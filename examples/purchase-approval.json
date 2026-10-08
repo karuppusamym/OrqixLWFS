@@ -1,0 +1,306 @@
+{
+  "schemaVersion": "0.1",
+  "workflowKey": "purchase-approval",
+  "name": "Purchase approval",
+  "metadata": {
+    "description": "Proposed USD purchase workflow. Requires real workspace group and procurement connection bindings before compilation/publication.",
+    "tags": [
+      "purchase",
+      "approval"
+    ]
+  },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "title",
+      "purpose",
+      "costCenter",
+      "amount"
+    ],
+    "properties": {
+      "title": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 120
+      },
+      "purpose": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1000
+      },
+      "costCenter": {
+        "type": "string",
+        "enum": [
+          "OPS",
+          "IT",
+          "HR"
+        ]
+      },
+      "amount": {
+        "type": "number",
+        "minimum": 0.01,
+        "multipleOf": 0.01
+      }
+    }
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "procurementId": {
+        "type": "string"
+      }
+    }
+  },
+  "triggers": [
+    "manual",
+    "api"
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "label": "Request submitted",
+      "config": {}
+    },
+    {
+      "id": "manager",
+      "type": "approval",
+      "label": "Manager approval",
+      "config": {
+        "candidateGroupRef": "managers",
+        "rejectReasonRequired": true
+      }
+    },
+    {
+      "id": "amountPolicy",
+      "type": "decision",
+      "label": "Check purchase amount",
+      "config": {
+        "decisionRef": "amount-policy"
+      }
+    },
+    {
+      "id": "route",
+      "type": "branch",
+      "label": "Finance approval needed?",
+      "config": {}
+    },
+    {
+      "id": "finance",
+      "type": "approval",
+      "label": "Finance approval",
+      "config": {
+        "candidateGroupRef": "finance-approvers",
+        "rejectReasonRequired": true
+      }
+    },
+    {
+      "id": "procure",
+      "type": "http",
+      "label": "Create purchase order",
+      "config": {
+        "connectionRef": "procurement",
+        "operation": "createOrder",
+        "inputMapping": {
+          "title": "/input/title",
+          "amount": "/input/amount",
+          "costCenter": "/input/costCenter"
+        },
+        "resultMapping": {
+          "procurementId": "/body/id"
+        },
+        "timeoutSeconds": 20,
+        "effectPolicy": "remoteIdempotency"
+      }
+    },
+    {
+      "id": "notify",
+      "type": "notification",
+      "label": "Notify requester",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "Your purchase request has been fulfilled."
+      }
+    },
+    {
+      "id": "fulfilled",
+      "type": "end",
+      "label": "Fulfilled",
+      "config": {
+        "businessOutcome": "Fulfilled"
+      }
+    },
+    {
+      "id": "rejected",
+      "type": "end",
+      "label": "Rejected",
+      "config": {
+        "businessOutcome": "Rejected"
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t1",
+      "from": "start",
+      "to": "manager",
+      "on": "next"
+    },
+    {
+      "id": "t2",
+      "from": "manager",
+      "to": "amountPolicy",
+      "on": "approved"
+    },
+    {
+      "id": "t3",
+      "from": "manager",
+      "to": "rejected",
+      "on": "rejected"
+    },
+    {
+      "id": "t4",
+      "from": "amountPolicy",
+      "to": "route",
+      "on": "next"
+    },
+    {
+      "id": "t5",
+      "from": "route",
+      "to": "finance",
+      "on": "condition",
+      "condition": {
+        "fieldRef": "/steps/amountPolicy/route",
+        "operator": "eq",
+        "value": "financeReview"
+      }
+    },
+    {
+      "id": "t6",
+      "from": "route",
+      "to": "procure",
+      "on": "default"
+    },
+    {
+      "id": "t7",
+      "from": "finance",
+      "to": "procure",
+      "on": "approved"
+    },
+    {
+      "id": "t8",
+      "from": "finance",
+      "to": "rejected",
+      "on": "rejected"
+    },
+    {
+      "id": "t9",
+      "from": "procure",
+      "to": "notify",
+      "on": "next"
+    },
+    {
+      "id": "t10",
+      "from": "notify",
+      "to": "fulfilled",
+      "on": "next"
+    }
+  ],
+  "decisions": [
+    {
+      "key": "amount-policy",
+      "version": 1,
+      "hitPolicy": "UNIQUE",
+      "rows": [
+        {
+          "when": {
+            "fieldRef": "/input/amount",
+            "operator": "gte",
+            "value": 5000
+          },
+          "then": {
+            "route": "financeReview"
+          }
+        }
+      ],
+      "default": {
+        "route": "standard"
+      }
+    }
+  ],
+  "execution": {
+    "maxConcurrentRuns": 50,
+    "maxAttempts": 3,
+    "retryDelaySeconds": 30
+  },
+  "security": {
+    "requiredGroupRefs": [
+      "managers",
+      "finance-approvers"
+    ],
+    "publishPermission": "workflow.publish",
+    "runPermission": "workflow.start"
+  },
+  "dependencies": {
+    "connections": [
+      {
+        "key": "procurement",
+        "definitionVersion": 1
+      }
+    ]
+  },
+  "outputMapping": {
+    "procurementId": {
+      "fieldRef": "/steps/procure/procurementId",
+      "required": false
+    }
+  },
+  "uiLayout": {
+    "positions": {
+      "start": {
+        "x": 120,
+        "y": 100
+      },
+      "manager": {
+        "x": 420,
+        "y": 100
+      },
+      "amountPolicy": {
+        "x": 720,
+        "y": 100
+      },
+      "route": {
+        "x": 120,
+        "y": 280
+      },
+      "finance": {
+        "x": 420,
+        "y": 280
+      },
+      "procure": {
+        "x": 720,
+        "y": 280
+      },
+      "notify": {
+        "x": 120,
+        "y": 460
+      },
+      "fulfilled": {
+        "x": 420,
+        "y": 460
+      },
+      "rejected": {
+        "x": 720,
+        "y": 460
+      }
+    },
+    "viewport": {
+      "x": 0,
+      "y": 0,
+      "zoom": 1
+    }
+  }
+}

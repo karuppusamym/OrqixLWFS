@@ -1,0 +1,703 @@
+# MASTER BUILD PROMPT
+# Universal AI-Native Workflow Platform
+## Production-First | OpenShift | Flowable OSS | React | PostgreSQL
+
+### 1. Your Role
+
+Act as a team of senior enterprise architects, BPMN specialists, AI platform engineers, full-stack developers, UI/UX designers, security architects, DevOps engineers, and QA automation engineers.
+
+Design and implement a production-oriented, lightweight, enterprise-grade, AI-native workflow orchestration platform.
+
+**This is NOT a proof of concept or throwaway demonstration.**
+
+The application demonstrated in 72 hours must be the same application that will subsequently be deployed into production. Implement the most important features first, but do not create temporary architecture, simulated execution engines, or disposable components.
+
+Prioritize working software, production-quality architecture, excellent usability, open standards, extensibility, and operational simplicity.
+
+### 2. Product Vision
+
+Build a universal workflow platform combining:
+
+- PEGA-style business process and case workflows
+- Camunda-style BPMN execution
+- n8n-style visual workflow creation
+- AI-native agent orchestration
+- MCP tool discovery and execution
+- Human-in-the-loop approval processes
+- Rules and decision management
+- Enterprise identity and governance
+- Conversational workflow generation
+- Portable, Git-versioned workflow definitions
+- Workflow migration from PEGA, Camunda, and LWFS
+- Event-driven and scheduled execution
+
+The platform must support business users, analysts, engineers, administrators, and AI agents.
+
+### 3. Mandatory Architecture Decisions
+
+Use the following technology stack.
+
+**Frontend**
+- React + TypeScript + Vite
+- React Flow / XYFlow for the primary visual canvas
+- BPMN.js for BPMN editing and visualization
+- Tailwind CSS
+- shadcn/ui
+- Zustand
+- TanStack Query
+- Monaco Editor
+- ELK.js for auto-layout
+
+**Backend**
+- Java 21 LTS
+- Spring Boot, using a compatible supported version
+- Flowable OSS BPMN/DMN/CMMN components where applicable
+- Spring Security
+- Spring Data / JPA where appropriate
+- REST APIs
+- Server-Sent Events or WebSocket for execution updates
+
+**Database**
+- PostgreSQL for production and integration environments
+- Database migrations through Flyway or Liquibase
+- JSONB for flexible metadata where appropriate
+- No mandatory pgvector dependency
+- SQLite may be used only for separate lightweight tooling or local metadata components, not as the Flowable clustered execution database
+
+**Infrastructure**
+- OpenShift Container Platform
+- Multiple application pods
+- PostgreSQL HA service
+- Kubernetes Secrets / approved enterprise secret management
+- Optional Kafka
+- No mandatory Redis
+- No mandatory Python backend
+- No mandatory Temporal
+- Container-based deployment
+
+**Language neutrality**
+
+The platform's core backend must be Java-based.
+
+Python, Node.js, .NET, Go, and other technologies must be supported through HTTP APIs, OpenAPI, MCP, A2A-compatible adapters, event messaging, and external workers.
+
+Do not embed a Python runtime merely to execute Python-based agents.
+
+### 4. Architecture Principles
+
+1. One core workflow execution engine: Flowable OSS.
+2. One mandatory backend language: Java.
+3. One primary frontend framework: React.
+4. PostgreSQL is the source of truth for durable workflow state.
+5. No mandatory Kafka or Redis dependency.
+6. No custom replacement for Flowable's BPMN execution semantics.
+7. Modular monolith initially, with separately scalable workers or adapters where necessary.
+8. All external integrations must be replaceable.
+9. Use standard APIs and portable workflow definitions.
+10. Enforce security at every layer.
+11. Support multiple OCP pods safely.
+12. Use immutable workflow versions for running instances.
+13. Keep AI reasoning separate from deterministic process control.
+14. Never expose credentials in exported workflows.
+15. Keep the application usable without configuring an LLM.
+
+### 5. Workflow Studio — UX Is a Top Priority
+
+Build an exceptionally intuitive web-based workflow designer.
+
+The interface should be comparable in usability to modern workflow automation platforms.
+
+**Main navigation**
+- Dashboard
+- Workspaces
+- Workflow Studio
+- My Tasks
+- Executions
+- Templates
+- Migration Center
+- Agent Registry
+- MCP Registry
+- Tool Registry
+- Connectors
+- Rules
+- Schedules
+- Analytics
+- Administration
+
+**Workspace hierarchy**
+
+Organization → Workspace → Folder/Subfolder → Workflow
+
+Support nested folders, tags, favorites, search, ownership, shared assets, and access-controlled resources.
+
+**Workflow creation modes**
+
+1. Drag-and-drop visual creation
+2. AI conversational creation
+3. BPMN diagram editing
+4. JSON/YAML definition editing
+5. Template-based creation
+6. Imported workflow modification
+
+All modes must produce a consistent canonical workflow model or a validated, loss-aware conversion to the execution format.
+
+**Visual editor features**
+- Drag and drop
+- Searchable node palette
+- Auto-connect suggestions
+- Auto-layout
+- Undo/redo
+- Copy/paste
+- Node duplication
+- Multi-selection
+- Keyboard shortcuts
+- Inline configuration
+- Schema-aware data mapping
+- Input/output preview
+- Node-level testing
+- Workflow-level testing
+- Live execution highlighting
+- Execution logs
+- Version comparison
+- One-click publish
+- One-click run
+- Contextual help
+- Accessible design
+- Light and dark themes
+
+Use a clean, modern design with excellent spacing, typography, and discoverability.
+
+Avoid overwhelming business users with advanced technical settings. Provide Basic and Advanced configuration modes.
+
+### 6. Workflow Definition and Portability
+
+Create a documented, versioned, portable workflow specification.
+
+Support JSON and YAML representations.
+
+Provide BPMN 2.0 import/export for the supported executable subset.
+
+Definitions must include:
+- Schema version
+- Workflow identity
+- Metadata
+- Input/output schemas
+- Nodes and transitions
+- Triggers
+- Rules
+- Retry policies
+- Timeouts
+- Error handling
+- Human tasks
+- Agent references
+- Tool references
+- MCP references
+- Child workflows
+- Execution settings
+- Security requirements
+- Dependency versions
+
+Separate portable workflow definitions from deployment-specific configuration.
+
+Create a compiler/translation layer that converts the canonical definition into valid Flowable BPMN and DMN artifacts.
+
+Preserve source mappings and identify unsupported constructs.
+
+Avoid claiming universal lossless BPMN round-trip compatibility.
+
+### 7. Workflow Engine
+
+Use Flowable OSS for process execution.
+
+Implement support for:
+- Start and end events
+- Service tasks
+- User tasks
+- Script-equivalent tasks through secure external workers
+- Exclusive gateways
+- Parallel gateways
+- Inclusive gateways where supported
+- Subprocesses
+- Call activities
+- Boundary events
+- Timers
+- Message events
+- Error events
+- Compensation where supported
+- Multi-instance activities
+- Process variables
+- Retries
+- Async execution
+- Cancellation
+- Suspension and resumption
+- Long-running workflows
+- Human approvals
+- Scheduled workflows
+- Versioned deployments
+
+Provide a unified execution API.
+
+Support workflow invocation through:
+- Web UI
+- REST API
+- Webhook
+- Schedule
+- Parent workflow
+- Kafka event adapter
+- Desktop launcher
+- Teams interaction
+- External applications
+
+Implement idempotency controls for external side effects and safe retries.
+
+### 8. AI-Native Orchestration
+
+Create an AI integration layer within the Java backend.
+
+**LLM Router**
+
+Support configurable providers:
+- OpenAI-compatible endpoints
+- Azure OpenAI
+- Anthropic
+- Gemini
+- Ollama-compatible local models
+
+Features:
+- Provider registration
+- Model registry
+- Workspace-specific access
+- Model selection policies
+- Fallback routing
+- Prompt templates
+- Structured output validation
+- Usage tracking
+- Cost estimation where available
+- Error handling
+- Timeout policies
+- Audit metadata
+
+**AI workflow generation**
+
+Allow a user to type:
+
+"Create an employee onboarding workflow with manager approval, IT access provisioning, HR notification, and Teams confirmation."
+
+The system should:
+1. Understand the request.
+2. Generate a draft workflow.
+3. Validate nodes and schemas.
+4. Render the workflow visually.
+5. Identify missing configuration.
+6. Allow the user to edit.
+7. Validate before publishing.
+8. Execute only after authorization.
+
+Never execute unvalidated AI-generated workflows automatically.
+
+### 9. Agent Registry
+
+Create a centralized agent registry.
+
+Support:
+- HTTP-based agents
+- Registered enterprise agents
+- A2A-compatible agents
+- Internal platform agents
+- External AI services
+- Agents implemented in Java, Python, Node.js, or other languages
+
+Agent metadata:
+- ID
+- Name
+- Description
+- Owner
+- Endpoint
+- Protocol
+- Version
+- Input/output schema
+- Authentication reference
+- Permissions
+- Timeout
+- Health status
+- Tags
+
+Allow platform-level and workspace-level registration.
+
+Implement agent invocation as a workflow task.
+
+Support synchronous responses and asynchronous callback patterns.
+
+### 10. MCP Integration
+
+Build a native MCP registry and client integration using a compatible Java MCP SDK.
+
+Support:
+- MCP server registration
+- Remote MCP connections
+- Supported transport configuration
+- Tool discovery
+- Tool schema inspection
+- Connection testing
+- Tool invocation
+- Authentication
+- Workspace permissions
+- Tool allowlisting
+- Execution auditing
+- Error handling
+
+An MCP tool should be usable as a drag-and-drop workflow node.
+
+Protect against SSRF, unauthorized tool execution, untrusted tool descriptions, prompt injection, and credential exposure.
+
+### 11. Connector Framework
+
+Build a reusable connector architecture.
+
+Initial connectors:
+- REST / HTTP
+- OpenAPI
+- PostgreSQL
+- Generic JDBC
+- Webhook
+- Microsoft Teams
+- Email
+- Kafka
+- MCP
+- Agent Registry
+- Child Workflow
+
+Support:
+- Global connectors
+- Workspace connectors
+- Connection testing
+- Credential references
+- Reusable configurations
+- Input/output mapping
+- Versioning
+- Retry policies
+- Permission controls
+
+Connector implementations must be modular and testable.
+
+### 12. Rules and Decision Management
+
+Use Flowable DMN where appropriate.
+
+Support:
+- Decision tables
+- If/else rules
+- Compound conditions
+- Input validation
+- Output mapping
+- Rule versioning
+- Rule testing
+- Visual rule editor
+- JSONLogic compatibility where practical
+
+Do not allow arbitrary untrusted code evaluation.
+
+### 13. Human-in-the-Loop
+
+Implement:
+- User task inbox
+- Group task assignments
+- Approval/rejection
+- Custom forms
+- Comments
+- Delegation
+- Escalation
+- Reminders
+- SLA deadlines
+- Task history
+- Workflow continuation
+
+Integrate Microsoft Teams for notifications and, when enterprise permissions allow, actionable approvals.
+
+Teams callbacks must be authenticated and authorized.
+
+### 14. Identity and RBAC
+
+Support:
+- PingFederate OIDC
+- Enterprise AD group mapping
+- Manual user-role assignment
+- Workspace membership
+- Role inheritance
+- Workflow-level permissions
+- Tool permissions
+- Connector permissions
+- Execution permissions
+- Publishing permissions
+
+Roles:
+- Platform Admin
+- Organization Admin
+- Workspace Admin
+- Workflow Designer
+- Publisher
+- Operator
+- Viewer
+- Approver
+
+Do not rely solely on frontend permission checks.
+
+Enforce authorization on backend APIs and execution paths.
+
+### 15. Version Control
+
+Implement:
+- Draft revisions
+- Published revisions
+- Immutable deployment versions
+- Version comparison
+- Rollback
+- Git integration
+- Export/import
+- Environment promotion
+- Audit trail
+- Dependency locking
+
+Running workflows must remain bound to the correct deployed process version.
+
+### 16. Migration Center
+
+Build a migration framework supporting:
+
+**Camunda**
+- BPMN 2.0 XML import
+- Supported gateways
+- User tasks
+- Service tasks
+- Timers
+- Call activities
+- Variables and mappings
+- Compatibility report
+
+**PEGA**
+- Import supported exported process artifacts
+- Map stages and steps
+- Convert supported assignments
+- Convert supported decisions
+- Map integration tasks
+- Identify unsupported rules and case semantics
+- Provide manual remediation interface
+
+**LWFS**
+- Create a pluggable adapter.
+- Define the required source schema.
+- Implement mappings once representative LWFS artifacts are supplied.
+
+Migration workflow:
+1. Upload
+2. Parse
+3. Analyze
+4. Map
+5. Convert
+6. Display
+7. Validate
+8. Test
+9. Publish
+
+Generate an explicit compatibility report.
+
+Never silently discard unsupported source elements.
+
+### 17. Event Streaming and Scheduling
+
+Implement:
+- REST triggers
+- Webhooks
+- Cron schedules
+- Database-backed events
+- Optional Kafka consumers/producers
+- Event correlation
+- Idempotency
+- Retry and dead-letter handling
+
+Use Flowable's durable scheduling capabilities where suitable.
+
+Avoid requiring Kafka for ordinary workflow execution.
+
+### 18. OCP Production Deployment
+
+Create OpenShift-compatible deployment manifests or Helm charts.
+
+Support:
+- Multiple application replicas
+- Readiness and liveness probes
+- Graceful shutdown
+- Resource requests and limits
+- HPA configuration
+- Rolling deployments
+- ConfigMaps
+- Secrets
+- NetworkPolicies
+- TLS
+- Structured logging
+- Metrics
+- Tracing
+- PostgreSQL HA integration
+
+Ensure Flowable job acquisition and execution work correctly across multiple pods.
+
+Validate database connection pool sizing and graceful pod termination.
+
+Do not assume that adding replicas automatically guarantees correct distributed execution.
+
+### 19. Security and Operational Controls
+
+Implement:
+- Server-side RBAC
+- Audit logging
+- Secret references
+- TLS
+- Input validation
+- Safe expression evaluation
+- Connector endpoint allowlists
+- SSRF prevention
+- Webhook signatures
+- Rate limiting
+- Sensitive-data redaction
+- Workspace isolation
+- Workflow execution quotas
+- Tool execution policies
+- Approval requirements for sensitive actions
+
+Create security tests for authorization boundaries and cross-workspace access.
+
+### 20. Observability
+
+Provide:
+- Live workflow execution graph
+- Execution timeline
+- Node-level status
+- Failure diagnostics
+- Retry history
+- Duration metrics
+- Workflow throughput
+- SLA monitoring
+- Audit events
+- Correlation IDs
+- OpenTelemetry instrumentation
+
+### 21. Required Demo Scenarios
+
+Implement real working examples:
+
+**Demo 1: Business Approval**
+Form → Manager Approval → Rule → API → Notification
+
+**Demo 2: AI Agent Workflow**
+Start → Agent Registry → Agent Call → MCP Tool → Rule → End
+
+**Demo 3: Human Approval in Teams**
+Workflow → Teams Notification → Human Decision → Resume
+
+**Demo 4: Child Workflow**
+Parent → Child Workflow → Return Result → Continue
+
+**Demo 5: Camunda Migration**
+Upload BPMN → Convert → Review → Execute
+
+**Demo 6: PEGA Migration**
+Upload Representative PEGA Export → Convert Supported Elements → Review → Execute
+
+**Demo 7: AI Workflow Builder**
+Natural-language Prompt → Generate Workflow → Edit → Publish → Execute
+
+### 22. Delivery Plan — First 72 Hours
+
+**Day 1: Foundation**
+- Create repository structure
+- Implement Spring Boot + Flowable
+- Configure PostgreSQL
+- Implement React application shell
+- Implement workflow CRUD
+- Build visual editor
+- Implement BPMN deployment
+- Execute first real workflow
+
+**Day 2: AI and Integrations**
+- Implement agent registry
+- MCP registry
+- REST connectors
+- LLM router
+- Human task inbox
+- Rules
+- Child workflow execution
+- Execution monitoring
+
+**Day 3: Migration and Demonstration**
+- Camunda import
+- PEGA representative import
+- Versioning
+- Sample templates
+- OCP deployment manifests
+- Integration tests
+- Demo walkthrough
+- Architecture documentation
+
+Prioritize a reliable vertical slice. Do not fake unfinished integrations or sacrifice security to meet the deadline.
+
+### 23. Required Deliverables
+
+Generate:
+1. Complete source repository
+2. React frontend
+3. Java backend
+4. Flowable integration
+5. PostgreSQL schema and migrations
+6. Workflow JSON Schema
+7. REST API specification
+8. OCP deployment manifests
+9. Docker Compose for development
+10. Example workflows
+11. Migration adapters
+12. Automated tests
+13. Architecture documentation
+14. User guide
+15. Admin guide
+16. Production readiness checklist
+17. Demo execution script
+18. Feature implementation status
+
+### 24. Quality Gates
+
+Before declaring a feature complete, verify:
+- Real backend execution
+- Persisted state
+- Correct error handling
+- Proper authorization
+- Version consistency
+- API validation
+- Automated tests
+- No hardcoded secrets
+- No simulated successful external calls
+- Correct restart behavior where relevant
+
+Test concurrent execution, pod restart recovery, workflow versioning, and human-task persistence.
+
+### 25. Implementation Instructions
+
+Begin by inspecting the repository and existing code.
+
+If no repository exists, initialize the project.
+
+Then:
+1. Produce a concise architecture and repository structure.
+2. Identify Flowable OSS capabilities and licensing constraints.
+3. Define the workflow data model and execution interfaces.
+4. Implement the smallest complete end-to-end workflow.
+5. Build the real visual editor around that implementation.
+6. Add AI-native and connector capabilities incrementally.
+7. Add migration functionality.
+8. Package for OpenShift.
+9. Run automated tests.
+10. Document what is complete and what remains.
+
+Do not stop after producing architecture diagrams or documentation.
+
+Proceed with implementation, run the application, validate functionality, and provide a working demo.
+
+**Critical requirement:** The demonstrated codebase must be the foundation of the production application. No architectural rewrite should be planned after the demo. Production deployment still requires all applicable security, resilience, integration and operational gates to pass.

@@ -147,6 +147,19 @@ describe('AI assistance (S10 section 6)', () => {
     await waitFor(() => expect(screen.queryByTestId('explain-panel')).not.toBeInTheDocument())
     await waitFor(() => expect(screen.getByTestId('inspector').querySelector('[data-field="label"]')).toHaveValue('Finance review'))
   })
+  it('shows compiler blockers independently of an AI claim that groups are ready', async () => {
+    signInAs('dana.designer')
+    server.use(http.post('*/api/v1/workspaces/:ws/workflows/:id/explain', () => HttpResponse.json({
+      summary: 'All groups are ready.', steps: [], generation: { model: 'test', costUsd: 0, profile: 'economy', promptVersion: 'explain-v2', attempts: 1, escalated: false, durationMs: 1 },
+      validation: { publishable: false, issues: [{ code: 'WF_GROUP_UNKNOWN', severity: 'blocker', message: 'Create the legal-reviewers group.', path: '/nodes/finance', nodeId: 'finance' }] },
+    })))
+    const user = userEvent.setup()
+    renderApp(EDIT)
+    await user.click(await screen.findByRole('button', { name: 'Explain' }))
+    expect(await screen.findByText('This workflow is not ready to publish.')).toBeInTheDocument()
+    expect(screen.getByText('Create the legal-reviewers group.')).toBeInTheDocument()
+    expect(screen.getByText(/AI text below does not change it/)).toBeInTheDocument()
+  })
 
   it('shows an explanation error with a retry', async () => {
     signInAs('dana.designer')

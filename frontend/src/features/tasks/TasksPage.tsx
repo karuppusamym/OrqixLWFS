@@ -35,10 +35,11 @@ export function TasksPage() {
   const ws = workspace.id
   const { taskId } = useParams()
   const [params, setParams] = useSearchParams()
-  const view = parseView(params.get('view'))
   const desktop = useIsDesktop()
   const navigate = useNavigate()
   const counters = useTaskCounters(ws, true)
+  const view = params.has('view') || taskId ? parseView(params.get('view'))
+    : counters.data && counters.data.assigned === 0 && counters.data.claimable > 0 ? 'claimable' : 'assigned'
   const list = useTasks(ws, view)
   const tasks: TaskSummary[] = list.data?.pages.flatMap((p) => p.items) ?? []
 
@@ -62,7 +63,7 @@ export function TasksPage() {
       <div className={cn('grid gap-6', desktop && showPanel ? 'lg:grid-cols-[minmax(0,1fr)_minmax(0,30rem)]' : '')}>
         {showList ? (
           <div className="min-w-0">
-            <Tabs value={view} onValueChange={(v) => setParams({ view: v }, { replace: true })}>
+            <Tabs value={view} onValueChange={(v) => navigate(`/w/${ws}/tasks?view=${v}`)}>
               <TabsList aria-label="Task lists">
                 {VIEWS.map((v) => (
                   <TabsTrigger key={v.id} value={v.id}>

@@ -1612,6 +1612,11 @@ export interface components {
         };
         WorkflowExplanation: {
             summary: string;
+            /** @description Compiler readiness for this definition against current workspace configuration; authoritative independently of AI text */
+            validation?: {
+                publishable: boolean;
+                issues: components["schemas"]["ValidationIssue"][];
+            };
             steps: {
                 nodeId: string;
                 text: string;

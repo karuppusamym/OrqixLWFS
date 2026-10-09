@@ -14,14 +14,14 @@ import tools.jackson.databind.node.ObjectNode;
 
 /**
  * Versioned prompts (S10 section 3 step 2): {@code ai/prompts/draft-v1.md} with the packaged workflow-v0 schema and
- * the purchase-approval example inlined, and {@code ai/prompts/explain-v1.md}. The system prompts are static, so
+ * the purchase-approval example inlined, and {@code ai/prompts/explain-v2.md}. The system prompts are static, so
  * providers can cache them; workspace context and the (untrusted) description go into the user turn.
  */
 @Component
 public class PromptLibrary {
 
     public static final String DRAFT_VERSION = "draft-v1";
-    public static final String EXPLAIN_VERSION = "explain-v1";
+    public static final String EXPLAIN_VERSION = "explain-v2";
 
     private final Json json;
     private final String draftSystem;
@@ -57,11 +57,12 @@ public class PromptLibrary {
     }
 
     /** User turn of an explanation: the canonical definition without presentation data. */
-    public String explainUser(JsonNode definition) {
+    public String explainUser(JsonNode definition, JsonNode validation) {
         ObjectNode copy = definition.isObject() ? (ObjectNode) definition.deepCopy() : json.object();
         copy.remove("uiLayout");
         copy.remove("inputUi");
-        return "<workflow>\n" + json.write(copy) + "\n</workflow>\n\nReply with the JSON object only.";
+        return "<workflow>\n" + json.write(copy) + "\n</workflow>\n<validation>\n" + json.write(validation)
+                + "\n</validation>\n\nThe validation result is authoritative for readiness. Describe missing configuration explicitly; do not call unavailable groups or integrations ready. Reply with the JSON object only.";
     }
 
     /** Response format of draft replies (structured outputs): the envelope; the document is checked by the compiler. */

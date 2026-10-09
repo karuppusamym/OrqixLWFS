@@ -263,10 +263,10 @@ public class Generator {
     }
 
     /** Explains a canonical definition; one retry when the reply cannot be used. */
-    public Explanation explain(ModelPolicy.ResolvedProfile profile, JsonNode definition, Meter meter) {
+    public Explanation explain(ModelPolicy.ResolvedProfile profile, JsonNode definition, JsonNode validation, Meter meter) {
         List<OpenRouterClient.Message> messages = new ArrayList<>();
         messages.add(new OpenRouterClient.Message("system", prompts.explainSystem()));
-        messages.add(new OpenRouterClient.Message("user", prompts.explainUser(definition)));
+        messages.add(new OpenRouterClient.Message("user", prompts.explainUser(definition, validation)));
         List<String> nodeIds = new ArrayList<>();
         definition.path("nodes").forEach(n -> nodeIds.add(n.path("id").asString("")));
         Deadline deadline = new Deadline(properties.generationDeadline());

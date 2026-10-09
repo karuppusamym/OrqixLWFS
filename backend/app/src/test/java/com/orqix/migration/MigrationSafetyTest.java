@@ -7,8 +7,26 @@ import java.util.zip.*;
 import org.junit.jupiter.api.Test;
 import com.orqix.migration.camunda.*;
 import com.orqix.migration.pega.PegaSource;
+import com.orqix.shared.json.Json;
+import tools.jackson.databind.json.JsonMapper;
 
 class MigrationSafetyTest {
+    @Test void pegaMappingRequiresAReviewedVersionAndConsistentFileProvenance() throws Exception {
+        var json = new Json(JsonMapper.builder().build());
+        var source = PegaSource.archive(archive("rules.xml", "synthetic".getBytes(StandardCharsets.UTF_8)));
+        var pkg = json.object(); pkg.put("format", "orqix-pega-mapping-0.1"); pkg.put("sourceArchiveHash", source.sourceHash());
+        pkg.putObject("definition").putArray("nodes").addObject().put("id", "start");
+        var mapping = pkg.putObject("fileMappings").putObject("rules.xml");
+        mapping.put("disposition", "mapped"); mapping.putArray("targetNodeIds").add("start"); mapping.put("explanation", "Reviewed synthetic mapping.");
+        pkg.put("sourceVersion", "ENTER-PEGA-VERSION");
+        assertThatThrownBy(() -> PegaSource.mapping(pkg, source, true)).isInstanceOf(SourceException.class);
+        pkg.put("sourceVersion", 24);
+        assertThatThrownBy(() -> PegaSource.mapping(pkg, source, true)).isInstanceOf(SourceException.class);
+        pkg.put("sourceVersion", "synthetic-24");
+        assertThat(PegaSource.mapping(pkg, source, true).publishable()).isTrue();
+        mapping.put("disposition", "excluded");
+        assertThatThrownBy(() -> PegaSource.mapping(pkg, source, true)).isInstanceOf(SourceException.class).hasMessageContaining("Excluded files");
+    }
     private byte[] archive(String name,byte[] content) throws IOException {
         var bytes=new ByteArrayOutputStream();
         try(var zip=new ZipOutputStream(bytes)) { zip.putNextEntry(new ZipEntry(name)); zip.write(content); zip.closeEntry(); }

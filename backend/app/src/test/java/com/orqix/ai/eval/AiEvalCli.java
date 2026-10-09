@@ -105,7 +105,7 @@ public final class AiEvalCli {
                     }
                     case "explain" -> {
                         response.put("system", prompts.explainSystem());
-                        response.put("user", prompts.explainUser(request.path("definition")));
+                        response.put("user", prompts.explainUser(request.path("definition"), request.path("validation")));
                         response.set("responseSchema", prompts.explanationSchema());
                         response.put("promptVersion", PromptLibrary.EXPLAIN_VERSION);
                     }

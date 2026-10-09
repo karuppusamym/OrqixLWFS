@@ -48,7 +48,7 @@ public final class AiDtos {
     public record Step(String nodeId, String text) {
     }
 
-    public record Explanation(String summary, List<Step> steps, Generation generation) {
+    public record Explanation(String summary, List<Step> steps, Generation generation, JsonNode validation) {
     }
 
     /** {@code AiDraftRequest}. */

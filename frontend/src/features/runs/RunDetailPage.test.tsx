@@ -23,6 +23,22 @@ async function regainFocus() {
 const at = (run: MockRun) => `/w/${WS}/runs/${run.id}`
 
 describe('run detail', () => {
+  it('gives operators a recovery link and prioritizes reconciliation for an unknown outcome', async () => {
+    signInAs('olga.operator')
+    const user = userEvent.setup()
+    renderApp(`/w/${WS}/runs?lifecycle=needsAttention`)
+    const links = await screen.findAllByRole('link', { name: /Review recovery for/ })
+    await user.click(links.find(link => link.getAttribute('href')?.includes(runByKey('ORQ-1004').id))!)
+    expect(await screen.findByText(/Recommended next step: review what happened/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Retry step' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Reconcile outcome' })).toBeEnabled()
+  })
+  it('does not offer recovery controls to viewers', async () => {
+    signInAs('vic.viewer')
+    renderApp(`/w/${WS}/runs?lifecycle=needsAttention`)
+    await screen.findByText('Needs attention', { selector: 'button' })
+    expect(screen.queryByRole('link', { name: /Review recovery for/ })).not.toBeInTheDocument()
+  })
   it('requester view: request values with USD, decisions, a business-language timeline, no operator tools', async () => {
     signInAs('rhea.requester')
     const run = runByKey('ORQ-1001') // completed and fulfilled

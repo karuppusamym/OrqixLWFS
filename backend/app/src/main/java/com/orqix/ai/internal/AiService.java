@@ -83,6 +83,7 @@ public class AiService {
     private final TransactionTemplate tx;
     private final MeterRegistry meters;
     private final Json json;
+    private final WorkflowCompiler compiler;
     private final Clock clock;
     private final Map<String, Gate> gates = new ConcurrentHashMap<>();
     private final Map<String, Notes> notes = new ConcurrentHashMap<>();
@@ -104,6 +105,7 @@ public class AiService {
         this.tx = new TransactionTemplate(transactions);
         this.meters = meters;
         this.json = json;
+        this.compiler = compiler;
         this.clock = clock;
     }
 
@@ -279,9 +281,11 @@ public class AiService {
         ModelPolicy.ResolvedProfile profile = models.resolve(request.profile());
         budgetLeft();
         Generator.Meter meter = generator.meter(profile);
+        var report = compiler.validate(json.write(definition.definition()), facts.load(access.workspace()).compileContext());
+        JsonNode validation = json.toTree(Map.of("publishable", report.publishable(), "issues", issues(report.issues())));
         Generator.Explanation explanation;
         try {
-            explanation = generator.explain(profile, definition.definition(), meter);
+            explanation = generator.explain(profile, definition.definition(), validation, meter);
         } catch (ProviderException e) {
             ProviderFailure failure = classify(e);
             recordExplain(caller, workspaceId, definition, meter, failure.outcome());
@@ -295,7 +299,7 @@ public class AiService {
         recordExplain(caller, workspaceId, definition, meter, AiLedger.Outcome.SUCCESS);
         return new AiDtos.Explanation(explanation.summary(),
                 explanation.steps().stream().map(s -> new AiDtos.Step(s.nodeId(), s.text())).toList(),
-                generation(meter, PromptLibrary.EXPLAIN_VERSION));
+                generation(meter, PromptLibrary.EXPLAIN_VERSION), validation);
     }
 
     private void recordExplain(Caller caller, UUID workspaceId, DraftAuthoring.Definition definition,

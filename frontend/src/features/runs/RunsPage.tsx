@@ -17,7 +17,7 @@ const FILTERS: Array<Lifecycle | ''> = ['', 'waiting', 'running', 'completed', '
 
 /** Runs for operators and viewers, with the "Needs attention" filter (docs/build/S7-frontend.md section 2). */
 export function RunsPage() {
-  const { workspace } = useWorkspace()
+  const { workspace, can } = useWorkspace()
   const ws = workspace.id
   const { params, update, lifecycle } = useListFilters()
   const workflowId = params.get('workflowId') ?? ''
@@ -101,7 +101,7 @@ export function RunsPage() {
         </EmptyState>
       ) : (
         <>
-          <RunsTable runs={runs} wsId={ws} showRequester caption="Runs in this workspace" />
+          <RunsTable runs={runs} wsId={ws} showRequester caption="Runs in this workspace" canOperate={can('run.operate')} />
           {query.hasNextPage ? (
             <div className="mt-4 flex justify-center">
               <Button variant="secondary" onClick={() => void query.fetchNextPage()} loading={query.isFetchingNextPage}>

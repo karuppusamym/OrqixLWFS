@@ -5,14 +5,14 @@ Updated 9 October 2026 · deliverable 18 · status vocabulary from [doc 09](09-m
 
 ## Evidence at this revision
 
-All rows were rerun on 9 October 2026 against the current working tree; Docker rows used a freshly rebuilt image on a clean database.
+The earlier broad verification was run on 9 October 2026 against a freshly rebuilt Docker image and clean database. The subsequent [release code audit](18-release-code-audit.md) reran compiler/application, frontend and browser checks while preserving existing local data; other rows retain the earlier evidence.
 
 | Suite | Result |
 |---|---|
 | Compiler (`backend/compiler`) | 204 tests pass; JaCoCo gate passes |
-| Application (`backend/app`, Testcontainers PostgreSQL 18, WireMock) | 124 tests pass, 1 skipped (opt-in live AI test); API responses validated against `contracts/openapi.yaml` |
-| Frontend (`frontend`, Vitest) | 396 tests pass, including contrast checks of both palettes and a no-hard-coded-color scan; typecheck, lint, build and API-type drift check pass |
-| Browser E2E, Docker stack (`tests/e2e`, Playwright, Edge) | 23 pass, 1 skipped by design (mock-only unknown-outcome injection); axe: no serious or critical findings; no CSP violations |
+| Application (`backend/app`, Testcontainers PostgreSQL 18, WireMock) | 125 tests run, 1 skipped (opt-in live AI test), no failures; final Pega guards additionally pass all four safety regressions; API responses validated against `contracts/openapi.yaml` |
+| Frontend (`frontend`, Vitest) | 401 tests pass, including contrast checks of both palettes and a no-hard-coded-color scan; typecheck, lint, build and API-type drift check pass |
+| Browser E2E, Docker stack (`tests/e2e`, Playwright, Edge) | 23 pass across the audit runs (18 broad checks plus all five accessibility checks after correcting a stale reference selector), 1 skipped by design (mock-only unknown-outcome injection); axe: no serious or critical findings; no CSP violations |
 | Browser E2E, mock mode | 22 pass, 2 skipped (migration specs run against the real stack only) |
 | API E2E, Docker stack (`tools/api-e2e`) | Scenarios 1–9 with fault injection: 26 / 26. Scenarios 10–14 (rollback, reconcile, cancel, forged fields): 33 / 33 |
 | Resilience, Docker stack (`tools/resilience`) | T-RES-01, T-RES-03 (kill -9 recovered in 73–76 s), T-RES-04 (60 s database outage), T-RES-05 (SIGTERM mid-call) and T-SEC-09 all pass. Evidence in `evidence/resilience/` |
@@ -73,16 +73,16 @@ Defects found and fixed this round:
 | Pega archive assessment and reviewed manual mappings | [doc 17](17-migration-workbench.md) | Verified on synthetic fixtures | No automatic native Pega rule conversion |
 | Brand palettes (`wf` default, `orqix`), studio auto-layout, request references `ORQ-n` | S7 §1, §5, §8 | Verified | Contrast tests, t-ui-10, references test; before and after screenshots in `evidence/design/` |
 
-## Design follow-ups (lead review and the vision design judge, 9 October 2026)
+## Design review follow-up (9 October 2026)
 
-- **My tasks:**
-  - The page opens on *Assigned to me*, which hides work that's available to claim. Open the tab that has work.
-  - The side panel can show a task from a different tab than the selected one.
-- **Workflows list:** *Start* and *Edit draft* have equal weight, and version state needs an icon and text.
-- **Runs:** a needs-attention row has no direct action, and the filter has no pressed state.
-- **Run detail:** the four operator actions have equal weight. Lead with the next safe action.
-- **AI explanation:** it can describe a group as ready when it's still missing. Ground the summary in the validation report.
+- **My tasks:** fixed automatic selection of available work and stale panels when tabs change; explicit tab choices are preserved.
+- **Workflows list:** version state now has an icon and text; Start and Edit already had different emphasis.
+- **Runs:** added permission-scoped recovery links on attention rows; the filter already had a pressed state.
+- **Run detail:** recovery guidance leads with reconciliation for unknown outcomes and otherwise the allowed retry or ownership review.
+- **AI explanation:** `explain-v2` receives compiler findings; authoritative readiness is shown separately from AI prose.
 - **AI generation:** move to async (202 plus polling) so slow providers don't depend on proxy timeouts.
+
+Current code review and verification: [release audit](18-release-code-audit.md). The audit reran backend, frontend and browser checks and added Pega mapping-integrity regressions; earlier live AI, performance and resilience evidence above was retained rather than claimed as rerun in this audit.
 
 ## Later milestones
 

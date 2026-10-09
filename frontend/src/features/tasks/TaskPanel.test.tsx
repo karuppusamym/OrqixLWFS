@@ -24,6 +24,24 @@ async function openPanel(title: string, view: 'claimable' | 'assigned' = 'claima
 }
 
 describe('task panel: states and conflict UX (T-UI-03)', () => {
+  it('opens available work when no task is assigned, while preserving an explicit tab choice', async () => {
+    signInAs('max.manager')
+    for (const run of db.runs.values()) for (const task of run.tasks) task.assigneeId = null
+    const user = userEvent.setup()
+    renderApp(`/w/${WS}/tasks`)
+    await waitFor(() => expect(screen.getByRole('tab', { name: /Available to claim/ })).toHaveAttribute('aria-selected', 'true'))
+    await user.click(screen.getByRole('tab', { name: /Assigned to me/ }))
+    expect(await screen.findByText('No tasks are assigned to you')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /Assigned to me/ })).toHaveAttribute('aria-selected', 'true')
+  })
+  it('closes the previous task panel when switching task lists', async () => {
+    signInAs('max.manager')
+    const user = userEvent.setup()
+    const { router } = await openPanel('Replacement laptop')
+    await user.click(screen.getByRole('tab', { name: 'Completed' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/w/${WS}/tasks`))
+    expect(screen.queryByRole('complementary', { name: 'Task details' })).not.toBeInTheDocument()
+  })
   it('shows the request with USD formatting, why you see it, and Claim first for a group task', async () => {
     signInAs('max.manager')
     await openPanel('Replacement laptop')

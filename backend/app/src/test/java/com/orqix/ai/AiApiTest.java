@@ -383,10 +383,11 @@ class AiApiTest extends IntegrationTestBase {
         assertThat(explained.status()).as(explained.toString()).isEqualTo(200);
         assertThat(explained.body().path("summary").asString()).contains("manager approves");
         assertThat(explained.body().path("steps").findValuesAsString("nodeId")).containsExactly("start", "manager");
-        assertThat(explained.body().path("generation").path("promptVersion").asString()).isEqualTo("explain-v1");
+        assertThat(explained.body().path("generation").path("promptVersion").asString()).isEqualTo("explain-v2");
+        assertThat(explained.body().path("validation").has("publishable")).isTrue();
         JsonNode sent = OpenRouterStub.requests().get(0);
         String user = sent.path("messages").get(1).path("content").asString();
-        assertThat(user).contains("<workflow>", "amount-policy").doesNotContain("uiLayout");
+        assertThat(user).contains("<workflow>", "amount-policy", "<validation>", "publishable").doesNotContain("uiLayout");
         assertThat(sent.path("max_tokens").asInt()).isEqualTo(4000);
         assertThat(jdbc.sql("""
                 SELECT metadata->>'revision' FROM audit_event WHERE action = 'ai.workflow.explained'
@@ -421,6 +422,24 @@ class AiApiTest extends IntegrationTestBase {
     }
 
     /** Last: rejected credentials disable AI in this context for the re-check interval. */
+    @Test
+    @Order(12)
+    void explanationIncludesCompilerReadinessForMissingGroups() throws Exception {
+        var definition = example();
+        ((ObjectNode) node(definition, "finance").path("config")).put("candidateGroupRef", "legal-reviewers");
+        OpenRouterStub.reply(envelope(definition, List.of(), List.of()), ECONOMY_MODEL, 0.0001);
+        var created = draft("Purchase approval with finance review for large purchases.");
+        assertThat(created.status()).as(created.toString()).isEqualTo(201);
+        String id = created.body().path("workflow").path("id").asString();
+        OpenRouterStub.reply("{\"summary\":\"All groups are ready.\",\"steps\":[]}", ECONOMY_MODEL, 0.0001);
+        var explained = api("vic.viewer").post(Map.of("revision", 1), "/workspaces/{ws}/workflows/{id}/explain", PURCHASING, id);
+        assertThat(explained.status()).as(explained.toString()).isEqualTo(200);
+        assertThat(explained.body().path("validation").path("publishable").asBoolean(true)).isFalse();
+        assertThat(explained.body().path("validation").path("issues").toString()).contains("legal-reviewers");
+        String prompt = OpenRouterStub.requests().getLast().path("messages").get(1).path("content").asString();
+        assertThat(prompt).contains("<validation>", "\"publishable\":false", "legal-reviewers");
+    }
+
     @Test
     @Order(99)
     void rejectedCredentialsReportAiAsDisabled() throws Exception {

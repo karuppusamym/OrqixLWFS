@@ -46,7 +46,7 @@ test('requester screens', async ({ sessions }) => {
 
   await page.goto(`/w/${ws}/requests`)
   await scan(page, 'my requests')
-  await page.getByRole('link', { name: /ORQ-1003|ORQ-1005|[A-F0-9]{8}/ }).first().click()
+  await page.getByRole('link', { name: /^ORQ-\d+$|^[A-F0-9]{8}$/ }).first().click()
   await expect(page.getByTestId('timeline')).toBeVisible()
   await scan(page, 'run detail (requester)')
   await page.goto('/not-found')

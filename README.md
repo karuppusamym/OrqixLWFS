@@ -26,6 +26,7 @@ The package accounts for all 25 sections of the supplied master prompt, all 18 r
 | Plan source migration | [05 PEGA, Camunda and LWFS migration](docs/05-migration.md) |
 | Import supported workflows | [Migration workbench: Camunda and reviewed Pega mappings](docs/17-migration-workbench.md) |
 | Improve authoring and integration | [Designer, connectors and migration assessment](docs/16-designer-connectors-migration.md) |
+| Review current defects and remaining scope | [Release code audit](docs/18-release-code-audit.md) |
 | Permissions, data lifecycle, operations | [11 Security, data lifecycle and operations](docs/11-security-operations.md) |
 | Standards and dependency sources | [14 Technical references](docs/14-technical-references.md) |
 | Checks performed and limitations | [08 Package validation](docs/08-validation.md) |
@@ -62,13 +63,13 @@ R0 is implemented: compiler module, Spring Boot + Flowable application, React fr
 | Area | Location | Verified |
 |---|---|---|
 | Compiler | `backend/compiler` | 204 tests |
-| Application | `backend/app` | 124 tests on PostgreSQL 18 (Testcontainers), API responses validated against the OpenAPI contract |
-| Frontend | `frontend` | 396 unit/component tests including color-contrast checks; typecheck, lint, build |
-| Browser E2E | `tests/e2e` | 23 pass / 1 skipped (mock-only) against the Docker stack; 22 / 2 in mock mode; no serious accessibility findings |
+| Application | `backend/app` | 125 tests run (one opt-in live-provider check skipped), plus final Pega safety regressions; API responses validated against the OpenAPI contract |
+| Frontend | `frontend` | 401 unit/component tests including color-contrast checks; typecheck, lint, build |
+| Browser E2E | `tests/e2e` | 23 pass across audit runs / 1 skipped (mock-only) against the Docker stack; earlier mock-mode evidence: 22 / 2; no serious accessibility findings |
 | API E2E | `tools/api-e2e` | 26 / 26 with injected failures, plus 33 / 33 operations scenarios |
 | Resilience, performance | `tools/resilience`, `tools/perf` | Kill, database outage, graceful shutdown and revocation scenarios pass; 20 users × 10 min with 0 errors and p95 under 120 ms |
 | AI assistance | `backend/app` (`com.orqix.ai`), `tools/ai-eval` | Optional. Set `OPENROUTER_API_KEY` in `.env`; DeepSeek by default, Jev Router for *Auto*, costly models excluded, monthly budget. Empty means rules-only |
-| Camunda / Pega import | `com.orqix.migration`, `examples/migration` | Camunda 7/8 subset converts with a compatibility report; Pega archives are assessed only |
+| Camunda / Pega import | `com.orqix.migration`, `examples/migration` | Camunda 7/8 subset converts with a compatibility report; Pega archive assessment and reviewed manual mappings create validated drafts; no automatic native Pega rule conversion |
 | Local stack | `deploy/compose` | PostgreSQL 18, Keycloak 26.8, procurement stub, migration job, app (OpenShift-style hardening) |
 | OpenShift, CI | `deploy/openshift`, `.github/workflows` | Rendered and statically validated; not applied to a cluster or executed |
 

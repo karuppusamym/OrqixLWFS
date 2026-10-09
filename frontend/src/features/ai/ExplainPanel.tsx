@@ -3,6 +3,7 @@ import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 
 import { useWorkspace } from '@/app/workspace'
 import { ProblemAlert, toProblem } from '@/components/common/ProblemAlert'
 import { Button } from '@/components/ui/button'
+import { Alert } from '@/components/ui/alert'
 import { useStudio, useStudioContext } from '@/features/studio/StudioContext'
 import { explainWorkflow, formatUsd, useAiEnabled, type WorkflowExplanation } from './api'
 
@@ -143,6 +144,11 @@ export function ExplainPanel({ onClose }: { onClose: () => void }) {
         />
       ) : (
         <div className="space-y-5">
+          {state.explanation.validation ? <Alert tone={state.explanation.validation.publishable ? 'info' : 'warning'} live="off">
+            <p className="font-semibold">{state.explanation.validation.publishable ? 'Compiler validation passed for this revision.' : 'This workflow is not ready to publish.'}</p>
+            {state.explanation.validation.issues.length ? <ul className="mt-2 list-disc pl-5">{state.explanation.validation.issues.map((issue, index) => <li key={index}>{issue.message}</li>)}</ul> : null}
+            <p className="mt-2 text-sm">This validation result comes from Orqix. AI text below does not change it.</p>
+          </Alert> : null}
           <p className="text-sm leading-6" data-testid="explain-summary">
             {state.explanation.summary}
           </p>

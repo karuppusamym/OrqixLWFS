@@ -37,7 +37,9 @@ public final class PegaSource {
     public static Report.CompatibilityReport mapping(JsonNode packageNode, Report.CompatibilityReport archive, boolean acknowledged) {
         if (!"orqix-pega-mapping-0.1".equals(packageNode.path("format").asString())
                 || !archive.sourceHash().equals(packageNode.path("sourceArchiveHash").asString())
-                || !packageNode.path("definition").isObject() || packageNode.path("sourceVersion").asString("").isBlank()) {
+                || !packageNode.path("definition").isObject() || !packageNode.path("sourceVersion").isString()
+                || packageNode.path("sourceVersion").asString("").isBlank()
+                || "ENTER-PEGA-VERSION".equals(packageNode.path("sourceVersion").asString())) {
             throw SourceException.invalid("Mapping package needs its format, Pega version, matching archive checksum and canonical definition.");
         }
         Set<String> targetNodes = new HashSet<>();
@@ -52,12 +54,14 @@ public final class PegaSource {
             boolean mapped = "mapped".equals(mapping.path("disposition").asString()) && mapping.path("targetNodeIds").isArray()
                     && !mapping.path("targetNodeIds").isEmpty();
             String first = null;
+            if (excluded && mapping.path("targetNodeIds").isArray() && !mapping.path("targetNodeIds").isEmpty())
+                throw SourceException.invalid("Excluded files cannot claim mapped target nodes.");
             if (mapped) for (var target : mapping.path("targetNodeIds")) {
                 String id = target.asString("");
-                if (!targetNodes.contains(id)) throw SourceException.invalid("A file mapping references an unknown target node.");
+                if (!target.isString() || !targetNodes.contains(id)) throw SourceException.invalid("A file mapping references an unknown target node.");
                 mappedTargets.add(id); if (first == null) first = id;
             }
-            if ((!excluded && !mapped) || mapping.path("explanation").asString("").isBlank()) {
+            if ((!excluded && !mapped) || !mapping.path("explanation").isString() || mapping.path("explanation").asString("").isBlank()) {
                 issues.add(original); continue;
             }
             issues.add(new Report.Issue(original.sourceElementId(), original.sourceName(), "archiveEntry", Report.INFO,

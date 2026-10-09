@@ -3,6 +3,7 @@ import type { Run } from '@/api/types'
 import { RelativeTime } from '@/components/common/RelativeTime'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table'
+import { Button } from '@/components/ui/button'
 import { formatDateTime } from '@/lib/dates'
 import { requestId, runProgressText } from '@/lib/runText'
 import { useIsDesktop } from '@/lib/useMediaQuery'
@@ -15,8 +16,11 @@ function whereItIsNow(run: Run) {
  * Shared list of runs: My requests (requester view) and Runs (operator or viewer view). A table from 1024 px; on
  * narrower screens each request is a card, so nothing needs sideways scrolling.
  */
-export function RunsTable({ runs, wsId, showRequester, caption }: { runs: Run[]; wsId: string; showRequester?: boolean; caption: string }) {
+export function RunsTable({ runs, wsId, showRequester, caption, canOperate = false }: { runs: Run[]; wsId: string; showRequester?: boolean; caption: string; canOperate?: boolean }) {
   const desktop = useIsDesktop()
+  const recovery = (run: Run) => canOperate && run.lifecycle === 'needsAttention' ? <Button asChild size="sm" variant="primary">
+    <Link to={`/w/${wsId}/runs/${run.id}#operator-actions`} aria-label={`Review recovery for ${requestId(run)}`}>Review recovery</Link>
+  </Button> : null
   if (!desktop) {
     return (
       <ul aria-label={caption} className="space-y-3">
@@ -31,6 +35,7 @@ export function RunsTable({ runs, wsId, showRequester, caption }: { runs: Run[];
             <p className="mt-1 font-semibold">
               {run.workflow.name} <span className="font-normal text-muted-foreground">&middot; Version {run.release.releaseNumber}</span>
             </p>
+            {canOperate && run.lifecycle === 'needsAttention' ? <div className="mt-3">{recovery(run)}</div> : null}
             <p className="mt-1 text-sm text-muted-foreground">{whereItIsNow(run)}</p>
             <p className="mt-2 text-xs text-muted-foreground">
               {showRequester ? <>Requested by {run.initiator.displayName} &middot; </> : null}
@@ -53,6 +58,7 @@ export function RunsTable({ runs, wsId, showRequester, caption }: { runs: Run[];
             <TH>Workflow</TH>
             <TH>Status</TH>
             <TH>Where it is now</TH>
+            {canOperate ? <TH>Recovery</TH> : null}
             {showRequester ? <TH>Requested by</TH> : null}
             <TH>Submitted</TH>
           </TR>
@@ -73,6 +79,7 @@ export function RunsTable({ runs, wsId, showRequester, caption }: { runs: Run[];
                 <StatusBadge lifecycle={run.lifecycle} outcome={run.outcome} outcomeKind={run.outcomeKind} />
               </TD>
               <TD className="max-w-80 text-muted-foreground">{whereItIsNow(run)}</TD>
+              {canOperate ? <TD>{recovery(run)}</TD> : null}
               {showRequester ? <TD>{run.initiator.displayName}</TD> : null}
               <TD className="whitespace-nowrap text-muted-foreground">
                 <span title={formatDateTime(run.createdAt)}>

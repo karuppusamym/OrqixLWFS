@@ -91,6 +91,7 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
   const effects = run.effects ?? []
   const reconcileCandidates = candidateEffects(effects)
   const notReversed = run.completedEffectsNotReversed ?? []
+  const nextAction = allowed.reconcile.allowed ? 'reconcile' : allowed.retry.allowed ? 'retry' : openTasks.length > 0 ? 'reassign' : null
 
   return (
     <>
@@ -161,18 +162,19 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
       ) : null}
 
       {operator ? (
-        <section aria-labelledby="operator-heading" className="mb-6 rounded-card border border-border bg-surface p-4">
+        <section id="operator-actions" aria-labelledby="operator-heading" className="mb-6 scroll-mt-20 rounded-card border border-border bg-surface p-4">
           <h2 id="operator-heading" className="mb-3 flex items-center gap-2 text-base">
             <Wrench className="size-4" aria-hidden="true" /> Operator actions
           </h2>
+          {nextAction ? <p className="mb-3 text-sm text-muted-foreground">Recommended next step: {nextAction === 'reconcile' ? 'review what happened in the connected system before retrying.' : nextAction === 'retry' ? 'review the failed step and retry it when the connection is ready.' : 'review task ownership and reassign if needed.'}</p> : null}
           <div className="flex flex-wrap gap-3">
-            <Button variant="secondary" onClick={() => setDialog('retry')} disabled={!allowed.retry.allowed}>
+            <Button variant={nextAction === 'retry' ? 'primary' : 'secondary'} onClick={() => setDialog('retry')} disabled={!allowed.retry.allowed}>
               Retry step
             </Button>
-            <Button variant="secondary" onClick={() => { setReconcileId(undefined); setDialog('reconcile') }} disabled={!allowed.reconcile.allowed}>
+            <Button variant={nextAction === 'reconcile' ? 'primary' : 'secondary'} onClick={() => { setReconcileId(undefined); setDialog('reconcile') }} disabled={!allowed.reconcile.allowed}>
               Reconcile outcome
             </Button>
-            <Button variant="secondary" onClick={() => setDialog('reassign')} disabled={openTasks.length === 0}>
+            <Button variant={nextAction === 'reassign' ? 'primary' : 'secondary'} onClick={() => setDialog('reassign')} disabled={openTasks.length === 0}>
               Reassign task
             </Button>
             <Button variant="danger" onClick={() => setDialog('cancel')} disabled={!allowed.cancel.allowed}>

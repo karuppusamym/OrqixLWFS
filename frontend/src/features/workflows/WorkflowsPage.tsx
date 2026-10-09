@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { FilePlus2, Workflow as WorkflowIcon } from 'lucide-react'
+import { CheckCircle2, FileClock, FilePlus2, Workflow as WorkflowIcon } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import * as endpoints from '@/api/endpoints'
@@ -109,7 +109,7 @@ export function WorkflowsPage() {
                       )}
                       {w.description ? <span className="block max-w-md text-xs text-muted-foreground">{w.description}</span> : null}
                     </TD>
-                    <TD>{w.activeRelease ? <Badge tone="accent">Version {w.activeRelease.releaseNumber}</Badge> : <Badge>Not published</Badge>}</TD>
+                    <TD>{w.activeRelease ? <Badge tone="accent"><CheckCircle2 className="mr-1 size-3.5" aria-hidden="true" />Version {w.activeRelease.releaseNumber}</Badge> : <Badge><FileClock className="mr-1 size-3.5" aria-hidden="true" />Not published</Badge>}</TD>
                     <TD>Revision {w.draftRevision}</TD>
                     <TD className="whitespace-nowrap text-muted-foreground">
                       <RelativeTime value={w.updatedAt} />

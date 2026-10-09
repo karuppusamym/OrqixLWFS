@@ -2433,6 +2433,15 @@ components:
       required: [summary, steps, generation]
       properties:
         summary: { type: string }
+        validation:
+          type: object
+          description: Compiler readiness for this definition against current workspace configuration; authoritative independently of AI text
+          required: [publishable, issues]
+          properties:
+            publishable: { type: boolean }
+            issues:
+              type: array
+              items: { $ref: '#/components/schemas/ValidationIssue' }
         steps:
           type: array
           items:

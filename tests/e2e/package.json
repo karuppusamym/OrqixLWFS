@@ -1,0 +1,20 @@
+{
+  "name": "orqix-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Playwright end-to-end and accessibility tests for the Orqix frontend (S9 T-UI-02..06)",
+  "scripts": {
+    "test": "playwright test",
+    "test:mock": "cross-env E2E_MOCK=true playwright test",
+    "typecheck": "tsc --noEmit",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "^1.64.0",
+    "@types/node": "^26.6.4",
+    "cross-env": "^10.1.0",
+    "typescript": "~5.9.3"
+  }
+}

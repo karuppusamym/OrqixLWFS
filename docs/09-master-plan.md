@@ -1,5 +1,5 @@
 # Master implementation plan
-Revision 0.2 · 7 October 2026 · proposed baseline
+Revision 0.3 · 7 October 2026 · proposed baseline
 
 ## Purpose and coverage
 
@@ -101,3 +101,11 @@ At each daily checkpoint, update completed work, failed gates, open inputs, rema
 - Use document 10 for all capabilities after the first slice.
 - Use document 11 for permission, data lifecycle and operational rules.
 - Use document 12 to prove that no master-prompt section or required deliverable was forgotten.
+
+## References
+
+[Technical references](14-technical-references.md) lists only current standards (BPMN 2.0.2, DMN 1.6, CMMN 1.1, JSON Schema 2020-12, OpenAPI 3.1, RFC 9457, WCAG 2.2, ASVS 5.0 and others), maintained documentation of pinned dependencies, and a small set of 2025–2026 research tied to later-milestone evaluations. Older research papers were removed; the design rules they once motivated are stated and tested directly in the build specification. The pinned Flowable release and Orqix's own tests determine the supported subset. No reference changes the selected stack or the release scope.
+
+## Build specification status
+
+The handoff step "build the v0 contracts into machine-readable OpenAPI and typed schemas" is done: see [docs/build](build/README.md) for the OpenAPI contract, reference DDL, schemas, fixtures, S1–S9 specifications, 24 build decisions and the inconsistencies they resolved. The ticket-level estimate in [S8](build/S8-r0-tickets.md) exceeds the three-day capacity assumed above; decision D01 must choose a schedule option before kickoff.

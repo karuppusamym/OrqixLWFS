@@ -1,0 +1,91 @@
+{
+  "schemaVersion": "0.1",
+  "key": "procurement",
+  "version": 1,
+  "name": "Procurement service",
+  "description": "Creates purchase orders. The real endpoint and its deduplication contract are decision D07; until confirmed, this definition is the contract the procurement stub implements for development and tests.",
+  "operations": {
+    "createOrder": {
+      "label": "Create purchase order",
+      "description": "Creates one purchase order. The remote service returns the original order for a repeated Idempotency-Key within 30 days.",
+      "method": "POST",
+      "path": "/orders",
+      "requestSchema": {
+        "type": "object",
+        "required": [
+          "title",
+          "amount",
+          "costCenter"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "amount": {
+            "type": "number"
+          },
+          "costCenter": {
+            "type": "string",
+            "enum": [
+              "OPS",
+              "IT",
+              "HR"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "responseSchema": {
+        "type": "object",
+        "required": [
+          "id",
+          "status"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "CREATED"
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
+      "successStatuses": [
+        200,
+        201
+      ],
+      "effectClass": "idempotentWithKey",
+      "idempotencyHeader": "Idempotency-Key",
+      "maxTimeoutSeconds": 20,
+      "testable": false
+    },
+    "health": {
+      "label": "Check service availability",
+      "method": "GET",
+      "path": "/health",
+      "responseSchema": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "successStatuses": [
+        200
+      ],
+      "effectClass": "readOnly",
+      "maxTimeoutSeconds": 5,
+      "testable": true
+    }
+  }
+}

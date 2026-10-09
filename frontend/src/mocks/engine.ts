@@ -1,0 +1,551 @@
+import type { Effect, Run, RunDetail, TaskDecision, TaskSummary } from '@/api/types'
+import type { Condition, Definition, Literal, WorkflowNode } from '@/features/studio/model/types'
+import { nodeById, outgoing } from '@/features/studio/model/graph'
+import {
+  WORKSPACES,
+  clock,
+  connectionDefinition,
+  db,
+  inGroup,
+  newId,
+  permissionsOf,
+  userById,
+  type MockRelease,
+  type MockRun,
+  type MockTask,
+  type MockUser,
+  type MockWorkflow,
+} from './state'
+
+/**
+ * A small deterministic stand-in for the Flowable-backed runtime (docs/build/S5-runtime.md): it walks the
+ * released workflow definition, creates tasks, evaluates rule tables and branches, calls the procurement
+ * "service" according to the selected fault mode, and writes the same event catalog the real backend writes.
+ */
+
+export const engineConfig = {
+  /** How long a failed external call waits before its automatic retry (mock timers only). */
+  retryDelayMs: 4000,
+  /** Schedules the automatic retry. Tests replace this to run it immediately or never. */
+  schedule: (fn: () => void, ms: number): void => {
+    setTimeout(fn, ms)
+  },
+}
+
+const MAX_ATTEMPTS = 3
+
+export function addEvent(run: MockRun, type: string, opts: { nodeId?: string | null; actorId?: string | null; data?: Record<string, unknown> } = {}): void {
+  run.eventSeq += 1
+  run.events.push({
+    seq: run.eventSeq,
+    type,
+    nodeId: opts.nodeId ?? null,
+    actorId: opts.actorId ?? null,
+    occurredAt: clock.iso(),
+    data: opts.data ?? {},
+  })
+  run.updatedAt = clock.iso()
+}
+
+function resolveRef(run: MockRun, ref: string): Literal | undefined {
+  const input = /^\/input\/(.+)$/.exec(ref)
+  if (input) return run.input[input[1] as string] as Literal | undefined
+  const step = /^\/steps\/([^/]+)\/(.+)$/.exec(ref)
+  if (step) return run.steps[step[1] as string]?.[step[2] as string] as Literal | undefined
+  return undefined
+}
+
+export function evaluateCondition(c: Condition, value: Literal | undefined): boolean {
+  if (value === undefined) return false
+  switch (c.operator) {
+    case 'eq':
+      return typeof c.value === 'number' && typeof value === 'number' ? c.value === value : value === c.value
+    case 'gte':
+      return typeof value === 'number' && typeof c.value === 'number' && value >= c.value
+    case 'lt':
+      return typeof value === 'number' && typeof c.value === 'number' && value < c.value
+  }
+}
+
+export function evaluateTable(
+  table: Definition['decisions'][number],
+  values: Record<string, Literal | undefined>,
+): { matchedRow: number | null; usedDefault: boolean; output: Record<string, Literal> } {
+  for (const [i, row] of table.rows.entries()) {
+    if (evaluateCondition(row.when, values[row.when.fieldRef])) return { matchedRow: i, usedDefault: false, output: row.then }
+  }
+  return { matchedRow: null, usedDefault: true, output: table.default }
+}
+
+export function currentRelease(run: MockRun): MockRelease {
+  const wf = db.workflows.get(run.workflowId) as MockWorkflow
+  return wf.releases.find((r) => r.id === run.releaseId) as MockRelease
+}
+
+export function selfApprovalAllowed(run: MockRun, release: MockRelease): boolean {
+  const ws = WORKSPACES.find((w) => w.id === run.wsId)
+  return release.definition.security.selfApproval === 'allow' && !!ws?.allowSelfApprovalWorkflows
+}
+
+export function notify(run: MockRun, userId: string, kind: 'workflowMessage' | 'runAttention', message: string): void {
+  db.notifications.unshift({ id: newId(), wsId: run.wsId, userId, runId: run.id, kind, message, createdAt: clock.iso(), readAt: null })
+}
+
+function createTask(run: MockRun, node: WorkflowNode): void {
+  db.taskCounter += 1
+  const hours = node.config.dueAfterHours as number | undefined
+  const dueAt = hours ? new Date(clock.now().getTime() + hours * 3_600_000).toISOString() : null
+  const task: MockTask = {
+    id: `task-${db.taskCounter}`,
+    runId: run.id,
+    nodeId: node.id,
+    label: node.label,
+    candidateGroup: node.config.candidateGroupRef as string,
+    assigneeId: null,
+    status: 'open',
+    createdAt: clock.iso(),
+    dueAt,
+    version: 1,
+    decision: null,
+    completedById: null,
+  }
+  run.tasks.push(task)
+  run.lifecycle = 'waiting'
+  addEvent(run, 'TASK_CREATED', { nodeId: node.id, data: { label: node.label, candidateGroup: task.candidateGroup, dueAt } })
+}
+
+function finish(run: MockRun, release: MockRelease, node: WorkflowNode): void {
+  run.lifecycle = 'completed'
+  run.outcome = (node.config.businessOutcome as string) ?? 'Completed'
+  run.outcomeKind = (node.config.outcomeKind as 'success' | 'rejected') ?? 'success'
+  run.endedAt = clock.iso()
+  const out: Record<string, unknown> = {}
+  for (const [key, m] of Object.entries(release.definition.outputMapping)) {
+    const v = resolveRef(run, m.fieldRef)
+    if (v !== undefined) out[key] = v
+  }
+  run.output = out
+  addEvent(run, 'RUN_COMPLETED', { nodeId: node.id, data: { outcome: run.outcome, outcomeKind: run.outcomeKind } })
+}
+
+/** Walk the graph from `nodeId` until a wait state, a failure that needs attention, or the end. */
+export function advance(run: MockRun, nodeId: string): void {
+  const release = currentRelease(run)
+  const def = release.definition
+  let current: string | undefined = nodeId
+  let guard = 0
+  while (current && guard++ < 100) {
+    const node = nodeById(def, current)
+    if (!node) return
+    const next = (on?: string): string | undefined => outgoing(def, node.id).find((t) => (on ? t.on === on : true))?.to
+    switch (node.type) {
+      case 'start':
+        current = next('next')
+        break
+      case 'approval':
+        createTask(run, node)
+        return
+      case 'decision': {
+        const table = def.decisions.find((d) => d.key === node.config.decisionRef)
+        if (!table) return
+        const values: Record<string, Literal | undefined> = {}
+        for (const row of table.rows) values[row.when.fieldRef] = resolveRef(run, row.when.fieldRef)
+        const result = evaluateTable(table, values)
+        run.steps[node.id] = result.output
+        addEvent(run, 'DECISION_EVALUATED', {
+          nodeId: node.id,
+          data: { label: node.label, decisionKey: table.key, version: table.version, matched: result.usedDefault ? 'default' : `r${(result.matchedRow ?? 0) + 1}`, outputs: result.output },
+        })
+        current = next('next')
+        break
+      }
+      case 'branch': {
+        const routes = outgoing(def, node.id)
+        const chosen = routes.find((t) => t.on === 'condition' && t.condition && evaluateCondition(t.condition, resolveRef(run, t.condition.fieldRef))) ?? routes.find((t) => t.on === 'default')
+        current = chosen?.to
+        break
+      }
+      case 'http': {
+        const outcome = performHttp(run, release, node, 1)
+        if (outcome !== 'succeeded') return
+        current = next('next')
+        break
+      }
+      case 'notification': {
+        notify(run, run.initiatorId, 'workflowMessage', (node.config.message as string) ?? '')
+        addEvent(run, 'NOTIFICATION_CREATED', { nodeId: node.id, data: { label: node.label, kind: 'workflowMessage', recipient: 'initiator' } })
+        current = next('next')
+        break
+      }
+      case 'end':
+        finish(run, release, node)
+        return
+    }
+  }
+}
+
+function effectFor(run: MockRun, node: WorkflowNode): MockRun['effects'][number] {
+  const existing = run.effects.find((e) => e.nodeId === node.id)
+  if (existing) return existing
+  const operation = node.config.operation as string
+  const op = (connectionDefinition.operations as Record<string, { effectClass: Effect['effectClass'] }>)[operation]
+  const effect: MockRun['effects'][number] = {
+    id: newId(),
+    runId: run.id,
+    nodeId: node.id,
+    label: node.label,
+    connectionKey: node.config.connectionRef as string,
+    operation,
+    effectClass: op?.effectClass ?? 'idempotentWithKey',
+    state: 'pending',
+    attempts: 0,
+    lastHttpStatus: null,
+    lastErrorCode: null,
+    lastErrorDetail: null,
+    remoteReference: null,
+    resolution: null,
+    updatedAt: clock.iso(),
+  }
+  run.effects.push(effect)
+  return effect
+}
+
+function setAttention(run: MockRun, node: WorkflowNode, effect: MockRun['effects'][number], reason: string, message: string): void {
+  run.lifecycle = 'needsAttention'
+  run.pendingHttpNode = node.id
+  run.attention = { reason, nodeId: node.id, effectId: effect.id, message, since: clock.iso() }
+  addEvent(run, 'RUN_NEEDS_ATTENTION', { nodeId: node.id, data: { label: node.label, reason, effectId: effect.id } })
+  notify(run, run.initiatorId, 'runAttention', 'Your request is delayed; an operator has been alerted.')
+}
+
+type HttpOutcome = 'succeeded' | 'waiting' | 'attention'
+
+/** One external call attempt, following the fault mode of the procurement "service". */
+function performHttp(run: MockRun, release: MockRelease, node: WorkflowNode, attempt: number): HttpOutcome {
+  const effect = effectFor(run, node)
+  run.pendingHttpNode = node.id
+  run.lifecycle = 'running'
+  run.attention = null
+  const fault = db.procurementFault
+  effect.attempts = attempt
+  effect.updatedAt = clock.iso()
+
+  if (fault === 'unknown') {
+    effect.state = 'unknown'
+    effect.lastHttpStatus = 201
+    effect.lastErrorCode = 'RESPONSE_INVALID'
+    effect.lastErrorDetail = 'The service answered 201 without an order number.'
+    addEvent(run, 'EFFECT_UNKNOWN', { nodeId: node.id, data: { label: node.label, attempt, errorCode: 'RESPONSE_INVALID' } })
+    setAttention(run, node, effect, 'EFFECT_UNKNOWN', 'Procurement service may have created the order. Check it before retrying.')
+    return 'attention'
+  }
+
+  if (fault === 'down') {
+    effect.state = 'retryableFailure'
+    effect.lastHttpStatus = 503
+    effect.lastErrorCode = 'UNEXPECTED_STATUS'
+    effect.lastErrorDetail = 'The service answered 503.'
+    for (let a = attempt; a <= MAX_ATTEMPTS; a++) {
+      effect.attempts = a
+      addEvent(run, 'EFFECT_FAILED', {
+        nodeId: node.id,
+        data: {
+          label: node.label,
+          attempt: a,
+          maxAttempts: MAX_ATTEMPTS,
+          classification: 'retryable',
+          httpStatus: 503,
+          errorCode: 'UNEXPECTED_STATUS',
+          ...(a < MAX_ATTEMPTS ? { nextRetryAt: new Date(clock.now().getTime() + 30_000).toISOString() } : {}),
+        },
+      })
+    }
+    setAttention(run, node, effect, 'RETRIES_EXHAUSTED', 'Procurement service did not respond after 3 attempts.')
+    return 'attention'
+  }
+
+  if (fault === 'failOnce' && attempt === 1) {
+    effect.state = 'retryableFailure'
+    effect.lastHttpStatus = 500
+    effect.lastErrorCode = 'UNEXPECTED_STATUS'
+    effect.lastErrorDetail = 'The service answered 500.'
+    const nextRetryAt = new Date(clock.now().getTime() + 30_000).toISOString()
+    addEvent(run, 'EFFECT_FAILED', { nodeId: node.id, data: { label: node.label, attempt, maxAttempts: MAX_ATTEMPTS, classification: 'retryable', httpStatus: 500, errorCode: 'UNEXPECTED_STATUS', nextRetryAt } })
+    const runId = run.id
+    engineConfig.schedule(() => {
+      const live = db.runs.get(runId)
+      if (!live || live.lifecycle !== 'running' || live.pendingHttpNode !== node.id) return
+      const rel = currentRelease(live)
+      const again = performHttp(live, rel, node, 2)
+      if (again === 'succeeded') advance(live, outgoing(rel.definition, node.id)[0]?.to ?? '')
+    }, engineConfig.retryDelayMs)
+    return 'waiting'
+  }
+
+  db.orderCounter += 1
+  const orderId = `PO-${db.orderCounter}`
+  effect.state = 'succeeded'
+  effect.lastHttpStatus = 201
+  effect.lastErrorCode = null
+  effect.lastErrorDetail = null
+  effect.remoteReference = orderId
+  const mapping = (node.config.resultMapping ?? {}) as Record<string, string>
+  const response: Record<string, unknown> = { id: orderId, status: 'CREATED' }
+  const result: Record<string, unknown> = {}
+  for (const [k, pointer] of Object.entries(mapping)) result[k] = response[pointer.split('/').filter(Boolean)[0] ?? '']
+  run.steps[node.id] = result
+  run.pendingHttpNode = null
+  addEvent(run, 'EFFECT_SUCCEEDED', { nodeId: node.id, data: { label: node.label, connectionKey: effect.connectionKey, operation: effect.operation, attempt, httpStatus: 201, remoteReference: orderId } })
+  void release
+  return 'succeeded'
+}
+
+export function createRun(opts: {
+  wsId: string
+  workflow: MockWorkflow
+  release: MockRelease
+  initiator: MockUser
+  input: Record<string, unknown>
+  businessKey: string | null
+ }): MockRun {
+  const references = [...db.runs.values()].filter((run) => run.wsId === opts.wsId)
+    .map((run) => run.reference ?? run.businessKey ?? '')
+  const nextNumber = Math.max(1000, ...references.filter((value) => /^ORQ-[0-9]+$/.test(value))
+    .map((value) => Number(value.slice(4)))) + 1
+  const reference = opts.businessKey && /^ORQ-[0-9]+$/.test(opts.businessKey) && !references.includes(opts.businessKey)
+    ? opts.businessKey : `ORQ-${nextNumber}`
+  const run: MockRun = {
+    id: newId(),
+    wsId: opts.wsId,
+    workflowId: opts.workflow.id,
+    releaseId: opts.release.id,
+    businessKey: opts.businessKey,
+    reference,
+    initiatorId: opts.initiator.id,
+    lifecycle: 'running',
+    outcome: null,
+    outcomeKind: null,
+    input: opts.input,
+    output: null,
+    steps: {},
+    createdAt: clock.iso(),
+    updatedAt: clock.iso(),
+    endedAt: null,
+    version: 1,
+    eventSeq: 0,
+    events: [],
+    tasks: [],
+    effects: [],
+    attention: null,
+    pendingHttpNode: null,
+    cancelledEffects: [],
+  }
+  db.runs.set(run.id, run)
+  addEvent(run, 'RUN_STARTED', { actorId: opts.initiator.id, data: { releaseNumber: opts.release.releaseNumber, businessKey: opts.businessKey } })
+  const start = opts.release.definition.nodes.find((n) => n.type === 'start')
+  if (start) advance(run, start.id)
+  run.version = 1
+  return run
+}
+
+export function claim(run: MockRun, task: MockTask, user: MockUser): void {
+  task.assigneeId = user.id
+  task.version += 1
+  run.version += 1
+  addEvent(run, 'TASK_CLAIMED', { nodeId: task.nodeId, actorId: user.id, data: { label: task.label, assignee: user.displayName } })
+}
+
+export function release(run: MockRun, task: MockTask, user: MockUser): void {
+  task.assigneeId = null
+  task.version += 1
+  run.version += 1
+  addEvent(run, 'TASK_RELEASED', { nodeId: task.nodeId, actorId: user.id, data: { label: task.label, candidateGroup: task.candidateGroup, assignee: user.displayName } })
+}
+
+export function decide(run: MockRun, task: MockTask, user: MockUser, action: 'approve' | 'reject', reason: string | null, comment: string | null): TaskDecision {
+  const rel = currentRelease(run)
+  const decision: TaskDecision = {
+    id: newId(),
+    taskId: task.id,
+    runId: run.id,
+    nodeId: task.nodeId,
+    label: task.label,
+    actor: { id: user.id, displayName: user.displayName },
+    action,
+    reason,
+    comment,
+    decidedAt: clock.iso(),
+    policyFlags: user.id === run.initiatorId && selfApprovalAllowed(run, rel) ? ['selfApprovalAllowed'] : [],
+  }
+  task.status = 'completed'
+  task.decision = decision
+  task.completedById = user.id
+  task.version += 1
+  run.version += 1
+  run.steps[task.nodeId] = {
+    decision: action === 'approve' ? 'approved' : 'rejected',
+    ...(reason ? { reason } : {}),
+    ...(comment ? { comment } : {}),
+    decidedBy: user.displayName,
+    decidedAt: decision.decidedAt,
+  }
+  addEvent(run, 'TASK_DECIDED', {
+    nodeId: task.nodeId,
+    actorId: user.id,
+    data: { label: task.label, action, hasReason: !!reason, hasComment: !!comment, policyFlags: decision.policyFlags },
+  })
+  const route = outgoing(rel.definition, task.nodeId).find((t) => t.on === (action === 'approve' ? 'approved' : 'rejected'))
+  if (route) advance(run, route.to)
+  return decision
+}
+
+export function retryRun(run: MockRun, user: MockUser, reason: string): void {
+  const node = nodeById(currentRelease(run).definition, run.pendingHttpNode ?? '')
+  if (!node) return
+  run.version += 1
+  addEvent(run, 'OPERATOR_RETRY', { nodeId: node.id, actorId: user.id, data: { label: node.label, reason } })
+  const rel = currentRelease(run)
+  const outcome = performHttp(run, rel, node, (run.effects.find((e) => e.nodeId === node.id)?.attempts ?? 0) + 1)
+  if (outcome === 'succeeded') advance(run, outgoing(rel.definition, node.id)[0]?.to ?? '')
+}
+
+export function reconcileRun(
+  run: MockRun,
+  effect: MockRun['effects'][number],
+  user: MockUser,
+  resolution: 'confirmedApplied' | 'confirmedNotApplied',
+  evidence: { note: string; remoteReference?: string },
+  result?: Record<string, string | number | boolean>,
+): void {
+  const rel = currentRelease(run)
+  run.version += 1
+  effect.updatedAt = clock.iso()
+  effect.resolution = { resolution, note: evidence.note, remoteReference: evidence.remoteReference ?? null, by: user.displayName } as never
+  addEvent(run, 'EFFECT_RECONCILED', { nodeId: effect.nodeId, actorId: user.id, data: { label: effect.label, resolution, remoteReference: evidence.remoteReference ?? null } })
+  if (resolution === 'confirmedApplied') {
+    effect.state = 'succeeded'
+    effect.remoteReference = evidence.remoteReference ?? effect.remoteReference
+    run.steps[effect.nodeId] = result ?? {}
+    run.pendingHttpNode = null
+    run.attention = null
+    run.lifecycle = 'running'
+    advance(run, outgoing(rel.definition, effect.nodeId)[0]?.to ?? '')
+  } else {
+    effect.state = 'notApplied'
+    if (run.attention) run.attention = { ...run.attention, message: `${effect.label ?? effect.nodeId} was confirmed as not done. Retry it when the other system is ready.` }
+  }
+}
+
+export function cancelRun(run: MockRun, user: MockUser, reason: string): void {
+  const succeeded = run.effects.filter((e) => e.state === 'succeeded')
+  run.lifecycle = 'cancelled'
+  run.endedAt = clock.iso()
+  run.pendingHttpNode = null
+  run.attention = null
+  run.version += 1
+  run.cancelledEffects = succeeded.map((e) => e.id)
+  for (const t of run.tasks) if (t.status === 'open') { t.status = 'cancelled'; t.version += 1 }
+  addEvent(run, 'RUN_CANCELLED', { actorId: user.id, data: { reason, completedEffects: succeeded.length } })
+  notify(run, run.initiatorId, 'workflowMessage', `Your request was cancelled: ${reason}`)
+}
+
+// Representations -----------------------------------------------------------------------------------
+
+export function toRun(run: MockRun): Run {
+  const wf = db.workflows.get(run.workflowId) as MockWorkflow
+  const rel = currentRelease(run)
+  const initiator = userById(run.initiatorId)
+  const steps: Run['currentSteps'] = []
+  for (const t of run.tasks.filter((x) => x.status === 'open')) {
+    const assignee = t.assigneeId ? userById(t.assigneeId) : undefined
+    steps.push({
+      nodeId: t.nodeId,
+      label: t.label,
+      kind: 'approval',
+      since: t.createdAt,
+      candidateGroup: t.candidateGroup,
+      assignee: assignee ? { id: assignee.id, displayName: assignee.displayName } : null,
+      dueAt: t.dueAt,
+    })
+  }
+  if (run.pendingHttpNode && (run.lifecycle === 'running' || run.lifecycle === 'needsAttention')) {
+    const node = nodeById(rel.definition, run.pendingHttpNode)
+    steps.push({ nodeId: run.pendingHttpNode, label: node?.label ?? run.pendingHttpNode, kind: 'http', since: run.attention?.since ?? run.updatedAt, candidateGroup: null, assignee: null, dueAt: null })
+  }
+  return {
+    id: run.id,
+    reference: run.reference ?? undefined,
+    workflow: { id: wf.id, key: wf.key, name: wf.name },
+    release: { id: rel.id, releaseNumber: rel.releaseNumber },
+    businessKey: run.businessKey,
+    initiator: { id: run.initiatorId, displayName: initiator?.displayName ?? 'Unknown' },
+    lifecycle: run.lifecycle,
+    outcome: run.outcome,
+    outcomeKind: run.outcomeKind,
+    currentSteps: steps,
+    attention: run.attention ? { reason: run.attention.reason as never, nodeId: run.attention.nodeId, effectId: run.attention.effectId, message: run.attention.message, since: run.attention.since } : null,
+    createdAt: run.createdAt,
+    updatedAt: run.updatedAt,
+    endedAt: run.endedAt,
+    isTest: WORKSPACES.find((w) => w.id === run.wsId)?.isTest ?? false,
+    version: run.version,
+  }
+}
+
+export function toTaskSummary(run: MockRun, task: MockTask): TaskSummary {
+  const assignee = task.assigneeId ? userById(task.assigneeId) : undefined
+  const initiator = userById(run.initiatorId)
+  const groupName = task.candidateGroup === 'finance-approvers' ? 'Finance approvers' : task.candidateGroup.charAt(0).toUpperCase() + task.candidateGroup.slice(1).replace(/-/g, ' ')
+  const wf = db.workflows.get(run.workflowId) as MockWorkflow
+  const titleField = Object.entries(currentRelease(run).definition.inputSchema.properties).find(([, f]) => f.type === 'string' && !f.enum)?.[0]
+  return {
+    id: task.id,
+    runId: run.id,
+    workflowName: wf.name,
+    runReference: run.reference ?? undefined,
+    businessKey: run.businessKey,
+    nodeId: task.nodeId,
+    label: task.label,
+    requestTitle: titleField ? ((run.input[titleField] as string | undefined) ?? null) : null,
+    requester: { id: run.initiatorId, displayName: initiator?.displayName ?? 'Unknown' },
+    candidateGroup: { key: task.candidateGroup as never, name: groupName },
+    assignee: assignee ? { id: assignee.id, displayName: assignee.displayName } : null,
+    status: task.status,
+    dueAt: task.dueAt,
+    createdAt: task.createdAt,
+    version: task.version,
+    decision: task.decision,
+  }
+}
+
+/** Sections follow the caller's permissions (docs/build/S3-api.md section 3 rule 4). */
+export function toRunDetail(run: MockRun, user: MockUser): RunDetail {
+  const base = toRun(run)
+  const perms = permissionsOf(user, run.wsId)
+  const participant = run.tasks.some((t) => t.assigneeId === user.id || t.completedById === user.id || inGroup(user, t.candidateGroup))
+  const canSeeData = run.initiatorId === user.id || participant || perms.includes('run.read-data')
+  const operator = perms.includes('run.operate')
+  const rel = currentRelease(run)
+  const labels: Record<string, string> = {}
+  // Like the server: titles in form order (inputUi.order first, then schema order).
+  const properties = rel.definition.inputSchema.properties
+  const order = [...(rel.definition.inputUi?.order ?? []).filter((k) => k in properties), ...Object.keys(properties).filter((k) => !(rel.definition.inputUi?.order ?? []).includes(k))]
+  for (const k of order) labels[k] = properties[k]!.title
+  const unknownEffect = run.effects.some((e) => e.state === 'unknown')
+  const active = run.lifecycle === 'running' || run.lifecycle === 'waiting' || run.lifecycle === 'needsAttention'
+  const attention = run.lifecycle === 'needsAttention'
+  return {
+    ...base,
+    input: (canSeeData ? run.input : null) as never,
+    inputLabels: labels,
+    output: (canSeeData ? run.output : null) as never,
+    tasks: run.tasks.map((t) => toTaskSummary(run, t)),
+    ...(operator ? { effects: run.effects.map(({ runId: _runId, ...e }) => e) } : {}),
+    ...(run.lifecycle === 'cancelled' ? { completedEffectsNotReversed: run.effects.filter((e) => run.cancelledEffects.includes(e.id)).map(({ runId: _runId, ...e }) => e) } : {}),
+    allowedActions: {
+      cancel: active ? { allowed: operator } : { allowed: false, reasonCode: 'RUN_NOT_ACTIVE' },
+      retry: !attention ? { allowed: false, reasonCode: 'RUN_NOT_RECOVERABLE' } : unknownEffect ? { allowed: false, reasonCode: 'EFFECT_NOT_RECONCILED' } : { allowed: operator },
+      reconcile: run.effects.some((e) => e.state === 'unknown' || e.state === 'permanentFailure' || e.state === 'retryableFailure') && attention ? { allowed: operator } : { allowed: false, reasonCode: 'NOTHING_TO_RECONCILE' },
+    },
+  }
+}

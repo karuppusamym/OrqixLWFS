@@ -1,5 +1,5 @@
 # Migration strategy: PEGA, Camunda and LWFS
-Status: proposed adapters. No source exports have been supplied or converted.
+Status: a supported Camunda 7/8 subset and Pega archive assessment with reviewed manual mappings are implemented. Synthetic fixtures are tested; customer source exports have not been supplied. See the [migration workbench](17-migration-workbench.md) for current behavior and limits. The broader adapters below remain a strategy.
 
 ## Migration product contract
 
@@ -94,3 +94,13 @@ Percentage mapped is an inventory metric only. Publishing requires zero blockers
 Compare approved/rejected paths, numeric threshold boundaries, null/missing values, user/group resolution, failure/retry handling, timezone behavior and external-effect count. Test child and parallel branches only when those constructs are in scope.
 
 Business owner signs off the target behavior; technical owner confirms integrations and security. Keep the original definition and report attached to the new workflow. Rollback routes new starts back to the prior system; already-started Orqix instances need an explicit completion/cancellation policy.
+
+## Transparent conversion and case classification
+
+Each transformation record identifies its source element, mapping rule/version, target element, assumption, severity and related behavior test. [Vanilla-Converter (2025)](https://arxiv.org/abs/2508.04352) is a useful recent catalog of Camunda 7-specific constructs and of reporting automatic versus manual transformation work.
+
+Maintain a fixture bundle containing original source, expected converted representation, compatibility report and expected outcomes. A syntactically valid result is insufficient when assignments, gateway behavior or integration effects differ.
+
+That converter targets Camunda 7 → Camunda 8. It is not adopted as a Flowable converter and provides no PEGA/LWFS compatibility guarantee. No external converter code is selected.
+
+Use the case-classification questions in [the product specification](01-product-spec.md) before flattening PEGA stages into a process. Owner: migration lead with source-system/business owners. Existing E16 milestones and source-sample dependencies remain.

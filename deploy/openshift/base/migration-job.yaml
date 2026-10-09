@@ -1,0 +1,83 @@
+# Pre-deployment migration Job (docs/03-architecture.md "OpenShift and operations", S1 section 5, S5 section 11).
+#
+# Same image as the pods, SPRING_PROFILES_ACTIVE=migrate: runs Flyway (schema orqix) and Flowable schema creation
+# (schema flowable) as orqix_migrator, then exits. It is the only writer of DDL; pods run with schema update disabled.
+#
+# ORDER OF OPERATIONS (see deploy/openshift/README.md); resources carry the label orqix.io/stage:
+#   1. oc apply -k overlays/<env> -l orqix.io/stage=prerequisites   ConfigMap, ServiceAccount, NetworkPolicies
+#   2. oc delete job orqix-migrate --ignore-not-found               a Job's pod template is immutable
+#   3. oc apply -k overlays/<env> -l orqix.io/stage=migration       this Job and nothing else
+#   4. oc wait --for=condition=complete job/orqix-migrate --timeout=15m   (fail the pipeline otherwise)
+#   5. oc apply -k overlays/<env> -l orqix.io/stage=app             Deployment, Service, Route, PDB, HPA = the rollout
+# Migrations are additive (expand/contract), so the previous version keeps running while step 3 executes.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: orqix-migrate
+  labels:
+    app.kubernetes.io/name: orqix
+    app.kubernetes.io/component: migration
+    app.kubernetes.io/part-of: orqix
+    orqix.io/stage: migration
+  annotations:
+    # For GitOps controllers: run before the rollout and replace the previous Job on every sync.
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  # DDL is never retried blindly: a failed migration needs a human (restore point, fix forward).
+  backoffLimit: 0
+  activeDeadlineSeconds: 900
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: orqix
+        app.kubernetes.io/component: migration
+        app.kubernetes.io/part-of: orqix
+    spec:
+      restartPolicy: Never
+      serviceAccountName: orqix
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: orqix
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: orqix-config
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: migrate
+            - name: ORQIX_DB_MIGRATOR_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: orqix-db-migrator
+                  key: password
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 128Mi

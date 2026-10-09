@@ -1,0 +1,17 @@
+# OpenShift. Every environment-specific value comes from the deployment (ConfigMap/Secret); ProdConfigurationGuard
+# refuses to start when a required value is missing or unsafe (S1 section 5).
+spring:
+  datasource:
+    url: ${ORQIX_DB_URL}
+    username: ${ORQIX_DB_USER}
+    password: ${ORQIX_DB_PASSWORD}
+
+server:
+  servlet:
+    session:
+      cookie:
+        secure: true
+
+orqix:
+  pagination:
+    cursor-secret: ${ORQIX_CURSOR_SECRET}

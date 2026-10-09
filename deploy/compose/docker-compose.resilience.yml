@@ -1,0 +1,24 @@
+# Resilience overlay (docs/build/S9 T-RES-03/04/05, T-SEC-09, T-PERF-01): a second application instance next to the
+# regular one, same image, same database and the same configuration. DEVELOPMENT ONLY.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.resilience.yml --profile app up -d --build
+#
+# Host ports: orqix-2 API 8082, management 8083 (override with ORQIX_2_HOST_PORT / ORQIX_2_MANAGEMENT_HOST_PORT).
+# There is no sticky routing: a session created through :8080 is valid on :8082 (JDBC sessions, doc S5 section 11).
+# The lock owner of each instance is its container hostname (orqix.runtime.lock-owner = ${HOSTNAME}), so the two
+# instances compete for jobs exactly like two pods; lock time 60 s and expired-job reset 15 s are the production values.
+#
+# stop_grace_period of orqix-2 matches the OpenShift terminationGracePeriodSeconds (60 s) so that a plain
+# `docker compose stop orqix-2` drains jobs the way a pod termination does (Compose' default of 10 s would SIGKILL a
+# draining instance). The scenarios pass `-t 60` explicitly for both instances; the base service is left untouched.
+name: orqix
+
+services:
+  orqix-2:
+    extends:
+      file: docker-compose.yml
+      service: orqix
+    stop_grace_period: 60s
+    ports: !override
+      - "${ORQIX_2_HOST_PORT:-8082}:8080"
+      - "${ORQIX_2_MANAGEMENT_HOST_PORT:-8083}:8081"

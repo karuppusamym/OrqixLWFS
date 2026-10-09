@@ -1,0 +1,9 @@
+{
+  "compilerVersion": "0.1.0",
+  "sourceHash": "5a0e96ff68a618f919cc7dc3e5d95252d99560f2f107c9c5353733cf46e92a56",
+  "semanticHash": "6ae448102e3af36408646948be6e02a899e806a03afd6e3eee595db579484c7f",
+  "bpmnHash": "ddd29371b6d1a8b60485a3de1ecbfec5acdddf35163be29d11c69acb9a913e7b",
+  "dmnHashes": {
+    "decisions/amount-policy.dmn": "94cbda62710b797fca51d6651b3cd7bcc034b9de2b29f57c4e74f8de09caca38"
+  }
+}

@@ -1,0 +1,150 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orqix
+  labels:
+    app.kubernetes.io/name: orqix
+    app.kubernetes.io/component: app
+    app.kubernetes.io/part-of: orqix
+    orqix.io/stage: app
+spec:
+  # Baseline of two pods: every pod runs the API and the job executor (S5 section 11), and two is the minimum for a
+  # rolling update with maxUnavailable 0 and for the PodDisruptionBudget. The int and prod overlays remove this field
+  # because the HorizontalPodAutoscaler owns the replica count after the first rollout.
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: orqix
+      app.kubernetes.io/component: app
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: orqix
+        app.kubernetes.io/component: app
+        app.kubernetes.io/part-of: orqix
+    spec:
+      serviceAccountName: orqix
+      automountServiceAccountToken: false
+      # Graceful shutdown (S5 section 11): readiness goes false, job acquisition stops, in-flight work drains within
+      # 45 s (spring.lifecycle.timeout-per-shutdown-phase). 5 s preStop + 45 s drain fits inside 60 s.
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        # No runAsUser/fsGroup: the restricted-v2 SCC assigns a namespace-range UID and fsGroup.
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: orqix
+              app.kubernetes.io/component: app
+      containers:
+        - name: orqix
+          image: orqix
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: management
+              containerPort: 8081
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: orqix-config
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: prod
+            # Image default is -XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError -XX:-UsePerfData; append with JAVA_OPTS.
+            - name: ORQIX_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: orqix-db-app
+                  key: password
+            - name: ORQIX_CURSOR_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: orqix-app
+                  key: cursor-secret
+            - name: SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_ORQIX_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: orqix-app
+                  key: oidc-client-secret
+            # AI assistance (docs/build/S10). Optional: without the Secret the pod starts with AI disabled (rules-only).
+            - name: OPENROUTER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: orqix-ai
+                  key: openrouter-api-key
+                  optional: true
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          # Management port 8081 is never exposed by the Route. Liveness never checks the database (no restart storms
+          # during a database outage); readiness includes it, so a pod without a database leaves the Service.
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: management
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 36
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: management
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: management
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+            successThreshold: 1
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 5"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            # One file per connection secretRef (orqix.secrets.dir); read on use, so rotation needs no restart.
+            - name: connection-secrets
+              mountPath: /var/run/secrets/orqix
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi
+        - name: connection-secrets
+          secret:
+            secretName: orqix-connection-secrets
+            defaultMode: 0440
+            # Optional: the pod starts before any connection exists; a missing file surfaces as CONNECTION_UNAVAILABLE.
+            optional: true

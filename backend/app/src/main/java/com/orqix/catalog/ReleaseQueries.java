@@ -1,0 +1,146 @@
+package com.orqix.catalog;
+
+import java.time.Instant;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+
+import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.orqix.shared.json.Json;
+import com.orqix.shared.web.Sql;
+
+import tools.jackson.databind.JsonNode;
+
+/**
+ * Read access to immutable releases for other modules (runtime). Releases never change after insert, so lookups are
+ * cached by id.
+ */
+@Service
+public class ReleaseQueries {
+
+    /** Immutable release facts needed at run time. */
+    public record ReleaseView(UUID id, UUID workspaceId, UUID workflowId, String workflowKey, String workflowName,
+            int releaseNumber, JsonNode definition, String processDefinitionId, String engineDeploymentId,
+            Instant publishedAt, JsonNode sourceMap) {
+
+        /** Business label of a canonical node or of a generated helper (mapped through the source map). */
+        public String nodeLabel(String elementId) {
+            if (elementId == null) {
+                return null;
+            }
+            String canonical = sourceMap == null ? elementId
+                    : sourceMap.path("bpmnToCanonical").path(elementId).asString(elementId);
+            JsonNode node = node(canonical);
+            return node == null ? null : node.path("label").asString(null);
+        }
+
+        public JsonNode inputSchema() {
+            return definition.path("inputSchema");
+        }
+
+        public JsonNode inputUi() {
+            return definition.path("inputUi");
+        }
+
+        public boolean selfApprovalAllowedByWorkflow() {
+            return "allow".equals(definition.path("security").path("selfApproval").asString(""));
+        }
+
+        public int maxConcurrentRuns() {
+            return definition.path("execution").path("maxConcurrentRuns").asInt(Integer.MAX_VALUE);
+        }
+
+        public int maxAttempts() {
+            return definition.path("execution").path("maxAttempts").asInt(1);
+        }
+
+        public JsonNode node(String nodeId) {
+            for (JsonNode node : definition.path("nodes")) {
+                if (nodeId.equals(node.path("id").asString(null))) {
+                    return node;
+                }
+            }
+            return null;
+        }
+
+        public JsonNode decisionTable(String key) {
+            for (JsonNode table : definition.path("decisions")) {
+                if (key.equals(table.path("key").asString(null))) {
+                    return table;
+                }
+            }
+            return null;
+        }
+    }
+
+    private final JdbcClient jdbc;
+    private final Json json;
+    private final Map<UUID, ReleaseView> cache = new ConcurrentHashMap<>();
+
+    public ReleaseQueries(JdbcClient jdbc, Json json) {
+        this.jdbc = jdbc;
+        this.json = json;
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<ReleaseView> find(UUID workspaceId, UUID releaseId) {
+        ReleaseView cached = cache.get(releaseId);
+        if (cached != null) {
+            return cached.workspaceId().equals(workspaceId) ? Optional.of(cached) : Optional.empty();
+        }
+        Optional<ReleaseView> loaded = jdbc.sql("""
+                SELECT r.id, r.workspace_id, r.workflow_id, w.key AS workflow_key, w.name AS workflow_name,
+                       r.release_number, r.definition::text AS definition, r.process_definition_id,
+                       r.engine_deployment_id, r.published_at, r.source_map::text AS source_map
+                FROM workflow_release r JOIN workflow w ON w.workspace_id = r.workspace_id AND w.id = r.workflow_id
+                WHERE r.workspace_id = :ws AND r.id = :id
+                """)
+                .param("ws", workspaceId).param("id", releaseId)
+                .query((rs, n) -> new ReleaseView(Sql.uuid(rs, "id"), Sql.uuid(rs, "workspace_id"),
+                        Sql.uuid(rs, "workflow_id"), rs.getString("workflow_key"), rs.getString("workflow_name"),
+                        rs.getInt("release_number"), json.parse(rs.getString("definition")),
+                        rs.getString("process_definition_id"), rs.getString("engine_deployment_id"),
+                        Sql.instant(rs, "published_at"), json.parse(rs.getString("source_map"))))
+                .optional();
+        loaded.ifPresent(view -> cache.put(view.id(), view));
+        return loaded;
+    }
+
+    /** Workflow facts needed to start runs (never cached: the active release changes). */
+    public record WorkflowRef(UUID id, UUID workspaceId, String key, String name, UUID activeReleaseId) {
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<WorkflowRef> workflow(UUID workspaceId, UUID workflowId) {
+        return jdbc.sql("""
+                SELECT id, workspace_id, key, name, active_release_id FROM workflow
+                WHERE workspace_id = :ws AND id = :id AND archived_at IS NULL
+                """)
+                .param("ws", workspaceId).param("id", workflowId)
+                .query((rs, n) -> new WorkflowRef(Sql.uuid(rs, "id"), Sql.uuid(rs, "workspace_id"), rs.getString("key"),
+                        rs.getString("name"), Sql.uuid(rs, "active_release_id")))
+                .optional();
+    }
+
+    /** Locks the workflow row (serializes starts against active-release changes and the quota check). */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public Optional<WorkflowRef> lockWorkflow(UUID workspaceId, UUID workflowId) {
+        return jdbc.sql("""
+                SELECT id, workspace_id, key, name, active_release_id FROM workflow
+                WHERE workspace_id = :ws AND id = :id AND archived_at IS NULL FOR SHARE
+                """)
+                .param("ws", workspaceId).param("id", workflowId)
+                .query((rs, n) -> new WorkflowRef(Sql.uuid(rs, "id"), Sql.uuid(rs, "workspace_id"), rs.getString("key"),
+                        rs.getString("name"), Sql.uuid(rs, "active_release_id")))
+                .optional();
+    }
+
+    public ReleaseView require(UUID workspaceId, UUID releaseId) {
+        return find(workspaceId, releaseId)
+                .orElseThrow(() -> new IllegalStateException("Release " + releaseId + " not found in workspace"));
+    }
+}

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Hand-authored security fixture: an external-entity (XXE) payload that the importer must reject without resolving it.
+     The entity targets a local file and a loopback URL; neither may ever be read or fetched. -->
+<!DOCTYPE definitions [
+  <!ENTITY secret SYSTEM "file:///etc/passwd">
+  <!ENTITY remote SYSTEM "http://127.0.0.1:9/xxe">
+]>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" targetNamespace="urn:orqix:migration-fixture">
+  <bpmn:process id="xxe" name="&secret;" isExecutable="true">
+    <bpmn:startEvent id="start" name="&remote;" />
+    <bpmn:endEvent id="end" />
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="end" />
+  </bpmn:process>
+</bpmn:definitions>

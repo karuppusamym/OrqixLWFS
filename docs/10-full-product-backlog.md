@@ -1,5 +1,5 @@
 # Full product backlog and acceptance contracts
-Revision 0.2. All epics below are Planned unless marked Needs input. Implementation has not started.
+Revision 0.3. All epics below are Planned unless marked Needs input. Implementation has not started.
 R0/R1/R2/R3 are defined in the [master plan](09-master-plan.md). Effort for R1–R3 must be estimated after the R0 integration spike and relevant discovery; no unsupported completion date is implied.
 
 ## E01 — Workspace and asset organization
@@ -92,6 +92,8 @@ Records include ID, name, description, owner, endpoint binding, protocol/version
 
 Support synchronous invocation with bounded timeout and asynchronous invocation returning an operation ID. Callback correlates operation/workspace/run/activity/attempt, validates identity/signature, expiration and nonce, and ignores duplicate completion safely. Late responses after cancellation do not resume a run.
 Acceptance: real external agent result validated; endpoint revocation takes effect; duplicate/late/wrong-workspace callbacks blocked; health status does not substitute for runtime authorization. A2A is enabled only for an explicitly tested protocol version.
+
+Bounded agent tasks: an agent or tool-using model runs inside one bounded task with explicit tool grants, input/output validation, time and call limits, and audited external actions. Flowable alone decides durable process continuation after the validated task result. Do not require private model reasoning in the audit trail. Apply the current [MCP security best practices](https://modelcontextprotocol.io/docs/2026-07-28/tutorials/security/security_best_practices) (specification 2026-07-28) and evaluate outcomes from persisted state as in [doc 14](14-technical-references.md) section C. This applies to E09–E11 and remains R2 scope.
 
 ## E11 — MCP and unified tool registry
 Milestone: R2. Owner: integration/security leads. Dependencies: E08/E10 policies, remote test server.

@@ -33,7 +33,7 @@ Step counts guide discussion; semantics, data and integrations determine migrati
 
 ## Primary use case: purchase request
 
-Requester supplies request title, purpose, cost center and amount in USD. The backend derives requester identity from the authenticated session. The backend obtains manager routing from workspace policy or an approved directory mapping; the requester cannot nominate an arbitrary approver.
+Requester supplies request title, purpose, cost center and amount in USD. The backend derives requester identity from the authenticated session. In R0, each approval step is assigned to a workspace group configured by an administrator (for example "Managers"); routing to the requester's own line manager needs a directory source and is R1 (decision D02). The requester can never nominate an approver.
 
 1. Validate and save input, then start an immutable published revision.
 2. Create a manager group task. Users claim it before deciding.
@@ -41,10 +41,10 @@ Requester supplies request title, purpose, cost center and amount in USD. The ba
 4. If approved, a versioned decision table returns standard or financeReview using an inclusive threshold of USD 5,000.
 5. Finance approves high-value requests; rejection ends as Rejected.
 6. Approved requests call the registered procurement API using an idempotency key.
-7. Create an in-app notification and end as Completed. External notification is additional, with its own delivery status.
+7. Notify the requester in-app of the outcome — fulfilled or rejected — and finish with the business outcome Fulfilled or Rejected (both are completed runs). External notification is additional, with its own delivery status.
 8. Display who acted, when, why and which version ran.
 
-Failures are explicit: missing manager prevents submission; an unavailable procurement API results in retry/attention status; notification failure never changes a rejected request into approved or claims external delivery succeeded. External systems must expose a test endpoint or approved non-destructive operation.
+Failures are explicit: an approval group that is not configured in the workspace blocks publication, and a group with no eligible member is shown to operators as a routing problem (never auto-approved); an unavailable procurement API results in retry/attention status; notification failure never changes a rejected request into approved or claims external delivery succeeded. External systems must expose a test endpoint or approved non-destructive operation.
 
 First release has fixed currency and simple fields. Attachments, currency conversion, directory synchronization and rich conditional forms are later scope.
 
@@ -110,3 +110,15 @@ All seven master-prompt demos stay on the roadmap. Only Business Approval is a b
 ## Full-product planning references
 
 The [master plan](09-master-plan.md) controls release scope. The [full backlog](10-full-product-backlog.md) specifies later capabilities; the [permissions contract](11-security-operations.md) defines role defaults. A template-only fallback is a reduced-scope R0 release, not completion of FR03.
+
+## Workflow versus case classification
+
+For each candidate workflow, record: whether next steps are predefined, whether new case data can enable work, whether discretionary work is required, and who may authorize exceptions.
+
+Purchase approval remains a structured R0 workflow. A source case requiring discretionary work or data-driven activation goes through E05 discovery (CMMN 1.1 on Flowable) before migration is promised. Approvers receive relevant request history and context within their data permissions. Broader case visibility does not grant authority to complete every task.
+
+Owner: business analyst and source-system owner. Evidence: a reviewed classification for each migration candidate.
+
+## Build specification
+
+The developer-facing specification for R0 — contracts, compiler rules, runtime behavior, screens, tickets and tests — is in [docs/build](build/README.md). Where it refines this document (group-based approval routing, generic run outcome, notifications on both outcomes), the build specification applies.

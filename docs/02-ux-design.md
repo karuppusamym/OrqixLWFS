@@ -9,7 +9,8 @@ The first navigation has five destinations: Home, My tasks, Workflows, Runs and 
 
 ## Visual system
 
-- White content surfaces, cool gray page background, dark navy typography and restrained teal primary actions.
+- Brand palettes are swappable token sets (`VITE_ORQIX_BRAND`). Default **`wf`**, a Wells Fargo–inspired palette: red top bar with a 4 px gold stripe, white surfaces on a warm neutral page, warm dark-gray text, red primary actions, gold as an accent only (never as text on white). Alternative **`orqix`**: cool gray page, navy text, teal primary. Palette only — no third-party names, logos or imagery; the product name stays Orqix.
+- Red means brand and action, never neutral information; destructive actions use a dark-crimson outline with icon and explicit text so they are not confused with primary actions. Every text and UI-component color pair is contrast-tested in CI (S7 §8).
 - 8 px spacing rhythm, 16 px body type, 24–32 px page titles, 12 px card radius.
 - Status uses icon + text as well as color: Waiting, Running, Completed, Rejected, Needs attention.
 - Desktop studio: 224 px navigation, flexible canvas, 320 px inspector. At smaller widths collapse navigation and open inspector as a drawer.
@@ -47,7 +48,7 @@ Approval submits once; disable repeat action while pending. If another person co
 ## Workflow studio
 
 Header: Workspace / Folder / Workflow name, Draft revision, save state.
-Actions: Preview form, Check workflow, Test, Publish.
+Actions: Preview form, Check workflow, Publish. In R0, testing a workflow means publishing and running it in a test workspace (visibly labelled, with its own test connections); an in-studio Test action arrives with R1 test runs.
 Views: Business flow by default; BPMN view and Definition in Advanced mode.
 
     Step library        Purchase approval                Step settings
@@ -115,3 +116,17 @@ When no provider is configured, templates and manual creation remain fully usabl
 ## User validation script
 
 Give five business users the purchase example and observe: find a template, add a field, change approval routing, test a threshold, publish if authorized, submit and find progress. Record task completion, confusion points and time. Verify keyboard-only equivalent actions and a screen reader's reading order. This research is planned, not completed.
+
+## Readable business models
+
+Orqix design rules for the editor:
+
+- Prefer action labels such as “Review request,” “Check amount” and “Create order.”
+- Present a small supported palette and explain each branch in business language.
+- Warn about hard-to-follow routing; keep warnings separate from blocking execution errors.
+- Suggest decomposition into a child workflow when supported and useful; require an explicit user action.
+- Keep “Fulfilled” and “Rejected” outcomes visibly distinct. Modeling guidance must not silently collapse outcomes or rewrite a valid graph.
+
+Apply labels/templates in R0; add complexity guidance with E02 in R1. Owner: UX/frontend lead. Evaluate these choices in the existing business-user trial, including whether users can explain the approval and rejection paths; only that observation establishes usability. Accessibility acceptance follows [WCAG 2.2](https://www.w3.org/TR/WCAG22/) AA.
+
+Routes, screen states, studio interaction rules and the form renderer for R0 are specified in [S7 — Frontend](build/S7-frontend.md).

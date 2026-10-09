@@ -1,0 +1,19 @@
+# Migration job: applies Flyway (schema orqix) and the Flowable engine schema (schema flowable), grants the runtime
+# role DML on the engine tables, then exits. Runs as the DDL owner (orqix_migrator), non-web, no job execution.
+spring:
+  main:
+    web-application-type: none
+  datasource:
+    username: ${orqix.db.migrator-user}
+    password: ${orqix.db.migrator-password}
+    hikari:
+      pool-name: orqix-migrate
+      maximum-pool-size: 5
+      # Flowable creates its tables in the first schema of the search path; Flyway prepends orqix itself.
+      connection-init-sql: "SET search_path TO flowable, orqix"
+  flyway:
+    enabled: true
+
+flowable:
+  database-schema-update: "true"
+  async-executor-activate: false

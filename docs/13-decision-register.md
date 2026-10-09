@@ -1,12 +1,12 @@
 # Decisions, prerequisites and unresolved inputs
-Revision 0.2 · no response required to use the planning package.
+Revision 0.3 · D01 now needs an answer before kickoff (see the build specification capacity finding).
 These items become blocking only when their dependent build/release work starts. No credentials should be pasted into this document.
 
 ## Decision register
 
 | ID | Decision/input | Proposed default | Who resolves it | Needed by | If unresolved |
 |---|---|---|---|---|---|
-| D01 | Three-day team and accepted scope | 3 experienced engineers; R0 core only; business owner available | Sponsor/technical lead | Kickoff | Use solo scope if applicable; no full-platform date commitment |
+| D01 | R0 team and schedule | 3 experienced engineers for 5 days ([S8 §1](build/S8-r0-tickets.md#1-capacity-finding-read-first) option A; ticket-level P0 estimate ≈ 100 h exceeds the 72 h three-day capacity); business owner available | Sponsor/technical lead | **Before kickoff** | Keep 3 days only as a declared reduced-scope R0 (option C); no full-platform date commitment |
 | D02 | Priority business workflow and policy | USD purchase request; finance review at 5,000; no self-approval | Business process owner | R0 form/rule freeze | Treat example as sample, not approved business logic |
 | D03 | Meaning/version of LWFS | Unknown source; pluggable adapter | LWFS owner | E16 source discovery | Native LWFS conversion stays Needs input |
 | D04 | PEGA/Camunda source versions and sanitized exports | One simple and one medium definition plus expected results | Source-system owners | Migration adapter tickets | Only compatibility fixtures; no native migration claim |
@@ -21,7 +21,7 @@ These items become blocking only when their dependent build/release work starts.
 | D13 | Separation of publisher/editor and approval policies | Deny requester self-approval; review production publishing policy | Business/security owner | R1 / production | Conservative restricted roles and explicit exception tracking |
 | D14 | Need for attachments/business calendars | Not in R0; R1 only when required | Business owner | E06/E04 | Use basic forms and elapsed-time SLA |
 | D15 | Git hosting, promotion permissions, secret manager | Interfaces only; bind to approved enterprise services | Platform owner | E15 | File export works; no automatic Git promotion |
-| D16 | Exact dependency/SDK/protocol versions | Verified candidate stack; lock after compatibility spike | Technical lead | First implementation session | Do not state versions are tested |
+| D16 | Exact dependency/SDK/protocol versions | Candidate pins in [S1 §1](build/S1-engineering-baseline.md#1-version-pins) (checked 7 Oct 2026); lock after spike B01.2 in ADR 0001 | Technical lead | First implementation session | Do not state versions are tested |
 | D17 | Production support/on-call and incident contacts | Named owners and verified alert route | Sponsor/platform owner | GA gate | No unattended production handoff |
 | D18 | Advanced PEGA case semantics needed | Discover representative adaptive case | Business/source owner | E05 | Support bounded workflows only |
 

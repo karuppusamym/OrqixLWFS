@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="dmn_amount-policy_v1" name="amount-policy" namespace="https://orqix.example/decisions">
+  <decision id="amount-policy" name="amount-policy">
+    <decisionTable id="amount-policy__table" hitPolicy="FIRST">
+      <input id="amount-policy__in" label="/input/amount">
+        <inputExpression id="amount-policy__inexpr" typeRef="number"><text>in1</text></inputExpression>
+      </input>
+      <output id="amount-policy__out_route" name="route" typeRef="string"/>
+      <rule id="amount-policy__r1">
+        <inputEntry id="amount-policy__r1_in"><text><![CDATA[>= 5000]]></text></inputEntry>
+        <outputEntry id="amount-policy__r1_route"><text><![CDATA["financeReview"]]></text></outputEntry>
+      </rule>
+      <rule id="amount-policy__default">
+        <inputEntry id="amount-policy__default_in"><text>-</text></inputEntry>
+        <outputEntry id="amount-policy__default_route"><text><![CDATA["standard"]]></text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+</definitions>

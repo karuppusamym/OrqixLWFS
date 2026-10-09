@@ -1,0 +1,405 @@
+package com.orqix.compiler.internal.rules;
+
+import static com.orqix.compiler.internal.rules.RuleContext.q;
+
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.regex.Pattern;
+
+import com.orqix.compiler.internal.json.JsonPointers;
+import com.orqix.compiler.internal.model.Enums.FieldKind;
+import com.orqix.compiler.internal.model.Enums.NodeKind;
+import com.orqix.compiler.internal.model.Enums.Route;
+import com.orqix.compiler.internal.model.Literal;
+import com.orqix.compiler.internal.model.Node;
+import com.orqix.compiler.internal.model.WorkflowDefinition;
+import com.orqix.compiler.internal.model.WorkflowDefinition.DecisionTable;
+import com.orqix.compiler.internal.model.WorkflowDefinition.FormSchema;
+import com.orqix.compiler.internal.model.WorkflowDefinition.OutputEntry;
+import com.orqix.compiler.internal.model.WorkflowDefinition.Transition;
+import com.orqix.compiler.internal.rules.FieldTypes.Resolution;
+import com.orqix.compiler.internal.rules.FieldTypes.Resolved;
+import com.orqix.compiler.internal.rules.FieldTypes.Unknown;
+
+/** Types, decisions, branches, forms, output mapping, layout and labels (S4 sections 4, 5.2 and 5.4). */
+final class TypeRules {
+
+    private static final BigDecimal CENT = new BigDecimal("0.01");
+    private static final Pattern PLACEHOLDER = Pattern.compile(
+            "(?i)^(step|task|node|activity|untitled|new step|new task|label|name|todo|tbd)( ?\\d+)?$");
+
+    private TypeRules() {
+    }
+
+    static void check(RuleContext rc) {
+        decisions(rc);
+        branches(rc);
+        outputMapping(rc);
+        form(rc, rc.definition().inputSchema(), "inputSchema", "request form");
+        form(rc, rc.definition().outputSchema(), "outputSchema", "result form");
+        inputUi(rc);
+        layout(rc);
+        labels(rc);
+    }
+
+    // ---------------------------------------------------------------- decisions
+
+    private static void decisions(RuleContext rc) {
+        WorkflowDefinition d = rc.definition();
+        Set<String> used = new HashSet<>();
+        for (Node n : d.nodes()) {
+            if (n instanceof Node.Decision dn) {
+                used.add(dn.decisionRef());
+                if (rc.types().table(dn.decisionRef()) == null) {
+                    rc.issues().blocker("WF_DECISION_UNKNOWN", n.configPath("decisionRef"), n.id(), null, n.label()
+                            + " uses the rule table " + q(dn.decisionRef()) + ", which does not exist.");
+                }
+            }
+        }
+        Set<String> keys = new HashSet<>();
+        for (DecisionTable table : d.decisions()) {
+            if (!keys.add(table.key())) {
+                rc.issues().blocker("WF_DECISION_DUPLICATE_KEY", table.path() + "/key", null, null,
+                        "Another rule table already uses the key " + q(table.key()) + ".");
+                continue;
+            }
+            if (!used.contains(table.key())) {
+                rc.issues().warning("WF_DECISION_UNUSED", table.path(), null, null, "The rule table "
+                        + q(table.key()) + " is not used by any decision step.");
+            }
+            table(rc, table);
+        }
+    }
+
+    private static void table(RuleContext rc, DecisionTable table) {
+        String name = q(table.key());
+        // Output literals and shape.
+        Map<String, Literal> reference = table.defaultOutput();
+        reference.forEach((k, v) -> Conditions.literalSafety(rc, v, table.path() + "/default/" + k, null, null));
+        for (DecisionTable.Row row : table.rows()) {
+            String rowPath = table.path() + "/rows/" + row.index();
+            row.then().forEach((k, v) -> Conditions.literalSafety(rc, v, rowPath + "/then/" + k, null, null));
+            if (!row.then().keySet().equals(reference.keySet())) {
+                rc.issues().blocker("WF_DECISION_OUTPUT_SHAPE", rowPath + "/then", null, null, "Rule "
+                        + (row.index() + 1) + " of " + name + " must set exactly the same results as the default: "
+                        + String.join(", ", reference.keySet()) + ".");
+                continue;
+            }
+            for (Map.Entry<String, Literal> e : row.then().entrySet()) {
+                Literal def = reference.get(e.getKey());
+                if (!def.typeName().equals(e.getValue().typeName())) {
+                    rc.issues().blocker("WF_DECISION_OUTPUT_SHAPE", rowPath + "/then/" + e.getKey(), null, null,
+                            "Rule " + (row.index() + 1) + " of " + name + " sets " + q(e.getKey()) + " to "
+                                    + words(e.getValue()) + ", but the default sets it to " + words(def) + ".");
+                }
+            }
+        }
+        // Conditions: one field, well typed, available where used, pairwise disjoint.
+        String field = table.rows().get(0).when().fieldRef();
+        boolean mixed = false;
+        List<Disjointness.Typed> typed = new ArrayList<>();
+        boolean allTyped = true;
+        List<Node> users = rc.definition().nodes().stream()
+                .filter(n -> n instanceof Node.Decision dn && dn.decisionRef().equals(table.key())
+                        && !rc.graph().isShadowed(n))
+                .toList();
+        for (DecisionTable.Row row : table.rows()) {
+            String base = table.path() + "/rows/" + row.index() + "/when";
+            if (!row.when().fieldRef().equals(field)) {
+                mixed = true;
+                rc.issues().blocker("WF_DECISION_MIXED_FIELDS", base + "/fieldRef", null, null, "Every rule of "
+                        + name + " must test the same field (" + field + ").");
+            }
+            Disjointness.Typed t = Conditions.check(rc, row.when(), base, null, null);
+            if (t == null) {
+                allTyped = false;
+            } else {
+                typed.add(t);
+            }
+            for (Node user : users) {
+                Conditions.availability(rc, row.when().fieldRef(), user, base + "/fieldRef", null);
+            }
+        }
+        if (mixed || !allTyped) {
+            return;
+        }
+        for (int i = 0; i < typed.size(); i++) {
+            for (int j = i + 1; j < typed.size(); j++) {
+                if (Disjointness.overlap(typed.get(i), typed.get(j))) {
+                    rc.issues().blocker("WF_DECISION_OVERLAP", table.path() + "/rows/" + j + "/when", null, null,
+                            "Rules " + (i + 1) + " and " + (j + 1) + " of " + name + " can both apply to the same"
+                                    + " value. Make the conditions exclusive.");
+                }
+            }
+        }
+        if (Disjointness.covers(typed, typed.get(0).type())) {
+            rc.issues().warning("WF_DECISION_DEFAULT_UNREACHABLE", table.path() + "/default", null, null,
+                    "The rules of " + name + " cover every possible value, so the default result is never used.");
+        }
+    }
+
+    private static String words(Literal literal) {
+        return switch (literal) {
+            case Literal.Str s -> "text";
+            case Literal.Num n -> "a number";
+            case Literal.Bool b -> "true or false";
+        };
+    }
+
+    // ---------------------------------------------------------------- branches
+
+    private static void branches(RuleContext rc) {
+        Map<Node, List<Transition>> byBranch = new LinkedHashMap<>();
+        Map<Transition, Disjointness.Typed> typed = new LinkedHashMap<>();
+        for (Transition t : rc.definition().transitions()) {
+            if (t.condition() == null) {
+                continue;
+            }
+            Node from = rc.graph().node(t.from());
+            String base = t.path() + "/condition";
+            Disjointness.Typed checked = Conditions.check(rc, t.condition(), base, from == null ? null : from.id(),
+                    t.id());
+            if (checked != null) {
+                typed.put(t, checked);
+            }
+            Conditions.availability(rc, t.condition().fieldRef(), from, base + "/fieldRef", t.id());
+            if (from != null && from.kind() == NodeKind.BRANCH && t.on() == Route.CONDITION) {
+                byBranch.computeIfAbsent(from, k -> new ArrayList<>()).add(t);
+            }
+        }
+        for (Map.Entry<Node, List<Transition>> e : byBranch.entrySet()) {
+            Node branch = e.getKey();
+            List<Transition> routes = e.getValue();
+            String field = routes.get(0).condition().fieldRef();
+            boolean mixed = false;
+            for (Transition t : routes) {
+                if (!t.condition().fieldRef().equals(field)) {
+                    mixed = true;
+                    rc.issues().blocker("WF_BRANCH_MIXED_FIELDS", t.path() + "/condition/fieldRef", branch.id(),
+                            t.id(), "Every condition of " + q(branch) + " must test the same field (" + field
+                                    + ").");
+                }
+            }
+            if (mixed || !routes.stream().allMatch(typed::containsKey)) {
+                continue;
+            }
+            for (int i = 0; i < routes.size(); i++) {
+                for (int j = i + 1; j < routes.size(); j++) {
+                    Transition a = routes.get(i);
+                    Transition b = routes.get(j);
+                    if (Disjointness.overlap(typed.get(a), typed.get(b))) {
+                        rc.issues().blocker("WF_BRANCH_OVERLAP", b.path() + "/condition", branch.id(), b.id(),
+                                "The conditions of paths " + pathName(a) + " and " + pathName(b) + " of "
+                                        + q(branch) + " can both be true. Make the conditions exclusive.");
+                    }
+                }
+            }
+        }
+    }
+
+    private static String pathName(Transition t) {
+        return t.label() == null ? q(t.id()) : q(t.label());
+    }
+
+    // ---------------------------------------------------------------- output mapping
+
+    private static void outputMapping(RuleContext rc) {
+        WorkflowDefinition d = rc.definition();
+        for (OutputEntry entry : d.outputMapping().values()) {
+            String path = JsonPointers.of("outputMapping", entry.key());
+            FormSchema.Field target = d.outputSchema().properties().get(entry.key());
+            if (target == null) {
+                rc.issues().blocker("WF_OUTPUT_MAPPING_UNKNOWN", path, null, null, "The result field "
+                        + q(entry.key()) + " is not defined in the result form (outputSchema).");
+            }
+            Resolution res = rc.types().resolve(entry.fieldRef());
+            if (res instanceof Unknown u) {
+                rc.issues().blocker("WF_FIELDREF_UNKNOWN", path + "/fieldRef", null, null, u.message());
+                continue;
+            }
+            if (!(res instanceof Resolved r)) {
+                continue;
+            }
+            if (target != null) {
+                Set<String> targetEnum = target.enumValues() == null ? null : new TreeSet<>(target.enumValues());
+                String problem = FieldTypes.incompatibility(r.type(), target.type(), targetEnum);
+                if (problem != null) {
+                    rc.issues().blocker("WF_OUTPUT_MAPPING_UNKNOWN", path + "/fieldRef", null, null,
+                            "The result field " + q(entry.key()) + " " + problem + ".");
+                }
+            }
+            if (entry.required() && r.producer() != null) {
+                requiredOutput(rc, entry, r, path + "/fieldRef");
+            }
+        }
+        List<String> required = d.outputSchema().required();
+        for (int i = 0; i < required.size(); i++) {
+            String key = required.get(i);
+            OutputEntry entry = d.outputMapping().get(key);
+            if (d.outputSchema().properties().containsKey(key) && (entry == null || !entry.required())) {
+                rc.issues().blocker("WF_OUTPUT_MAPPING_MISSING", "/outputSchema/required/" + i, null, null,
+                        "The result field " + q(key) + " is required, so it needs a mapping marked as required.");
+            }
+        }
+    }
+
+    private static void requiredOutput(RuleContext rc, OutputEntry entry, Resolved r, String path) {
+        Node producer = r.producer();
+        Graph g = rc.graph();
+        if (g.hasDominators()) {
+            for (Node end : g.ends()) {
+                if (g.isReachable(end) && !g.dominates(producer, end)) {
+                    rc.issues().blocker("WF_OUTPUT_NOT_GUARANTEED", path, producer.id(), null, q(producer)
+                            + " does not happen on every path to a Finish step (for example " + q(end) + "), so"
+                            + " the result field " + q(entry.key()) + " cannot be required.");
+                    return;
+                }
+            }
+        }
+        if (r.type().mayBeAbsent()) {
+            rc.issues().blocker("WF_OUTPUT_NOT_GUARANTEED", path, producer.id(), null, "The " + r.key() + " of "
+                    + q(producer) + " is only recorded when the approver enters one, so the result field "
+                    + q(entry.key()) + " cannot be required.");
+        }
+    }
+
+    // ---------------------------------------------------------------- forms and presentation
+
+    private static void form(RuleContext rc, FormSchema form, String member, String formName) {
+        for (int i = 0; i < form.required().size(); i++) {
+            String key = form.required().get(i);
+            if (!form.properties().containsKey(key)) {
+                rc.issues().blocker("WF_FORM_INVALID", "/" + member + "/required/" + i, null, null, "The "
+                        + formName + " requires " + q(key) + ", but has no such field.");
+            }
+        }
+        for (FormSchema.Field f : form.properties().values()) {
+            String base = JsonPointers.of(member, "properties", f.key());
+            String title = q(f.title());
+            String is = title + " is " + f.type().description() + ", so it cannot ";
+            if (f.enumValues() != null && f.type() != FieldKind.STRING) {
+                invalid(rc, base + "/enum", is + "have a list of choices.");
+            }
+            if (f.type() != FieldKind.STRING) {
+                if (f.minLength() != null) {
+                    invalid(rc, base + "/minLength", is + "have a text length limit.");
+                }
+                if (f.maxLength() != null) {
+                    invalid(rc, base + "/maxLength", is + "have a text length limit.");
+                }
+            }
+            if (!f.type().numeric()) {
+                if (f.minimum() != null) {
+                    invalid(rc, base + "/minimum", is + "have a minimum.");
+                }
+                if (f.maximum() != null) {
+                    invalid(rc, base + "/maximum", is + "have a maximum.");
+                }
+                if (f.multipleOf() != null) {
+                    invalid(rc, base + "/multipleOf", is + "have a precision (multipleOf).");
+                }
+            } else if (f.type() == FieldKind.INTEGER && f.multipleOf() != null
+                    && f.multipleOf().compareTo(BigDecimal.ONE) != 0) {
+                invalid(rc, base + "/multipleOf", title + " is a whole number, so it cannot allow cents"
+                        + " (multipleOf " + f.multipleOf().toPlainString() + ").");
+            }
+            if (f.minLength() != null && f.maxLength() != null && f.minLength() > f.maxLength()) {
+                invalid(rc, base + "/minLength", title + " has a minimum length greater than its maximum length.");
+            }
+            if (f.minimum() != null && f.maximum() != null && f.minimum().compareTo(f.maximum()) > 0) {
+                invalid(rc, base + "/minimum", title + " has a minimum greater than its maximum.");
+            }
+        }
+    }
+
+    private static void invalid(RuleContext rc, String path, String message) {
+        rc.issues().blocker("WF_FORM_INVALID", path, null, null, message);
+    }
+
+    private static void inputUi(RuleContext rc) {
+        WorkflowDefinition.InputUi ui = rc.definition().inputUi();
+        if (ui == null) {
+            return;
+        }
+        Map<String, FormSchema.Field> fields = rc.definition().inputSchema().properties();
+        for (int i = 0; i < ui.order().size(); i++) {
+            String key = ui.order().get(i);
+            if (!fields.containsKey(key)) {
+                rc.issues().warning("WF_UI_UNKNOWN_FIELD", "/inputUi/order/" + i, null, null, "The form layout"
+                        + " mentions " + q(key) + ", which is not a field of the request form.");
+            }
+        }
+        for (Map.Entry<String, String> e : ui.widgets().entrySet()) {
+            String path = JsonPointers.of("inputUi", "widgets", e.getKey());
+            FormSchema.Field f = fields.get(e.getKey());
+            if (f == null) {
+                rc.issues().warning("WF_UI_UNKNOWN_FIELD", path, null, null, "The form layout mentions "
+                        + q(e.getKey()) + ", which is not a field of the request form.");
+                continue;
+            }
+            String need = switch (e.getValue()) {
+                case "text", "textarea" -> f.type() == FieldKind.STRING ? null : "a text field";
+                case "number" -> f.type().numeric() ? null : "a number field";
+                case "money" -> f.type() == FieldKind.NUMBER && f.multipleOf() != null
+                        && f.multipleOf().compareTo(CENT) == 0 ? null : "a number field with cents (multipleOf 0.01)";
+                case "select", "radio" -> f.type() == FieldKind.STRING && f.enumValues() != null ? null
+                        : "a text field with a list of choices (enum)";
+                case "checkbox" -> f.type() == FieldKind.BOOLEAN ? null : "a true/false field";
+                default -> null;
+            };
+            if (need != null) {
+                rc.issues().warning("WF_UI_WIDGET_MISMATCH", path, null, null, "The " + e.getValue()
+                        + " widget needs " + need + "; " + q(f.title()) + " is not.");
+            }
+        }
+    }
+
+    private static void layout(RuleContext rc) {
+        if (rc.definition().uiLayout() == null) {
+            return;
+        }
+        for (String id : rc.definition().uiLayout().positions().keySet()) {
+            if (rc.graph().node(id) == null) {
+                rc.issues().blocker("WF_LAYOUT_UNKNOWN_NODE", JsonPointers.of("uiLayout", "positions", id), null,
+                        null, "The canvas layout has a position for " + q(id) + ", which is not a step.");
+            }
+        }
+    }
+
+    private static void labels(RuleContext rc) {
+        WorkflowDefinition d = rc.definition();
+        expression(rc, d.name(), "/name", null, null);
+        for (Node n : d.nodes()) {
+            expression(rc, n.label(), n.path() + "/label", n.id(), null);
+            if (n instanceof Node.Notification note) {
+                expression(rc, note.message(), n.configPath("message"), n.id(), null);
+            }
+            String label = n.label().strip();
+            if (label.length() < 3) {
+                rc.issues().warning("WF_LABEL_STYLE", n.path() + "/label", n.id(), null, q(n)
+                        + " is too short to be a clear step name. Say what happens in this step.");
+            } else if (PLACEHOLDER.matcher(label).matches()) {
+                rc.issues().warning("WF_LABEL_STYLE", n.path() + "/label", n.id(), null, q(n)
+                        + " is a placeholder name. Say what happens in this step.");
+            }
+        }
+        for (Transition t : d.transitions()) {
+            if (t.label() != null) {
+                expression(rc, t.label(), t.path() + "/label", null, t.id());
+            }
+        }
+    }
+
+    private static void expression(RuleContext rc, String text, String path, String nodeId, String transitionId) {
+        if (text.contains("${") || text.contains("#{")) {
+            rc.issues().blocker("WF_LABEL_EXPRESSION", path, nodeId, transitionId,
+                    "Names, labels and messages cannot contain \"${\" or \"#{\".");
+        }
+    }
+}

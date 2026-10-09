@@ -1,0 +1,398 @@
+{
+  "description": "Compiler acceptance fixtures. Each case applies RFC 6902 JSON Patch operations to examples/purchase-approval.json, validates in the given workspace context, and expects at least the listed issue codes as blockers (or exactly no blockers for valid cases). Codes are defined in docs/build/S4-workflow-compiler.md. Tests must assert codes, not message text.",
+  "base": "examples/purchase-approval.json",
+  "defaultContext": {
+    "workspaceIsTest": false,
+    "groups": [
+      "managers",
+      "finance-approvers"
+    ],
+    "connections": [
+      {
+        "key": "procurement",
+        "definitionVersion": 1,
+        "definition": "examples/connections/procurement.connection.json",
+        "bindingEnabled": true
+      }
+    ]
+  },
+  "cases": [
+    {
+      "name": "valid-base",
+      "patch": [],
+      "expectBlockers": []
+    },
+    {
+      "name": "valid-without-rejection-notification",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/transitions/2/to",
+          "value": "rejected"
+        },
+        {
+          "op": "replace",
+          "path": "/transitions/7/to",
+          "value": "rejected"
+        },
+        {
+          "op": "remove",
+          "path": "/transitions/10"
+        },
+        {
+          "op": "remove",
+          "path": "/nodes/8"
+        },
+        {
+          "op": "remove",
+          "path": "/uiLayout/positions/notifyRejected"
+        }
+      ],
+      "expectBlockers": []
+    },
+    {
+      "name": "unsupported-schema-version",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/schemaVersion",
+          "value": "0.2"
+        }
+      ],
+      "expectBlockers": [
+        "WF_SCHEMA_VERSION_UNSUPPORTED"
+      ]
+    },
+    {
+      "name": "unknown-node-type",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/nodes/2/type",
+          "value": "script"
+        }
+      ],
+      "expectBlockers": [
+        "WF_SCHEMA_INVALID"
+      ]
+    },
+    {
+      "name": "reserved-double-underscore-id",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/nodes/1/id",
+          "value": "manager__x"
+        }
+      ],
+      "expectBlockers": [
+        "WF_SCHEMA_INVALID"
+      ]
+    },
+    {
+      "name": "effect-policy-not-allowed-on-node",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/nodes/5/config/effectPolicy",
+          "value": "remoteIdempotency"
+        }
+      ],
+      "expectBlockers": [
+        "WF_SCHEMA_INVALID"
+      ]
+    },
+    {
+      "name": "two-start-nodes",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/nodes/-",
+          "value": {
+            "id": "start2",
+            "type": "start",
+            "label": "Second start",
+            "config": {}
+          }
+        },
+        {
+          "op": "add",
+          "path": "/transitions/-",
+          "value": {
+            "id": "t12",
+            "from": "start2",
+            "to": "manager",
+            "on": "next"
+          }
+        }
+      ],
+      "expectBlockers": [
+        "WF_START_COUNT"
+      ]
+    },
+    {
+      "name": "cycle-and-unreachable-end",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/transitions/9/to",
+          "value": "manager"
+        }
+      ],
+      "expectBlockers": [
+        "WF_CYCLE",
+        "WF_UNREACHABLE_NODE"
+      ]
+    },
+    {
+      "name": "branch-without-default",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/transitions/5"
+        }
+      ],
+      "expectBlockers": [
+        "WF_BRANCH_DEFAULT"
+      ]
+    },
+    {
+      "name": "approval-missing-rejected-route",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/transitions/2"
+        }
+      ],
+      "expectBlockers": [
+        "WF_APPROVAL_ROUTES"
+      ]
+    },
+    {
+      "name": "ordering-operator-on-text",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/transitions/4/condition/operator",
+          "value": "gte"
+        }
+      ],
+      "expectBlockers": [
+        "WF_OPERATOR_TYPE"
+      ]
+    },
+    {
+      "name": "condition-uses-downstream-step",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/transitions/4/condition",
+          "value": {
+            "fieldRef": "/steps/finance/decision",
+            "operator": "eq",
+            "value": "approved"
+          }
+        }
+      ],
+      "expectBlockers": [
+        "WF_FIELDREF_NOT_GUARANTEED"
+      ]
+    },
+    {
+      "name": "unknown-input-field",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/nodes/5/config/inputMapping/title",
+          "value": "/input/titel"
+        }
+      ],
+      "expectBlockers": [
+        "WF_FIELDREF_UNKNOWN"
+      ]
+    },
+    {
+      "name": "required-output-not-guaranteed",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/outputMapping/procurementId/required",
+          "value": true
+        }
+      ],
+      "expectBlockers": [
+        "WF_OUTPUT_NOT_GUARANTEED"
+      ]
+    },
+    {
+      "name": "unknown-decision-ref",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/nodes/2/config/decisionRef",
+          "value": "amount-policy-v2"
+        }
+      ],
+      "expectBlockers": [
+        "WF_DECISION_UNKNOWN"
+      ]
+    },
+    {
+      "name": "overlapping-decision-rows",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/decisions/0/rows/-",
+          "value": {
+            "when": {
+              "fieldRef": "/input/amount",
+              "operator": "gte",
+              "value": 10000
+            },
+            "then": {
+              "route": "financeReview"
+            }
+          }
+        }
+      ],
+      "expectBlockers": [
+        "WF_DECISION_OVERLAP"
+      ]
+    },
+    {
+      "name": "decision-rows-test-different-fields",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/decisions/0/rows/-",
+          "value": {
+            "when": {
+              "fieldRef": "/input/costCenter",
+              "operator": "eq",
+              "value": "IT"
+            },
+            "then": {
+              "route": "financeReview"
+            }
+          }
+        }
+      ],
+      "expectBlockers": [
+        "WF_DECISION_MIXED_FIELDS"
+      ]
+    },
+    {
+      "name": "unsafe-string-literal",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/decisions/0/default/route",
+          "value": "standard\" || true"
+        }
+      ],
+      "expectBlockers": [
+        "WF_LITERAL_UNSAFE"
+      ]
+    },
+    {
+      "name": "layout-references-missing-node",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/uiLayout/positions/ghost",
+          "value": {
+            "x": 0,
+            "y": 0
+          }
+        }
+      ],
+      "expectBlockers": [
+        "WF_LAYOUT_UNKNOWN_NODE"
+      ]
+    },
+    {
+      "name": "timeout-exceeds-operation-limit",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/nodes/5/config/timeoutSeconds",
+          "value": 25
+        }
+      ],
+      "expectBlockers": [
+        "WF_TIMEOUT_EXCEEDS_OPERATION"
+      ]
+    },
+    {
+      "name": "required-request-field-not-mapped",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/nodes/5/config/inputMapping/costCenter"
+        }
+      ],
+      "expectBlockers": [
+        "WF_MAPPING_MISSING_REQUIRED"
+      ]
+    },
+    {
+      "name": "self-approval-in-production-workspace",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/security/selfApproval",
+          "value": "allow"
+        }
+      ],
+      "expectBlockers": [
+        "WF_SELF_APPROVAL_NOT_ALLOWED"
+      ]
+    },
+    {
+      "name": "self-approval-in-test-workspace",
+      "context": {
+        "workspaceIsTest": true
+      },
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/security/selfApproval",
+          "value": "allow"
+        }
+      ],
+      "expectBlockers": [],
+      "expectWarnings": [
+        "WF_SELF_APPROVAL_ALLOWED"
+      ]
+    },
+    {
+      "name": "candidate-group-not-in-workspace",
+      "context": {
+        "groups": [
+          "managers"
+        ]
+      },
+      "patch": [],
+      "expectBlockers": [
+        "WF_GROUP_UNBOUND"
+      ]
+    },
+    {
+      "name": "connection-binding-disabled",
+      "context": {
+        "connections": [
+          {
+            "key": "procurement",
+            "definitionVersion": 1,
+            "definition": "examples/connections/procurement.connection.json",
+            "bindingEnabled": false
+          }
+        ]
+      },
+      "patch": [],
+      "expectBlockers": [
+        "WF_CONNECTION_UNBOUND"
+      ]
+    }
+  ]
+}

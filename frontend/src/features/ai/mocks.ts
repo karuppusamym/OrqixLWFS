@@ -1,0 +1,313 @@
+import { delay, http, HttpResponse, type HttpHandler, type JsonBodyType } from 'msw'
+import type { Permission } from '@/api/types'
+import { normalizeDefinition, type Definition } from '@/features/studio/model/types'
+import { getCurrentUser } from '@/mocks/handlers'
+import { GROUPS, WORKSPACES, clock, connectionDefinition, db, isMember, newId, permissionsOf, purchaseTemplate, userById, type MockWorkflow } from '@/mocks/state'
+import { validateDefinition, type ValidationContext } from '@/mocks/validate'
+import { DESCRIPTION_MAX, DESCRIPTION_MIN } from './limits'
+
+/**
+ * Mock-mode AI (S10): status (enabled), deterministic "generation" and "explanation" so the feature can be shown and
+ * tested without a provider. Generation takes a few seconds in the browser, like the real thing.
+ */
+export const aiMock = { enabled: true, spentUsd: 0.0184, generationDelayMs: 2500 }
+
+const B = '*/api/v1'
+
+function problem(status: number, code: string, title: string, extra: Record<string, unknown> = {}, headers: Record<string, string> = {}) {
+  return HttpResponse.json(
+    { type: `https://orqix.example/problems/${code.toLowerCase().replace(/_/g, '-')}`, title, status, code, correlationId: newId(), ...extra },
+    { status, headers: { 'Content-Type': 'application/problem+json', ...headers } },
+  )
+}
+
+function guard(wsId: unknown, ...anyOf: Permission[]): { ok: true; perms: Permission[]; userId: string } | { ok: false; res: Response } {
+  const id = typeof wsId === 'string' ? wsId : ''
+  const user = getCurrentUser()
+  if (!WORKSPACES.some((w) => w.id === id) || !isMember(user, id)) return { ok: false, res: problem(404, 'NOT_FOUND', 'Not found') }
+  const perms = permissionsOf(user, id)
+  if (anyOf.length > 0 && !anyOf.some((p) => perms.includes(p))) return { ok: false, res: problem(403, 'FORBIDDEN', 'Forbidden') }
+  return { ok: true, perms, userId: user.id }
+}
+
+const PROFILES = [
+  { id: 'economy', label: 'Economy', model: 'deepseek/deepseek-v3.2', variablePrice: false },
+  { id: 'auto', label: 'Auto (Jev Router)', model: 'typesafe/jev-router', variablePrice: true },
+]
+
+function status() {
+  return {
+    enabled: aiMock.enabled,
+    reason: aiMock.enabled ? null : 'AI is not configured: no provider key is set.',
+    defaultProfile: aiMock.enabled ? 'economy' : null,
+    profiles: aiMock.enabled ? PROFILES : [],
+    excludedModels: ['anthropic/claude-opus-*', 'anthropic/claude-fable-*', 'anthropic/claude-mythos-*', 'openai/*-pro*', '*:batch'],
+    maxPrice: { promptPerMillion: 1.0, completionPerMillion: 3.0 },
+    budget: { monthlyUsd: 10.0, spentUsd: aiMock.spentUsd },
+  }
+}
+
+function context(wsId: string): ValidationContext {
+  const ops = connectionDefinition.operations as Record<string, { requestSchema?: { required?: string[]; properties?: Record<string, unknown> }; responseSchema?: { properties?: Record<string, unknown> }; maxTimeoutSeconds: number }>
+  const empty = wsId === WORKSPACES[2]?.id
+  return {
+    groups: empty ? [] : GROUPS.map((g) => g.key),
+    isTestWorkspace: WORKSPACES.find((w) => w.id === wsId)?.isTest ?? false,
+    connections: empty
+      ? []
+      : [
+          {
+            key: 'procurement',
+            versions: [1],
+            bound: !!db.bindings.get(`${wsId}:procurement`)?.enabled,
+            operations: Object.fromEntries(
+              Object.entries(ops).map(([name, op]) => [
+                name,
+                { requestRequired: op.requestSchema?.required ?? [], requestProps: Object.keys(op.requestSchema?.properties ?? {}), responseProps: Object.keys(op.responseSchema?.properties ?? {}), maxTimeoutSeconds: op.maxTimeoutSeconds },
+              ]),
+            ),
+          },
+        ],
+  }
+}
+
+function toKey(name: string): string {
+  const key = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+  return /^[a-z]/.test(key) ? key.slice(0, 56).replace(/-+$/, '') : `ai-${key}`.slice(0, 56)
+}
+
+/** A two-level approval workflow; the second approver group may not exist (shown as missing configuration). */
+function approvalDraft(name: string, firstGroup: string, secondGroup: string | null): Definition {
+  const nodes = [
+    { id: 'start', type: 'start', label: 'Request submitted', config: {} },
+    { id: 'firstReview', type: 'approval', label: 'Review request', config: { candidateGroupRef: firstGroup, rejectReasonRequired: true, dueAfterHours: 24 } },
+    ...(secondGroup ? [{ id: 'secondReview', type: 'approval', label: 'Second review', config: { candidateGroupRef: secondGroup, rejectReasonRequired: true, dueAfterHours: 48 } }] : []),
+    { id: 'notifyApproved', type: 'notification', label: 'Tell requester it was approved', config: { channel: 'inApp', recipient: 'initiator', message: 'Your request was approved.' } },
+    { id: 'approved', type: 'end', label: 'Approved', config: { businessOutcome: 'Approved', outcomeKind: 'success' } },
+    { id: 'notifyRejected', type: 'notification', label: 'Tell requester it was rejected', config: { channel: 'inApp', recipient: 'initiator', message: 'Your request was rejected. Open it to see the reason.' } },
+    { id: 'rejected', type: 'end', label: 'Rejected', config: { businessOutcome: 'Rejected', outcomeKind: 'rejected' } },
+  ]
+  const after = secondGroup ? 'secondReview' : 'notifyApproved'
+  const transitions = [
+    { id: 't1', from: 'start', to: 'firstReview', on: 'next' },
+    { id: 't2', from: 'firstReview', to: after, on: 'approved' },
+    { id: 't3', from: 'firstReview', to: 'notifyRejected', on: 'rejected' },
+    ...(secondGroup
+      ? [
+          { id: 't4', from: 'secondReview', to: 'notifyApproved', on: 'approved' },
+          { id: 't5', from: 'secondReview', to: 'notifyRejected', on: 'rejected' },
+        ]
+      : []),
+    { id: 't6', from: 'notifyApproved', to: 'approved', on: 'next' },
+    { id: 't7', from: 'notifyRejected', to: 'rejected', on: 'next' },
+  ]
+  const positions: Record<string, { x: number; y: number }> = {}
+  const row = ['start', 'firstReview', ...(secondGroup ? ['secondReview'] : []), 'notifyApproved', 'approved']
+  row.forEach((id, i) => (positions[id] = { x: 80 + i * 220, y: 200 }))
+  positions.notifyRejected = { x: 520, y: 380 }
+  positions.rejected = { x: 740, y: 380 }
+  return normalizeDefinition({
+    schemaVersion: '0.1',
+    workflowKey: toKey(name),
+    name,
+    metadata: { description: `${name}: the request is reviewed${secondGroup ? ' in two steps' : ''} and the requester is told the outcome.` },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['title', 'details'],
+      properties: {
+        title: { type: 'string', title: 'What do you need?', minLength: 1, maxLength: 120 },
+        details: { type: 'string', title: 'Details', description: 'Why it is needed and anything the reviewer should know.', minLength: 1, maxLength: 2000 },
+      },
+    },
+    inputUi: { order: ['title', 'details'], widgets: { details: 'textarea' }, currency: 'USD' },
+    outputSchema: { type: 'object', additionalProperties: false, properties: {} },
+    triggers: ['manual'],
+    nodes,
+    transitions,
+    decisions: [],
+    execution: { maxConcurrentRuns: 100, maxAttempts: 3, retryDelaySeconds: 30 },
+    security: { selfApproval: 'deny' },
+    dependencies: { connections: [] },
+    outputMapping: {},
+    uiLayout: { positions, viewport: { x: 0, y: 0, zoom: 0.8 } },
+  })
+}
+
+function generate(description: string, requestedName: string | undefined): { definition: Definition; assumptions: string[] } | null {
+  const text = description.toLowerCase()
+  if (/\b(poem|joke|recipe|song|story)\b/.test(text)) return null
+  if (/\b(purchase|buy|order|equipment)\b/.test(text)) {
+    const definition = purchaseTemplate()
+    definition.name = requestedName ?? 'Purchase approval'
+    return {
+      definition,
+      assumptions: [
+        'Finance reviews purchases of USD 5,000 or more; smaller purchases only need the manager.',
+        'The purchase order is created in the procurement system after all approvals.',
+        'Rejected requests end with an in-app message to the requester.',
+      ],
+    }
+  }
+  const second = /\bsecurity\b/.test(text) ? 'security-team' : /\blegal\b/.test(text) ? 'legal-reviewers' : /\bfinance\b/.test(text) ? 'finance-approvers' : null
+  const name = requestedName ?? (/\baccess\b/.test(text) ? 'Access request' : 'Approval request')
+  return {
+    definition: approvalDraft(name, 'managers', second),
+    assumptions: [
+      'The first review is done by the managers group.',
+      ...(second ? [`A second review by the ${second} group follows the first approval.`] : []),
+      'Parallel reviews are not supported yet, so reviews happen one after the other.',
+    ],
+  }
+}
+
+function workflowView(wf: MockWorkflow, perms: Permission[]) {
+  const owner = userById(wf.ownerId)
+  return {
+    id: wf.id,
+    key: wf.key,
+    name: wf.name,
+    description: wf.description,
+    owner: owner ? { id: owner.id, displayName: owner.displayName } : { id: newId(), displayName: 'Unknown' },
+    draftRevision: 1,
+    activeRelease: null,
+    canStart: false,
+    updatedAt: wf.updatedAt,
+    version: wf.version,
+    createdAt: wf.createdAt,
+    permissions: perms,
+  }
+}
+
+function explanation(def: Definition) {
+  const approvals = def.nodes.filter((n) => n.type === 'approval')
+  const groups = approvals.map((n) => String(n.config.candidateGroupRef ?? 'a group'))
+  const steps = def.nodes.map((n) => {
+    switch (n.type) {
+      case 'start':
+        return { nodeId: n.id, text: 'The requester fills in the request form and submits it.' }
+      case 'approval':
+        return { nodeId: n.id, text: `Someone in the ${String(n.config.candidateGroupRef ?? '')} group approves or rejects the request. A rejection needs a reason.` }
+      case 'decision':
+        return { nodeId: n.id, text: 'A rule table checks the request (for example the amount) to decide which path comes next.' }
+      case 'branch':
+        return { nodeId: n.id, text: 'The request takes one of the paths depending on the result of the rules.' }
+      case 'http':
+        return { nodeId: n.id, text: `Orqix calls the ${String(n.config.connectionRef ?? 'connected')} system to complete the work.` }
+      case 'notification':
+        return { nodeId: n.id, text: `The requester gets an in-app message: "${String(n.config.message ?? '')}"` }
+      default:
+        return { nodeId: n.id, text: `The request finishes with the outcome ${String(n.config.businessOutcome ?? n.label)}.` }
+    }
+  })
+  return {
+    summary: `${def.name} lets people submit a request that is reviewed by ${groups.length === 0 ? 'nobody' : groups.join(', then ')}. Each reviewer can approve or reject; a rejection ends the request and the requester is told why. When everything is approved the workflow finishes with a success outcome.`,
+    steps,
+    generation: { profile: 'economy', model: 'deepseek/deepseek-v3.2', promptVersion: 'explain-v1', attempts: 1, escalated: false, inputTokens: 2100, outputTokens: 380, costUsd: 0.0007, durationMs: 1800 },
+  }
+}
+
+export function createAiHandlers(): HttpHandler[] {
+  return [
+    http.get(`${B}/workspaces/:ws/ai/status`, async ({ params }) => {
+      if (db.latencyMs > 0) await delay(db.latencyMs)
+      const g = guard(params.ws, 'workflow.read', 'workflow.edit', 'workspace.manage-access')
+      return g.ok ? HttpResponse.json(status()) : g.res
+    }),
+    http.post(`${B}/workspaces/:ws/ai/drafts`, async ({ params, request }) => {
+      const g = guard(params.ws, 'workflow.edit')
+      if (!g.ok) return g.res
+      const key = request.headers.get('Idempotency-Key')
+      if (!key || !/^[A-Za-z0-9._:-]{8,128}$/.test(key)) return problem(400, 'IDEMPOTENCY_KEY_REQUIRED', 'An Idempotency-Key header is required')
+      const input = (await request.json().catch(() => ({}))) as { description?: string; name?: string; profile?: string }
+      const description = (input.description ?? '').trim()
+      if (description.length < DESCRIPTION_MIN || description.length > DESCRIPTION_MAX) {
+        return problem(400, 'MALFORMED_REQUEST', 'The request is malformed', { fieldErrors: [{ pointer: '/description', code: 'minLength', message: 'Invalid value' }] })
+      }
+      if (!aiMock.enabled) return problem(422, 'AI_NOT_CONFIGURED', 'AI assistance is not configured', { detail: 'AI is not configured: no provider key is set.' })
+      const stored = `${g.userId}|generateAiDraft|${key}`
+      const hash = JSON.stringify([params.ws, input])
+      const prior = db.idempotency.get(stored)
+      if (prior) {
+        if (prior.hash !== hash) return problem(409, 'IDEMPOTENCY_KEY_REUSED', 'The Idempotency-Key was used for a different request')
+        return HttpResponse.json(prior.body as JsonBodyType, { status: 200, headers: { 'Idempotent-Replayed': 'true' } })
+      }
+      const profile = input.profile ?? 'economy'
+      if (!PROFILES.some((p) => p.id === profile)) return problem(422, 'AI_MODEL_NOT_ALLOWED', 'The requested AI model or profile is not allowed', { detail: 'Unknown AI profile.' })
+      if (db.latencyMs > 0) await delay(Math.max(db.latencyMs, aiMock.generationDelayMs))
+      if (/\(unavailable\)/i.test(description)) {
+        return problem(503, 'AI_PROVIDER_UNAVAILABLE', 'The AI provider is unavailable; nothing was created', { detail: 'The AI provider is unavailable. Nothing was created; try again shortly.' }, { 'Retry-After': '20' })
+      }
+      const generated = generate(description, input.name?.trim() || undefined)
+      if (!generated) {
+        return problem(422, 'AI_OUTPUT_INVALID', 'The AI could not produce a valid workflow', { detail: 'The description does not describe a business workflow: it asks for something that is not a process.', issues: [] })
+      }
+      const wsId = String(params.ws)
+      let wfKey = toKey(generated.definition.name)
+      for (let n = 2; [...db.workflows.values()].some((w) => w.wsId === wsId && w.key === wfKey); n++) wfKey = `${toKey(generated.definition.name)}-${n}`
+      generated.definition.workflowKey = wfKey
+      const now = clock.iso()
+      const wf: MockWorkflow = {
+        id: newId(),
+        wsId,
+        key: wfKey,
+        name: generated.definition.name,
+        description: generated.definition.metadata.description || null,
+        ownerId: g.userId,
+        drafts: [{ revision: 1, savedAt: now, savedById: g.userId, definition: generated.definition }],
+        releases: [],
+        activeReleaseId: null,
+        version: 1,
+        createdAt: now,
+        updatedAt: now,
+      }
+      db.workflows.set(wf.id, wf)
+      const issues = validateDefinition(generated.definition, context(wsId))
+      const binding = new Set(['WF_GROUP_UNBOUND', 'WF_CONNECTION_UNDECLARED', 'WF_CONNECTION_UNKNOWN', 'WF_CONNECTION_UNBOUND', 'WF_OPERATION_UNKNOWN'])
+      const missingConfiguration = issues
+        .filter((i) => i.severity === 'blocker' && binding.has(i.code))
+        .map((i) => {
+          const node = generated.definition.nodes.find((n) => n.id === i.nodeId)
+          const group = node?.config.candidateGroupRef
+          const message = i.code === 'WF_GROUP_UNBOUND' && typeof group === 'string' ? `Create the group "${group}" in Settings > Access, or choose an existing group for this approval step.` : i.message
+          return { message, nodeId: i.nodeId ?? null, code: i.code }
+        })
+      const cost = profile === 'auto' ? 0.0143 : 0.0031
+      aiMock.spentUsd = Math.round((aiMock.spentUsd + cost) * 10_000) / 10_000
+      const result = {
+        workflow: workflowView(wf, g.perms),
+        draft: { workflowId: wf.id, revision: 1, savedAt: now, savedBy: { id: g.userId, displayName: getCurrentUser().displayName }, definition: generated.definition },
+        report: { revision: 1, compilerVersion: '0.1.0-mock', publishable: !issues.some((i) => i.severity === 'blocker'), semanticHash: null, issues },
+        assumptions: generated.assumptions,
+        missingConfiguration,
+        generation: {
+          profile,
+          model: profile === 'auto' ? 'openai/gpt-6-luna' : 'deepseek/deepseek-v3.2',
+          promptVersion: 'draft-v1',
+          attempts: 1,
+          escalated: false,
+          inputTokens: 9800,
+          outputTokens: 2400,
+          costUsd: cost,
+          durationMs: aiMock.generationDelayMs,
+        },
+      }
+      db.idempotency.set(stored, { hash, status: 201, body: result })
+      return HttpResponse.json(result as JsonBodyType, { status: 201 })
+    }),
+    http.post(`${B}/workspaces/:ws/workflows/:id/explain`, async ({ params, request }) => {
+      const g = guard(params.ws, 'workflow.read')
+      if (!g.ok) return g.res
+      const wf = db.workflows.get(String(params.id))
+      if (!wf || wf.wsId !== params.ws) return problem(404, 'NOT_FOUND', 'Not found')
+      const input = (await request.json().catch(() => ({}))) as { revision?: number }
+      if (!aiMock.enabled) return problem(422, 'AI_NOT_CONFIGURED', 'AI assistance is not configured')
+      let def: Definition | undefined
+      if (input.revision !== undefined) def = wf.drafts.find((d) => d.revision === input.revision)?.definition
+      else def = wf.releases.find((r) => r.id === wf.activeReleaseId)?.definition
+      if (!def) return input.revision !== undefined ? problem(404, 'NOT_FOUND', 'Not found') : problem(422, 'NO_ACTIVE_RELEASE', 'The workflow has no active release')
+      if (db.latencyMs > 0) await delay(Math.max(db.latencyMs, 900))
+      return HttpResponse.json(explanation(def) as JsonBodyType)
+    }),
+  ]
+}

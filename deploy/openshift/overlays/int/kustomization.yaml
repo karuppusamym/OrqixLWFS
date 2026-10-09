@@ -1,0 +1,47 @@
+# int overlay. Placeholders (REPLACE) are completed by the environment owner / the deployment pipeline.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: orqix-int
+
+resources:
+  - ../../base
+
+images:
+  - name: orqix
+    newName: registry.example.com/REPLACE/orqix
+    newTag: REPLACE-release-tag
+
+configMapGenerator:
+  - name: orqix-config
+    behavior: merge
+    envs:
+      - config.env
+
+patches:
+  - target: {group: route.openshift.io, version: v1, kind: Route, name: orqix}
+    patch: |-
+      - op: replace
+        path: /spec/host
+        value: orqix-int.apps.REPLACE.example.com
+  # Network placeholders: database, identity provider, approved connection endpoint.
+  - target: {group: networking.k8s.io, version: v1, kind: NetworkPolicy, name: orqix-allow-postgres-egress}
+    patch: |-
+      - op: replace
+        path: /spec/egress/0/to/0/ipBlock/cidr
+        value: 192.0.2.11/32
+  - target: {group: networking.k8s.io, version: v1, kind: NetworkPolicy, name: orqix-allow-idp-egress}
+    patch: |-
+      - op: replace
+        path: /spec/egress/0/to/0/ipBlock/cidr
+        value: 198.51.100.20/32
+  - target: {group: networking.k8s.io, version: v1, kind: NetworkPolicy, name: orqix-allow-connection-egress}
+    patch: |-
+      - op: replace
+        path: /spec/egress/0/to/0/ipBlock/cidr
+        value: 203.0.113.31/32
+  # The HorizontalPodAutoscaler owns the replica count after the first rollout (base baseline: 2).
+  - target: {group: apps, version: v1, kind: Deployment, name: orqix}
+    patch: |-
+      - op: remove
+        path: /spec/replicas

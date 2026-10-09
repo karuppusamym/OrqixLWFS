@@ -1,5 +1,5 @@
 # Master-prompt coverage and deliverable register
-Revision 0.2 · 7 October 2026
+Revision 0.3 · 7 October 2026 · deliverables 5, 6, 7, 10 and 12 updated for the build specification
 
 Coverage means the requirement is addressed by a plan, including an explicit later milestone or dependency. It does not mean implemented, tested or production-ready. All runtime capabilities remain Planned or Needs input.
 
@@ -71,14 +71,14 @@ Paths below are intended build locations unless marked present. Owners are role 
 | 2 | React frontend | frontend/ | Frontend lead | Not started; R0 then each release |
 | 3 | Java backend | backend/ | Backend lead | Not started; R0 then each release |
 | 4 | Flowable integration | backend/runtime and compiler modules | Backend lead | Specified; not implemented R0 |
-| 5 | PostgreSQL schema/migrations | backend database migrations + engine migration job | Backend/platform leads | Data model specified; DDL not created R0 |
-| 6 | Workflow JSON Schema | contracts/workflow-v0.schema.json | Compiler lead | v0 draft present; standards validation/compiler tests pending; extend per milestone |
-| 7 | REST API specification | contracts/openapi.yaml | Backend lead | Prose contract present; machine-readable OpenAPI not created; freeze R0 |
+| 5 | PostgreSQL schema/migrations | backend database migrations + engine migration job | Backend/platform leads | Reference DDL present ([V1](../backend/app/src/main/resources/db/migration/V1__orqix_core.sql), executed on PostgreSQL 16.13); Flyway wiring in B01.4 (R0) |
+| 6 | Workflow JSON Schema | contracts/workflow-v0.schema.json | Compiler lead | v0.1 revised before freeze; meta-validated; example validates; 25 compiler fixtures present; compiler tests R0 |
+| 7 | REST API specification | contracts/openapi.yaml | Backend lead | [OpenAPI 3.1 draft](../contracts/openapi.yaml) present (48 operations, structurally checked); freeze at B01 (R0) |
 | 8 | OCP manifests | deploy/openshift/ | Platform lead | Specified, not created/tested R0 |
 | 9 | Docker Compose | deploy/compose/ | Platform lead | Not created/tested R0 |
-| 10 | Example workflows | examples/ | Business/backend leads | Purchase JSON draft present; executable artifacts/tests R0, onboarding R1 |
+| 10 | Example workflows | examples/ | Business/backend leads | Purchase template, procurement connection definition and behavior fixtures present; executable artifacts/tests R0, onboarding R1 |
 | 11 | Migration adapters | backend/migration/ | Migration lead | Specified only; R1/R3 and source dependencies |
-| 12 | Automated tests | backend tests, frontend tests, tests/e2e/ | QA/engineering leads | Not implemented; package checks are not app tests |
+| 12 | Automated tests | backend tests, frontend tests, tests/e2e/ | QA/engineering leads | [Test plan](build/S9-test-plan.md) and shared fixtures present; no application tests yet (package checks are not app tests) |
 | 13 | Architecture documentation | docs/03-architecture.md + decisions | Technical lead | Present; validate against implementation continuously |
 | 14 | User guide | docs/user-guide.md | Frontend/business leads | UX spec present; actual user guide pending R0 |
 | 15 | Admin guide | docs/admin-guide.md | Platform lead | Operational contract present; deployment-specific guide pending R0/GA |

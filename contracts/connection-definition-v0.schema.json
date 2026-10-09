@@ -1,0 +1,292 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orqix.example/schemas/connection-definition-v0.schema.json",
+  "title": "Orqix connection definition v0.1 — portable HTTP operation contract",
+  "description": "Immutable, versioned, secret-free description of an approved HTTP integration. Environment details (base URL, credential reference, enabled flag) live in the connection binding, which is not portable and never exported. See docs/build/S5-runtime.md for retry and effect semantics.",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": "0.1"
+    },
+    "key": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,62}[a-z0-9]$"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 2000
+    },
+    "operations": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 20,
+      "propertyNames": {
+        "pattern": "^[a-z][A-Za-z0-9]{0,63}$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/operation"
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "key",
+    "version",
+    "name",
+    "operations"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "operation": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "method": {
+          "enum": [
+            "GET",
+            "POST",
+            "PUT",
+            "PATCH"
+          ]
+        },
+        "path": {
+          "description": "Static path appended to the binding base URL. No templates or query strings in v0.",
+          "type": "string",
+          "pattern": "^/[A-Za-z0-9._~/-]{0,200}$"
+        },
+        "requestSchema": {
+          "description": "Flat JSON body. Required for POST/PUT/PATCH, forbidden for GET (compiler rule CONN_REQUEST_SCHEMA).",
+          "$ref": "#/$defs/requestObject"
+        },
+        "responseSchema": {
+          "$ref": "#/$defs/responseObject"
+        },
+        "successStatuses": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 200,
+            "maximum": 299
+          }
+        },
+        "effectClass": {
+          "description": "readOnly: no remote side effect, retried freely. idempotentWithKey: remote deduplicates by the idempotency header, retried with the same key. nonIdempotent: retried only when the request provably was not sent; otherwise the outcome is unknown and an operator must reconcile.",
+          "enum": [
+            "readOnly",
+            "idempotentWithKey",
+            "nonIdempotent"
+          ]
+        },
+        "idempotencyHeader": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9-]{0,63}$"
+        },
+        "maxTimeoutSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30
+        },
+        "testable": {
+          "description": "May be invoked from the connection test endpoint. Only allowed for readOnly operations.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "label",
+        "method",
+        "path",
+        "responseSchema",
+        "successStatuses",
+        "effectClass",
+        "maxTimeoutSeconds",
+        "testable"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "effectClass": {
+                "const": "idempotentWithKey"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "idempotencyHeader"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "idempotencyHeader"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "testable": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "effectClass": {
+                "const": "readOnly"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "GET"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "requestSchema"
+              ]
+            }
+          },
+          "else": {
+            "required": [
+              "requestSchema"
+            ]
+          }
+        }
+      ]
+    },
+    "scalarField": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "enum": [
+            "string",
+            "number",
+            "integer",
+            "boolean"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "enum": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "maxLength": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4000
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "requestObject": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "object"
+        },
+        "required": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "properties": {
+          "type": "object",
+          "maxProperties": 30,
+          "propertyNames": {
+            "pattern": "^[a-z][A-Za-z0-9]{0,63}$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/scalarField"
+          }
+        },
+        "additionalProperties": {
+          "const": false
+        }
+      },
+      "required": [
+        "type",
+        "properties",
+        "additionalProperties"
+      ],
+      "additionalProperties": false
+    },
+    "responseObject": {
+      "description": "Remote APIs may add fields; unknown fields are ignored unless additionalProperties is false. Nesting is limited to three object levels by rule CONN_RESPONSE_DEPTH. Arrays are not mappable in v0.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "object"
+        },
+        "required": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "properties": {
+          "type": "object",
+          "maxProperties": 50,
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/scalarField"
+              },
+              {
+                "$ref": "#/$defs/responseObject"
+              }
+            ]
+          }
+        },
+        "additionalProperties": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "type",
+        "properties"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

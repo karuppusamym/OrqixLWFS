@@ -1,0 +1,466 @@
+@import 'tailwindcss';
+
+/*
+ * Visual tokens (docs/build/S7-frontend.md section 8, docs/02-ux-design.md): white surfaces on a warm page, 8 px
+ * rhythm, 16 px body, 12 px card radius. Every color in the application is one of these CSS variables; components
+ * never carry hex values, so a theme is only a block of overrides.
+ *
+ * Brands (selected by VITE_ORQIX_BRAND, applied to <html data-brand="...">, default "wf"):
+ *   orqix - the original teal palette (this :root block).
+ *   wf    - red / gold / warm neutrals (the :root[data-brand='wf'] block). Palette only: no logo, name or imagery.
+ *
+ * The pairs that must stay readable (4.5:1 text, 3:1 UI components and focus rings) are checked for BOTH brands by
+ * src/styles/contrast.test.ts, which parses this file. Add a token and its pairing there when you add a color.
+ */
+:root {
+  color-scheme: light;
+
+  --background: #edf2f5;
+  --surface: #ffffff;
+  --surface-muted: #f5f8fa;
+  --foreground: #163545;
+  --muted-foreground: #4c6472;
+  --border: #cad6dd;
+  --input-border: #6f8693;
+  --placeholder: #5d717d;
+
+  --primary: #087e77;
+  --primary-hover: #066d67;
+  --primary-pressed: #05605b;
+  --primary-foreground: #ffffff;
+  --primary-text: #066a64;
+  --primary-soft: #eaf7f4;
+  --primary-soft-border: #add8cf;
+
+  /* Gold accent: stripes, indicators and highlight badges with dark text. Never text on a light surface. */
+  --accent: #f1c24b;
+  --accent-foreground: #163545;
+  --accent-soft: #fff4d6;
+  --accent-border: #e8c76a;
+
+  /* Top bar */
+  --topbar: #ffffff;
+  --topbar-foreground: #163545;
+  --topbar-hover: rgb(22 53 69 / 0.07);
+  --topbar-stripe: #cad6dd;
+  --topbar-stripe-height: 1px;
+
+  /* Side navigation */
+  --nav: #153b49;
+  --nav-foreground: #d5e5ea;
+  --nav-muted: #b4cdd5;
+  --nav-hover: rgb(255 255 255 / 0.1);
+  --nav-active: #245d68;
+  --nav-active-foreground: #ffffff;
+  --nav-indicator: #7bd0c0;
+  --nav-border: rgb(255 255 255 / 0.15);
+  --nav-ring: #ffffff;
+  --nav-badge: #ffffff;
+  --nav-badge-foreground: #153b49;
+
+  /* Keyboard focus: a dark ring separated from the element by a light gap works on white, on brand colors and on photos. */
+  --ring: #0a6c9e;
+  --ring-gap: #ffffff;
+
+  --danger: #b42318;
+  --danger-soft: #fdecea;
+  --danger-border: #f1b4ae;
+  --danger-foreground: #7a1810;
+  --danger-solid: #b42318;
+  --danger-solid-hover: #8f1c13;
+
+  --warning-soft: #fff4d6;
+  --warning-border: #e8c76a;
+  --warning-foreground: #6b4e0f;
+
+  --success: #116249;
+  --success-soft: #e6f5ef;
+  --success-border: #add8cf;
+  --success-foreground: #0b4a37;
+
+  --info-soft: #e3effb;
+  --info-border: #b3cfee;
+  --info-foreground: #143d6b;
+
+  --neutral-soft: #e8eef2;
+  --neutral-hover: #dbe5eb;
+  --skeleton: #dde6eb;
+
+  /* Status pairs: each is shown with an icon and text as well as color. */
+  --status-waiting-bg: #fff2d6;
+  --status-waiting-fg: #6b4e0f;
+  --status-running-bg: #e3effb;
+  --status-running-fg: #1a4f8b;
+  --status-attention-bg: #fde8e8;
+  --status-attention-fg: #9b1c1c;
+  --status-success-bg: #e6f5ef;
+  --status-success-fg: #0f5a42;
+  --status-rejected-bg: #e8edf1;
+  --status-rejected-fg: #35495a;
+  --status-cancelled-bg: #eef0f2;
+  --status-cancelled-fg: #4b5563;
+
+  /* Studio canvas: step kinds (a color and its soft tint; the kind name is always printed as text too). */
+  --kind-start: #4f6675;
+  --kind-start-soft: #e8eef2;
+  --kind-approval: #066a64;
+  --kind-approval-soft: #e1f3f0;
+  --kind-decision: #2b5f95;
+  --kind-decision-soft: #e3edf8;
+  --kind-branch: #6d4aa3;
+  --kind-branch-soft: #eee8f7;
+  --kind-http: #96590a;
+  --kind-http-soft: #fbefd9;
+  --kind-notification: #3b6b2b;
+  --kind-notification-soft: #e6f1df;
+  --kind-end: #44596a;
+  --kind-end-soft: #e8edf1;
+  --outcome-success-border: #8fc4b0;
+  --outcome-rejected-border: #9fb0bd;
+
+  /* Studio canvas: routes, surface and map. */
+  --edge-approved: #087e77;
+  --edge-rejected: #9b1c1c;
+  --edge-default: #52667a;
+  --edge-condition: #3b6ea5;
+  --edge-next: #52667a;
+  --edge-label-bg: #ffffff;
+  --canvas: #f7fafb;
+  --canvas-dot: #b9c7ce;
+  --canvas-mask: rgb(22 53 69 / 0.1);
+
+  --overlay: rgb(21 59 73 / 0.55);
+  --shadow-rgb: 21 59 73;
+
+  --radius: 12px;
+}
+
+:root[data-brand='wf'] {
+  /* Warm neutrals: page, surfaces, text, borders. */
+  --background: #f4f0ed;
+  --surface: #ffffff;
+  --surface-muted: #faf8f6;
+  --foreground: #3b3331;
+  --muted-foreground: #675c58;
+  --border: #d9d2cc;
+  --input-border: #857a75;
+  --placeholder: #6f6561;
+
+  /* Red: primary actions. Darker red (primary-text) for links and text on light surfaces. */
+  --primary: #d71e28;
+  --primary-hover: #b5171f;
+  --primary-pressed: #9a1219;
+  --primary-foreground: #ffffff;
+  --primary-text: #a8161f;
+  --primary-soft: #fcebec;
+  --primary-soft-border: #f1bfc2;
+
+  /* Gold: accent only. */
+  --accent: #ffcd41;
+  --accent-foreground: #3b3331;
+  --accent-soft: #fff4d1;
+  --accent-border: #e6c45a;
+
+  --topbar: #d71e28;
+  --topbar-foreground: #ffffff;
+  --topbar-hover: rgb(0 0 0 / 0.14);
+  --topbar-stripe: #ffcd41;
+  --topbar-stripe-height: 4px;
+
+  --nav: #ffffff;
+  --nav-foreground: #3b3331;
+  --nav-muted: #675c58;
+  --nav-hover: #f4f0ed;
+  --nav-active: #fcebec;
+  --nav-active-foreground: #8e1b16;
+  --nav-indicator: #d71e28;
+  --nav-border: #d9d2cc;
+  --nav-ring: #1f1a19;
+  --nav-badge: #d71e28;
+  --nav-badge-foreground: #ffffff;
+
+  --ring: #1f1a19;
+  --ring-gap: #ffffff;
+
+  /* Destructive actions are dark crimson outlines with an icon and explicit text, never the primary red. */
+  --danger: #8e1b16;
+  --danger-soft: #fbeae8;
+  --danger-border: #e6b3ae;
+  --danger-foreground: #6e1410;
+  --danger-solid: #7a1511;
+  --danger-solid-hover: #5f100d;
+
+  --warning-soft: #fff4d1;
+  --warning-border: #e6c45a;
+  --warning-foreground: #5f4300;
+
+  --success: #1e6b3a;
+  --success-soft: #e5f2e9;
+  --success-border: #a9d4b7;
+  --success-foreground: #14532d;
+
+  --info-soft: #e6eef7;
+  --info-border: #b5c9e3;
+  --info-foreground: #1d4a7a;
+
+  --neutral-soft: #ede8e4;
+  --neutral-hover: #e3dcd7;
+  --skeleton: #e6dfda;
+
+  --status-waiting-bg: #fff1c9;
+  --status-waiting-fg: #5f4300;
+  --status-running-bg: #e2ecf7;
+  --status-running-fg: #1d4a7a;
+  --status-attention-bg: #fbe3e0;
+  --status-attention-fg: #8e1b16;
+  --status-success-bg: #e1f1e6;
+  --status-success-fg: #14532d;
+  --status-rejected-bg: #eae4e0;
+  --status-rejected-fg: #4a403d;
+  --status-cancelled-bg: #f0ece9;
+  --status-cancelled-fg: #5b514d;
+
+  --kind-start: #5f5550;
+  --kind-start-soft: #efeae6;
+  --kind-approval: #8a5a00;
+  --kind-approval-soft: #fff1c9;
+  --kind-decision: #255f94;
+  --kind-decision-soft: #e3edf7;
+  --kind-branch: #6b4c9a;
+  --kind-branch-soft: #eee8f6;
+  --kind-http: #0c6b66;
+  --kind-http-soft: #def1ef;
+  --kind-notification: #3b6b2b;
+  --kind-notification-soft: #e6f1df;
+  --kind-end: #4a403d;
+  --kind-end-soft: #ece6e2;
+  --outcome-success-border: #8fc4a0;
+  --outcome-rejected-border: #b3a9a3;
+
+  --edge-approved: #1e6b3a;
+  --edge-rejected: #8e1b16;
+  --edge-default: #6b5f5a;
+  --edge-condition: #255f94;
+  --edge-next: #6b5f5a;
+  --edge-label-bg: #ffffff;
+  --canvas: #faf8f6;
+  --canvas-dot: #cfc6c0;
+  --canvas-mask: rgb(59 51 49 / 0.1);
+
+  --overlay: rgb(43 37 35 / 0.55);
+  --shadow-rgb: 59 51 49;
+}
+
+@theme inline {
+  --font-sans: 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Code', Consolas, monospace;
+
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-foreground: var(--foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input-border: var(--input-border);
+  --color-placeholder: var(--placeholder);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-pressed: var(--primary-pressed);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-text: var(--primary-text);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-soft-border: var(--primary-soft-border);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-border: var(--accent-border);
+  --color-topbar: var(--topbar);
+  --color-topbar-foreground: var(--topbar-foreground);
+  --color-topbar-hover: var(--topbar-hover);
+  --color-topbar-stripe: var(--topbar-stripe);
+  --color-nav: var(--nav);
+  --color-nav-foreground: var(--nav-foreground);
+  --color-nav-muted: var(--nav-muted);
+  --color-nav-hover: var(--nav-hover);
+  --color-nav-active: var(--nav-active);
+  --color-nav-active-foreground: var(--nav-active-foreground);
+  --color-nav-indicator: var(--nav-indicator);
+  --color-nav-border: var(--nav-border);
+  --color-nav-badge: var(--nav-badge);
+  --color-nav-badge-foreground: var(--nav-badge-foreground);
+  --color-ring: var(--ring);
+  --color-ring-gap: var(--ring-gap);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-danger-border: var(--danger-border);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-danger-solid: var(--danger-solid);
+  --color-danger-solid-hover: var(--danger-solid-hover);
+  --color-warning-soft: var(--warning-soft);
+  --color-warning-border: var(--warning-border);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-success-border: var(--success-border);
+  --color-success-foreground: var(--success-foreground);
+  --color-info-soft: var(--info-soft);
+  --color-info-border: var(--info-border);
+  --color-info-foreground: var(--info-foreground);
+  --color-neutral-soft: var(--neutral-soft);
+  --color-neutral-hover: var(--neutral-hover);
+  --color-skeleton: var(--skeleton);
+  --color-overlay: var(--overlay);
+  --color-canvas: var(--canvas);
+
+  --color-status-waiting-bg: var(--status-waiting-bg);
+  --color-status-waiting-fg: var(--status-waiting-fg);
+  --color-status-running-bg: var(--status-running-bg);
+  --color-status-running-fg: var(--status-running-fg);
+  --color-status-attention-bg: var(--status-attention-bg);
+  --color-status-attention-fg: var(--status-attention-fg);
+  --color-status-success-bg: var(--status-success-bg);
+  --color-status-success-fg: var(--status-success-fg);
+  --color-status-rejected-bg: var(--status-rejected-bg);
+  --color-status-rejected-fg: var(--status-rejected-fg);
+  --color-status-cancelled-bg: var(--status-cancelled-bg);
+  --color-status-cancelled-fg: var(--status-cancelled-fg);
+
+  --color-kind-start: var(--kind-start);
+  --color-kind-start-soft: var(--kind-start-soft);
+  --color-kind-approval: var(--kind-approval);
+  --color-kind-approval-soft: var(--kind-approval-soft);
+  --color-kind-decision: var(--kind-decision);
+  --color-kind-decision-soft: var(--kind-decision-soft);
+  --color-kind-branch: var(--kind-branch);
+  --color-kind-branch-soft: var(--kind-branch-soft);
+  --color-kind-http: var(--kind-http);
+  --color-kind-http-soft: var(--kind-http-soft);
+  --color-kind-notification: var(--kind-notification);
+  --color-kind-notification-soft: var(--kind-notification-soft);
+  --color-kind-end: var(--kind-end);
+  --color-kind-end-soft: var(--kind-end-soft);
+  --color-outcome-success-border: var(--outcome-success-border);
+  --color-outcome-rejected-border: var(--outcome-rejected-border);
+
+  --color-edge-approved: var(--edge-approved);
+  --color-edge-rejected: var(--edge-rejected);
+
+  --radius-card: var(--radius);
+  --radius-control: 8px;
+}
+
+@layer base {
+  html {
+    /* Keep focused elements clear of sticky bars and panels (WCAG 2.2 SC 2.4.11). */
+    scroll-padding-top: 6rem;
+    scroll-padding-bottom: 7rem;
+  }
+
+  body {
+    margin: 0;
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: 1rem;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1 {
+    font-size: 1.75rem;
+    line-height: 2.25rem;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+  }
+  h2 {
+    font-size: 1.25rem;
+    line-height: 1.75rem;
+    font-weight: 650;
+  }
+  h3 {
+    font-size: 1rem;
+    line-height: 1.5rem;
+    font-weight: 650;
+  }
+
+  /* Dark ring, separated from the element by a 2 px gap: at least 3:1 against white, the page and the brand red. */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  button,
+  [role='button'],
+  summary,
+  select,
+  label[for] {
+    cursor: pointer;
+  }
+  button:disabled,
+  select:disabled {
+    cursor: not-allowed;
+  }
+
+  a {
+    color: var(--primary-text);
+    text-underline-offset: 2px;
+  }
+
+  ::placeholder {
+    color: var(--placeholder);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  dialog.orqix-dialog {
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--foreground);
+    max-width: min(92vw, 40rem);
+    width: 100%;
+    max-height: 90dvh;
+    box-shadow: 0 20px 50px rgb(var(--shadow-rgb) / 0.25);
+    margin: auto;
+  }
+  dialog.orqix-dialog::backdrop {
+    background: var(--overlay);
+  }
+
+  /* The brand stripe under the top bar (gold in the wf brand, a hairline in orqix). */
+  .topbar-stripe {
+    height: var(--topbar-stripe-height);
+    background: var(--topbar-stripe);
+  }
+
+  /* On the brand-colored top bar the gap is white, so the ring never touches the red. */
+  .focus-on-bar :focus-visible {
+    box-shadow: 0 0 0 2px var(--ring-gap);
+  }
+
+  /* Elements on the navigation use the navigation's own ring (light on a dark nav, dark on a light one). */
+  .focus-on-nav :focus-visible {
+    outline-color: var(--nav-ring);
+    box-shadow: 0 0 0 2px var(--nav);
+  }
+
+  /* Soft elevation for cards, panels and sticky bars. */
+  .shadow-card {
+    box-shadow: 0 1px 2px rgb(var(--shadow-rgb) / 0.06);
+  }
+  .shadow-bar {
+    box-shadow: 0 -6px 12px -8px rgb(var(--shadow-rgb) / 0.25);
+  }
+}

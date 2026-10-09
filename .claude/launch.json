@@ -1,0 +1,26 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "frontend-mock",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "frontend", "run", "dev:mock"],
+      "port": 5173
+    },
+    {
+      "name": "frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "frontend", "run", "dev"],
+      "port": 5173
+    },
+    {
+      "name": "backend",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "set \"JAVA_HOME=C:\\Users\\karup\\.jdks\\jdk-21.0.12.1+1\" && backend\\mvnw.cmd -B -q -f backend\\pom.xml -pl compiler install -DskipTests && backend\\mvnw.cmd -B -f backend\\pom.xml -pl app spring-boot:run -Dspring-boot.run.profiles=dev"
+      ],
+      "port": 8080
+    }
+  ]
+}

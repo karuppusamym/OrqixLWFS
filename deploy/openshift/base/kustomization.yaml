@@ -1,0 +1,34 @@
+# Orqix on OpenShift - base. Environment overlays live in ../overlays/{dev,int,prod}.
+#
+# Everything an environment must supply is marked REPLACE in this base (image registry, hostnames, CIDRs) or in the
+# overlay. No real secret values exist anywhere in this tree: Secrets are referenced by name (see secrets.example.yaml).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - serviceaccount.yaml
+  - deployment.yaml
+  - service.yaml
+  - route.yaml
+  - networkpolicy.yaml
+  - pdb.yaml
+  - hpa.yaml
+  - migration-job.yaml
+
+# Non-secret configuration. The generated name carries a content hash, so a configuration change rolls the pods
+# (and gives the migration Job a new spec) without a manual restart.
+configMapGenerator:
+  - name: orqix-config
+    envs:
+      - config.env
+    options:
+      labels:
+        app.kubernetes.io/name: orqix
+        app.kubernetes.io/part-of: orqix
+        orqix.io/stage: prerequisites
+
+# The image name used in the manifests is a placeholder; overlays map it to a registry path and a tag or digest.
+images:
+  - name: orqix
+    newName: registry.example.com/REPLACE/orqix
+    newTag: latest

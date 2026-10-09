@@ -1,0 +1,304 @@
+package com.orqix.compiler.internal.bpmn;
+
+import java.math.BigDecimal;
+import java.util.HashMap;
+import java.util.Map;
+
+import com.orqix.compiler.internal.model.Enums.Route;
+import com.orqix.compiler.internal.model.Node;
+import com.orqix.compiler.internal.model.WorkflowDefinition;
+import com.orqix.compiler.internal.model.WorkflowDefinition.Condition;
+import com.orqix.compiler.internal.model.WorkflowDefinition.Position;
+import com.orqix.compiler.internal.model.WorkflowDefinition.Transition;
+
+/**
+ * BPMN 2.0 generation (S4 section 6). Element order: process extension, then every node in canonical order followed
+ * immediately by its generated helpers, then one sequence flow per canonical transition in canonical order. The only
+ * expressions written are the allowlisted forms of S4 section 6; user text appears only in {@code name} attributes and
+ * {@code orqix:*} extension attributes, never inside an expression.
+ */
+public final class BpmnGenerator {
+
+    public static final String BPMN_NS = "http://www.omg.org/spec/BPMN/20100524/MODEL";
+    public static final String XSI_NS = "http://www.w3.org/2001/XMLSchema-instance";
+    public static final String FLOWABLE_NS = "http://flowable.org/bpmn";
+    public static final String ORQIX_NS = "https://orqix.example/bpmn/v0";
+    public static final String BPMNDI_NS = "http://www.omg.org/spec/BPMN/20100524/DI";
+    public static final String DC_NS = "http://www.omg.org/spec/DD/20100524/DC";
+    public static final String DI_NS = "http://www.omg.org/spec/DD/20100524/DI";
+    public static final String TARGET_NAMESPACE = "https://orqix.example/workflows";
+
+    /** Suffix of the helper flow from an approval task to its outcome gateway. */
+    public static final String APPROVAL_OUT = "__out";
+    /** Suffix of the outcome gateway generated after an approval task. */
+    public static final String APPROVAL_ROUTE = "__route";
+
+    /** Generated process plus its source map. */
+    public record Result(String xml, SourceMap sourceMap) {
+    }
+
+    private BpmnGenerator() {
+    }
+
+    /**
+     * @param definition       a definition without blockers
+     * @param decisionResource decision table key to DMN resource name
+     */
+    public static Result generate(WorkflowDefinition definition, String compilerVersion, String semanticHash,
+                                  Map<String, String> decisionResource) {
+        Map<String, Node> nodes = new HashMap<>();
+        definition.nodes().forEach(n -> nodes.put(n.id(), n));
+        Map<String, String> branchDefault = new HashMap<>();
+        for (Transition t : definition.transitions()) {
+            if (t.on() == Route.DEFAULT) {
+                branchDefault.putIfAbsent(t.from(), t.id());
+            }
+        }
+
+        SourceMap map = new SourceMap();
+        XmlOut x = new XmlOut();
+        x.open("", "definitions", BPMN_NS)
+                .defaultNamespace(BPMN_NS)
+                .namespace("xsi", XSI_NS)
+                .namespace("flowable", FLOWABLE_NS)
+                .namespace("orqix", ORQIX_NS)
+                .namespace("bpmndi", BPMNDI_NS)
+                .namespace("omgdc", DC_NS)
+                .namespace("omgdi", DI_NS)
+                .attr("targetNamespace", TARGET_NAMESPACE);
+        x.open("", "process", BPMN_NS)
+                .attr("id", definition.workflowKey())
+                .attr("name", definition.name())
+                .attr("isExecutable", "true");
+        x.open("", "extensionElements", BPMN_NS);
+        x.leaf("orqix", "release", ORQIX_NS)
+                .attr("schemaVersion", definition.schemaVersion())
+                .attr("compilerVersion", compilerVersion)
+                .attr("semanticHash", semanticHash);
+        x.close();
+
+        for (Node n : definition.nodes()) {
+            node(x, map, definition, n, branchDefault, decisionResource);
+        }
+        for (Transition t : definition.transitions()) {
+            flow(x, map, nodes, t);
+        }
+        x.close();
+        Diagram.write(x, definition, nodes);
+        x.close();
+        return new Result(x.finish(), map);
+    }
+
+    private static void node(XmlOut x, SourceMap map, WorkflowDefinition d, Node n,
+                             Map<String, String> branchDefault, Map<String, String> decisionResource) {
+        map.node(n.id(), n.id());
+        switch (n) {
+            case Node.Start s -> x.leaf("", "startEvent", BPMN_NS).attr("id", s.id()).attr("name", s.label());
+            case Node.Approval a -> {
+                x.open("", "userTask", BPMN_NS)
+                        .attr("id", a.id())
+                        .attr("name", a.label())
+                        .attr("flowable", FLOWABLE_NS, "candidateGroups", a.candidateGroupRef());
+                x.open("", "extensionElements", BPMN_NS);
+                x.leaf("orqix", "approval", ORQIX_NS)
+                        .attr("rejectReasonRequired", Boolean.toString(a.rejectReasonRequired()));
+                if (a.dueAfterHours() != null) {
+                    x.attr("dueAfterHours", a.dueAfterHours().toString());
+                }
+                x.close();
+                x.close();
+                String out = a.id() + APPROVAL_OUT;
+                String gateway = a.id() + APPROVAL_ROUTE;
+                x.leaf("", "sequenceFlow", BPMN_NS).attr("id", out).attr("sourceRef", a.id())
+                        .attr("targetRef", gateway);
+                map.node(a.id(), out);
+                x.leaf("", "exclusiveGateway", BPMN_NS).attr("id", gateway).attr("name", a.label() + ": outcome");
+                map.node(a.id(), gateway);
+            }
+            case Node.Decision dn -> {
+                x.open("", "serviceTask", BPMN_NS)
+                        .attr("id", dn.id())
+                        .attr("name", dn.label())
+                        .attr("flowable", FLOWABLE_NS, "delegateExpression", "${orqixDecisionTask}");
+                WorkflowDefinition.DecisionTable table = d.decisions().stream()
+                        .filter(t -> t.key().equals(dn.decisionRef())).findFirst().orElseThrow();
+                x.open("", "extensionElements", BPMN_NS);
+                x.leaf("orqix", "decision", ORQIX_NS)
+                        .attr("ref", table.key())
+                        .attr("version", Integer.toString(table.version()))
+                        .attr("resource", decisionResource.get(table.key()))
+                        .attr("fieldRef", table.rows().get(0).when().fieldRef());
+                x.close();
+                x.close();
+            }
+            case Node.Branch b -> {
+                x.leaf("", "exclusiveGateway", BPMN_NS).attr("id", b.id()).attr("name", b.label());
+                if (branchDefault.containsKey(b.id())) {
+                    x.attr("default", branchDefault.get(b.id()));
+                }
+            }
+            case Node.Http h -> {
+                x.open("", "serviceTask", BPMN_NS)
+                        .attr("id", h.id())
+                        .attr("name", h.label())
+                        .attr("flowable", FLOWABLE_NS, "async", "true")
+                        .attr("flowable", FLOWABLE_NS, "exclusive", "true")
+                        .attr("flowable", FLOWABLE_NS, "delegateExpression", "${orqixHttpTask}");
+                x.open("", "extensionElements", BPMN_NS);
+                x.inline("flowable", "failedJobRetryTimeCycle", FLOWABLE_NS, null,
+                        RetryCycle.forAttempts(d.execution().maxAttempts(), d.execution().retryDelaySeconds()),
+                        false);
+                String version = Integer.toString(d.dependencies().stream()
+                        .filter(dep -> dep.key().equals(h.connectionRef())).findFirst().orElseThrow()
+                        .definitionVersion());
+                x.open("orqix", "http", ORQIX_NS)
+                        .attr("connection", h.connectionRef())
+                        .attr("connectionVersion", version)
+                        .attr("operation", h.operation())
+                        .attr("timeoutSeconds", Integer.toString(h.timeoutSeconds()));
+                h.inputMapping().forEach((name, fieldRef) ->
+                        x.leaf("orqix", "input", ORQIX_NS).attr("name", name).attr("fieldRef", fieldRef));
+                h.resultMapping().forEach((name, pointer) ->
+                        x.leaf("orqix", "result", ORQIX_NS).attr("name", name).attr("pointer", pointer));
+                x.close();
+                x.close();
+                x.close();
+            }
+            case Node.Notification no -> {
+                x.open("", "serviceTask", BPMN_NS)
+                        .attr("id", no.id())
+                        .attr("name", no.label())
+                        .attr("flowable", FLOWABLE_NS, "delegateExpression", "${orqixNotificationTask}");
+                x.open("", "extensionElements", BPMN_NS);
+                x.leaf("orqix", "notification", ORQIX_NS)
+                        .attr("channel", no.channel())
+                        .attr("recipient", no.recipient())
+                        .attr("message", no.message());
+                x.close();
+                x.close();
+            }
+            case Node.End e -> {
+                x.open("", "endEvent", BPMN_NS).attr("id", e.id()).attr("name", e.label());
+                x.open("", "extensionElements", BPMN_NS);
+                x.leaf("orqix", "outcome", ORQIX_NS).attr("label", e.businessOutcome()).attr("kind", e.outcomeKind());
+                x.close();
+                x.close();
+            }
+        }
+    }
+
+    private static void flow(XmlOut x, SourceMap map, Map<String, Node> nodes, Transition t) {
+        map.transition(t.id(), t.id());
+        Node from = nodes.get(t.from());
+        String source = from instanceof Node.Approval ? from.id() + APPROVAL_ROUTE : from.id();
+        String expression = switch (t.on()) {
+            case APPROVED -> "${orqixRoute.approved(execution, '" + from.id() + "')}";
+            case REJECTED -> "${orqixRoute.rejected(execution, '" + from.id() + "')}";
+            case CONDITION -> "${orqixRoute.condition(execution, '" + t.id() + "')}";
+            case NEXT, DEFAULT -> null;
+        };
+        if (expression == null) {
+            x.leaf("", "sequenceFlow", BPMN_NS);
+            flowAttributes(x, t, source);
+            return;
+        }
+        x.open("", "sequenceFlow", BPMN_NS);
+        flowAttributes(x, t, source);
+        if (t.condition() != null) {
+            Condition c = t.condition();
+            x.open("", "extensionElements", BPMN_NS);
+            x.leaf("orqix", "condition", ORQIX_NS)
+                    .attr("fieldRef", c.fieldRef())
+                    .attr("operator", c.operator().json())
+                    .attr("valueType", c.value().typeName())
+                    .attr("value", c.value().text());
+            x.close();
+        }
+        x.openInline("", "conditionExpression", BPMN_NS)
+                .attr("xsi", XSI_NS, "type", "tFormalExpression")
+                .cdata(expression)
+                .closeInline();
+        x.close();
+    }
+
+    private static void flowAttributes(XmlOut x, Transition t, String source) {
+        x.attr("id", t.id());
+        if (t.label() != null) {
+            x.attr("name", t.label());
+        }
+        x.attr("sourceRef", source).attr("targetRef", t.to());
+    }
+
+    /** BPMN diagram interchange from {@code uiLayout} (ticket B03.7, priority P2). */
+    static final class Diagram {
+
+        /** Canvas card size (S7): positions are the top-left corner of a 220 x 72 card. */
+        private static final BigDecimal CARD_HALF_WIDTH = new BigDecimal(110);
+        private static final BigDecimal CARD_HALF_HEIGHT = new BigDecimal(36);
+        private static final BigDecimal HELPER_OFFSET = new BigDecimal(90);
+
+        private Diagram() {
+        }
+
+        static void write(XmlOut x, WorkflowDefinition d, Map<String, Node> nodes) {
+            if (d.uiLayout() == null || !d.nodes().stream().allMatch(n ->
+                    d.uiLayout().positions().containsKey(n.id()))) {
+                return;
+            }
+            Map<String, BigDecimal[]> centre = new HashMap<>();
+            for (Node n : d.nodes()) {
+                Position p = d.uiLayout().positions().get(n.id());
+                BigDecimal cx = p.x().add(CARD_HALF_WIDTH);
+                BigDecimal cy = p.y().add(CARD_HALF_HEIGHT);
+                centre.put(n.id(), new BigDecimal[] {cx, cy});
+                if (n instanceof Node.Approval) {
+                    centre.put(n.id() + APPROVAL_ROUTE, new BigDecimal[] {cx.add(HELPER_OFFSET), cy});
+                }
+            }
+            String key = d.workflowKey();
+            x.open("bpmndi", "BPMNDiagram", BPMNDI_NS).attr("id", key + "__diagram");
+            x.open("bpmndi", "BPMNPlane", BPMNDI_NS).attr("id", key + "__plane").attr("bpmnElement", key);
+            for (Node n : d.nodes()) {
+                int[] size = switch (n.kind()) {
+                    case START, END -> new int[] {36, 36};
+                    case BRANCH -> new int[] {40, 40};
+                    default -> new int[] {100, 80};
+                };
+                shape(x, n.id(), centre.get(n.id()), size[0], size[1]);
+                if (n instanceof Node.Approval) {
+                    shape(x, n.id() + APPROVAL_ROUTE, centre.get(n.id() + APPROVAL_ROUTE), 40, 40);
+                    edge(x, n.id() + APPROVAL_OUT, centre.get(n.id()), centre.get(n.id() + APPROVAL_ROUTE));
+                }
+            }
+            for (Transition t : d.transitions()) {
+                Node from = nodes.get(t.from());
+                String source = from instanceof Node.Approval ? from.id() + APPROVAL_ROUTE : from.id();
+                edge(x, t.id(), centre.get(source), centre.get(t.to()));
+            }
+            x.close();
+            x.close();
+        }
+
+        private static void shape(XmlOut x, String element, BigDecimal[] c, int width, int height) {
+            x.open("bpmndi", "BPMNShape", BPMNDI_NS).attr("id", element + "__di").attr("bpmnElement", element);
+            x.leaf("omgdc", "Bounds", DC_NS)
+                    .attr("x", num(c[0].subtract(BigDecimal.valueOf(width / 2))))
+                    .attr("y", num(c[1].subtract(BigDecimal.valueOf(height / 2))))
+                    .attr("width", Integer.toString(width))
+                    .attr("height", Integer.toString(height));
+            x.close();
+        }
+
+        private static void edge(XmlOut x, String element, BigDecimal[] from, BigDecimal[] to) {
+            x.open("bpmndi", "BPMNEdge", BPMNDI_NS).attr("id", element + "__di").attr("bpmnElement", element);
+            x.leaf("omgdi", "waypoint", DI_NS).attr("x", num(from[0])).attr("y", num(from[1]));
+            x.leaf("omgdi", "waypoint", DI_NS).attr("x", num(to[0])).attr("y", num(to[1]));
+            x.close();
+        }
+
+        private static String num(BigDecimal value) {
+            BigDecimal v = value.stripTrailingZeros();
+            return v.signum() == 0 ? "0" : v.toPlainString();
+        }
+    }
+}

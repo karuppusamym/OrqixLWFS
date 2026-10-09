@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: orqix
+  labels:
+    app.kubernetes.io/name: orqix
+    app.kubernetes.io/component: app
+    app.kubernetes.io/part-of: orqix
+    orqix.io/stage: app
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: orqix
+    app.kubernetes.io/component: app
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+    # Reachable inside the cluster for Prometheus scraping only: the Route targets "http", and the NetworkPolicy admits
+    # port 8081 solely from the monitoring namespaces.
+    - name: management
+      port: 8081
+      targetPort: management
+      protocol: TCP

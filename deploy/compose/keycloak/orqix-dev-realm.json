@@ -1,0 +1,368 @@
+{
+  "realm": "orqix-dev",
+  "displayName": "Orqix (local development only)",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "registrationEmailAsUsername": false,
+  "rememberMe": false,
+  "verifyEmail": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": false,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": false,
+  "eventsEnabled": false,
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "groups": [
+    {
+      "name": "orqix-platform-admins",
+      "path": "/orqix-platform-admins"
+    },
+    {
+      "name": "orqix-purchasing-admins",
+      "path": "/orqix-purchasing-admins"
+    },
+    {
+      "name": "orqix-purchasing-designers",
+      "path": "/orqix-purchasing-designers"
+    },
+    {
+      "name": "orqix-purchasing-publishers",
+      "path": "/orqix-purchasing-publishers"
+    },
+    {
+      "name": "orqix-purchasing-operators",
+      "path": "/orqix-purchasing-operators"
+    },
+    {
+      "name": "orqix-purchasing-viewers",
+      "path": "/orqix-purchasing-viewers"
+    },
+    {
+      "name": "orqix-purchasing-requesters",
+      "path": "/orqix-purchasing-requesters"
+    },
+    {
+      "name": "orqix-purchasing-managers",
+      "path": "/orqix-purchasing-managers"
+    },
+    {
+      "name": "orqix-purchasing-finance",
+      "path": "/orqix-purchasing-finance"
+    },
+    {
+      "name": "orqix-facilities-requesters",
+      "path": "/orqix-facilities-requesters"
+    }
+  ],
+  "users": [
+    {
+      "username": "pat.platform",
+      "email": "pat.platform@orqix.example",
+      "emailVerified": true,
+      "firstName": "Pat",
+      "lastName": "Platform",
+      "enabled": true,
+      "requiredActions": [],
+      "groups": [
+        "/orqix-platform-admins"
+      ],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Dev!pat.platform",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "wade.admin",
+      "email": "wade.admin@orqix.example",
+      "emailVerified": true,
+      "firstName": "Wade",
+      "lastName": "Admin",
+      "enabled": true,
+      "requiredActions": [],
+      "groups": [
+        "/orqix-purchasing-admins"
+      ],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Dev!wade.admin",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "dana.designer",
+      "email": "dana.designer@orqix.example",
+      "emailVerified": true,
+      "firstName": "Dana",
+      "lastName": "Designer",
+      "enabled": true,
+      "requiredActions": [],
+      "groups": [
+        "/orqix-purchasing-designers"
+      ],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Dev!dana.designer",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "paul.publisher",
+      "email": "paul.publisher@orqix.example",
+      "emailVerified": true,
+      "firstName": "Paul",
+      "lastName": "Publisher",
+      "enabled": true,
+      "requiredActions": [],
+      "groups": [
+        "/orqix-purchasing-publishers"
+      ],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Dev!paul.publisher",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "olga.operator",
+      "email": "olga.operator@orqix.example",
+      "emailVerified": true,
+      "firstName": "Olga",
+      "lastName": "Operator",
+      "enabled": true,
+      "requiredActions": [],
+      "groups": [
+        "/orqix-purchasing-operators"
+      ],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Dev!olga.operator",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "vic.viewer",
+      "email": "vic.viewer@orqix.example",
+      "emailVerified": true,
+      "firstName": "Vic",
+      "lastName": "Viewer",
+      "enabled": true,
+      "requiredActions": [],
+      "groups": [
+        "/orqix-purchasing-viewers"
+      ],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Dev!vic.viewer",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "rhea.requester",
+      "email": "rhea.requester@orqix.example",
+      "emailVerified": true,
+      "firstName": "Rhea",
+      "lastName": "Requester",
+      "enabled": true,
+      "requiredActions": [],
+      "groups": [
+        "/orqix-purchasing-requesters"
+      ],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Dev!rhea.requester",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "mani.manager",
+      "email": "mani.manager@orqix.example",
+      "emailVerified": true,
+      "firstName": "Mani",
+      "lastName": "Manager",
+      "enabled": true,
+      "requiredActions": [],
+      "groups": [
+        "/orqix-purchasing-managers",
+        "/orqix-purchasing-requesters"
+      ],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Dev!mani.manager",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "max.manager",
+      "email": "max.manager@orqix.example",
+      "emailVerified": true,
+      "firstName": "Max",
+      "lastName": "Manager",
+      "enabled": true,
+      "requiredActions": [],
+      "groups": [
+        "/orqix-purchasing-managers",
+        "/orqix-purchasing-requesters"
+      ],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Dev!max.manager",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "fin.finance",
+      "email": "fin.finance@orqix.example",
+      "emailVerified": true,
+      "firstName": "Fin",
+      "lastName": "Finance",
+      "enabled": true,
+      "requiredActions": [],
+      "groups": [
+        "/orqix-purchasing-finance"
+      ],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Dev!fin.finance",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "fred.facilities",
+      "email": "fred.facilities@orqix.example",
+      "emailVerified": true,
+      "firstName": "Fred",
+      "lastName": "Facilities",
+      "enabled": true,
+      "requiredActions": [],
+      "groups": [
+        "/orqix-facilities-requesters"
+      ],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Dev!fred.facilities",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "otto.outsider",
+      "email": "otto.outsider@orqix.example",
+      "emailVerified": true,
+      "firstName": "Otto",
+      "lastName": "Outsider",
+      "enabled": true,
+      "requiredActions": [],
+      "groups": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Dev!otto.outsider",
+          "temporary": false
+        }
+      ]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "orqix-web",
+      "name": "Orqix web (server-side OIDC login for the SPA)",
+      "description": "Confidential client: authorization code + PKCE S256 only.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "bearerOnly": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "orqix-web-dev-secret",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "frontchannelLogout": true,
+      "redirectUris": [
+        "http://localhost:8080/login/oauth2/code/orqix",
+        "http://localhost:5173/login/oauth2/code/orqix"
+      ],
+      "webOrigins": [
+        "http://localhost:8080",
+        "http://localhost:5173"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:8080/*##http://localhost:5173/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "groups",
+            "full.path": "false",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "orqix-machine-demo",
+      "name": "Orqix machine client (demo for POST /runs and read APIs)",
+      "description": "Client credentials only. Access tokens carry aud=orqix-api.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "bearerOnly": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "orqix-machine-demo-dev-secret",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "frontchannelLogout": false,
+      "attributes": {},
+      "protocolMappers": [
+        {
+          "name": "orqix-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "orqix-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,50 @@
+# dev overlay. Placeholders (REPLACE) are completed by the environment owner / the deployment pipeline.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: orqix-dev
+
+resources:
+  - ../../base
+
+images:
+  - name: orqix
+    newName: image-registry.openshift-image-registry.svc:5000/orqix-dev/orqix
+    newTag: dev
+
+configMapGenerator:
+  - name: orqix-config
+    behavior: merge
+    envs:
+      - config.env
+
+patches:
+  - target: {group: route.openshift.io, version: v1, kind: Route, name: orqix}
+    patch: |-
+      - op: replace
+        path: /spec/host
+        value: orqix-dev.apps.REPLACE.example.com
+  # Network placeholders: database, identity provider, approved connection endpoint.
+  - target: {group: networking.k8s.io, version: v1, kind: NetworkPolicy, name: orqix-allow-postgres-egress}
+    patch: |-
+      - op: replace
+        path: /spec/egress/0/to/0/ipBlock/cidr
+        value: 192.0.2.10/32
+  - target: {group: networking.k8s.io, version: v1, kind: NetworkPolicy, name: orqix-allow-idp-egress}
+    patch: |-
+      - op: replace
+        path: /spec/egress/0/to/0/ipBlock/cidr
+        value: 198.51.100.20/32
+  - target: {group: networking.k8s.io, version: v1, kind: NetworkPolicy, name: orqix-allow-connection-egress}
+    patch: |-
+      - op: replace
+        path: /spec/egress/0/to/0/ipBlock/cidr
+        value: 203.0.113.30/32
+  # Smaller footprint for the shared development cluster (base: 500m/1Gi requests, 2/2Gi limits).
+  - target: {group: apps, version: v1, kind: Deployment, name: orqix}
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources
+        value:
+          requests: {cpu: 250m, memory: 768Mi}
+          limits: {cpu: "1", memory: 1536Mi}

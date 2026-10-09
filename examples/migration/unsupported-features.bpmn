@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Hand-authored compatibility fixture, not a customer export. One of each construct that adapter camunda-bpmn-0.1 blocks
+     or reports as an acknowledged loss (docs/build/S11-camunda-import.md section 2). The flow is a valid BPMN chain so that
+     every element is reachable; it is not meant to be meaningful as a process. -->
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" targetNamespace="urn:orqix:migration-fixture">
+  <bpmn:message id="paymentReceived" name="Payment received" />
+  <bpmn:process id="unsupported-features" name="Unsupported constructs" isExecutable="true">
+    <bpmn:startEvent id="start" />
+    <bpmn:userTask id="review" name="Review" camunda:candidateGroups="source-reviewers">
+      <bpmn:extensionElements>
+        <camunda:taskListener event="create" class="example.NotifyListener" />
+      </bpmn:extensionElements>
+    </bpmn:userTask>
+    <bpmn:boundaryEvent id="reviewTimeout" attachedToRef="review">
+      <bpmn:timerEventDefinition><bpmn:timeDuration>PT48H</bpmn:timeDuration></bpmn:timerEventDefinition>
+    </bpmn:boundaryEvent>
+    <bpmn:scriptTask id="calculate" name="Calculate totals" scriptFormat="groovy"><bpmn:script>total = 1</bpmn:script></bpmn:scriptTask>
+    <bpmn:sendTask id="sendConfirmation" name="Send confirmation" camunda:class="example.MailDelegate" />
+    <bpmn:receiveTask id="awaitPayment" name="Await payment" messageRef="paymentReceived" />
+    <bpmn:manualTask id="fileRecord" name="File the paper record" />
+    <bpmn:businessRuleTask id="riskRules" name="Risk rules" camunda:decisionRef="risk" />
+    <bpmn:parallelGateway id="fork" />
+    <bpmn:inclusiveGateway id="options" />
+    <bpmn:intermediateCatchEvent id="waitOneDay" name="Wait one day">
+      <bpmn:timerEventDefinition><bpmn:timeDuration>P1D</bpmn:timeDuration></bpmn:timerEventDefinition>
+    </bpmn:intermediateCatchEvent>
+    <bpmn:subProcess id="nested" name="Nested work">
+      <bpmn:startEvent id="nestedStart" />
+      <bpmn:endEvent id="nestedEnd" />
+      <bpmn:sequenceFlow id="nestedFlow" sourceRef="nestedStart" targetRef="nestedEnd" />
+    </bpmn:subProcess>
+    <bpmn:callActivity id="callChild" name="Call child process" calledElement="child" />
+    <bpmn:exclusiveGateway id="complexChoice" default="toEnd" />
+    <bpmn:endEvent id="done" name="Done" />
+    <bpmn:endEvent id="timedOut" name="Timed out" />
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="review" />
+    <bpmn:sequenceFlow id="f2" sourceRef="review" targetRef="calculate" />
+    <bpmn:sequenceFlow id="f3" sourceRef="calculate" targetRef="sendConfirmation" />
+    <bpmn:sequenceFlow id="f4" sourceRef="sendConfirmation" targetRef="awaitPayment" />
+    <bpmn:sequenceFlow id="f5" sourceRef="awaitPayment" targetRef="fileRecord" />
+    <bpmn:sequenceFlow id="f6" sourceRef="fileRecord" targetRef="riskRules" />
+    <bpmn:sequenceFlow id="f7" sourceRef="riskRules" targetRef="fork" />
+    <bpmn:sequenceFlow id="f8" sourceRef="fork" targetRef="options" />
+    <bpmn:sequenceFlow id="f9" sourceRef="options" targetRef="waitOneDay" />
+    <bpmn:sequenceFlow id="f10" sourceRef="waitOneDay" targetRef="nested" />
+    <bpmn:sequenceFlow id="f11" sourceRef="nested" targetRef="callChild" />
+    <bpmn:sequenceFlow id="f12" sourceRef="callChild" targetRef="complexChoice" />
+    <bpmn:sequenceFlow id="toDone" sourceRef="complexChoice" targetRef="done"><bpmn:conditionExpression>${customer.risk.score() &gt; limits.max}</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="toEnd" sourceRef="complexChoice" targetRef="done" />
+    <bpmn:sequenceFlow id="timeoutFlow" sourceRef="reviewTimeout" targetRef="timedOut" />
+  </bpmn:process>
+</bpmn:definitions>

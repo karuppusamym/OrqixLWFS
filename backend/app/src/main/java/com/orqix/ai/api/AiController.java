@@ -38,17 +38,21 @@ public class AiController {
     }
 
     @PostMapping("/ai/drafts")
-    public ResponseEntity<AiDtos.DraftResult> generateAiDraft(@PathVariable UUID workspaceId,
+    public ResponseEntity<AiDtos.Job> generateAiDraft(@PathVariable UUID workspaceId,
             @RequestHeader(name = IdempotencyService.HEADER, required = false) String idempotencyKey,
             @RequestBody(required = false) JsonNode body) {
-        AiService.Drafted drafted = ai.generateDraft(callers.current(), workspaceId, idempotencyKey, body);
-        if (drafted.replayed()) {
-            return ResponseEntity.ok().header(IdempotencyService.REPLAYED_HEADER, "true").body(drafted.result());
+        AiService.Accepted accepted = ai.generateDraft(callers.current(), workspaceId, idempotencyKey, body);
+        if (accepted.replayed()) {
+            return ResponseEntity.ok().header(IdempotencyService.REPLAYED_HEADER, "true").body(accepted.job());
         }
-        String workflowId = drafted.result().workflow().path("id").asString();
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .location(URI.create("/api/v1/workspaces/" + workspaceId + "/workflows/" + workflowId))
-                .body(drafted.result());
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .location(URI.create("/api/v1/workspaces/" + workspaceId + "/ai/generations/" + accepted.job().id()))
+                .body(accepted.job());
+    }
+
+    @GetMapping("/ai/generations/{generationId}")
+    public AiDtos.Job getAiGeneration(@PathVariable UUID workspaceId, @PathVariable UUID generationId) {
+        return ai.getGeneration(callers.current(), workspaceId, generationId);
     }
 
     @PostMapping("/workflows/{workflowId}/explain")

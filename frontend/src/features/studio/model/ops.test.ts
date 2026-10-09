@@ -23,6 +23,49 @@ import { normalizeDefinition, type Definition } from './types'
 
 const template = (): Definition => normalizeDefinition(purchase)
 
+describe('workflow pattern editing', () => {
+  it('adds parallel branches without replacing an existing branch and updates join references on rename', () => {
+    let def = addNode(template(), 'parallelSplit').def
+    def = addNode(def, 'parallelJoin').def
+    const split = def.nodes.find((n) => n.type === 'parallelSplit')!
+    const join = def.nodes.find((n) => n.type === 'parallelJoin')!
+    split.config.joinRef = join.id
+    const first = setRoute(def, split.id, 'next', 'manager')
+    expect(first.ok).toBe(true)
+    if (!first.ok) return
+    const second = setRoute(first.def, split.id, 'next', 'finance')
+    expect(second.ok).toBe(true)
+    if (!second.ok) return
+    expect(second.def.transitions.filter((t) => t.from === split.id).map((t) => t.to)).toEqual(['manager', 'finance'])
+    const added = addNodeAfter(second.def, split.id, 'wait', { on: 'next' })
+    expect(added.ok).toBe(true)
+    if (!added.ok) return
+    expect(added.def.transitions.filter((t) => t.from === split.id)).toHaveLength(3)
+    const renamed = renameNodeId(added.def, join.id, 'allDone')
+    expect(renamed.ok).toBe(true)
+    if (renamed.ok) expect(renamed.def.nodes.find((n) => n.id === split.id)!.config.joinRef).toBe('allDone')
+  })
+
+  it('permits a timeout route only when the approval has a time limit', () => {
+    const def = template()
+    expect(canConnect(def, { from: 'manager', to: 'rejected', on: 'timedOut' }).ok).toBe(false)
+    def.nodes.find((n) => n.id === 'manager')!.config.timeoutAfter = 'PT2H'
+    expect(canConnect(def, { from: 'manager', to: 'rejected', on: 'timedOut' }).ok).toBe(true)
+  })
+
+  it('rewrites child input mappings when request fields or producing steps are renamed', () => {
+    const def = addNode(template(), 'startWorkflow').def
+    const child = def.nodes.find((n) => n.type === 'startWorkflow')!
+    child.config.inputMapping = { total: '/input/amount', order: '/steps/procure/procurementId' }
+    const field = renameFieldKey(def, 'amount', 'totalAmount')
+    expect(field.ok).toBe(true)
+    if (!field.ok) return
+    const step = renameNodeId(field.def, 'procure', 'order')
+    expect(step.ok).toBe(true)
+    if (step.ok) expect(step.def.nodes.find((n) => n.id === child.id)!.config.inputMapping).toEqual({ total: '/input/totalAmount', order: '/steps/order/procurementId' })
+  })
+})
+
 describe('connector result rename', () => {
   it('preserves all consumers and leaves the original document intact', () => {
     const def = template()

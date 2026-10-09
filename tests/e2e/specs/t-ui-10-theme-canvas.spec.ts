@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test'
 import { expect, test } from '../support/fixtures'
 import { MOCK } from '../support/env'
-import { createPurchaseWorkflow, ensureTemplatePublished, submitPurchase, workspaceId } from '../support/app'
+import { apiGet, createPurchaseWorkflow, ensureTemplatePublished, submitPurchase, workflowIdByKey, workspaceId } from '../support/app'
 
 /**
  * T-UI-10: the red / gold theme is applied from tokens, the studio canvas opens readable and tidy, auto-layout is
@@ -135,4 +135,86 @@ test('phone: requests and tasks are cards, and nothing scrolls sideways', async 
   await manager.goto(`/w/${ws}/tasks?view=claimable`)
   await expect(manager.getByRole('list', { name: 'Available to claim' })).toBeVisible()
   await expect.poll(() => manager.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+})
+
+/** One page of the app on a phone: it fits the screen width (nothing scrolls sideways). */
+async function expectFits(page: Page, label: string): Promise<void> {
+  await expect(page.locator('#main')).toBeVisible()
+  await page.waitForLoadState('networkidle')
+  const overflow = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, inner: innerWidth }))
+  expect(overflow.scroll, `${label} is wider than the screen (${overflow.scroll} > ${overflow.inner})`).toBeLessThanOrEqual(overflow.inner)
+}
+
+test('phone: no main screen scrolls sideways at 375 px', async ({ sessions }) => {
+  if (MOCK) await sessions.mockCall('reset', { published: true, sampleRuns: true, demo: true })
+  const view = { width: 375, height: 812 }
+  const requester = await sessions.as('rhea.requester')
+  const ws = await workspaceId(requester)
+  const workflowId = await workflowIdByKey(requester, ws)
+  await requester.setViewportSize(view)
+  const mine = await apiGet<{ items: Array<{ id: string }> }>(requester, `/workspaces/${ws}/me/requests`)
+  for (const [label, path] of [
+    ['home', `/w/${ws}`],
+    ['request form', `/w/${ws}/start/${workflowId}`],
+    ['request detail', `/w/${ws}/runs/${mine.items[0]?.id}`],
+  ] as const) {
+    await requester.goto(path)
+    await expectFits(requester, label)
+  }
+
+  const manager = await sessions.as('mani.manager')
+  await manager.setViewportSize(view)
+  const tasks = await apiGet<{ items: Array<{ id: string }> }>(manager, `/workspaces/${ws}/tasks?view=claimable`)
+  await manager.goto(`/w/${ws}/tasks/${tasks.items[0]?.id}`)
+  await expect(manager.getByTestId('task-actions')).toBeVisible()
+  await expectFits(manager, 'task panel')
+
+  const operator = await sessions.as('olga.operator')
+  await operator.setViewportSize(view)
+  const runs = await apiGet<{ items: Array<{ id: string; lifecycle: string }> }>(operator, `/workspaces/${ws}/runs`)
+  const stuck = runs.items.find((r) => r.lifecycle === 'needsAttention')
+  await operator.goto(`/w/${ws}/runs`)
+  await expectFits(operator, 'runs')
+  if (stuck) {
+    await operator.goto(`/w/${ws}/runs/${stuck.id}`)
+    await expect(operator.getByRole('heading', { name: 'Operator actions' })).toBeVisible()
+    await expectFits(operator, 'operator run detail')
+  }
+
+  const designer = await sessions.as('dana.designer')
+  await designer.setViewportSize(view)
+  for (const [label, path] of [
+    ['workflows', `/w/${ws}/workflows`],
+    ['workflow overview', `/w/${ws}/workflows/${workflowId}`],
+    ['import', `/w/${ws}/migrations`],
+  ] as const) {
+    await designer.goto(path)
+    await expectFits(designer, label)
+  }
+  const admin = await sessions.as('wade.admin')
+  await admin.setViewportSize(view)
+  await admin.goto(`/w/${ws}/settings`)
+  await expectFits(admin, 'settings')
+})
+
+test('phone: a very long title without spaces wraps instead of widening request, task list or task panel', async ({ sessions }) => {
+  if (MOCK) await sessions.mockCall('reset', { published: true, sampleRuns: false })
+  const requester = await sessions.as('rhea.requester')
+  const ws = await workspaceId(requester)
+  const workflowId = await workflowIdByKey(requester, ws)
+  await requester.setViewportSize({ width: 375, height: 812 })
+  const title = 'Replacement of the audio system Supercalifragilisticexpialidociousequipmentbundle'
+  const { runUrl } = await submitPurchase(requester, ws, workflowId, { title, purpose: 'Audio ' + 'Longwordwithoutspaces'.repeat(6), costCenter: 'OPS', amount: '250' })
+  await requester.goto(runUrl)
+  await expect(requester.getByTestId('run-reference')).toBeVisible()
+  await expectFits(requester, 'request detail with a long title')
+
+  const manager = await sessions.as('mani.manager')
+  await manager.setViewportSize({ width: 375, height: 812 })
+  await manager.goto(`/w/${ws}/tasks?view=claimable`)
+  await expect(manager.getByRole('link', { name: new RegExp(title.slice(0, 20)) }).first()).toBeVisible()
+  await expectFits(manager, 'task list with a long title')
+  await manager.getByRole('link', { name: new RegExp(title.slice(0, 20)) }).first().click()
+  await expect(manager.getByTestId('task-actions')).toBeVisible()
+  await expectFits(manager, 'task panel with a long title')
 })

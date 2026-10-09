@@ -98,6 +98,9 @@ public final class Stub {
     private static synchronized ResponseDefinition handle(Request request) {
         String path = request.getUrl();
         String method = request.getMethod().getName();
+        if (path.equals("/mcp") || path.startsWith("/mcp?")) {
+            return McpStub.handle(request);
+        }
         if ("GET".equals(method) && path.startsWith("/health")) {
             return json(200, "{\"status\":\"UP\"}");
         }

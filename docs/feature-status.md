@@ -9,18 +9,18 @@ The earlier broad verification was run on 9 October 2026 against a freshly rebui
 
 | Suite | Result |
 |---|---|
-| Compiler (`backend/compiler`) | 204 tests pass; JaCoCo gate passes |
-| Application (`backend/app`, Testcontainers PostgreSQL 18, WireMock) | 125 tests run, 1 skipped (opt-in live AI test), no failures; final Pega guards additionally pass all four safety regressions; API responses validated against `contracts/openapi.yaml` |
-| Frontend (`frontend`, Vitest) | 401 tests pass, including contrast checks of both palettes and a no-hard-coded-color scan; typecheck, lint, build and API-type drift check pass |
-| Browser E2E, Docker stack (`tests/e2e`, Playwright, Edge) | 23 pass across the audit runs (18 broad checks plus all five accessibility checks after correcting a stale reference selector), 1 skipped by design (mock-only unknown-outcome injection); axe: no serious or critical findings; no CSP violations |
-| Browser E2E, mock mode | 22 pass, 2 skipped (migration specs run against the real stack only) |
+| Compiler (`backend/compiler`) | 263 tests pass; JaCoCo gate passes |
+| Application (`backend/app`, Testcontainers PostgreSQL 18, WireMock) | 180 tests run, 1 skipped (opt-in live AI test), no failures; API responses validated against `contracts/openapi.yaml` |
+| Frontend (`frontend`, Vitest) | 421 tests pass, including contrast checks of both palettes and a no-hard-coded-color scan; typecheck, lint, build and API-type drift check pass |
+| Browser E2E, Docker stack (`tests/e2e`, Playwright, Edge) | 25 checks pass across the final runs: 24 in the broad run plus the corrected Procurement connection check; 3 mock-only checks skipped. All five accessibility checks pass; no serious or critical axe findings or CSP violations |
+| Browser E2E, mock mode | Final selected checks: 7 pass (both AI flows and five theme/canvas/mobile checks). Earlier broad evidence: 22 pass, 2 migration checks skipped |
 | API E2E, Docker stack (`tools/api-e2e`) | Scenarios 1–9 with fault injection: 26 / 26. Scenarios 10–14 (rollback, reconcile, cancel, forged fields): 33 / 33 |
 | Resilience, Docker stack (`tools/resilience`) | T-RES-01, T-RES-03 (kill -9 recovered in 73–76 s), T-RES-04 (60 s database outage), T-RES-05 (SIGTERM mid-call) and T-SEC-09 all pass. Evidence in `evidence/resilience/` |
 | Performance smoke (`tools/perf`, T-PERF-01) | 20 users for 10 minutes: 43,167 requests, 0 errors. p95 is 26 ms for list and task APIs and 117 ms for starting a request (targets: 1 s and 2 s) |
 | AI on the Docker stack (live OpenRouter) | Status, economy draft (1 attempt, 41 s, USD 0.0025), idempotent replay, explanation (USD 0.0005) and permission checks: 7 / 7 |
 | AI evaluation (`tools/ai-eval`) | Economy profile, 8 cases: 8/8 valid, judge average 3.75/5, USD 0.031, p50 29 s. Auto profile (Jev Router), 2 cases: 2/2 valid, judge 4.0/5, p50 8 s. Total spend about USD 0.28 |
-| Contract check / manifests | 47 checks / 132 checks across 3 overlays pass |
-| Procurement stub | 58 tests (earlier revision; stub unchanged) |
+| Contract check / manifests | 50 checks / 132 checks across 3 overlays pass |
+| Procurement stub | 87 tests pass, including MCP authentication, endpoint and fault modes |
 | Compatibility spikes ([ADR 0001](adr/0001-dependency-baseline.md)) | 10 of 10 pass. S-5 (two engines, kill) now passes via T-RES-02 and T-RES-03 |
 
 Defects found and fixed this round:
@@ -67,7 +67,7 @@ Defects found and fixed this round:
 
 | Capability | Spec | Status | Evidence / limits |
 |---|---|---|---|
-| AI draft from a description, Explain, Settings → AI | [S10](build/S10-ai-assistance.md) | Verified with stubbed and live provider | `AiApiTest` (13), `AiDisabledTest`, `DraftRulesTest`; live check 7/7 and eval above. Async generation (202 plus polling) is a follow-up. A router's chosen model is reported only after the call, so the exclusion list can't block it in advance; budgets limit the cost |
+| AI draft from a description, Explain, Settings → AI | [S10](build/S10-ai-assistance.md) | Verified with stubbed and live provider | `AiApiTest` (21), `AiDisabledTest`, `DraftRulesTest`; live check 7/7 and eval above. Background generation (202 plus polling), concurrent limits, interruption handling, access rechecks and retention are verified with a stub; earlier live-provider evidence predates that transport change. A router's chosen model is reported only after the call, so the exclusion list can't block it in advance; budgets limit the cost |
 | Model policy: low-cost default, excluded costly models, price caps, budgets | S10 §1 | Verified | Economy is `deepseek/deepseek-v3.2` and auto is `typesafe/jev-router`. Opus, Fable, Mythos, `*-pro*` and `:batch` models are excluded. Caps are USD 1/3 per million tokens, USD 10 a month and USD 0.50 per request |
 | Camunda 7/8 BPMN import with compatibility report | [S11](build/S11-camunda-import.md) | Verified | `MigrationApiTest`, `MigrationSafetyTest`, `FixtureDispositionTest` (every element gets a disposition; one test per blocked construct; XXE rejected); browser spec t-ui-09 |
 | Pega archive assessment and reviewed manual mappings | [doc 17](17-migration-workbench.md) | Verified on synthetic fixtures | No automatic native Pega rule conversion |
@@ -80,10 +80,17 @@ Defects found and fixed this round:
 - **Runs:** added permission-scoped recovery links on attention rows; the filter already had a pressed state.
 - **Run detail:** recovery guidance leads with reconciliation for unknown outcomes and otherwise the allowed retry or ownership review.
 - **AI explanation:** `explain-v2` receives compiler findings; authoritative readiness is shown separately from AI prose.
-- **AI generation:** move to async (202 plus polling) so slow providers don't depend on proxy timeouts.
+- **AI generation:** completed async transport (202 plus polling), workspace notices, retention and concurrent admission checks.
 
 Current code review and verification: [release audit](18-release-code-audit.md). The audit reran backend, frontend and browser checks and added Pega mapping-integrity regressions; earlier live AI, performance and resilience evidence above was retained rather than claimed as rerun in this audit.
 
+## Workflow and integration extensions (9 October 2026)
+
+| Capability | Spec | Status | Evidence / limits |
+|---|---|---|---|
+| Matched parallel branches, wait timers, approval time limits and pinned child workflows | [S12](build/S12-workflow-patterns.md) | Verified | 58 compiler pattern tests and 7 runtime tests; editor route, configuration and reference tests. Graphs remain acyclic; bounded rework is future work |
+| Bounded agent connections and approved read-only MCP tools | [S13](build/S13-agents-mcp.md) | Verified with scripted services | 24 executor tests, 12 MCP client tests and 2 full workflow tests; stub endpoint/auth/fault tests. Real provider accuracy and customer tools require acceptance |
+
 ## Later milestones
 
-The [migration workbench](17-migration-workbench.md) now provides a tested Camunda 7/8 subset and Pega archive assessment with compiler-validated manual mappings. Synthetic fixtures verify these boundaries; native Pega automatic conversion and customer equivalence remain open. Broader R1–R3 capabilities (parallel/timer/child patterns, agents, MCP, Teams, full PEGA/LWFS adapters, advanced BPMN/CMMN and Git promotion) remain **Planned** per the [full backlog](10-full-product-backlog.md). Production readiness requires the [production gates](06-delivery-plan.md#production-release-gates), none of which has been passed.
+The [migration workbench](17-migration-workbench.md) now provides a tested Camunda 7/8 subset and Pega archive assessment with compiler-validated manual mappings. Synthetic fixtures verify these boundaries; native Pega automatic conversion and customer equivalence remain open. Remaining R1–R3 capabilities (bounded rework, Teams, full PEGA/LWFS adapters, advanced BPMN/CMMN and Git promotion) remain **Planned** per the [full backlog](10-full-product-backlog.md). Production readiness requires the [production gates](06-delivery-plan.md#production-release-gates), none of which has been passed.

@@ -22,6 +22,42 @@ async function openSteps(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe('studio (Steps tab, inspector, autosave, check, conflicts)', () => {
+  it('edits a wait duration and saves the timer configuration', async () => {
+    signInAs('dana.designer')
+    const draft = db.workflows.get(PURCHASE_WORKFLOW_ID)!.drafts.at(-1)!.definition
+    const node = draft.nodes.find((n) => n.id === 'manager')!
+    node.type = 'wait'
+    node.config = { duration: 'PT1H' }
+    const user = userEvent.setup()
+    renderApp(EDIT)
+    await openSteps(user)
+    await user.click(stepButton('manager'))
+    const duration = await screen.findByLabelText(/^Wait duration/)
+    await user.clear(duration)
+    await user.type(duration, 'PT30M')
+    await user.tab()
+    await waitFor(() => expect(screen.getByTestId('save-state')).toHaveTextContent('Saved'), { timeout: 5000 })
+    expect(db.workflows.get(PURCHASE_WORKFLOW_ID)!.drafts.at(-1)!.definition.nodes.find((n) => n.id === 'manager')!.config.duration).toBe('PT30M')
+  })
+
+  it('removes the timeout route when an approval time limit is cleared', async () => {
+    signInAs('dana.designer')
+    const draft = db.workflows.get(PURCHASE_WORKFLOW_ID)!.drafts.at(-1)!.definition
+    draft.nodes.find((n) => n.id === 'manager')!.config.timeoutAfter = 'PT2H'
+    draft.transitions.push({ id: 'timeout-route', from: 'manager', to: 'rejected', on: 'timedOut' })
+    const user = userEvent.setup()
+    renderApp(EDIT)
+    await openSteps(user)
+    expect(within(screen.getByTestId('step-row-manager')).getByLabelText('Timed out')).toHaveValue('rejected')
+    await user.click(stepButton('manager'))
+    await user.clear(await screen.findByLabelText(/^Time limit/))
+    await user.tab()
+    await waitFor(() => expect(screen.getByTestId('save-state')).toHaveTextContent('Saved'), { timeout: 5000 })
+    const saved = db.workflows.get(PURCHASE_WORKFLOW_ID)!.drafts.at(-1)!.definition
+    expect(saved.nodes.find((n) => n.id === 'manager')!.config.timeoutAfter).toBeUndefined()
+    expect(saved.transitions.some((t) => t.id === 'timeout-route')).toBe(false)
+  })
+
   it('shows an unavailable pinned connector version without displaying another version’s mappings', async () => {
     signInAs('dana.designer')
     const draft = db.workflows.get(PURCHASE_WORKFLOW_ID)!.drafts.at(-1)!.definition

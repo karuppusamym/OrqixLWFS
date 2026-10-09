@@ -199,3 +199,10 @@ orqix:
     max-output-tokens: 8000
     # Fastest provider within max-price (OpenRouter provider.sort); empty lets OpenRouter balance by price.
     provider-sort: throughput
+    # Async draft generation (POST /ai/drafts answers 202 and the client polls): bounded executor per pod, state in the
+    # database so any pod can answer the poll. A job whose pod died is failed after deadline + orphan-margin.
+    jobs:
+      threads: 4
+      queue: 16
+      active-per-user: 2
+      orphan-margin: 30s

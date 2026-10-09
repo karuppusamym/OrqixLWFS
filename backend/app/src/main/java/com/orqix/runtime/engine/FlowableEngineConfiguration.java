@@ -15,7 +15,7 @@ import org.springframework.context.annotation.Configuration;
 import com.orqix.shared.config.OrqixProperties;
 
 /**
- * Engine configuration (S5 section 1): BPMN + DMN only; explicit expression bean map (only the four Orqix beans are
+ * Engine configuration (S5 section 1): BPMN + DMN only; explicit expression bean map (only the five Orqix beans are
  * reachable from expressions, BD-05); one engine-wide projection listener; custom failed-job command factory; a bounded
  * job executor pool (core 4 / max 6, below the connection pool minus API headroom).
  */
@@ -24,7 +24,7 @@ public class FlowableEngineConfiguration {
 
     /** The only names an expression in generated BPMN may resolve. */
     public static final List<String> EXPRESSION_BEANS =
-            List.of("orqixRoute", "orqixDecisionTask", "orqixHttpTask", "orqixNotificationTask");
+            List.of("orqixRoute", "orqixDecisionTask", "orqixHttpTask", "orqixNotificationTask", "orqixChildTask");
 
     @Bean(destroyMethod = "shutdown")
     DefaultAsyncTaskExecutor orqixJobTaskExecutor(OrqixProperties properties) {
@@ -44,6 +44,7 @@ public class FlowableEngineConfiguration {
             DecisionTaskDelegate orqixDecisionTask,
             HttpTaskDelegate orqixHttpTask,
             NotificationTaskDelegate orqixNotificationTask,
+            ChildTaskDelegate orqixChildTask,
             RuntimeProjectionListener projectionListener,
             OrqixFailedJobCommandFactory failedJobCommandFactory,
             DefaultAsyncTaskExecutor orqixJobTaskExecutor) {
@@ -53,6 +54,7 @@ public class FlowableEngineConfiguration {
             beans.put("orqixDecisionTask", orqixDecisionTask);
             beans.put("orqixHttpTask", orqixHttpTask);
             beans.put("orqixNotificationTask", orqixNotificationTask);
+            beans.put("orqixChildTask", orqixChildTask);
             configuration.setBeans(beans);
 
             configuration.setEnableEventDispatcher(true);

@@ -99,7 +99,8 @@ function Studio({ workflowId, initial }: { workflowId: string; initial: DraftDat
 
   // Connection response types for result chips.
   const usedConnections = useStore(store, (st) => [...new Set(st.definition.nodes.filter((n) => n.type === 'http').map((n) => n.config.connectionRef as string).filter(Boolean))].join(','))
-  const connections = useConnectionLookup(ws, usedConnections.split(',').filter(Boolean), can('connection.read'))
+  const usedWorkflows = useStore(store, (st) => [...new Set(st.definition.nodes.filter((n) => n.type === 'startWorkflow').map((n) => n.config.workflowRef as string).filter(Boolean))].join(','))
+  const connections = useConnectionLookup(ws, usedConnections.split(',').filter(Boolean), can('connection.read'), usedWorkflows.split(',').filter(Boolean))
 
   const groups = useGroups(ws)
   const groupNames = useMemo(() => Object.fromEntries((groups.data?.items ?? []).map((g) => [g.key, g.name])), [groups.data])

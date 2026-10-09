@@ -27,11 +27,13 @@ public class AdminController {
     private final OrderStore store;
     private final FaultState faults;
     private final StubProperties properties;
+    private final McpState mcp;
 
-    public AdminController(OrderStore store, FaultState faults, StubProperties properties) {
+    public AdminController(OrderStore store, FaultState faults, StubProperties properties, McpState mcp) {
         this.store = store;
         this.faults = faults;
         this.properties = properties;
+        this.mcp = mcp;
     }
 
     /**
@@ -127,6 +129,7 @@ public class AdminController {
     public Map<String, String> reset() {
         store.reset();
         faults.reset();
+        mcp.reset();
         return Map.of("status", "RESET");
     }
 

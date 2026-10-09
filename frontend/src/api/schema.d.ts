@@ -901,8 +901,39 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Generate a new workflow draft from a description (never publishes) */
+        /**
+         * Start generating a workflow draft from a description (async; never publishes)
+         * @description Checks and authorizes synchronously (400, 403, 404, 422 AI_NOT_CONFIGURED or AI_MODEL_NOT_ALLOWED, 429 budget or
+         *     rate limit), then accepts the generation as a job and answers 202 with a Location to poll
+         *     (getAiGeneration). An identical request with the same Idempotency-Key returns the same job (200). The outcome of
+         *     the generation (the draft, or why it failed) is on the job.
+         */
         post: operations["generateAiDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/ai/generations/{generationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                generationId: components["parameters"]["GenerationId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Poll an AI draft generation (state is shared by all instances)
+         * @description You always see your own generations; other people's generations are visible only to holders of workflow.edit
+         *     in the workspace (anyone else gets 404). A generation whose instance died is failed once its deadline has passed.
+         *     Poll every 2 seconds; a generation ends in succeeded (with result) or failed (with problem).
+         */
+        get: operations["getAiGeneration"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1252,7 +1283,7 @@ export interface components {
             nodeId: string;
             label: string;
             /** @enum {string} */
-            kind: "approval" | "http";
+            kind: "approval" | "http" | "wait" | "child";
             since: components["schemas"]["Timestamp"];
             candidateGroup?: string | null;
             assignee?: components["schemas"]["SubjectRef"] | null;
@@ -1469,6 +1500,11 @@ export interface components {
         ConnectionSummary: {
             key: components["schemas"]["Key"];
             name: string;
+            /**
+             * @description http (default) or agent (an AI task over an MCP server, docs/build/S13-agents-mcp.md)
+             * @enum {string}
+             */
+            kind?: "http" | "agent";
             latestVersion: number;
             versions: number[];
             binding: {
@@ -1523,9 +1559,13 @@ export interface components {
             outcome: "succeeded" | "failed";
             httpStatus?: number | null;
             durationMs: number;
-            /** @description e.g. EGRESS_NOT_ALLOWED, TIMEOUT, CONNECT_FAILED, UNEXPECTED_STATUS, RESPONSE_INVALID */
+            /** @description e.g. EGRESS_NOT_ALLOWED, TIMEOUT, CONNECT_FAILED, UNEXPECTED_STATUS, RESPONSE_INVALID; agents: AI_PROVIDER_UNAVAILABLE, AI_BUDGET_EXCEEDED, MCP_UNAVAILABLE, OUTPUT_INVALID */
             errorCode?: string | null;
             detail?: string | null;
+            /** @description Agent test only. The schema-valid structured result of the operation. */
+            output?: Record<string, never> | null;
+            /** @description Agent test only. The business sentence the run timeline would show. */
+            summary?: string | null;
         };
         RoleBinding: {
             id: components["schemas"]["Uuid"];
@@ -1578,6 +1618,15 @@ export interface components {
                 monthlyUsd?: number;
                 spentUsd?: number;
             };
+            /** @description Profiles paused by the circuit breaker: their router chose a model the policy refuses; paused until the next UTC midnight */
+            disabledProfiles?: {
+                id: string;
+                label: string;
+                /** @description The model the router chose */
+                model: string;
+                reason: string;
+                until: components["schemas"]["Timestamp"];
+            }[];
         };
         AiDraftRequest: {
             description: string;
@@ -1597,6 +1646,19 @@ export interface components {
             /** @description From the provider usage report; null when not reported (never shown as zero) */
             costUsd?: number | null;
             durationMs: number;
+            /** @description Set when a router chose a model the policy refuses (excluded, not allowed, or above the price caps); the profile is then paused for the rest of the UTC day */
+            policyViolation?: string | null;
+        };
+        /** @description An accepted AI draft generation. Poll getAiGeneration until status is succeeded or failed. */
+        AiGenerationJob: {
+            id: components["schemas"]["Uuid"];
+            /** @enum {string} */
+            status: "queued" | "running" | "succeeded" | "failed";
+            startedAt: components["schemas"]["Timestamp"];
+            finishedAt?: components["schemas"]["Timestamp"];
+            profile: string;
+            result?: components["schemas"]["AiDraftResult"];
+            problem?: components["schemas"]["Problem"];
         };
         AiDraftResult: {
             workflow: components["schemas"]["Workflow"];
@@ -1743,6 +1805,8 @@ export interface components {
             config: Record<string, never>;
         };
         key: string;
+        /** @description ISO-8601 duration in days, hours and minutes only (for example PT1M, PT48H, P2D, P1DT12H). The compiler enforces PT1M to P90D (WF_DURATION_TOO_SHORT, WF_DURATION_TOO_LONG). */
+        duration: string;
         condition: {
             fieldRef: components["schemas"]["fieldRef"];
             /** @enum {unknown} */
@@ -1782,6 +1846,8 @@ export interface components {
                 rejectReasonRequired: true;
                 /** @description Display-only due date in R0. No reminder or escalation is executed. */
                 dueAfterHours?: number;
+                /** @description Optional. When nobody decides within this time, the approval ends and the request continues on the timedOut route (for example to an escalation approval, or to a rejection). Adds a timedOut route and the decision value timedOut. See S12. */
+                timeoutAfter?: components["schemas"]["duration"];
             };
         } & components["schemas"]["nodeBase"];
         decisionNode: {
@@ -1832,6 +1898,53 @@ export interface components {
                 message: string;
             };
         } & components["schemas"]["nodeBase"];
+        parallelSplitNode: {
+            id?: unknown;
+            label?: unknown;
+            /** @constant */
+            type?: "parallelSplit";
+            /** @description Run in parallel: every outgoing next transition starts one branch. joinRef names the parallelJoin step where all branches must meet. */
+            config?: {
+                joinRef: components["schemas"]["id"];
+            };
+        } & components["schemas"]["nodeBase"];
+        parallelJoinNode: {
+            id?: unknown;
+            label?: unknown;
+            /** @constant */
+            type?: "parallelJoin";
+            /** @description Wait for all: continues once every branch of the matching parallelSplit has finished. */
+            config?: Record<string, never>;
+        } & components["schemas"]["nodeBase"];
+        waitNode: {
+            id?: unknown;
+            label?: unknown;
+            /** @constant */
+            type?: "wait";
+            /** @description Wait for a fixed time before the request continues. The timer runs on the job executor and survives restarts. */
+            config?: {
+                duration: components["schemas"]["duration"];
+            };
+        } & components["schemas"]["nodeBase"];
+        startWorkflowNode: {
+            id?: unknown;
+            label?: unknown;
+            /** @constant */
+            type?: "startWorkflow";
+            /** @description Start another workflow as a child request and continue when it finishes. Outputs at /steps/<id>/: outcome, outcomeKind, reference and every key of resultMapping. The child release is pinned when this workflow is published. */
+            config?: {
+                /** @description Key of the workflow to start. */
+                workflowRef: components["schemas"]["key"];
+                /** @description Child request field -> value from this request. */
+                inputMapping: {
+                    [key: string]: components["schemas"]["fieldRef"];
+                };
+                /** @description Output name in this request -> result field of the child (its outputSchema). */
+                resultMapping: {
+                    [key: string]: components["schemas"]["fieldKey"];
+                };
+            };
+        } & components["schemas"]["nodeBase"];
         endNode: {
             id?: unknown;
             label?: unknown;
@@ -1852,7 +1965,7 @@ export interface components {
             from: components["schemas"]["id"];
             to: components["schemas"]["id"];
             /** @enum {unknown} */
-            on: "next" | "approved" | "rejected" | "condition" | "default";
+            on: "next" | "approved" | "rejected" | "timedOut" | "condition" | "default";
             /** @description Optional business explanation shown on the canvas, e.g. 'USD 5,000 or more'. */
             label?: string;
             condition?: components["schemas"]["condition"];
@@ -1894,7 +2007,7 @@ export interface components {
             };
             outputSchema: components["schemas"]["formSchema"];
             triggers: ("manual" | "api")[];
-            nodes: (components["schemas"]["startNode"] | components["schemas"]["approvalNode"] | components["schemas"]["decisionNode"] | components["schemas"]["branchNode"] | components["schemas"]["httpNode"] | components["schemas"]["notificationNode"] | components["schemas"]["endNode"])[];
+            nodes: (components["schemas"]["startNode"] | components["schemas"]["approvalNode"] | components["schemas"]["decisionNode"] | components["schemas"]["branchNode"] | components["schemas"]["httpNode"] | components["schemas"]["notificationNode"] | components["schemas"]["parallelSplitNode"] | components["schemas"]["parallelJoinNode"] | components["schemas"]["waitNode"] | components["schemas"]["startWorkflowNode"] | components["schemas"]["endNode"])[];
             transitions: components["schemas"]["transition"][];
             decisions: components["schemas"]["decisionTable"][];
             /** @description maxAttempts/retryDelaySeconds apply only to external service work (http nodes), never to human decisions. */
@@ -2002,6 +2115,8 @@ export interface components {
                         rejectReasonRequired: true;
                         /** @description Display-only due date in R0. No reminder or escalation is executed. */
                         dueAfterHours?: number;
+                        /** @description Optional. When nobody decides within this time, the approval ends and the request continues on the timedOut route (for example to an escalation approval, or to a rejection). Adds a timedOut route and the decision value timedOut. See S12. */
+                        timeoutAfter?: components["schemas"]["duration"];
                     };
                 } & components["schemas"]["nodeBase"];
                 decisionNode: {
@@ -2052,6 +2167,55 @@ export interface components {
                         message: string;
                     };
                 } & components["schemas"]["nodeBase"];
+                /** @description ISO-8601 duration in days, hours and minutes only (for example PT1M, PT48H, P2D, P1DT12H). The compiler enforces PT1M to P90D (WF_DURATION_TOO_SHORT, WF_DURATION_TOO_LONG). */
+                duration: string;
+                parallelSplitNode: {
+                    id?: unknown;
+                    label?: unknown;
+                    /** @constant */
+                    type?: "parallelSplit";
+                    /** @description Run in parallel: every outgoing next transition starts one branch. joinRef names the parallelJoin step where all branches must meet. */
+                    config?: {
+                        joinRef: components["schemas"]["id"];
+                    };
+                } & components["schemas"]["nodeBase"];
+                parallelJoinNode: {
+                    id?: unknown;
+                    label?: unknown;
+                    /** @constant */
+                    type?: "parallelJoin";
+                    /** @description Wait for all: continues once every branch of the matching parallelSplit has finished. */
+                    config?: Record<string, never>;
+                } & components["schemas"]["nodeBase"];
+                waitNode: {
+                    id?: unknown;
+                    label?: unknown;
+                    /** @constant */
+                    type?: "wait";
+                    /** @description Wait for a fixed time before the request continues. The timer runs on the job executor and survives restarts. */
+                    config?: {
+                        duration: components["schemas"]["duration"];
+                    };
+                } & components["schemas"]["nodeBase"];
+                startWorkflowNode: {
+                    id?: unknown;
+                    label?: unknown;
+                    /** @constant */
+                    type?: "startWorkflow";
+                    /** @description Start another workflow as a child request and continue when it finishes. Outputs at /steps/<id>/: outcome, outcomeKind, reference and every key of resultMapping. The child release is pinned when this workflow is published. */
+                    config?: {
+                        /** @description Key of the workflow to start. */
+                        workflowRef: components["schemas"]["key"];
+                        /** @description Child request field -> value from this request. */
+                        inputMapping: {
+                            [key: string]: components["schemas"]["fieldRef"];
+                        };
+                        /** @description Output name in this request -> result field of the child (its outputSchema). */
+                        resultMapping: {
+                            [key: string]: components["schemas"]["fieldKey"];
+                        };
+                    };
+                } & components["schemas"]["nodeBase"];
                 endNode: {
                     id?: unknown;
                     label?: unknown;
@@ -2072,7 +2236,7 @@ export interface components {
                     from: components["schemas"]["id"];
                     to: components["schemas"]["id"];
                     /** @enum {unknown} */
-                    on: "next" | "approved" | "rejected" | "condition" | "default";
+                    on: "next" | "approved" | "rejected" | "timedOut" | "condition" | "default";
                     /** @description Optional business explanation shown on the canvas, e.g. 'USD 5,000 or more'. */
                     label?: string;
                     condition?: components["schemas"]["condition"];
@@ -2121,6 +2285,45 @@ export interface components {
             };
             additionalProperties?: boolean;
         };
+        agentTool: {
+            /** @description Tool name as listed by the MCP server. */
+            name: string;
+            /** @description Business name of the tool or the system behind it, shown in the studio and on the run timeline. */
+            label: string;
+            /** @description Optional administrator-written tool description offered to the model instead of the server's own description (which is untrusted). */
+            description?: string;
+        };
+        agentSpec: {
+            /** @description Fixed system prompt written by an administrator and versioned with the connection version. Run data is never part of it. */
+            instructions: string;
+            /** @description Model profile of the AI settings (never a raw model id). Omitted: the deployment default profile. */
+            modelProfile?: string;
+            /** @description Allow-list of tools of the MCP server in the binding. Only these are offered to the model and only these can be called. */
+            tools: components["schemas"]["agentTool"][];
+            /** @description Upper bound on tool calls in one execution; further calls are refused. */
+            maxToolCalls: number;
+            /** @description Business sentence shown on the run timeline, after the connection name. {field} is replaced by a request or result value, {tools} by the labels of the tools that were called. */
+            summary?: string;
+        };
+        /** @description An AI task: a fixed instruction, an allow-list of MCP tools, structured input and a structured result. requestSchema is the input (flat scalars, mapped from workflow fields like an HTTP request); responseSchema is the result the agent must produce (additionalProperties false). */
+        agentOperation: {
+            label: string;
+            description?: string;
+            requestSchema: components["schemas"]["requestObject"];
+            responseSchema: components["schemas"]["responseObject"] & {
+                /** @constant */
+                additionalProperties: false;
+            };
+            /**
+             * @description Agents cannot cause side effects in this release: always readOnly.
+             * @constant
+             */
+            effectClass: "readOnly";
+            /** @description Wall-clock limit for the whole model and tool loop. */
+            maxTimeoutSeconds: number;
+            testable: boolean;
+            agent: components["schemas"]["agentSpec"];
+        };
         operation: {
             label: string;
             description?: string;
@@ -2143,19 +2346,22 @@ export interface components {
             testable: boolean;
         } & (unknown & unknown & unknown);
         /**
-         * Orqix connection definition v0.1 — portable HTTP operation contract
-         * @description Immutable, versioned, secret-free description of an approved HTTP integration. Environment details (base URL, credential reference, enabled flag) live in the connection binding, which is not portable and never exported. See docs/build/S5-runtime.md for retry and effect semantics.
+         * Orqix connection definition v0.1 — portable HTTP operation or AI agent contract
+         * @description Immutable, versioned, secret-free description of an approved integration: kind http (default) is an HTTP operation contract, kind agent is a bounded AI task that may call allow-listed tools of one MCP server (S13). Environment details (base URL or MCP endpoint, credential reference, enabled flag) live in the connection binding, which is not portable and never exported. See docs/build/S5-runtime.md for retry and effect semantics and docs/build/S13-agents-mcp.md for agents.
          */
         "connection-definition-v0.schema": {
             /** @constant */
             schemaVersion: "0.1";
+            /**
+             * @description http (default): operations are HTTP calls. agent: operations are bounded AI tasks that call allow-listed tools of the MCP server in the binding; effect class is always readOnly.
+             * @enum {unknown}
+             */
+            kind?: "http" | "agent";
             key: string;
             version: number;
             name: string;
             description?: string;
-            operations: {
-                [key: string]: components["schemas"]["operation"];
-            };
+            operations: Record<string, never>;
             $defs: {
                 operation: {
                     label: string;
@@ -2205,8 +2411,47 @@ export interface components {
                     };
                     additionalProperties?: boolean;
                 };
+                /** @description An AI task: a fixed instruction, an allow-list of MCP tools, structured input and a structured result. requestSchema is the input (flat scalars, mapped from workflow fields like an HTTP request); responseSchema is the result the agent must produce (additionalProperties false). */
+                agentOperation: {
+                    label: string;
+                    description?: string;
+                    requestSchema: components["schemas"]["requestObject"];
+                    responseSchema: components["schemas"]["responseObject"] & {
+                        /** @constant */
+                        additionalProperties: false;
+                    };
+                    /**
+                     * @description Agents cannot cause side effects in this release: always readOnly.
+                     * @constant
+                     */
+                    effectClass: "readOnly";
+                    /** @description Wall-clock limit for the whole model and tool loop. */
+                    maxTimeoutSeconds: number;
+                    testable: boolean;
+                    agent: components["schemas"]["agentSpec"];
+                };
+                agentSpec: {
+                    /** @description Fixed system prompt written by an administrator and versioned with the connection version. Run data is never part of it. */
+                    instructions: string;
+                    /** @description Model profile of the AI settings (never a raw model id). Omitted: the deployment default profile. */
+                    modelProfile?: string;
+                    /** @description Allow-list of tools of the MCP server in the binding. Only these are offered to the model and only these can be called. */
+                    tools: components["schemas"]["agentTool"][];
+                    /** @description Upper bound on tool calls in one execution; further calls are refused. */
+                    maxToolCalls: number;
+                    /** @description Business sentence shown on the run timeline, after the connection name. {field} is replaced by a request or result value, {tools} by the labels of the tools that were called. */
+                    summary?: string;
+                };
+                agentTool: {
+                    /** @description Tool name as listed by the MCP server. */
+                    name: string;
+                    /** @description Business name of the tool or the system behind it, shown in the studio and on the run timeline. */
+                    label: string;
+                    /** @description Optional administrator-written tool description offered to the model instead of the server's own description (which is untrusted). */
+                    description?: string;
+                };
             };
-        };
+        } & unknown;
     };
     responses: {
         /** @description Malformed request or missing Idempotency-Key */
@@ -2314,6 +2559,7 @@ export interface components {
     parameters: {
         WorkspaceId: components["schemas"]["Uuid"];
         WorkflowId: components["schemas"]["Uuid"];
+        GenerationId: components["schemas"]["Uuid"];
         ReleaseId: components["schemas"]["Uuid"];
         RunId: components["schemas"]["Uuid"];
         EffectId: components["schemas"]["Uuid"];
@@ -3610,11 +3856,13 @@ export interface operations {
                 "application/json": {
                     version: number;
                     operation: string;
+                    /** @description Sample input of an agent operation (kind agent), validated against its requestSchema. Ignored for HTTP operations. */
+                    input?: Record<string, never>;
                 };
             };
         };
         responses: {
-            /** @description Test outcome (a failed remote call is a 200 with outcome=failed) */
+            /** @description Test outcome (a failed remote call is a 200 with outcome=failed). An agent test uses AI and is metered like any AI use. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3878,23 +4126,25 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Idempotent replay */
+            /** @description Idempotent replay; the job as it is now */
             200: {
                 headers: {
                     "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AiDraftResult"];
+                    "application/json": components["schemas"]["AiGenerationJob"];
                 };
             };
-            /** @description Draft created */
-            201: {
+            /** @description Accepted; poll the job at Location */
+            202: {
                 headers: {
+                    /** @description URL of the job (getAiGeneration) */
+                    Location?: string;
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AiDraftResult"];
+                    "application/json": components["schemas"]["AiGenerationJob"];
                 };
             };
             400: components["responses"]["BadRequest"];
@@ -3905,6 +4155,32 @@ export interface operations {
             422: components["responses"]["Unprocessable"];
             429: components["responses"]["TooManyRequests"];
             503: components["responses"]["Unavailable"];
+        };
+    };
+    getAiGeneration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                generationId: components["parameters"]["GenerationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The generation as it is now */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiGenerationJob"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     explainWorkflow: {

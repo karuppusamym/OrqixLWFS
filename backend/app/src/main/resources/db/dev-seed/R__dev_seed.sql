@@ -104,3 +104,46 @@ SELECT '00000000-0000-7000-8000-000000000201', '00000000-0000-7000-8000-00000000
 FROM (SELECT $orqix_json$ ${dev_purchase_template} $orqix_json$::jsonb AS doc) t
 WHERE EXISTS (SELECT 1 FROM workflow WHERE id = '00000000-0000-7000-8000-000000000701')
 ON CONFLICT DO NOTHING;
+
+-- S13 agents and MCP (docs/build/S13-agents-mcp.md section 9): the compliance reviewers group (finance users review in the
+-- demo), the agent connection vendor-risk-assistant v1 (examples/connections) bound to the MCP endpoint of the
+-- procurement stub, and the vendor-onboarding-check workflow with draft revision 1 (unpublished: publishing is the demo).
+INSERT INTO workspace_group (id, workspace_id, key, name, revision)
+VALUES ('00000000-0000-7000-8000-000000000503', '00000000-0000-7000-8000-000000000201', 'compliance-reviewers', 'Compliance reviewers', 1),
+       ('00000000-0000-7000-8000-000000000513', '00000000-0000-7000-8000-000000000202', 'compliance-reviewers', 'Compliance reviewers', 1)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO workspace_group_member (workspace_id, group_id, principal_type, principal_value, created_by)
+VALUES ('00000000-0000-7000-8000-000000000201', '00000000-0000-7000-8000-000000000503', 'idpGroup', 'orqix-purchasing-finance', '00000000-0000-7000-8000-000000000001'),
+       ('00000000-0000-7000-8000-000000000202', '00000000-0000-7000-8000-000000000513', 'idpGroup', 'orqix-purchasing-finance', '00000000-0000-7000-8000-000000000001')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO connection_definition (id, workspace_id, key, version, definition, definition_hash, created_by)
+VALUES ('00000000-0000-7000-8000-000000000602', '00000000-0000-7000-8000-000000000201', 'vendor-risk-assistant', 1,
+        $orqix_json$ ${dev_vendor_agent_definition} $orqix_json$::jsonb, '${dev_vendor_agent_definition_hash}',
+        '00000000-0000-7000-8000-000000000001'),
+       ('00000000-0000-7000-8000-000000000612', '00000000-0000-7000-8000-000000000202', 'vendor-risk-assistant', 1,
+        $orqix_json$ ${dev_vendor_agent_definition} $orqix_json$::jsonb, '${dev_vendor_agent_definition_hash}',
+        '00000000-0000-7000-8000-000000000001')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO connection_binding (workspace_id, connection_key, base_url, auth_type, enabled, revision, updated_by)
+VALUES ('00000000-0000-7000-8000-000000000201', 'vendor-risk-assistant', '${dev_stub_base_url}/mcp', 'none', true, 1,
+        '00000000-0000-7000-8000-000000000001'),
+       ('00000000-0000-7000-8000-000000000202', 'vendor-risk-assistant', '${dev_stub_base_url}/mcp', 'none', true, 1,
+        '00000000-0000-7000-8000-000000000001')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO workflow (id, workspace_id, key, name, description, owner_subject_id, draft_revision, version, created_by)
+SELECT '00000000-0000-7000-8000-000000000702', '00000000-0000-7000-8000-000000000201', t.doc ->> 'workflowKey',
+       t.doc ->> 'name', t.doc -> 'metadata' ->> 'description', '00000000-0000-7000-8000-000000000001', 1, 1,
+       '00000000-0000-7000-8000-000000000001'
+FROM (SELECT $orqix_json$ ${dev_vendor_template} $orqix_json$::jsonb AS doc) t
+ON CONFLICT DO NOTHING;
+
+INSERT INTO workflow_draft_revision (workspace_id, workflow_id, revision, definition, schema_version, saved_by)
+SELECT '00000000-0000-7000-8000-000000000201', '00000000-0000-7000-8000-000000000702', 1, t.doc,
+       t.doc ->> 'schemaVersion', '00000000-0000-7000-8000-000000000001'
+FROM (SELECT $orqix_json$ ${dev_vendor_template} $orqix_json$::jsonb AS doc) t
+WHERE EXISTS (SELECT 1 FROM workflow WHERE id = '00000000-0000-7000-8000-000000000702')
+ON CONFLICT DO NOTHING;

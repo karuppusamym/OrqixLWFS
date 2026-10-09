@@ -12,6 +12,7 @@ import org.springframework.core.io.Resource;
  * @param commitThenTimeoutMs    default sleep of the {@code commitThenTimeout} fault (longer than a 20 s client timeout)
  * @param maxFaultDelayMs        upper bound accepted for a fault {@code delayMs}
  * @param maxBodyBytes           maximum accepted request body
+ * @param mcpToken               bearer token required by {@code POST /mcp}; empty (default) means no authentication
  */
 @ConfigurationProperties("stub")
 public record StubProperties(
@@ -19,5 +20,6 @@ public record StubProperties(
         @DefaultValue("createOrder") String contractOperation,
         @DefaultValue("35000") long commitThenTimeoutMs,
         @DefaultValue("600000") long maxFaultDelayMs,
-        @DefaultValue("65536") int maxBodyBytes) {
+        @DefaultValue("65536") int maxBodyBytes,
+        @DefaultValue("") String mcpToken) {
 }

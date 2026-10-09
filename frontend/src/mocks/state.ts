@@ -257,7 +257,7 @@ export interface MockBinding {
   updatedById: string
 }
 
-export type ProcurementFault = 'none' | 'failOnce' | 'unknown' | 'down'
+export type ProcurementFault = 'none' | 'failOnce' | 'unknown' | 'down' | 'rejected'
 
 export interface MockDb {
   workflows: Map<string, MockWorkflow>

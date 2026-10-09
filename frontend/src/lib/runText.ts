@@ -19,14 +19,25 @@ export function requestId(run: Pick<Run, 'id' | 'businessKey' | 'reference'>): s
   return requestReference(run)
 }
 
+/**
+ * What the request is about (the first text field of the form, such as "Annual design software licences"). Task lists carry
+ * it already; run lists show it when the server sends `requestTitle`, and fall back to the workflow name when it does not.
+ */
+export function runTitle(run: Run): string | null {
+  const title = (run as Run & { requestTitle?: unknown }).requestTitle
+  return typeof title === 'string' && title.trim() !== '' ? title.trim() : null
+}
+
 /** The person's own reference, shown separately when it differs from the generated request reference. */
 export function ownReference(run: Pick<Run, 'businessKey' | 'reference'>): string | null {
   return run.businessKey && run.businessKey !== run.reference ? run.businessKey : null
 }
 
 /** "Waiting for Managers: Review request" or "Mani Manager is reviewing: Review request". */
-export function stepOwnerText(step: CurrentStep): string {
-  if (step.kind === 'http') return `${step.label} is in progress`
+export function stepOwnerText(step: CurrentStep, lifecycle?: Run['lifecycle']): string {
+  if (step.kind === 'http') return lifecycle === 'needsAttention' ? `${step.label} is delayed` : `${step.label} is in progress`
+  if (step.kind === 'wait') return `Waiting until the timer finishes: ${step.label}`
+  if (step.kind === 'child') return `Waiting for the child request: ${step.label}`
   if (step.assignee) return `${step.assignee.displayName} is working on: ${step.label}`
   const group = step.candidateGroup ? humanize(step.candidateGroup) : 'an approver'
   return `Waiting for ${group}: ${step.label}`
@@ -38,7 +49,7 @@ export function runProgressText(run: Pick<Run, 'lifecycle' | 'currentSteps' | 'o
   if (run.lifecycle === 'cancelled') return 'Cancelled'
   const first = run.currentSteps[0]
   if (!first) return run.lifecycle === 'needsAttention' ? 'Needs attention' : 'In progress'
-  return stepOwnerText(first)
+  return stepOwnerText(first, run.lifecycle)
 }
 
 /** Task title for lists: the request title when known, otherwise the request reference, otherwise the step. */

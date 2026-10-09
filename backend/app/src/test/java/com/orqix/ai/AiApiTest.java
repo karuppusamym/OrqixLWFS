@@ -56,6 +56,10 @@ class AiApiTest extends IntegrationTestBase {
 
     @Autowired
     private JdbcClient jdbc;
+    @Autowired
+    private com.orqix.ai.internal.AiJobStore jobStore;
+    @Autowired
+    private com.orqix.identity.PolicyService policy;
 
     @BeforeEach
     void resetStub() {
@@ -103,7 +107,7 @@ class AiApiTest extends IntegrationTestBase {
         Map<String, Object> body = Map.of("description", description, "name", "Falcon purchases");
         String key = UUID.randomUUID().toString();
 
-        Response created = api("dana.designer").post(body, key, DRAFTS, PURCHASING);
+        Draft created = postDraft("dana.designer", body, key);
         assertThat(created.status()).as(created.toString()).isEqualTo(201);
         JsonNode result = created.body();
         UUID workflowId = UUID.fromString(result.path("workflow").path("id").asString());
@@ -166,16 +170,18 @@ class AiApiTest extends IntegrationTestBase {
                 SELECT metadata->>'source' FROM audit_event WHERE action = 'workflow.created' AND resource_id = :wf
                 """).param("wf", workflowId.toString()).query(String.class).single()).isEqualTo("ai");
 
-        // Idempotent replay: same workflow, review notes kept, no second provider call.
+        // Idempotent replay: the same job (now succeeded), review notes kept, no second provider call.
         Response replay = api("dana.designer").post(body, key, DRAFTS, PURCHASING);
         assertThat(replay.status()).as(replay.toString()).isEqualTo(200);
         assertThat(replay.header("Idempotent-Replayed")).isEqualTo("true");
-        assertThat(replay.body().path("workflow").path("id").asString()).isEqualTo(workflowId.toString());
-        assertThat(replay.body().path("assumptions")).isEqualTo(result.path("assumptions"));
-        assertThat(replay.body().path("generation").path("model").asString()).isEqualTo(ECONOMY_MODEL);
+        assertThat(replay.body().path("id").asString()).isEqualTo(created.jobId());
+        assertThat(replay.body().path("status").asString()).isEqualTo("succeeded");
+        assertThat(replay.body().path("result").path("workflow").path("id").asString()).isEqualTo(workflowId.toString());
+        assertThat(replay.body().path("result").path("assumptions")).isEqualTo(result.path("assumptions"));
+        assertThat(replay.body().path("result").path("missingConfiguration")).isEqualTo(result.path("missingConfiguration"));
+        assertThat(replay.body().path("result").path("generation").path("model").asString()).isEqualTo(ECONOMY_MODEL);
         assertThat(OpenRouterStub.requests()).hasSize(1);
-        Response reused = api("dana.designer").post(Map.of("description", description + " Changed."), key, DRAFTS,
-                PURCHASING);
+        Response reused = api("dana.designer").post(Map.of("description", description + " Changed."), key, DRAFTS, PURCHASING);
         assertThat(reused.code()).isEqualTo("IDEMPOTENCY_KEY_REUSED");
         Response noKey = api("dana.designer").post(body, null, DRAFTS, PURCHASING);
         assertThat(noKey.code()).isEqualTo("IDEMPOTENCY_KEY_REQUIRED");
@@ -187,8 +193,8 @@ class AiApiTest extends IntegrationTestBase {
     void invalidJsonIsRepairedInASecondTurn() throws Exception {
         OpenRouterStub.reply("{\"definition\": {\"schemaVersion\": \"0.1\", oops", ECONOMY_MODEL, 0.001);
         OpenRouterStub.reply("```json\n" + envelope(example(), List.of(), List.of()) + "\n```", ECONOMY_MODEL, 0.002);
-        Response created = api("dana.designer").post(Map.of("description", "Purchase approval with finance review."),
-                UUID.randomUUID().toString(), DRAFTS, PURCHASING);
+        Draft created = postDraft("dana.designer", Map.of("description", "Purchase approval with finance review."),
+                UUID.randomUUID().toString());
         assertThat(created.status()).as(created.toString()).isEqualTo(201);
         assertThat(created.body().path("generation").path("attempts").asInt()).isEqualTo(2);
         assertThat(created.body().path("generation").path("costUsd").decimalValue()).isEqualByComparingTo("0.003");
@@ -207,8 +213,8 @@ class AiApiTest extends IntegrationTestBase {
             OpenRouterStub.reply(envelope(broken, List.of(), List.of()), ECONOMY_MODEL, 0.001);
         }
         OpenRouterStub.reply(envelope(example(), List.of("Escalated."), List.of()), "openai/gpt-6-luna", 0.012);
-        Response created = api("dana.designer").post(Map.of("description", "Purchase approval with finance review.",
-                "name", "Escalated purchase"), UUID.randomUUID().toString(), DRAFTS, PURCHASING);
+        Draft created = postDraft("dana.designer", Map.of("description", "Purchase approval with finance review.",
+                "name", "Escalated purchase"), UUID.randomUUID().toString());
         assertThat(created.status()).as(created.toString()).isEqualTo(201);
         JsonNode generation = created.body().path("generation");
         assertThat(generation.path("attempts").asInt()).isEqualTo(4);
@@ -233,8 +239,8 @@ class AiApiTest extends IntegrationTestBase {
             OpenRouterStub.reply(envelope(brokenExample(), List.of(), List.of()), i < 3 ? ECONOMY_MODEL : "x/router-pick",
                     0.001);
         }
-        Response failed = api("dana.designer").post(Map.of("description", "Purchase approval with finance review."),
-                UUID.randomUUID().toString(), DRAFTS, PURCHASING);
+        Draft failed = postDraft("dana.designer", Map.of("description", "Purchase approval with finance review."),
+                UUID.randomUUID().toString());
         assertThat(failed.status()).as(failed.toString()).isEqualTo(422);
         assertThat(failed.code()).isEqualTo("AI_OUTPUT_INVALID");
         assertThat(failed.body().path("issues").findValuesAsString("code")).contains("WF_APPROVAL_ROUTES");
@@ -258,8 +264,8 @@ class AiApiTest extends IntegrationTestBase {
     void notAWorkflowStopsWithoutRepairs() throws Exception {
         OpenRouterStub.reply("{\"definition\": null, \"assumptions\": [], \"missingConfiguration\": [], "
                 + "\"notAWorkflow\": \"The text asks for a poem, not a business process.\"}", ECONOMY_MODEL, 0.0004);
-        Response failed = api("dana.designer").post(Map.of("description", "Write me a poem about autumn leaves."),
-                UUID.randomUUID().toString(), DRAFTS, PURCHASING);
+        Draft failed = postDraft("dana.designer", Map.of("description", "Write me a poem about autumn leaves."),
+                UUID.randomUUID().toString());
         assertThat(failed.code()).as(failed.toString()).isEqualTo("AI_OUTPUT_INVALID");
         assertThat(failed.body().path("detail").asString()).contains("poem");
         assertThat(OpenRouterStub.requests()).hasSize(1);
@@ -272,17 +278,16 @@ class AiApiTest extends IntegrationTestBase {
     void providerRateLimitServerErrorTimeoutAndCreditMapTo503() throws Exception {
         long before = workflows();
         OpenRouterStub.fail(429, Map.of("Retry-After", "17"));
-        Response limited = draft("Purchase approval with finance review.");
+        Draft limited = draft("Purchase approval with finance review.");
         assertThat(limited.status()).as(limited.toString()).isEqualTo(503);
         assertThat(limited.code()).isEqualTo("AI_PROVIDER_UNAVAILABLE");
-        assertThat(limited.header("Retry-After")).isEqualTo("17");
 
         OpenRouterStub.fail(500, Map.of());
-        Response broken = draft("Purchase approval with finance review.");
+        Draft broken = draft("Purchase approval with finance review.");
         assertThat(broken.code()).as(broken.toString()).isEqualTo("AI_PROVIDER_UNAVAILABLE");
 
         OpenRouterStub.slow(envelope(example(), List.of(), List.of()), 5000);
-        Response slow = draft("Purchase approval with finance review.");
+        Draft slow = draft("Purchase approval with finance review.");
         assertThat(slow.code()).as(slow.toString()).isEqualTo("AI_PROVIDER_UNAVAILABLE");
         assertThat(slow.body().path("detail").asString()).contains("in time");
 
@@ -300,7 +305,7 @@ class AiApiTest extends IntegrationTestBase {
         long before = workflows();
         // 4 s budget: after a 2.5 s invalid answer, another attempt of that length cannot finish in time.
         OpenRouterStub.delayed(envelope(brokenExample(), List.of(), List.of()), ECONOMY_MODEL, 0.001, 2500);
-        Response stopped = draft("Purchase approval with finance review.");
+        Draft stopped = draft("Purchase approval with finance review.");
         assertThat(stopped.status()).as(stopped.toString()).isEqualTo(422);
         assertThat(stopped.code()).isEqualTo("AI_OUTPUT_INVALID");
         assertThat(stopped.body().path("detail").asString()).contains("time limit");
@@ -311,7 +316,7 @@ class AiApiTest extends IntegrationTestBase {
         OpenRouterStub.reset();
         OpenRouterStub.delayed(envelope(brokenExample(), List.of(), List.of()), ECONOMY_MODEL, 0.001, 1500);
         OpenRouterStub.delayed(envelope(example(), List.of(), List.of()), ECONOMY_MODEL, 0.001, 6000);
-        Response cut = draft("Purchase approval with finance review.");
+        Draft cut = draft("Purchase approval with finance review.");
         assertThat(cut.status()).as(cut.toString()).isEqualTo(422);
         assertThat(cut.body().path("detail").asString()).contains("time limit");
         assertThat(OpenRouterStub.requests()).hasSize(2);
@@ -324,14 +329,14 @@ class AiApiTest extends IntegrationTestBase {
     @Order(8)
     void excludedOverCapAndUnknownProfilesAreRefusedButJsonModeProfilesWork() throws Exception {
         for (String profile : List.of("premium", "banned", "nope")) {
-            Response refused = api("dana.designer").post(Map.of("description", "Purchase approval with finance review.",
-                    "profile", profile), UUID.randomUUID().toString(), DRAFTS, PURCHASING);
+            Draft refused = postDraft("dana.designer", Map.of("description", "Purchase approval with finance review.",
+                    "profile", profile), UUID.randomUUID().toString());
             assertThat(refused.code()).as(profile + " " + refused).isEqualTo("AI_MODEL_NOT_ALLOWED");
         }
         assertThat(OpenRouterStub.requests()).isEmpty();
         OpenRouterStub.reply(envelope(example(), List.of(), List.of()), "plain/json-only", 0.0001);
-        Response created = api("dana.designer").post(Map.of("description", "Purchase approval with finance review.",
-                "profile", "plain"), UUID.randomUUID().toString(), DRAFTS, PURCHASING);
+        Draft created = postDraft("dana.designer", Map.of("description", "Purchase approval with finance review.",
+                "profile", "plain"), UUID.randomUUID().toString());
         assertThat(created.status()).as(created.toString()).isEqualTo(201);
         assertThat(OpenRouterStub.requests().get(0).path("response_format").path("type").asString())
                 .isEqualTo("json_object");
@@ -350,7 +355,7 @@ class AiApiTest extends IntegrationTestBase {
                     1, 1, 1, 10.00, 1, 'success')
                 """, rowId, SANDBOX, subject);
         try {
-            Response refused = draft("Purchase approval with finance review.");
+            Draft refused = draft("Purchase approval with finance review.");
             assertThat(refused.status()).as(refused.toString()).isEqualTo(429);
             assertThat(refused.code()).isEqualTo("AI_BUDGET_EXCEEDED");
             assertThat(Long.parseLong(refused.header("Retry-After"))).isPositive();
@@ -406,19 +411,201 @@ class AiApiTest extends IntegrationTestBase {
     @Order(11)
     void permissionsAndRequestValidationComeBeforeAnyProviderCall() throws Exception {
         Map<String, Object> body = Map.of("description", "Purchase approval with finance review.");
-        assertThat(api("vic.viewer").post(body, UUID.randomUUID().toString(), DRAFTS, PURCHASING).status())
+        assertThat(postDraft("vic.viewer", body, UUID.randomUUID().toString()).status())
                 .isEqualTo(403);
-        assertThat(api("otto.outsider").post(body, UUID.randomUUID().toString(), DRAFTS, PURCHASING).status())
+        assertThat(postDraft("otto.outsider", body, UUID.randomUUID().toString()).status())
                 .isEqualTo(404);
-        assertThat(api("dana.designer").post(Map.of("description", "short"), UUID.randomUUID().toString(), DRAFTS,
-                PURCHASING).code()).isEqualTo("MALFORMED_REQUEST");
-        assertThat(api("dana.designer").post(Map.of("description", "Purchase approval with finance.", "extra", 1),
-                UUID.randomUUID().toString(), DRAFTS, PURCHASING).code()).isEqualTo("MALFORMED_REQUEST");
-        assertThat(api("dana.designer").post(Map.of("description", "Purchase approval with finance.", "profile",
-                "Bad Profile"), UUID.randomUUID().toString(), DRAFTS, PURCHASING).code()).isEqualTo("MALFORMED_REQUEST");
-        assertThat(api("dana.designer").post(Map.of("description", "Purchase approval with finance.", "name",
-                "Bad ${name}"), UUID.randomUUID().toString(), DRAFTS, PURCHASING).code()).isEqualTo("MALFORMED_REQUEST");
+        assertThat(postDraft("dana.designer", Map.of("description", "short"), UUID.randomUUID().toString()).code()).isEqualTo("MALFORMED_REQUEST");
+        assertThat(postDraft("dana.designer", Map.of("description", "Purchase approval with finance.", "extra", 1),
+                UUID.randomUUID().toString()).code()).isEqualTo("MALFORMED_REQUEST");
+        assertThat(postDraft("dana.designer", Map.of("description", "Purchase approval with finance.", "profile",
+                "Bad Profile"), UUID.randomUUID().toString()).code()).isEqualTo("MALFORMED_REQUEST");
+        assertThat(postDraft("dana.designer", Map.of("description", "Purchase approval with finance.", "name",
+                "Bad ${name}"), UUID.randomUUID().toString()).code()).isEqualTo("MALFORMED_REQUEST");
         assertThat(OpenRouterStub.requests()).isEmpty();
+    }
+
+    @Test
+    @Order(13)
+    void answersWith202AndLocationAndAnyPodCanBePolled() throws Exception {
+        OpenRouterStub.delayed(envelope(example(), List.of("One assumption."), List.of()), ECONOMY_MODEL, 0.002, 1200);
+        String key = UUID.randomUUID().toString();
+        Response accepted = api("dana.designer").post(Map.of("description", "Purchase approval with finance review."),
+                key, DRAFTS, PURCHASING);
+        assertThat(accepted.status()).as(accepted.toString()).isEqualTo(202);
+        String id = accepted.body().path("id").asString();
+        assertThat(accepted.header("Location")).endsWith("/ai/generations/" + id);
+        assertThat(accepted.body().path("status").asString()).isIn("queued", "running");
+        assertThat(accepted.body().path("profile").asString()).isEqualTo("economy");
+        assertThat(accepted.body().has("result")).isFalse();
+        // A replay while it runs returns the job as it is now (200), without a second provider call.
+        Response replay = api("dana.designer").post(Map.of("description", "Purchase approval with finance review."),
+                key, DRAFTS, PURCHASING);
+        assertThat(replay.status()).isEqualTo(200);
+        assertThat(replay.header("Idempotent-Replayed")).isEqualTo("true");
+        assertThat(replay.body().path("id").asString()).isEqualTo(id);
+        // Polling reads the database: the creator, another designer and nobody else.
+        JsonNode done = await("dana.designer", id);
+        assertThat(done.path("status").asString()).isEqualTo("succeeded");
+        assertThat(done.path("finishedAt").isString()).isTrue();
+        assertThat(done.path("result").path("generation").path("costUsd").decimalValue()).isEqualByComparingTo("0.002");
+        assertThat(api("dana.designer").get("/workspaces/{ws}/ai/generations/{id}", PURCHASING, id).status()).isEqualTo(200);
+        assertThat(api("vic.viewer").get("/workspaces/{ws}/ai/generations/{id}", PURCHASING, id).status()).isEqualTo(404);
+        assertThat(api("rhea.requester").get("/workspaces/{ws}/ai/generations/{id}", PURCHASING, id).status()).isEqualTo(403);
+        assertThat(api("otto.outsider").get("/workspaces/{ws}/ai/generations/{id}", PURCHASING, id).status()).isEqualTo(404);
+        assertThat(api("dana.designer").get("/workspaces/{ws}/ai/generations/{id}", PURCHASING, UUID.randomUUID()).status())
+                .isEqualTo(404);
+        assertThat(api("dana.designer").get("/workspaces/{ws}/ai/generations/{id}", SANDBOX, id).status()).isEqualTo(404);
+        assertThat(OpenRouterStub.requests()).hasSize(1);
+        // The job row holds no description and no model output beyond the review notes.
+        String row = jdbc.sql("SELECT to_jsonb(j)::text FROM ai_generation_job j WHERE id = :id")
+                .param("id", UUID.fromString(id)).query(String.class).single();
+        assertThat(row).doesNotContain("finance review").doesNotContain("Purchase approval with");
+    }
+
+    @Test
+    @Order(14)
+    void limitsConcurrentJobsPerPerson() throws Exception {
+        OpenRouterStub.slow(envelope(example(), List.of(), List.of()), 1500);
+        OpenRouterStub.slow(envelope(example(), List.of(), List.of()), 1500);
+        Map<String, Object> body = Map.of("description", "Purchase approval with finance review.");
+        Response first = api("dana.designer").post(body, UUID.randomUUID().toString(), DRAFTS, PURCHASING);
+        Response second = api("dana.designer").post(Map.of("description", "Another purchase approval with finance."),
+                UUID.randomUUID().toString(), DRAFTS, PURCHASING);
+        Response third = api("dana.designer").post(Map.of("description", "A third purchase approval with finance."),
+                UUID.randomUUID().toString(), DRAFTS, PURCHASING);
+        assertThat(first.status()).isEqualTo(202);
+        assertThat(second.status()).isEqualTo(202);
+        assertThat(third.status()).as(third.toString()).isEqualTo(429);
+        assertThat(third.code()).isEqualTo("RATE_LIMITED");
+        assertThat(third.header("Retry-After")).isEqualTo("15");
+        assertThat(await("dana.designer", first.body().path("id").asString()).path("status").asString())
+                .isEqualTo("succeeded");
+        assertThat(await("dana.designer", second.body().path("id").asString()).path("status").asString())
+                .isEqualTo("succeeded");
+    }
+
+    @Test
+    @Order(15)
+    void aJobOrphanedByARestartIsFailedAfterItsDeadline() throws Exception {
+        UUID jobId = UUID.randomUUID();
+        UUID subject = jdbc.sql("SELECT id FROM subject WHERE external_subject = 'kc-dana.designer'")
+                .query(UUID.class).single();
+        superuser("""
+                INSERT INTO orqix.ai_generation_job (id, workspace_id, subject_id, status, profile, correlation_id,
+                    created_at, started_at, deadline_at)
+                VALUES (?, ?, ?, 'running', 'economy', 'corr-orphan-1', now() - interval '10 minutes',
+                    now() - interval '9 minutes', now() - interval '1 minute')
+                """, jobId, PURCHASING, subject);
+        JsonNode job = api("dana.designer").get("/workspaces/{ws}/ai/generations/{id}", PURCHASING, jobId).body();
+        assertThat(job.path("status").asString()).isEqualTo("failed");
+        assertThat(job.path("problem").path("code").asString()).isEqualTo("AI_PROVIDER_UNAVAILABLE");
+        assertThat(job.path("problem").path("correlationId").asString()).isEqualTo("corr-orphan-1");
+        assertThat(job.path("problem").path("detail").asString()).contains("interrupted");
+    }
+
+    @Test
+    @Order(16)
+    void concurrentSubmissionsRespectPerPersonLimit() throws Exception {
+        OpenRouterStub.slow(envelope(example(), List.of(), List.of()), 2500);
+        OpenRouterStub.slow(envelope(example(), List.of(), List.of()), 2500);
+        try (var executor = java.util.concurrent.Executors.newFixedThreadPool(4)) {
+            var start = new java.util.concurrent.CountDownLatch(1);
+            var submitted = new java.util.ArrayList<java.util.concurrent.Future<Response>>();
+            for (int i = 0; i < 4; i++) {
+                submitted.add(executor.submit(() -> {
+                    start.await();
+                    return api("dana.designer").post(Map.of("description", "Purchase approval with finance review."),
+                            UUID.randomUUID().toString(), DRAFTS, PURCHASING);
+                }));
+            }
+            start.countDown();
+            var responses = new java.util.ArrayList<Response>();
+            for (var future : submitted) responses.add(future.get());
+            assertThat(responses.stream().map(Response::status).toList()).containsExactlyInAnyOrder(202, 202, 429, 429);
+            for (Response r : responses) if (r.status() == 202) {
+                assertThat(await("dana.designer", r.body().path("id").asString()).path("status").asString()).isEqualTo("succeeded");
+            }
+        }
+    }
+
+    @Test
+    @Order(17)
+    void revokedEditingAccessDuringGenerationCreatesNoDraft() throws Exception {
+        OpenRouterStub.slow(envelope(example(), List.of(), List.of()), 1500);
+        long before = workflows();
+        Response accepted = api("dana.designer").post(Map.of("description", "Purchase approval with finance review."),
+                UUID.randomUUID().toString(), DRAFTS, PURCHASING);
+        assertThat(accepted.status()).isEqualTo(202);
+        UUID job = UUID.fromString(accepted.body().path("id").asString());
+        UUID binding = UUID.fromString("00000000-0000-7000-8000-000000000302");
+        try {
+            superuser("UPDATE orqix.role_binding SET role = 'VIEWER' WHERE id = ?", binding);
+            policy.evictAll();
+            org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(10)).until(() ->
+                    jdbc.sql("SELECT status FROM ai_generation_job WHERE id = :id").param("id", job)
+                            .query(String.class).single().equals("failed"));
+            assertThat(workflows()).isEqualTo(before);
+        } finally {
+            superuser("UPDATE orqix.role_binding SET role = 'WORKFLOW_DESIGNER' WHERE id = ?", binding);
+            policy.evictAll();
+        }
+    }
+
+    @Test
+    @Order(18)
+    void terminalJobsExpireAfterRetentionWhileDraftsAndLiveReplayJobsRemain() throws Exception {
+        OpenRouterStub.reply(envelope(example(), List.of(), List.of()), ECONOMY_MODEL, 0.0001);
+        Response accepted = api("dana.designer").post(Map.of("description", "Purchase approval with finance review."),
+                UUID.randomUUID().toString(), DRAFTS, PURCHASING);
+        String id = accepted.body().path("id").asString();
+        JsonNode done = await("dana.designer", id);
+        String workflowId = done.path("result").path("workflow").path("id").asString();
+        superuser("UPDATE orqix.ai_generation_job SET finished_at = now() - interval '31 days' WHERE id = ?", UUID.fromString(id));
+        jobStore.purgeExpired();
+        assertThat(jobStore.find(PURCHASING, UUID.fromString(id))).isPresent();
+        superuser("UPDATE orqix.idempotency_record SET expires_at = now() - interval '1 second' WHERE resource_id = ?", id);
+        jobStore.purgeExpired();
+        assertThat(jobStore.find(PURCHASING, UUID.fromString(id))).isEmpty();
+        assertThat(api("dana.designer").get("/workspaces/{ws}/ai/generations/{id}", PURCHASING, id).status()).isEqualTo(404);
+        assertThat(api("dana.designer").get("/workspaces/{ws}/workflows/{id}", PURCHASING, workflowId).status()).isEqualTo(200);
+    }
+
+    /** Last but one: tripping the breaker pauses the auto profile in this context for the rest of the UTC day. */
+    @Test
+    @Order(98)
+    void aRouterChoosingAnExcludedModelRecordsItAndPausesTheProfile() throws Exception {
+        OpenRouterStub.reply(envelope(example(), List.of(), List.of()), "anthropic/claude-opus-9", 0.02);
+        Draft routed = postDraft("dana.designer", Map.of("description", "Purchase approval with finance review.",
+                "profile", "auto"), UUID.randomUUID().toString());
+        // The valid output is kept (the call is already paid) but the violation is recorded on the generation.
+        assertThat(routed.status()).as(routed.toString()).isEqualTo(201);
+        assertThat(routed.body().path("generation").path("model").asString()).isEqualTo("anthropic/claude-opus-9");
+        assertThat(routed.body().path("generation").path("policyViolation").asString()).contains("excluded model");
+        assertThat(jdbc.sql("""
+                SELECT count(*) FROM ai_generation WHERE profile = 'auto' AND policy_violation IS NOT NULL
+                """).query(Long.class).single()).isEqualTo(1);
+        // The profile is paused: not offered, refused, and Settings can show why.
+        JsonNode status = api("dana.designer").get("/workspaces/{ws}/ai/status", PURCHASING).body();
+        assertThat(status.path("profiles").findValuesAsString("id")).doesNotContain("auto");
+        JsonNode disabled = status.path("disabledProfiles").get(0);
+        assertThat(disabled.path("id").asString()).isEqualTo("auto");
+        assertThat(disabled.path("model").asString()).isEqualTo("anthropic/claude-opus-9");
+        assertThat(disabled.path("reason").asString()).contains("excluded model", "00:00 UTC");
+        assertThat(disabled.path("until").isString()).isTrue();
+        Response refused = api("dana.designer").post(Map.of("description", "Purchase approval with finance review.",
+                "profile", "auto"), UUID.randomUUID().toString(), DRAFTS, PURCHASING);
+        assertThat(refused.code()).as(refused.toString()).isEqualTo("AI_MODEL_NOT_ALLOWED");
+        // The default profile keeps working, and escalation no longer reaches the paused router.
+        for (int i = 0; i < 3; i++) {
+            OpenRouterStub.reply(envelope(brokenExample(), List.of(), List.of()), ECONOMY_MODEL, 0.001);
+        }
+        int before = OpenRouterStub.requests().size();
+        Draft failed = draft("Purchase approval with finance review.");
+        assertThat(failed.code()).isEqualTo("AI_OUTPUT_INVALID");
+        assertThat(OpenRouterStub.requests().size() - before).isEqualTo(3);
+        assertThat(OpenRouterStub.requests().stream().skip(before).map(r -> r.path("model").asString()))
+                .containsOnly(ECONOMY_MODEL);
     }
 
     /** Last: rejected credentials disable AI in this context for the re-check interval. */
@@ -428,7 +615,7 @@ class AiApiTest extends IntegrationTestBase {
         var definition = example();
         ((ObjectNode) node(definition, "finance").path("config")).put("candidateGroupRef", "legal-reviewers");
         OpenRouterStub.reply(envelope(definition, List.of(), List.of()), ECONOMY_MODEL, 0.0001);
-        var created = draft("Purchase approval with finance review for large purchases.");
+        Draft created = draft("Purchase approval with finance review for large purchases.");
         assertThat(created.status()).as(created.toString()).isEqualTo(201);
         String id = created.body().path("workflow").path("id").asString();
         OpenRouterStub.reply("{\"summary\":\"All groups are ready.\",\"steps\":[]}", ECONOMY_MODEL, 0.0001);
@@ -444,7 +631,7 @@ class AiApiTest extends IntegrationTestBase {
     @Order(99)
     void rejectedCredentialsReportAiAsDisabled() throws Exception {
         OpenRouterStub.fail(401, Map.of());
-        Response rejected = draft("Purchase approval with finance review.");
+        Draft rejected = draft("Purchase approval with finance review.");
         assertThat(rejected.status()).as(rejected.toString()).isEqualTo(422);
         assertThat(rejected.code()).isEqualTo("AI_NOT_CONFIGURED");
         JsonNode status = api("dana.designer").get("/workspaces/{ws}/ai/status", PURCHASING).body();
@@ -456,9 +643,75 @@ class AiApiTest extends IntegrationTestBase {
 
     // ---------------------------------------------------------------- helpers
 
-    private Response draft(String description) throws Exception {
-        return api("dana.designer").post(Map.of("description", description), UUID.randomUUID().toString(), DRAFTS,
-                PURCHASING);
+    /** A draft request as a client sees it: POST, then poll the job until it ends. Mirrors the old synchronous shape. */
+    private final class Draft {
+        private final Response accepted;
+        private final JsonNode job;
+
+        Draft(Response accepted, JsonNode job) {
+            this.accepted = accepted;
+            this.job = job;
+        }
+
+        String jobId() {
+            return job == null ? null : job.path("id").asString();
+        }
+
+        /** 201 when the job succeeded, the problem status when it failed, the POST status when it was refused. */
+        int status() {
+            if (job == null) {
+                return accepted.status();
+            }
+            return "succeeded".equals(job.path("status").asString()) ? 201
+                    : "failed".equals(job.path("status").asString()) ? job.path("problem").path("status").asInt() : -1;
+        }
+
+        JsonNode body() {
+            if (job == null) {
+                return accepted.body();
+            }
+            return "succeeded".equals(job.path("status").asString()) ? job.path("result") : job.path("problem");
+        }
+
+        String code() {
+            return body().path("code").asString(null);
+        }
+
+        String header(String name) {
+            return accepted.header(name);
+        }
+
+        @Override
+        public String toString() {
+            return job == null ? accepted.toString() : job.toString();
+        }
+    }
+
+    private Draft postDraft(String user, Object body, String key) throws Exception {
+        Response accepted = api(user).post(body, key, DRAFTS, PURCHASING);
+        if (accepted.status() != 202) {
+            return new Draft(accepted, null);
+        }
+        assertThat(accepted.header("Location")).contains("/ai/generations/" + accepted.body().path("id").asString());
+        return new Draft(accepted, await(user, accepted.body().path("id").asString()));
+    }
+
+    private JsonNode await(String user, String jobId) throws Exception {
+        long until = System.currentTimeMillis() + 40_000;
+        while (true) {
+            Response poll = api(user).get("/workspaces/{ws}/ai/generations/{id}", PURCHASING, jobId);
+            assertThat(poll.status()).as(poll.toString()).isEqualTo(200);
+            String state = poll.body().path("status").asString();
+            if ("succeeded".equals(state) || "failed".equals(state)) {
+                return poll.body();
+            }
+            assertThat(System.currentTimeMillis()).as("job " + jobId + " still " + state).isLessThan(until);
+            Thread.sleep(100);
+        }
+    }
+
+    private Draft draft(String description) throws Exception {
+        return postDraft("dana.designer", Map.of("description", description), UUID.randomUUID().toString());
     }
 
     private long workflows() {

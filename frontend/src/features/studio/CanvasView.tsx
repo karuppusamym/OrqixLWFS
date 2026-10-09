@@ -39,7 +39,7 @@ const nodeTypes = { step: StepNode }
 const edgeTypes = { route: RouteEdge }
 
 /** Route colors come from theme tokens (src/index.css `--edge-*`), so a brand change recolors the canvas too. */
-const edgeColor = (on: RouteKind): string => `var(--edge-${on})`
+const edgeColor = (on: RouteKind): string => `var(--edge-${on === 'timedOut' ? 'condition' : on})`
 
 export const PALETTE_MIME = 'application/x-orqix-node'
 
@@ -113,6 +113,7 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
         const c = counts[n.id]
         const total = (c?.blockers ?? 0) + (c?.warnings ?? 0)
         const data: StepNodeData = { kind: n.type, label: n.label, subtitle: nodeSubtitle(def, n, groupNames), blockers: c?.blockers ?? 0, warnings: c?.warnings ?? 0 }
+        if (n.type === 'approval') data.timeout = !!n.config.timeoutAfter
         if (n.type === 'end') {
           data.outcomeKind = n.config.outcomeKind === 'rejected' ? 'rejected' : 'success'
           if (typeof n.config.businessOutcome === 'string') data.outcome = n.config.businessOutcome
@@ -141,7 +142,7 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
             id: t.id,
             source: t.from,
             target: t.to,
-            sourceHandle: t.on === 'approved' ? 'approved' : t.on === 'rejected' ? 'rejected' : t.on === 'condition' || t.on === 'default' ? 'route' : 'next',
+            sourceHandle: t.on === 'approved' ? 'approved' : t.on === 'rejected' ? 'rejected' : t.on === 'timedOut' ? 'timedOut' : t.on === 'condition' || t.on === 'default' ? 'route' : 'next',
             targetHandle: 'in',
             type: 'route',
             data: { on: t.on, text },

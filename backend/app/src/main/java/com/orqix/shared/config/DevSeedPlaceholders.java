@@ -24,6 +24,8 @@ public class DevSeedPlaceholders implements FlywayConfigurationCustomizer {
 
     static final String TEMPLATE = "templates/purchase-approval.json";
     static final String CONNECTION = "dev-seed/connections/procurement.connection.json";
+    static final String VENDOR_AGENT = "dev-seed/connections/vendor-risk-assistant.connection.json";
+    static final String VENDOR_TEMPLATE = "templates/vendor-onboarding-check.json";
 
     private final Environment environment;
 
@@ -39,6 +41,10 @@ public class DevSeedPlaceholders implements FlywayConfigurationCustomizer {
         placeholders.put("dev_purchase_template", template);
         placeholders.put("dev_procurement_definition", connection);
         placeholders.put("dev_procurement_definition_hash", Json.canonicalSha256(connection));
+        String vendorAgent = read(VENDOR_AGENT);
+        placeholders.put("dev_vendor_agent_definition", vendorAgent);
+        placeholders.put("dev_vendor_agent_definition_hash", Json.canonicalSha256(vendorAgent));
+        placeholders.put("dev_vendor_template", read(VENDOR_TEMPLATE));
         placeholders.put("dev_stub_base_url", environment.getProperty("orqix.dev-seed.stub-base-url",
                 "http://localhost:8095"));
         configuration.placeholders(placeholders);

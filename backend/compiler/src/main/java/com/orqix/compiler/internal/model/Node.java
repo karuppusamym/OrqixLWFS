@@ -33,9 +33,9 @@ public sealed interface Node {
         }
     }
 
-    /** Ask for approval. {@code dueAfterHours} may be null. */
+    /** Ask for approval. {@code dueAfterHours} and {@code timeoutAfter} (ISO-8601 duration) may be null. */
     record Approval(int index, String id, String label, String candidateGroupRef, boolean rejectReasonRequired,
-                    Integer dueAfterHours) implements Node {
+                    Integer dueAfterHours, String timeoutAfter) implements Node {
         @Override
         public NodeKind kind() {
             return NodeKind.APPROVAL;
@@ -74,6 +74,42 @@ public sealed interface Node {
         @Override
         public NodeKind kind() {
             return NodeKind.NOTIFICATION;
+        }
+    }
+
+    /** Run in parallel: starts one branch per outgoing path; {@code joinRef} names the matching join. */
+    record ParallelSplit(int index, String id, String label, String joinRef) implements Node {
+        @Override
+        public NodeKind kind() {
+            return NodeKind.PARALLEL_SPLIT;
+        }
+    }
+
+    /** Wait for all branches of the matching split. */
+    record ParallelJoin(int index, String id, String label) implements Node {
+        @Override
+        public NodeKind kind() {
+            return NodeKind.PARALLEL_JOIN;
+        }
+    }
+
+    /** Wait for a fixed time (ISO-8601 duration). */
+    record Wait(int index, String id, String label, String duration) implements Node {
+        @Override
+        public NodeKind kind() {
+            return NodeKind.WAIT;
+        }
+    }
+
+    /**
+     * Start another workflow as a child request. {@code inputMapping}: child request field to field reference here;
+     * {@code resultMapping}: output name here to child result field. Both sorted by key.
+     */
+    record StartWorkflow(int index, String id, String label, String workflowRef, Map<String, String> inputMapping,
+                         Map<String, String> resultMapping) implements Node {
+        @Override
+        public NodeKind kind() {
+            return NodeKind.START_WORKFLOW;
         }
     }
 

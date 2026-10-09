@@ -27,14 +27,14 @@ STUB = "http://localhost:8095"
 REQUESTS = [
     # (title, purpose, cost center, amount, requester, journey)
     ("Replacement laptop for onboarding", "New starter in Operations needs a laptop before Monday.", "OPS", 1800, "rhea.requester", "waiting-manager"),
-    ("Ergonomic chairs (12)", "Replace chairs that failed the annual safety check.", "FAC", 3600, "rhea.requester", "waiting-manager"),
+    ("Ergonomic chairs (12)", "Replace chairs that failed the annual safety check.", "HR", 3600, "rhea.requester", "waiting-manager"),
     ("Standing desks for the analytics team", "Team of 8 moving to the third floor; budget approved in Q3 plan.", "IT", 5000, "rhea.requester", "waiting-finance"),
-    ("Server rack for the new office", "Required for the branch network rollout.", "IT", 12500, "fred.facilities", "waiting-finance"),
+    ("Server rack for the new office", "Required for the branch network rollout.", "IT", 12500, "rhea.requester", "waiting-finance"),
     ("Conference room camera", "Hybrid meetings in the main boardroom.", "OPS", 950, "rhea.requester", "fulfilled"),
-    ("Monitor arms (20)", "Desk refresh for the finance floor.", "FAC", 1200, "fred.facilities", "fulfilled"),
-    ("Premium coffee machine", "Nice to have for the kitchen.", "FAC", 2400, "rhea.requester", "rejected-manager"),
+    ("Monitor arms (20)", "Desk refresh for the finance floor.", "HR", 1200, "rhea.requester", "fulfilled"),
+    ("Premium coffee machine", "Nice to have for the kitchen.", "HR", 2400, "rhea.requester", "rejected-manager"),
     ("Annual design software licences", "Renewal for 15 seats.", "IT", 7800, "rhea.requester", "rejected-finance"),
-    ("Label printer", "Warehouse labelling; the old printer is broken.", "OPS", 640, "fred.facilities", "needs-attention"),
+    ("Label printer", "Warehouse labelling; the old printer is broken.", "OPS", 640, "rhea.requester", "needs-attention"),
 ]
 
 
@@ -81,12 +81,12 @@ def decide(client, ws, run_id, action, reason=None, comment=None):
     if comment:
         body["comment"] = comment
     r = client.post(f"/workspaces/{ws}/tasks/{task['id']}/decision", body, idem=True)
-    if r.status_code != 200:
+    if r.status_code not in (200, 201):
         raise RuntimeError(f"decision failed: {r.status_code} {r.text[:200]}")
 
 
 def main():
-    clients = {u: Client(u) for u in ("rhea.requester", "fred.facilities", "mani.manager", "fin.finance", "paul.publisher")}
+    clients = {u: Client(u) for u in ("rhea.requester", "mani.manager", "fin.finance", "paul.publisher")}
     rhea = clients["rhea.requester"]
     paul = clients["paul.publisher"]
     ws = next(w["id"] for w in rhea.get("/me").json()["workspaces"] if w["key"] == "purchasing")
@@ -122,8 +122,7 @@ def main():
         if journey == "needs-attention":
             wait_for(rhea, ws, rid, lambda x: x["lifecycle"] in ("needsAttention", "completed"))
             requests.post(f"{STUB}/__faults", json={"mode": "none"}, timeout=10)
-        final = wait_for(rhea, ws, rid, lambda x: True)
-        final = rhea.get(f"/workspaces/{ws}/runs/{rid}").json() if final is None else final
+        final = wait_for(rhea, ws, rid, lambda x: x["lifecycle"] != "running")
         created.append((run.get("reference", rid[:8]), title, journey, final["lifecycle"]))
         log(f"{run.get('reference', rid[:8])}  {title:<40} {journey:<17} -> {final['lifecycle']}")
         time.sleep(0.4)

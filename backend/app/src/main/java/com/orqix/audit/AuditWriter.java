@@ -88,7 +88,9 @@ public class AuditWriter {
                     "inputTokens", "outputTokens", "costUsd", "durationMs", "outcome")),
             Map.entry("migration.uploaded", Set.of("migrationId", "sourceSystem", "sourceSha256", "adapterVersion",
                     "elementCount", "blockerCount", "actionCount")),
-            Map.entry("migration.converted", Set.of("migrationId", "workflowId", "workflowKey")));
+            Map.entry("migration.converted", Set.of("migrationId", "workflowId", "workflowKey")),
+            Map.entry("agent.call", Set.of("key", "operation", "profile", "model", "outcome", "toolCalls", "inputTokens",
+                    "outputTokens", "costUsd", "durationMs", "effectId")));
 
     private final JdbcClient jdbc;
     private final Json json;

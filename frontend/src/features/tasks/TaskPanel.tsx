@@ -205,9 +205,9 @@ export function TaskPanel({ taskId, onClaimed }: { taskId: string; onClaimed?: (
   const busy = pending !== null
 
   const why = (() => {
-    if (isMine || canClaim || task.completedBy?.id === me.subject.id) return `You're seeing this because you're in the ${task.candidateGroup.name} group.`
-    if (can('run.read')) return 'You can see this because you can view requests in this workspace.'
-    return `This task is assigned to the ${task.candidateGroup.name} group.`
+    if (isMine || canClaim || task.completedBy?.id === me.subject.id) return `Because you're in the ${task.candidateGroup.name} group.`
+    if (can('run.read')) return 'Because you can view all requests in this workspace.'
+    return `It is assigned to the ${task.candidateGroup.name} group.`
   })()
 
   return (
@@ -218,7 +218,7 @@ export function TaskPanel({ taskId, onClaimed }: { taskId: string; onClaimed?: (
             {task.workflowName}
             {` · ${requestReference(task)}`}
           </p>
-          <h2 className="mt-1 text-xl">{task.requestTitle ?? task.label}</h2>
+          <h2 className="mt-1 text-xl wrap-anywhere">{task.requestTitle ?? task.label}</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             {task.label} &middot; requested by {task.requester.displayName}
             {due ? <span className={due.overdue ? ' font-semibold text-danger' : ''}> &middot; {due.label}</span> : null}
@@ -244,7 +244,7 @@ export function TaskPanel({ taskId, onClaimed }: { taskId: string; onClaimed?: (
             {fields.map((f) => (
               <div key={f.key} className="grid gap-1 px-4 py-2.5 sm:grid-cols-[10rem_1fr]">
                 <dt className="text-sm font-semibold text-muted-foreground">{f.label}</dt>
-                <dd className="break-words whitespace-pre-wrap">{displayJsonValue(f, asRecord(task.request.input)[f.key])}</dd>
+                <dd className="wrap-anywhere whitespace-pre-wrap">{displayJsonValue(f, asRecord(task.request.input)[f.key])}</dd>
               </div>
             ))}
           </dl>
@@ -273,8 +273,8 @@ export function TaskPanel({ taskId, onClaimed }: { taskId: string; onClaimed?: (
                     {h.actor.displayName} {h.action === 'approve' ? 'approved' : 'rejected'} {h.label ?? 'a step'}
                   </p>
                   <p className="text-xs text-muted-foreground">{formatDateTime(h.decidedAt)}</p>
-                  {h.reason ? <p className="mt-1 whitespace-pre-wrap">Reason: {h.reason}</p> : null}
-                  {h.comment ? <p className="mt-1 whitespace-pre-wrap">Comment: {h.comment}</p> : null}
+                  {h.reason ? <p className="mt-1 wrap-anywhere whitespace-pre-wrap">Reason: {h.reason}</p> : null}
+                  {h.comment ? <p className="mt-1 wrap-anywhere whitespace-pre-wrap">Comment: {h.comment}</p> : null}
                 </li>
               ))}
             </ol>

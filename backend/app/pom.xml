@@ -169,6 +169,8 @@
                 <targetPath>templates</targetPath>
                 <includes>
                     <include>purchase-approval.json</include>
+                    <include>new-hire-onboarding.json</include>
+                    <include>vendor-onboarding-check.json</include>
                 </includes>
             </resource>
             <!-- Connection definition used by the dev seed (profile dev only). -->
@@ -177,6 +179,7 @@
                 <targetPath>dev-seed/connections</targetPath>
                 <includes>
                     <include>procurement.connection.json</include>
+                    <include>vendor-risk-assistant.connection.json</include>
                 </includes>
             </resource>
         </resources>

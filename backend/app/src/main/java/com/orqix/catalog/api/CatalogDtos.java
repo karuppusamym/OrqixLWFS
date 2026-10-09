@@ -25,7 +25,7 @@ public final class CatalogDtos {
     public static final String KEY = "^[a-z][a-z0-9-]{0,62}[a-z0-9]$";
 
     public record Template(String id, String name, String description, String typicalOwner, List<String> requiredInputs,
-            List<String> requiredGroups, List<String> requiredConnections) {
+            List<String> requiredGroups, List<String> requiredConnections, List<String> requiredWorkflows) {
     }
 
     public record TemplateList(List<Template> items) {

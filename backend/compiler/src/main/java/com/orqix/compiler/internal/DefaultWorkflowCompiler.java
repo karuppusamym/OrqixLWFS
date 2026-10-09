@@ -7,9 +7,11 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 
 import com.orqix.compiler.CompilationException;
 import com.orqix.compiler.CompileContext;
+import com.orqix.compiler.CompileContext.WorkflowInfo;
 import com.orqix.compiler.CompiledWorkflow;
 import com.orqix.compiler.ValidationReport;
 import com.orqix.compiler.WorkflowCompiler;
@@ -33,7 +35,7 @@ public final class DefaultWorkflowCompiler implements WorkflowCompiler {
      * Semantic version of the generated output (S4 section 9): minor for new constructs, patch for formatting-only
      * changes. Changing it changes the golden files ({@code orqix:release compilerVersion}).
      */
-    public static final String VERSION = "0.1.0";
+    public static final String VERSION = "0.2.0";
 
     private final Pipeline pipeline;
 
@@ -88,7 +90,23 @@ public final class DefaultWorkflowCompiler implements WorkflowCompiler {
             decisions.add(new CompiledWorkflow.DecisionRef(table.key(), table.version()));
         }
 
-        BpmnGenerator.Result bpmn = BpmnGenerator.generate(d, VERSION, report.semanticHash(), resourceByKey);
+        Map<String, WorkflowInfo> childFacts = new LinkedHashMap<>();
+        List<CompiledWorkflow.ChildRef> childRefs = new ArrayList<>();
+        Set<String> closure = new TreeSet<>();
+        int height = 0;
+        for (Node n : d.nodes()) {
+            if (n instanceof Node.StartWorkflow s) {
+                WorkflowInfo child = analysis.workspace().workflows().get(s.workflowRef());
+                childFacts.put(s.id(), child);
+                childRefs.add(new CompiledWorkflow.ChildRef(s.id(), s.workflowRef(), child.releaseId(),
+                        child.releaseNumber(), child.semanticHash()));
+                closure.add(s.workflowRef());
+                closure.addAll(child.callClosure());
+                height = Math.max(height, 1 + child.callHeight());
+            }
+        }
+
+        BpmnGenerator.Result bpmn = BpmnGenerator.generate(d, VERSION, report.semanticHash(), resourceByKey, childFacts);
 
         Set<String> usedConnections = new LinkedHashSet<>();
         Set<String> groups = new LinkedHashSet<>();
@@ -120,7 +138,10 @@ public final class DefaultWorkflowCompiler implements WorkflowCompiler {
                 report.warnings(),
                 List.copyOf(decisions),
                 List.copyOf(connections),
-                List.copyOf(groups));
+                List.copyOf(groups),
+                List.copyOf(childRefs),
+                List.copyOf(closure),
+                height);
     }
 
     private static FieldKind inputKind(RuleContext analysis, DecisionTable table) {

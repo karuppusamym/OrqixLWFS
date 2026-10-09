@@ -316,7 +316,7 @@ public class HttpExecutor {
     }
 
     /** Collects at most {@link #MAX_RESPONSE_BYTES}; larger bodies fail the call as an invalid response. */
-    private static final class LimitedSubscriber implements HttpResponse.BodySubscriber<byte[]> {
+    static final class LimitedSubscriber implements HttpResponse.BodySubscriber<byte[]> {
 
         private final CompletableFuture<byte[]> result = new CompletableFuture<>();
         private final List<ByteBuffer> buffers = new ArrayList<>();

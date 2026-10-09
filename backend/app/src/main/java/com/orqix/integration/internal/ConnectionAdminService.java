@@ -26,6 +26,7 @@ import com.orqix.identity.Permission;
 import com.orqix.identity.PolicyService;
 import com.orqix.identity.SubjectService;
 import com.orqix.identity.WorkspaceAccess;
+import com.orqix.integration.AgentExecutor;
 import com.orqix.integration.ConnectionDefinition;
 import com.orqix.integration.ConnectionService;
 import com.orqix.integration.EgressPolicy;
@@ -38,6 +39,7 @@ import com.orqix.shared.problem.ProblemCode;
 import com.orqix.shared.web.Sql;
 
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ObjectNode;
 
 /**
  * Connections API (B05.2): definitions are immutable versions validated against connection-definition-v0.schema.json;
@@ -55,6 +57,7 @@ public class ConnectionAdminService {
     private final EgressPolicy egress;
     private final SecretStore secrets;
     private final HttpExecutor executor;
+    private final AgentExecutor agents;
     private final AuditWriter audit;
     private final JdbcClient jdbc;
     private final Json json;
@@ -62,14 +65,15 @@ public class ConnectionAdminService {
     private final Schema definitionSchema;
 
     public ConnectionAdminService(ConnectionService connections, PolicyService policy, SubjectService subjects,
-            EgressPolicy egress, SecretStore secrets, HttpExecutor executor, AuditWriter audit, JdbcClient jdbc, Json json,
-            Clock clock) {
+            EgressPolicy egress, SecretStore secrets, HttpExecutor executor, AgentExecutor agents, AuditWriter audit,
+            JdbcClient jdbc, Json json, Clock clock) {
         this.connections = connections;
         this.policy = policy;
         this.subjects = subjects;
         this.egress = egress;
         this.secrets = secrets;
         this.executor = executor;
+        this.agents = agents;
         this.audit = audit;
         this.jdbc = jdbc;
         this.json = json;
@@ -90,7 +94,8 @@ public class ConnectionAdminService {
         byKey.forEach((key, versions) -> {
             ConnectionService.DefinitionRecord latest = versions.get(versions.size() - 1);
             Optional<ConnectionService.Binding> binding = connections.binding(workspaceId, key);
-            items.add(new ConnectionDtos.ConnectionSummary(key, latest.definition().name(), latest.version(),
+            items.add(new ConnectionDtos.ConnectionSummary(key, latest.definition().name(), latest.definition().kind(),
+                    latest.version(),
                     versions.stream().map(ConnectionService.DefinitionRecord::version).toList(),
                     new ConnectionDtos.BindingState(binding.isPresent(), binding.map(ConnectionService.Binding::enabled)
                             .orElse(false), binding.map(b -> host(b.baseUrl())).orElse(null)),
@@ -139,6 +144,11 @@ public class ConnectionAdminService {
         }
         int version = definition.path("version").asInt();
         List<ConnectionService.DefinitionRecord> existing = connections.definitions(workspaceId, key);
+        List<ApiException.FieldError> semantic = agentChecks(definition, existing);
+        if (!semantic.isEmpty()) {
+            throw new ApiException(ProblemCode.VALIDATION_FAILED, "The connection definition is not valid.")
+                    .withFieldErrors(semantic);
+        }
         int latest = existing.isEmpty() ? 0 : existing.get(existing.size() - 1).version();
         if (existing.stream().anyMatch(d -> d.version() == version)) {
             throw new ApiException(ProblemCode.DUPLICATE_KEY, "This version is already registered; versions are immutable.");
@@ -196,6 +206,10 @@ public class ConnectionAdminService {
             case "apiKeyHeader" -> {
                 if (auth.secretRef() == null || auth.headerName() == null) {
                     errors.add(new ApiException.FieldError("/auth", "required", "secretRef and headerName are required"));
+                }
+                if (connections.definitions(workspaceId, key).stream().anyMatch(d -> d.definition().isAgent())) {
+                    errors.add(new ApiException.FieldError("/auth/type", "enum",
+                            "An agent connection supports the auth types none and bearerToken"));
                 }
             }
             default -> errors.add(new ApiException.FieldError("/auth/type", "enum", "Unknown auth type"));
@@ -291,8 +305,22 @@ public class ConnectionAdminService {
         ConnectionService.Binding binding = connections.binding(workspaceId, key).filter(ConnectionService.Binding::enabled)
                 .orElseThrow(() -> new ApiException(ProblemCode.CONNECTION_NOT_BOUND,
                         "Configure and enable the binding first."));
-        ConnectionDtos.TestResult result;
         long started = System.nanoTime();
+        ConnectionDtos.TestResult result = record.definition().isAgent()
+                ? testAgent(caller, workspaceId, record, operation, binding, request.input(), started)
+                : testHttp(record, operation, binding, started);
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("key", key);
+        metadata.put("operation", request.operation());
+        metadata.put("outcome", result.outcome());
+        audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.USER, caller.subjectId(),
+                "connection.tested", "connection", key, AuditWriter.Outcome.SUCCESS, metadata));
+        return result;
+    }
+
+    private ConnectionDtos.TestResult testHttp(ConnectionService.DefinitionRecord record,
+            ConnectionDefinition.Operation operation, ConnectionService.Binding binding, long started) {
+        ConnectionDtos.TestResult result;
         try {
             egress.check(binding.baseUrl());
             String secret = null;
@@ -313,13 +341,103 @@ public class ConnectionAdminService {
         } catch (EgressPolicy.EgressDeniedException e) {
             result = new ConnectionDtos.TestResult("failed", null, elapsed(started), "EGRESS_NOT_ALLOWED", e.getMessage());
         }
-        Map<String, Object> metadata = new LinkedHashMap<>();
-        metadata.put("key", key);
-        metadata.put("operation", request.operation());
-        metadata.put("outcome", result.outcome());
-        audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.USER, caller.subjectId(),
-                "connection.tested", "connection", key, AuditWriter.Outcome.SUCCESS, metadata));
         return result;
+    }
+
+    /** Runs an agent operation once with a sample input (uses AI, metered like any AI use; S13 section 8). */
+    private ConnectionDtos.TestResult testAgent(Caller caller, UUID workspaceId, ConnectionService.DefinitionRecord record,
+            ConnectionDefinition.Operation operation, ConnectionService.Binding binding, JsonNode input, long started) {
+        String unavailable = agents.unavailableReason();
+        if (unavailable != null) {
+            throw new ApiException(ProblemCode.AI_NOT_CONFIGURED, unavailable);
+        }
+        ObjectNode sample = sampleInput(operation, input);
+        try {
+            egress.check(binding.baseUrl());
+        } catch (EgressPolicy.EgressDeniedException e) {
+            return new ConnectionDtos.TestResult("failed", null, elapsed(started), "EGRESS_NOT_ALLOWED", e.getMessage());
+        }
+        String secret = null;
+        if (!"none".equals(binding.authType())) {
+            secret = secrets.read(binding.secretRef()).orElse(null);
+            if (secret == null) {
+                return new ConnectionDtos.TestResult("failed", null, elapsed(started), "CONNECTION_UNAVAILABLE",
+                        "The credential is not available.");
+            }
+        }
+        AgentExecutor.Result run = agents.execute(new AgentExecutor.Request(workspaceId, null, null,
+                caller.subjectId(), "test", 1, record.definition(), operation, sample, Map.of(), binding.baseUrl(),
+                secret, operation.maxTimeoutSeconds()));
+        if (run.outcome() == HttpExecutor.Outcome.SUCCEEDED) {
+            return new ConnectionDtos.TestResult("succeeded", null, elapsed(started), null, run.detail(), run.output(),
+                    run.summary());
+        }
+        return new ConnectionDtos.TestResult("failed", null, elapsed(started), run.errorCode(), run.businessMessage());
+    }
+
+    /** The sample input must satisfy the operation's request schema (a flat object of scalars). */
+    private ObjectNode sampleInput(ConnectionDefinition.Operation operation, JsonNode input) {
+        if (input == null || !input.isObject()) {
+            throw new ApiException(ProblemCode.VALIDATION_FAILED, "A sample input is required to test an agent.")
+                    .withFieldErrors(List.of(new ApiException.FieldError("/input", "required",
+                            "Provide an object with the operation's input fields")));
+        }
+        ObjectNode schemaNode = (ObjectNode) operation.requestSchema().deepCopy();
+        schemaNode.put("$schema", "https://json-schema.org/draft/2020-12/schema");
+        List<Error> errors = SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12).getSchema(schemaNode)
+                .validate(input);
+        if (!errors.isEmpty()) {
+            throw new ApiException(ProblemCode.VALIDATION_FAILED, "The sample input does not match the operation.")
+                    .withFieldErrors(errors.stream().limit(20).map(e -> new ApiException.FieldError(
+                            "/input" + pointer(e), e.getKeyword() == null ? "schema" : e.getKeyword(), e.getMessage()))
+                            .toList());
+        }
+        return (ObjectNode) input;
+    }
+
+    private static final Pattern PLACEHOLDER = Pattern.compile("\\{([A-Za-z][A-Za-z0-9]*)}");
+
+    /**
+     * Checks that the JSON Schema cannot express: an agent keeps its kind across versions (the binding of the key is an
+     * MCP endpoint or an HTTP service, never both), tool names are unique, and every summary placeholder names an
+     * input field, a result field or {tools}.
+     */
+    private static List<ApiException.FieldError> agentChecks(JsonNode definition,
+            List<ConnectionService.DefinitionRecord> existing) {
+        List<ApiException.FieldError> errors = new ArrayList<>();
+        String kind = definition.path("kind").asString("http");
+        for (ConnectionService.DefinitionRecord previous : existing) {
+            if (!previous.definition().kind().equals(kind)) {
+                errors.add(new ApiException.FieldError("/definition/kind", "const", "A connection keeps its kind ("
+                        + previous.definition().kind() + ") across versions"));
+                break;
+            }
+        }
+        if (!"agent".equals(kind)) {
+            return errors;
+        }
+        for (Map.Entry<String, JsonNode> operation : definition.path("operations").properties()) {
+            String base = "/definition/operations/" + operation.getKey() + "/agent";
+            JsonNode agent = operation.getValue().path("agent");
+            java.util.Set<String> names = new java.util.HashSet<>();
+            for (JsonNode tool : agent.path("tools")) {
+                if (!names.add(tool.path("name").asString())) {
+                    errors.add(new ApiException.FieldError(base + "/tools", "uniqueItems",
+                            "Tool " + tool.path("name").asString() + " is listed twice"));
+                }
+            }
+            java.util.Set<String> known = new java.util.HashSet<>(java.util.Set.of("tools"));
+            operation.getValue().path("requestSchema").path("properties").propertyNames().forEach(known::add);
+            operation.getValue().path("responseSchema").path("properties").propertyNames().forEach(known::add);
+            java.util.regex.Matcher matcher = PLACEHOLDER.matcher(agent.path("summary").asString(""));
+            while (matcher.find()) {
+                if (!known.contains(matcher.group(1))) {
+                    errors.add(new ApiException.FieldError(base + "/summary", "pattern",
+                            "{" + matcher.group(1) + "} is neither an input field, a result field nor {tools}"));
+                }
+            }
+        }
+        return errors;
     }
 
     // ---------------------------------------------------------------- helpers

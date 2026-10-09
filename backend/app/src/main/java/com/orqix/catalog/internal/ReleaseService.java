@@ -115,7 +115,7 @@ public class ReleaseService {
                 .orElseThrow(() -> new ApiException(ProblemCode.VALIDATION_FAILED, "The draft revision does not exist.")
                         .withFieldErrors(List.of(new ApiException.FieldError("/draftRevision", "minimum",
                                 "Unknown draft revision"))));
-        CompileContext context = contexts.create(access.workspace());
+        CompileContext context = contexts.create(access.workspace(), draft.definitionJson());
         ValidationReport report = compiler.validate(draft.definitionJson(), context);
         if (!report.publishable()) {
             throw new ApiException(ProblemCode.WORKFLOW_INVALID, "Fix the blocking issues before publishing.")
@@ -190,6 +190,14 @@ public class ReleaseService {
                 .put("definitionVersion", c.definitionVersion()).put("definitionHash", c.definitionHash()));
         ArrayNode groups = manifest.putArray("groups");
         compiled.groups().forEach(groups::add);
+        // Child workflows pinned at publish time (S12): the release id of each started workflow's active release.
+        ArrayNode children = manifest.putArray("workflows");
+        compiled.children().forEach(c -> children.addObject().put("nodeId", c.nodeId())
+                .put("workflowKey", c.workflowKey()).put("releaseId", c.releaseId())
+                .put("releaseNumber", c.releaseNumber()).put("semanticHash", c.semanticHash()));
+        ArrayNode closure = manifest.putArray("callClosure");
+        compiled.callClosure().forEach(closure::add);
+        manifest.put("callHeight", compiled.callHeight());
         return manifest;
     }
 
@@ -272,6 +280,14 @@ public class ReleaseService {
                     .append(" (binding: base URL and credential reference in the target environment)\n");
             connections.definition(workspaceId, key, version).ifPresent(d -> entries.put(
                     "connections/" + key + "-v" + version + ".json", pretty(json.write(d.definition().document()))));
+        }
+        if (manifest.path("workflows").size() > 0) {
+            bindings.append("\n## Workflows started by this workflow\n\n");
+            for (JsonNode pin : manifest.path("workflows")) {
+                bindings.append("- `").append(pin.path("workflowKey").asString()).append("` (pinned to release ")
+                        .append(pin.path("releaseNumber").asInt()).append(" in the source environment; publish the same")
+                        .append(" workflow in the target workspace first and publish this workflow again to pin it)\n");
+            }
         }
         entries.put("BINDINGS.md", bindings.toString().getBytes(StandardCharsets.UTF_8));
         audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.USER, caller.subjectId(),

@@ -10,7 +10,7 @@ import { DESCRIPTION_MAX, DESCRIPTION_MIN } from './limits'
  * Mock-mode AI (S10): status (enabled), deterministic "generation" and "explanation" so the feature can be shown and
  * tested without a provider. Generation takes a few seconds in the browser, like the real thing.
  */
-export const aiMock = { enabled: true, spentUsd: 0.0184, generationDelayMs: 2500 }
+export const aiMock = { enabled: true, spentUsd: 0.0184, generationDelayMs: 2500, trippedAuto: false }
 
 const B = '*/api/v1'
 
@@ -40,10 +40,13 @@ function status() {
     enabled: aiMock.enabled,
     reason: aiMock.enabled ? null : 'AI is not configured: no provider key is set.',
     defaultProfile: aiMock.enabled ? 'economy' : null,
-    profiles: aiMock.enabled ? PROFILES : [],
+    profiles: aiMock.enabled ? PROFILES.filter((p) => !(aiMock.trippedAuto && p.id === 'auto')) : [],
     excludedModels: ['anthropic/claude-opus-*', 'anthropic/claude-fable-*', 'anthropic/claude-mythos-*', 'openai/*-pro*', '*:batch'],
     maxPrice: { promptPerMillion: 1.0, completionPerMillion: 3.0 },
     budget: { monthlyUsd: 10.0, spentUsd: aiMock.spentUsd },
+    disabledProfiles: aiMock.trippedAuto
+      ? [{ id: 'auto', label: 'Auto (Jev Router)', model: 'anthropic/claude-opus-9', reason: 'The router chose the excluded model anthropic/claude-opus-9. The profile is paused until 00:00 UTC.', until: new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate() + 1)).toISOString() }]
+      : [],
   }
 }
 
@@ -207,6 +210,109 @@ function explanation(def: Definition) {
   }
 }
 
+interface MockJob {
+  id: string
+  wsId: string
+  userId: string
+  input: { description?: string; name?: string; profile?: string }
+  profile: string
+  hash: string
+  startedAt: number
+  finishedAt: number | null
+  outcome: { result: Record<string, unknown> } | { problem: Record<string, unknown> } | null
+}
+
+const jobs = new Map<string, MockJob>()
+const jobsByKey = new Map<string, MockJob>()
+
+/** Forget every job (tests and persona switches). */
+export function resetAiJobs(): void {
+  jobs.clear()
+  jobsByKey.clear()
+}
+
+function problemBody(status: number, code: string, title: string, detail: string, extra: Record<string, unknown> = {}) {
+  return { type: `https://orqix.example/problems/${code.toLowerCase().replace(/_/g, '-')}`, title, status, code, detail, correlationId: newId(), ...extra }
+}
+
+/** Creates the workflow when the generation "finishes", as the server does when the model answered. */
+function finish(job: MockJob, perms: Permission[]): void {
+  const description = (job.input.description ?? '').trim()
+  if (/\(unavailable\)/i.test(description)) {
+    job.outcome = { problem: problemBody(503, 'AI_PROVIDER_UNAVAILABLE', 'The AI provider is unavailable; nothing was created', 'The AI provider is unavailable. Nothing was created; try again shortly.') }
+    return
+  }
+  const generated = generate(description, job.input.name?.trim() || undefined)
+  if (!generated) {
+    job.outcome = { problem: problemBody(422, 'AI_OUTPUT_INVALID', 'The AI could not produce a valid workflow', 'The description does not describe a business workflow: it asks for something that is not a process.', { issues: [] }) }
+    return
+  }
+  let wfKey = toKey(generated.definition.name)
+  for (let n = 2; [...db.workflows.values()].some((w) => w.wsId === job.wsId && w.key === wfKey); n++) wfKey = `${toKey(generated.definition.name)}-${n}`
+  generated.definition.workflowKey = wfKey
+  const now = clock.iso()
+  const wf: MockWorkflow = {
+    id: newId(),
+    wsId: job.wsId,
+    key: wfKey,
+    name: generated.definition.name,
+    description: generated.definition.metadata.description || null,
+    ownerId: job.userId,
+    drafts: [{ revision: 1, savedAt: now, savedById: job.userId, definition: generated.definition }],
+    releases: [],
+    activeReleaseId: null,
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+  }
+  db.workflows.set(wf.id, wf)
+  const issues = validateDefinition(generated.definition, context(job.wsId))
+  const binding = new Set(['WF_GROUP_UNBOUND', 'WF_CONNECTION_UNDECLARED', 'WF_CONNECTION_UNKNOWN', 'WF_CONNECTION_UNBOUND', 'WF_OPERATION_UNKNOWN'])
+  const missingConfiguration = issues
+    .filter((i) => i.severity === 'blocker' && binding.has(i.code))
+    .map((i) => {
+      const node = generated.definition.nodes.find((n) => n.id === i.nodeId)
+      const group = node?.config.candidateGroupRef
+      const message = i.code === 'WF_GROUP_UNBOUND' && typeof group === 'string' ? `Create the group "${group}" in Settings > Access, or choose an existing group for this approval step.` : i.message
+      return { message, nodeId: i.nodeId ?? null, code: i.code }
+    })
+  const cost = job.profile === 'auto' ? 0.0143 : 0.0031
+  aiMock.spentUsd = Math.round((aiMock.spentUsd + cost) * 10_000) / 10_000
+  job.outcome = {
+    result: {
+      workflow: workflowView(wf, perms),
+      draft: { workflowId: wf.id, revision: 1, savedAt: now, savedBy: { id: job.userId, displayName: userById(job.userId)?.displayName ?? 'Unknown' }, definition: generated.definition },
+      report: { revision: 1, compilerVersion: '0.1.0-mock', publishable: !issues.some((i) => i.severity === 'blocker'), semanticHash: null, issues },
+      assumptions: generated.assumptions,
+      missingConfiguration,
+      generation: {
+        profile: job.profile,
+        model: job.profile === 'auto' ? 'openai/gpt-6-luna' : 'deepseek/deepseek-v3.2',
+        promptVersion: 'draft-v1',
+        attempts: 1,
+        escalated: false,
+        inputTokens: 9800,
+        outputTokens: 2400,
+        costUsd: cost,
+        durationMs: aiMock.generationDelayMs,
+      },
+    },
+  }
+}
+
+/** The job as the API shows it: queued, then running, then (after the mock delay) succeeded or failed. */
+function jobView(job: MockJob, perms: Permission[]) {
+  const age = Date.now() - job.startedAt
+  if (!job.outcome && age >= aiMock.generationDelayMs) {
+    finish(job, perms)
+    job.finishedAt = Date.now()
+  }
+  const base = { id: job.id, startedAt: new Date(job.startedAt).toISOString(), profile: job.profile }
+  if (!job.outcome) return { ...base, status: age < Math.min(400, aiMock.generationDelayMs / 4) ? 'queued' : 'running' }
+  const finishedAt = new Date(job.finishedAt ?? Date.now()).toISOString()
+  return 'result' in job.outcome ? { ...base, status: 'succeeded', finishedAt, result: job.outcome.result } : { ...base, status: 'failed', finishedAt, problem: job.outcome.problem }
+}
+
 export function createAiHandlers(): HttpHandler[] {
   return [
     http.get(`${B}/workspaces/:ws/ai/status`, async ({ params }) => {
@@ -227,73 +333,25 @@ export function createAiHandlers(): HttpHandler[] {
       if (!aiMock.enabled) return problem(422, 'AI_NOT_CONFIGURED', 'AI assistance is not configured', { detail: 'AI is not configured: no provider key is set.' })
       const stored = `${g.userId}|generateAiDraft|${key}`
       const hash = JSON.stringify([params.ws, input])
-      const prior = db.idempotency.get(stored)
+      const prior = jobsByKey.get(stored)
       if (prior) {
         if (prior.hash !== hash) return problem(409, 'IDEMPOTENCY_KEY_REUSED', 'The Idempotency-Key was used for a different request')
-        return HttpResponse.json(prior.body as JsonBodyType, { status: 200, headers: { 'Idempotent-Replayed': 'true' } })
+        return HttpResponse.json(jobView(prior, g.perms) as JsonBodyType, { status: 200, headers: { 'Idempotent-Replayed': 'true' } })
       }
       const profile = input.profile ?? 'economy'
       if (!PROFILES.some((p) => p.id === profile)) return problem(422, 'AI_MODEL_NOT_ALLOWED', 'The requested AI model or profile is not allowed', { detail: 'Unknown AI profile.' })
-      if (db.latencyMs > 0) await delay(Math.max(db.latencyMs, aiMock.generationDelayMs))
-      if (/\(unavailable\)/i.test(description)) {
-        return problem(503, 'AI_PROVIDER_UNAVAILABLE', 'The AI provider is unavailable; nothing was created', { detail: 'The AI provider is unavailable. Nothing was created; try again shortly.' }, { 'Retry-After': '20' })
-      }
-      const generated = generate(description, input.name?.trim() || undefined)
-      if (!generated) {
-        return problem(422, 'AI_OUTPUT_INVALID', 'The AI could not produce a valid workflow', { detail: 'The description does not describe a business workflow: it asks for something that is not a process.', issues: [] })
-      }
-      const wsId = String(params.ws)
-      let wfKey = toKey(generated.definition.name)
-      for (let n = 2; [...db.workflows.values()].some((w) => w.wsId === wsId && w.key === wfKey); n++) wfKey = `${toKey(generated.definition.name)}-${n}`
-      generated.definition.workflowKey = wfKey
-      const now = clock.iso()
-      const wf: MockWorkflow = {
-        id: newId(),
-        wsId,
-        key: wfKey,
-        name: generated.definition.name,
-        description: generated.definition.metadata.description || null,
-        ownerId: g.userId,
-        drafts: [{ revision: 1, savedAt: now, savedById: g.userId, definition: generated.definition }],
-        releases: [],
-        activeReleaseId: null,
-        version: 1,
-        createdAt: now,
-        updatedAt: now,
-      }
-      db.workflows.set(wf.id, wf)
-      const issues = validateDefinition(generated.definition, context(wsId))
-      const binding = new Set(['WF_GROUP_UNBOUND', 'WF_CONNECTION_UNDECLARED', 'WF_CONNECTION_UNKNOWN', 'WF_CONNECTION_UNBOUND', 'WF_OPERATION_UNKNOWN'])
-      const missingConfiguration = issues
-        .filter((i) => i.severity === 'blocker' && binding.has(i.code))
-        .map((i) => {
-          const node = generated.definition.nodes.find((n) => n.id === i.nodeId)
-          const group = node?.config.candidateGroupRef
-          const message = i.code === 'WF_GROUP_UNBOUND' && typeof group === 'string' ? `Create the group "${group}" in Settings > Access, or choose an existing group for this approval step.` : i.message
-          return { message, nodeId: i.nodeId ?? null, code: i.code }
-        })
-      const cost = profile === 'auto' ? 0.0143 : 0.0031
-      aiMock.spentUsd = Math.round((aiMock.spentUsd + cost) * 10_000) / 10_000
-      const result = {
-        workflow: workflowView(wf, g.perms),
-        draft: { workflowId: wf.id, revision: 1, savedAt: now, savedBy: { id: g.userId, displayName: getCurrentUser().displayName }, definition: generated.definition },
-        report: { revision: 1, compilerVersion: '0.1.0-mock', publishable: !issues.some((i) => i.severity === 'blocker'), semanticHash: null, issues },
-        assumptions: generated.assumptions,
-        missingConfiguration,
-        generation: {
-          profile,
-          model: profile === 'auto' ? 'openai/gpt-6-luna' : 'deepseek/deepseek-v3.2',
-          promptVersion: 'draft-v1',
-          attempts: 1,
-          escalated: false,
-          inputTokens: 9800,
-          outputTokens: 2400,
-          costUsd: cost,
-          durationMs: aiMock.generationDelayMs,
-        },
-      }
-      db.idempotency.set(stored, { hash, status: 201, body: result })
-      return HttpResponse.json(result as JsonBodyType, { status: 201 })
+      const job: MockJob = { id: newId(), wsId: String(params.ws), userId: g.userId, input, profile, hash, startedAt: Date.now(), finishedAt: null, outcome: null }
+      jobsByKey.set(stored, job)
+      jobs.set(job.id, job)
+      return HttpResponse.json(jobView(job, g.perms) as JsonBodyType, { status: 202, headers: { Location: `/api/v1/workspaces/${String(params.ws)}/ai/generations/${job.id}` } })
+    }),
+    http.get(`${B}/workspaces/:ws/ai/generations/:id`, async ({ params }) => {
+      if (db.latencyMs > 0) await delay(Math.min(db.latencyMs, 150))
+      const g = guard(params.ws, 'workflow.read', 'workflow.edit')
+      if (!g.ok) return g.res
+      const job = jobs.get(String(params.id))
+      if (!job || job.wsId !== params.ws || (job.userId !== g.userId && !g.perms.includes('workflow.edit'))) return problem(404, 'NOT_FOUND', 'Not found')
+      return HttpResponse.json(jobView(job, g.perms) as JsonBodyType)
     }),
     http.post(`${B}/workspaces/:ws/workflows/:id/explain`, async ({ params, request }) => {
       const g = guard(params.ws, 'workflow.read')

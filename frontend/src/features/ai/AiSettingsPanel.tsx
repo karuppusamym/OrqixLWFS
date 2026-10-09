@@ -2,6 +2,7 @@ import { Sparkles } from 'lucide-react'
 import { LoadingBlock } from '@/components/common/LoadingBlock'
 import { QueryError } from '@/components/common/QueryError'
 import { Badge } from '@/components/ui/badge'
+import { Alert } from '@/components/ui/alert'
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table'
 import { formatUsd, useAiStatus } from './api'
 
@@ -38,6 +39,19 @@ export function AiSettingsPanel() {
         </p>
         <p className="mt-2 text-sm text-muted-foreground">Provider: OpenRouter. These settings belong to the deployment and are read-only here.</p>
       </section>
+
+      {data.disabledProfiles && data.disabledProfiles.length > 0 ? (
+        <Alert tone="warning" title="A profile is paused" live="off" data-testid="ai-paused">
+          <ul className="mt-1 space-y-2">
+            {data.disabledProfiles.map((p) => (
+              <li key={p.id}>
+                <span className="font-semibold">{p.label}</span> chose <span className="font-mono text-xs">{p.model}</span>. {p.reason} It is available again after{' '}
+                {new Date(p.until).toISOString().slice(0, 16).replace('T', ' ')} UTC.
+              </li>
+            ))}
+          </ul>
+        </Alert>
+      ) : null}
 
       <section aria-labelledby="ai-spend" className="rounded-card border border-border bg-surface p-4">
         <h3 id="ai-spend" className="text-sm">

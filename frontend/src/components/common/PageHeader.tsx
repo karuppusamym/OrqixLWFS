@@ -25,7 +25,7 @@ export function PageHeader({
   return (
     <div className={cn('mb-6 flex flex-wrap items-start justify-between gap-4', className)}>
       <div className="min-w-0">
-        <h1 ref={ref} tabIndex={-1} className="outline-none">
+        <h1 ref={ref} tabIndex={-1} className="wrap-anywhere outline-none">
           {title}
         </h1>
         {description ? <p className="mt-1 text-muted-foreground">{description}</p> : null}

@@ -71,15 +71,20 @@ export const KINDS: Record<NodeKind, KindInfo> = {
     defaultLabel: 'Finished',
     routes: [],
   },
+  parallelSplit: { kind: 'parallelSplit', paletteLabel: 'Run in parallel', caption: 'Run in parallel', description: 'Start several branches together.', defaultLabel: 'Start parallel work', routes: ['next'] },
+  parallelJoin: { kind: 'parallelJoin', paletteLabel: 'Wait for all', caption: 'Wait for all', description: 'Continue once every parallel branch finishes.', defaultLabel: 'All work finished', routes: ['next'] },
+  wait: { kind: 'wait', paletteLabel: 'Wait', caption: 'Wait', description: 'Pause for a fixed amount of time.', defaultLabel: 'Wait before continuing', routes: ['next'] },
+  startWorkflow: { kind: 'startWorkflow', paletteLabel: 'Start another workflow', caption: 'Child workflow', description: 'Start a published workflow and wait for its result.', defaultLabel: 'Start another workflow', routes: ['next'] },
 }
 
 /** Palette order. The start step always exists and cannot be added or deleted. */
-export const PALETTE_KINDS: NodeKind[] = ['approval', 'decision', 'branch', 'http', 'notification', 'end']
+export const PALETTE_KINDS: NodeKind[] = ['approval', 'decision', 'branch', 'http', 'notification', 'parallelSplit', 'parallelJoin', 'wait', 'startWorkflow', 'end']
 
 export const ROUTE_LABEL: Record<RouteKind, string> = {
   next: 'Next',
   approved: 'Approved',
   rejected: 'Rejected',
+  timedOut: 'Timed out',
   condition: 'When',
   default: 'Otherwise',
 }
@@ -89,7 +94,14 @@ export function defaultConfig(kind: NodeKind): Record<string, unknown> {
   switch (kind) {
     case 'start':
     case 'branch':
+    case 'parallelJoin':
       return {}
+    case 'parallelSplit':
+      return { joinRef: '' }
+    case 'wait':
+      return { duration: 'PT1H' }
+    case 'startWorkflow':
+      return { workflowRef: '', inputMapping: {}, resultMapping: {} }
     case 'approval':
       return { candidateGroupRef: '', rejectReasonRequired: true }
     case 'decision':

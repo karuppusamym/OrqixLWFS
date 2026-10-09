@@ -2,7 +2,7 @@
 target/
 dist/
 dist-mock/
-build/
+/build/
 *.class
 
 # Python

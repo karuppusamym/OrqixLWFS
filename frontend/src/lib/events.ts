@@ -45,6 +45,13 @@ export function outputsInWords(outputs: unknown): string {
   return parts.length > 0 ? parts.join(', ') : 'decision made'
 }
 
+/** Outputs on the timeline: values are words too, so "financeReview" reads "finance review". */
+function outputsForTimeline(outputs: unknown): string {
+  if (typeof outputs !== 'object' || outputs === null) return 'decision made'
+  const parts = Object.entries(outputs as Record<string, unknown>).map(([k, v]) => `${humanize(k)} is ${typeof v === 'string' ? humanize(v).toLowerCase() : String(v)}`)
+  return parts.length > 0 ? parts.join(', ') : 'decision made'
+}
+
 function retryTime(value: unknown, now: Date): string | undefined {
   const text = str(value)
   if (!text) return undefined
@@ -60,6 +67,8 @@ export type EventTone = 'neutral' | 'waiting' | 'success' | 'rejected' | 'cancel
 export function eventTone(event: Pick<RunEvent, 'type' | 'data'>): EventTone {
   switch (event.type) {
     case 'TASK_CREATED':
+    case 'WAIT_STARTED':
+    case 'CHILD_STARTED':
       return 'waiting'
     case 'TASK_DECIDED':
       return event.data.action === 'reject' ? 'rejected' : 'success'
@@ -135,6 +144,16 @@ export function describeEvent(event: RunEvent, ctx: EventContext): string {
     }
     case 'TASK_CREATED':
       return `Waiting for ${groupName(str(event.data.candidateGroup), ctx)}: ${label}`
+    case 'TASK_TIMED_OUT':
+      return `The time limit for ${label} passed; the approval was cancelled`
+    case 'WAIT_STARTED':
+      return `${label}: waiting for the timer`
+    case 'WAIT_ENDED':
+      return `${label}: the wait finished`
+    case 'CHILD_STARTED':
+      return `${label}: a child request was started`
+    case 'CHILD_ENDED':
+      return `${label}: child request finished${str(event.data.outcome) ? ` (${str(event.data.outcome)})` : ''}`
     case 'TASK_CLAIMED':
       return `${actorName(event, ctx)} picked up ${label}`
     case 'TASK_RELEASED':
@@ -148,7 +167,7 @@ export function describeEvent(event: RunEvent, ctx: EventContext): string {
       return `${actorName(event, ctx)} ${action} ${label}`
     }
     case 'DECISION_EVALUATED':
-      return `${label}: ${outputsInWords(event.data.outputs)}`
+      return `${label}: ${outputsForTimeline(event.data.outputs)}`
     case 'EFFECT_SUCCEEDED': {
       const ref = str(event.data.remoteReference)
       return `${label} completed${ref ? ` (reference ${ref})` : ''}`
@@ -191,9 +210,9 @@ export function attentionNextStep(reason: string): string {
     case 'EFFECT_UNKNOWN':
       return 'Check the other system, record what you found with Reconcile outcome, then continue.'
     case 'EFFECT_REJECTED':
-      return 'Fix the connection or the request contract, then retry the step.'
+      return 'Fix the connection or the details of the request, then retry the step.'
     case 'RESPONSE_INVALID':
-      return 'Check the connection contract, then retry the step.'
+      return 'Check what the other system answered and what the connection expects, then retry the step.'
     case 'CONNECTION_UNAVAILABLE':
       return 'Fix or enable the connection address, then retry the step.'
     case 'POLICY_DENIED':

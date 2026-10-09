@@ -1092,9 +1092,12 @@ paths:
               properties:
                 version: { type: integer, minimum: 1 }
                 operation: { type: string, pattern: '^[a-z][A-Za-z0-9]{0,63}$' }
+                input:
+                  type: object
+                  description: Sample input of an agent operation (kind agent), validated against its requestSchema. Ignored for HTTP operations.
       responses:
         '200':
-          description: Test outcome (a failed remote call is a 200 with outcome=failed)
+          description: Test outcome (a failed remote call is a 200 with outcome=failed). An agent test uses AI and is metered like any AI use.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ConnectionTestResult' }
@@ -1300,7 +1303,12 @@ paths:
     post:
       tags: [AI]
       operationId: generateAiDraft
-      summary: Generate a new workflow draft from a description (never publishes)
+      summary: Start generating a workflow draft from a description (async; never publishes)
+      description: |
+        Checks and authorizes synchronously (400, 403, 404, 422 AI_NOT_CONFIGURED or AI_MODEL_NOT_ALLOWED, 429 budget or
+        rate limit), then accepts the generation as a job and answers 202 with a Location to poll
+        (getAiGeneration). An identical request with the same Idempotency-Key returns the same job (200). The outcome of
+        the generation (the draft, or why it failed) is on the job.
       x-orqix-permission: workflow.edit
       x-orqix-audit: ai.draft.generated
       parameters:
@@ -1312,17 +1320,19 @@ paths:
             schema: { $ref: '#/components/schemas/AiDraftRequest' }
       responses:
         '200':
-          description: Idempotent replay
+          description: Idempotent replay; the job as it is now
           headers:
             Idempotent-Replayed: { $ref: '#/components/headers/IdempotentReplayed' }
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/AiDraftResult' }
-        '201':
-          description: Draft created
+              schema: { $ref: '#/components/schemas/AiGenerationJob' }
+        '202':
+          description: Accepted; poll the job at Location
+          headers:
+            Location: { description: 'URL of the job (getAiGeneration)', schema: { type: string } }
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/AiDraftResult' }
+              schema: { $ref: '#/components/schemas/AiGenerationJob' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -1331,6 +1341,29 @@ paths:
         '422': { $ref: '#/components/responses/Unprocessable' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
         '503': { $ref: '#/components/responses/Unavailable' }
+
+  /workspaces/{workspaceId}/ai/generations/{generationId}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/GenerationId'
+    get:
+      tags: [AI]
+      operationId: getAiGeneration
+      summary: Poll an AI draft generation (state is shared by all instances)
+      description: |
+        You always see your own generations; other people's generations are visible only to holders of workflow.edit
+        in the workspace (anyone else gets 404). A generation whose instance died is failed once its deadline has passed.
+        Poll every 2 seconds; a generation ends in succeeded (with result) or failed (with problem).
+      x-orqix-permission: workflow.read | workflow.edit
+      responses:
+        '200':
+          description: The generation as it is now
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiGenerationJob' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /workspaces/{workspaceId}/workflows/{workflowId}/explain:
     parameters:
@@ -1471,6 +1504,11 @@ components:
       schema: { $ref: '#/components/schemas/Uuid' }
     WorkflowId:
       name: workflowId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Uuid' }
+    GenerationId:
+      name: generationId
       in: path
       required: true
       schema: { $ref: '#/components/schemas/Uuid' }
@@ -1984,7 +2022,7 @@ components:
       properties:
         nodeId: { type: string }
         label: { type: string }
-        kind: { type: string, enum: [approval, http] }
+        kind: { type: string, enum: [approval, http, wait, child] }
         since: { $ref: '#/components/schemas/Timestamp' }
         candidateGroup: { type: [string, 'null'] }
         assignee: { oneOf: [{ $ref: '#/components/schemas/SubjectRef' }, { type: 'null' }] }
@@ -2254,6 +2292,10 @@ components:
       properties:
         key: { $ref: '#/components/schemas/Key' }
         name: { type: string }
+        kind:
+          type: string
+          enum: [http, agent]
+          description: http (default) or agent (an AI task over an MCP server, docs/build/S13-agents-mcp.md)
         latestVersion: { type: integer }
         versions: { type: array, items: { type: integer } }
         binding:
@@ -2323,8 +2365,14 @@ components:
         outcome: { type: string, enum: [succeeded, failed] }
         httpStatus: { type: [integer, 'null'] }
         durationMs: { type: integer }
-        errorCode: { type: [string, 'null'], description: 'e.g. EGRESS_NOT_ALLOWED, TIMEOUT, CONNECT_FAILED, UNEXPECTED_STATUS, RESPONSE_INVALID' }
+        errorCode: { type: [string, 'null'], description: 'e.g. EGRESS_NOT_ALLOWED, TIMEOUT, CONNECT_FAILED, UNEXPECTED_STATUS, RESPONSE_INVALID; agents: AI_PROVIDER_UNAVAILABLE, AI_BUDGET_EXCEEDED, MCP_UNAVAILABLE, OUTPUT_INVALID' }
         detail: { type: [string, 'null'] }
+        output:
+          type: [object, 'null']
+          description: Agent test only. The schema-valid structured result of the operation.
+        summary:
+          type: [string, 'null']
+          description: Agent test only. The business sentence the run timeline would show.
 
     RoleBinding:
       type: object
@@ -2389,6 +2437,18 @@ components:
           properties:
             monthlyUsd: { type: number }
             spentUsd: { type: number }
+        disabledProfiles:
+          type: array
+          description: 'Profiles paused by the circuit breaker: their router chose a model the policy refuses; paused until the next UTC midnight'
+          items:
+            type: object
+            required: [id, label, model, reason, until]
+            properties:
+              id: { type: string }
+              label: { type: string }
+              model: { type: string, description: 'The model the router chose' }
+              reason: { type: string }
+              until: { $ref: '#/components/schemas/Timestamp' }
     AiDraftRequest:
       type: object
       additionalProperties: false
@@ -2410,6 +2470,19 @@ components:
         outputTokens: { type: [integer, 'null'] }
         costUsd: { type: [number, 'null'], description: 'From the provider usage report; null when not reported (never shown as zero)' }
         durationMs: { type: integer }
+        policyViolation: { type: [string, 'null'], description: 'Set when a router chose a model the policy refuses (excluded, not allowed, or above the price caps); the profile is then paused for the rest of the UTC day' }
+    AiGenerationJob:
+      type: object
+      required: [id, status, startedAt, profile]
+      description: An accepted AI draft generation. Poll getAiGeneration until status is succeeded or failed.
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        status: { type: string, enum: [queued, running, succeeded, failed] }
+        startedAt: { $ref: '#/components/schemas/Timestamp' }
+        finishedAt: { $ref: '#/components/schemas/Timestamp' }
+        profile: { type: string }
+        result: { $ref: '#/components/schemas/AiDraftResult' }
+        problem: { $ref: '#/components/schemas/Problem' }
     AiDraftResult:
       type: object
       required: [workflow, draft, report, assumptions, missingConfiguration, generation]

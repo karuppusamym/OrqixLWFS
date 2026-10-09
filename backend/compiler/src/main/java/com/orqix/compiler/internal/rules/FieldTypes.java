@@ -10,8 +10,11 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 
+import com.orqix.compiler.CompileContext;
+import com.orqix.compiler.internal.json.StrictJson;
 import com.orqix.compiler.internal.model.Enums.FieldKind;
 import com.orqix.compiler.internal.model.Literal;
+import com.orqix.compiler.internal.model.ModelReader;
 import com.orqix.compiler.internal.model.Node;
 import com.orqix.compiler.internal.model.WorkflowDefinition;
 import com.orqix.compiler.internal.model.WorkflowDefinition.DecisionTable;
@@ -60,12 +63,15 @@ public final class FieldTypes {
     private final WorkflowDefinition definition;
     private final Graph graph;
     private final Connections connections;
+    private final CompileContext workspace;
     private final Map<String, DecisionTable> tables = new HashMap<>();
 
-    public FieldTypes(WorkflowDefinition definition, Graph graph, Connections connections) {
+    public FieldTypes(WorkflowDefinition definition, Graph graph, Connections connections,
+            CompileContext workspace) {
         this.definition = definition;
         this.graph = graph;
         this.connections = connections;
+        this.workspace = workspace;
         for (DecisionTable t : definition.decisions()) {
             tables.putIfAbsent(t.key(), t);
         }
@@ -100,6 +106,7 @@ public final class FieldTypes {
             case Node.Approval a -> approvalOutput(a, key);
             case Node.Decision d -> decisionOutput(d, key);
             case Node.Http h -> httpOutput(h, key);
+            case Node.StartWorkflow w -> startWorkflowOutput(w, key);
             default -> new Unknown("\"" + producer.label() + "\" (" + producer.kind().businessLabel()
                     + ") does not produce any data that can be used here.");
         };
@@ -110,12 +117,54 @@ public final class FieldTypes {
             return new Unknown("\"" + a.label() + "\" does not produce \"" + key + "\". It produces: "
                     + String.join(", ", APPROVAL_OUTPUTS) + ".");
         }
+        boolean timeout = a.timeoutAfter() != null;
         if (key.equals("decision")) {
-            return new Resolved(new FieldType(FieldKind.STRING, Set.of("approved", "rejected"), false, null, null),
-                    a, key);
+            Set<String> domain = timeout ? Set.of("approved", "rejected", "timedOut") : Set.of("approved", "rejected");
+            return new Resolved(new FieldType(FieldKind.STRING, domain, false, null, null), a, key);
         }
-        boolean optional = key.equals("reason") || key.equals("comment");
+        // reason and comment are optional; with a time limit nobody decides on the timedOut path.
+        boolean optional = key.equals("reason") || key.equals("comment")
+                || (timeout && (key.equals("decidedBy") || key.equals("decidedAt")));
         return new Resolved(new FieldType(FieldKind.STRING, null, optional, null, null), a, key);
+    }
+
+    /** Outputs of "Start another workflow": outcome, outcomeKind, reference and the mapped result fields (S12). */
+    private Resolution startWorkflowOutput(Node.StartWorkflow w, String key) {
+        CompileContext.WorkflowInfo child = workspace == null ? null : workspace.workflows().get(w.workflowRef());
+        if (child == null || !child.published()) {
+            return new Indeterminate();
+        }
+        switch (key) {
+            case "outcome" -> {
+                return new Resolved(new FieldType(FieldKind.STRING, Collections.unmodifiableSet(
+                        new TreeSet<>(child.outcomes())), false, null, null), w, key);
+            }
+            case "outcomeKind" -> {
+                return new Resolved(new FieldType(FieldKind.STRING, Collections.unmodifiableSet(
+                        new TreeSet<>(child.outcomeKinds())), false, null, null), w, key);
+            }
+            case "reference" -> {
+                return new Resolved(FieldType.of(FieldKind.STRING), w, key);
+            }
+            default -> {
+                String childKey = w.resultMapping().get(key);
+                if (childKey == null) {
+                    Set<String> keys = new TreeSet<>(List.of("outcome", "outcomeKind", "reference"));
+                    keys.addAll(w.resultMapping().keySet());
+                    return new Unknown("\"" + w.label() + "\" does not produce \"" + key + "\". It produces: "
+                            + String.join(", ", keys) + ".");
+                }
+                FormSchema.Field field = ModelReader.readFormSchema("/outputSchema",
+                        StrictJson.parse(child.outputSchemaJson())).properties().get(childKey);
+                if (field == null) {
+                    return new Indeterminate();
+                }
+                Set<String> domain = field.type() == FieldKind.STRING && field.enumValues() != null
+                        ? Collections.unmodifiableSet(new TreeSet<>(field.enumValues())) : null;
+                boolean optional = !child.guaranteedOutputs().contains(childKey);
+                return new Resolved(new FieldType(field.type(), domain, optional, null, null), w, key);
+            }
+        }
     }
 
     private Resolution decisionOutput(Node.Decision d, String key) {

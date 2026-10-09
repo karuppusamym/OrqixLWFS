@@ -1,31 +1,42 @@
 # Current release code audit
 
-Reviewed 9 October 2026. This audit distinguishes reproducible defects, implemented features and future scope; it does not claim universal Camunda/Pega compatibility or completion of production gates.
+Reviewed 9 October 2026. The pending implementation is complete for background AI drafts, matched parallel branches, wait timers, approval time limits, pinned child workflows and bounded agent connections with approved read-only MCP tools. Changes remain uncommitted.
 
-## Fixed and tested
+## Completed and checked
 
-- My tasks chooses available work when no task is assigned. Explicit tab choices remain selected, and switching tabs closes the previous task panel.
-- Operators can open recovery guidance directly from an attention row on desktop or mobile. Viewers and requesters do not receive operator controls. Unknown outcomes lead with reconciliation; retry remains governed by server permissions and effect state. Cancellation retains separate confirmation.
-- Published and unpublished workflow states have icons and text. Start and Edit retain distinct emphasis; the attention filter already had a pressed state, so those stale review notes were corrected without duplicating work.
-- AI explanations use `explain-v2` with compiler readiness and findings for the current workspace. The response exposes validation separately, and the UI shows that authoritative result even if AI prose claims a missing group is ready. The explanation remains model-generated and may be inaccurate; validation does not prove that production endpoints work. Provider verification in this audit uses a stub, with no live model spend.
-- Pega reviewed mappings reject the unchanged version placeholder and non-string versions. Excluded files cannot also claim mapped target nodes, and explanation/target IDs retain explicit types. These checks assess manual mapping integrity, not native Pega semantic equivalence.
+- AI drafting returns a persisted job with `202` and polling. Workspace notices let people continue working and open the draft when ready. Repeated requests reuse the job; concurrent admissions respect the per-person limit. Interrupted jobs fail after their deadline, access is rechecked before saving, and expired terminal jobs are removed while live replay records, drafts, usage and audit records remain.
+- The compiler validates parallel joins, durations, approval timeout routes, child input/output mappings, recursion and depth limits. Published manifests pin child releases. The studio exposes the new steps, mappings and routes in Canvas and Steps, and updates references when steps are renamed.
+- The runtime persists timers, joins parallel arrivals once, cancels timed-out tasks and waits for child results. Immediate child completion resumes its parent through a durable job. Cancellation or rejection ends active descendants and their tasks. A run remains Waiting while another parallel approval is open.
+- Agent connections use bounded model/tool calls, schema validation, existing egress and binding controls, effect outcomes and usage records. The procurement stub implements deterministic MCP tools, authentication and fault modes. Full workflow tests cover automatic low-risk completion and high-risk compliance approval.
+- Earlier audit fixes remain: task-tab selection, operator recovery links, accessible version state, authoritative compiler readiness beside AI explanations, and Pega manual-mapping integrity checks.
+- API types were regenerated, frontend lint was corrected, and the root build ignore rule was narrowed so source specifications under `docs/build` are visible to Git.
 
 ## Verification evidence
 
-- [Full compiler and application run](../evidence/ui-review/release-audit-backend.log): 204 compiler tests; 125 application tests run, with one opt-in live-provider test skipped. The later Pega guard change is covered by [the final four safety regressions](../evidence/ui-review/release-audit-pega.log).
-- [Frontend](../evidence/ui-review/release-audit-frontend.log): all 401 tests pass; TypeScript, lint and API type checks pass.
-- [Production image build](../evidence/ui-review/release-audit-build.log) and [real-stack browser suite](../evidence/ui-review/release-audit-browser.log): 18 checks passed in the broad run; an old request-reference selector failed and prevented four serial accessibility checks. The selector was corrected to use current request references, and [all five accessibility checks then passed](../evidence/ui-review/release-audit-accessibility.log). Together, all 23 real-stack checks pass; the one mock-only scenario is skipped.
+| Check | Result |
+|---|---|
+| [Full backend verify](../evidence/pending-backend-verified.log) | 263 compiler tests and JaCoCo gate pass; 180 application tests, 1 opt-in live-provider test skipped, no failures |
+| Frontend | 421 tests pass; TypeScript, lint, API drift check and production build pass |
+| [AI concurrency and agent workflow regressions](../evidence/pending-agent-ai.log) | 23 tests pass |
+| [Procurement stub](../evidence/pending-stub.log) | 87 tests pass |
+| [Contract check](../evidence/pending-contracts.log) | 50 checks pass, including all three workflow examples and both connection definitions |
+| [Selected mock browser checks](../evidence/pending-browser-mock.log) | 7 pass: both AI flows and five theme/canvas/mobile checks |
+| [Real-stack browser suite](../evidence/pending-browser-real.log), [final connector checks](../evidence/pending-browser-connectors.log) | All 25 applicable checks pass across these runs, 3 mock-only checks skipped. The broad run passed 24 checks and exposed a test assuming one connection; scoping it to Procurement fixes the remaining check. Both connector checks then pass |
 
-The app runs locally at http://localhost:8080. Existing work, database contents and unrelated changes were preserved. Changes remain uncommitted.
+Backend integration tests use PostgreSQL 18, Flowable, real policy checks and scripted provider/tool services. Earlier live AI, performance, API and Docker resilience evidence in [feature status](feature-status.md) was retained; those external checks were not rerun here.
 
-## Still open
+## Local application
 
-| Scope | Remaining work | Completion evidence needed |
-|---|---|---|
-| AI generation transport | Durable asynchronous jobs with 202/polling, restart behavior, idempotent retries, retention and access checks | Slow-provider, restart, access-revocation and repeated-submit tests; current generation remains synchronous with deadlines |
-| Broader workflow patterns | Timers/escalation, matched parallel branches, pinned child workflows and bounded rework | Canonical schema, compiler, editor and runtime support plus race/restart/behavior tests |
-| Native Pega automatic conversion | Inspect representative real exports and implement supported rule semantics | Source version/dependencies and source-versus-target routing, SLA, stages and effect outcomes |
-| Full Camunda coverage | Constructs currently reported as unsupported | Explicit supported-subset extensions and equivalence fixtures; unsupported constructs continue to block conversion |
-| Production deployment | Real identity provider, procurement endpoint, cluster, restore exercise and CI execution | Environment access and production-gate results; local/stub checks do not substitute for these |
+The app runs at http://localhost:8080 with the new migrations and existing database contents preserved. The normal multi-stage image build was attempted twice, but Docker Hub authentication returned `504 Gateway Timeout` ([log](../evidence/pending-image-build.log)). Local Java and frontend artifacts were packaged into the existing runtime images instead ([package](../evidence/pending-local-package.log), [app image](../evidence/pending-app-image-local.log), [stub image](../evidence/pending-stub-image-local.log)). Compose completed successfully and the application, database, identity provider and stub are healthy. Previous runtime images remain tagged `before-pending` for local recovery. Repeat the standard image build when the registry is reachable.
 
-The remaining items are visible scope, not completed features. See [feature status](feature-status.md), [migration workbench](17-migration-workbench.md) and [full backlog](10-full-product-backlog.md).
+## Remaining scope
+
+| Scope | Remaining work |
+|---|---|
+| Workflow breadth | Bounded rework and arbitrary loops; graphs remain acyclic |
+| Agent breadth | Write tools, Teams and A2A; real-provider accuracy and customer-tool acceptance |
+| Native Pega/LWFS conversion | Representative exports, supported semantics and source-versus-target equivalence |
+| Full Camunda coverage | Explicit extensions beyond the declared supported subset and equivalence fixtures |
+| Production deployment | Enterprise identity, procurement endpoint, cluster, restore exercise and CI execution |
+
+These are future scope and environment gates. Local checks do not establish production readiness. See [S10](build/S10-ai-assistance.md), [S12](build/S12-workflow-patterns.md), [S13](build/S13-agents-mcp.md), [feature status](feature-status.md) and the [full backlog](10-full-product-backlog.md).

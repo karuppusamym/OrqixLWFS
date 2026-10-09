@@ -100,6 +100,16 @@ public class EngineCommands {
         });
     }
 
+    /** Resume a pinned child step in a durable job after the child's transaction commits. */
+    public void resumeChild(String processInstanceId, String nodeId, Map<String, Object> variables) {
+        var executions = runtimeService.createExecutionQuery().processInstanceId(processInstanceId)
+                .activityId(nodeId).list();
+        if (executions.size() != 1) {
+            throw new IllegalStateException("Expected one waiting child execution at " + nodeId);
+        }
+        runtimeService.triggerAsync(executions.getFirst().getId(), variables);
+    }
+
     public Optional<String> deadLetterJob(String processInstanceId) {
         List<Job> jobs = managementService.createDeadLetterJobQuery().processInstanceId(processInstanceId).list();
         return jobs.isEmpty() ? Optional.empty() : Optional.of(jobs.get(0).getId());

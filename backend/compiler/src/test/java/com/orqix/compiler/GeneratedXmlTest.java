@@ -36,7 +36,8 @@ class GeneratedXmlTest {
     private static final Pattern ANY_EXPRESSION = Pattern.compile("[$#]\\{");
     private static final Pattern ALLOWED = Pattern.compile(
             "\\$\\{orqixRoute\\.(approved|rejected|condition)\\(execution, '[A-Za-z][A-Za-z0-9_-]{0,63}'\\)\\}"
-                    + "|\\$\\{orqixDecisionTask\\}|\\$\\{orqixHttpTask\\}|\\$\\{orqixNotificationTask\\}");
+                    + "|\\$\\{orqixDecisionTask\\}|\\$\\{orqixHttpTask\\}|\\$\\{orqixNotificationTask\\}"
+                    + "|\\$\\{orqixChildTask\\}");
 
     static String everythingJson() throws IOException {
         try (InputStream in = GeneratedXmlTest.class.getResourceAsStream("/workflows/everything.json")) {
@@ -48,6 +49,7 @@ class GeneratedXmlTest {
         List<CompiledWorkflow> list = new ArrayList<>();
         list.add(Compilers.workflowCompiler().compile(TestSupport.purchaseJson(), TestSupport.defaultContext()));
         list.add(Compilers.workflowCompiler().compile(everythingJson(), TestSupport.defaultContext()));
+        list.add(Compilers.workflowCompiler().compile(TestSupport.onboardingJson(), TestSupport.onboardingContext()));
         for (CompilerCasesTest.Case c : CompilerCasesTest.cases()) {
             if (Compilers.workflowCompiler().validate(c.definition(), c.context()).publishable()) {
                 list.add(Compilers.workflowCompiler().compile(c.definition(), c.context()));

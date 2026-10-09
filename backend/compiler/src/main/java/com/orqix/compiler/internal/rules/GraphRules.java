@@ -97,17 +97,21 @@ final class GraphRules {
             if (rc.graph().isShadowed(n) || n.kind() == NodeKind.END) {
                 continue;
             }
+            boolean timeout = n instanceof Node.Approval a && a.timeoutAfter() != null;
             Set<Route> allowed = switch (n.kind()) {
-                case APPROVAL -> Set.of(Route.APPROVED, Route.REJECTED);
+                case APPROVAL -> timeout ? Set.of(Route.APPROVED, Route.REJECTED, Route.TIMED_OUT)
+                        : Set.of(Route.APPROVED, Route.REJECTED);
                 case BRANCH -> Set.of(Route.CONDITION, Route.DEFAULT);
                 default -> Set.of(Route.NEXT);
             };
             Map<Route, Integer> counts = new HashMap<>();
             for (Transition t : rc.leaving(n)) {
                 if (!allowed.contains(t.on())) {
+                    String hint = t.on() == Route.TIMED_OUT ? " Set a time limit on this step to add a path for when"
+                            + " nobody decides in time, or remove this path." : "";
                     rc.issues().blocker("WF_OUTGOING_INVALID", t.path() + "/on", n.id(), t.id(), n.label() + " ("
                             + n.kind().businessLabel() + ") can only continue on " + routes(allowed) + ", not on "
-                            + q(t.on().json()) + ".");
+                            + q(t.on().json()) + "." + hint);
                 } else {
                     counts.merge(t.on(), 1, Integer::sum);
                 }
@@ -116,6 +120,19 @@ final class GraphRules {
                 case APPROVAL -> {
                     approvalRoute(rc, n, counts.getOrDefault(Route.APPROVED, 0), "approved");
                     approvalRoute(rc, n, counts.getOrDefault(Route.REJECTED, 0), "rejected");
+                    if (timeout) {
+                        int timedOut = counts.getOrDefault(Route.TIMED_OUT, 0);
+                        if (timedOut == 0) {
+                            rc.issues().blocker("WF_TIMEOUT_ROUTE", n.path(), n.id(), null, n.label()
+                                    + " has a time limit, so it needs a path for when nobody decides in time.");
+                        } else if (timedOut > 1) {
+                            rc.issues().blocker("WF_TIMEOUT_ROUTE", n.path(), n.id(), null, n.label()
+                                    + " can have only one path for when nobody decides in time.");
+                        }
+                    }
+                }
+                case PARALLEL_SPLIT -> {
+                    // The number of branches is checked with the other parallel rules (ParallelRules).
                 }
                 case BRANCH -> {
                     int defaults = counts.getOrDefault(Route.DEFAULT, 0);

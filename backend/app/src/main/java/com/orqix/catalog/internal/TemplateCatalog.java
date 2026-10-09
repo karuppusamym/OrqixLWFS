@@ -26,11 +26,19 @@ import tools.jackson.databind.JsonNode;
 public class TemplateCatalog {
 
     public record Template(String id, String name, String description, String typicalOwner, List<String> requiredInputs,
-            List<String> requiredGroups, List<String> requiredConnections, String definitionJson) {
+            List<String> requiredGroups, List<String> requiredConnections, List<String> requiredWorkflows,
+            String definitionJson) {
     }
 
-    private static final Map<String, String> RESOURCES = Map.of("purchase-approval", "templates/purchase-approval.json");
-    private static final Map<String, String> OWNERS = Map.of("purchase-approval", "Purchasing operations");
+    /** Insertion order is the order of the template list. */
+    private static final Map<String, String> RESOURCES = new LinkedHashMap<>();
+    private static final Map<String, String> OWNERS = Map.of("purchase-approval", "Purchasing operations",
+            "new-hire-onboarding", "People operations");
+
+    static {
+        RESOURCES.put("purchase-approval", "templates/purchase-approval.json");
+        RESOURCES.put("new-hire-onboarding", "templates/new-hire-onboarding.json");
+    }
 
     private final Json json;
     private final Map<String, Template> templates = new LinkedHashMap<>();
@@ -69,8 +77,15 @@ public class TemplateCatalog {
         for (JsonNode dependency : definition.path("dependencies").path("connections")) {
             connections.add(dependency.path("key").asString());
         }
+        LinkedHashSet<String> workflows = new LinkedHashSet<>();
+        for (JsonNode node : definition.path("nodes")) {
+            String ref = node.path("config").path("workflowRef").asString(null);
+            if (ref != null) {
+                workflows.add(ref);
+            }
+        }
         return new Template(id, definition.path("name").asString(id),
                 definition.path("metadata").path("description").asString(""), OWNERS.getOrDefault(id, "Workflow owner"),
-                inputs, List.copyOf(groups), connections, text);
+                inputs, List.copyOf(groups), connections, List.copyOf(workflows), text);
     }
 }

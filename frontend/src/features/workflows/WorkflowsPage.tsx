@@ -21,7 +21,7 @@ import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table'
 import { fieldErrorMap } from '@/lib/problemMessages'
-import { KEY_PATTERN, toKey } from '@/lib/text'
+import { humanize, KEY_PATTERN, toKey } from '@/lib/text'
 import { useListFilters } from '@/lib/useListFilters'
 import { DescribeItChoice, DescribeItDialog } from '@/features/ai/DescribeItDialog'
 
@@ -88,7 +88,7 @@ export function WorkflowsPage() {
               <THead>
                 <TR>
                   <TH>Name</TH>
-                  <TH>Active version</TH>
+                  <TH>Status</TH>
                   <TH>Draft</TH>
                   <TH>Last change</TH>
                   <TH>
@@ -109,7 +109,17 @@ export function WorkflowsPage() {
                       )}
                       {w.description ? <span className="block max-w-md text-xs text-muted-foreground">{w.description}</span> : null}
                     </TD>
-                    <TD>{w.activeRelease ? <Badge tone="accent"><CheckCircle2 className="mr-1 size-3.5" aria-hidden="true" />Version {w.activeRelease.releaseNumber}</Badge> : <Badge><FileClock className="mr-1 size-3.5" aria-hidden="true" />Not published</Badge>}</TD>
+                    <TD>
+                      {w.activeRelease ? (
+                        <Badge tone="success" title="New requests use this version">
+                          <CheckCircle2 aria-hidden="true" /> Active v{w.activeRelease.releaseNumber}
+                        </Badge>
+                      ) : (
+                        <Badge title="Nobody can start this workflow until it is published">
+                          <FileClock aria-hidden="true" /> Draft only
+                        </Badge>
+                      )}
+                    </TD>
                     <TD>Revision {w.draftRevision}</TD>
                     <TD className="whitespace-nowrap text-muted-foreground">
                       <RelativeTime value={w.updatedAt} />
@@ -233,7 +243,7 @@ function NewWorkflowDialog({ onClose }: { onClose: () => void }) {
                     <span className="font-semibold">{t.name}</span>
                     <span className="block text-muted-foreground">{t.description}</span>
                     <span className="mt-1 block text-xs text-muted-foreground">
-                      Needs groups: {(t.requiredGroups ?? []).join(', ') || 'none'} &middot; connections: {(t.requiredConnections ?? []).join(', ') || 'none'}
+                      Needs approver groups: {(t.requiredGroups ?? []).map(humanize).join(', ') || 'none'} &middot; connections: {(t.requiredConnections ?? []).map(humanize).join(', ') || 'none'}
                     </span>
                   </Label>
                 </div>

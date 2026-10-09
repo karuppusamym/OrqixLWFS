@@ -99,6 +99,7 @@ export function routeGeometry(source: Point, target: Point, others: Rect[], labe
 const TEXT_CLASS: Record<RouteKind, string> = {
   approved: 'text-edge-approved',
   rejected: 'text-edge-rejected',
+  timedOut: 'text-edge-condition',
   condition: 'text-edge-condition',
   default: 'text-foreground',
   next: 'text-foreground',

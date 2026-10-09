@@ -1,12 +1,19 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://orqix.example/schemas/connection-definition-v0.schema.json",
-  "title": "Orqix connection definition v0.1 — portable HTTP operation contract",
-  "description": "Immutable, versioned, secret-free description of an approved HTTP integration. Environment details (base URL, credential reference, enabled flag) live in the connection binding, which is not portable and never exported. See docs/build/S5-runtime.md for retry and effect semantics.",
+  "title": "Orqix connection definition v0.1 — portable HTTP operation or AI agent contract",
+  "description": "Immutable, versioned, secret-free description of an approved integration: kind http (default) is an HTTP operation contract, kind agent is a bounded AI task that may call allow-listed tools of one MCP server (S13). Environment details (base URL or MCP endpoint, credential reference, enabled flag) live in the connection binding, which is not portable and never exported. See docs/build/S5-runtime.md for retry and effect semantics and docs/build/S13-agents-mcp.md for agents.",
   "type": "object",
   "properties": {
     "schemaVersion": {
       "const": "0.1"
+    },
+    "kind": {
+      "description": "http (default): operations are HTTP calls. agent: operations are bounded AI tasks that call allow-listed tools of the MCP server in the binding; effect class is always readOnly.",
+      "enum": [
+        "http",
+        "agent"
+      ]
     },
     "key": {
       "type": "string",
@@ -31,9 +38,6 @@
       "maxProperties": 20,
       "propertyNames": {
         "pattern": "^[a-z][A-Za-z0-9]{0,63}$"
-      },
-      "additionalProperties": {
-        "$ref": "#/$defs/operation"
       }
     }
   },
@@ -287,6 +291,168 @@
         "properties"
       ],
       "additionalProperties": false
+    },
+    "agentOperation": {
+      "description": "An AI task: a fixed instruction, an allow-list of MCP tools, structured input and a structured result. requestSchema is the input (flat scalars, mapped from workflow fields like an HTTP request); responseSchema is the result the agent must produce (additionalProperties false).",
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "requestSchema": {
+          "$ref": "#/$defs/requestObject"
+        },
+        "responseSchema": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/responseObject"
+            },
+            {
+              "required": [
+                "required",
+                "additionalProperties"
+              ],
+              "properties": {
+                "additionalProperties": {
+                  "const": false
+                }
+              }
+            }
+          ]
+        },
+        "effectClass": {
+          "description": "Agents cannot cause side effects in this release: always readOnly.",
+          "const": "readOnly"
+        },
+        "maxTimeoutSeconds": {
+          "description": "Wall-clock limit for the whole model and tool loop.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30
+        },
+        "testable": {
+          "type": "boolean"
+        },
+        "agent": {
+          "$ref": "#/$defs/agentSpec"
+        }
+      },
+      "required": [
+        "label",
+        "requestSchema",
+        "responseSchema",
+        "effectClass",
+        "maxTimeoutSeconds",
+        "testable",
+        "agent"
+      ],
+      "additionalProperties": false
+    },
+    "agentSpec": {
+      "type": "object",
+      "properties": {
+        "instructions": {
+          "description": "Fixed system prompt written by an administrator and versioned with the connection version. Run data is never part of it.",
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 4000
+        },
+        "modelProfile": {
+          "description": "Model profile of the AI settings (never a raw model id). Omitted: the deployment default profile.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,31}$"
+        },
+        "tools": {
+          "description": "Allow-list of tools of the MCP server in the binding. Only these are offered to the model and only these can be called.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/agentTool"
+          }
+        },
+        "maxToolCalls": {
+          "description": "Upper bound on tool calls in one execution; further calls are refused.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "summary": {
+          "description": "Business sentence shown on the run timeline, after the connection name. {field} is replaced by a request or result value, {tools} by the labels of the tools that were called.",
+          "type": "string",
+          "maxLength": 300
+        }
+      },
+      "required": [
+        "instructions",
+        "tools",
+        "maxToolCalls"
+      ],
+      "additionalProperties": false
+    },
+    "agentTool": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Tool name as listed by the MCP server.",
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,63}$"
+        },
+        "label": {
+          "description": "Business name of the tool or the system behind it, shown in the studio and on the run timeline.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "description": {
+          "description": "Optional administrator-written tool description offered to the model instead of the server's own description (which is untrusted).",
+          "type": "string",
+          "maxLength": 500
+        }
+      },
+      "required": [
+        "name",
+        "label"
+      ],
+      "additionalProperties": false
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "agent"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "operations": {
+            "additionalProperties": {
+              "$ref": "#/$defs/agentOperation"
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "operations": {
+            "additionalProperties": {
+              "$ref": "#/$defs/operation"
+            }
+          }
+        }
+      }
+    }
+  ]
 }

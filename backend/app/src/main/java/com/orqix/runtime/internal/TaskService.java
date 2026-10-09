@@ -240,9 +240,7 @@ public class TaskService {
         tasks.end(workspaceId, taskId, "completed", now);
         runs.mutate(workspaceId, task.runId(), m -> {
             m.removeStep(task.nodeId());
-            if (RunStore.WAITING.equals(m.lifecycle)) {
-                m.lifecycle = RunStore.RUNNING;
-            }
+            m.settle();
         });
         Map<String, Object> decided = new LinkedHashMap<>();
         decided.put("action", request.action());

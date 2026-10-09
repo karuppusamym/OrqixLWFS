@@ -17,6 +17,7 @@ export interface StepNodeData extends Record<string, unknown> {
   outcomeKind?: 'success' | 'rejected'
   /** Finish steps only: the outcome name shown on the card, for example "Fulfilled". */
   outcome?: string
+  timeout?: boolean
 }
 
 export type StepFlowNode = Node<StepNodeData, 'step'>
@@ -91,6 +92,7 @@ function StepNodeComponent({ data, selected }: NodeProps<StepFlowNode>) {
           <span className="pointer-events-none absolute top-[78%] right-5 flex -translate-y-1/2 items-center gap-1.5 rounded-full bg-danger-soft px-2.5 py-0.5 text-[15px] leading-6 font-bold text-danger-foreground">
             <XCircle className="size-4" aria-hidden="true" /> Rejected
           </span>
+          {data.timeout ? <Handle type="source" position={Position.Bottom} id="timedOut" aria-label="Timed out route" /> : null}
         </>
       ) : data.kind === 'branch' ? (
         <Handle type="source" position={Position.Right} id="route" aria-hidden="true" />

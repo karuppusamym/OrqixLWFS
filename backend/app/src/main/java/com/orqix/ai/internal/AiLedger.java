@@ -46,7 +46,20 @@ public class AiLedger {
     public record Entry(UUID workspaceId, UUID subjectId, String kind, String profile, String model,
             String requestedModel, String promptVersion, int attempts, boolean escalated, Long inputTokens,
             Long outputTokens, BigDecimal costUsd, long durationMs, Outcome outcome, UUID workflowId, Integer revision,
-            Integer releaseNumber) {
+            Integer releaseNumber, String policyViolation) {
+
+        /** Without a policy violation (the original shape; kept for callers such as agent steps). */
+        public Entry(UUID workspaceId, UUID subjectId, String kind, String profile, String model, String requestedModel,
+                String promptVersion, int attempts, boolean escalated, Long inputTokens, Long outputTokens,
+                BigDecimal costUsd, long durationMs, Outcome outcome, UUID workflowId, Integer revision,
+                Integer releaseNumber) {
+            this(workspaceId, subjectId, kind, profile, model, requestedModel, promptVersion, attempts, escalated,
+                    inputTokens, outputTokens, costUsd, durationMs, outcome, workflowId, revision, releaseNumber, null);
+        }
+    }
+
+    /** A recorded policy violation: the router chose {@code model}, refused for {@code violation}. */
+    public record Violation(String model, String violation) {
     }
 
     private final JdbcClient jdbc;
@@ -63,9 +76,9 @@ public class AiLedger {
         jdbc.sql("""
                 INSERT INTO ai_generation (id, workspace_id, subject_id, kind, profile, model, requested_model,
                     prompt_version, attempts, escalated, input_tokens, output_tokens, cost_usd, duration_ms, outcome,
-                    workflow_id, revision, release_number, created_at)
+                    workflow_id, revision, release_number, policy_violation, created_at)
                 VALUES (:id, :ws, :subject, :kind, :profile, :model, :requested, :prompt, :attempts, :escalated,
-                    :input, :output, :cost, :duration, :outcome, :workflow, :revision, :release, :at)
+                    :input, :output, :cost, :duration, :outcome, :workflow, :revision, :release, :violation, :at)
                 """)
                 .param("id", Ids.newId()).param("ws", entry.workspaceId()).param("subject", entry.subjectId())
                 .param("kind", entry.kind()).param("profile", entry.profile())
@@ -76,6 +89,8 @@ public class AiLedger {
                 .param("cost", entry.costUsd()).param("duration", entry.durationMs())
                 .param("outcome", entry.outcome().value()).param("workflow", entry.workflowId())
                 .param("revision", entry.revision()).param("release", entry.releaseNumber())
+                .param("violation", entry.policyViolation() == null ? null
+                        : entry.policyViolation().substring(0, Math.min(300, entry.policyViolation().length())))
                 .param("at", Sql.ts(clock.instant()))
                 .update();
     }
@@ -85,7 +100,7 @@ public class AiLedger {
     public Optional<AiDtos.Generation> draftGeneration(UUID workspaceId, UUID workflowId) {
         return jdbc.sql("""
                 SELECT profile, model, prompt_version, attempts, escalated, input_tokens, output_tokens, cost_usd,
-                       duration_ms
+                       duration_ms, policy_violation
                 FROM ai_generation
                 WHERE workspace_id = :ws AND workflow_id = :workflow AND kind = 'draft' AND outcome = 'success'
                 ORDER BY created_at LIMIT 1
@@ -94,8 +109,21 @@ public class AiLedger {
                 .query((rs, n) -> new AiDtos.Generation(rs.getString("profile"), rs.getString("model"),
                         rs.getString("prompt_version"), rs.getInt("attempts"), rs.getBoolean("escalated"),
                         (Long) rs.getObject("input_tokens", Long.class), (Long) rs.getObject("output_tokens", Long.class),
-                        AiService.usd(rs.getBigDecimal("cost_usd")), rs.getLong("duration_ms")))
+                        AiService.usd(rs.getBigDecimal("cost_usd")), rs.getLong("duration_ms"),
+                        rs.getString("policy_violation")))
                 .optional();
+    }
+
+    /** The latest policy violation recorded for the profile since the start of the UTC day. */
+    public Optional<Violation> violationToday(String profile) {
+        Instant dayStart = clock.instant().atZone(ZoneOffset.UTC).toLocalDate().atStartOfDay(ZoneOffset.UTC).toInstant();
+        return jdbc.sql("""
+                SELECT model, policy_violation FROM ai_generation
+                WHERE profile = :profile AND policy_violation IS NOT NULL AND created_at >= :start
+                ORDER BY created_at DESC LIMIT 1
+                """)
+                .param("profile", profile).param("start", Sql.ts(dayStart))
+                .query((rs, n) -> new Violation(rs.getString("model"), rs.getString("policy_violation"))).optional();
     }
 
     /** Provider-reported spend of the current UTC calendar month (all workspaces). */

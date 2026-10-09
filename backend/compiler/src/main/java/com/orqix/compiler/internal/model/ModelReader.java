@@ -90,7 +90,8 @@ public final class ModelReader {
             case START -> new Node.Start(index, id, label);
             case APPROVAL -> new Node.Approval(index, id, label, c.get("candidateGroupRef").stringValue(),
                     c.get("rejectReasonRequired").booleanValue(),
-                    c.has("dueAfterHours") ? c.get("dueAfterHours").intValue() : null);
+                    c.has("dueAfterHours") ? c.get("dueAfterHours").intValue() : null,
+                    c.has("timeoutAfter") ? c.get("timeoutAfter").stringValue() : null);
             case DECISION -> new Node.Decision(index, id, label, c.get("decisionRef").stringValue());
             case BRANCH -> new Node.Branch(index, id, label);
             case HTTP -> new Node.Http(index, id, label, c.get("connectionRef").stringValue(),
@@ -98,6 +99,11 @@ public final class ModelReader {
                     stringMap(c.get("resultMapping")), c.get("timeoutSeconds").intValue());
             case NOTIFICATION -> new Node.Notification(index, id, label, c.get("channel").stringValue(),
                     c.get("recipient").stringValue(), c.get("message").stringValue());
+            case PARALLEL_SPLIT -> new Node.ParallelSplit(index, id, label, c.get("joinRef").stringValue());
+            case PARALLEL_JOIN -> new Node.ParallelJoin(index, id, label);
+            case WAIT -> new Node.Wait(index, id, label, c.get("duration").stringValue());
+            case START_WORKFLOW -> new Node.StartWorkflow(index, id, label, c.get("workflowRef").stringValue(),
+                    stringMap(c.get("inputMapping")), stringMap(c.get("resultMapping")));
             case END -> new Node.End(index, id, label, c.get("businessOutcome").stringValue(),
                     c.get("outcomeKind").stringValue());
         };
@@ -162,6 +168,11 @@ public final class ModelReader {
             map.put(e.getKey(), Literal.of(v));
         }
         return Collections.unmodifiableMap(map);
+    }
+
+    /** Reads a form schema (request or result form) that already passed the workflow JSON Schema. */
+    public static FormSchema readFormSchema(String path, JsonNode form) {
+        return readForm(path, form);
     }
 
     private static FormSchema readForm(String path, JsonNode form) {

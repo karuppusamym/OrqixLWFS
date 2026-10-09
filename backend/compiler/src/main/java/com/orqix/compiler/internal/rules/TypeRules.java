@@ -264,7 +264,7 @@ final class TypeRules {
         }
         if (r.type().mayBeAbsent()) {
             rc.issues().blocker("WF_OUTPUT_NOT_GUARANTEED", path, producer.id(), null, "The " + r.key() + " of "
-                    + q(producer) + " is only recorded when the approver enters one, so the result field "
+                    + q(producer) + " " + Conditions.absentWhy(producer) + ", so the result field "
                     + q(entry.key()) + " cannot be required.");
         }
     }

@@ -82,7 +82,7 @@ class GoldenFilesTest {
     void manifestFacts() throws CompilationException {
         CompiledWorkflow w = Compilers.workflowCompiler().compile(TestSupport.purchaseJson(),
                 TestSupport.defaultContext());
-        assertThat(w.compilerVersion()).isEqualTo("0.1.0").isEqualTo(Compilers.workflowCompiler().version());
+        assertThat(w.compilerVersion()).isEqualTo("0.2.0").isEqualTo(Compilers.workflowCompiler().version());
         assertThat(w.processId()).isEqualTo("purchase-approval");
         assertThat(w.decisions()).containsExactly(new CompiledWorkflow.DecisionRef("amount-policy", 1));
         String definition = TestSupport.read("examples/connections/procurement.connection.json");

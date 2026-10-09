@@ -49,18 +49,36 @@ public class ModelPolicy {
     private record Catalog(Map<String, OpenRouterClient.ModelInfo> models, Instant fetchedAt) {
     }
 
+    /**
+     * A profile paused by the circuit breaker: its router chose a model the policy refuses.
+     *
+     * @param model the routed model that tripped the breaker
+     * @param until the next UTC midnight
+     */
+    public record Tripped(String profileId, String label, String model, String reason, Instant until) {
+    }
+
+    private record CachedTrip(Optional<Tripped> trip, Instant checkedAt) {
+    }
+
+    private static final Duration TRIP_CACHE = Duration.ofSeconds(10);
+
     private final AiProperties properties;
     private final OpenRouterClient client;
+    private final AiLedger ledger;
     private final Clock clock;
+    private final Map<String, Tripped> localTrips = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Map<String, CachedTrip> storedTrips = new java.util.concurrent.ConcurrentHashMap<>();
     private volatile Catalog catalog;
     private volatile Instant catalogFailedAt;
     private volatile Instant credentialsRejectedAt;
     private final AtomicBoolean refreshing = new AtomicBoolean();
     private final Map<String, String> loggedViolations = new java.util.concurrent.ConcurrentHashMap<>();
 
-    public ModelPolicy(AiProperties properties, OpenRouterClient client, Clock clock) {
+    public ModelPolicy(AiProperties properties, OpenRouterClient client, AiLedger ledger, Clock clock) {
         this.properties = properties;
         this.client = client;
+        this.ledger = ledger;
         this.clock = clock;
     }
 
@@ -157,6 +175,10 @@ public class ModelPolicy {
         if (fixed.isPresent()) {
             return fixed;
         }
+        Optional<Tripped> tripped = tripped(profileId);
+        if (tripped.isPresent()) {
+            return Optional.of(tripped.get().reason());
+        }
         String model = properties.profiles().get(profileId).model();
         Catalog current = catalog();
         if (current == null) {
@@ -177,6 +199,94 @@ public class ModelPolicy {
             return Optional.of("The model " + model + " costs more than the configured price caps.");
         }
         return Optional.empty();
+    }
+
+    /**
+     * The model a provider reported for a call is checked against the policy: a router (variable-price profile) can
+     * pick any model its own catalog has, and its candidates cannot be restricted by an allowlist (S10 section 1). A
+     * violation is a model matching {@code excluded-models}, outside the {@code allowed-models} list, or a fixed price
+     * above the caps. Returns the reason, or empty when the routed model is acceptable (or unknown to the catalog).
+     */
+    public Optional<String> routedViolation(String requestedModel, String routedModel) {
+        if (routedModel == null || routedModel.isBlank() || normalize(routedModel).equals(normalize(requestedModel))) {
+            return Optional.empty();
+        }
+        String id = normalize(routedModel);
+        if (excluded(id)) {
+            return Optional.of("The router chose the excluded model " + id + ".");
+        }
+        if (!allowlisted(id)) {
+            return Optional.of("The router chose " + id + ", which is not in the model allowlist.");
+        }
+        Catalog current = catalog;
+        OpenRouterClient.ModelInfo info = current == null ? null : current.models().get(id);
+        if (info != null && !info.variablePrice()) {
+            BigDecimal prompt = info.promptPrice().multiply(MILLION);
+            BigDecimal completion = info.completionPrice().multiply(MILLION);
+            if (prompt.compareTo(properties.maxPrice().promptPerMillion()) > 0
+                    || completion.compareTo(properties.maxPrice().completionPerMillion()) > 0) {
+                return Optional.of("The router chose " + id + ", which costs more than the configured price caps.");
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Circuit breaker: pauses the profile for the rest of the UTC day after its router chose a refused model. The
+     * generation that revealed it keeps the violation on its {@code ai_generation} row, which is how every other pod
+     * learns about the pause (see {@link #tripped}).
+     */
+    public void tripBreaker(String profileId, String routedModel, String reason) {
+        Instant until = nextMidnight();
+        Tripped trip = new Tripped(profileId, labelOf(profileId), routedModel,
+                reason + " The profile is paused until 00:00 UTC.", until);
+        if (localTrips.put(profileId, trip) == null) {
+            log.error("AI profile '{}' paused until {}: {}", profileId, until, reason);
+        }
+    }
+
+    /** The active pause of a profile (this pod's trips, or a violation recorded today by any pod). */
+    public Optional<Tripped> tripped(String profileId) {
+        Instant now = clock.instant();
+        Tripped local = localTrips.get(profileId);
+        if (local != null) {
+            if (local.until().isAfter(now)) {
+                return Optional.of(local);
+            }
+            localTrips.remove(profileId, local);
+        }
+        CachedTrip cached = storedTrips.get(profileId);
+        if (cached == null || cached.checkedAt().plus(TRIP_CACHE).isBefore(now)) {
+            Optional<Tripped> found;
+            try {
+                found = ledger.violationToday(profileId).map(v -> new Tripped(profileId, labelOf(profileId), v.model(),
+                        v.violation() + " The profile is paused until 00:00 UTC.", nextMidnight()));
+            } catch (RuntimeException e) {
+                found = Optional.empty();
+            }
+            cached = new CachedTrip(found, now);
+            storedTrips.put(profileId, cached);
+        }
+        return cached.trip();
+    }
+
+    /** Every profile that is paused right now (Settings > AI, getAiStatus). */
+    public List<Tripped> trippedProfiles() {
+        List<Tripped> result = new ArrayList<>();
+        for (String id : properties.profiles().keySet()) {
+            tripped(id).ifPresent(result::add);
+        }
+        return result;
+    }
+
+    private String labelOf(String profileId) {
+        AiProperties.Profile profile = properties.profiles().get(profileId);
+        return profile == null || profile.label() == null || profile.label().isBlank() ? profileId : profile.label();
+    }
+
+    private Instant nextMidnight() {
+        return clock.instant().atZone(java.time.ZoneOffset.UTC).toLocalDate().plusDays(1)
+                .atStartOfDay(java.time.ZoneOffset.UTC).toInstant();
     }
 
     /** True when the model id matches an excluded glob (a leading "~" alias marker is ignored). */

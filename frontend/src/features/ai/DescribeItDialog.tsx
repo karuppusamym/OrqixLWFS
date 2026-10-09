@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Sparkles } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { fingerprintOf, useIdempotencyKey } from '@/api/idempotency'
 import type { ProblemError } from '@/api/problem'
@@ -13,7 +13,8 @@ import { Input, Textarea } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { fieldErrorMap } from '@/lib/problemMessages'
-import { DESCRIPTION_MAX, DESCRIPTION_MIN, generateAiDraft, useAiEnabled, useAiStatus, type AiProfile } from './api'
+import { DESCRIPTION_MAX, DESCRIPTION_MIN, generateAiDraft, jobProblem, useAiEnabled, useAiStatus, waitForGeneration, type AiProfile } from './api'
+import { labelOf, trackJob } from './jobs'
 import { saveReviewNotes } from './reviewNotes'
 
 /** Two starting points shown under the description box (S10 section 6). */
@@ -51,6 +52,8 @@ export function DescribeItDialog({ onClose, onBack }: { onClose: () => void; onB
   const [pending, setPending] = useState(false)
   const [elapsed, setElapsed] = useState(0)
   const [error, setError] = useState<ProblemError | null>(null)
+  const [jobId, setJobId] = useState<string | null>(null)
+  const watching = useRef<AbortController | null>(null)
   const chosen = profile || status.data?.defaultProfile || profiles[0]?.id || ''
 
   useEffect(() => {
@@ -59,6 +62,9 @@ export function DescribeItDialog({ onClose, onBack }: { onClose: () => void; onB
     const timer = window.setInterval(() => setElapsed(Math.round((Date.now() - started) / 1000)), 1000)
     return () => window.clearInterval(timer)
   }, [pending])
+
+  // Leaving the page stops this dialog's polling; a draft left in the background is followed by the toast instead.
+  useEffect(() => () => watching.current?.abort(), [])
 
   const submit = async () => {
     const text = description.trim()
@@ -71,28 +77,52 @@ export function DescribeItDialog({ onClose, onBack }: { onClose: () => void; onB
     setPending(true)
     setElapsed(0)
     setError(null)
+    const controller = new AbortController()
+    watching.current = controller
     try {
-      const { data } = await generateAiDraft(ws, body, keys.keyFor(fingerprintOf(ws, body)))
-      saveReviewNotes(ws, data)
+      // 202: the generation runs on the server; this dialog polls it (and may be closed meanwhile).
+      const { data: accepted } = await generateAiDraft(ws, body, keys.keyFor(fingerprintOf(ws, body)))
+      setJobId(accepted.id)
+      const job = await waitForGeneration(ws, accepted.id, { signal: controller.signal })
+      if (job.status === 'failed' || !job.result) {
+        // The same key would replay the failed job: a retry is a new command.
+        keys.reset()
+        setJobId(null)
+        setError(jobProblem(job))
+        setPending(false)
+        return
+      }
+      saveReviewNotes(ws, job.result)
       await client.invalidateQueries({ queryKey: ['ws', ws, 'workflows'] })
-      navigate(`/w/${ws}/workflows/${data.workflow.id}/edit`)
+      navigate(`/w/${ws}/workflows/${job.result.workflow.id}/edit`)
     } catch (cause) {
+      if (cause instanceof DOMException && cause.name === 'AbortError') return
       const problem = toProblem(cause)
       const mapped = fieldErrorMap(problem)
       if (Object.keys(mapped).length > 0) setErrors(mapped)
       else setError(problem)
+      setJobId(null)
       setPending(false)
     }
+  }
+
+  // Closing while the draft is being generated keeps it going: the toast follows it and offers "Open draft".
+  const close = () => {
+    if (pending && jobId) {
+      watching.current?.abort()
+      trackJob({ id: jobId, ws, label: labelOf(description) })
+    }
+    onClose()
   }
 
   return (
     <Dialog
       open
-      onClose={onClose}
+      onClose={close}
       size="lg"
       title="Describe your workflow"
       description="Say what should happen in plain words. Orqix drafts the steps; you review every step before anything is published."
-      dismissible={!pending}
+      dismissible={!pending || !!jobId}
       footer={
         <>
           {onBack ? (
@@ -100,8 +130,8 @@ export function DescribeItDialog({ onClose, onBack }: { onClose: () => void; onB
               <ArrowLeft aria-hidden="true" /> Other ways to start
             </Button>
           ) : null}
-          <Button variant="secondary" onClick={onClose} disabled={pending}>
-            Cancel
+          <Button variant="secondary" onClick={close} disabled={pending && !jobId}>
+            {pending && jobId ? 'Close and keep drafting' : 'Cancel'}
           </Button>
           <Button variant="primary" onClick={() => void submit()} loading={pending}>
             <Sparkles aria-hidden="true" /> Generate draft
@@ -189,6 +219,7 @@ export function DescribeItDialog({ onClose, onBack }: { onClose: () => void; onB
           {pending ? (
             <p className="rounded-control border border-info-border bg-info-soft p-3 text-info-foreground">
               Generating a draft and checking every step. This can take up to a minute{elapsed >= 5 ? ` (${elapsed} s so far)` : ''}.
+              {jobId ? " You can close this window: we'll open the draft when it's ready." : ''}
             </p>
           ) : null}
         </div>

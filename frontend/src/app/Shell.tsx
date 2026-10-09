@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { NotificationsMenu } from '@/features/notifications/NotificationsMenu'
+import { AiJobToasts } from '@/features/ai/AiJobToasts'
 import { cn } from '@/lib/cn'
 import { initials } from '@/lib/text'
 import { useIsDesktop } from '@/lib/useMediaQuery'
@@ -176,6 +177,7 @@ export function Shell() {
           <main id="main" tabIndex={-1} className={cn('min-w-0 flex-1 outline-none', fullBleed ? 'min-h-0 overflow-hidden' : 'mx-auto w-full max-w-[1200px] px-4 py-6 lg:px-8 lg:py-8')}>
             <Outlet />
           </main>
+          <AiJobToasts />
         </div>
       </div>
     </div>

@@ -33,6 +33,8 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * @param generationDeadline  total wall-clock budget of one generation (all attempts); no attempt is started that
  *                            cannot finish before it
  * @param providerSort        OpenRouter {@code provider.sort} (throughput, latency or price); empty sends none
+ * @param jobs                async draft generation executor (S10 section 3): bounded threads and queue, per-person
+ *                            limit and the margin after which an unfinished job of a dead pod is marked failed
  */
 @ConfigurationProperties(prefix = "orqix.ai")
 public record AiProperties(
@@ -53,7 +55,8 @@ public record AiProperties(
         @DefaultValue("1h") Duration modelsCacheTtl,
         @DefaultValue("Orqix") String appTitle,
         @DefaultValue("150s") Duration generationDeadline,
-        @DefaultValue("throughput") String providerSort) {
+        @DefaultValue("throughput") String providerSort,
+        @DefaultValue Jobs jobs) {
 
     /** Default exclusion list (costly model families and batch variants). */
     public static final List<String> DEFAULT_EXCLUDED = List.of("anthropic/claude-opus-*", "anthropic/claude-fable-*",
@@ -66,6 +69,23 @@ public record AiProperties(
     /** USD per million tokens. */
     public record MaxPrice(@DefaultValue("1.00") BigDecimal promptPerMillion,
             @DefaultValue("3.00") BigDecimal completionPerMillion) {
+    }
+
+    /**
+     * @param threads       concurrent generations per pod
+     * @param queue         accepted jobs waiting for a thread (beyond that: 429 RATE_LIMITED)
+     * @param activePerUser queued or running jobs one person may have at the same time
+     * @param orphanMargin  time added to the generation deadline before a job without a live pod is failed
+     */
+    public record Jobs(@DefaultValue("4") int threads, @DefaultValue("16") int queue,
+            @DefaultValue("2") int activePerUser, @DefaultValue("30s") Duration orphanMargin) {
+
+        public Jobs {
+            threads = Math.max(1, Math.min(32, threads));
+            queue = Math.max(0, Math.min(1000, queue));
+            activePerUser = Math.max(1, activePerUser);
+            orphanMargin = orphanMargin == null || orphanMargin.isNegative() ? Duration.ofSeconds(30) : orphanMargin;
+        }
     }
 
     /** USD. */
@@ -105,6 +125,9 @@ public record AiProperties(
             generationDeadline = Duration.ofSeconds(150);
         }
         providerSort = providerSort == null ? "" : providerSort.trim();
+        if (jobs == null) {
+            jobs = new Jobs(4, 16, 2, Duration.ofSeconds(30));
+        }
     }
 
     /** True when a provider key is configured. */

@@ -78,6 +78,7 @@ export function MockBar() {
               <option value="failOnce">Fails once, then works</option>
               <option value="unknown">Outcome unknown</option>
               <option value="down">Down (retries run out)</option>
+              <option value="rejected">Rejects the order (HTTP 400)</option>
             </select>
           </div>
           <button type="button" className="min-h-9 w-full rounded-control border border-input-border bg-surface px-3 font-semibold hover:bg-surface-muted" onClick={() => resetMockData()}>

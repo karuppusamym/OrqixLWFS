@@ -62,6 +62,14 @@ To import an existing process, choose **Workflows → Import workflow**. Camunda
 
 Testing a whole workflow means publishing and running it in a test workspace. An in-studio test button comes *later*.
 
+## Background drafts and workflow patterns
+
+**Workflows → New workflow → Describe it** creates a draft in the background when AI is enabled. You can close the dialog and keep working; the workspace notice offers **Open draft** when it is ready. Review every step and the AI's assumptions before publishing. If generation fails, the notice explains the reason and you can submit again.
+
+The studio palette also includes **Run in parallel**, **Wait for all**, **Wait** and **Start another workflow**. Connect every parallel branch to its matching **Wait for all** step. A rejection ends the request and cancels other open branches. **Wait** accepts durations such as `PT30M` or `P1D`.
+
+An approval's **Time limit** cancels the task and follows its **Timed out** route; connect that route to another approval to escalate. **Due after** only displays a due date. **Start another workflow** uses a published workflow in the same workspace, maps its request and result values, and waits for completion. Publishing pins the child version. Cancelling a parent cancels its active child requests. Loops and bounded rework remain future features.
+
 ## Connecting another system
 
 Workspace administrators can open **Settings → Connections**, configure the address and sign-in method, enable the connection and save it. Use **Test connection** with a read-only operation to check the saved binding. A new system first needs an approved operation contract registered by the platform team.

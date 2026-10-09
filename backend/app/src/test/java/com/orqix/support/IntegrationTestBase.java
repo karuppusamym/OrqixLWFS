@@ -33,6 +33,15 @@ public abstract class IntegrationTestBase {
     public static final UUID SANDBOX = UUID.fromString("00000000-0000-7000-8000-000000000202");
     public static final UUID FACILITIES = UUID.fromString("00000000-0000-7000-8000-000000000203");
 
+    static {
+        // Agent steps (S13) run on the shared context, whose job executor serves every context of the JVM: AI is therefore
+        // enabled here, against a WireMock OpenRouter. System properties rank below @DynamicPropertySource, so the AI test
+        // classes keep their own settings, and AiDisabledTest switches AI off for its own context.
+        System.setProperty("orqix.ai.api-key", AgentLlmStub.KEY);
+        System.setProperty("orqix.ai.base-url", AgentLlmStub.baseUrl());
+        System.setProperty("orqix.ai.timeout", "5s");
+    }
+
     @Autowired
     protected MockMvc mvc;
 

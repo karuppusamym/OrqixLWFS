@@ -26,18 +26,23 @@ public class EffectDispatcher {
     /** Extra lease beyond the call timeout for journal writes (S5 section 6.1). */
     static final Duration LEASE_MARGIN = Duration.ofSeconds(15);
 
+    /** @param initiatorSubjectId run initiator; agent usage is metered for this person */
     public record DispatchRequest(UUID workspaceId, UUID runId, String nodeId, int occurrence, String connectionKey,
             int connectionVersion, String operation, ObjectNode body, Map<String, String> resultMapping,
-            int timeoutSeconds, String leaseOwner) {
+            int timeoutSeconds, String leaseOwner, UUID initiatorSubjectId) {
     }
 
     public sealed interface DispatchResult permits Succeeded, Failed {
         UUID effectId();
     }
 
-    /** @param reused true when an earlier attempt had already succeeded (no call was made) */
+    /**
+     * @param reused  true when an earlier attempt had already succeeded (no call was made)
+     * @param summary business sentence for the run timeline (agent operations only, else null)
+     * @param meta    model, tool names and timings, tokens and cost of an agent call (else null); never payloads
+     */
     public record Succeeded(UUID effectId, int attempt, ObjectNode result, Integer httpStatus, String remoteReference,
-            String effectClass, boolean reused) implements DispatchResult {
+            String effectClass, boolean reused, String summary, ObjectNode meta) implements DispatchResult {
     }
 
     /**
@@ -53,15 +58,17 @@ public class EffectDispatcher {
     private final EgressPolicy egress;
     private final SecretStore secrets;
     private final HttpExecutor executor;
+    private final AgentExecutor agents;
     private final EffectJournal journal;
     private final Json json;
 
     public EffectDispatcher(ConnectionService connections, EgressPolicy egress, SecretStore secrets,
-            HttpExecutor executor, EffectJournal journal, Json json) {
+            HttpExecutor executor, AgentExecutor agents, EffectJournal journal, Json json) {
         this.connections = connections;
         this.egress = egress;
         this.secrets = secrets;
         this.executor = executor;
+        this.agents = agents;
         this.journal = journal;
         this.json = json;
     }
@@ -85,6 +92,7 @@ public class EffectDispatcher {
 
         // Pre-dispatch policy check with current data (binding enabled, egress, credential present).
         String policyDenial = null;
+        String denialMessage = null;
         boolean dnsFailure = false;
         Optional<ConnectionService.Binding> binding = connections.binding(request.workspaceId(), request.connectionKey());
         String secretValue = null;
@@ -106,6 +114,13 @@ public class EffectDispatcher {
                     policyDenial = "The credential for the connection is not available";
                 }
             }
+            if (policyDenial == null && definition.isAgent() && agents.unavailableReason() != null) {
+                // Agents need AI: a clear failure that an operator can retry after the fix (S13 section 7).
+                String reason = agents.unavailableReason();
+                policyDenial = "AI is not available: " + reason;
+                denialMessage = name + " needs AI, which is not available: " + reason
+                        + " An administrator must fix it, then an operator can retry.";
+            }
         }
 
         EffectJournal.EffectRequest effectRequest = new EffectJournal.EffectRequest(request.workspaceId(),
@@ -117,7 +132,7 @@ public class EffectDispatcher {
         switch (begin.action()) {
             case ALREADY_SUCCEEDED -> {
                 return new Succeeded(effect.id(), effect.attempts(), (ObjectNode) effect.result(),
-                        effect.lastHttpStatus(), effect.remoteReference(), effectClass, true);
+                        effect.lastHttpStatus(), effect.remoteReference(), effectClass, true, null, null);
             }
             case UNKNOWN -> {
                 return new Failed(effect.id(), effect.attempts(), false, "EFFECT_UNKNOWN", "EFFECT_UNKNOWN", "unknown",
@@ -134,8 +149,8 @@ public class EffectDispatcher {
             case POLICY_DENIED -> {
                 return new Failed(effect.id(), effect.attempts(), false, "CONNECTION_UNAVAILABLE",
                         "CONNECTION_UNAVAILABLE", "permanent", null, effectClass,
-                        "The connection to " + name + " is not available. An administrator must fix the connection "
-                                + "binding, then an operator can retry.");
+                        denialMessage != null ? denialMessage : "The connection to " + name + " is not available. "
+                                + "An administrator must fix the connection binding, then an operator can retry.");
             }
             case PROCEED -> {
                 // continue below
@@ -149,6 +164,9 @@ public class EffectDispatcher {
                     effectClass, retriesMessage(name));
         }
         ConnectionService.Binding target = binding.orElseThrow();
+        if (definition.isAgent()) {
+            return dispatchAgent(request, record, operation, target, secretValue, effect, attempt, effectClass);
+        }
         HttpExecutor.CallResult call = executor.call(new HttpExecutor.Target(target.baseUrl(), target.authType(),
                 target.authHeaderName(), target.secretRef()), definition, operation, request.body(),
                 request.resultMapping(), effectKey, request.timeoutSeconds(), secretValue);
@@ -157,7 +175,7 @@ public class EffectDispatcher {
                 journal.finish(request.workspaceId(), effect.id(), EffectJournal.SUCCEEDED, call.httpStatus(), null,
                         call.detail(), call.result(), call.remoteReference());
                 return new Succeeded(effect.id(), attempt, call.result(), call.httpStatus(), call.remoteReference(),
-                        effectClass, false);
+                        effectClass, false, null, null);
             }
             case RETRYABLE -> {
                 journal.finish(request.workspaceId(), effect.id(), EffectJournal.RETRYABLE_FAILURE, call.httpStatus(),
@@ -183,6 +201,36 @@ public class EffectDispatcher {
                         call.httpStatus(), effectClass, unknownMessage(name));
             }
             default -> throw new IllegalStateException();
+        }
+    }
+
+    /** Runs an agent operation (S13): same journal protocol, the model and tool loop instead of one HTTP call. */
+    private DispatchResult dispatchAgent(DispatchRequest request, ConnectionService.DefinitionRecord record,
+            Operation operation, ConnectionService.Binding target, String secretValue, EffectJournal.Effect effect,
+            int attempt, String effectClass) {
+        AgentExecutor.Result run = agents.execute(new AgentExecutor.Request(request.workspaceId(), request.runId(),
+                effect.id(), request.initiatorSubjectId(), request.nodeId(), attempt, record.definition(), operation,
+                request.body(), request.resultMapping(), target.baseUrl(),
+                "bearerToken".equals(target.authType()) ? secretValue : null, request.timeoutSeconds()));
+        switch (run.outcome()) {
+            case SUCCEEDED -> {
+                journal.finish(request.workspaceId(), effect.id(), EffectJournal.SUCCEEDED, null, null, run.detail(),
+                        run.result(), null);
+                return new Succeeded(effect.id(), attempt, run.result(), null, null, effectClass, false, run.summary(),
+                        run.meta());
+            }
+            case RETRYABLE -> {
+                journal.finish(request.workspaceId(), effect.id(), EffectJournal.RETRYABLE_FAILURE, null,
+                        run.errorCode(), run.detail(), null, null);
+                return new Failed(effect.id(), attempt, true, "RETRIES_EXHAUSTED", run.errorCode(), "retryable", null,
+                        effectClass, run.businessMessage());
+            }
+            default -> {
+                journal.finish(request.workspaceId(), effect.id(), EffectJournal.PERMANENT_FAILURE, null,
+                        run.errorCode(), run.detail(), null, null);
+                return new Failed(effect.id(), attempt, false, run.attentionReason(), run.errorCode(), "permanent", null,
+                        effectClass, run.businessMessage());
+            }
         }
     }
 

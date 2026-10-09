@@ -13,7 +13,8 @@ const DB_KEY = 'orqix.mock.db.v1'
 
 /** Hooks for demos and Playwright (mock mode only): simulate "another person did something" and flip faults. */
 export interface MockControl {
-  reset(options?: { published?: boolean; sampleRuns?: boolean }): void
+  /** Without options: the walkthrough data. With options: the small fixture set the tests use unless `demo` is true. */
+  reset(options?: { published?: boolean; sampleRuns?: boolean; demo?: boolean }): void
   setUser(username: string): void
   setProcurementFault(fault: ProcurementFault): void
   /** Another approver completes a task, so the signed-in person sees a conflict (T-UI-03). */
@@ -36,7 +37,7 @@ function persist() {
 /** Start the in-browser API. Called once before the app renders when mock mode is on. */
 export async function startMock(): Promise<void> {
   const saved = readStorage(DB_KEY)
-  if (!saved || !restoreDb(saved)) seedDb()
+  if (!saved || !restoreDb(saved)) seedDb({ demo: true })
   db.latencyMs = 150
   setCurrentUser(readStorage(PERSONA_KEY) ?? 'rhea.requester')
   engineConfig.retryDelayMs = 4000
@@ -73,7 +74,7 @@ export async function startMock(): Promise<void> {
 
   window.__orqixMock = {
     reset(options) {
-      seedDb(options)
+      seedDb(options ?? { demo: true })
       db.latencyMs = 150
       persist()
     },

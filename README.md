@@ -47,6 +47,10 @@ R0 assumes experienced engineers, an available business owner, working developme
 
 LWFS name/version/schema, representative native exports, enterprise identity/cluster access, real integration endpoints, model/tool permissions, retention and production capacity decisions remain in document 13. A missing input blocks its dependent feature, not independent planning or core work.
 
+## Pending implementation completed (9 October 2026)
+
+Background AI drafts now use jobs and polling. The compiler, studio and runtime support matched parallel work, wait timers, approval time limits and pinned child workflows. Agent connections can use approved read-only MCP tools with bounded calls and recorded usage. See [S10](docs/build/S10-ai-assistance.md), [S12](docs/build/S12-workflow-patterns.md), [S13](docs/build/S13-agents-mcp.md) and the [release audit](docs/18-release-code-audit.md) for checks and remaining scope.
+
 ## What changed in revision 0.5
 
 R0 is implemented: compiler module, Spring Boot + Flowable application, React frontend, Docker Compose stack with a Keycloak dev realm and a procurement stub, OpenShift Kustomize manifests and a CI workflow. Status and evidence per requirement: [feature status](docs/feature-status.md). Guides: [user guide](docs/user-guide.md), [admin guide](docs/admin-guide.md).
@@ -62,10 +66,10 @@ R0 is implemented: compiler module, Spring Boot + Flowable application, React fr
 
 | Area | Location | Verified |
 |---|---|---|
-| Compiler | `backend/compiler` | 204 tests |
-| Application | `backend/app` | 125 tests run (one opt-in live-provider check skipped), plus final Pega safety regressions; API responses validated against the OpenAPI contract |
-| Frontend | `frontend` | 401 unit/component tests including color-contrast checks; typecheck, lint, build |
-| Browser E2E | `tests/e2e` | 23 pass across audit runs / 1 skipped (mock-only) against the Docker stack; earlier mock-mode evidence: 22 / 2; no serious accessibility findings |
+| Compiler | `backend/compiler` | 263 tests |
+| Application | `backend/app` | 180 tests run (one opt-in live-provider check skipped); API responses validated against the OpenAPI contract |
+| Frontend | `frontend` | 421 unit/component tests including color-contrast checks; typecheck, lint, build |
+| Browser E2E | `tests/e2e` | 25 checks pass across final runs / 3 mock-only checks skipped against the Docker stack; selected mock AI and layout checks: 7 pass; no serious accessibility findings |
 | API E2E | `tools/api-e2e` | 26 / 26 with injected failures, plus 33 / 33 operations scenarios |
 | Resilience, performance | `tools/resilience`, `tools/perf` | Kill, database outage, graceful shutdown and revocation scenarios pass; 20 users × 10 min with 0 errors and p95 under 120 ms |
 | AI assistance | `backend/app` (`com.orqix.ai`), `tools/ai-eval` | Optional. Set `OPENROUTER_API_KEY` in `.env`; DeepSeek by default, Jev Router for *Auto*, costly models excluded, monthly budget. Empty means rules-only |

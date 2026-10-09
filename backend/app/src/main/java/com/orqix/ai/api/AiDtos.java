@@ -1,10 +1,13 @@
 package com.orqix.ai.api;
 
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.UUID;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.orqix.shared.problem.ApiException;
 
 import tools.jackson.databind.JsonNode;
@@ -30,12 +33,24 @@ public final class AiDtos {
     public record Budget(BigDecimal monthlyUsd, BigDecimal spentUsd) {
     }
 
-    public record Status(boolean enabled, String reason, String defaultProfile, List<Profile> profiles,
-            List<String> excludedModels, MaxPrice maxPrice, Budget budget) {
+    /** A profile paused by the circuit breaker: its router chose a model the policy refuses (S10 section 1). */
+    public record DisabledProfile(String id, String label, String model, String reason, Instant until) {
     }
 
+    public record Status(boolean enabled, String reason, String defaultProfile, List<Profile> profiles,
+            List<String> excludedModels, MaxPrice maxPrice, Budget budget, List<DisabledProfile> disabledProfiles) {
+    }
+
+    /** @param policyViolation why the routed model was refused by the policy, when it was (profile is then paused) */
     public record Generation(String profile, String model, String promptVersion, int attempts, boolean escalated,
-            Long inputTokens, Long outputTokens, BigDecimal costUsd, long durationMs) {
+            Long inputTokens, Long outputTokens, BigDecimal costUsd, long durationMs, String policyViolation) {
+
+        /** Without a policy violation. */
+        public Generation(String profile, String model, String promptVersion, int attempts, boolean escalated,
+                Long inputTokens, Long outputTokens, BigDecimal costUsd, long durationMs) {
+            this(profile, model, promptVersion, attempts, escalated, inputTokens, outputTokens, costUsd, durationMs,
+                    null);
+        }
     }
 
     public record MissingItem(String message, String nodeId, String code) {
@@ -43,6 +58,15 @@ public final class AiDtos {
 
     public record DraftResult(JsonNode workflow, JsonNode draft, JsonNode report, List<String> assumptions,
             List<MissingItem> missingConfiguration, Generation generation) {
+    }
+
+    /**
+     * {@code AiGenerationJob}: an accepted generation. {@code startedAt} is when it was accepted; {@code result} is set
+     * when it succeeded and {@code problem} (an RFC 9457 body) when it failed.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record Job(UUID id, String status, Instant startedAt, Instant finishedAt, String profile, DraftResult result,
+            JsonNode problem) {
     }
 
     public record Step(String nodeId, String text) {

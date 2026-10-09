@@ -30,7 +30,7 @@ describe('timeline text in business language (docs/build/S7-frontend.md section 
   })
 
   it('DECISION_EVALUATED puts outputs in words', () => {
-    expect(describeEvent(event('DECISION_EVALUATED', { nodeId: 'amountPolicy', data: { outputs: { route: 'financeReview' } } }), ctx)).toBe('Check purchase amount: Route is financeReview')
+    expect(describeEvent(event('DECISION_EVALUATED', { nodeId: 'amountPolicy', data: { outputs: { route: 'financeReview' } } }), ctx)).toBe('Check purchase amount: Route is finance review')
     expect(outputsInWords({ a: 1, bigNumber: 2 })).toBe('A is 1, Big number is 2')
   })
 

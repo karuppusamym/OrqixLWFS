@@ -56,11 +56,12 @@ public class OperatorService {
     private final AuditWriter audit;
     private final Json json;
     private final Clock clock;
+    private final ChildRuns children;
 
     public OperatorService(PolicyService policy, RunAccess runAccess, RunStore runs, TaskStore tasks, RunEvents events,
             RunService runService, RuntimeViews views, ReleaseQueries releases, ConnectionService connections,
             EffectJournal journal, EngineCommands engine, NotificationService notifications,
-            IdempotencyService idempotency, AuditWriter audit, Json json, Clock clock) {
+            IdempotencyService idempotency, AuditWriter audit, Json json, Clock clock, ChildRuns children) {
         this.policy = policy;
         this.runAccess = runAccess;
         this.runs = runs;
@@ -77,6 +78,7 @@ public class OperatorService {
         this.audit = audit;
         this.json = json;
         this.clock = clock;
+        this.children = children;
     }
 
     // ---------------------------------------------------------------- retry (S5 section 7.1)
@@ -294,6 +296,8 @@ public class OperatorService {
             m.endedAt = now;
             m.steps.removeAll();
         });
+        children.cancelActiveChildren(run, "The parent request was cancelled.");
+        children.onRunEnded(runs.find(workspaceId, runId).orElseThrow());
         List<EffectJournal.Effect> succeeded = journal.forRun(workspaceId, runId).stream()
                 .filter(e -> EffectJournal.SUCCEEDED.equals(e.state())).toList();
         Map<String, Object> data = new LinkedHashMap<>();

@@ -47,8 +47,10 @@ beforeAll(() => {
   HTMLElement.prototype.scrollTo = () => undefined
 })
 
-afterEach(() => {
+afterEach(async () => {
   cleanup()
+  // Leaving the studio flushes an unsaved draft; let that request finish before the next test reseeds the mock database.
+  await new Promise((resolve) => setTimeout(resolve, 30))
   server.resetHandlers()
   resetLoginRedirectGuard()
   db.latencyMs = 0

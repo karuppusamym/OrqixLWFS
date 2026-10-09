@@ -15,7 +15,8 @@ import com.orqix.compiler.internal.model.WorkflowDefinition;
 import com.orqix.compiler.internal.model.WorkflowDefinition.Transition;
 
 /**
- * Graph view of a definition: node lookup, resolved transitions, reachability, reverse reachability and dominators.
+ * Graph view of a definition: node lookup, resolved transitions, reachability, reverse reachability and dominators
+ * (a parallel join counts every branch as guaranteed, S12).
  * Nodes whose ID repeats an earlier node's ID are "shadowed": transitions resolve to the first occurrence and the
  * shadowed node is left out of graph rules (it is reported as WF_DUPLICATE_ID).
  */
@@ -102,6 +103,9 @@ public final class Graph {
                 if (i == start.index()) {
                     continue;
                 }
+                // A parallel join waits for every branch, so whatever is guaranteed in any branch is guaranteed after
+                // it (union); every other node with several incoming paths is a simple merge (intersection).
+                boolean allBranches = nodes.get(i).kind() == NodeKind.PARALLEL_JOIN;
                 BitSet next = null;
                 for (Transition t : incoming.get(i)) {
                     int p = byId.get(t.from()).index();
@@ -110,6 +114,8 @@ public final class Graph {
                     }
                     if (next == null) {
                         next = (BitSet) dom[p].clone();
+                    } else if (allBranches) {
+                        next.or(dom[p]);
                     } else {
                         next.and(dom[p]);
                     }

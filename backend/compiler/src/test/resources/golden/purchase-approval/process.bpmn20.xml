@@ -2,7 +2,7 @@
 <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:flowable="http://flowable.org/bpmn" xmlns:orqix="https://orqix.example/bpmn/v0" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC" xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI" targetNamespace="https://orqix.example/workflows">
   <process id="purchase-approval" name="Purchase approval" isExecutable="true">
     <extensionElements>
-      <orqix:release schemaVersion="0.1" compilerVersion="0.1.0" semanticHash="6ae448102e3af36408646948be6e02a899e806a03afd6e3eee595db579484c7f"/>
+      <orqix:release schemaVersion="0.1" compilerVersion="0.2.0" semanticHash="6ae448102e3af36408646948be6e02a899e806a03afd6e3eee595db579484c7f"/>
     </extensionElements>
     <startEvent id="start" name="Request submitted"/>
     <userTask id="manager" name="Review request" flowable:candidateGroups="managers">

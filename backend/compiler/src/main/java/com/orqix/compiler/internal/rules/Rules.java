@@ -15,11 +15,14 @@ public final class Rules {
                                   Issues issues) {
         Graph graph = new Graph(definition);
         Connections connections = new Connections(definition, workspace, schemas);
-        FieldTypes types = new FieldTypes(definition, graph, connections);
+        FieldTypes types = new FieldTypes(definition, graph, connections, workspace);
         RuleContext rc = new RuleContext(definition, workspace, graph, connections, types, issues);
         GraphRules.check(rc);
+        ParallelRules.check(rc);
+        TimerRules.check(rc);
         TypeRules.check(rc);
         BindingRules.check(rc);
+        ChildRules.check(rc);
         return rc;
     }
 }

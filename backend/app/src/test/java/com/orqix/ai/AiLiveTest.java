@@ -39,17 +39,27 @@ class AiLiveTest extends IntegrationTestBase {
     void economyProfileDraftsAValidatedPurchaseWorkflow() throws Exception {
         Response status = api("dana.designer").get("/workspaces/{ws}/ai/status", PURCHASING);
         assertThat(status.body().path("enabled").asBoolean()).as(status.toString()).isTrue();
-        Response created = api("dana.designer").post(Map.of("description", "Employees request equipment purchases "
+        Response accepted = api("dana.designer").post(Map.of("description", "Employees request equipment purchases "
                 + "with a title, a business purpose, a cost center (OPS, IT or HR) and an amount in USD. Their manager "
                 + "approves every request; purchases of USD 5,000 or more also need finance approval. Tell the "
                 + "requester the result.", "name", "Live purchase " + UUID.randomUUID().toString().substring(0, 6)),
                 UUID.randomUUID().toString(), "/workspaces/{ws}/ai/drafts", PURCHASING);
-        assertThat(created.status()).as(created.toString()).isEqualTo(201);
-        JsonNode generation = created.body().path("generation");
+        assertThat(accepted.status()).as(accepted.toString()).isEqualTo(202);
+        JsonNode job = accepted.body();
+        long until = System.currentTimeMillis() + 170_000;
+        while (!"succeeded".equals(job.path("status").asString()) && !"failed".equals(job.path("status").asString())
+                && System.currentTimeMillis() < until) {
+            Thread.sleep(2_000);
+            job = api("dana.designer").get("/workspaces/{ws}/ai/generations/{id}", PURCHASING,
+                    accepted.body().path("id").asString()).body();
+        }
+        assertThat(job.path("status").asString()).as(job.toString()).isEqualTo("succeeded");
+        JsonNode created = job.path("result");
+        JsonNode generation = created.path("generation");
         assertThat(generation.path("profile").asString()).isEqualTo("economy");
         assertThat(generation.path("attempts").asInt()).isBetween(1, 3);
         assertThat(generation.path("costUsd").isNumber()).isTrue();
-        assertThat(created.body().path("draft").path("definition").path("security").path("selfApproval").asString())
+        assertThat(created.path("draft").path("definition").path("security").path("selfApproval").asString())
                 .isEqualTo("deny");
     }
 

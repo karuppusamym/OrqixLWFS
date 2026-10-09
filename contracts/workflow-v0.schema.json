@@ -113,6 +113,18 @@
             "$ref": "#/$defs/notificationNode"
           },
           {
+            "$ref": "#/$defs/parallelSplitNode"
+          },
+          {
+            "$ref": "#/$defs/parallelJoinNode"
+          },
+          {
+            "$ref": "#/$defs/waitNode"
+          },
+          {
+            "$ref": "#/$defs/startWorkflowNode"
+          },
+          {
             "$ref": "#/$defs/endNode"
           }
         ]
@@ -520,6 +532,10 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 720
+            },
+            "timeoutAfter": {
+              "description": "Optional. When nobody decides within this time, the approval ends and the request continues on the timedOut route (for example to an escalation approval, or to a rejection). Adds a timedOut route and the decision value timedOut. See S12.",
+              "$ref": "#/$defs/duration"
             }
           },
           "required": [
@@ -678,6 +694,139 @@
       },
       "additionalProperties": false
     },
+    "duration": {
+      "description": "ISO-8601 duration in days, hours and minutes only (for example PT1M, PT48H, P2D, P1DT12H). The compiler enforces PT1M to P90D (WF_DURATION_TOO_SHORT, WF_DURATION_TOO_LONG).",
+      "type": "string",
+      "maxLength": 20,
+      "pattern": "^P(?=\\d|T\\d)(\\d{1,3}D)?(T(?=\\d)(\\d{1,4}H)?(\\d{1,5}M)?)?$"
+    },
+    "parallelSplitNode": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/nodeBase"
+        }
+      ],
+      "properties": {
+        "id": true,
+        "label": true,
+        "type": {
+          "const": "parallelSplit"
+        },
+        "config": {
+          "type": "object",
+          "description": "Run in parallel: every outgoing next transition starts one branch. joinRef names the parallelJoin step where all branches must meet.",
+          "properties": {
+            "joinRef": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "required": [
+            "joinRef"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "parallelJoinNode": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/nodeBase"
+        }
+      ],
+      "properties": {
+        "id": true,
+        "label": true,
+        "type": {
+          "const": "parallelJoin"
+        },
+        "config": {
+          "type": "object",
+          "description": "Wait for all: continues once every branch of the matching parallelSplit has finished.",
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "waitNode": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/nodeBase"
+        }
+      ],
+      "properties": {
+        "id": true,
+        "label": true,
+        "type": {
+          "const": "wait"
+        },
+        "config": {
+          "type": "object",
+          "description": "Wait for a fixed time before the request continues. The timer runs on the job executor and survives restarts.",
+          "properties": {
+            "duration": {
+              "$ref": "#/$defs/duration"
+            }
+          },
+          "required": [
+            "duration"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "startWorkflowNode": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/nodeBase"
+        }
+      ],
+      "properties": {
+        "id": true,
+        "label": true,
+        "type": {
+          "const": "startWorkflow"
+        },
+        "config": {
+          "type": "object",
+          "description": "Start another workflow as a child request and continue when it finishes. Outputs at /steps/<id>/: outcome, outcomeKind, reference and every key of resultMapping. The child release is pinned when this workflow is published.",
+          "properties": {
+            "workflowRef": {
+              "description": "Key of the workflow to start.",
+              "$ref": "#/$defs/key"
+            },
+            "inputMapping": {
+              "description": "Child request field -> value from this request.",
+              "type": "object",
+              "propertyNames": {
+                "$ref": "#/$defs/fieldKey"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/fieldRef"
+              }
+            },
+            "resultMapping": {
+              "description": "Output name in this request -> result field of the child (its outputSchema).",
+              "type": "object",
+              "propertyNames": {
+                "$ref": "#/$defs/fieldKey"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/fieldKey"
+              }
+            }
+          },
+          "required": [
+            "workflowRef",
+            "inputMapping",
+            "resultMapping"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "endNode": {
       "allOf": [
         {
@@ -732,6 +881,7 @@
             "next",
             "approved",
             "rejected",
+            "timedOut",
             "condition",
             "default"
           ]

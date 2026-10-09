@@ -1,0 +1,286 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:flowable="http://flowable.org/bpmn" xmlns:orqix="https://orqix.example/bpmn/v0" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC" xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI" targetNamespace="https://orqix.example/workflows">
+  <process id="new-hire-onboarding" name="New hire onboarding" isExecutable="true">
+    <extensionElements>
+      <orqix:release schemaVersion="0.1" compilerVersion="0.2.0" semanticHash="900d26d991fe8b3330895c82df52bf316b2f44d3472621b672ffecc2f739e189"/>
+    </extensionElements>
+    <startEvent id="start" name="New colleague submitted"/>
+    <parallelGateway id="setup" name="Prepare in parallel"/>
+    <userTask id="it" name="IT accounts and access" flowable:candidateGroups="it-desk">
+      <extensionElements>
+        <orqix:approval rejectReasonRequired="true" dueAfterHours="24" timeoutAfter="PT4H"/>
+      </extensionElements>
+    </userTask>
+    <sequenceFlow id="it__out" sourceRef="it" targetRef="it__route"/>
+    <exclusiveGateway id="it__route" name="IT accounts and access: outcome"/>
+    <boundaryEvent id="it__timeout" name="IT accounts and access: no decision in time" attachedToRef="it" cancelActivity="true">
+      <extensionElements>
+        <orqix:timeout after="PT4H"/>
+      </extensionElements>
+      <timerEventDefinition>
+        <timeDuration>PT4H</timeDuration>
+      </timerEventDefinition>
+    </boundaryEvent>
+    <userTask id="itEscalation" name="IT lead review" flowable:candidateGroups="managers">
+      <extensionElements>
+        <orqix:approval rejectReasonRequired="true" dueAfterHours="24"/>
+      </extensionElements>
+    </userTask>
+    <sequenceFlow id="itEscalation__out" sourceRef="itEscalation" targetRef="itEscalation__route"/>
+    <exclusiveGateway id="itEscalation__route" name="IT lead review: outcome"/>
+    <serviceTask id="itReady" name="Tell requester IT access is approved" flowable:delegateExpression="${orqixNotificationTask}">
+      <extensionElements>
+        <orqix:notification channel="inApp" recipient="initiator" message="IT accounts and access were approved."/>
+      </extensionElements>
+    </serviceTask>
+    <userTask id="facilities" name="Desk and building pass" flowable:candidateGroups="facilities-team">
+      <extensionElements>
+        <orqix:approval rejectReasonRequired="true" dueAfterHours="48"/>
+      </extensionElements>
+    </userTask>
+    <sequenceFlow id="facilities__out" sourceRef="facilities" targetRef="facilities__route"/>
+    <exclusiveGateway id="facilities__route" name="Desk and building pass: outcome"/>
+    <parallelGateway id="setupDone" name="IT and Facilities are done" flowable:async="true" flowable:exclusive="true"/>
+    <intermediateCatchEvent id="leadTime" name="Allow lead time before ordering">
+      <extensionElements>
+        <orqix:wait duration="PT1M"/>
+      </extensionElements>
+      <timerEventDefinition>
+        <timeDuration>PT1M</timeDuration>
+      </timerEventDefinition>
+    </intermediateCatchEvent>
+    <serviceTask id="orderEquipment" name="Order equipment" flowable:async="true" flowable:exclusive="true" flowable:triggerable="true" flowable:delegateExpression="${orqixChildTask}">
+      <extensionElements>
+        <flowable:failedJobRetryTimeCycle>R3/PT30S</flowable:failedJobRetryTimeCycle>
+        <orqix:child workflow="purchase-approval" releaseNumber="1" semanticHash="6ae448102e3af36408646948be6e02a899e806a03afd6e3eee595db579484c7f">
+          <orqix:input name="amount" fieldRef="/input/equipmentBudget"/>
+          <orqix:input name="costCenter" fieldRef="/input/department"/>
+          <orqix:input name="purpose" fieldRef="/input/justification"/>
+          <orqix:input name="title" fieldRef="/input/equipment"/>
+          <orqix:result name="orderId" output="procurementId"/>
+        </orqix:child>
+      </extensionElements>
+    </serviceTask>
+    <exclusiveGateway id="equipmentOutcome" name="Was the equipment approved?" default="t16"/>
+    <serviceTask id="notifyReady" name="Tell requester onboarding is ready" flowable:delegateExpression="${orqixNotificationTask}">
+      <extensionElements>
+        <orqix:notification channel="inApp" recipient="initiator" message="Onboarding is ready: access, desk and equipment are arranged."/>
+      </extensionElements>
+    </serviceTask>
+    <endEvent id="ready" name="Ready">
+      <extensionElements>
+        <orqix:outcome label="Ready" kind="success"/>
+      </extensionElements>
+    </endEvent>
+    <serviceTask id="notifyEquipmentRejected" name="Tell requester equipment was not approved" flowable:delegateExpression="${orqixNotificationTask}">
+      <extensionElements>
+        <orqix:notification channel="inApp" recipient="initiator" message="The equipment purchase was not approved. Open the request to see the details."/>
+      </extensionElements>
+    </serviceTask>
+    <endEvent id="equipmentRejected" name="Equipment not approved">
+      <extensionElements>
+        <orqix:outcome label="Equipment rejected" kind="rejected"/>
+      </extensionElements>
+      <terminateEventDefinition/>
+    </endEvent>
+    <serviceTask id="notifyRejected" name="Tell requester onboarding was rejected" flowable:delegateExpression="${orqixNotificationTask}">
+      <extensionElements>
+        <orqix:notification channel="inApp" recipient="initiator" message="Onboarding was rejected. Open the request to see the reason."/>
+      </extensionElements>
+    </serviceTask>
+    <endEvent id="rejected" name="Rejected">
+      <extensionElements>
+        <orqix:outcome label="Rejected" kind="rejected"/>
+      </extensionElements>
+      <terminateEventDefinition/>
+    </endEvent>
+    <sequenceFlow id="t1" sourceRef="start" targetRef="setup"/>
+    <sequenceFlow id="t2" name="IT" sourceRef="setup" targetRef="it"/>
+    <sequenceFlow id="t3" name="Facilities" sourceRef="setup" targetRef="facilities"/>
+    <sequenceFlow id="t4" sourceRef="it__route" targetRef="itReady">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${orqixRoute.approved(execution, 'it')}]]></conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="t5" sourceRef="it__route" targetRef="notifyRejected">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${orqixRoute.rejected(execution, 'it')}]]></conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="t6" name="No decision in 4 hours" sourceRef="it__timeout" targetRef="itEscalation"/>
+    <sequenceFlow id="t7" sourceRef="itEscalation__route" targetRef="itReady">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${orqixRoute.approved(execution, 'itEscalation')}]]></conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="t8" sourceRef="itEscalation__route" targetRef="notifyRejected">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${orqixRoute.rejected(execution, 'itEscalation')}]]></conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="t9" sourceRef="itReady" targetRef="setupDone"/>
+    <sequenceFlow id="t10" sourceRef="facilities__route" targetRef="setupDone">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${orqixRoute.approved(execution, 'facilities')}]]></conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="t11" sourceRef="facilities__route" targetRef="notifyRejected">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${orqixRoute.rejected(execution, 'facilities')}]]></conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="t12" sourceRef="setupDone" targetRef="leadTime"/>
+    <sequenceFlow id="t13" sourceRef="leadTime" targetRef="orderEquipment"/>
+    <sequenceFlow id="t14" sourceRef="orderEquipment" targetRef="equipmentOutcome"/>
+    <sequenceFlow id="t15" name="Equipment approved" sourceRef="equipmentOutcome" targetRef="notifyReady">
+      <extensionElements>
+        <orqix:condition fieldRef="/steps/orderEquipment/outcomeKind" operator="eq" valueType="string" value="success"/>
+      </extensionElements>
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${orqixRoute.condition(execution, 't15')}]]></conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="t16" name="Otherwise" sourceRef="equipmentOutcome" targetRef="notifyEquipmentRejected"/>
+    <sequenceFlow id="t17" sourceRef="notifyReady" targetRef="ready"/>
+    <sequenceFlow id="t18" sourceRef="notifyEquipmentRejected" targetRef="equipmentRejected"/>
+    <sequenceFlow id="t19" sourceRef="notifyRejected" targetRef="rejected"/>
+  </process>
+  <bpmndi:BPMNDiagram id="new-hire-onboarding__diagram">
+    <bpmndi:BPMNPlane id="new-hire-onboarding__plane" bpmnElement="new-hire-onboarding">
+      <bpmndi:BPMNShape id="start__di" bpmnElement="start">
+        <omgdc:Bounds x="152" y="278" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="setup__di" bpmnElement="setup">
+        <omgdc:Bounds x="430" y="276" width="40" height="40"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="it__di" bpmnElement="it">
+        <omgdc:Bounds x="680" y="56" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="it__route__di" bpmnElement="it__route">
+        <omgdc:Bounds x="800" y="76" width="40" height="40"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="it__out__di" bpmnElement="it__out">
+        <omgdi:waypoint x="730" y="96"/>
+        <omgdi:waypoint x="820" y="96"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="it__timeout__di" bpmnElement="it__timeout">
+        <omgdc:Bounds x="712" y="118" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="itEscalation__di" bpmnElement="itEscalation">
+        <omgdc:Bounds x="1000" y="56" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="itEscalation__route__di" bpmnElement="itEscalation__route">
+        <omgdc:Bounds x="1120" y="76" width="40" height="40"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="itEscalation__out__di" bpmnElement="itEscalation__out">
+        <omgdi:waypoint x="1050" y="96"/>
+        <omgdi:waypoint x="1140" y="96"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="itReady__di" bpmnElement="itReady">
+        <omgdc:Bounds x="1320" y="56" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="facilities__di" bpmnElement="facilities">
+        <omgdc:Bounds x="680" y="456" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="facilities__route__di" bpmnElement="facilities__route">
+        <omgdc:Bounds x="800" y="476" width="40" height="40"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="facilities__out__di" bpmnElement="facilities__out">
+        <omgdi:waypoint x="730" y="496"/>
+        <omgdi:waypoint x="820" y="496"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="setupDone__di" bpmnElement="setupDone">
+        <omgdc:Bounds x="1670" y="276" width="40" height="40"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="leadTime__di" bpmnElement="leadTime">
+        <omgdc:Bounds x="1952" y="278" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="orderEquipment__di" bpmnElement="orderEquipment">
+        <omgdc:Bounds x="2200" y="256" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="equipmentOutcome__di" bpmnElement="equipmentOutcome">
+        <omgdc:Bounds x="2550" y="276" width="40" height="40"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="notifyReady__di" bpmnElement="notifyReady">
+        <omgdc:Bounds x="2800" y="136" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ready__di" bpmnElement="ready">
+        <omgdc:Bounds x="3152" y="158" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="notifyEquipmentRejected__di" bpmnElement="notifyEquipmentRejected">
+        <omgdc:Bounds x="2800" y="376" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="equipmentRejected__di" bpmnElement="equipmentRejected">
+        <omgdc:Bounds x="3152" y="398" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="notifyRejected__di" bpmnElement="notifyRejected">
+        <omgdc:Bounds x="1320" y="656" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="rejected__di" bpmnElement="rejected">
+        <omgdc:Bounds x="1672" y="678" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="t1__di" bpmnElement="t1">
+        <omgdi:waypoint x="170" y="296"/>
+        <omgdi:waypoint x="450" y="296"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="t2__di" bpmnElement="t2">
+        <omgdi:waypoint x="450" y="296"/>
+        <omgdi:waypoint x="730" y="96"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="t3__di" bpmnElement="t3">
+        <omgdi:waypoint x="450" y="296"/>
+        <omgdi:waypoint x="730" y="496"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="t4__di" bpmnElement="t4">
+        <omgdi:waypoint x="820" y="96"/>
+        <omgdi:waypoint x="1370" y="96"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="t5__di" bpmnElement="t5">
+        <omgdi:waypoint x="820" y="96"/>
+        <omgdi:waypoint x="1370" y="696"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="t6__di" bpmnElement="t6">
+        <omgdi:waypoint x="730" y="136"/>
+        <omgdi:waypoint x="1050" y="96"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="t7__di" bpmnElement="t7">
+        <omgdi:waypoint x="1140" y="96"/>
+        <omgdi:waypoint x="1370" y="96"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="t8__di" bpmnElement="t8">
+        <omgdi:waypoint x="1140" y="96"/>
+        <omgdi:waypoint x="1370" y="696"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="t9__di" bpmnElement="t9">
+        <omgdi:waypoint x="1370" y="96"/>
+        <omgdi:waypoint x="1690" y="296"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="t10__di" bpmnElement="t10">
+        <omgdi:waypoint x="820" y="496"/>
+        <omgdi:waypoint x="1690" y="296"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="t11__di" bpmnElement="t11">
+        <omgdi:waypoint x="820" y="496"/>
+        <omgdi:waypoint x="1370" y="696"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="t12__di" bpmnElement="t12">
+        <omgdi:waypoint x="1690" y="296"/>
+        <omgdi:waypoint x="1970" y="296"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="t13__di" bpmnElement="t13">
+        <omgdi:waypoint x="1970" y="296"/>
+        <omgdi:waypoint x="2250" y="296"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="t14__di" bpmnElement="t14">
+        <omgdi:waypoint x="2250" y="296"/>
+        <omgdi:waypoint x="2570" y="296"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="t15__di" bpmnElement="t15">
+        <omgdi:waypoint x="2570" y="296"/>
+        <omgdi:waypoint x="2850" y="176"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="t16__di" bpmnElement="t16">
+        <omgdi:waypoint x="2570" y="296"/>
+        <omgdi:waypoint x="2850" y="416"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="t17__di" bpmnElement="t17">
+        <omgdi:waypoint x="2850" y="176"/>
+        <omgdi:waypoint x="3170" y="176"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="t18__di" bpmnElement="t18">
+        <omgdi:waypoint x="2850" y="416"/>
+        <omgdi:waypoint x="3170" y="416"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="t19__di" bpmnElement="t19">
+        <omgdi:waypoint x="1370" y="696"/>
+        <omgdi:waypoint x="1690" y="696"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>

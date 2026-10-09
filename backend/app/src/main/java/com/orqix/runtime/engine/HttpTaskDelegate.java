@@ -78,14 +78,17 @@ public class HttpTaskDelegate implements JavaDelegate {
 
         EffectDispatcher.DispatchResult result = dispatcher.dispatch(new EffectDispatcher.DispatchRequest(workspaceId,
                 runId, element.getId(), OCCURRENCE, connection, connectionVersion, operation, dispatcher.body(values),
-                results, timeoutSeconds, properties.runtime().lockOwner()));
+                results, timeoutSeconds, properties.runtime().lockOwner(), ProcessData.initiator(execution)));
 
         if (result instanceof EffectDispatcher.Succeeded success) {
             if (!success.reused()) {
                 metrics.effectAttempt(success.effectClass(), "succeeded");
             }
             execution.setVariable(ProcessData.stepVariable(element.getId()), json.write(success.result()));
-            runs.mutate(workspaceId, runId, m -> m.removeStep(element.getId()));
+            runs.mutate(workspaceId, runId, m -> {
+                m.removeStep(element.getId());
+                m.settle();
+            });
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("connectionKey", connection);
             data.put("operation", operation);
@@ -94,6 +97,12 @@ public class HttpTaskDelegate implements JavaDelegate {
             data.put("remoteReference", success.remoteReference());
             if (success.reused()) {
                 data.put("reusedRecordedResult", true);
+            }
+            if (success.summary() != null) {
+                data.put("summary", success.summary());
+            }
+            if (success.meta() != null) {
+                data.put("agent", success.meta());
             }
             events.append(workspaceId, runId, "EFFECT_SUCCEEDED", element.getId(), null, data);
             return;

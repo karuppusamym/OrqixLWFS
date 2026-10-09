@@ -200,7 +200,7 @@ export function StartRequestPage() {
               {fields.map((f) => (
                 <div key={f.key} className="grid gap-1 px-4 py-3 sm:grid-cols-[14rem_1fr]">
                   <dt className="text-sm font-semibold text-muted-foreground">{f.label}</dt>
-                  <dd className="whitespace-pre-wrap break-words">{displayValue(f, values[f.key])}</dd>
+                  <dd className="whitespace-pre-wrap wrap-anywhere">{displayValue(f, values[f.key])}</dd>
                 </div>
               ))}
               {businessKey.trim() ? (

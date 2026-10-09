@@ -57,6 +57,39 @@ public final class TestSupport {
         return (ObjectNode) json("examples/purchase-approval.json");
     }
 
+    public static String onboardingJson() {
+        return read("examples/new-hire-onboarding.json");
+    }
+
+    public static ObjectNode onboarding() {
+        return (ObjectNode) json("examples/new-hire-onboarding.json");
+    }
+
+    /** Release id used for the pinned {@code purchase-approval} child in tests. */
+    public static final String PURCHASE_RELEASE_ID = "00000000-0000-7000-8000-0000000000a1";
+
+    /**
+     * The default workspace plus the groups of the onboarding example and {@code purchase-approval} as a published
+     * workflow (release 1) that other workflows may start.
+     */
+    public static CompileContext onboardingContext() {
+        CompileContext base = defaultContext();
+        Map<String, CompileContext.GroupInfo> groups = new LinkedHashMap<>(base.groups());
+        groups.put("it-desk", new CompileContext.GroupInfo("it-desk", "IT service desk", 1));
+        groups.put("facilities-team", new CompileContext.GroupInfo("facilities-team", "Facilities team", 1));
+        Map<String, CompileContext.WorkflowInfo> workflows = new LinkedHashMap<>();
+        workflows.put("purchase-approval", purchaseAsChild(1));
+        return new CompileContext(base.selfApprovalAllowed(), groups, base.connectionVersions(),
+                base.enabledConnectionBindings(), workflows);
+    }
+
+    /** The purchase template as a published child workflow (it starts no workflow itself). */
+    public static CompileContext.WorkflowInfo purchaseAsChild(int releaseNumber) {
+        String semanticHash = Compilers.workflowCompiler().validate(purchaseJson(), defaultContext()).semanticHash();
+        return CompileContext.WorkflowInfo.of("purchase-approval", "Purchase approval", PURCHASE_RELEASE_ID,
+                releaseNumber, semanticHash, purchaseJson(), Set.of(), 0);
+    }
+
     /** @return the default fixture workspace of compiler-cases.json */
     public static CompileContext defaultContext() {
         JsonNode cases = json("examples/fixtures/compiler-cases.json");

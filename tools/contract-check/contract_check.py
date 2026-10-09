@@ -3,7 +3,7 @@
 
 Checks, in order:
   1. Both JSON Schemas are valid JSON Schema 2020-12 documents and all their local $refs resolve.
-  2. examples/purchase-approval.json validates against contracts/workflow-v0.schema.json and every
+  2. Every examples/*.json workflow validates against contracts/workflow-v0.schema.json and every
      examples/connections/*.json validates against contracts/connection-definition-v0.schema.json.
   3. examples/fixtures/compiler-cases.json: every RFC 6902 patch applies to the base document; cases that
      expect WF_SCHEMA_INVALID / WF_SCHEMA_VERSION_UNSUPPORTED fail schema validation, all others pass it.
@@ -328,14 +328,16 @@ def check_examples(report: Report, root: Path, schemas: dict[str, Any]) -> None:
     workflow_schema = schemas.get("workflow-v0.schema.json")
     connection_schema = schemas.get("connection-definition-v0.schema.json")
 
-    workflow_path = root / "examples" / "purchase-approval.json"
+    workflow_files = sorted((root / "examples").glob("*.json"))
     if workflow_schema is None:
-        report.fail("workflow schema unavailable; skipping purchase-approval.json")
-    elif not workflow_path.is_file():
+        report.fail("workflow schema unavailable; skipping workflow examples")
+    elif not (root / "examples" / "purchase-approval.json").is_file():
         report.fail("examples/purchase-approval.json not found")
     else:
-        errors = validation_errors(Draft202012Validator(workflow_schema), json.loads(workflow_path.read_text("utf-8")))
-        report.check(not errors, "examples/purchase-approval.json is a valid workflow", "purchase-approval.json: " + "; ".join(errors))
+        validator = Draft202012Validator(workflow_schema)
+        for path in workflow_files:
+            errors = validation_errors(validator, json.loads(path.read_text("utf-8")))
+            report.check(not errors, f"examples/{path.name} is a valid workflow", path.name + ": " + "; ".join(errors))
 
     connection_files = sorted((root / "examples" / "connections").glob("*.json"))
     report.check(bool(connection_files), f"found {len(connection_files)} connection definition(s)", "no examples/connections/*.json found")

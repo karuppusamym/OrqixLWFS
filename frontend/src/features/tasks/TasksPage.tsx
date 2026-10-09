@@ -1,6 +1,7 @@
 import { CalendarClock, Inbox } from 'lucide-react'
+import { useEffect } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
-import { useTaskCounters, useTasks } from '@/api/queries'
+import { useTask, useTaskCounters, useTasks } from '@/api/queries'
 import type { TaskSummary, TaskView } from '@/api/types'
 import { useWorkspace } from '@/app/workspace'
 import { EmptyState } from '@/components/common/EmptyState'
@@ -31,15 +32,24 @@ function parseView(value: string | null): TaskView {
  * Desktop shows the panel beside the list; on narrow screens a task opens on its own page (/tasks/:taskId).
  */
 export function TasksPage() {
-  const { workspace } = useWorkspace()
+  const { workspace, me } = useWorkspace()
   const ws = workspace.id
   const { taskId } = useParams()
   const [params, setParams] = useSearchParams()
   const desktop = useIsDesktop()
   const navigate = useNavigate()
   const counters = useTaskCounters(ws, true)
-  const view = params.has('view') || taskId ? parseView(params.get('view'))
-    : counters.data && counters.data.assigned === 0 && counters.data.claimable > 0 ? 'claimable' : 'assigned'
+  // A link straight to a task (a notification, a bookmark) has no list in it: open the list the task belongs to, so the
+  // panel never shows a task that is missing from the selected tab.
+  const deepLink = !!taskId && !params.has('view')
+  const linked = useTask(ws, deepLink ? taskId : undefined)
+  const inferred: TaskView | null = linked.data ? (linked.data.status !== 'open' ? 'completed' : linked.data.assignee?.id === me.subject.id ? 'assigned' : 'claimable') : null
+  useEffect(() => {
+    if (deepLink && inferred) navigate(`/w/${ws}/tasks/${taskId}?view=${inferred}`, { replace: true })
+  }, [deepLink, inferred, navigate, taskId, ws])
+  const view = params.has('view') ? parseView(params.get('view'))
+    : taskId ? (inferred ?? 'assigned')
+      : counters.data && counters.data.assigned === 0 && counters.data.claimable > 0 ? 'claimable' : 'assigned'
   const list = useTasks(ws, view)
   const tasks: TaskSummary[] = list.data?.pages.flatMap((p) => p.items) ?? []
 
@@ -127,7 +137,7 @@ function TaskList({ tasks, ws, view, taskId, desktop, onOpen }: { tasks: TaskSum
       <ul aria-label={label} className="space-y-3">
         {tasks.map((t) => (
           <li key={t.id} className="rounded-card border border-border bg-surface p-4 shadow-card">
-            <Link to={`/w/${ws}/tasks/${t.id}?view=${view}`} className="text-base font-semibold">
+            <Link to={`/w/${ws}/tasks/${t.id}?view=${view}`} className="text-base font-semibold wrap-anywhere">
               {taskTitle(t)}
             </Link>
             <p className="text-sm text-muted-foreground tabular-nums">{requestReference(t)}</p>
@@ -154,7 +164,7 @@ function TaskList({ tasks, ws, view, taskId, desktop, onOpen }: { tasks: TaskSum
             <TH>Request</TH>
             <TH>Step</TH>
             <TH>Requested by</TH>
-            <TH>Due</TH>
+            <TH>{view === 'completed' ? 'Decision' : 'Due'}</TH>
             <TH>Action</TH>
           </TR>
         </THead>
@@ -164,7 +174,7 @@ function TaskList({ tasks, ws, view, taskId, desktop, onOpen }: { tasks: TaskSum
             return (
               <TR key={t.id} className={cn(selected && 'bg-neutral-soft')} aria-current={selected ? 'true' : undefined}>
                 <TD>
-                  <Link to={`/w/${ws}/tasks/${t.id}?view=${view}`} className="font-semibold">
+                  <Link to={`/w/${ws}/tasks/${t.id}?view=${view}`} className="font-semibold wrap-anywhere">
                     {taskTitle(t)}
                   </Link>
                   <span className="block text-xs text-muted-foreground tabular-nums">{requestReference(t)}</span>
@@ -173,7 +183,7 @@ function TaskList({ tasks, ws, view, taskId, desktop, onOpen }: { tasks: TaskSum
                 <TD>{t.requester.displayName}</TD>
                 <TD className="whitespace-nowrap">{dueText(t)}</TD>
                 <TD>
-                  <Button variant={selected ? 'primary' : 'secondary'} size="sm" onClick={() => onOpen(t.id)} aria-label={`Open ${taskTitle(t)}`}>
+                  <Button variant="secondary" size="sm" onClick={() => onOpen(t.id)} aria-label={`Open ${taskTitle(t)}`}>
                     Open
                   </Button>
                 </TD>

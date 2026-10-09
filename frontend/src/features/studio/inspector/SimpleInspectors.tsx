@@ -86,6 +86,19 @@ export function ApprovalInspector({ node }: { node: WorkflowNode }) {
             </p>
           </div>
         </div>
+        <FormField label="Time limit" optionalText id={`approval-timeout-${node.id}`} description="For example PT2H or P1D. Cancels the approval and follows Timed out when no decision is made in time.">
+          {(ids) => <CommitInput id={ids.input} value={cfg<string>(node, 'timeoutAfter') ?? ''} disabled={readOnly} aria-describedby={ids.describedBy} onCommit={(v) => store.getState().apply((d) => ({
+            ...d,
+            nodes: d.nodes.map((n) => {
+              if (n.id !== node.id) return n
+              const config = { ...n.config }
+              if (v.trim()) config.timeoutAfter = v.trim()
+              else delete config.timeoutAfter
+              return { ...n, config }
+            }),
+            transitions: v.trim() ? d.transitions : d.transitions.filter((t) => t.from !== node.id || t.on !== 'timedOut'),
+          }))} />}
+        </FormField>
       </InspectorSection>
       <Advanced>
         <StepIdField node={node} />

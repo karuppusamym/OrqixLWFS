@@ -25,7 +25,7 @@ public class ReleaseQueries {
     /** Immutable release facts needed at run time. */
     public record ReleaseView(UUID id, UUID workspaceId, UUID workflowId, String workflowKey, String workflowName,
             int releaseNumber, JsonNode definition, String processDefinitionId, String engineDeploymentId,
-            Instant publishedAt, JsonNode sourceMap) {
+            Instant publishedAt, JsonNode sourceMap, JsonNode manifest) {
 
         /** Business label of a canonical node or of a generated helper (mapped through the source map). */
         public String nodeLabel(String elementId) {
@@ -36,6 +36,19 @@ public class ReleaseQueries {
                     : sourceMap.path("bpmnToCanonical").path(elementId).asString(elementId);
             JsonNode node = node(canonical);
             return node == null ? null : node.path("label").asString(null);
+        }
+
+        /**
+         * The child release a "Start another workflow" step is pinned to (S12), from the release manifest; null when
+         * the release has no such pin.
+         */
+        public JsonNode childPin(String nodeId) {
+            for (JsonNode pin : manifest.path("workflows")) {
+                if (nodeId.equals(pin.path("nodeId").asString(null))) {
+                    return pin;
+                }
+            }
+            return null;
         }
 
         public JsonNode inputSchema() {
@@ -95,7 +108,8 @@ public class ReleaseQueries {
         Optional<ReleaseView> loaded = jdbc.sql("""
                 SELECT r.id, r.workspace_id, r.workflow_id, w.key AS workflow_key, w.name AS workflow_name,
                        r.release_number, r.definition::text AS definition, r.process_definition_id,
-                       r.engine_deployment_id, r.published_at, r.source_map::text AS source_map
+                       r.engine_deployment_id, r.published_at, r.source_map::text AS source_map,
+                       r.manifest::text AS manifest
                 FROM workflow_release r JOIN workflow w ON w.workspace_id = r.workspace_id AND w.id = r.workflow_id
                 WHERE r.workspace_id = :ws AND r.id = :id
                 """)
@@ -104,7 +118,8 @@ public class ReleaseQueries {
                         Sql.uuid(rs, "workflow_id"), rs.getString("workflow_key"), rs.getString("workflow_name"),
                         rs.getInt("release_number"), json.parse(rs.getString("definition")),
                         rs.getString("process_definition_id"), rs.getString("engine_deployment_id"),
-                        Sql.instant(rs, "published_at"), json.parse(rs.getString("source_map"))))
+                        Sql.instant(rs, "published_at"), json.parse(rs.getString("source_map")),
+                        json.parse(rs.getString("manifest"))))
                 .optional();
         loaded.ifPresent(view -> cache.put(view.id(), view));
         return loaded;

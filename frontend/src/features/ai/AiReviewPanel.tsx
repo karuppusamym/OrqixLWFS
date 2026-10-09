@@ -85,6 +85,11 @@ export function AiReviewPanel({ workflowId }: { workflowId: string }) {
               </ul>
             )}
           </div>
+          {generation.policyViolation ? (
+            <p className="rounded-control border border-danger-border bg-danger-soft p-3 text-danger-foreground" data-testid="ai-policy-violation">
+              {generation.policyViolation} The draft passed every check, but tell an administrator: this model profile has been paused.
+            </p>
+          ) : null}
           <p className="text-xs" data-testid="ai-generation">
             Drafted with the {generation.profile} profile ({generation.model}) in {generation.attempts} {generation.attempts === 1 ? 'attempt' : 'attempts'}
             {generation.escalated ? ', after escalating to a stronger model' : ''}, {formatDuration(generation.durationMs)}, cost {formatUsd(generation.costUsd)}. Nothing is published until a

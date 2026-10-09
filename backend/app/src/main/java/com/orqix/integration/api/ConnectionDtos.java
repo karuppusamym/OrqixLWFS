@@ -27,7 +27,7 @@ public final class ConnectionDtos {
     public record BindingState(boolean configured, boolean enabled, String host) {
     }
 
-    public record ConnectionSummary(String key, String name, int latestVersion, List<Integer> versions,
+    public record ConnectionSummary(String key, String name, String kind, int latestVersion, List<Integer> versions,
             BindingState binding, List<OperationSummary> operations) {
     }
 
@@ -58,11 +58,18 @@ public final class ConnectionDtos {
             @NotNull Boolean enabled) {
     }
 
+    /** @param input sample input of an agent operation; ignored for HTTP operations */
     public record TestRequest(@NotNull @Min(1) Integer version,
-            @NotNull @Pattern(regexp = "^[a-z][A-Za-z0-9]{0,63}$") String operation) {
+            @NotNull @Pattern(regexp = "^[a-z][A-Za-z0-9]{0,63}$") String operation, JsonNode input) {
     }
 
-    public record TestResult(String outcome, Integer httpStatus, long durationMs, String errorCode, String detail) {
+    /** @param output agent tests only: the structured result; @param summary agent tests only: the timeline sentence */
+    public record TestResult(String outcome, Integer httpStatus, long durationMs, String errorCode, String detail,
+            JsonNode output, String summary) {
+
+        public TestResult(String outcome, Integer httpStatus, long durationMs, String errorCode, String detail) {
+            this(outcome, httpStatus, durationMs, errorCode, detail, null, null);
+        }
     }
 
     @SuppressWarnings("unused")

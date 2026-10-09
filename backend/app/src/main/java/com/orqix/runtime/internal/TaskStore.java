@@ -117,6 +117,17 @@ public class TaskStore {
                 .update();
     }
 
+    /** Ends the open task of one step because its time limit passed (stored as cancelled; the run event says why). */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public int cancelOpenForNode(UUID workspaceId, UUID runId, String nodeId, Instant endedAt) {
+        return jdbc.sql("""
+                UPDATE task_context SET status = 'cancelled', ended_at = :ended, version = version + 1
+                WHERE workspace_id = :ws AND run_id = :run AND node_id = :node AND status = 'open'
+                """)
+                .param("ended", Sql.ts(endedAt)).param("ws", workspaceId).param("run", runId).param("node", nodeId)
+                .update();
+    }
+
     @Transactional(propagation = Propagation.MANDATORY)
     public int cancelOpenForRun(UUID workspaceId, UUID runId, Instant endedAt) {
         return jdbc.sql("""

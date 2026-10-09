@@ -41,12 +41,21 @@ public class RunStore {
     public record RunRow(UUID id, UUID workspaceId, String reference, UUID workflowId, UUID releaseId,
             String engineProcessInstanceId, String businessKey, UUID initiator, String lifecycle, String outcome, String outcomeKind,
             ArrayNode currentSteps, JsonNode attention, JsonNode input, JsonNode output, long eventSeq, int version,
-            Instant createdAt, Instant updatedAt, Instant endedAt) {
+            Instant createdAt, Instant updatedAt, Instant endedAt, UUID parentRunId, String parentNodeId,
+            Integer parentOccurrence, int callDepth) {
 
         public boolean isActive() {
             return RUNNING.equals(lifecycle) || WAITING.equals(lifecycle) || NEEDS_ATTENTION.equals(lifecycle);
         }
+
+        /** True when another run started this one ("Start another workflow", S12). */
+        public boolean isChild() {
+            return parentRunId != null;
+        }
     }
+
+    /** Step kinds that wait for something other than a job: a person, a timer or a child run. */
+    private static final java.util.Set<String> WAITING_KINDS = java.util.Set.of("approval", "wait", "child");
 
     /** Mutable view used by {@link #mutate}. */
     public static final class Mutation {
@@ -107,6 +116,24 @@ public class RunStore {
             }
         }
 
+        /**
+         * Sets running or waiting from the current steps: {@code waiting} when something is open and every open step
+         * waits for a person, a timer or a child run, {@code running} otherwise (a job is executing or pending, or the
+         * engine is between steps). Other lifecycles are left alone.
+         */
+        public void settle() {
+            if (!RUNNING.equals(lifecycle) && !WAITING.equals(lifecycle)) {
+                return;
+            }
+            boolean onlyWaiting = steps.size() > 0;
+            for (JsonNode step : steps) {
+                if (!WAITING_KINDS.contains(step.path("kind").asString(""))) {
+                    onlyWaiting = false;
+                }
+            }
+            lifecycle = onlyWaiting ? WAITING : RUNNING;
+        }
+
         public void updateStep(String nodeId, Consumer<ObjectNode> change) {
             for (JsonNode step : steps) {
                 if (nodeId.equals(step.path("nodeId").asString(null)) && step instanceof ObjectNode object) {
@@ -119,7 +146,8 @@ public class RunStore {
     private static final String COLUMNS = """
             id, workspace_id, reference, workflow_id, release_id, engine_process_instance_id, business_key,
             initiator_subject_id, lifecycle, outcome, outcome_kind, current_steps::text AS current_steps, attention::text AS attention,
-            input::text AS input, output::text AS output, event_seq, version, created_at, updated_at, ended_at
+            input::text AS input, output::text AS output, event_seq, version, created_at, updated_at, ended_at,
+            parent_run_id, parent_node_id, parent_occurrence, call_depth
             """;
 
     private final JdbcClient jdbc;
@@ -151,6 +179,62 @@ public class RunStore {
                 .param("bkey", businessKey).param("initiator", initiator).param("input", json.write(input))
                 .param("now", Sql.ts(now))
                 .update();
+    }
+
+    /**
+     * Inserts the child run of a "Start another workflow" step (S12). The unique index on (parent run, step, visit)
+     * makes a duplicate start impossible: callers look the child up with {@link #findChild} first, and a concurrent
+     * duplicate fails here.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void insertChild(UUID id, UUID workspaceId, UUID workflowId, UUID releaseId, String businessKey,
+            UUID initiator, JsonNode input, RunRow parent, String parentNodeId, int occurrence) {
+        insert(id, workspaceId, workflowId, releaseId, businessKey, initiator, input);
+        jdbc.sql("""
+                UPDATE workflow_run SET parent_run_id = :parent, parent_node_id = :node, parent_occurrence = :occ,
+                       call_depth = :depth
+                WHERE workspace_id = :ws AND id = :id
+                """)
+                .param("parent", parent.id()).param("node", parentNodeId).param("occ", occurrence)
+                .param("depth", parent.callDepth() + 1).param("ws", workspaceId).param("id", id).update();
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<RunRow> findChild(UUID workspaceId, UUID parentRunId, String parentNodeId, int occurrence) {
+        return jdbc.sql("SELECT " + COLUMNS + """
+                 FROM workflow_run
+                 WHERE workspace_id = :ws AND parent_run_id = :parent AND parent_node_id = :node
+                   AND parent_occurrence = :occ
+                """)
+                .param("ws", workspaceId).param("parent", parentRunId).param("node", parentNodeId)
+                .param("occ", occurrence).query(this::map).optional();
+    }
+
+    /** Direct children of a run, oldest first. */
+    @Transactional(readOnly = true)
+    public java.util.List<RunRow> children(UUID workspaceId, UUID parentRunId) {
+        return jdbc.sql("SELECT " + COLUMNS + """
+                 FROM workflow_run WHERE workspace_id = :ws AND parent_run_id = :parent
+                 ORDER BY created_at, id
+                """)
+                .param("ws", workspaceId).param("parent", parentRunId).query(this::map).list();
+    }
+
+    /** Every descendant of a run, deepest first (the order in which a cancel locks them, S12 section 4). */
+    @Transactional(readOnly = true)
+    public java.util.List<RunRow> descendantsDeepestFirst(UUID workspaceId, UUID runId) {
+        return jdbc.sql("""
+                WITH RECURSIVE tree AS (
+                    SELECT id, call_depth FROM workflow_run WHERE workspace_id = :ws AND parent_run_id = :id
+                    UNION ALL
+                    SELECT r.id, r.call_depth FROM workflow_run r JOIN tree t ON r.parent_run_id = t.id
+                    WHERE r.workspace_id = :ws
+                )
+                """ + "SELECT " + COLUMNS + """
+                 FROM workflow_run WHERE workspace_id = :ws AND id IN (SELECT id FROM tree)
+                 ORDER BY call_depth DESC, created_at, id
+                """)
+                .param("ws", workspaceId).param("id", runId).query(this::map).list();
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
@@ -215,7 +299,8 @@ public class RunStore {
                 rs.getString("outcome_kind"), (ArrayNode) stepsNode, attention == null ? null : json.parse(attention),
                 json.parse(rs.getString("input")), output == null ? null : json.parse(output), rs.getLong("event_seq"),
                 rs.getInt("version"), Sql.instant(rs, "created_at"), Sql.instant(rs, "updated_at"),
-                Sql.instant(rs, "ended_at"));
+                Sql.instant(rs, "ended_at"), Sql.uuid(rs, "parent_run_id"), rs.getString("parent_node_id"),
+                (Integer) rs.getObject("parent_occurrence"), rs.getInt("call_depth"));
     }
 
     public static String columns() {

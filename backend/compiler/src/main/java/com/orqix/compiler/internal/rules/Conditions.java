@@ -103,8 +103,19 @@ final class Conditions {
         }
         if (r.type().mayBeAbsent()) {
             rc.issues().blocker("WF_FIELDREF_NOT_GUARANTEED", path, usedAt.id(), transitionId, "The " + r.key()
-                    + " of " + q(producer) + " is only recorded when the approver enters one, so it cannot be"
-                    + " used at " + q(usedAt) + ".");
+                    + " of " + q(producer) + " " + absentWhy(producer) + ", so it cannot be used at " + q(usedAt)
+                    + ".");
         }
+    }
+
+    /** Why a value may be missing, in business words (approval details vs. results of another workflow). */
+    static String absentWhy(Node producer) {
+        if (producer instanceof Node.StartWorkflow) {
+            return "is not always returned by the other workflow (for example when the request is rejected)";
+        }
+        if (producer instanceof Node.Approval a && a.timeoutAfter() != null) {
+            return "is only recorded when someone decides in time (and, for a reason or comment, enters one)";
+        }
+        return "is only recorded when the approver enters one";
     }
 }

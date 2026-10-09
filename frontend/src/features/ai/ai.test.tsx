@@ -5,8 +5,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { db, PURCHASE_WORKFLOW_ID } from '@/mocks/state'
 import { server } from '@/test/server'
 import { renderApp, signInAs, WS } from '@/test/utils'
-import { aiMock } from './mocks'
-import { formatUsd } from './api'
+import { aiMock, resetAiJobs } from './mocks'
+import { aiPolling, formatUsd } from './api'
+import { clearTrackedJobs } from './jobs'
 import { readReviewNotes } from './reviewNotes'
 
 const EDIT = `/w/${WS}/workflows/${PURCHASE_WORKFLOW_ID}/edit`
@@ -19,10 +20,19 @@ async function openNewWorkflow(user: ReturnType<typeof userEvent.setup>) {
 describe('AI assistance (S10 section 6)', () => {
   beforeEach(() => {
     aiMock.enabled = true
+    aiMock.trippedAuto = false
+    aiMock.generationDelayMs = 0
+    aiPolling.intervalMs = 20
+    resetAiJobs()
     window.sessionStorage.clear()
+    clearTrackedJobs()
   })
   afterEach(() => {
     aiMock.enabled = true
+    aiMock.trippedAuto = false
+    aiPolling.intervalMs = 2000
+    aiMock.generationDelayMs = 2500
+    clearTrackedJobs()
   })
 
   it('hides every AI entry point when AI is not configured', async () => {
@@ -196,6 +206,67 @@ describe('AI assistance (S10 section 6)', () => {
     expect(within(settings).getByText(/read-only here/)).toBeInTheDocument()
     expect(within(settings).getByRole('list', { name: 'Excluded models' })).toHaveTextContent('anthropic/claude-opus-*')
     expect(within(settings).getByText(/of USD 10.00/)).toBeInTheDocument()
+  })
+
+  it('lets the person close the dialog while drafting: a toast follows the job and opens the draft when ready', async () => {
+    aiMock.generationDelayMs = 600
+    signInAs('dana.designer')
+    const user = userEvent.setup()
+    const { router } = renderApp(`/w/${WS}/workflows`)
+    const dialog = await openNewWorkflow(user)
+    await user.click(await within(dialog).findByRole('button', { name: 'Describe it' }))
+    const describe = await screen.findByRole('dialog', { name: 'Describe your workflow' })
+    await user.type(within(describe).getByLabelText(/What should the workflow do/), 'Access requests approved by the owner and by security.')
+    await user.click(within(describe).getByRole('button', { name: /Generate draft/ }))
+    expect(await within(describe).findByTestId('describe-progress')).toHaveTextContent(/we'll open the draft when it's ready/)
+
+    await user.click(await within(describe).findByRole('button', { name: 'Close and keep drafting' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Describe your workflow' })).not.toBeInTheDocument())
+    const toast = await screen.findByTestId('ai-job-toast')
+    expect(toast).toHaveTextContent(/We'll let you know when the draft is ready/)
+
+    // Still on the list; the toast turns into "Open draft" when the job succeeds.
+    await within(toast).findByText('Your draft is ready', undefined, { timeout: 5000 })
+    expect(router.state.location.pathname).toBe(`/w/${WS}/workflows`)
+    await user.click(within(toast).getByRole('button', { name: 'Open draft' }))
+    await waitFor(() => expect(router.state.location.pathname).toMatch(/\/workflows\/[^/]+\/edit$/))
+    expect(await screen.findByTestId('ai-review')).toBeInTheDocument()
+    expect(screen.queryByTestId('ai-job-toast')).not.toBeInTheDocument()
+  })
+
+  it('shows a failed generation in the dialog and starts the retry as a new command', async () => {
+    signInAs('dana.designer')
+    const keys: string[] = []
+    server.use(
+      http.post('*/api/v1/workspaces/:ws/ai/drafts', ({ request }) => {
+        keys.push(request.headers.get('Idempotency-Key') ?? '')
+        return undefined
+      }),
+    )
+    const user = userEvent.setup()
+    renderApp(`/w/${WS}/workflows`)
+    const dialog = await openNewWorkflow(user)
+    await user.click(await within(dialog).findByRole('button', { name: 'Describe it' }))
+    const describe = await screen.findByRole('dialog', { name: 'Describe your workflow' })
+    await user.type(within(describe).getByLabelText(/What should the workflow do/), 'Approval for a laptop purchase (unavailable)')
+    await user.click(within(describe).getByRole('button', { name: /Generate draft/ }))
+    expect(await within(describe).findByText(/not responding right now/)).toBeInTheDocument()
+    await user.click(within(describe).getByRole('button', { name: /Try again/ }))
+    await waitFor(() => expect(keys).toHaveLength(2))
+    expect(keys[1]).not.toBe(keys[0])
+  })
+
+  it('shows a paused profile in Settings > AI and offers only the remaining profiles', async () => {
+    aiMock.trippedAuto = true
+    signInAs('wade.admin')
+    const user = userEvent.setup()
+    renderApp(`/w/${WS}/settings`)
+    await user.click(await screen.findByRole('tab', { name: /^AI$/ }))
+    const paused = await screen.findByTestId('ai-paused')
+    expect(paused).toHaveTextContent(/anthropic\/claude-opus-9/)
+    expect(paused).toHaveTextContent(/paused until 00:00 UTC/)
+    const settings = screen.getByTestId('ai-settings')
+    expect(within(settings).queryByText(/Varies per request/)).not.toBeInTheDocument()
   })
 
   it('formats small costs without rounding them to zero', () => {

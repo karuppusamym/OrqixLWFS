@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.Map;
 
+import com.orqix.compiler.CompileContext.WorkflowInfo;
 import com.orqix.compiler.internal.model.Enums.Route;
 import com.orqix.compiler.internal.model.Node;
 import com.orqix.compiler.internal.model.WorkflowDefinition;
@@ -32,6 +33,8 @@ public final class BpmnGenerator {
     public static final String APPROVAL_OUT = "__out";
     /** Suffix of the outcome gateway generated after an approval task. */
     public static final String APPROVAL_ROUTE = "__route";
+    /** Suffix of the interrupting timer boundary event generated for an approval with a time limit. */
+    public static final String APPROVAL_TIMEOUT = "__timeout";
 
     /** Generated process plus its source map. */
     public record Result(String xml, SourceMap sourceMap) {
@@ -43,9 +46,10 @@ public final class BpmnGenerator {
     /**
      * @param definition       a definition without blockers
      * @param decisionResource decision table key to DMN resource name
+     * @param children         "Start another workflow" node id to the pinned child release facts
      */
     public static Result generate(WorkflowDefinition definition, String compilerVersion, String semanticHash,
-                                  Map<String, String> decisionResource) {
+                                  Map<String, String> decisionResource, Map<String, WorkflowInfo> children) {
         Map<String, Node> nodes = new HashMap<>();
         definition.nodes().forEach(n -> nodes.put(n.id(), n));
         Map<String, String> branchDefault = new HashMap<>();
@@ -78,7 +82,7 @@ public final class BpmnGenerator {
         x.close();
 
         for (Node n : definition.nodes()) {
-            node(x, map, definition, n, branchDefault, decisionResource);
+            node(x, map, definition, n, branchDefault, decisionResource, children);
         }
         for (Transition t : definition.transitions()) {
             flow(x, map, nodes, t);
@@ -90,7 +94,8 @@ public final class BpmnGenerator {
     }
 
     private static void node(XmlOut x, SourceMap map, WorkflowDefinition d, Node n,
-                             Map<String, String> branchDefault, Map<String, String> decisionResource) {
+                             Map<String, String> branchDefault, Map<String, String> decisionResource,
+                             Map<String, WorkflowInfo> children) {
         map.node(n.id(), n.id());
         switch (n) {
             case Node.Start s -> x.leaf("", "startEvent", BPMN_NS).attr("id", s.id()).attr("name", s.label());
@@ -105,6 +110,9 @@ public final class BpmnGenerator {
                 if (a.dueAfterHours() != null) {
                     x.attr("dueAfterHours", a.dueAfterHours().toString());
                 }
+                if (a.timeoutAfter() != null) {
+                    x.attr("timeoutAfter", a.timeoutAfter());
+                }
                 x.close();
                 x.close();
                 String out = a.id() + APPROVAL_OUT;
@@ -114,6 +122,22 @@ public final class BpmnGenerator {
                 map.node(a.id(), out);
                 x.leaf("", "exclusiveGateway", BPMN_NS).attr("id", gateway).attr("name", a.label() + ": outcome");
                 map.node(a.id(), gateway);
+                if (a.timeoutAfter() != null) {
+                    String timeout = a.id() + APPROVAL_TIMEOUT;
+                    x.open("", "boundaryEvent", BPMN_NS)
+                            .attr("id", timeout)
+                            .attr("name", a.label() + ": no decision in time")
+                            .attr("attachedToRef", a.id())
+                            .attr("cancelActivity", "true");
+                    x.open("", "extensionElements", BPMN_NS);
+                    x.leaf("orqix", "timeout", ORQIX_NS).attr("after", a.timeoutAfter());
+                    x.close();
+                    x.open("", "timerEventDefinition", BPMN_NS);
+                    x.inline("", "timeDuration", BPMN_NS, null, a.timeoutAfter(), false);
+                    x.close();
+                    x.close();
+                    map.node(a.id(), timeout);
+                }
             }
             case Node.Decision dn -> {
                 x.open("", "serviceTask", BPMN_NS)
@@ -177,11 +201,60 @@ public final class BpmnGenerator {
                 x.close();
                 x.close();
             }
+            case Node.ParallelSplit p -> x.leaf("", "parallelGateway", BPMN_NS).attr("id", p.id())
+                    .attr("name", p.label());
+            case Node.ParallelJoin j -> x.leaf("", "parallelGateway", BPMN_NS)
+                    .attr("id", j.id())
+                    .attr("name", j.label())
+                    // Asynchronous and exclusive: branches finishing at the same time are joined one after the other,
+                    // so exactly one continuation happens (S12 section 1).
+                    .attr("flowable", FLOWABLE_NS, "async", "true")
+                    .attr("flowable", FLOWABLE_NS, "exclusive", "true");
+            case Node.Wait w -> {
+                x.open("", "intermediateCatchEvent", BPMN_NS).attr("id", w.id()).attr("name", w.label());
+                x.open("", "extensionElements", BPMN_NS);
+                x.leaf("orqix", "wait", ORQIX_NS).attr("duration", w.duration());
+                x.close();
+                x.open("", "timerEventDefinition", BPMN_NS);
+                x.inline("", "timeDuration", BPMN_NS, null, w.duration(), false);
+                x.close();
+                x.close();
+            }
+            case Node.StartWorkflow c -> {
+                WorkflowInfo child = children.get(c.id());
+                x.open("", "serviceTask", BPMN_NS)
+                        .attr("id", c.id())
+                        .attr("name", c.label())
+                        .attr("flowable", FLOWABLE_NS, "async", "true")
+                        .attr("flowable", FLOWABLE_NS, "exclusive", "true")
+                        .attr("flowable", FLOWABLE_NS, "triggerable", "true")
+                        .attr("flowable", FLOWABLE_NS, "delegateExpression", "${orqixChildTask}");
+                x.open("", "extensionElements", BPMN_NS);
+                x.inline("flowable", "failedJobRetryTimeCycle", FLOWABLE_NS, null,
+                        RetryCycle.forAttempts(d.execution().maxAttempts(), d.execution().retryDelaySeconds()),
+                        false);
+                x.open("orqix", "child", ORQIX_NS)
+                        .attr("workflow", c.workflowRef())
+                        .attr("releaseNumber", Integer.toString(child.releaseNumber()))
+                        .attr("semanticHash", child.semanticHash());
+                c.inputMapping().forEach((name, fieldRef) ->
+                        x.leaf("orqix", "input", ORQIX_NS).attr("name", name).attr("fieldRef", fieldRef));
+                c.resultMapping().forEach((name, output) ->
+                        x.leaf("orqix", "result", ORQIX_NS).attr("name", name).attr("output", output));
+                x.close();
+                x.close();
+                x.close();
+            }
             case Node.End e -> {
                 x.open("", "endEvent", BPMN_NS).attr("id", e.id()).attr("name", e.label());
                 x.open("", "extensionElements", BPMN_NS);
                 x.leaf("orqix", "outcome", ORQIX_NS).attr("label", e.businessOutcome()).attr("kind", e.outcomeKind());
                 x.close();
+                if ("rejected".equals(e.outcomeKind())
+                        && d.nodes().stream().anyMatch(other -> other instanceof Node.ParallelSplit)) {
+                    // A rejection ends the whole request, including parallel branches that are still open (S12).
+                    x.leaf("", "terminateEventDefinition", BPMN_NS);
+                }
                 x.close();
             }
         }
@@ -190,12 +263,12 @@ public final class BpmnGenerator {
     private static void flow(XmlOut x, SourceMap map, Map<String, Node> nodes, Transition t) {
         map.transition(t.id(), t.id());
         Node from = nodes.get(t.from());
-        String source = from instanceof Node.Approval ? from.id() + APPROVAL_ROUTE : from.id();
+        String source = flowSource(from, t);
         String expression = switch (t.on()) {
             case APPROVED -> "${orqixRoute.approved(execution, '" + from.id() + "')}";
             case REJECTED -> "${orqixRoute.rejected(execution, '" + from.id() + "')}";
             case CONDITION -> "${orqixRoute.condition(execution, '" + t.id() + "')}";
-            case NEXT, DEFAULT -> null;
+            case NEXT, DEFAULT, TIMED_OUT -> null;
         };
         if (expression == null) {
             x.leaf("", "sequenceFlow", BPMN_NS);
@@ -221,6 +294,14 @@ public final class BpmnGenerator {
         x.close();
     }
 
+    /** BPMN element a canonical transition leaves from (approvals leave through their generated helpers). */
+    private static String flowSource(Node from, Transition t) {
+        if (from instanceof Node.Approval) {
+            return from.id() + (t.on() == Route.TIMED_OUT ? APPROVAL_TIMEOUT : APPROVAL_ROUTE);
+        }
+        return from.id();
+    }
+
     private static void flowAttributes(XmlOut x, Transition t, String source) {
         x.attr("id", t.id());
         if (t.label() != null) {
@@ -236,6 +317,7 @@ public final class BpmnGenerator {
         private static final BigDecimal CARD_HALF_WIDTH = new BigDecimal(110);
         private static final BigDecimal CARD_HALF_HEIGHT = new BigDecimal(36);
         private static final BigDecimal HELPER_OFFSET = new BigDecimal(90);
+        private static final BigDecimal BOUNDARY_OFFSET = new BigDecimal(40);
 
         private Diagram() {
         }
@@ -251,8 +333,11 @@ public final class BpmnGenerator {
                 BigDecimal cx = p.x().add(CARD_HALF_WIDTH);
                 BigDecimal cy = p.y().add(CARD_HALF_HEIGHT);
                 centre.put(n.id(), new BigDecimal[] {cx, cy});
-                if (n instanceof Node.Approval) {
+                if (n instanceof Node.Approval a) {
                     centre.put(n.id() + APPROVAL_ROUTE, new BigDecimal[] {cx.add(HELPER_OFFSET), cy});
+                    if (a.timeoutAfter() != null) {
+                        centre.put(n.id() + APPROVAL_TIMEOUT, new BigDecimal[] {cx, cy.add(BOUNDARY_OFFSET)});
+                    }
                 }
             }
             String key = d.workflowKey();
@@ -260,20 +345,22 @@ public final class BpmnGenerator {
             x.open("bpmndi", "BPMNPlane", BPMNDI_NS).attr("id", key + "__plane").attr("bpmnElement", key);
             for (Node n : d.nodes()) {
                 int[] size = switch (n.kind()) {
-                    case START, END -> new int[] {36, 36};
-                    case BRANCH -> new int[] {40, 40};
+                    case START, END, WAIT -> new int[] {36, 36};
+                    case BRANCH, PARALLEL_SPLIT, PARALLEL_JOIN -> new int[] {40, 40};
                     default -> new int[] {100, 80};
                 };
                 shape(x, n.id(), centre.get(n.id()), size[0], size[1]);
-                if (n instanceof Node.Approval) {
+                if (n instanceof Node.Approval a) {
                     shape(x, n.id() + APPROVAL_ROUTE, centre.get(n.id() + APPROVAL_ROUTE), 40, 40);
                     edge(x, n.id() + APPROVAL_OUT, centre.get(n.id()), centre.get(n.id() + APPROVAL_ROUTE));
+                    if (a.timeoutAfter() != null) {
+                        shape(x, n.id() + APPROVAL_TIMEOUT, centre.get(n.id() + APPROVAL_TIMEOUT), 36, 36);
+                    }
                 }
             }
             for (Transition t : d.transitions()) {
                 Node from = nodes.get(t.from());
-                String source = from instanceof Node.Approval ? from.id() + APPROVAL_ROUTE : from.id();
-                edge(x, t.id(), centre.get(source), centre.get(t.to()));
+                edge(x, t.id(), centre.get(flowSource(from, t)), centre.get(t.to()));
             }
             x.close();
             x.close();

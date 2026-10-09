@@ -2,9 +2,9 @@
  * Canonical workflow v0.1 document as the studio edits it (contracts/workflow-v0.schema.json).
  * Drafts may be incomplete, so every container is normalized on load and every accessor is defensive.
  */
-export type NodeKind = 'start' | 'approval' | 'decision' | 'branch' | 'http' | 'notification' | 'end'
+export type NodeKind = 'start' | 'approval' | 'decision' | 'branch' | 'http' | 'notification' | 'parallelSplit' | 'parallelJoin' | 'wait' | 'startWorkflow' | 'end'
 export type Operator = 'eq' | 'gte' | 'lt'
-export type RouteKind = 'next' | 'approved' | 'rejected' | 'condition' | 'default'
+export type RouteKind = 'next' | 'approved' | 'rejected' | 'timedOut' | 'condition' | 'default'
 export type Literal = string | number | boolean
 
 export interface Condition {

@@ -6,6 +6,8 @@ import java.util.Map;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 
 import com.orqix.support.IntegrationTestBase;
 
@@ -13,6 +15,16 @@ import tools.jackson.databind.JsonNode;
 
 /** S10: without a provider key the product is rules-only (shared test context, application-test sets no key). */
 class AiDisabledTest extends IntegrationTestBase {
+
+    /**
+     * The shared base enables AI against a WireMock provider for agent steps (S13); this class needs the rules-only product.
+     * No jobs run in this context, so its executor is off and cannot take work from the other contexts.
+     */
+    @DynamicPropertySource
+    static void aiOff(DynamicPropertyRegistry registry) {
+        registry.add("orqix.ai.api-key", () -> "");
+        registry.add("flowable.async-executor-activate", () -> "false");
+    }
 
     @Test
     void statusIsDisabledAndAiEndpointsAre422WhileTemplatesKeepWorking() throws Exception {

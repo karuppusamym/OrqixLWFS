@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { cn } from '@/lib/cn'
 import { formatDay } from '@/lib/dates'
-import { requestId, requestReference, runProgressText, taskDueText, taskTitle } from '@/lib/runText'
+import { requestId, requestReference, runProgressText, runTitle, taskDueText, taskTitle } from '@/lib/runText'
 
 const shortcut = 'flex items-center gap-3 rounded-card border border-border bg-surface p-4 text-foreground no-underline shadow-card hover:border-primary'
 
@@ -64,7 +64,7 @@ export function HomePage() {
         </Link>
       </section>
 
-      {canStart ? (
+      {canStart && (can('workflow.start') || workflows.length > 0) ? (
         <section aria-labelledby="start-heading" className="mb-8">
           <h2 id="start-heading" className="mb-3">
             Start a request
@@ -168,7 +168,7 @@ export function HomePage() {
                 <Link to={`/w/${ws}/runs/${r.id}`} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-foreground no-underline hover:bg-surface-muted">
                   <span className="min-w-0">
                     <span className="block font-semibold">
-                      {r.workflow.name} <span className="font-normal text-muted-foreground tabular-nums">&middot; {requestId(r)}</span>
+                      <span className="wrap-anywhere">{runTitle(r) ?? r.workflow.name}</span> <span className="font-normal text-muted-foreground tabular-nums">&middot; {requestId(r)}</span>
                     </span>
                     <span className="block text-sm text-muted-foreground">
                       {runProgressText(r)} &middot; submitted <RelativeTime value={r.createdAt} /> ({formatDay(r.createdAt)})

@@ -17,6 +17,8 @@ export function routeText(def: Definition, t: Transition, lookup?: ConnectionLoo
       return 'Approved'
     case 'rejected':
       return 'Rejected'
+    case 'timedOut':
+      return 'Timed out'
     case 'default':
       return t.label ? `Otherwise (${t.label})` : 'Otherwise'
     case 'condition':
@@ -58,6 +60,14 @@ export function nodeSubtitle(def: Definition, node: WorkflowNode, groupNames: Re
       return c.operation ? `${c.connectionRef as string} · ${c.operation as string}` : 'No operation chosen'
     case 'notification':
       return (c.message as string) || 'No message yet'
+    case 'parallelSplit':
+      return `${def.transitions.filter((t) => t.from === node.id).length} parallel branches`
+    case 'parallelJoin':
+      return 'Continue when all branches finish'
+    case 'wait':
+      return (c.duration as string) || 'No duration chosen'
+    case 'startWorkflow':
+      return (c.workflowRef as string) || 'No workflow chosen'
     case 'end':
       return `${(c.businessOutcome as string) || 'No outcome'}${c.outcomeKind === 'rejected' ? ' (rejected)' : ''}`
   }

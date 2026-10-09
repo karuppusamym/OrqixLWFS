@@ -91,7 +91,9 @@ AI can draft a workflow from a description and explain a workflow in plain langu
 
 A profile whose model is excluded or over the caps is disabled at startup with a logged reason. Also set a credit limit on the key itself at OpenRouter. Jev Router chooses its model per request and reports that model only after the call, so the exclusion list cannot block it in advance. Its cost is still capped by the budgets above.
 
-**Time limits.** One draft generation takes about 10–60 seconds. It stops at `orqix.ai.generation-deadline` (150 s), and each model call stops at `orqix.ai.timeout` (120 s). Any proxy in front of Orqix needs a timeout of at least 180 s; the OpenShift Route already has one. Orqix asks OpenRouter for the fastest providers within the price caps (`orqix.ai.provider-sort: throughput`).
+**Background generation.** Draft requests return `202 Accepted` and a job URL. The browser polls and lets people keep working, then offers **Open draft**. A generation stops at `orqix.ai.generation-deadline` (150 s); each provider call stops at `orqix.ai.timeout` (120 s). Explanations remain synchronous, so proxy timeouts still need to cover those calls. Provider routing uses `orqix.ai.provider-sort: throughput`.
+
+**Job limits and recovery.** `orqix.ai.jobs` bounds threads, queue size and active jobs per person (default two per workspace). Admission is serialized across pods. Jobs interrupted by a restart fail after their deadline plus the orphan margin; their descriptions are held only in memory and are not replayed. Editing access is checked again before saving a generated draft. Terminal jobs use `orqix.idempotency.retention` (default 30 days), with live replay records protected. Cleanup keeps generated drafts, usage records and audit history.
 
 **Data sent to the model.** Orqix sends the description, the node catalog and rules, one example, workspace group keys and names, and connection operation names and schemas. It never sends request data, bindings or URLs, secrets, user lists or audit data. Orqix stores usage metadata (model, tokens, cost, outcome) in `ai_generation` and in the audit log, never prompt or response text.
 
@@ -102,7 +104,7 @@ A profile whose model is excluded or over the caps is disabled at startup with a
 | Situation | Action |
 |---|---|
 | Settings → AI shows *credentials rejected* | Replace the key and restart the pods. Provider 401 and 403 responses switch AI off until then |
-| `AI_PROVIDER_UNAVAILABLE` | The provider timed out or returned 429 or 5xx. Nothing was created; users can retry |
+| `AI_PROVIDER_UNAVAILABLE` | The provider timed out or returned 429 or 5xx. Inspect the failed job; users can submit again with a new Idempotency-Key |
 | `AI_BUDGET_EXCEEDED` | Wait for the next month (UTC) or raise `orqix.ai.budget.monthly-usd` |
 
 ## 8. Operating

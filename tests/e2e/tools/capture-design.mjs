@@ -133,6 +133,11 @@ for (const [view, viewport] of Object.entries(VIEWPORTS)) {
       await page.goto(`/w/${WS}/runs`)
       await settle(page)
       await shot(page, view, '10-runs')
+      await page.goto(`/w/${WS}/runs?lifecycle=needsAttention`)
+      await settle(page)
+      await shot(page, view, '25-runs-needs-attention')
+      await page.goto(`/w/${WS}/runs`)
+      await settle(page)
       const runs = await api(page, `/workspaces/${WS}/runs`)
       const stuck = runs.items.find((r) => r.lifecycle === 'needsAttention')
       if (stuck) {
@@ -156,6 +161,16 @@ for (const [view, viewport] of Object.entries(VIEWPORTS)) {
       await page.goto(`/w/${WS}/workflows/${WORKFLOW}`)
       await settle(page)
       await shot(page, view, '13-workflow-overview')
+    })
+    await attempt('new workflow and describe-it', async () => {
+      await page.goto(`/w/${WS}/workflows`)
+      await settle(page)
+      await page.getByRole('button', { name: /New workflow/ }).click()
+      await page.waitForTimeout(600)
+      await shot(page, view, '23-new-workflow-dialog', { fullPage: false })
+      await page.getByRole('button', { name: 'Describe it' }).click()
+      await page.waitForTimeout(700)
+      await shot(page, view, '24-describe-it-dialog', { fullPage: false })
     })
     await attempt('import', async () => {
       await page.goto(`/w/${WS}/migrations`)
@@ -207,6 +222,9 @@ for (const [view, viewport] of Object.entries(VIEWPORTS)) {
       await page.getByRole('tab', { name: /Connections/ }).click()
       await page.waitForTimeout(500)
       await shot(page, view, '20-settings-connections')
+      await page.getByRole('tab', { name: /^AI$|AI$/ }).click()
+      await page.waitForTimeout(800)
+      await shot(page, view, '22-settings-ai')
     })
     await context.close()
   }

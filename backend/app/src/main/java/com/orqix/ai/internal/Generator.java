@@ -39,6 +39,7 @@ public class Generator {
         private String model;
         private String profile;
         private String requestedModel;
+        private String violation;
 
         Meter(ModelPolicy.ResolvedProfile profile) {
             use(profile);
@@ -65,6 +66,11 @@ public class Generator {
 
         public int attempts() {
             return attempts;
+        }
+
+        /** Why a routed model was refused by the policy (S10 section 1), or null. */
+        public String violation() {
+            return violation;
         }
 
         public boolean escalated() {
@@ -215,6 +221,7 @@ public class Generator {
             }
             deadline.attempted(System.nanoTime() - started);
             meter.add(result);
+            checkRouted(current, result, meter);
             DraftRules.Evaluation evaluation = rules.evaluate(result.content(), name, workspace);
             if (evaluation.status() == DraftRules.Status.VALID) {
                 return new DraftOutcome(DraftStatus.VALID, evaluation, List.of(), meter, null, false, false);
@@ -230,6 +237,10 @@ public class Generator {
                         null, null));
             }
             lastIssues = List.copyOf(issues);
+            if (meter.violation() != null && policy.tripped(current.id()).isPresent()) {
+                // The router chose a refused model: no further attempts on a paused profile.
+                return new DraftOutcome(DraftStatus.INVALID, evaluation, issues, meter, null, false, false);
+            }
             boolean budgetReached = meter.costOrZero().compareTo(perRequest) >= 0
                     || meter.costOrZero().compareTo(budgetLeft) >= 0;
             if (budgetReached) {
@@ -279,6 +290,7 @@ public class Generator {
                     deadline.callTimeout(properties.timeout()));
             deadline.attempted(System.nanoTime() - started);
             meter.add(result);
+            checkRouted(profile, result, meter);
             Explanation explanation = parseExplanation(result.content(), nodeIds);
             if (explanation != null) {
                 return explanation;
@@ -291,6 +303,19 @@ public class Generator {
                     + "object {\"summary\": \"...\", \"steps\": [{\"nodeId\": \"...\", \"text\": \"...\"}]}."));
         }
         return null;
+    }
+
+    /**
+     * Checks the model a provider reports against the policy (a router may pick any model): the violation is recorded
+     * on the generation and trips the circuit breaker of the profile for the rest of the UTC day.
+     */
+    private void checkRouted(ModelPolicy.ResolvedProfile profile, OpenRouterClient.ChatResult result, Meter meter) {
+        policy.routedViolation(profile.model(), result.model()).ifPresent(reason -> {
+            if (meter.violation == null) {
+                meter.violation = reason;
+            }
+            policy.tripBreaker(profile.id(), result.model(), reason);
+        });
     }
 
     /** New meter for an explanation. */

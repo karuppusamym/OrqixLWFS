@@ -256,7 +256,10 @@ export function routeSlots(def: Definition, node: WorkflowNode): RouteSlot[] {
       return [
         { on: 'approved', label: 'When approved' },
         { on: 'rejected', label: 'When rejected' },
+        ...(node.config.timeoutAfter ? [{ on: 'timedOut' as const, label: 'When timed out' }] : []),
       ]
+    case 'parallelSplit':
+      return [...out.map((t) => ({ on: 'next' as const, transitionId: t.id, label: `After the branch to ${targetLabel(def, t.to)}` })), { on: 'next', label: 'New parallel branch' }]
     case 'branch':
       return [
         ...out.filter((t) => t.on === 'condition').map((t) => ({ on: 'condition' as const, transitionId: t.id, label: `After the path to ${targetLabel(def, t.to)}` })),

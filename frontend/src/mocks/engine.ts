@@ -240,6 +240,17 @@ function performHttp(run: MockRun, release: MockRelease, node: WorkflowNode, att
     return 'attention'
   }
 
+  if (fault === 'rejected') {
+    // A definite "no" (HTTP 400): nothing was created, an operator fixes the cause and retries.
+    effect.state = 'permanentFailure'
+    effect.lastHttpStatus = 400
+    effect.lastErrorCode = 'HTTP_400'
+    effect.lastErrorDetail = 'The service answered 400.'
+    addEvent(run, 'EFFECT_FAILED', { nodeId: node.id, data: { label: node.label, attempt, maxAttempts: MAX_ATTEMPTS, classification: 'permanent', httpStatus: 400, errorCode: 'HTTP_400' } })
+    setAttention(run, node, effect, 'EFFECT_REJECTED', 'The procurement service rejected the order (HTTP 400).')
+    return 'attention'
+  }
+
   if (fault === 'down') {
     effect.state = 'retryableFailure'
     effect.lastHttpStatus = 503
@@ -472,12 +483,17 @@ export function toRun(run: MockRun): Run {
     const node = nodeById(rel.definition, run.pendingHttpNode)
     steps.push({ nodeId: run.pendingHttpNode, label: node?.label ?? run.pendingHttpNode, kind: 'http', since: run.attention?.since ?? run.updatedAt, candidateGroup: null, assignee: null, dueAt: null })
   }
-  return {
+  const summary: Run & { requestTitle: string | null } = {
     id: run.id,
     reference: run.reference ?? undefined,
     workflow: { id: wf.id, key: wf.key, name: wf.name },
     release: { id: rel.id, releaseNumber: rel.releaseNumber },
     businessKey: run.businessKey,
+    // Not in the contract yet: the first text field of the request, as task lists already carry (see runTitle in lib/runText.ts).
+    requestTitle: ((): string | null => {
+      const field = Object.entries(rel.definition.inputSchema.properties).find(([, f]) => f.type === 'string' && !f.enum)?.[0]
+      return field ? ((run.input[field] as string | undefined) ?? null) : null
+    })(),
     initiator: { id: run.initiatorId, displayName: initiator?.displayName ?? 'Unknown' },
     lifecycle: run.lifecycle,
     outcome: run.outcome,
@@ -490,6 +506,7 @@ export function toRun(run: MockRun): Run {
     isTest: WORKSPACES.find((w) => w.id === run.wsId)?.isTest ?? false,
     version: run.version,
   }
+  return summary
 }
 
 export function toTaskSummary(run: MockRun, task: MockTask): TaskSummary {

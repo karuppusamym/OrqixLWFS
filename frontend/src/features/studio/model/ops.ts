@@ -128,6 +128,9 @@ export function renameNodeId(def: Definition, oldId: string, newId: string): OpR
     if (t.from === oldId) t.from = newId
     if (t.to === oldId) t.to = newId
   }
+  for (const n of next.nodes) {
+    if (n.type === 'parallelSplit' && n.config.joinRef === oldId) n.config.joinRef = newId
+  }
   const positions = next.uiLayout?.positions
   if (positions && oldId in positions) {
     positions[newId] = positions[oldId] as Position
@@ -198,7 +201,7 @@ export function removeNode(def: Definition, id: string): Definition {
 
 /** Which route kind a React Flow source handle stands for. */
 export function routeForHandle(node: WorkflowNode, handle: string | null | undefined): RouteKind {
-  if (node.type === 'approval') return handle === 'rejected' ? 'rejected' : 'approved'
+  if (node.type === 'approval') return handle === 'timedOut' ? 'timedOut' : handle === 'rejected' ? 'rejected' : 'approved'
   if (node.type === 'branch') return 'condition'
   return 'next'
 }
@@ -224,8 +227,12 @@ export function canConnect(def: Definition, req: Pick<ConnectRequest, 'from' | '
   const others = outgoing(def, from.id).filter((t) => t.id !== req.transitionId)
   switch (from.type) {
     case 'approval':
-      if (req.on !== 'approved' && req.on !== 'rejected') return { ok: false, reason: 'Approval steps have an Approved and a Rejected route.' }
+      if (req.on !== 'approved' && req.on !== 'rejected' && !(req.on === 'timedOut' && from.config.timeoutAfter)) return { ok: false, reason: 'Choose Approved, Rejected, or a configured time limit route.' }
       if (others.some((t) => t.on === req.on)) return { ok: false, reason: `This step already has a ${req.on === 'approved' ? 'Approved' : 'Rejected'} route.` }
+      break
+    case 'parallelSplit':
+      if (req.on !== 'next') return { ok: false, reason: 'Parallel branches use Next routes.' }
+      if (others.some((t) => t.to === to.id)) return { ok: false, reason: 'There is already a branch to that step.' }
       break
     case 'branch':
       if (req.on !== 'condition' && req.on !== 'default') return { ok: false, reason: 'Paths of a choice are conditions or Otherwise.' }
@@ -292,7 +299,7 @@ export function updateTransition(def: Definition, id: string, patch: { label?: s
  * For paths of a choice, `transitionId` identifies the path.
  */
 export function setRoute(def: Definition, fromId: string, on: RouteKind, toId: string | null, transitionId?: string): OpResult {
-  const existing = def.transitions.find((t) => (transitionId ? t.id === transitionId : t.from === fromId && t.on === on))
+  const existing = def.transitions.find((t) => (transitionId ? t.id === transitionId : nodeById(def, fromId)?.type !== 'parallelSplit' && t.from === fromId && t.on === on))
   if (toId === null) return { ok: true, def: existing ? removeTransition(def, existing.id) : def }
   if (existing) {
     if (existing.to === toId) return { ok: true, def }
@@ -321,7 +328,7 @@ export function addNodeAfter(def: Definition, afterId: string, kind: NodeKind, s
     next.uiLayout.positions[added.id] = collides(def, desired, kind) ? findFreePosition(def, desired, kind) : desired
   }
   const on = slot?.on ?? KINDS[source.type].routes[0] ?? 'next'
-  const existing = next.transitions.find((t) => (slot?.transitionId ? t.id === slot.transitionId : t.from === afterId && t.on === on))
+  const existing = next.transitions.find((t) => (slot?.transitionId ? t.id === slot.transitionId : source.type !== 'parallelSplit' && t.from === afterId && t.on === on))
   if (existing) {
     const oldTarget = existing.to
     const re = connect(next, { from: afterId, to: added.id, on: existing.on, transitionId: existing.id })

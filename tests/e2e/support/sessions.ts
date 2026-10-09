@@ -3,7 +3,7 @@ import { BASE_URL, MOCK, passwordFor, type Username } from './env'
 
 /** The hooks frontend/src/mocks/browser.ts exposes on window.__orqixMock (mock mode only). */
 export interface MockControl {
-  reset(options?: { published?: boolean; sampleRuns?: boolean }): void
+  reset(options?: { published?: boolean; sampleRuns?: boolean; demo?: boolean }): void
   setProcurementFault(fault: 'none' | 'failOnce' | 'unknown' | 'down'): void
   decideTaskAs(username: string, taskId: string, action: 'approve' | 'reject', reason?: string): void
   claimTaskAs(username: string, taskId: string): void

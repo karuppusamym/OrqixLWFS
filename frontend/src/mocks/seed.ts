@@ -44,11 +44,16 @@ export interface SeedOptions {
   published?: boolean
   /** Add example runs in different states. Default true. */
   sampleRuns?: boolean
+  /**
+   * Seed the walkthrough data that matches tools/demo/seed_demo.py (nine requests, long titles, every state) instead of
+   * the small fixture set the tests rely on. Default false; the in-browser mock starts with it.
+   */
+  demo?: boolean
 }
 
 /** Reset the mock backend to its seed (see docs/build/S1-engineering-baseline.md section 6.1 for the personas). */
 export function seedDb(options: SeedOptions = {}): void {
-  const { published = true, sampleRuns = true } = options
+  const { published = true, sampleRuns = true, demo = false } = options
   replaceDb(emptyDb())
   const designer = userByName('dana.designer')
   const publisher = userByName('paul.publisher')
@@ -86,7 +91,68 @@ export function seedDb(options: SeedOptions = {}): void {
     wf.version = 2
   }
 
-  if (published && sampleRuns) seedRuns(wf)
+  if (published && sampleRuns) {
+    if (demo) seedDemoRuns(wf)
+    else seedRuns(wf)
+  }
+}
+
+/**
+ * The walkthrough data of tools/demo/seed_demo.py, in the same order, so ORQ-1001 to ORQ-1009 mean the same thing in
+ * the mock and on the real stack: two waiting at a manager, two waiting at finance, two fulfilled, one rejected by a
+ * manager with a reason, one rejected by finance, and one that needs attention (the procurement system answered 400).
+ */
+function seedDemoRuns(wf: MockWorkflow): void {
+  const release = wf.releases[0] as MockRelease
+  const rhea = userByName('rhea.requester')
+  const dana = userByName('dana.designer') // stands in for the facilities requester of the real seed, who is in another workspace here
+  const mani = userByName('mani.manager')
+  const fin = userByName('fin.finance')
+  const mk = (hoursAgo: number, who: typeof rhea, input: Record<string, unknown>) =>
+    clock.asIfAgo(hoursAgo, () => createRun({ wsId: WS_PURCHASING, workflow: wf, release, initiator: who, input, businessKey: null }))
+  const openTask = (run: ReturnType<typeof mk>) => run.tasks.find((t) => t.status === 'open')!
+  const act = <T,>(hoursAgo: number, fn: () => T): T => clock.asIfAgo(hoursAgo, fn)
+  const approveByManager = (run: ReturnType<typeof mk>, hoursAgo: number, comment: string) =>
+    act(hoursAgo, () => {
+      const t = openTask(run)
+      claim(run, t, mani)
+      decide(run, t, mani, 'approve', null, comment)
+    })
+
+  // 1-2: waiting for a manager.
+  mk(9, rhea, { title: 'Replacement laptop for onboarding', purpose: 'New starter in Operations needs a laptop before Monday.', costCenter: 'OPS', amount: 1800 })
+  mk(8, rhea, { title: 'Ergonomic chairs (12)', purpose: 'Replace chairs that failed the annual safety check.', costCenter: 'HR', amount: 3600 })
+
+  // 3-4: manager approved, waiting for finance (USD 5,000 and above).
+  approveByManager(mk(7, rhea, { title: 'Standing desks for the analytics team', purpose: 'Team of 8 moving to the third floor; budget approved in Q3 plan.', costCenter: 'IT', amount: 5000 }), 6.5, 'Approved by manager; finance to review.')
+  approveByManager(mk(6, dana, { title: 'Server rack for the new office', purpose: 'Required for the branch network rollout.', costCenter: 'IT', amount: 12500 }), 5.5, 'Approved by manager; finance to review.')
+
+  // 5-6: completed and fulfilled.
+  approveByManager(mk(5, rhea, { title: 'Conference room camera', purpose: 'Hybrid meetings in the main boardroom.', costCenter: 'OPS', amount: 950 }), 4.5, 'Looks fine.')
+  approveByManager(mk(4, dana, { title: 'Monitor arms (20)', purpose: 'Desk refresh for the finance floor.', costCenter: 'HR', amount: 1200 }), 3.5, 'Looks fine.')
+
+  // 7: rejected by a manager, with a reason.
+  const coffee = mk(3, rhea, { title: 'Premium coffee machine', purpose: 'Nice to have for the kitchen.', costCenter: 'HR', amount: 2400 })
+  act(2.5, () => {
+    const t = openTask(coffee)
+    claim(coffee, t, mani)
+    decide(coffee, t, mani, 'reject', "Not in this quarter's budget; please resubmit in January.", null)
+  })
+
+  // 8: approved by a manager, rejected by finance.
+  const licences = mk(2, rhea, { title: 'Annual design software licences', purpose: 'Renewal for 15 seats.', costCenter: 'IT', amount: 7800 })
+  approveByManager(licences, 1.7, 'Looks fine.')
+  act(1.4, () => {
+    const t = openTask(licences)
+    claim(licences, t, fin)
+    decide(licences, t, fin, 'reject', 'Over the quarterly budget for software.', null)
+  })
+
+  // 9: needs attention. The procurement system answers 400 once; an operator fixes the cause and retries.
+  const saved = db.procurementFault
+  db.procurementFault = 'rejected'
+  approveByManager(mk(1, dana, { title: 'Label printer', purpose: 'Warehouse labelling; the old printer is broken.', costCenter: 'OPS', amount: 640 }), 0.8, 'Looks fine.')
+  db.procurementFault = saved
 }
 
 function seedRuns(wf: MockWorkflow): void {

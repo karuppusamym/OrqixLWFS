@@ -78,7 +78,7 @@ public class WorkflowService {
         policy.require(access, Permission.WORKFLOW_EDIT, "listTemplates", false);
         return new CatalogDtos.TemplateList(templates.all().stream()
                 .map(t -> new CatalogDtos.Template(t.id(), t.name(), t.description(), t.typicalOwner(), t.requiredInputs(),
-                        t.requiredGroups(), t.requiredConnections()))
+                        t.requiredGroups(), t.requiredConnections(), t.requiredWorkflows()))
                 .toList());
     }
 
@@ -207,7 +207,7 @@ public class WorkflowService {
         Visible visible = visible(caller, workspaceId, workflowId, "validateDraft");
         policy.require(visible.access(), Permission.WORKFLOW_READ, "validateDraft", false);
         CatalogStore.DraftRow draft = store.draft(workspaceId, workflowId, revision).orElseThrow(ApiException::notFound);
-        CompileContext context = contexts.create(visible.access().workspace());
+        CompileContext context = contexts.create(visible.access().workspace(), draft.definitionJson());
         ValidationReport report = compiler.validate(draft.definitionJson(), context);
         return new CatalogDtos.ValidationReport(revision, report.compilerVersion(), report.publishable(),
                 report.semanticHash(), issues(report.issues()));

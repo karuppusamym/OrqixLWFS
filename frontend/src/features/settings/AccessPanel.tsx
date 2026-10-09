@@ -16,6 +16,13 @@ const ROLE_HELP: Record<string, string> = {
   APPROVER: 'Can claim and decide tasks for groups they belong to.',
 }
 
+/** Where a role came from, in plain words. */
+const SOURCE_LABEL: Record<string, string> = {
+  seed: 'Initial setup',
+  bootstrap: 'Initial setup',
+  manual: 'Added by an administrator',
+}
+
 const PERMISSION_HELP: Record<string, string> = {
   'workflow.start': 'Can start requests',
   'connection.manage': 'Can change connection addresses and test them',
@@ -59,7 +66,7 @@ export function AccessPanel() {
                     <Badge>{humanize(b.role)}</Badge>
                   </TD>
                   <TD className="max-w-sm text-muted-foreground">{ROLE_HELP[b.role] ?? ''}</TD>
-                  <TD className="text-muted-foreground">{humanize(b.source)}</TD>
+                  <TD className="text-muted-foreground">{SOURCE_LABEL[b.source] ?? humanize(b.source)}</TD>
                 </TR>
               ))}
               {roleBindings.length === 0 ? (

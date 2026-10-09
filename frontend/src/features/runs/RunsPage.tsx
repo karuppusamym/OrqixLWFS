@@ -1,4 +1,4 @@
-import { Activity, AlertTriangle } from 'lucide-react'
+import { Activity, AlertTriangle, Check } from 'lucide-react'
 import { useListFilters } from '@/lib/useListFilters'
 import { useRuns, useWorkflows } from '@/api/queries'
 import type { Lifecycle } from '@/api/types'
@@ -41,11 +41,13 @@ export function RunsPage() {
       <PageHeader title="Runs" description="All requests in this workspace. Technical details are available on each run." />
       <div className="mb-4 flex flex-wrap items-end gap-4 rounded-card border border-border bg-surface p-4">
         <Button
-          variant={attentionOnly ? 'primary' : 'secondary'}
+          variant="secondary"
+          // Pressed is shown as a toggle (tinted, red outline, check mark), not as a second primary action next to "Review recovery".
+          className={attentionOnly ? 'border-2 border-primary bg-primary-soft text-primary-text hover:bg-primary-soft' : undefined}
           aria-pressed={attentionOnly}
           onClick={() => update({ lifecycle: attentionOnly ? '' : 'needsAttention' })}
         >
-          <AlertTriangle aria-hidden="true" /> Needs attention
+          {attentionOnly ? <Check aria-hidden="true" /> : <AlertTriangle aria-hidden="true" />} Needs attention
         </Button>
         <div className="space-y-1.5">
           <Label htmlFor="runs-status">Status</Label>

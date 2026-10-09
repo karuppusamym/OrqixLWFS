@@ -1,4 +1,4 @@
-import { Bell, CheckCheck, FileInput, GitBranch, ListChecks, Plug, UserCheck, type LucideIcon } from 'lucide-react'
+import { Bell, CheckCheck, Clock, FileInput, GitBranch, GitFork, GitMerge, ListChecks, Plug, Workflow, UserCheck, type LucideIcon } from 'lucide-react'
 import type { NodeKind } from './model/types'
 
 export const KIND_ICON: Record<NodeKind, LucideIcon> = {
@@ -9,6 +9,10 @@ export const KIND_ICON: Record<NodeKind, LucideIcon> = {
   http: Plug,
   notification: Bell,
   end: CheckCheck,
+  parallelSplit: GitFork,
+  parallelJoin: GitMerge,
+  wait: Clock,
+  startWorkflow: Workflow,
 }
 
 /**
@@ -24,6 +28,10 @@ export const KIND_ACCENT: Record<NodeKind, string> = {
   http: 'bg-kind-http',
   notification: 'bg-kind-notification',
   end: 'bg-kind-end',
+  parallelSplit: 'bg-kind-branch',
+  parallelJoin: 'bg-kind-branch',
+  wait: 'bg-kind-notification',
+  startWorkflow: 'bg-kind-http',
 }
 
 export const KIND_BADGE: Record<NodeKind, string> = {
@@ -34,6 +42,10 @@ export const KIND_BADGE: Record<NodeKind, string> = {
   http: 'bg-kind-http-soft text-kind-http',
   notification: 'bg-kind-notification-soft text-kind-notification',
   end: 'bg-kind-end-soft text-kind-end',
+  parallelSplit: 'bg-kind-branch-soft text-kind-branch',
+  parallelJoin: 'bg-kind-branch-soft text-kind-branch',
+  wait: 'bg-kind-notification-soft text-kind-notification',
+  startWorkflow: 'bg-kind-http-soft text-kind-http',
 }
 
 /** CSS variable per kind, for SVG (the minimap) where utility classes do not reach. */
@@ -45,4 +57,8 @@ export const KIND_VAR: Record<NodeKind, string> = {
   http: 'var(--kind-http)',
   notification: 'var(--kind-notification)',
   end: 'var(--kind-end)',
+  parallelSplit: 'var(--kind-branch)',
+  parallelJoin: 'var(--kind-branch)',
+  wait: 'var(--kind-notification)',
+  startWorkflow: 'var(--kind-http)',
 }

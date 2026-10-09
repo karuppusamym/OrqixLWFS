@@ -16,6 +16,10 @@ public final class Enums {
         BRANCH("branch", "Choose a path"),
         HTTP("http", "Call a system"),
         NOTIFICATION("notification", "Notify someone"),
+        PARALLEL_SPLIT("parallelSplit", "Run in parallel"),
+        PARALLEL_JOIN("parallelJoin", "Wait for all"),
+        WAIT("wait", "Wait"),
+        START_WORKFLOW("startWorkflow", "Start another workflow"),
         END("end", "Finish");
 
         private final String json;
@@ -47,14 +51,26 @@ public final class Enums {
 
     /** Transition {@code on} values. */
     public enum Route {
-        NEXT, APPROVED, REJECTED, CONDITION, DEFAULT;
+        NEXT("next"), APPROVED("approved"), REJECTED("rejected"), TIMED_OUT("timedOut"), CONDITION("condition"),
+        DEFAULT("default");
+
+        private final String json;
+
+        Route(String json) {
+            this.json = json;
+        }
 
         public String json() {
-            return name().toLowerCase(Locale.ROOT);
+            return json;
         }
 
         public static Route fromJson(String text) {
-            return valueOf(text.toUpperCase(Locale.ROOT));
+            for (Route r : values()) {
+                if (r.json.equals(text)) {
+                    return r;
+                }
+            }
+            throw new IllegalArgumentException("Unknown route " + text);
         }
     }
 

@@ -20,6 +20,7 @@ export interface FieldInfo {
 export interface ConnectionLookup {
   /** Type of the response property addressed by a JSON Pointer, if known. */
   responseType(connectionKey: string, version: number | undefined, operation: string, pointer: string): FieldType | undefined
+  workflowOutputType?(workflowKey: string, output: string): FieldType | undefined
 }
 
 export const REQUEST_GROUP = 'Request'
@@ -63,7 +64,7 @@ function stepOutputs(def: Definition, node: WorkflowNode, lookup?: ConnectionLoo
   switch (node.type) {
     case 'approval':
       return [
-        base('decision', 'string', 'Decision', ['approved', 'rejected']),
+        base('decision', 'string', 'Decision', node.config.timeoutAfter ? ['approved', 'rejected', 'timedOut'] : ['approved', 'rejected']),
         base('reason', 'string', 'Reason'),
         base('comment', 'string', 'Comment'),
         base('decidedBy', 'string', 'Decided by'),
@@ -91,6 +92,11 @@ function stepOutputs(def: Definition, node: WorkflowNode, lookup?: ConnectionLoo
         const type = (connectionKey && operation ? lookup?.responseType(connectionKey, version, operation, pointer) : undefined) ?? 'string'
         return base(k, type, humanize(k))
       })
+    }
+    case 'startWorkflow': {
+      const mapping = (node.config.resultMapping ?? {}) as Record<string, string>
+      return [base('outcome', 'string'), base('outcomeKind', 'string'), base('reference', 'string'),
+        ...Object.entries(mapping).map(([key, output]) => base(key, lookup?.workflowOutputType?.(node.config.workflowRef as string, output) ?? 'string'))]
     }
     default:
       return []
@@ -142,7 +148,7 @@ export function rewriteRefs(def: Definition, map: (ref: string) => string): void
     for (const r of d.rows) r.when.fieldRef = map(r.when.fieldRef)
   }
   for (const n of def.nodes) {
-    if (n.type === 'http') {
+    if (n.type === 'http' || n.type === 'startWorkflow') {
       const mapping = n.config.inputMapping as Record<string, string> | undefined
       if (mapping) for (const k of Object.keys(mapping)) mapping[k] = map(mapping[k] as string)
     }
@@ -160,7 +166,7 @@ export function usagesOfRef(def: Definition, predicate: (ref: string) => boolean
     if (d.rows.some((r) => predicate(r.when.fieldRef))) places.push(`the rule table "${d.key}"`)
   }
   for (const n of def.nodes) {
-    if (n.type === 'http') {
+    if (n.type === 'http' || n.type === 'startWorkflow') {
       const mapping = (n.config.inputMapping ?? {}) as Record<string, string>
       if (Object.values(mapping).some(predicate)) places.push(`the step "${n.label}"`)
     }

@@ -41,7 +41,8 @@ public final class SchemaValidation {
     private static final Pattern BRANCH_EVAL = Pattern.compile("^/properties/nodes/items/oneOf/(\\d+)(/.*)?$");
     /** Order of the {@code oneOf} alternatives in the workflow schema. */
     private static final List<NodeKind> BRANCH_ORDER = List.of(NodeKind.START, NodeKind.APPROVAL,
-            NodeKind.DECISION, NodeKind.BRANCH, NodeKind.HTTP, NodeKind.NOTIFICATION, NodeKind.END);
+            NodeKind.DECISION, NodeKind.BRANCH, NodeKind.HTTP, NodeKind.NOTIFICATION, NodeKind.PARALLEL_SPLIT,
+            NodeKind.PARALLEL_JOIN, NodeKind.WAIT, NodeKind.START_WORKFLOW, NodeKind.END);
 
     private final Schema workflowSchema;
     private final Schema connectionSchema;

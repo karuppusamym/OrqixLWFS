@@ -41,6 +41,14 @@ public class CatalogStore {
     public record Artifact(String name, String mediaType, byte[] content, String sha256) {
     }
 
+    /**
+     * A workflow another workflow may start (S12): its key and name, and the facts of its active release (all null
+     * when it has none).
+     */
+    public record CallableRow(String key, String name, UUID activeReleaseId, Integer releaseNumber, String semanticHash,
+            String definitionJson, String manifestJson) {
+    }
+
     private static final String WORKFLOW_COLUMNS = """
             w.id, w.workspace_id, w.key, w.name, w.description, w.owner_subject_id, w.draft_revision, w.active_release_id,
             w.version, w.created_at, w.updated_at, r.release_number AS active_release_number,
@@ -93,6 +101,26 @@ public class CatalogStore {
         jdbc.sql("SELECT id FROM workflow WHERE workspace_id = :ws AND id = :id FOR UPDATE")
                 .param("ws", workspaceId).param("id", workflowId).query(UUID.class).optional();
         return workflow(workspaceId, workflowId);
+    }
+
+    /** The listed workflows of the workspace (not archived) with their active release, for pinning children. */
+    @Transactional(readOnly = true)
+    public List<CallableRow> callable(UUID workspaceId, java.util.Collection<String> keys) {
+        if (keys.isEmpty()) {
+            return List.of();
+        }
+        return jdbc.sql("""
+                SELECT w.key, w.name, w.active_release_id, r.release_number, r.semantic_hash,
+                       r.definition::text AS definition, r.manifest::text AS manifest
+                FROM workflow w LEFT JOIN workflow_release r ON r.workspace_id = w.workspace_id AND r.id = w.active_release_id
+                WHERE w.workspace_id = :ws AND w.archived_at IS NULL AND w.key IN (:keys)
+                ORDER BY w.key
+                """)
+                .param("ws", workspaceId).param("keys", List.copyOf(keys))
+                .query((rs, n) -> new CallableRow(rs.getString("key"), rs.getString("name"),
+                        Sql.uuid(rs, "active_release_id"), (Integer) rs.getObject("release_number"),
+                        rs.getString("semantic_hash"), rs.getString("definition"), rs.getString("manifest")))
+                .list();
     }
 
     /** Keyset page (created_at DESC, id DESC), {@code limit + 1} rows. */

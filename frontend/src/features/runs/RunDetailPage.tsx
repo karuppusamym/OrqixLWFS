@@ -49,7 +49,7 @@ export function RunDetailPage() {
   const release = useRelease(ws, run.data?.workflow.id ?? '', can('workflow.read') ? run.data?.release.id : null)
 
   if (run.isPending) return <LoadingBlock rows={5} label="Loading the request" />
-  if (run.isError) return <QueryError error={run.error} onRetry={() => void run.refetch()} what="this request" backTo={{ to: `/w/${ws}/requests`, label: 'Back to My requests' }} />
+  if (run.isError) return <QueryError error={run.error} onRetry={() => void run.refetch()} what="this request" backTo={can('run.read') ? { to: `/w/${ws}/runs`, label: 'Back to Runs' } : { to: `/w/${ws}/requests`, label: 'Back to My requests' }} />
   return <RunView run={run.data} events={events.data?.events ?? []} eventsUpdatedAt={events.dataUpdatedAt} releaseDefinition={release.data?.definition} />
 }
 
@@ -91,7 +91,16 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
   const effects = run.effects ?? []
   const reconcileCandidates = candidateEffects(effects)
   const notReversed = run.completedEffectsNotReversed ?? []
-  const nextAction = allowed.reconcile.allowed ? 'reconcile' : allowed.retry.allowed ? 'retry' : openTasks.length > 0 ? 'reassign' : null
+  // Lead with the next safe action. An unknown outcome is checked before anything is retried; a definite failure or used-up
+  // retries are retried; only a stuck request with nothing to retry points at the task owner. A request that is simply
+  // waiting needs no recommendation.
+  const unknownOutcome = effects.some((e) => e.state === 'unknown')
+  const nextAction = !needsAttention
+    ? null
+    : unknownOutcome && allowed.reconcile.allowed ? 'reconcile'
+      : allowed.retry.allowed ? 'retry'
+        : allowed.reconcile.allowed ? 'reconcile'
+          : openTasks.length > 0 ? 'reassign' : null
 
   return (
     <>
@@ -116,7 +125,7 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
           const due = dueInfo(s.dueAt)
           return (
             <span key={s.nodeId} className="text-sm">
-              {stepOwnerText(s)}
+              {stepOwnerText(s, run.lifecycle)}
               {due ? <span className={due.overdue ? 'ml-2 font-semibold text-danger' : 'ml-2 text-muted-foreground'}>{due.label}</span> : null}
             </span>
           )
@@ -168,16 +177,16 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
           </h2>
           {nextAction ? <p className="mb-3 text-sm text-muted-foreground">Recommended next step: {nextAction === 'reconcile' ? 'review what happened in the connected system before retrying.' : nextAction === 'retry' ? 'review the failed step and retry it when the connection is ready.' : 'review task ownership and reassign if needed.'}</p> : null}
           <div className="flex flex-wrap gap-3">
-            <Button variant={nextAction === 'retry' ? 'primary' : 'secondary'} onClick={() => setDialog('retry')} disabled={!allowed.retry.allowed}>
+            <Button variant={nextAction === 'retry' ? 'primary' : 'secondary'} onClick={() => setDialog('retry')} disabled={!allowed.retry.allowed} title="Run the failed step again">
               Retry step
             </Button>
-            <Button variant={nextAction === 'reconcile' ? 'primary' : 'secondary'} onClick={() => { setReconcileId(undefined); setDialog('reconcile') }} disabled={!allowed.reconcile.allowed}>
+            <Button variant={nextAction === 'reconcile' ? 'primary' : 'secondary'} onClick={() => { setReconcileId(undefined); setDialog('reconcile') }} disabled={!allowed.reconcile.allowed} title="Record what really happened in the other system, with evidence">
               Reconcile outcome
             </Button>
-            <Button variant={nextAction === 'reassign' ? 'primary' : 'secondary'} onClick={() => setDialog('reassign')} disabled={openTasks.length === 0}>
+            <Button variant={nextAction === 'reassign' ? 'primary' : 'secondary'} onClick={() => setDialog('reassign')} disabled={openTasks.length === 0} title="Give the open approval task to another eligible person">
               Reassign task
             </Button>
-            <Button variant="danger" onClick={() => setDialog('cancel')} disabled={!allowed.cancel.allowed}>
+            <Button variant="danger" onClick={() => setDialog('cancel')} disabled={!allowed.cancel.allowed} title="Stop this request. Work already done in other systems is not undone.">
               <Ban aria-hidden="true" /> Cancel request
             </Button>
           </div>
@@ -188,7 +197,7 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
         </section>
       ) : null}
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_26rem]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 xl:grid-cols-[minmax(0,1fr)_26rem]">
         <div className="min-w-0 space-y-6">
           <Card>
             <CardHeader>
@@ -202,7 +211,7 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
                   {requestRows.map((row) => (
                     <div key={row.key} className="grid gap-1 px-4 py-2.5 sm:grid-cols-[12rem_1fr]">
                       <dt className="text-sm font-semibold text-muted-foreground">{row.label}</dt>
-                      <dd className="break-words whitespace-pre-wrap">{row.value}</dd>
+                      <dd className="wrap-anywhere whitespace-pre-wrap">{row.value}</dd>
                     </div>
                   ))}
                 </dl>
@@ -241,8 +250,8 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
                           {t.label}: {d.action === 'approve' ? 'Approved' : 'Rejected'} by {d.actor.displayName}
                         </p>
                         <p className="text-xs text-muted-foreground">{formatDateTime(d.decidedAt)}</p>
-                        {d.reason ? <p className="mt-1 whitespace-pre-wrap">Reason: {d.reason}</p> : null}
-                        {d.comment ? <p className="mt-1 whitespace-pre-wrap">Comment: {d.comment}</p> : null}
+                        {d.reason ? <p className="mt-1 wrap-anywhere whitespace-pre-wrap">Reason: {d.reason}</p> : null}
+                        {d.comment ? <p className="mt-1 wrap-anywhere whitespace-pre-wrap">Comment: {d.comment}</p> : null}
                         {d.policyFlags.length > 0 ? <p className="mt-1 text-xs text-warning-foreground">Policy: {d.policyFlags.map(humanize).join(', ')}</p> : null}
                       </li>
                     )
@@ -357,7 +366,7 @@ function TechnicalDetails({ run, effects, onReconcile }: { run: RunDetail; effec
                         </span>
                       </TD>
                       <TD>{e.attempts}</TD>
-                      <TD className="max-w-60 text-xs">
+                      <TD className="min-w-48 max-w-72 text-xs">
                         {e.lastErrorCode ? <span className="font-mono">{e.lastErrorCode}</span> : '—'}
                         {e.lastHttpStatus ? <span className="block text-muted-foreground">HTTP {e.lastHttpStatus}</span> : null}
                         {e.lastErrorDetail ? <span className="block text-muted-foreground">{e.lastErrorDetail}</span> : null}

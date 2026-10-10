@@ -1,5 +1,5 @@
 import type { RunEvent } from '@/api/types'
-import { formatDay, formatTime } from './dates'
+import { formatDay, formatTime, formatUtcDateTime } from './dates'
 import { humanize } from './text'
 
 /**
@@ -147,8 +147,11 @@ export function describeEvent(event: RunEvent, ctx: EventContext): string {
       return `Waiting for ${groupName(str(event.data.candidateGroup), ctx)}: ${label}`
     case 'TASK_TIMED_OUT':
       return `The time limit for ${label} passed; the approval was cancelled`
-    case 'WAIT_STARTED':
-      return `${label}: waiting for the timer`
+    case 'WAIT_STARTED': {
+      // A wait until a date has no duration; it reports the moment it ends (UTC).
+      const until = str(event.data.until)
+      return str(event.data.duration) || !until ? `${label}: waiting for the timer` : `${label}: waiting until ${formatUtcDateTime(until)}`
+    }
     case 'WAIT_ENDED':
       return `${label}: the wait finished`
     case 'CHILD_STARTED': {

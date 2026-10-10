@@ -3,19 +3,21 @@ Updated 10 October 2026 · deliverable 18 · status vocabulary from [doc 09](09-
 
 **Verified** = automated tests pass against real PostgreSQL/Flowable (and, where stated, the Docker stack with real Keycloak and the procurement stub). **Implemented** = code exists; integration or acceptance verification is pending or limited as stated in the row. Nothing is marked Verified on mocks alone.
 
-## Latest verification — 10 October 2026 (demo release candidate)
+## Latest verification — 10 October 2026 (demo release candidate, second pass)
 
-Everything below ran against the working tree committed with this revision, on a Docker stack rebuilt from it with a clean database and the demo data from `tools/demo/seed_demo.py`. It supersedes the counts in the older baseline below.
+Everything below ran against the committed tree, on a Docker stack rebuilt from it with a clean database. It supersedes the counts in the older baselines further down.
 
 | Suite | Result |
 |---|---|
-| Compiler | 267 tests pass |
-| Application (Testcontainers PostgreSQL 18, WireMock) | 436 tests pass, 2 skipped (opt-in live AI and agent tests) |
-| Frontend (Vitest) | 490 tests pass; typecheck, lint, build and API-type drift check pass |
-| Browser E2E, Docker stack | 29 pass, 8 skipped (mock-only checks); one agent-test wait was too short for a real model call, fixed and rerun green; no serious accessibility findings |
-| Browser E2E, mock mode | 33 pass, 4 skipped (real-stack-only checks) |
-| API E2E, Docker stack | Purchase scenarios with fault injection 26/26; rollback, reconcile, cancel and forged-field scenarios 33/33; agent scenarios (Demo 2) 19/19; AI drafting (Demo 7, live provider) 21/21; parallel, timer and child-workflow scenarios (Demo 4) 33/33 |
-| Contract check / manifests | 67 checks / 132 checks across 3 overlays pass |
+| Compiler | 280 tests pass |
+| Application (Testcontainers PostgreSQL 18, WireMock) | 453 tests pass, 2 skipped (opt-in live AI and agent tests) |
+| Frontend (Vitest) | 530 tests pass; typecheck, lint, build and API-type drift check pass |
+| Browser E2E, Docker stack | 30 pass, 11 skipped (mock-only checks); no serious accessibility findings |
+| Browser E2E, mock mode | 37 pass, 4 skipped (real-stack-only checks) |
+| API E2E, Docker stack | Purchase scenarios with fault injection 26/26; rollback, reconcile, cancel, forged fields 33/33; agents (Demo 2) 19/19; AI drafting (Demo 7, live provider) 21/21; parallel, timer, child (Demo 4) 33/33; wait until a date 26/26 |
+| Load smoke (T-PERF-01), 20 users for 10 minutes | 43,692 requests, 0 errors, 69 requests/s; p95 16 ms for list and task APIs, 82 ms to start a request; every approved run completed with exactly one purchase order |
+| AI draft evaluation (economy, 8 cases) | 8/8 valid and 8/8 valid on the first attempt, judge average 3.5/5, one semantic miss (expense-claim threshold not modeled as at-least/below), USD 0.026; the provider was slow this time (p50 49 s) |
+| Contract check / manifests | 68 checks / 132 checks across 3 overlays pass |
 
 ### Demo readiness
 
@@ -33,7 +35,8 @@ Defects found and fixed in this round: run comments returned 400 instead of the 
 
 ### Known limits to state when asked
 - AI generation takes 10–60 s and depends on the provider; budgets cap spend (USD 10 a month, 0.50 a request). Jev Router cannot be restricted to a candidate list, so its chosen model is checked after the call and the profile is paused for the day if it is forbidden.
-- The conversational Assistant is new and has not been demonstrated or reviewed in this round; it is not part of the demo script.
+- The Assistant (guided conversation) was reviewed on the real stack and rewritten in plain language: starting a request, reviewing and deciding a task with an explicit confirm step, and a mock mode. Limits: only the latest turn resumes after a reload, lists of structured items must use the form, My tasks and My requests show 25 items, no comment on a decision. Its first-turn AI matching is optional and was not reviewed.
+- Dates in waits are UTC; a date cannot be used in conditions or decision tables yet.
 - Nothing here has run on a real OpenShift cluster, real PingFederate, a CI host or the real procurement API; the production gates remain open.
 
 ## Historical combined verification baseline

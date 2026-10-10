@@ -25,7 +25,7 @@ public class CatalogStore {
 
     public record WorkflowRow(UUID id, UUID workspaceId, String key, String name, String description, UUID owner,
             int draftRevision, UUID activeReleaseId, int version, Instant createdAt, Instant updatedAt,
-            Integer activeReleaseNumber, Instant activePublishedAt) {
+            Integer activeReleaseNumber, Instant activePublishedAt, Integer activeDraftRevision) {
     }
 
     public record DraftRow(UUID workflowId, int revision, String definitionJson, String schemaVersion, UUID savedBy,
@@ -52,7 +52,7 @@ public class CatalogStore {
     private static final String WORKFLOW_COLUMNS = """
             w.id, w.workspace_id, w.key, w.name, w.description, w.owner_subject_id, w.draft_revision, w.active_release_id,
             w.version, w.created_at, w.updated_at, r.release_number AS active_release_number,
-            r.published_at AS active_published_at
+            r.published_at AS active_published_at, r.draft_revision AS active_draft_revision
             """;
     private static final String WORKFLOW_FROM = """
             FROM workflow w LEFT JOIN workflow_release r ON r.workspace_id = w.workspace_id AND r.id = w.active_release_id
@@ -271,7 +271,7 @@ public class CatalogStore {
                 rs.getString("description"), Sql.uuid(rs, "owner_subject_id"), rs.getInt("draft_revision"),
                 Sql.uuid(rs, "active_release_id"), rs.getInt("version"), Sql.instant(rs, "created_at"),
                 Sql.instant(rs, "updated_at"), (Integer) rs.getObject("active_release_number"),
-                Sql.instant(rs, "active_published_at"));
+                Sql.instant(rs, "active_published_at"), (Integer) rs.getObject("active_draft_revision"));
     }
 
     private ReleaseRow mapRelease(ResultSet rs, int n) throws SQLException {

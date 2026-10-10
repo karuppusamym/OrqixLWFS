@@ -31,7 +31,7 @@ public final class CatalogDtos {
     public record TemplateList(List<Template> items) {
     }
 
-    public record ActiveReleaseRef(UUID id, int releaseNumber, Instant publishedAt) {
+    public record ActiveReleaseRef(UUID id, int releaseNumber, Instant publishedAt, int draftRevision) {
     }
 
     /** {@code Workflow} (and {@code WorkflowSummary} when version/createdAt/permissions are null). */

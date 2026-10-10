@@ -104,7 +104,7 @@ function AtomicConditionEditor({
             }}
           >
             {!info ? <option value={condition.fieldRef}>{condition.fieldRef || 'Choose a value'}</option> : null}
-            {fields.filter(f => f.type !== 'array').map((f) => (
+            {fields.filter(f => f.type !== 'array' && f.type !== 'date').map((f) => (
               <option key={f.ref} value={f.ref}>
                 {chipLabel(f)}
               </option>
@@ -139,7 +139,7 @@ export function ConditionEditor(props: {
   const { condition, onChange, idBase, disabled, fields } = props
   const mode = 'all' in condition ? 'all' : 'any' in condition ? 'any' : 'single'
   const terms = conditionTerms(condition)
-  const blank: AtomicCondition = { fieldRef: fields.find(f => f.type !== 'array')?.ref ?? '', operator: 'eq', value: defaultLiteral(fields.find(f => f.type !== 'array')?.type) }
+  const blank: AtomicCondition = { fieldRef: fields.find(f => f.type !== 'array' && f.type !== 'date')?.ref ?? '', operator: 'eq', value: defaultLiteral(fields.find(f => f.type !== 'array' && f.type !== 'date')?.type) }
   const update = (next: AtomicCondition[]) => onChange(mode === 'single' ? next[0]! : mode === 'all' ? { all: next } : { any: next })
   if (props.fixedField) return <AtomicConditionEditor {...props} condition={terms[0] ?? blank} onChange={onChange} />
   return <div className="space-y-4">

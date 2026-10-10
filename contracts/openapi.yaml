@@ -2291,8 +2291,23 @@ components:
           properties:
             workflowName: { type: string }
             input: { type: object, additionalProperties: true }
+            fields:
+              type: array
+              description: Request values in form order with their business labels
+              items:
+                type: object
+                required: [name, label, value]
+                properties:
+                  name: { type: string }
+                  label: { type: string }
+                  value: {}
+                  display: { type: string, description: Readable form of the value when it differs from the stored one, for example a calendar date }
         runId: { $ref: '#/components/schemas/Uuid' }
         taskId: { type: string }
+        taskAction:
+          type: string
+          enum: [claim, approve, reject]
+          description: Present once a task action is prepared and waiting for explicit confirmation
     Uuid: { type: string, format: uuid }
     Key: { type: string, pattern: '^[a-z][a-z0-9-]{0,62}[a-z0-9]$' }
     Name: { type: string, minLength: 1, maxLength: 200 }
@@ -2515,11 +2530,12 @@ components:
           oneOf:
             - type: 'null'
             - type: object
-              required: [id, releaseNumber, publishedAt]
+              required: [id, releaseNumber, publishedAt, draftRevision]
               properties:
                 id: { $ref: '#/components/schemas/Uuid' }
                 releaseNumber: { type: integer }
                 publishedAt: { $ref: '#/components/schemas/Timestamp' }
+                draftRevision: { type: integer, description: 'The draft revision this release was published from; the workflow has unpublished changes when draftRevision (on the workflow) is greater' }
         canStart: { type: boolean }
         updatedAt: { $ref: '#/components/schemas/Timestamp' }
     Workflow:
@@ -2729,6 +2745,12 @@ components:
             id: { $ref: '#/components/schemas/Uuid' }
             releaseNumber: { type: integer }
         businessKey: { type: [string, 'null'] }
+        requestTitle:
+          type: [string, 'null']
+          description: >-
+            What the request is about: the first text field of the request form (in form order), trimmed and cut to 120
+            characters, for list display. Null for a caller who may not read the request data (the rule of `input` on
+            RunDetail: the initiator, a task participant, or run.read-data) and when the form has no text field.
         initiator: { $ref: '#/components/schemas/SubjectRef' }
         lifecycle: { $ref: '#/components/schemas/Lifecycle' }
         outcome: { type: [string, 'null'], description: 'Business outcome label from the end node' }
@@ -3021,6 +3043,7 @@ components:
         id: { $ref: '#/components/schemas/Uuid' }
         runId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }] }
         runReference: { type: [string, 'null'], description: 'Human request reference of runId, e.g. ORQ-1043' }
+        requestTitle: { type: [string, 'null'], description: 'Title of the request runId (see Run.requestTitle); null when the recipient may not read the request data' }
         kind: { type: string, enum: [workflowMessage, runAttention] }
         message: { type: string }
         createdAt: { $ref: '#/components/schemas/Timestamp' }

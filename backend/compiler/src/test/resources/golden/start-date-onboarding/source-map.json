@@ -1,0 +1,36 @@
+{
+  "nodes": {
+    "start": ["start"],
+    "confirm": ["confirm", "confirm__out", "confirm__route"],
+    "untilStart": ["untilStart"],
+    "notifyStarted": ["notifyStarted"],
+    "started": ["started"],
+    "notifyRejected": ["notifyRejected"],
+    "declined": ["declined"]
+  },
+  "transitions": {
+    "t1": ["t1"],
+    "t2": ["t2"],
+    "t3": ["t3"],
+    "t4": ["t4"],
+    "t5": ["t5"],
+    "t6": ["t6"]
+  },
+  "bpmnToCanonical": {
+    "start": "start",
+    "confirm": "confirm",
+    "confirm__out": "confirm",
+    "confirm__route": "confirm",
+    "untilStart": "untilStart",
+    "notifyStarted": "notifyStarted",
+    "started": "started",
+    "notifyRejected": "notifyRejected",
+    "declined": "declined",
+    "t1": "t1",
+    "t2": "t2",
+    "t3": "t3",
+    "t4": "t4",
+    "t5": "t5",
+    "t6": "t6"
+  }
+}

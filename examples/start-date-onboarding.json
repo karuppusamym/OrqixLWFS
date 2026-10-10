@@ -1,0 +1,205 @@
+{
+  "schemaVersion": "0.1",
+  "workflowKey": "start-date-onboarding",
+  "name": "Prepare for a new colleague's start date",
+  "metadata": {
+    "description": "Your manager confirms a new colleague's start. The request then waits until the start date (09:00 UTC) and tells you that the first day has begun.",
+    "tags": [
+      "onboarding",
+      "timer",
+      "date"
+    ]
+  },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "employeeName",
+      "startDate"
+    ],
+    "properties": {
+      "employeeName": {
+        "type": "string",
+        "title": "New colleague",
+        "description": "Full name of the person who is joining.",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "startDate": {
+        "type": "string",
+        "format": "date",
+        "title": "Start date",
+        "description": "The first working day. Dates in the past are treated as already reached; the latest date is one year from today."
+      }
+    }
+  },
+  "inputUi": {
+    "order": [
+      "employeeName",
+      "startDate"
+    ],
+    "widgets": {}
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  },
+  "triggers": [
+    "manual",
+    "api"
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "label": "Start requested",
+      "config": {}
+    },
+    {
+      "id": "confirm",
+      "type": "approval",
+      "label": "Confirm the start",
+      "config": {
+        "candidateGroupRef": "managers",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 24
+      }
+    },
+    {
+      "id": "untilStart",
+      "type": "wait",
+      "label": "Wait until the start date",
+      "config": {
+        "untilField": "/input/startDate",
+        "atTime": "09:00"
+      }
+    },
+    {
+      "id": "notifyStarted",
+      "type": "notification",
+      "label": "Tell requester the first day began",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "The first day of your new colleague has begun."
+      }
+    },
+    {
+      "id": "started",
+      "type": "end",
+      "label": "First day reached",
+      "config": {
+        "businessOutcome": "First day reached",
+        "outcomeKind": "success"
+      }
+    },
+    {
+      "id": "notifyRejected",
+      "type": "notification",
+      "label": "Tell requester it was declined",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "Your start request was declined."
+      }
+    },
+    {
+      "id": "declined",
+      "type": "end",
+      "label": "Declined",
+      "config": {
+        "businessOutcome": "Declined",
+        "outcomeKind": "rejected"
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t1",
+      "from": "start",
+      "to": "confirm",
+      "on": "next"
+    },
+    {
+      "id": "t2",
+      "from": "confirm",
+      "to": "untilStart",
+      "on": "approved"
+    },
+    {
+      "id": "t3",
+      "from": "confirm",
+      "to": "notifyRejected",
+      "on": "rejected"
+    },
+    {
+      "id": "t4",
+      "from": "untilStart",
+      "to": "notifyStarted",
+      "on": "next"
+    },
+    {
+      "id": "t5",
+      "from": "notifyStarted",
+      "to": "started",
+      "on": "next"
+    },
+    {
+      "id": "t6",
+      "from": "notifyRejected",
+      "to": "declined",
+      "on": "next"
+    }
+  ],
+  "decisions": [],
+  "execution": {
+    "maxConcurrentRuns": 100,
+    "maxAttempts": 3,
+    "retryDelaySeconds": 30
+  },
+  "security": {
+    "selfApproval": "deny"
+  },
+  "dependencies": {
+    "connections": []
+  },
+  "outputMapping": {},
+  "uiLayout": {
+    "positions": {
+      "start": {
+        "x": 80,
+        "y": 200
+      },
+      "confirm": {
+        "x": 300,
+        "y": 200
+      },
+      "untilStart": {
+        "x": 540,
+        "y": 200
+      },
+      "notifyStarted": {
+        "x": 780,
+        "y": 200
+      },
+      "started": {
+        "x": 1000,
+        "y": 200
+      },
+      "notifyRejected": {
+        "x": 540,
+        "y": 420
+      },
+      "declined": {
+        "x": 780,
+        "y": 420
+      }
+    },
+    "viewport": {
+      "x": 0,
+      "y": 0,
+      "zoom": 0.8
+    }
+  }
+}

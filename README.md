@@ -67,10 +67,10 @@ R0 is implemented: compiler module, Spring Boot + Flowable application, React fr
 
 | Area | Location | Verified |
 |---|---|---|
-| Compiler | `backend/compiler` | 263 tests |
-| Application | `backend/app` | 180 tests run (one opt-in live-provider check skipped); API responses validated against the OpenAPI contract |
-| Frontend | `frontend` | 421 unit/component tests including color-contrast checks; typecheck, lint, build |
-| Browser E2E | `tests/e2e` | 25 checks pass across final runs / 3 mock-only checks skipped against the Docker stack; selected mock AI and layout checks: 7 pass; no serious accessibility findings |
+| Compiler | `backend/compiler` | 280 tests |
+| Application | `backend/app` | 453 tests on PostgreSQL 18 (Testcontainers), API responses validated against the OpenAPI contract |
+| Frontend | `frontend` | 530 unit/component tests including color-contrast checks; typecheck, lint, build |
+| Browser E2E | `tests/e2e` | 30 pass / 11 skipped (mock-only) against the Docker stack; 37 / 4 in mock mode; no serious accessibility findings |
 | API E2E | `tools/api-e2e` | 26 / 26 with injected failures, plus 33 / 33 operations scenarios |
 | Resilience, performance | `tools/resilience`, `tools/perf` | Kill, database outage, graceful shutdown and revocation scenarios pass; 20 users × 10 min with 0 errors and p95 under 120 ms |
 | AI assistance | `backend/app` (`com.orqix.ai`), `tools/ai-eval` | Optional. Set `OPENROUTER_API_KEY` in `.env`; DeepSeek by default, Jev Router for *Auto*, costly models excluded, monthly budget. Empty means rules-only |

@@ -3,6 +3,7 @@ package com.orqix.compiler.internal.rules;
 import static com.orqix.compiler.internal.rules.RuleContext.q;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -312,12 +313,34 @@ final class TypeRules {
                 invalid(rc, base + "/multipleOf", title + " is a whole number, so it cannot allow cents"
                         + " (multipleOf " + f.multipleOf().toPlainString() + ").");
             }
+            dateBounds(rc, f, base);
             if (f.minLength() != null && f.maxLength() != null && f.minLength() > f.maxLength()) {
                 invalid(rc, base + "/minLength", title + " has a minimum length greater than its maximum length.");
             }
             if (f.minimum() != null && f.maximum() != null && f.minimum().compareTo(f.maximum()) > 0) {
                 invalid(rc, base + "/minimum", title + " has a minimum greater than its maximum.");
             }
+        }
+    }
+
+    /** formatMinimum / formatMaximum of a date field: real calendar dates, minimum not after maximum. */
+    private static void dateBounds(RuleContext rc, FormSchema.Field f, String base) {
+        LocalDate min = date(rc, f, base + "/formatMinimum", f.formatMinimum(), "earliest");
+        LocalDate max = date(rc, f, base + "/formatMaximum", f.formatMaximum(), "latest");
+        if (min != null && max != null && min.isAfter(max)) {
+            invalid(rc, base + "/formatMinimum", q(f.title()) + " has an earliest date after its latest date.");
+        }
+    }
+
+    private static LocalDate date(RuleContext rc, FormSchema.Field f, String path, String text, String which) {
+        if (text == null) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(text);
+        } catch (java.time.format.DateTimeParseException e) {
+            invalid(rc, path, q(f.title()) + " has an " + which + " date that does not exist (" + text + ").");
+            return null;
         }
     }
 

@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { CheckCircle2, FileClock, FilePlus2, Workflow as WorkflowIcon } from 'lucide-react'
+import { CheckCircle2, FileClock, FilePlus2, PencilLine, Workflow as WorkflowIcon } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import * as endpoints from '@/api/endpoints'
@@ -111,9 +111,16 @@ export function WorkflowsPage() {
                     </TD>
                     <TD>
                       {w.activeRelease ? (
-                        <Badge tone="success" title="New requests use this version">
-                          <CheckCircle2 aria-hidden="true" /> Active v{w.activeRelease.releaseNumber}
-                        </Badge>
+                        <div className="flex flex-wrap gap-1.5">
+                          <Badge tone="success" title="New requests use this version">
+                            <CheckCircle2 aria-hidden="true" /> Active v{w.activeRelease.releaseNumber}
+                          </Badge>
+                          {w.draftRevision > w.activeRelease.draftRevision ? (
+                            <Badge tone="warning" title="The draft has changes that new requests do not use until you publish">
+                              <PencilLine aria-hidden="true" /> Changes not published
+                            </Badge>
+                          ) : null}
+                        </div>
                       ) : (
                         <Badge title="Nobody can start this workflow until it is published">
                           <FileClock aria-hidden="true" /> Draft only

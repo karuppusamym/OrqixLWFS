@@ -1,5 +1,5 @@
 import type { CurrentStep, Run, TaskSummary } from '@/api/types'
-import { dueInfo } from './dates'
+import { dueInfo, formatUtcDateTime } from './dates'
 import { humanize, shortId } from './text'
 
 /**
@@ -20,11 +20,12 @@ export function requestId(run: Pick<Run, 'id' | 'businessKey' | 'reference'>): s
 }
 
 /**
- * What the request is about (the first text field of the form, such as "Annual design software licences"). Task lists carry
- * it already; run lists show it when the server sends `requestTitle`, and fall back to the workflow name when it does not.
+ * What the request is about (the first text field of the form, such as "Annual design software licences"). The server
+ * sends it as `requestTitle` on runs, tasks and notifications, and withholds it from callers who may not read the request
+ * data; callers fall back to the workflow name or the request reference when it is null.
  */
-export function runTitle(run: Run): string | null {
-  const title = (run as Run & { requestTitle?: unknown }).requestTitle
+export function runTitle(run: Pick<Run, 'requestTitle'>): string | null {
+  const title = run.requestTitle
   return typeof title === 'string' && title.trim() !== '' ? title.trim() : null
 }
 
@@ -36,7 +37,7 @@ export function ownReference(run: Pick<Run, 'businessKey' | 'reference'>): strin
 /** "Waiting for Managers: Review request" or "Mani Manager is reviewing: Review request". */
 export function stepOwnerText(step: CurrentStep, lifecycle?: Run['lifecycle']): string {
   if (step.kind === 'http') return lifecycle === 'needsAttention' ? `${step.label} is delayed` : `${step.label} is in progress`
-  if (step.kind === 'wait') return `Waiting until the timer finishes: ${step.label}`
+  if (step.kind === 'wait') return step.dueAt ? `Waiting until ${formatUtcDateTime(step.dueAt)}: ${step.label}` : `Waiting until the timer finishes: ${step.label}`
   if (step.kind === 'child') return `Waiting for the child request: ${step.label}`
   if (step.assignee) return `${step.assignee.displayName} is working on: ${step.label}`
   const group = step.candidateGroup ? humanize(step.candidateGroup) : 'an approver'

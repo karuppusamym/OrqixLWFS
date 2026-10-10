@@ -93,8 +93,22 @@ public sealed interface Node {
         }
     }
 
-    /** Wait for a fixed time (ISO-8601 duration). */
-    record Wait(int index, String id, String label, String duration) implements Node {
+    /**
+     * Wait for a fixed time (ISO-8601 {@code duration}) or until a calendar date ({@code untilField}, a reference to a
+     * date field) at {@code atTime} UTC (HH:mm, null means 09:00). Exactly one of duration and untilField is set in a
+     * valid workflow; the rule {@code WF_WAIT_CHOICE} reports anything else.
+     */
+    record Wait(int index, String id, String label, String duration, String untilField, String atTime)
+            implements Node {
+
+        /** Time of day when {@code atTime} is not given. */
+        public static final String DEFAULT_TIME = "09:00";
+
+        /** @return the time of day in HH:mm (UTC) at which a date wait ends */
+        public String time() {
+            return atTime == null ? DEFAULT_TIME : atTime;
+        }
+
         @Override
         public NodeKind kind() {
             return NodeKind.WAIT;

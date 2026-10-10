@@ -24,7 +24,7 @@ public class FlowableEngineConfiguration {
 
     /** The only names an expression in generated BPMN may resolve. */
     public static final List<String> EXPRESSION_BEANS =
-            List.of("orqixRoute", "orqixDecisionTask", "orqixHttpTask", "orqixNotificationTask", "orqixChildTask");
+            List.of("orqixRoute", "orqixDecisionTask", "orqixHttpTask", "orqixNotificationTask", "orqixChildTask", "orqixWait");
 
     @Bean(destroyMethod = "shutdown")
     DefaultAsyncTaskExecutor orqixJobTaskExecutor(OrqixProperties properties) {
@@ -41,6 +41,7 @@ public class FlowableEngineConfiguration {
     @Bean
     EngineConfigurationConfigurer<SpringProcessEngineConfiguration> orqixProcessEngineConfigurer(
             OrqixRoute orqixRoute,
+            OrqixWait orqixWait,
             DecisionTaskDelegate orqixDecisionTask,
             HttpTaskDelegate orqixHttpTask,
             NotificationTaskDelegate orqixNotificationTask,
@@ -51,6 +52,7 @@ public class FlowableEngineConfiguration {
         return configuration -> {
             Map<Object, Object> beans = new LinkedHashMap<>();
             beans.put("orqixRoute", orqixRoute);
+            beans.put("orqixWait", orqixWait);
             beans.put("orqixDecisionTask", orqixDecisionTask);
             beans.put("orqixHttpTask", orqixHttpTask);
             beans.put("orqixNotificationTask", orqixNotificationTask);

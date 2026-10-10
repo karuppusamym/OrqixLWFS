@@ -96,7 +96,7 @@ export function ProjectPage() {
     </section>
 
     {last ? <Alert tone="success" className="mb-6" title={`Converted ${last.fileName}`}>
-      <p>The draft <span className="font-mono">{last.workflowKey}</span> was created. Review it and publish it before you convert a file that calls it, so the parent can pin the child&apos;s release.</p>
+      <p>The draft <span className="font-mono">{last.workflowKey}</span> was created. Review it and publish it before you convert a file that calls it, so the parent uses the child&apos;s published version.</p>
       <p className="mt-2 flex flex-wrap gap-3"><Link to={`/w/${ws}/workflows/${last.workflowId}/edit`}>Open the draft</Link><Link to={`/w/${ws}/workflows/${last.workflowId}/publish`}>Review and publish</Link></p>
     </Alert> : null}
 

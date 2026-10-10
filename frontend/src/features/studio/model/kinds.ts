@@ -73,7 +73,7 @@ export const KINDS: Record<NodeKind, KindInfo> = {
   },
   parallelSplit: { kind: 'parallelSplit', paletteLabel: 'Run in parallel', caption: 'Run in parallel', description: 'Start several branches together.', defaultLabel: 'Start parallel work', routes: ['next'] },
   parallelJoin: { kind: 'parallelJoin', paletteLabel: 'Wait for all', caption: 'Wait for all', description: 'Continue once every parallel branch finishes.', defaultLabel: 'All work finished', routes: ['next'] },
-  wait: { kind: 'wait', paletteLabel: 'Wait', caption: 'Wait', description: 'Pause for a fixed amount of time.', defaultLabel: 'Wait before continuing', routes: ['next'] },
+  wait: { kind: 'wait', paletteLabel: 'Wait', caption: 'Wait', description: 'Pause for a length of time, or until a date.', defaultLabel: 'Wait before continuing', routes: ['next'] },
   startWorkflow: { kind: 'startWorkflow', paletteLabel: 'Start another workflow', caption: 'Child workflow', description: 'Start a published workflow and wait for its result.', defaultLabel: 'Start another workflow', routes: ['next'] },
 }
 

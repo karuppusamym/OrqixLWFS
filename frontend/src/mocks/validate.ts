@@ -1,4 +1,5 @@
 import type { ValidationIssue } from '@/api/types'
+import { isCalendarDate } from '@/lib/dates'
 import { allFields, availableFields, parseRef } from '@/features/studio/model/fieldRefs'
 import { hasCycle, incoming, nodeById, outgoing, reachableFrom, startNode } from '@/features/studio/model/graph'
 import { isAtomicCondition, type Condition, type Definition, type Literal, type WorkflowNode } from '@/features/studio/model/types'
@@ -137,6 +138,17 @@ export function validateDefinition(def: Definition, ctx: ValidationContext): Iss
           issues.push(issue('WF_PARALLEL_JOIN_UNKNOWN', 'blocker', `"${n.label}" needs a matching "Wait for all" step.`, nodePath(n, '/config/joinRef'), n.id))
         break
       case 'wait': {
+        const hasDuration = c.duration !== undefined
+        const hasDate = c.untilField !== undefined
+        if (hasDuration === hasDate) {
+          issues.push(issue('WF_WAIT_CHOICE', 'blocker', hasDuration ? `"${n.label}" has both a length of time and a date. Choose one.` : `"${n.label}" needs either a length of time or a date to wait until.`, nodePath(n, hasDuration ? '/config/untilField' : '/config/duration'), n.id))
+          break
+        }
+        if (hasDate) {
+          checkWaitDate(def, n, String(c.untilField), issues)
+          if (c.atTime !== undefined && !/^([01]\d|2[0-3]):[0-5]\d$/.test(String(c.atTime))) issues.push(issue('WF_SCHEMA_INVALID', 'blocker', `"${n.label}" needs a time of day written like 09:00.`, nodePath(n, '/config/atTime'), n.id))
+          break
+        }
         const minutes = durationMinutes(String(c.duration ?? ''))
         if (minutes === null) issues.push(issue('WF_DURATION_INVALID', 'blocker', `"${n.label}" has a time that is not valid. Use days, hours and minutes, for example PT30M or P2D.`, nodePath(n, '/config/duration'), n.id))
         else if (minutes < 1) issues.push(issue('WF_DURATION_TOO_SHORT', 'blocker', `"${n.label}" waits no time at all. The shortest time is 1 minute.`, nodePath(n, '/config/duration'), n.id))
@@ -257,6 +269,10 @@ export function validateDefinition(def: Definition, ctx: ValidationContext): Iss
   for (const [key, f] of Object.entries(def.inputSchema.properties)) {
     if (f.minLength !== undefined && f.maxLength !== undefined && f.minLength > f.maxLength) issues.push(issue('WF_FORM_INVALID', 'blocker', `"${f.title}" has a minimum length above its maximum.`, `/inputSchema/properties/${key}`))
     if (f.minimum !== undefined && f.maximum !== undefined && f.minimum > f.maximum) issues.push(issue('WF_FORM_INVALID', 'blocker', `"${f.title}" has a minimum above its maximum.`, `/inputSchema/properties/${key}`))
+    for (const [member, text] of [['formatMinimum', f.formatMinimum], ['formatMaximum', f.formatMaximum]] as const) {
+      if (text !== undefined && !isCalendarDate(text)) issues.push(issue('WF_FORM_INVALID', 'blocker', `"${f.title}" has a date limit that does not exist (${text}).`, `/inputSchema/properties/${key}/${member}`))
+    }
+    if (f.formatMinimum && f.formatMaximum && isCalendarDate(f.formatMinimum) && isCalendarDate(f.formatMaximum) && f.formatMinimum > f.formatMaximum) issues.push(issue('WF_FORM_INVALID', 'blocker', `"${f.title}" has an earliest date after its latest date.`, `/inputSchema/properties/${key}/formatMinimum`))
   }
   for (const [k, m] of Object.entries(def.outputMapping)) {
     const parsed = parseRef(m.fieldRef)
@@ -271,6 +287,26 @@ export function validateDefinition(def: Definition, ctx: ValidationContext): Iss
   }
 
   return issues.sort((a, b) => (a.severity === b.severity ? 0 : a.severity === 'blocker' ? -1 : 1) || a.path.localeCompare(b.path) || a.code.localeCompare(b.code))
+}
+
+/** The date of a "wait until a date" step must be an existing date question that always has a value (S12 section 10). */
+function checkWaitDate(def: Definition, n: WorkflowNode, ref: string, issues: Issue[]): void {
+  const path = `/nodes/${def.nodes.findIndex((x) => x.id === n.id)}/config/untilField`
+  const known = allFields(def).find((f) => f.ref === ref)
+  if (!known) {
+    issues.push(issue('WF_FIELDREF_UNKNOWN', 'blocker', ref ? `"${ref}" does not exist.` : `"${n.label}" needs a date to wait until.`, path, n.id))
+    return
+  }
+  if (known.type !== 'date') {
+    issues.push(issue('WF_WAIT_FIELD_TYPE', 'blocker', `"${n.label}" waits until the date in ${ref}, but that is not a date. Choose a date field.`, path, n.id))
+    return
+  }
+  const input = /^\/input\/(.+)$/.exec(ref)?.[1]
+  if (input) {
+    if (!(def.inputSchema.required ?? []).includes(input)) issues.push(issue('WF_WAIT_FIELD_OPTIONAL', 'blocker', `"${n.label}" waits until the date in "${known.label}", but that field is optional on the request form, so there may be no date to wait for. Make the field required.`, path, n.id))
+  } else if (!availableFields(def, n.id).some((f) => f.ref === ref)) {
+    issues.push(issue('WF_FIELDREF_NOT_GUARANTEED', 'blocker', `"${known.group} → ${known.label}" is not always available before "${n.label}".`, path, n.id))
+  }
 }
 
 function checkRef(def: Definition, at: WorkflowNode, ref: string, path: string, issues: Issue[]): void {
@@ -299,6 +335,10 @@ function checkCondition(def: Definition, at: WorkflowNode, c: Condition, path: s
   }
   if (!availableFields(def, at.id).some((f) => f.ref === c.fieldRef)) {
     issues.push(issue('WF_FIELDREF_NOT_GUARANTEED', 'blocker', `"${known.group} → ${known.label}" is not always available before "${at.label}".`, `${path}/fieldRef`, at.id, transitionId))
+  }
+  if (known.type === 'date') {
+    issues.push(issue('WF_OPERATOR_TYPE', 'blocker', `${c.fieldRef} is a date. Dates can be used to wait until a day, but not (yet) to choose a path or in a decision table.`, `${path}/operator`, at.id, transitionId))
+    return
   }
   if (isNumericRange(c.operator) && known.type !== 'number' && known.type !== 'integer') {
     issues.push(issue('WF_OPERATOR_TYPE', 'blocker', '"at least" and "less than" only work on numbers.', `${path}/operator`, at.id, transitionId))

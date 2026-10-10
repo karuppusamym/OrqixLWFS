@@ -52,6 +52,12 @@ final class Conditions {
             return null;
         }
         FieldType type = r.type();
+        if (type.kind() == FieldKind.DATE) {
+            rc.issues().blocker("WF_OPERATOR_TYPE", base + "/operator", nodeId, transitionId, c.fieldRef()
+                    + " is a date. Dates can be used to wait until a day, but not (yet) to choose a path or in a"
+                    + " decision table.");
+            return null;
+        }
         if (Disjointness.ordering(c.operator()) && !type.kind().numeric()) {
             rc.issues().blocker("WF_OPERATOR_TYPE", base + "/operator", nodeId, transitionId, "The comparison "
                     + q(c.operator().phrase()) + " works only on numbers, but " + c.fieldRef() + " is "
@@ -78,7 +84,7 @@ final class Conditions {
             case BOOLEAN -> literal instanceof Literal.Bool;
             case NUMBER -> literal instanceof Literal.Num;
             case INTEGER -> literal instanceof Literal.Num n && n.integral();
-            case ARRAY -> false;
+            case ARRAY, DATE -> false;
         };
     }
 

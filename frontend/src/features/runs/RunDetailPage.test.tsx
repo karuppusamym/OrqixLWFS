@@ -43,7 +43,9 @@ describe('run detail', () => {
     signInAs('rhea.requester')
     const run = runByKey('ORQ-1001') // completed and fulfilled
     renderApp(at(run))
-    expect(await screen.findByRole('heading', { level: 1, name: 'Purchase approval' })).toBeInTheDocument()
+    // the header leads with what the request is about; the workflow name moves to the line below
+    expect(await screen.findByRole('heading', { level: 1, name: String(run.input.title) })).toBeInTheDocument()
+    expect(screen.getByText(/Purchase approval ·/)).toBeInTheDocument()
     expect(screen.getByTestId('run-status')).toHaveTextContent('Completed · Fulfilled')
     expect(screen.getByTestId('request-values')).toHaveTextContent('$240.00')
     const timeline = screen.getByTestId('timeline')

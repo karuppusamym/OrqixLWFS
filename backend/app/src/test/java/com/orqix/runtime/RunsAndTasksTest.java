@@ -394,6 +394,76 @@ class RunsAndTasksTest extends RuntimeTestBase {
         }
     }
 
+    @Test
+    void runListsCarryTheRequestTitleOnlyForCallersWhoMayReadTheData() throws Exception {
+        UUID workflowId = workflow();
+        JsonNode started = start("rhea.requester", PURCHASING, workflowId, BigDecimal.ONE);
+        UUID runId = UUID.fromString(started.path("id").asString());
+        // the start response goes to the initiator, who may read the request
+        assertThat(started.path("requestTitle").asString()).isEqualTo("Replacement laptop");
+        // the initiator (my requests) and an operator (run.read-data) see the title
+        assertThat(titleIn(api("rhea.requester").get("/workspaces/{ws}/me/requests?limit=100", PURCHASING).body(), runId))
+                .isEqualTo("Replacement laptop");
+        assertThat(titleIn(api("olga.operator").get("/workspaces/{ws}/runs?limit=100", PURCHASING).body(), runId))
+                .isEqualTo("Replacement laptop");
+        assertThat(run(PURCHASING, runId).path("requestTitle").asString()).isEqualTo("Replacement laptop");
+        // a viewer sees that the request exists, but the title is withheld together with the input
+        Response viewerList = api("vic.viewer").get("/workspaces/{ws}/runs?limit=100", PURCHASING);
+        assertThat(viewerList.status()).isEqualTo(200);
+        assertThat(findRun(viewerList.body(), runId).has("requestTitle")).isTrue();
+        assertThat(titleIn(viewerList.body(), runId)).isNull();
+        JsonNode viewerDetail = api("vic.viewer").get("/workspaces/{ws}/runs/{id}", PURCHASING, runId).body();
+        assertThat(viewerDetail.path("input").isNull()).isTrue();
+        assertThat(viewerDetail.path("requestTitle").isNull()).isTrue();
+        assertThat(viewerList.body().toString()).doesNotContain("Replacement laptop");
+        // notifications of the request carry the title for the initiator
+        approve("mani.manager", PURCHASING, runId, "manager");
+        awaitLifecycle(PURCHASING, runId, "completed", "waiting", "needsAttention");
+        for (JsonNode notification : api("rhea.requester").get("/workspaces/{ws}/me/notifications?limit=100", PURCHASING)
+                .body().path("items")) {
+            if (runId.toString().equals(notification.path("runId").asString())) {
+                assertThat(notification.path("requestTitle").asString()).isEqualTo("Replacement laptop");
+            }
+        }
+    }
+
+    @Test
+    void workflowListSaysWhichDraftRevisionTheActiveReleaseWasPublishedFrom() throws Exception {
+        UUID id = publishPurchase(PURCHASING, null);
+        JsonNode published = api("dana.designer").get("/workspaces/{ws}/workflows/{id}", PURCHASING, id).body();
+        assertThat(published.path("activeRelease").path("draftRevision").asInt()).isEqualTo(2);
+        assertThat(published.path("draftRevision").asInt()).isEqualTo(2);
+        // editing the draft moves the draft revision on; the release keeps the revision it was published from
+        JsonNode draft = api("dana.designer").get("/workspaces/{ws}/workflows/{id}/draft", PURCHASING, id).body();
+        ObjectNode changed = (ObjectNode) draft.path("definition");
+        changed.put("name", "Purchase approval (changed)");
+        assertThat(api("dana.designer").put(Map.of("definition", changed), "\"r2\"",
+                "/workspaces/{ws}/workflows/{id}/draft", PURCHASING, id).status()).isEqualTo(200);
+        JsonNode list = api("dana.designer").get("/workspaces/{ws}/workflows?limit=100", PURCHASING).body();
+        JsonNode listed = null;
+        for (JsonNode item : list.path("items")) {
+            if (id.toString().equals(item.path("id").asString())) {
+                listed = item;
+            }
+        }
+        assertThat(listed).as("workflow listed").isNotNull();
+        assertThat(listed.path("draftRevision").asInt()).isEqualTo(3);
+        assertThat(listed.path("activeRelease").path("draftRevision").asInt()).isEqualTo(2);
+    }
+
+    private static JsonNode findRun(JsonNode page, UUID runId) {
+        for (JsonNode item : page.path("items")) {
+            if (runId.toString().equals(item.path("id").asString())) {
+                return item;
+            }
+        }
+        throw new AssertionError("run " + runId + " not listed");
+    }
+
+    private static String titleIn(JsonNode page, UUID runId) {
+        return findRun(page, runId).path("requestTitle").asString(null);
+    }
+
     private static List<String> strings(JsonNode page, String field) {
         return page.path("items").findValues(field).stream().map(JsonNode::asString).toList();
     }

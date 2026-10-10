@@ -12,7 +12,7 @@ import { addField, applyFields, fieldsFromDefinition, FIELD_KIND_LABELS, renameF
 import type { WorkflowNode } from '../model/types'
 import { Advanced, CommitInput, CommitNumber, CommitTextarea, InspectorSection } from './controls'
 
-const KIND_ORDER: FieldKind[] = ['text', 'longText', 'number', 'money', 'integer', 'yesNo', 'choice', 'collection']
+const KIND_ORDER: FieldKind[] = ['text', 'longText', 'number', 'money', 'integer', 'date', 'yesNo', 'choice', 'collection']
 
 /** Request form editor: an ordered list of questions (docs/build/S7-frontend.md section 5, inspector table). */
 export function StartInspector({ node }: { node: WorkflowNode }) {
@@ -213,6 +213,16 @@ function FieldCard({
             </FormField>
             <FormField label="Maximum" optionalText id={`${p}-max`}>
               {(ids) => <CommitNumber id={ids.input} value={f.maximum} disabled={readOnly} onCommit={(v) => onChange({ maximum: v })} />}
+            </FormField>
+          </div>
+        ) : null}
+        {f.kind === 'date' ? (
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label="Earliest date" optionalText id={`${p}-mindate`}>
+              {(ids) => <CommitInput id={ids.input} type="date" value={f.minDate ?? ''} max={f.maxDate} disabled={readOnly} onCommit={(v) => onChange({ minDate: v || undefined })} />}
+            </FormField>
+            <FormField label="Latest date" optionalText id={`${p}-maxdate`}>
+              {(ids) => <CommitInput id={ids.input} type="date" value={f.maxDate ?? ''} min={f.minDate} disabled={readOnly} onCommit={(v) => onChange({ maxDate: v || undefined })} />}
             </FormField>
           </div>
         ) : null}

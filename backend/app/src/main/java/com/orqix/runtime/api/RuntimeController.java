@@ -4,6 +4,7 @@ import java.net.URI;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -23,6 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.orqix.identity.Caller;
 import com.orqix.identity.CallerResolver;
 import com.orqix.identity.PolicyService;
+import com.orqix.identity.WorkspaceAccess;
 import com.orqix.notification.NotificationService;
 import com.orqix.runtime.internal.OperatorService;
 import com.orqix.runtime.internal.RunQueries;
@@ -199,15 +201,17 @@ public class RuntimeController {
             @RequestParam(defaultValue = "false") boolean unread, @RequestParam(required = false) String cursor,
             @RequestParam(required = false) Integer limit) {
         Caller caller = callers.current();
-        policy.requireMember(caller, workspaceId);
+        WorkspaceAccess access = policy.requireMember(caller, workspaceId);
         int size = Limits.of(limit);
         String filterKey = "listMyNotifications|" + workspaceId + "|" + caller.subjectId() + "|" + unread;
         List<NotificationService.NotificationRow> rows = notifications.list(workspaceId, caller.subjectId(), unread,
                 cursors.decode(cursor, filterKey), size + 1);
         Page.Result<NotificationService.NotificationRow> page = Page.of(rows, size,
                 n -> new CursorCodec.Position(n.createdAt(), n.id().toString()), cursors, filterKey);
+        Map<UUID, String> titles = runs.requestTitles(access, page.items().stream()
+                .map(NotificationService.NotificationRow::runId).filter(java.util.Objects::nonNull).distinct().toList());
         return new RuntimeDtos.NotificationPage(page.items().stream()
-                .map(n -> new RuntimeDtos.Notification(n.id(), n.runId(), n.runReference(), n.kind(), n.message(),
+                .map(n -> new RuntimeDtos.Notification(n.id(), n.runId(), n.runReference(), titles.get(n.runId()), n.kind(), n.message(),
                         n.createdAt(), n.readAt()))
                 .toList(), page.nextCursor(), notifications.unreadCount(workspaceId, caller.subjectId()));
     }

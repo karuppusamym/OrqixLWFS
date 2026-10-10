@@ -1,3 +1,4 @@
+import { formatCalendarDate } from '../dates'
 import { MONEY_PATTERN, formatUsd } from '../money'
 import type { FieldDef } from './schema'
 import { buildFields, type FormSchema, type FormUi } from './schema'
@@ -131,6 +132,12 @@ function messageFor(f: FieldDef, keyword: IssueKeyword, typedLength: number): st
       return formatMessage(f, '')
     case 'enum':
       return 'Choose one of the listed options.'
+    case 'format':
+      return 'Enter a valid date, for example 14 Oct 2026.'
+    case 'formatMinimum':
+      return `Choose a date on or after ${formatCalendarDate(s.formatMinimum)}.`
+    case 'formatMaximum':
+      return `Choose a date on or before ${formatCalendarDate(s.formatMaximum)}.`
     case 'minLength':
       return `Use at least ${s.minLength} character${s.minLength === 1 ? '' : 's'}.`
     case 'maxLength':

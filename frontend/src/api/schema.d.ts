@@ -1319,9 +1319,22 @@ export interface components {
                 input: {
                     [key: string]: unknown;
                 };
+                /** @description Request values in form order with their business labels */
+                fields?: {
+                    name: string;
+                    label: string;
+                    value: unknown;
+                    /** @description Readable form of the value when it differs from the stored one */
+                    display?: string;
+                }[];
             };
             runId?: components["schemas"]["Uuid"];
             taskId?: string;
+            /**
+             * @description Present once a task action is prepared and waiting for explicit confirmation
+             * @enum {string}
+             */
+            taskAction?: "claim" | "approve" | "reject";
         };
         /** Format: uuid */
         Uuid: string;
@@ -1449,6 +1462,8 @@ export interface components {
                 id: components["schemas"]["Uuid"];
                 releaseNumber: number;
                 publishedAt: components["schemas"]["Timestamp"];
+                /** @description The draft revision this release was published from; the workflow has unpublished changes when draftRevision (on the workflow) is greater */
+                draftRevision: number;
             };
             canStart: boolean;
             updatedAt: components["schemas"]["Timestamp"];
@@ -1614,6 +1629,8 @@ export interface components {
                 releaseNumber: number;
             };
             businessKey?: string | null;
+            /** @description What the request is about: the first text field of the request form (in form order), trimmed and cut to 120 characters, for list display. Null for a caller who may not read the request data (the rule of `input` on RunDetail: the initiator, a task participant, or run.read-data) and when the form has no text field. */
+            requestTitle?: string | null;
             initiator: components["schemas"]["SubjectRef"];
             lifecycle: components["schemas"]["Lifecycle"];
             /** @description Business outcome label from the end node */
@@ -1841,6 +1858,8 @@ export interface components {
             runId?: components["schemas"]["Uuid"] | null;
             /** @description Human request reference of runId, e.g. ORQ-1043 */
             runReference?: string | null;
+            /** @description Title of the request runId (see Run.requestTitle); null when the recipient may not read the request data */
+            requestTitle?: string | null;
             /** @enum {string} */
             kind: "workflowMessage" | "runAttention";
             message: string;
@@ -2216,11 +2235,22 @@ export interface components {
         };
         fieldKey: string;
         label: string;
+        /** @description A calendar date YYYY-MM-DD. The compiler also rejects dates that do not exist (WF_FORM_INVALID). */
+        calendarDate: string;
         scalarFormField: {
             /** @enum {unknown} */
             type: "string" | "number" | "integer" | "boolean";
             title: string;
             description?: string;
+            /**
+             * @description date: a calendar date written YYYY-MM-DD, without time or time zone. Only on type string.
+             * @constant
+             */
+            format?: "date";
+            /** @description Earliest allowed date (YYYY-MM-DD, inclusive). Only with format date. */
+            formatMinimum?: components["schemas"]["calendarDate"];
+            /** @description Latest allowed date (YYYY-MM-DD, inclusive). Only with format date. */
+            formatMaximum?: components["schemas"]["calendarDate"];
             enum?: string[];
             minLength?: number;
             maxLength?: number;
@@ -2253,7 +2283,7 @@ export interface components {
         decisionOutput: {
             [key: string]: components["schemas"]["literal"];
         };
-        /** @description Approved JSON Schema keyword subset for request/output forms. No pattern, format, $ref, nested objects, arrays or remote schemas in v0. */
+        /** @description Approved JSON Schema keyword subset for request/output forms. No pattern, $ref, format other than date, nested objects, arrays or remote schemas in v0. */
         formSchema: {
             /** @constant */
             type: "object";
@@ -2358,9 +2388,12 @@ export interface components {
             label?: unknown;
             /** @constant */
             type?: "wait";
-            /** @description Wait for a fixed time before the request continues. The timer runs on the job executor and survives restarts. */
+            /** @description Wait before the request continues: either for a fixed time (duration) or until a calendar date held in a date field (untilField, with an optional atTime, UTC). Exactly one of the two is required (compiler rule WF_WAIT_CHOICE). The timer runs on the job executor and survives restarts. */
             config?: {
-                duration: components["schemas"]["duration"];
+                duration?: components["schemas"]["duration"];
+                untilField?: components["schemas"]["fieldRef"];
+                /** @description Time of day (UTC, HH:mm, default 09:00) at which the wait ends on the date of untilField. */
+                atTime?: string;
             };
         } & components["schemas"]["nodeBase"];
         startWorkflowNode: {
@@ -2518,7 +2551,7 @@ export interface components {
                 /** @description Comparison/output literal. String literals are additionally restricted by compiler rule WF_LITERAL_UNSAFE. */
                 literal: string | number | boolean;
                 condition: unknown;
-                /** @description Approved JSON Schema keyword subset for request/output forms. No pattern, format, $ref, nested objects, arrays or remote schemas in v0. */
+                /** @description Approved JSON Schema keyword subset for request/output forms. No pattern, $ref, format other than date, nested objects, arrays or remote schemas in v0. */
                 formSchema: {
                     /** @constant */
                     type: "object";
@@ -2632,9 +2665,12 @@ export interface components {
                     label?: unknown;
                     /** @constant */
                     type?: "wait";
-                    /** @description Wait for a fixed time before the request continues. The timer runs on the job executor and survives restarts. */
+                    /** @description Wait before the request continues: either for a fixed time (duration) or until a calendar date held in a date field (untilField, with an optional atTime, UTC). Exactly one of the two is required (compiler rule WF_WAIT_CHOICE). The timer runs on the job executor and survives restarts. */
                     config?: {
-                        duration: components["schemas"]["duration"];
+                        duration?: components["schemas"]["duration"];
+                        untilField?: components["schemas"]["fieldRef"];
+                        /** @description Time of day (UTC, HH:mm, default 09:00) at which the wait ends on the date of untilField. */
+                        atTime?: string;
                     };
                 } & components["schemas"]["nodeBase"];
                 startWorkflowNode: {
@@ -2721,6 +2757,15 @@ export interface components {
                     type: "string" | "number" | "integer" | "boolean";
                     title: string;
                     description?: string;
+                    /**
+                     * @description date: a calendar date written YYYY-MM-DD, without time or time zone. Only on type string.
+                     * @constant
+                     */
+                    format?: "date";
+                    /** @description Earliest allowed date (YYYY-MM-DD, inclusive). Only with format date. */
+                    formatMinimum?: components["schemas"]["calendarDate"];
+                    /** @description Latest allowed date (YYYY-MM-DD, inclusive). Only with format date. */
+                    formatMaximum?: components["schemas"]["calendarDate"];
                     enum?: string[];
                     minLength?: number;
                     maxLength?: number;
@@ -2729,6 +2774,8 @@ export interface components {
                     /** @enum {unknown} */
                     multipleOf?: 0.01 | 1;
                 };
+                /** @description A calendar date YYYY-MM-DD. The compiler also rejects dates that do not exist (WF_FORM_INVALID). */
+                calendarDate: string;
                 arrayFormField: {
                     /** @constant */
                     type: "array";

@@ -129,8 +129,12 @@ public class RunService {
                                 + "\" for you, and you are not allowed to start that workflow."));
             }
         }
-        List<FormValidator.FieldError> errors = formValidator.validate(json.write(release.inputSchema()),
-                json.write(request.input()));
+        List<FormValidator.FieldError> errors = new java.util.ArrayList<>(formValidator.validate(
+                json.write(release.inputSchema()), json.write(request.input())));
+        if (errors.isEmpty()) {
+            // A "wait until a date" step cannot wait further than its horizon (S12 section 10).
+            errors.addAll(WaitDates.check(release.definition(), request.input(), WaitDates.today()));
+        }
         if (!errors.isEmpty()) {
             throw new ApiException(ProblemCode.VALIDATION_FAILED, "Some values are not valid.").withFieldErrors(
                     errors.stream().map(e -> new ApiException.FieldError("/input" + e.pointer(), e.code(), e.message()))
@@ -200,8 +204,52 @@ public class RunService {
         Page.Result<RunStore.RunRow> page = Page.of(rows, size,
                 r -> new CursorCodec.Position(r.createdAt(), r.id().toString()), cursors, filterKey);
         Map<UUID, String> names = views.names(page.items(), List.of(), List.of());
+        java.util.Set<UUID> titleVisible = dataVisibleRuns(access, page.items());
         return new RuntimeDtos.RunPage(page.items().stream()
-                .map(r -> views.run(r, names, access.workspace().isTest())).toList(), page.nextCursor());
+                .map(r -> views.run(r, names, access.workspace().isTest(), titleVisible.contains(r.id()))).toList(),
+                page.nextCursor());
+    }
+
+    /**
+     * The runs whose request data the caller may read (the rule of {@link RunAccess.Visible#dataVisible()}), for list
+     * views: run.read-data, the initiator, or a task participant, with a constant number of queries.
+     */
+    private java.util.Set<UUID> dataVisibleRuns(WorkspaceAccess access, List<RunStore.RunRow> rows) {
+        java.util.Set<UUID> visible = new java.util.HashSet<>();
+        if (access.has(Permission.RUN_READ_DATA)) {
+            rows.forEach(r -> visible.add(r.id()));
+            return visible;
+        }
+        List<RunStore.RunRow> others = new java.util.ArrayList<>();
+        for (RunStore.RunRow run : rows) {
+            if (run.initiator().equals(access.subjectId())) {
+                visible.add(run.id());
+            } else {
+                others.add(run);
+            }
+        }
+        visible.addAll(runAccess.participantRuns(access, others));
+        return visible;
+    }
+
+    /**
+     * Request titles of the given runs for a notification list: only for runs whose data the caller may read, absent
+     * otherwise.
+     */
+    @Transactional(readOnly = true)
+    public Map<UUID, String> requestTitles(WorkspaceAccess access, java.util.Collection<UUID> runIds) {
+        List<RunStore.RunRow> rows = runs.findAll(access.workspaceId(), runIds);
+        java.util.Set<UUID> visible = dataVisibleRuns(access, rows);
+        Map<UUID, String> titles = new java.util.HashMap<>();
+        for (RunStore.RunRow run : rows) {
+            if (visible.contains(run.id())) {
+                String title = RuntimeViews.requestTitle(run.input(), releases.require(run.workspaceId(), run.releaseId()));
+                if (title != null) {
+                    titles.put(run.id(), title);
+                }
+            }
+        }
+        return titles;
     }
 
     // ---------------------------------------------------------------- detail and timeline
@@ -254,8 +302,9 @@ public class RunService {
                 .map(e -> views.effect(e, label(release, e.nodeId()))).toList() : null;
         List<RuntimeDtos.Effect> reversedViews = notReversed.isEmpty() ? null : notReversed.stream()
                 .map(e -> views.effect(e, label(release, e.nodeId()))).toList();
-        RuntimeDtos.RunSummary summary = views.run(run, names, access.workspace().isTest());
+        RuntimeDtos.RunSummary summary = views.run(run, names, access.workspace().isTest(), data);
         return new RuntimeDtos.RunDetail(summary.id(), summary.reference(), summary.workflow(), summary.release(), summary.businessKey(),
+                summary.requestTitle(),
                 summary.initiator(), summary.lifecycle(), summary.outcome(), summary.outcomeKind(), summary.currentSteps(),
                 summary.attention(), summary.createdAt(), summary.updatedAt(), summary.endedAt(), summary.isTest(),
                 summary.version(), data ? run.input() : null, RuntimeViews.inputLabels(release),
@@ -294,7 +343,8 @@ public class RunService {
     }
 
     RuntimeDtos.RunSummary summary(RunStore.RunRow run, WorkspaceAccess access) {
-        return views.run(run, views.names(List.of(run), List.of(), List.of()), access.workspace().isTest());
+        // The caller started the run, so may read its request data.
+        return views.run(run, views.names(List.of(run), List.of(), List.of()), access.workspace().isTest(), true);
     }
 
     @SuppressWarnings("unused")

@@ -4,6 +4,7 @@ import { claim, decide, engineConfig, resumeTimers } from './engine'
 import { createAiHandlers } from '@/features/ai/mocks'
 import { createMigrationHandlers } from '@/features/migration/mocks'
 import { createHandlers, setCurrentUser } from './handlers'
+import { createConversationHandlers, resetConversations } from './conversation'
 import { seedDb } from './seed'
 import { db, restoreDb, snapshotDb, type ProcurementFault, userByName } from './state'
 import { setSignOutHandler } from '@/api/auth'
@@ -51,7 +52,7 @@ export async function startMock(): Promise<void> {
   resumeTimers()
 
   // In-page fetch interception (no service worker): works in every browser context, including embedded previews.
-  const handlers = [...createAiHandlers(), ...createMigrationHandlers(), ...createHandlers()]
+  const handlers = [...createAiHandlers(), ...createMigrationHandlers(), ...createConversationHandlers(), ...createHandlers()]
   const interceptor = new FetchInterceptor()
   interceptor.on('request', async ({ request, controller }) => {
     const response = await getResponse(handlers, request)
@@ -77,6 +78,7 @@ export async function startMock(): Promise<void> {
   window.__orqixMock = {
     reset(options) {
       seedDb(options ?? { demo: true })
+      resetConversations()
       db.latencyMs = 150
       persist()
     },
@@ -115,5 +117,6 @@ export async function startMock(): Promise<void> {
 export function resetMockData(): void {
   removeStorage(DB_KEY)
   removeStorage(PERSONA_KEY)
+  resetConversations()
   window.location.reload()
 }

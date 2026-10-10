@@ -96,6 +96,16 @@ public class TaskStore {
                 .param("ws", workspaceId).param("run", runId).query(TaskStore::map).list();
     }
 
+    /** Open tasks of several runs in one query (list views). */
+    @Transactional(readOnly = true)
+    public List<TaskRow> openForRuns(UUID workspaceId, java.util.Collection<UUID> runIds) {
+        if (runIds.isEmpty()) {
+            return List.of();
+        }
+        return jdbc.sql("SELECT " + COLUMNS + " FROM task_context WHERE workspace_id = :ws AND run_id IN (:ids) AND status = 'open'")
+                .param("ws", workspaceId).param("ids", runIds).query(TaskStore::map).list();
+    }
+
     /**
      * Compare-and-set on the task version (S3 section 6). Returns false when the version no longer matches.
      */

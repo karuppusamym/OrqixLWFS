@@ -213,10 +213,19 @@ public final class BpmnGenerator {
             case Node.Wait w -> {
                 x.open("", "intermediateCatchEvent", BPMN_NS).attr("id", w.id()).attr("name", w.label());
                 x.open("", "extensionElements", BPMN_NS);
-                x.leaf("orqix", "wait", ORQIX_NS).attr("duration", w.duration());
+                if (w.duration() != null) {
+                    x.leaf("orqix", "wait", ORQIX_NS).attr("duration", w.duration());
+                } else {
+                    x.leaf("orqix", "wait", ORQIX_NS).attr("untilField", w.untilField()).attr("atTime", w.time());
+                }
                 x.close();
                 x.open("", "timerEventDefinition", BPMN_NS);
-                x.inline("", "timeDuration", BPMN_NS, null, w.duration(), false);
+                if (w.duration() != null) {
+                    x.inline("", "timeDuration", BPMN_NS, null, w.duration(), false);
+                } else {
+                    // The due date is computed when the token arrives, from the date field (S12 section 10).
+                    x.inline("", "timeDate", BPMN_NS, null, "${orqixWait.until(execution, '" + w.id() + "')}", true);
+                }
                 x.close();
                 x.close();
             }

@@ -125,6 +125,7 @@ export function WorkflowOverviewPage() {
               <>
                 <p className="text-2xl font-semibold">Version {wf.activeRelease.releaseNumber}</p>
                 <p className="text-sm text-muted-foreground">Published {formatDateTime(wf.activeRelease.publishedAt)}</p>
+                {wf.draftRevision > wf.activeRelease.draftRevision ? <p className="mt-1 text-sm font-semibold text-warning-foreground">The draft has changes that are not published yet.</p> : null}
               </>
             ) : (
               <>

@@ -273,7 +273,8 @@ public final class FieldTypes {
      */
     public static String incompatibility(FieldType source, FieldKind targetKind, Set<String> targetEnum) {
         boolean kindOk = switch (targetKind) {
-            case STRING -> source.kind() == FieldKind.STRING;
+            case STRING -> source.kind() == FieldKind.STRING || (source.kind() == FieldKind.DATE && targetEnum == null);
+            case DATE -> source.kind() == FieldKind.DATE;
             case NUMBER -> source.kind().numeric();
             case INTEGER -> source.kind() == FieldKind.INTEGER;
             case BOOLEAN -> source.kind() == FieldKind.BOOLEAN;

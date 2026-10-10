@@ -67,11 +67,17 @@ public class RuntimeViews {
         return subjects.displayNames(ids);
     }
 
-    public RuntimeDtos.RunSummary run(RunStore.RunRow run, Map<UUID, String> names, boolean isTest) {
+    /**
+     * {@code titleVisible} is false for a caller who may not read the request data: the title is a field of that data,
+     * so it is withheld together with {@code input}.
+     */
+    public RuntimeDtos.RunSummary run(RunStore.RunRow run, Map<UUID, String> names, boolean isTest,
+            boolean titleVisible) {
         ReleaseQueries.ReleaseView release = releases.require(run.workspaceId(), run.releaseId());
         return new RuntimeDtos.RunSummary(run.id(), run.reference(),
                 new RuntimeDtos.WorkflowRef(run.workflowId(), release.workflowKey(), release.workflowName()),
                 new RuntimeDtos.ReleaseRef(release.id(), release.releaseNumber()), run.businessKey(),
+                titleVisible ? requestTitle(run.input(), release) : null,
                 subjects.ref(run.initiator(), names), run.lifecycle(), run.outcome(), run.outcomeKind(),
                 steps(run, names), attention(run.attention()), run.createdAt(), run.updatedAt(), run.endedAt(), isTest,
                 run.version(), parentRef(run));
@@ -181,13 +187,21 @@ public class RuntimeViews {
         return order;
     }
 
-    /** First text field of the request, in form order, for list display. */
+    /** The request title is cut to this many characters. */
+    public static final int REQUEST_TITLE_MAX = 120;
+
+    /** First non-blank free-text field (not a choice list or a date) of the request, in form order, trimmed and cut to 120 characters, for list display. */
     public static String requestTitle(JsonNode input, ReleaseQueries.ReleaseView release) {
         for (String field : fieldOrder(release)) {
             JsonNode schema = release.inputSchema().path("properties").path(field);
-            if ("string".equals(schema.path("type").asString(null)) && input.path(field).isString()) {
-                String value = input.path(field).asString();
-                return value.length() > 200 ? value.substring(0, 200) : value;
+            boolean plainText = "string".equals(schema.path("type").asString(null)) && schema.path("enum").isMissingNode()
+                    && schema.path("format").isMissingNode();
+            if (plainText && input.path(field).isString()) {
+                String value = input.path(field).asString().strip();
+                if (!value.isEmpty()) {
+                    return value.length() > REQUEST_TITLE_MAX ? value.substring(0, REQUEST_TITLE_MAX).stripTrailing()
+                            : value;
+                }
             }
         }
         return null;

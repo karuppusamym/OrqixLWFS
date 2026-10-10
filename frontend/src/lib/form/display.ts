@@ -1,3 +1,4 @@
+import { formatCalendarDate } from '../dates'
 import { formatNumber, formatUsd } from '../money'
 import type { FieldDef } from './schema'
 
@@ -6,6 +7,7 @@ export function displayJsonValue(field: FieldDef | undefined, value: unknown): s
   if (value === undefined || value === null || value === '') return '—'
   if (typeof value === 'boolean') return value ? 'Yes' : 'No'
   if (typeof value === 'number') return field?.isMoney ? formatUsd(value) : formatNumber(value)
+  if (typeof value === 'string' && field?.schema.format === 'date') return formatCalendarDate(value)
   if (typeof value === 'string') return field?.isMoney ? formatUsd(value) : value
   return JSON.stringify(value)
 }

@@ -1,6 +1,7 @@
 import type { Effect, Run, RunDetail, TaskDecision, TaskSummary } from '@/api/types'
 import { isAtomicCondition, type Condition, type Definition, type Literal, type WorkflowNode } from '@/features/studio/model/types'
 import { nodeById, outgoing } from '@/features/studio/model/graph'
+import { dateWaitDue } from './dateWait'
 import {
   WORKSPACES,
   clock,
@@ -172,7 +173,7 @@ export function resumeTimers(): void {
     const def = currentRelease(run).definition
     for (const [nodeId, w] of Object.entries(run.waits ?? {})) {
       const node = nodeById(def, nodeId)
-      if (node) engineConfig.schedule(() => fireWait(run, node), Math.max(0, new Date(w.dueAt).getTime() - clock.now().getTime()))
+      if (node) engineConfig.schedule(() => fireWait(run, node), Math.min(MOCK_TIMER_CAP_MS, Math.max(0, new Date(w.dueAt).getTime() - clock.now().getTime())))
     }
     for (const task of run.tasks.filter((t) => t.status === 'open')) {
       const node = nodeById(def, task.nodeId)
@@ -186,11 +187,17 @@ export function resumeTimers(): void {
 }
 
 function startWait(run: MockRun, node: WorkflowNode): void {
-  const ms = Math.min(durationMs(String(node.config.duration)) ?? 0, MOCK_TIMER_CAP_MS)
-  const dueAt = new Date(clock.now().getTime() + ms).toISOString()
+  const untilField = node.config.untilField as string | undefined
+  // Until a date: the real due moment is shown; a date in the past ends at once and, like every mock timer, a future
+  // date ends after a few seconds (S12 section 10).
+  const date = untilField ? resolveRef(run, untilField) : undefined
+  const due = typeof date === 'string' ? dateWaitDue(date, node.config.atTime as string | undefined) : null
+  const wanted = due ? Math.max(0, due.getTime() - clock.now().getTime()) : (durationMs(String(node.config.duration)) ?? 0)
+  const ms = Math.min(wanted, MOCK_TIMER_CAP_MS)
+  const dueAt = due ? due.toISOString() : new Date(clock.now().getTime() + ms).toISOString()
   run.waits = { ...(run.waits ?? {}), [node.id]: { dueAt } }
   run.lifecycle = 'waiting'
-  addEvent(run, 'WAIT_STARTED', { nodeId: node.id, data: { label: node.label, duration: node.config.duration, until: dueAt } })
+  addEvent(run, 'WAIT_STARTED', { nodeId: node.id, data: { label: node.label, duration: node.config.duration ?? null, until: dueAt } })
   engineConfig.schedule(() => fireWait(run, node), ms)
 }
 
@@ -615,7 +622,29 @@ export function cancelRun(run: MockRun, user: MockUser, reason: string, cascade 
 
 // Representations -----------------------------------------------------------------------------------
 
-export function toRun(run: MockRun): Run {
+/**
+ * What the request is about, like the server: the first text field of the form in form order (inputUi.order first),
+ * trimmed and cut to 120 characters. Null when the form has no text field.
+ */
+export function requestTitleOf(run: MockRun): string | null {
+  const rel = currentRelease(run)
+  const properties = rel.definition.inputSchema.properties
+  const preferred = (rel.definition.inputUi?.order ?? []).filter((k) => k in properties)
+  const order = [...preferred, ...Object.keys(properties).filter((k) => !preferred.includes(k))]
+  for (const field of order) {
+    const value = run.input[field]
+    if (properties[field]?.type === 'string' && !properties[field]?.enum && !properties[field]?.format && typeof value === 'string' && value.trim() !== '') return value.trim().slice(0, 120).trimEnd()
+  }
+  return null
+}
+
+/** The rule for request data (docs/build/S3-api.md section 3 rule 4): the initiator, a task participant, or run.read-data. */
+export function canSeeRunData(run: MockRun, user: MockUser): boolean {
+  const participant = run.tasks.some((t) => t.assigneeId === user.id || t.completedById === user.id || inGroup(user, t.candidateGroup))
+  return run.initiatorId === user.id || participant || permissionsOf(user, run.wsId).includes('run.read-data')
+}
+
+export function toRun(run: MockRun, user: MockUser): Run {
   const wf = db.workflows.get(run.workflowId) as MockWorkflow
   const rel = currentRelease(run)
   const initiator = userById(run.initiatorId)
@@ -642,17 +671,13 @@ export function toRun(run: MockRun): Run {
     const node = nodeById(rel.definition, run.pendingHttpNode)
     steps.push({ nodeId: run.pendingHttpNode, label: node?.label ?? run.pendingHttpNode, kind: 'http', since: run.attention?.since ?? run.updatedAt, candidateGroup: null, assignee: null, dueAt: null })
   }
-  const summary: Run & { requestTitle: string | null } = {
+  const summary: Run = {
     id: run.id,
     reference: run.reference ?? undefined,
     workflow: { id: wf.id, key: wf.key, name: wf.name },
     release: { id: rel.id, releaseNumber: rel.releaseNumber },
     businessKey: run.businessKey,
-    // Not in the contract yet: the first text field of the request, as task lists already carry (see runTitle in lib/runText.ts).
-    requestTitle: ((): string | null => {
-      const field = Object.entries(rel.definition.inputSchema.properties).find(([, f]) => f.type === 'string' && !f.enum)?.[0]
-      return field ? ((run.input[field] as string | undefined) ?? null) : null
-    })(),
+    requestTitle: canSeeRunData(run, user) ? requestTitleOf(run) : null,
     initiator: { id: run.initiatorId, displayName: initiator?.displayName ?? 'Unknown' },
     lifecycle: run.lifecycle,
     outcome: run.outcome,
@@ -678,7 +703,6 @@ export function toTaskSummary(run: MockRun, task: MockTask): TaskSummary {
   const initiator = userById(run.initiatorId)
   const groupName = task.candidateGroup === 'finance-approvers' ? 'Finance approvers' : task.candidateGroup.charAt(0).toUpperCase() + task.candidateGroup.slice(1).replace(/-/g, ' ')
   const wf = db.workflows.get(run.workflowId) as MockWorkflow
-  const titleField = Object.entries(currentRelease(run).definition.inputSchema.properties).find(([, f]) => f.type === 'string' && !f.enum)?.[0]
   return {
     id: task.id,
     runId: run.id,
@@ -687,7 +711,7 @@ export function toTaskSummary(run: MockRun, task: MockTask): TaskSummary {
     businessKey: run.businessKey,
     nodeId: task.nodeId,
     label: task.label,
-    requestTitle: titleField ? ((run.input[titleField] as string | undefined) ?? null) : null,
+    requestTitle: requestTitleOf(run),
     requester: { id: run.initiatorId, displayName: initiator?.displayName ?? 'Unknown' },
     candidateGroup: { key: task.candidateGroup as never, name: groupName },
     assignee: assignee ? { id: assignee.id, displayName: assignee.displayName } : null,
@@ -701,10 +725,9 @@ export function toTaskSummary(run: MockRun, task: MockTask): TaskSummary {
 
 /** Sections follow the caller's permissions (docs/build/S3-api.md section 3 rule 4). */
 export function toRunDetail(run: MockRun, user: MockUser): RunDetail {
-  const base = toRun(run)
+  const base = toRun(run, user)
   const perms = permissionsOf(user, run.wsId)
-  const participant = run.tasks.some((t) => t.assigneeId === user.id || t.completedById === user.id || inGroup(user, t.candidateGroup))
-  const canSeeData = run.initiatorId === user.id || participant || perms.includes('run.read-data')
+  const canSeeData = canSeeRunData(run, user)
   const operator = perms.includes('run.operate')
   const rel = currentRelease(run)
   const labels: Record<string, string> = {}

@@ -380,7 +380,7 @@ export function literalOf(text: string, type: 'string' | 'number' | 'integer' | 
 
 // Request form fields -----------------------------------------------------------------------------------------
 
-export type FieldKind = 'text' | 'longText' | 'number' | 'money' | 'integer' | 'yesNo' | 'choice' | 'collection'
+export type FieldKind = 'text' | 'longText' | 'number' | 'money' | 'integer' | 'date' | 'yesNo' | 'choice' | 'collection'
 
 export const FIELD_KIND_LABELS: Record<FieldKind, string> = {
   text: 'Text',
@@ -388,6 +388,7 @@ export const FIELD_KIND_LABELS: Record<FieldKind, string> = {
   number: 'Number',
   money: 'Money (USD)',
   integer: 'Whole number',
+  date: 'Date',
   yesNo: 'Yes/No',
   choice: 'Choice',
   collection: 'Collection',
@@ -404,6 +405,9 @@ export interface FormFieldModel {
   maximum?: number | undefined
   minLength?: number | undefined
   maxLength?: number | undefined
+  /** Earliest and latest date (YYYY-MM-DD) of a Date question. */
+  minDate?: string | undefined
+  maxDate?: string | undefined
   itemSchema?: Definition['inputSchema']['properties'][string] | undefined
   minItems?: number | undefined
   maxItems?: number | undefined
@@ -419,6 +423,7 @@ export function fieldsFromDefinition(def: Definition): FormFieldModel[] {
     let kind: FieldKind = 'text'
     if (f.type === 'array') kind = 'collection'
     else if (f.type === 'boolean') kind = 'yesNo'
+    else if (f.type === 'string' && f.format === 'date') kind = 'date'
     else if (f.enum && f.enum.length > 0) kind = 'choice'
     else if (f.type === 'integer') kind = 'integer'
     else if (f.type === 'number') kind = widget === 'money' || f.multipleOf === 0.01 ? 'money' : 'number'
@@ -434,6 +439,7 @@ export function fieldsFromDefinition(def: Definition): FormFieldModel[] {
       maximum: f.maximum,
       minLength: f.minLength,
       maxLength: f.maxLength,
+      minDate: f.formatMinimum, maxDate: f.formatMaximum,
       itemSchema: f.items, minItems: f.minItems, maxItems: f.maxItems,
     }
   })
@@ -481,6 +487,11 @@ export function applyFields(def: Definition, fields: FormFieldModel[]): Definiti
         if (f.minimum !== undefined) schema.minimum = f.minimum
         if (f.maximum !== undefined) schema.maximum = f.maximum
         widgets[f.key] = 'number'
+        break
+      case 'date':
+        schema.format = 'date'
+        if (f.minDate) schema.formatMinimum = f.minDate
+        if (f.maxDate) schema.formatMaximum = f.maxDate
         break
       case 'yesNo':
         schema.type = 'boolean'

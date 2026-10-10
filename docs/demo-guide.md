@@ -65,6 +65,11 @@ Full script: [S12 §10](build/S12-workflow-patterns.md).
 3. After the one-minute wait the run shows **Other requests started by this one**: a Purchase approval ORQ-n. Approve it as `mani.manager`; the parent timeline says it finished and the parent completes with the purchase order number.
 4. Variants: reject Facilities (the whole request ends and the IT task is cancelled); cancel the parent as `olga.operator` while the child waits (the child is cancelled); republish *Purchase approval* mid-run (the running parent keeps its pinned version).
 
+### Bonus: wait until a date, and the Assistant
+
+- **Wait until a date:** `examples/start-date-onboarding.json` waits until a start date the requester enters (a date question). The wait card reads "Until Start date, 09:00 UTC". Details in [S12 §10](build/S12-workflow-patterns.md).
+- **Assistant:** as `rhea.requester` open **Assistant** → *Start a request* → answer the questions (one at a time, Change a value on the review, Submit). As `mani.manager` open **Assistant** → *My tasks* → pick the request, read it, Approve, then Confirm. Nothing is recorded before the confirm step. Guide: [user guide](user-guide.md).
+
 ## Demo 5 — Camunda import
 
 1. As `dana.designer`: Workflows → **Import workflow** → upload `examples/migration/camunda7-purchase.bpmn`.

@@ -38,7 +38,7 @@ export function AccessPanel() {
 
   return (
     <div className="space-y-8">
-      <Alert tone="info">Access is shown here read only. In this release, changes are made through the API or by your platform team.</Alert>
+      <Alert tone="info">Access is shown here read only. For now, changes are made through the API or by your platform team.</Alert>
 
       <section aria-labelledby="roles-heading">
         <h2 id="roles-heading" className="mb-3">
@@ -46,7 +46,7 @@ export function AccessPanel() {
         </h2>
         <div className="overflow-hidden rounded-card border border-border bg-surface">
           <Table>
-            <caption className="sr-only">Role bindings</caption>
+            <caption className="sr-only">Who holds which role</caption>
             <THead>
               <TR>
                 <TH>Person or group</TH>

@@ -88,7 +88,8 @@ public final class RuntimeDtos {
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record RunDetail(UUID id, String reference, WorkflowRef workflow, ReleaseRef release,
-            @JsonInclude(JsonInclude.Include.ALWAYS) String businessKey, SubjectRef initiator, String lifecycle,
+            @JsonInclude(JsonInclude.Include.ALWAYS) String businessKey,
+            @JsonInclude(JsonInclude.Include.ALWAYS) String requestTitle, SubjectRef initiator, String lifecycle,
             @JsonInclude(JsonInclude.Include.ALWAYS) String outcome,
             @JsonInclude(JsonInclude.Include.ALWAYS) String outcomeKind, List<CurrentStep> currentSteps,
             @JsonInclude(JsonInclude.Include.ALWAYS) Attention attention, Instant createdAt, Instant updatedAt,
@@ -99,7 +100,8 @@ public final class RuntimeDtos {
             List<ChildRun> children) {
     }
 
-    public record RunSummary(UUID id, String reference, WorkflowRef workflow, ReleaseRef release, String businessKey, SubjectRef initiator,
+    public record RunSummary(UUID id, String reference, WorkflowRef workflow, ReleaseRef release, String businessKey,
+            String requestTitle, SubjectRef initiator,
             String lifecycle, String outcome, String outcomeKind, List<CurrentStep> currentSteps, Attention attention,
             Instant createdAt, Instant updatedAt, Instant endedAt, boolean isTest, int version, ParentRef parentRun) {
     }
@@ -160,7 +162,7 @@ public final class RuntimeDtos {
 
     // ------------------------------------------------------------------ notifications
 
-    public record Notification(UUID id, UUID runId, String runReference, String kind, String message, Instant createdAt, Instant readAt) {
+    public record Notification(UUID id, UUID runId, String runReference, String requestTitle, String kind, String message, Instant createdAt, Instant readAt) {
     }
 
     public record NotificationPage(List<Notification> items, String nextCursor, int unreadCount) {

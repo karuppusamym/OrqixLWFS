@@ -64,6 +64,24 @@ public class RunAccess {
         return false;
     }
 
+    /** The runs among {@code runs} the caller participates in, with a constant number of queries (list views). */
+    java.util.Set<UUID> participantRuns(WorkspaceAccess access, java.util.Collection<RunStore.RunRow> runs) {
+        if (runs.isEmpty()) {
+            return java.util.Set.of();
+        }
+        UUID workspaceId = runs.iterator().next().workspaceId();
+        java.util.List<UUID> ids = runs.stream().map(RunStore.RunRow::id).toList();
+        java.util.Set<UUID> result = taskQueries.heldOrDecidedAmong(workspaceId, ids, access.subjectId());
+        if (access.has(Permission.TASK_ACT)) {
+            for (TaskStore.TaskRow task : tasks.openForRuns(workspaceId, ids)) {
+                if (eligible(access, task)) {
+                    result.add(task.runId());
+                }
+            }
+        }
+        return result;
+    }
+
     /** Eligibility (S5 section 4): task.act, member of the candidate group, separation of duties. */
     public static boolean eligible(WorkspaceAccess access, TaskStore.TaskRow task) {
         return access.has(Permission.TASK_ACT) && access.groupKeys().contains(task.candidateGroupKey())

@@ -52,6 +52,10 @@ export interface FieldSchemaDoc {
   title: string
   description?: string
   enum?: string[]
+  /** `date` on a string field: a calendar date YYYY-MM-DD. */
+  format?: 'date'
+  formatMinimum?: string
+  formatMaximum?: string
   minLength?: number
   maxLength?: number
   minimum?: number

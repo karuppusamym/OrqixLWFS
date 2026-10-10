@@ -59,6 +59,41 @@ describe('studio (Steps tab, inspector, autosave, check, conflicts)', () => {
     expect(db.workflows.get(PURCHASE_WORKFLOW_ID)!.drafts.at(-1)!.definition.nodes.find((n) => n.id === 'manager')!.config.duration).toBe('PT30M')
   }, 30000)
 
+  it('switches a wait to "until a date", picks a date question and previews it in UTC', async () => {
+    signInAs('dana.designer')
+    const draft = db.workflows.get(PURCHASE_WORKFLOW_ID)!.drafts.at(-1)!.definition
+    draft.inputSchema.properties.startDate = { type: 'string', format: 'date', title: 'Start date' }
+    draft.inputSchema.required = [...(draft.inputSchema.required ?? []), 'startDate']
+    const node = draft.nodes.find((n) => n.id === 'manager')!
+    node.type = 'wait'
+    node.config = { duration: 'PT1H' }
+    const user = userEvent.setup()
+    renderApp(EDIT)
+    await openSteps(user)
+    await user.click(stepButton('manager'))
+    expect(await screen.findByLabelText(/^Wait duration/)).toBeInTheDocument()
+    await user.click(screen.getByRole('radio', { name: 'Until a date' }))
+    expect(screen.queryByLabelText(/^Wait duration/)).not.toBeInTheDocument()
+    // The first date question is chosen for you; the step row and the preview say so in plain language.
+    const field = await screen.findByLabelText(/^Date to wait until/)
+    expect(field).toHaveValue('/input/startDate')
+    expect(screen.getByTestId('date-wait-preview')).toHaveTextContent('Waits until the date in "Start date", at 09:00 UTC.')
+    expect(within(screen.getByTestId('step-row-manager')).getByText(/Until Start date, 09:00 UTC/)).toBeInTheDocument()
+    await user.type(screen.getByLabelText(/^Try a date/), '2026-10-14')
+    expect(screen.getByTestId('date-wait-preview')).toHaveTextContent('Waits until 14 Oct 2026, 09:00 UTC.')
+    const time = screen.getByLabelText(/^Time of day/)
+    await user.clear(time)
+    await user.type(time, '17:30')
+    await user.tab()
+    expect(screen.getByTestId('date-wait-preview')).toHaveTextContent('Waits until 14 Oct 2026, 17:30 UTC.')
+    await waitFor(() => expect(screen.getByTestId('save-state')).toHaveTextContent('Saved'), { timeout: 12000 })
+    const saved = db.workflows.get(PURCHASE_WORKFLOW_ID)!.drafts.at(-1)!.definition.nodes.find((n) => n.id === 'manager')!
+    expect(saved.config).toEqual({ untilField: '/input/startDate', atTime: '17:30' })
+    // Back to a duration removes the date settings.
+    await user.click(screen.getByRole('radio', { name: 'For a duration' }))
+    await waitFor(() => expect(db.workflows.get(PURCHASE_WORKFLOW_ID)!.drafts.at(-1)!.definition.nodes.find((n) => n.id === 'manager')!.config).toEqual({ duration: 'PT1H' }), { timeout: 12000 })
+  }, 40000)
+
   it('removes the timeout route when an approval time limit is cleared', async () => {
     signInAs('dana.designer')
     const draft = db.workflows.get(PURCHASE_WORKFLOW_ID)!.drafts.at(-1)!.definition

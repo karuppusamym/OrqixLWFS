@@ -4,6 +4,7 @@ import type { ReactElement } from 'react'
 import { createMemoryRouter, RouterProvider, type RouteObject } from 'react-router'
 import { Providers } from '@/app/providers'
 import { routes } from '@/app/routes'
+import { resetConversations } from '@/mocks/conversation'
 import { setCurrentUser } from '@/mocks/handlers'
 import { seedDb, type SeedOptions } from '@/mocks/seed'
 import { db, WS_PURCHASING } from '@/mocks/state'
@@ -15,6 +16,7 @@ export function testQueryClient(): QueryClient {
 /** Reset the mock backend and choose who is signed in. */
 export function signInAs(username: string, options?: SeedOptions): void {
   seedDb(options)
+  resetConversations()
   db.latencyMs = 0
   setCurrentUser(username)
 }

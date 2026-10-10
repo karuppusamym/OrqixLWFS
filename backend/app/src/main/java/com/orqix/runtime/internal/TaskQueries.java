@@ -153,6 +153,20 @@ public class TaskQueries {
                 .param("ws", workspaceId).param("run", runId).param("s", subject).query(Boolean.class).single();
     }
 
+    /** The runs among {@code runIds} for which {@link #heldOrDecided} is true, in one query. */
+    @Transactional(readOnly = true)
+    public java.util.Set<UUID> heldOrDecidedAmong(UUID workspaceId, java.util.Collection<UUID> runIds, UUID subject) {
+        if (runIds.isEmpty()) {
+            return java.util.Set.of();
+        }
+        return new java.util.HashSet<>(jdbc.sql("""
+                SELECT run_id FROM task_context WHERE workspace_id = :ws AND run_id IN (:ids) AND assignee_subject_id = :s
+                UNION
+                SELECT run_id FROM task_decision WHERE workspace_id = :ws AND run_id IN (:ids) AND actor_subject_id = :s
+                """)
+                .param("ws", workspaceId).param("ids", runIds).param("s", subject).query(UUID.class).list());
+    }
+
     @Transactional(propagation = Propagation.MANDATORY)
     public UUID insertDecision(UUID workspaceId, String taskId, UUID runId, String nodeId, UUID actor, String action,
             String reason, String comment, List<String> policyFlags, java.time.Instant decidedAt) {

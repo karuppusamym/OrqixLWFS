@@ -109,7 +109,9 @@ public final class Enums {
 
     /** Scalar field types of forms, request/response schemas and step outputs. */
     public enum FieldKind {
-        STRING("text"), NUMBER("a number"), INTEGER("a whole number"), BOOLEAN("true or false"), ARRAY("a list");
+        STRING("text"), NUMBER("a number"), INTEGER("a whole number"), BOOLEAN("true or false"), ARRAY("a list"),
+        /** A calendar date: JSON {@code type: string, format: date}, written YYYY-MM-DD (S12 section 10). */
+        DATE("a date");
 
         private final String description;
 
@@ -128,6 +130,11 @@ public final class Enums {
 
         public boolean numeric() {
             return this == NUMBER || this == INTEGER;
+        }
+
+        /** @return DATE for a string with {@code format: date}, otherwise as {@link #fromJson(String)} */
+        public static FieldKind fromJson(String type, String format) {
+            return "string".equals(type) && "date".equals(format) ? DATE : fromJson(type);
         }
 
         /** @return the kind, or null when the text is not a scalar type */

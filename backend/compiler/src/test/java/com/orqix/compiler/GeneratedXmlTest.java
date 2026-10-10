@@ -37,7 +37,8 @@ class GeneratedXmlTest {
     private static final Pattern ALLOWED = Pattern.compile(
             "\\$\\{orqixRoute\\.(approved|rejected|condition)\\(execution, '[A-Za-z][A-Za-z0-9_-]{0,63}'\\)\\}"
                     + "|\\$\\{orqixDecisionTask\\}|\\$\\{orqixHttpTask\\}|\\$\\{orqixNotificationTask\\}"
-                    + "|\\$\\{orqixChildTask\\}");
+                    + "|\\$\\{orqixChildTask\\}"
+                    + "|\\$\\{orqixWait\\.until\\(execution, '[A-Za-z][A-Za-z0-9_-]{0,63}'\\)\\}");
 
     static String everythingJson() throws IOException {
         try (InputStream in = GeneratedXmlTest.class.getResourceAsStream("/workflows/everything.json")) {
@@ -50,6 +51,8 @@ class GeneratedXmlTest {
         list.add(Compilers.workflowCompiler().compile(TestSupport.purchaseJson(), TestSupport.defaultContext()));
         list.add(Compilers.workflowCompiler().compile(everythingJson(), TestSupport.defaultContext()));
         list.add(Compilers.workflowCompiler().compile(TestSupport.onboardingJson(), TestSupport.onboardingContext()));
+        list.add(Compilers.workflowCompiler().compile(TestSupport.read("examples/start-date-onboarding.json"),
+                TestSupport.defaultContext()));
         for (CompilerCasesTest.Case c : CompilerCasesTest.cases()) {
             if (Compilers.workflowCompiler().validate(c.definition(), c.context()).publishable()) {
                 list.add(Compilers.workflowCompiler().compile(c.definition(), c.context()));

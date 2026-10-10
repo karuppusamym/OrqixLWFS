@@ -1,10 +1,15 @@
 package com.orqix.compiler.internal.eval;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
+import java.time.format.TextStyle;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 import com.orqix.compiler.FormValidator;
 import com.orqix.compiler.internal.json.JsonPointers;
@@ -14,13 +19,15 @@ import tools.jackson.databind.JsonNode;
 
 /**
  * Request input validation against the approved form keyword subset (type, required, enum, minLength, maxLength,
- * minimum, maximum, multipleOf, additionalProperties) with exact {@link BigDecimal} arithmetic. Types are strict: the
+ * minimum, maximum, multipleOf, additionalProperties, and for {@code format: date} the calendar date with
+ * formatMinimum and formatMaximum) with exact {@link BigDecimal} arithmetic. Types are strict: the
  * string {@code "1800"} is not a number. One error per failed keyword; a field with the wrong type reports only the
  * type error. Errors are ordered by pointer, then code.
  */
 public final class DefaultFormValidator implements FormValidator {
 
     private static final BigDecimal CENT = new BigDecimal("0.01");
+    private static final Pattern DATE = Pattern.compile("^[0-9]{4}-[0-9]{2}-[0-9]{2}$");
 
     @Override
     public List<FieldError> validate(String inputSchemaJson, String inputJson) {
@@ -93,6 +100,10 @@ public final class DefaultFormValidator implements FormValidator {
                 errors.add(new FieldError(pointer, "maxItems", "Enter at most " + schema.path("maxItems").asInt(25) + " items."));
             for (int i = 0; i < value.size(); i++) field(pointer + "/" + i, schema.path("items"), value.get(i), errors);
         }
+        if (value.isString() && "date".equals(schema.path("format").stringValue(""))) {
+            date(pointer, schema, value.stringValue(), errors);
+            return;
+        }
         if (value.isString()) {
             String text = value.stringValue();
             if (schema.has("enum")) {
@@ -133,6 +144,39 @@ public final class DefaultFormValidator implements FormValidator {
                 }
             }
         }
+    }
+
+    /** Calendar dates: YYYY-MM-DD, a day that exists, within formatMinimum and formatMaximum (inclusive). */
+    private static void date(String pointer, JsonNode schema, String text, List<FieldError> errors) {
+        LocalDate date = parseDate(text);
+        if (date == null) {
+            errors.add(new FieldError(pointer, "format", "Enter a date in the form YYYY-MM-DD."));
+            return;
+        }
+        LocalDate min = parseDate(schema.path("formatMinimum").stringValue(null));
+        LocalDate max = parseDate(schema.path("formatMaximum").stringValue(null));
+        if (min != null && date.isBefore(min)) {
+            errors.add(new FieldError(pointer, "formatMinimum", "Choose a date on or after " + show(min) + "."));
+        }
+        if (max != null && date.isAfter(max)) {
+            errors.add(new FieldError(pointer, "formatMaximum", "Choose a date on or before " + show(max) + "."));
+        }
+    }
+
+    private static LocalDate parseDate(String text) {
+        if (text == null || !DATE.matcher(text).matches()) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(text);
+        } catch (DateTimeParseException e) {
+            return null;
+        }
+    }
+
+    private static String show(LocalDate date) {
+        return date.getDayOfMonth() + " " + date.getMonth().getDisplayName(TextStyle.SHORT, Locale.ENGLISH) + " "
+                + date.getYear();
     }
 
     private static boolean integral(BigDecimal value) {

@@ -1,11 +1,14 @@
+import { useState } from 'react'
 import { useRelease, useWorkflows } from '@/api/queries'
 import { FormField } from '@/components/common/FormField'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Select } from '@/components/ui/input'
+import { Input, Select } from '@/components/ui/input'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Label } from '@/components/ui/label'
 import { useStudio, useStudioContext } from '../StudioContext'
 import { availableFields, chipLabel } from '../model/fieldRefs'
+import { DEFAULT_WAIT_TIME, WAIT_HORIZON_DAYS, dateWaitPreview } from '../model/summary'
 import { cfg, normalizeDefinition, type WorkflowNode } from '../model/types'
 import { Advanced, CommitInput, DurationPreview, InspectorSection } from './controls'
 import { StepIdField } from './SimpleInspectors'
@@ -25,13 +28,58 @@ export function ParallelInspector({ node }: { node: WorkflowNode }) {
   </>
 }
 
+/** Wait: for a length of time, or until a date taken from a Date question or an earlier step (S12 section 10). */
 export function WaitInspector({ node }: { node: WorkflowNode }) {
-  const { store, readOnly } = useStudioContext()
+  const { store, readOnly, connections } = useStudioContext()
+  const def = useStudio((s) => s.definition)
+  const [sample, setSample] = useState('')
+  const untilField = cfg<string>(node, 'untilField')
+  const mode = untilField !== undefined ? 'date' : 'duration'
+  const patch = (p: Record<string, unknown>) => store.getState().updateNodeConfig(node.id, p)
+  const dateFields = availableFields(def, node.id, connections).filter((f) => f.type === 'date')
+  const chosen = dateFields.find((f) => f.ref === untilField)
+  const time = cfg<string>(node, 'atTime') ?? DEFAULT_WAIT_TIME
+  const choose = (next: string) => {
+    if (next === mode) return
+    if (next === 'date') patch({ duration: undefined, untilField: dateFields[0]?.ref ?? '', atTime: undefined })
+    else patch({ duration: 'PT1H', untilField: undefined, atTime: undefined })
+  }
   return <>
-    <FormField label="Wait duration" required id={`wait-duration-${node.id}`} description="Use a duration such as PT30M (30 minutes), PT2H (2 hours), or P1D (1 day).">
-      {(ids) => <CommitInput id={ids.input} value={cfg<string>(node, 'duration') ?? ''} disabled={readOnly} aria-describedby={ids.describedBy} onCommit={(duration) => store.getState().updateNodeConfig(node.id, { duration: duration.trim() })} />}
-    </FormField>
-    <DurationPreview text={cfg<string>(node, 'duration') ?? ''} verb="waits" />
+    <fieldset className="space-y-2">
+      <legend className="text-sm font-semibold">What does it wait for?</legend>
+      <RadioGroup value={mode} onValueChange={choose} disabled={readOnly} aria-label="What does it wait for?">
+        <div className="flex items-center gap-3">
+          <RadioGroupItem value="duration" id={`wait-mode-duration-${node.id}`} />
+          <Label htmlFor={`wait-mode-duration-${node.id}`} className="font-medium">For a duration</Label>
+        </div>
+        <div className="flex items-center gap-3">
+          <RadioGroupItem value="date" id={`wait-mode-date-${node.id}`} />
+          <Label htmlFor={`wait-mode-date-${node.id}`} className="font-medium">Until a date</Label>
+        </div>
+      </RadioGroup>
+    </fieldset>
+    {mode === 'duration' ? <>
+      <FormField label="Wait duration" required id={`wait-duration-${node.id}`} description="Use a duration such as PT30M (30 minutes), PT2H (2 hours), or P1D (1 day).">
+        {(ids) => <CommitInput id={ids.input} value={cfg<string>(node, 'duration') ?? ''} disabled={readOnly} aria-describedby={ids.describedBy} onCommit={(duration) => patch({ duration: duration.trim() })} />}
+      </FormField>
+      <DurationPreview text={cfg<string>(node, 'duration') ?? ''} verb="waits" />
+    </> : <>
+      <FormField label="Date to wait until" required id={`wait-field-${node.id}`} description="A Date question of the request form, or a date from an earlier step. If the date has already passed, the request continues at once.">
+        {(ids) => <Select id={ids.input} value={untilField ?? ''} disabled={readOnly} aria-describedby={ids.describedBy} onChange={(e) => patch({ untilField: e.target.value })}>
+          <option value="">Choose a date</option>
+          {untilField && !chosen ? <option value={untilField}>{untilField} (not a date question)</option> : null}
+          {dateFields.map((f) => <option key={f.ref} value={f.ref}>{chipLabel(f)}</option>)}
+        </Select>}
+      </FormField>
+      {dateFields.length === 0 ? <p className="text-sm text-muted-foreground">There is no date to choose yet. Add a question of type Date to the request form first.</p> : null}
+      <FormField label="Time of day (UTC)" id={`wait-time-${node.id}`} description="The wait ends at this time on that date. Times are in UTC.">
+        {(ids) => <CommitInput id={ids.input} type="time" value={time} disabled={readOnly} aria-describedby={ids.describedBy} onCommit={(v) => patch({ atTime: v && v !== DEFAULT_WAIT_TIME ? v : undefined })} />}
+      </FormField>
+      <FormField label="Try a date" optionalText id={`wait-sample-${node.id}`} description={`Only for this preview. Dates more than ${WAIT_HORIZON_DAYS} days ahead are not accepted when a request starts.`}>
+        {(ids) => <Input id={ids.input} type="date" value={sample} onChange={(e) => setSample(e.target.value)} aria-describedby={ids.describedBy} />}
+      </FormField>
+      <p role="status" data-testid="date-wait-preview" className="text-sm text-muted-foreground">{dateWaitPreview(chosen?.label, time, sample)}</p>
+    </>}
     <Advanced><StepIdField node={node} /></Advanced>
   </>
 }
@@ -54,7 +102,7 @@ export function ChildInspector({ node }: { node: WorkflowNode }) {
   const patch = (p: Record<string, unknown>) => store.getState().updateNodeConfig(node.id, p)
   return <>
     <InspectorSection title="Workflow">
-      <FormField label="Published workflow" required id={`child-workflow-${node.id}`} description="Publishing pins its current release. A later child release does not change this published workflow.">
+      <FormField label="Published workflow" required id={`child-workflow-${node.id}`} description="Publishing fixes the version used today. Later versions of the child workflow do not change this workflow.">
         {(ids) => <Select id={ids.input} value={ref} disabled={readOnly} onChange={(e) => patch({ workflowRef: e.target.value, inputMapping: {}, resultMapping: {} })}>
           <option value="">Choose a workflow</option>
           {ref && !child ? <option value={ref}>{ref} (not loaded or not published)</option> : null}
@@ -150,7 +198,7 @@ export function ChildInspector({ node }: { node: WorkflowNode }) {
             patch({ inputMapping: next })
           }}>
             <option value="">Choose a value</option>
-            {fields.filter((f) => f.type === field.type || (field.type === 'number' && f.type === 'integer')).map((f) => <option key={f.ref} value={f.ref}>{chipLabel(f)}</option>)}
+            {fields.filter((f) => f.type === (field.format === 'date' ? 'date' : field.type) || (field.type === 'number' && f.type === 'integer') || (field.type === 'string' && !field.format && !field.enum && f.type === 'date')).map((f) => <option key={f.ref} value={f.ref}>{chipLabel(f)}</option>)}
           </Select>}
         </FormField>)}
       </InspectorSection>

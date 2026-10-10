@@ -11,6 +11,17 @@ const dateTime = new Intl.DateTimeFormat('en-GB', {
   minute: '2-digit',
 })
 
+const utcDateTime = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'UTC',
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+})
+const utcDate = new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC', day: 'numeric', month: 'short', year: 'numeric' })
+
 function toDate(value: string | number | Date | null | undefined): Date | null {
   if (value === null || value === undefined || value === '') return null
   const d = value instanceof Date ? value : new Date(value)
@@ -39,6 +50,27 @@ export function formatTime(value: string | Date | null | undefined): string {
 export function formatDateTime(value: string | Date | null | undefined): string {
   const d = toDate(value)
   return d ? dateTime.format(d) : ''
+}
+
+/** "14 Oct 2026, 09:00 UTC": a moment shown in UTC, as "wait until a date" steps end at a UTC time (S12 section 10). */
+export function formatUtcDateTime(value: string | Date | null | undefined): string {
+  const d = toDate(value)
+  return d ? `${utcDateTime.format(d).replace(' at ', ', ')} UTC` : ''
+}
+
+const CALENDAR_DATE = /^(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/
+
+/** True for a real calendar date written YYYY-MM-DD (no 30 February). */
+export function isCalendarDate(text: unknown): text is string {
+  if (typeof text !== 'string' || !CALENDAR_DATE.test(text)) return false
+  const d = new Date(`${text}T00:00:00Z`)
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === text
+}
+
+/** "14 Oct 2026" for a calendar date YYYY-MM-DD (no time zone involved); anything else is returned as typed. */
+export function formatCalendarDate(text: string | null | undefined): string {
+  if (!isCalendarDate(text)) return text ?? ''
+  return utcDate.format(new Date(`${text}T00:00:00Z`))
 }
 
 /** Short relative text: "just now", "5 minutes ago", "3 hours ago", "2 days ago", otherwise the date. */

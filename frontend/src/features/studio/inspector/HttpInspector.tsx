@@ -36,7 +36,7 @@ interface OperationDoc {
 }
 
 function compatible(source: FieldInfo['type'], target: ScalarSchema['type']): boolean {
-  if (target === 'string') return source === 'string'
+  if (target === 'string') return source === 'string' || source === 'date'
   if (target === 'boolean') return source === 'boolean'
   if (target === 'integer') return source === 'integer'
   return source === 'number' || source === 'integer'

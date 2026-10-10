@@ -288,7 +288,8 @@ public class WorkflowService {
 
     private CatalogDtos.WorkflowView summary(CatalogStore.WorkflowRow row, WorkspaceAccess access, Map<UUID, String> names) {
         CatalogDtos.ActiveReleaseRef active = row.activeReleaseId() == null ? null
-                : new CatalogDtos.ActiveReleaseRef(row.activeReleaseId(), row.activeReleaseNumber(), row.activePublishedAt());
+                : new CatalogDtos.ActiveReleaseRef(row.activeReleaseId(), row.activeReleaseNumber(), row.activePublishedAt(),
+                        row.activeDraftRevision());
         return new CatalogDtos.WorkflowView(row.id(), row.key(), row.name(), row.description(),
                 subjects.ref(row.owner(), names), row.draftRevision(), active, canStart(access, row), row.updatedAt(),
                 null, null, null);

@@ -55,6 +55,7 @@ export function NotificationsMenu({ buttonClassName }: { buttonClassName?: strin
                   <span className="mt-0.5 block text-xs text-muted-foreground">
                     {n.runReference ? <span className="font-semibold tabular-nums">{n.runReference}</span> : null}
                     {n.runReference ? ' · ' : ''}
+                    {n.requestTitle ? <>{n.requestTitle} &middot; </> : null}
                     {n.kind === 'runAttention' ? 'Needs attention · ' : ''}
                     <RelativeTime value={n.createdAt} />
                   </span>

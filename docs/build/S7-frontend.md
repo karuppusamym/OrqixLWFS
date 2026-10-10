@@ -97,7 +97,8 @@ Header: `Workspace / Workflows / {name}`, "Draft revision {n}", save state (Savi
 
 | Step | Basic | Advanced |
 |---|---|---|
-| Request form (start) | Field list: label, type (Text, Long text, Number, Money (USD), Whole number, Yes/No, Choice), required, help text, choices; reorder | Field key (auto camelCase from label), min/max, length limits |
+| Request form (start) | Field list: label, type (Text, Long text, Number, Money (USD), Whole number, Date, Yes/No, Choice), required, help text, choices; reorder | Field key (auto camelCase from label), min/max, length limits, earliest and latest date (Date) |
+| Wait | **For a duration** (ISO duration with a plain-language reading) or **Until a date** (a Date question or guaranteed earlier date, time of day in UTC, "Try a date" preview: "Waits until 14 Oct 2026, 09:00 UTC.") | Step ID |
 | Ask for approval | Assign to (group picker from `listGroups`), due after (hours, labelled "shown as a due date; no reminder is sent"), "Reason required when rejecting" (locked on) | Step ID |
 | Make a decision | Input field (chips "Request → Amount"), rows: operator (is / at least / less than) + value → outputs; *Otherwise* outputs; **Test this rule** (sample value → `evaluateDecision`) | Table key, version |
 | Choose a path | Routes: field, operator, value, label; which route is Otherwise | — |

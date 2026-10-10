@@ -66,7 +66,7 @@ Testing a whole workflow means publishing and running it in a test workspace. An
 
 **Workflows → New workflow → Describe it** creates a draft in the background when AI is enabled. You can close the dialog and keep working; the workspace notice offers **Open draft** when it is ready. Review every step and the AI's assumptions before publishing. If generation fails, the notice explains the reason and you can submit again.
 
-The studio palette also includes **Run in parallel**, **Wait for all**, **Wait** and **Start another workflow**. Connect every parallel branch to its matching **Wait for all** step. A rejection ends the request and cancels other open branches. **Wait** accepts durations such as `PT30M` or `P1D`.
+The studio palette also includes **Run in parallel**, **Wait for all**, **Wait** and **Start another workflow**. Connect every parallel branch to its matching **Wait for all** step. A rejection ends the request and cancels other open branches. **Wait** has two forms: **For a duration** (`PT30M`, `P1D`) and **Until a date**, which waits until the date the requester entered in a **Date** question (for example "Start date") at a time of day you choose, 09:00 by default. Times are always UTC; the inspector shows "Waits until 14 Oct 2026, 09:00 UTC." for a date you try. If the date has already passed the request continues at once; a date more than a year (366 days) ahead is refused on the form. The date question must be required.
 
 An approval's **Time limit** cancels the task and follows its **Timed out** route; connect that route to another approval to escalate. **Due after** only displays a due date. **Start another workflow** uses a published workflow in the same workspace, maps its request and result values, and waits for completion. Publishing pins the child version. Cancelling a parent cancels its active child requests. Loops and bounded rework remain future features.
 
@@ -115,15 +115,23 @@ Every operator action asks for a reason and is recorded. Operators cannot change
 
 ## Request collections and comments
 
-Collection questions let requesters add or remove bounded scalar items. The form validates each item's type and constraints plus the configured count; the studio supports collection questions with text, number, whole-number or Yes/No items (1 to 25). Published child for-each steps process these values sequentially or in parallel according to their pinned contract; collected result lists retain input order.
+Collection questions let requesters add or remove bounded scalar items. The form validates each item's type and constraints plus the configured count; the studio supports collection questions with text, number, whole-number or Yes/No items (1 to 25). A **Date** question shows a date picker and stores a calendar date without a time zone; you can set an earliest and a latest date. Published child for-each steps process these values sequentially or in parallel according to their pinned contract; collected result lists retain input order.
 
 People allowed to see request data can read permanent comments on the request page. The initiator, task participants and operators can add comments. Comments are plain text, limited to 2,000 characters, retain their author/time, and cannot be edited or deleted through the application. Summary-only visibility does not expose comments. A failed save retains your text and retries use the same idempotency key.
 
-## Starting requests in a conversation
+## Using the Assistant
 
-Open **Assistant** in your workspace. Choose **workflows**, then a workflow, or enter `start Purchase approval`. Answer each question; optional questions can be skipped. Invalid answers leave the current question open. Review the collected answers and select **Submit request**. A request is created only after confirmation. Reloading resumes your current conversation.
+The **Assistant** (in the left menu) is a guided way to do three things: start a request, decide a task that is waiting for you, and check on a request. It asks one question at a time, shows you the details, and does nothing until you confirm. It uses the same permissions as the normal screens, so you can only start, approve or reject what you could already start, approve or reject there.
 
-Use `fieldName=value` to change an answer before submission. **My tasks** lists work available to you; `approve taskId`, `claim taskId` and `reject taskId: reason` prepare an action for your confirmation. **Discard proposed action** clears the proposal. Use `status ORQ-1001` to check a request you can view. These are guided commands; unrestricted language interpretation is not part of this release.
+**Start a request.** Choose **Start a request**, then the request type (for example Purchase approval). Answer each question in the answer box and press Enter. Where the answer is a choice (such as a cost center) or Yes/No, buttons appear as shortcuts. For a list, separate the items with commas, for example `Laptop, Monitor`. Numbers can include thousands separators (1,250.50). Date questions ask for year-month-day, for example 2026-10-14, and the review shows them as, for example, 14 October 2026. Optional questions have a **Skip this question** button. If an answer is not valid, the same question stays open with a hint. You can also describe what you need in your own words, for example "I need a laptop"; if your organization has set up an AI service, your message and the names of the request types you can use are sent to it only to find the right request type. You always review before anything is submitted.
+
+**Review and submit.** The review lists your answers with their question names. Use **Change** beside a value to correct it, then choose **Submit request**. Nothing is submitted until you do. **Discard this draft** clears it without submitting. If you press Submit twice or your connection drops, the request is still created only once.
+
+**Decide a task.** Choose **My tasks**, then a task. The Assistant first shows you the request details. Choose **Approve**, or **Reject** and say why (a reason is required). You are then asked to confirm; only **Confirm approval** or **Confirm rejection** records the decision. **Go back** or **Leave this task alone** records nothing. If someone else decides the task first, you are told and nothing is recorded for you.
+
+**Check a request.** Choose **My requests**, then a request, for its current status, or open it for details.
+
+Your last conversation is remembered for this browser session, so reloading the page continues where you were; **New conversation** starts over. A conversation that has expired or was changed in another tab shows a message with a button to reload or start again. Keyboard: after each answer focus moves to the next place you act, Enter sends, Shift+Enter adds a line, and new replies are announced to screen readers.
 
 ## Document references and repeated work
 

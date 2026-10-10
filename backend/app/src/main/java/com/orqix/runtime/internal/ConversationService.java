@@ -147,7 +147,7 @@ public class ConversationService {
     private ObjectNode view(Session s) {
         ObjectNode result=json.object();
         result.put("id",s.id().toString()).put("version",s.version());
-        for (String k:List.of("stage","message","choices","field","review","runId","taskId")) {
+        for (String k:List.of("stage","message","choices","field","review","runId","taskId","taskAction")) {
             JsonNode value=s.state().get(k);
             if (value!=null) result.set(k,value);
         }
@@ -158,20 +158,25 @@ public class ConversationService {
             ConversationIntentService.Interpretation interpretation) {
         String lower=text.toLowerCase(Locale.ROOT);
         if (lower.equals("cancel") || lower.equals("reset")) {
-            state.removeAll();state.put("stage","idle").put("message","Draft cleared. Say start followed by a workflow name, my tasks, my requests, or status followed by a request reference.");return;
+            state.removeAll();state.put("stage","idle").put("message","Nothing was changed and the draft is cleared. Say Start a request, My tasks or My requests when you are ready.");return;
         }
         if (lower.equals("confirm") || lower.equals("submit")) { confirm(caller,ws,state,key);return; }
         if (lower.equals("my tasks")) {
-            state.removeAll();state.put("stage","idle").put("message","Choose an available task to review. Approving or claiming asks for confirmation.");
+            state.removeAll();
             var choices=state.putArray("choices");
+            Set<String> seen=new HashSet<>();
             for(String tab:List.of("assigned","claimable")) for(var task:tasks.listTasks(caller,ws,tab,null,25).items())
-                choices.addObject().put("label",task.runReference()+" - "+task.label()).put("command","approve "+task.id());
+                if(seen.add(task.id())) choices.addObject().put("label",taskLabel(task.runReference(),task.requestTitle(),task.label())).put("command","review "+task.id());
+            state.put("stage","idle").put("message",choices.isEmpty()?"You have no tasks waiting for you right now."
+                    :"These tasks are waiting for you. Choose one to see the request before you decide.");
             return;
         }
         if (lower.equals("my requests")) {
-            state.removeAll();state.put("stage","idle").put("message","Your latest requests:");var choices=state.putArray("choices");
+            state.removeAll();var choices=state.putArray("choices");
             for(var run:runs.listMyRequests(caller,ws,null,null,25).items())
-                choices.addObject().put("label",run.reference()+" - "+run.lifecycle()).put("command","status "+run.reference());
+                choices.addObject().put("label",run.reference()+" - "+(run.requestTitle()==null||run.requestTitle().isBlank()?"":run.requestTitle()+" - ")+lifecycleWords(run.lifecycle())).put("command","status "+run.reference());
+            state.put("stage","idle").put("message",choices.isEmpty()?"You have not made any requests yet. Choose Start a request to begin one."
+                    :"Your latest requests. Choose one to see where it stands.");
             return;
         }
         if (lower.startsWith("status ")) {
@@ -181,9 +186,10 @@ public class ConversationService {
                         .param("ws",ws).param("ref",ref.toUpperCase(Locale.ROOT)).query(UUID.class).optional().orElseThrow(ApiException::notFound);
             else runId=uuid(ref);
             var run=runs.getRun(caller,ws,runId);
-            state.removeAll();state.put("stage","completed").put("runId",run.id().toString()).put("message",run.reference()+" is "+run.lifecycle()
-                    +(run.outcome()==null?"":" - "+run.outcome())+(run.attention()==null?"":". "+run.attention().message()));return;
+            state.removeAll();state.put("stage","completed").put("runId",run.id().toString()).put("message",run.reference()+(run.requestTitle()==null||run.requestTitle().isBlank()?"":" ("+run.requestTitle()+")")+" is "+lifecycleWords(run.lifecycle())
+                    +(run.outcome()==null?"":" ("+run.outcome()+")")+"."+(run.attention()==null?"":" "+run.attention().message()));return;
         }
+        if (lower.startsWith("review ")) { reviewTask(caller,ws,state,text.substring(7).trim());return; }
         if (lower.startsWith("approve ") || lower.startsWith("reject ") || lower.startsWith("claim ")) {
             task(caller,ws,state,text);return;
         }
@@ -195,7 +201,7 @@ public class ConversationService {
                     .filter(w->w.key().equalsIgnoreCase(query)||w.name().equalsIgnoreCase(query)).toList();
             var candidates=exact.isEmpty()?page:exact;
             if(query!=null && candidates.size()==1) { begin(caller,ws,state,candidates.getFirst().id());return; }
-            state.removeAll();state.put("stage","idle").put("message",candidates.isEmpty()?"No published workflow you can start matched. Try workflows to see available choices.":"Choose a published workflow:");
+            state.removeAll();state.put("stage","idle").put("message",candidates.isEmpty()?"I could not find a request type you can start with that name. Choose Start a request to see what is available.":(query==null?"What would you like to request?":"Which of these did you mean?"));
             var choices=state.putArray("choices");for(var w:candidates) choices.addObject().put("label",w.name()).put("command","start "+w.key());
             return;
         }
@@ -220,7 +226,15 @@ public class ConversationService {
             }
             return;
         }
-        state.put("stage","idle").put("message","Say start followed by a workflow name, workflows, my tasks, my requests, or status followed by a request reference. Commands are guided and do not need an AI provider.");
+        if (state.path("stage").asString().equals("confirmingTask")) {
+            state.put("message","Choose Approve or Reject below. Nothing is recorded until you confirm, and Discard leaves the task untouched.");
+            return;
+        }
+        state.removeAll();state.put("stage","idle").put("message","I can help you start a request, decide a task that is waiting for you, or check on a request you made. Choose one below, or type what you want, for example Start Purchase approval.");
+        var menu=state.putArray("choices");
+        menu.addObject().put("label","Start a request").put("command","workflows");
+        menu.addObject().put("label","My tasks").put("command","my tasks");
+        menu.addObject().put("label","My requests").put("command","my requests");
     }
     private void begin(Caller caller,UUID ws,ObjectNode state,UUID workflow) {
         begin(caller, ws, state, workflow, null);
@@ -262,19 +276,35 @@ public class ConversationService {
         if(equal>0 && state.path("schema").path("properties").has(text.substring(0,equal).trim())) {
             name=text.substring(0,equal).trim();raw=text.substring(equal+1).trim();
         }
-        if(name==null) { state.put("message","To edit a value, send fieldName=value. Send confirm to submit the reviewed request.");return; }
+        if(name==null) { state.put("message","To change a value, use the Change button beside it. To submit the request as shown, choose Submit request or say confirm.");return; }
         JsonNode schema=state.path("schema").path("properties").path(name);
         boolean required=false;for(JsonNode n:state.path("schema").path("required"))if(name.equals(n.asString()))required=true;
         if(raw.equalsIgnoreCase("skip") && !required) { ((ObjectNode)state.path("input")).remove(name); ((tools.jackson.databind.node.ArrayNode)state.path("skipped")).add(name);ask(state);return; }
         JsonNode value;
+        for(JsonNode option:schema.path("enum")) if(option.isString() && option.asString().equalsIgnoreCase(raw)) raw=option.asString();
         try { value=scalar(schema,raw); }
-        catch(IllegalArgumentException ex) { state.put("message","Enter a valid "+schema.path("type").asString()+" for "+schema.path("title").asString(name)+".");return; }
+        catch(RuntimeException ex) { state.put("message",invalid(schema,name));return; }
         ObjectNode one=json.object().put("type","object").put("additionalProperties",false);
         one.putObject("properties").set(name,schema);one.putArray("required").add(name);
         ObjectNode answer=json.object();answer.set(name,value);
         var errors=forms.validate(json.write(one),json.write(answer));
-        if(!errors.isEmpty()) { state.put("message",errors.getFirst().message());return; }
+        if(!errors.isEmpty()) {
+            state.put("message","format".equals(errors.getFirst().code())&&"date".equals(schema.path("format").asString(""))
+                    ?invalid(schema,name):errors.getFirst().message());return;
+        }
         ((ObjectNode)state.path("input")).set(name,value);ask(state);
+    }
+    private static final String DATE_HINT="Enter the date as year-month-day, for example 2026-10-14.";
+    private static final java.time.format.DateTimeFormatter READABLE_DATE=java.time.format.DateTimeFormatter.ofPattern("d MMMM yyyy",Locale.ENGLISH);
+    private String invalid(JsonNode schema,String name) {
+        String title=schema.path("title").asString(name);
+        if("date".equals(schema.path("format").asString("")))return "Please enter "+title+" as year-month-day, for example 2026-10-14.";
+        return switch(schema.path("type").asString()) {
+            case "number","integer" -> "Please enter "+title+" as a number, for example 1500 or 1,500.50.";
+            case "boolean" -> "Please answer yes or no for "+title+".";
+            case "array" -> "Please list the items for "+title+" separated by commas, for example Laptop, Monitor.";
+            default -> "That answer is not valid for "+title+". Please try again.";
+        };
     }
     private JsonNode scalar(JsonNode schema,String raw) {
         return switch(schema.path("type").asString()) {
@@ -286,9 +316,22 @@ public class ConversationService {
                 if(!Set.of("true","false","yes","no").contains(raw.toLowerCase(Locale.ROOT)))throw new IllegalArgumentException();
                 yield json.parse(raw.equalsIgnoreCase("true")||raw.equalsIgnoreCase("yes")?"true":"false");
             }
-            case "array" -> json.parse(raw);
+            case "array" -> list(schema,raw);
             default -> json.mapper().valueToTree(raw);
         };
+    }
+    /** A list is a JSON array or, more naturally, comma-separated items such as Laptop, Monitor. */
+    private JsonNode list(JsonNode schema,String raw) {
+        if(raw.startsWith("[")) return json.parse(raw);
+        String itemType=schema.path("items").path("type").asString("string");
+        if(itemType.equals("object")||itemType.equals("array")) throw new IllegalArgumentException();
+        var array=json.mapper().createArrayNode();
+        for(String part:raw.split("[,\n]")) {
+            String item=part.trim();
+            if(item.isEmpty())continue;
+            array.add(scalar(schema.path("items"),item));
+        }
+        return array;
     }
     private void ask(ObjectNode state) {
         Set<String> skipped=new HashSet<>();for(JsonNode n:state.path("skipped"))skipped.add(n.asString());
@@ -299,39 +342,99 @@ public class ConversationService {
             ObjectNode field=json.object().put("name",name);schema.properties().forEach(e->field.set(e.getKey(),e.getValue()));
             boolean required=false;for(JsonNode n:state.path("schema").path("required"))if(name.equals(n.asString()))required=true;
             field.put("required",required);state.set("field",field);state.remove("review");
-            state.put("stage","collecting").put("message","What is "+schema.path("title").asString(name)+"?"+(required?"":" You can say skip."));return;
+            String title=schema.path("title").asString(name);
+            String question=title.endsWith("?")?title:"What is "+title+"?";
+            if("date".equals(schema.path("format").asString("")))question+=" "+DATE_HINT;
+            state.put("stage","collecting").put("message",question);return;
         }
-        state.remove("field");state.put("stage","review").put("message","Review "+state.path("workflowName").asString()+". Send confirm to submit, fieldName=value to edit, or cancel to discard.");
+        state.remove("field");state.put("stage","review").put("message","Review "+state.path("workflowName").asString()+". Check the details below. Nothing is submitted until you confirm; you can change a value first or discard the draft.");
         ObjectNode review=state.putObject("review");review.put("workflowName",state.path("workflowName").asString());review.set("input",state.path("input"));
+        review.set("fields",fields(state.path("schema"),state.path("order"),state.path("input")));
+    }
+    /** Labelled values in form order, so a person never sees internal field names. */
+    private tools.jackson.databind.node.ArrayNode fields(JsonNode schema,JsonNode order,JsonNode input) {
+        var result=json.mapper().createArrayNode();
+        Set<String> names=new LinkedHashSet<>();
+        for(JsonNode n:order)names.add(n.asString());
+        input.properties().forEach(e->names.add(e.getKey()));
+        for(String name:names) {
+            if(!input.has(name))continue;
+            JsonNode property=schema.path("properties").path(name);
+            ObjectNode row=result.addObject();
+            row.put("name",name).put("label",property.path("title").asString(name)).set("value",input.get(name));
+            if(input.get(name).isString()&&"date".equals(property.path("format").asString(""))) {
+                try { row.put("display",java.time.LocalDate.parse(input.get(name).asString()).format(READABLE_DATE)); }
+                catch(java.time.format.DateTimeParseException ignored) { /* shown as typed */ }
+            }
+        }
+        return result;
+    }
+    private static String lifecycleWords(String lifecycle) {
+        return switch(lifecycle) {
+            case "running"->"in progress";
+            case "waiting"->"waiting for a decision";
+            case "needsAttention"->"needs attention";
+            case "completed"->"finished";
+            case "cancelled"->"cancelled";
+            default->lifecycle;
+        };
+    }
+    private static String taskLabel(String reference,String requestTitle,String label) {
+        return reference+" - "+(requestTitle==null||requestTitle.isBlank()?label:requestTitle+" ("+label+")");
+    }
+    private void reviewTask(Caller caller,UUID ws,ObjectNode state,String taskId) {
+        if(!Pattern.matches("[A-Za-z0-9_-]{1,128}",taskId))throw ApiException.malformed("Choose a task from My tasks.");
+        var detail=tasks.getTask(caller,ws,taskId);
+        if(!detail.allowedActions().claim().allowed() && !detail.allowedActions().decide().allowed())throw ApiException.forbidden();
+        state.removeAll();state.put("stage","confirmingTask").put("taskId",taskId).put("taskVersion",detail.version());
+        taskReview(state,detail);
+        state.put("message","Review "+detail.runReference()+(detail.requestTitle()==null?"":" - "+detail.requestTitle())
+                +". Nothing is recorded until you approve or reject and then confirm.");
+        state.putArray("choices").addObject().put("label","Approve").put("command","approve "+taskId);
+    }
+    private void taskReview(ObjectNode state,RuntimeDtos.TaskDetail detail) {
+        ObjectNode review=state.putObject("review");
+        review.put("workflowName",detail.runReference()+(detail.requestTitle()==null?"":" - "+detail.requestTitle()));
+        JsonNode input=detail.request()==null||detail.request().input()==null||!detail.request().input().isObject()?json.object():detail.request().input();
+        review.set("input",input);
+        JsonNode schema=detail.request()==null||detail.request().inputSchema()==null?json.object():detail.request().inputSchema();
+        JsonNode order=detail.request()==null||detail.request().inputUi()==null?json.mapper().createArrayNode():detail.request().inputUi().path("order");
+        review.set("fields",fields(schema,order,input));
     }
     private void task(Caller caller,UUID ws,ObjectNode state,String text) {
         int space=text.indexOf(' ');String action=text.substring(0,space).toLowerCase(Locale.ROOT),rest=text.substring(space+1).trim();
         int colon=rest.indexOf(':');String taskId=colon<0?rest:rest.substring(0,colon).trim(),reason=colon<0?null:rest.substring(colon+1).trim();
-        if(!Pattern.matches("[A-Za-z0-9_-]{1,128}",taskId))throw ApiException.malformed("Use the task identifier shown in My tasks.");
+        if(!Pattern.matches("[A-Za-z0-9_-]{1,128}",taskId))throw ApiException.malformed("Choose a task from My tasks.");
         var detail=tasks.getTask(caller,ws,taskId);
         if(!detail.allowedActions().claim().allowed() && !detail.allowedActions().decide().allowed())throw ApiException.forbidden();
         state.removeAll();state.put("stage","confirmingTask").put("taskId",taskId).put("taskAction",action)
-                .put("taskVersion",detail.version());if(reason!=null)state.put("reason",reason);
-        state.put("message","Confirm "+action+" for "+detail.runReference()+" - "+detail.label()+"."
-                +(action.equals("reject")&&reason==null?" Supply a reason with reject taskId: reason before confirming.":" Send confirm to proceed or cancel to discard."));
+                .put("taskVersion",detail.version());if(reason!=null&&!reason.isBlank())state.put("reason",reason);
+        taskReview(state,detail);
+        String what=detail.runReference()+(detail.requestTitle()==null?"":" - "+detail.requestTitle());
+        String verb=switch(action){case "approve"->"approve";case "reject"->"reject";default->"take";};
+        state.put("message",action.equals("reject")&&reason==null
+                ?"A reason is required to reject "+what+". Tell the requester what to change."
+                :"You are about to "+verb+" "+what+(reason==null?"":" because: "+reason)+". Nothing is recorded until you confirm.");
     }
     private void confirm(Caller caller,UUID ws,ObjectNode state,String key) {
         if(state.path("stage").asString().equals("review")) {
             var result=runs.start(caller,ws,key,new RuntimeDtos.StartRunRequest(uuid(state.path("workflowId").asString()),
                     uuid(state.path("releaseId").asString()),null,state.path("input")));
-            state.removeAll();state.put("stage","completed").put("runId",result.run().id().toString()).put("message","Submitted "+result.run().reference()+". You can follow its progress or start another request.");return;
+            state.removeAll();state.put("stage","completed").put("runId",result.run().id().toString()).put("message","Submitted "+result.run().reference()+(result.run().requestTitle()==null||result.run().requestTitle().isBlank()?"":" ("+result.run().requestTitle()+")")+". You can follow its progress or start another request.");return;
         }
         if(state.path("stage").asString().equals("confirmingTask")) {
-            String id=state.path("taskId").asString(),action=state.path("taskAction").asString();
+            String id=state.path("taskId").asString(),action=state.path("taskAction").asString("");
             String reason=state.path("reason").asString(null);
-            if(action.equals("reject") && (reason==null||reason.isBlank())) {state.put("message","A rejection requires a reason. Send reject "+id+": your reason.");return;}
+            if(action.isEmpty()) {state.put("message","Choose Approve or Reject first, then confirm.");return;}
+            if(action.equals("reject") && (reason==null||reason.isBlank())) {state.put("message","A reason is required to reject. Tell the requester what to change.");return;}
             var task=tasks.getTask(caller,ws,id);
             if(task.version()!=state.path("taskVersion").asInt())throw new ApiException(ProblemCode.TASK_VERSION_CONFLICT).with("currentVersion",task.version());
             if(task.allowedActions().claim().allowed())task=tasks.claim(caller,ws,id,task.version());
             if(!action.equals("claim"))tasks.decide(caller,ws,id,key,new RuntimeDtos.DecisionRequest(task.version(),action,reason,null));
-            state.removeAll();state.put("stage","completed").put("taskId",id).put("message",action.equals("claim")?"Task claimed.":"Decision recorded.");return;
+            state.removeAll();state.put("stage","completed").put("taskId",id).put("message",action.equals("claim")?"You took "+task.runReference()+".":
+                    "You "+(action.equals("approve")?"approved ":"rejected ")+task.runReference()+".");return;
         }
-        state.put("message","There is no reviewed action to confirm. Start a request or choose a task first.");
+        state.put("message","There is nothing to confirm yet. Start a request or choose a task first.");
     }
     private static UUID uuid(String value) {try{return UUID.fromString(value);}catch(RuntimeException ex){throw ApiException.malformed("Invalid identifier.");}}
 }

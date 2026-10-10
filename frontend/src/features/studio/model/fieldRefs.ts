@@ -2,7 +2,8 @@ import { humanize } from '@/lib/text'
 import { guaranteedBefore, nodeById } from './graph'
 import { conditionTerms, type Definition, type Literal, type WorkflowNode } from './types'
 
-export type FieldType = 'string' | 'number' | 'integer' | 'boolean' | 'array'
+/** `date` is a string field with format date: a calendar date YYYY-MM-DD. */
+export type FieldType = 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'date'
 
 export interface FieldInfo {
   /** Structured reference stored in the document, e.g. /input/amount or /steps/manager/decision. Never an expression. */
@@ -47,7 +48,7 @@ function inputFields(def: Definition): FieldInfo[] {
       ref: `/input/${key}`,
       label: field?.title || humanize(key),
       group: REQUEST_GROUP,
-      type: field?.type ?? 'string',
+      type: field?.format === 'date' && field.type === 'string' ? 'date' : (field?.type ?? 'string'),
       ...(field?.enum ? { enumValues: field.enum } : {}),
     }
   })

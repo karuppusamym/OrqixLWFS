@@ -38,7 +38,7 @@ Graphs are acyclic in v0. Any node may have several incoming transitions (simple
 
 | Source | Type |
 |---|---|
-| `/input/<k>` | From `inputSchema.properties.k`: `string` (with `enum` → finite string domain), `number`, `integer`, `boolean` |
+| `/input/<k>` | From `inputSchema.properties.k`: `string` (with `enum` → finite string domain), `number`, `integer`, `boolean`, `date` (a `string` with `format: date`: a calendar date `YYYY-MM-DD`; usable by a wait and as a text or date mapping source, not in comparisons) |
 | `/steps/<approval>/decision` | string, domain {approved, rejected} |
 | `/steps/<approval>/reason`, `comment`, `decidedBy`, `decidedAt` | string (reason/comment may be absent) |
 | `/steps/<decision>/<k>` | Type shared by every row and the default for key `k`; for strings the domain is the set of literal values |
@@ -85,7 +85,7 @@ Severity **B** = blocker (cannot publish), **W** = warning (publish requires `ac
 |---|---|---|
 | `WF_FIELDREF_UNKNOWN` | B | Referenced input field, step or output key does not exist |
 | `WF_FIELDREF_NOT_GUARANTEED` | B | §4 rule 1 |
-| `WF_OPERATOR_TYPE` | B | `gte`/`lt` on a non-numeric field |
+| `WF_OPERATOR_TYPE` | B | `gte`/`lt` on a non-numeric field; any comparison of a date field |
 | `WF_LITERAL_TYPE` | B | Literal type differs from field type |
 | `WF_LITERAL_NOT_IN_DOMAIN` | B | `eq` against a value the field can never hold (enum or decision output domain) |
 | `WF_LITERAL_UNSAFE` | B | §3 literal safety |
@@ -99,7 +99,10 @@ Severity **B** = blocker (cannot publish), **W** = warning (publish requires `ac
 | `WF_DECISION_UNUSED` | W | Table not referenced by any decision node |
 | `WF_BRANCH_MIXED_FIELDS` | B | All condition routes of a branch test the same `fieldRef` |
 | `WF_BRANCH_OVERLAP` | B | Conditions of one branch must be pairwise disjoint |
-| `WF_FORM_INVALID` | B | `required` names unknown fields; min > max; keyword not valid for the field type (e.g. `enum` on number, `multipleOf: 0.01` on integer) |
+| `WF_FORM_INVALID` | B | `required` names unknown fields; min > max; keyword not valid for the field type (e.g. `enum` on number, `multipleOf: 0.01` on integer); a date question whose `formatMinimum`/`formatMaximum` is not a real day or whose earliest date is after its latest |
+| `WF_WAIT_CHOICE` | B | A wait has exactly one of `duration` and `untilField` |
+| `WF_WAIT_FIELD_TYPE` | B | `untilField` must name a date field |
+| `WF_WAIT_FIELD_OPTIONAL` | B | A request-form date used by a wait must be required |
 | `WF_UI_UNKNOWN_FIELD` | W | `inputUi` names a field that does not exist |
 | `WF_UI_WIDGET_MISMATCH` | W | Widget incompatible with type (`money` needs number with `multipleOf: 0.01`; `select`/`radio` need `enum`; `checkbox` needs boolean) |
 | `WF_OUTPUT_MAPPING_UNKNOWN` | B | `outputMapping` key not in `outputSchema`, or incompatible type |
@@ -154,9 +157,10 @@ Namespaces: `bpmn` = `http://www.omg.org/spec/BPMN/20100524/MODEL`, `flowable` =
 |---|---|
 | `${orqixRoute.approved(execution, '<id>')}` / `${orqixRoute.rejected(execution, '<id>')}` | Approval outcome routing |
 | `${orqixRoute.condition(execution, '<transitionId>')}` | Branch condition (structured condition read from the flow's `orqix:condition`) |
-| `${orqixDecisionTask}`, `${orqixHttpTask}`, `${orqixNotificationTask}` | Delegate expressions |
+| `${orqixWait.until(execution, '<id>')}` | Due moment of a "wait until a date" step (`timeDate` of its timer; S12 section 10) |
+| `${orqixDecisionTask}`, `${orqixHttpTask}`, `${orqixNotificationTask}`, `${orqixChildTask}` | Delegate expressions |
 
-The engine is configured with an explicit expression bean map containing only `orqixRoute`, `orqixDecisionTask`, `orqixHttpTask` and `orqixNotificationTask` (Flowable `beans` property), so no other Spring bean is reachable from any expression (verified in spike S-2).
+The engine is configured with an explicit expression bean map containing only `orqixRoute`, `orqixWait`, `orqixDecisionTask`, `orqixHttpTask`, `orqixNotificationTask` and `orqixChildTask` (Flowable `beans` property), so no other Spring bean is reachable from any expression (verified in spike S-2).
 
 Templates (purchase example; whitespace normative only for golden files):
 
@@ -267,6 +271,8 @@ Input-entry syntax per operator: `gte` → `>= n`, `lt` → `< n`, `eq` number �
 Orqix data is stored as JSON **text** and parsed only by Orqix code configured with `BigDecimal` for floats, so Flowable's JSON variable mapper can never change money precision. Generated expressions never read these variables directly.
 
 ## 9. Source map, hashes, determinism
+
+*Note (S12 section 10):* waits until a date add the `timeDate` construct and the `orqixWait` expression to the BPMN. They are produced only for definitions that earlier compilers rejected, so no existing artifact changed and `compilerVersion` stays `0.2.0` for now; a release process that wants every new construct to carry a new version bumps it to `0.3.0` together with all golden files.
 
 - **Source map:** `nodes` (canonical id → BPMN ids), `transitions` (canonical id → flow ids), `bpmnToCanonical` (reverse). Generated helpers map back to their owning node, so runtime events on `manager__route` display as "Review request".
 - **Hashes:** `sourceHash` = SHA-256 of the RFC 8785 (JCS) form of the full definition; `semanticHash` = same without `uiLayout`; `bpmnHash`, `dmnHashes` = SHA-256 of the exact bytes deployed.

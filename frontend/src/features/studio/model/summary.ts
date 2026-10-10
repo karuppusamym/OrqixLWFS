@@ -1,3 +1,4 @@
+import { formatCalendarDate, isCalendarDate } from '@/lib/dates'
 import { chipFor, fieldInfo, type ConnectionLookup } from './fieldRefs'
 import { nodeById } from './graph'
 import { KINDS, ROUTE_LABEL } from './kinds'
@@ -66,12 +67,35 @@ export function nodeSubtitle(def: Definition, node: WorkflowNode, groupNames: Re
     case 'parallelJoin':
       return 'Continue when all branches finish'
     case 'wait':
-      return (c.duration as string) || 'No duration chosen'
+      return waitSummary(def, c)
     case 'startWorkflow':
       return (c.workflowRef as string) || 'No workflow chosen'
     case 'end':
-      return `${(c.businessOutcome as string) || 'No outcome'}${c.outcomeKind === 'rejected' ? ' (rejected)' : ''}`
+      return endSubtitle((c.businessOutcome as string) || 'No outcome', c.outcomeKind === 'rejected')
   }
+}
+
+/** "Finish · Rejected": the outcome name, plus "Rejected" only when the name does not already say so. */
+function endSubtitle(outcome: string, rejected: boolean): string {
+  return `Finish · ${outcome}${rejected && !/reject/i.test(outcome) ? ' · Rejected' : ''}`
+}
+
+/** Time of day (UTC) at which a "wait until a date" step ends when none is chosen (S12 section 10). */
+export const DEFAULT_WAIT_TIME = '09:00'
+/** The latest date a wait may be asked to wait for: one year from today. */
+export const WAIT_HORIZON_DAYS = 366
+
+/** "Waits until 14 Oct 2026, 09:00 UTC." for a chosen date, otherwise a description of the rule. */
+export function dateWaitPreview(label: string | undefined, time: string, date?: string): string {
+  const at = `${time || DEFAULT_WAIT_TIME} UTC`
+  if (date && isCalendarDate(date)) return `Waits until ${formatCalendarDate(date)}, ${at}.`
+  return `Waits until the date in "${label ?? 'the chosen question'}", at ${at}.`
+}
+
+function waitSummary(def: Definition, c: Record<string, unknown>): string {
+  const until = c.untilField as string | undefined
+  if (until) return `Until ${fieldInfo(def, until)?.label ?? 'a date'}, ${(c.atTime as string) || DEFAULT_WAIT_TIME} UTC`
+  return (c.duration as string) || 'No duration chosen'
 }
 
 /** Accessible name of a node, e.g. "Approval: Review request, 2 issues". */

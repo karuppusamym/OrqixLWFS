@@ -164,6 +164,9 @@ function FieldControl({
                 ) : null}
               </>
             )
+          case 'date':
+            // A native date input: it shows the browser's own calendar, and its value is always YYYY-MM-DD.
+            return <Input {...common} type="date" value={text} min={f.schema.formatMinimum} max={f.schema.formatMaximum} onChange={(e) => onChange(e.target.value)} />
           case 'select':
             return (
               <Select {...common} value={text} onChange={(e) => onChange(e.target.value)}>

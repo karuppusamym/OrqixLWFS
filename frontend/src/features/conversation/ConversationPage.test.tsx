@@ -45,7 +45,7 @@ describe('guided conversation execution', () => {
     sessionStorage.setItem(`orqix.conversation:${WS}:${subject}`, ID)
     const bodies: ConversationMessage[] = []
     server.use(
-      http.get('/api/v1/workspaces/:ws/conversations/:id', () => HttpResponse.json(reply({ version: 7, stage: 'confirmingTask', message: 'Confirm rejection of Review purchase.', taskId: 'task-one' }))),
+      http.get('/api/v1/workspaces/:ws/conversations/:id', () => HttpResponse.json(reply({ version: 7, stage: 'confirmingTask', message: 'You are about to approve ORQ-1001.', taskId: 'task-one', taskAction: 'approve' }))),
       http.post(endpoint, async ({ request }) => {
         bodies.push(await request.json() as ConversationMessage)
         return HttpResponse.json(reply({ version: 8, message: 'Proposed action discarded.' }))
@@ -53,11 +53,11 @@ describe('guided conversation execution', () => {
     )
     const user = userEvent.setup()
     renderApp(PATH)
-    expect(await screen.findByRole('button', { name: 'Confirm task action' })).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Discard proposed action' }))
+    expect(await screen.findByRole('button', { name: 'Confirm approval' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Leave this task alone' }))
     await screen.findByText('Proposed action discarded.')
     expect(bodies).toEqual([{ message: 'cancel', conversationId: ID, expectedVersion: 7 }])
-    expect(screen.queryByRole('button', { name: 'Confirm task action' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Confirm approval' })).not.toBeInTheDocument()
   })
 
   it('retries a failed message with the same idempotency key and preserves the typed text', async () => {
@@ -91,10 +91,28 @@ describe('guided conversation execution', () => {
     )
     const user = userEvent.setup()
     renderApp(PATH)
-    await screen.findByText('This conversation could not be resumed.')
+    await screen.findByText(/could not reopen your last conversation/)
     await user.click(screen.getByRole('button', { name: 'New conversation' }))
-    await user.click(screen.getByRole('button', { name: new RegExp('^' + 'workflows' + '$') }))
+    await user.click(screen.getByRole('button', { name: 'Start a request' }))
     await waitFor(() => expect(bodies).toEqual([{ message: 'workflows' }]))
+  })
+
+  it('asks for a date plainly and shows the reviewed date in a readable form', async () => {
+    let calls = 0
+    server.use(http.post(endpoint, () => {
+      calls += 1
+      return HttpResponse.json(calls === 1
+        ? reply({ stage: 'collecting', message: 'Needed by? Enter the date as year-month-day, for example 2026-10-14.', field: { name: 'needBy', title: 'Needed by', type: 'string', format: 'date', required: true } })
+        : reply({ version: 2, stage: 'review', message: 'Review.', review: { workflowName: 'Purchase approval', input: { needBy: '2026-10-14' }, fields: [{ name: 'needBy', label: 'Needed by', value: '2026-10-14', display: '14 October 2026' }] } }))
+    }))
+    const user = userEvent.setup()
+    renderApp(PATH)
+    await user.type(await screen.findByLabelText('Message'), 'start Purchase approval')
+    await user.click(screen.getByRole('button', { name: 'Send' }))
+    const box = await screen.findByLabelText('Your answer: Needed by')
+    expect(screen.getAllByText(/year-month-day, for example 2026-10-14/).length).toBeGreaterThan(0)
+    await user.type(box, '2026-10-14{Enter}')
+    expect(await screen.findByText('14 October 2026')).toBeInTheDocument()
   })
 })
 

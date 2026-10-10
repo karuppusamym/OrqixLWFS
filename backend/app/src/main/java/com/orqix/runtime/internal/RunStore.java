@@ -249,6 +249,16 @@ public class RunStore {
                 .param("ws", workspaceId).param("id", runId).query(this::map).optional();
     }
 
+    /** Several runs of one workspace in one query (list views); unknown ids are simply absent. */
+    @Transactional(readOnly = true)
+    public java.util.List<RunRow> findAll(UUID workspaceId, java.util.Collection<UUID> runIds) {
+        if (runIds.isEmpty()) {
+            return java.util.List.of();
+        }
+        return jdbc.sql("SELECT " + COLUMNS + " FROM workflow_run WHERE workspace_id = :ws AND id IN (:ids)")
+                .param("ws", workspaceId).param("ids", runIds).query(this::map).list();
+    }
+
     @Transactional(propagation = Propagation.MANDATORY)
     public Optional<RunRow> lock(UUID workspaceId, UUID runId) {
         return jdbc.sql("SELECT " + COLUMNS + " FROM workflow_run WHERE workspace_id = :ws AND id = :id FOR UPDATE")

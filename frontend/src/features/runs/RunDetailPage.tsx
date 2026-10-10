@@ -18,7 +18,7 @@ import { attentionNextStep, describeEvent, eventTone, timelineEvents, type Event
 import { displayJsonValue } from '@/lib/form/display'
 import { orderedRequestRows } from '@/lib/form/rows'
 import { buildFields, parseFormSchema, parseFormUi, type FieldDef } from '@/lib/form/schema'
-import { ownReference, requestId, stepOwnerText } from '@/lib/runText'
+import { ownReference, requestId, runTitle, stepOwnerText } from '@/lib/runText'
 import { humanize } from '@/lib/text'
 import { isTerminal } from '@/lib/status'
 import { CancelDialog, ReassignDialog, ReconcileDialog, RetryDialog } from './OperatorDialogs'
@@ -107,10 +107,10 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
   return (
     <>
       <PageHeader
-        title={run.workflow.name}
+        title={runTitle(run) ?? run.workflow.name}
         description={
           <>
-            Request <span className="font-semibold tabular-nums" data-testid="run-reference">{requestId(run)}</span>
+            {runTitle(run) ? <>{run.workflow.name} &middot; </> : null}Request <span className="font-semibold tabular-nums" data-testid="run-reference">{requestId(run)}</span>
             {ownReference(run) ? <> (your reference {ownReference(run)})</> : null}
             {run.parentRun ? <> &middot; started by <Link className="font-semibold underline" data-testid="parent-run-link" to={`/w/${ws}/runs/${run.parentRun.id}`}>{run.parentRun.reference}</Link>{run.parentRun.nodeLabel ? <> ({run.parentRun.nodeLabel})</> : null}</> : null} &middot; Version {run.release.releaseNumber} &middot; submitted by {run.initiator.displayName} on {formatDateTime(run.createdAt)}
           </>

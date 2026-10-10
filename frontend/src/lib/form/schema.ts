@@ -3,14 +3,21 @@
  * and the presentation hints (`inputUi`). Server data is untrusted, so parsing is defensive.
  */
 
+import { isCalendarDate } from '../dates'
+
 export type FieldType = 'string' | 'number' | 'integer' | 'boolean' | 'array'
-export type Widget = 'text' | 'textarea' | 'number' | 'money' | 'select' | 'radio' | 'checkbox' | 'collection'
+export type Widget = 'text' | 'date' | 'textarea' | 'number' | 'money' | 'select' | 'radio' | 'checkbox' | 'collection'
 
 export interface FormFieldSchema {
   type: FieldType
   title: string
   description?: string
   enum?: string[]
+  /** `date`: a calendar date written YYYY-MM-DD, without time or time zone (type is string). */
+  format?: 'date'
+  /** Earliest and latest allowed date (YYYY-MM-DD, inclusive), only with format date. */
+  formatMinimum?: string
+  formatMaximum?: string
   minLength?: number
   maxLength?: number
   minimum?: number
@@ -56,6 +63,11 @@ export function parseFormSchema(raw: unknown): FormSchema {
       title: typeof value.title === 'string' && value.title ? value.title : key,
     }
     if (typeof value.description === 'string') field.description = value.description
+    if (field.type === 'string' && value.format === 'date') {
+      field.format = 'date'
+      if (isCalendarDate(value.formatMinimum)) field.formatMinimum = value.formatMinimum
+      if (isCalendarDate(value.formatMaximum)) field.formatMaximum = value.formatMaximum
+    }
     if (Array.isArray(value.enum)) field.enum = value.enum.filter((v): v is string => typeof v === 'string')
     const minLength = num(value.minLength)
     const maxLength = num(value.maxLength)
@@ -114,6 +126,7 @@ export function widgetFor(schema: FormFieldSchema, hint: Widget | undefined): Wi
     case 'boolean':
       return 'checkbox'
     case 'string':
+      if (schema.format === 'date') return 'date'
       if (schema.enum && schema.enum.length > 0) return hint === 'radio' ? 'radio' : 'select'
       return hint === 'textarea' ? 'textarea' : 'text'
     case 'integer':

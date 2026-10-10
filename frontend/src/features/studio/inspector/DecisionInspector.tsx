@@ -23,7 +23,7 @@ export function DecisionInspector({ node }: { node: WorkflowNode }) {
   const def = useStudio((s) => s.definition)
   const ref = node.config.decisionRef as string | undefined
   const table = def.decisions.find((d) => d.key === ref)
-  const fields = useMemo(() => availableFields(def, node.id, connections).filter(f => f.type !== 'array'), [def, node.id, connections])
+  const fields = useMemo(() => availableFields(def, node.id, connections).filter(f => f.type !== 'array' && f.type !== 'date'), [def, node.id, connections])
   const [pendingField, setPendingField] = useState('')
   const [keyError, setKeyError] = useState<string>()
   const [newKey, setNewKey] = useState('')
@@ -212,7 +212,7 @@ function TestRule({
   revision,
 }: {
   fieldRef: string
-  info: { type: 'string' | 'number' | 'integer' | 'boolean' | 'array'; enumValues?: string[] } | undefined
+  info: { type: 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'date'; enumValues?: string[] } | undefined
   tableKey: string
   wsId: string
   workflowId: string

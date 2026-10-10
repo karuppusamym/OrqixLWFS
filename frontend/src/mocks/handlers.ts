@@ -1,12 +1,13 @@
 import { delay, http, HttpResponse, type HttpHandler, type JsonBodyType } from 'msw'
 import type { Permission, ProblemCode, TaskDetail, ValidationIssue } from '@/api/types'
 import { nodeById } from '@/features/studio/model/graph'
-import { addEvent, evaluateTable, claim, createRun, decide, cancelRun, currentRelease, reconcileRun, retryRun, release as releaseTask, selfApprovalAllowed, toRun, toRunDetail, toTaskSummary } from './engine'
+import { addEvent, canSeeRunData, evaluateTable, requestTitleOf, claim, createRun, decide, cancelRun, currentRelease, reconcileRun, retryRun, release as releaseTask, selfApprovalAllowed, toRun, toRunDetail, toTaskSummary } from './engine'
 import { makeRelease } from './seed'
 import { migrationPublishDenial } from './migration'
 import { normalizeDefinition, type Definition, type Literal } from '@/features/studio/model/types'
 import { buildFields, parseFormSchema } from '@/lib/form/schema'
 import { validateJsonInput } from '@/lib/form/validate'
+import { waitHorizonErrors } from './dateWait'
 import { validateDefinition, type ValidationContext } from './validate'
 import {
   GROUPS,
@@ -143,7 +144,7 @@ function summary(wf: MockWorkflow, perms: Permission[]) {
     description: wf.description,
     owner: subjectRef(userById(wf.ownerId)),
     draftRevision: wf.drafts.at(-1)?.revision ?? 1,
-    activeRelease: active ? { id: active.id, releaseNumber: active.releaseNumber, publishedAt: active.publishedAt } : null,
+    activeRelease: active ? { id: active.id, releaseNumber: active.releaseNumber, publishedAt: active.publishedAt, draftRevision: active.draftRevision } : null,
     canStart: !!active && perms.includes('workflow.start'),
     updatedAt: wf.updatedAt,
   }
@@ -531,7 +532,7 @@ export function createHandlers(): HttpHandler[] {
       if (key) runs = runs.filter((r) => r.businessKey === key || r.reference === key)
       runs.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       const page = paginate(runs, url)
-      return HttpResponse.json({ items: page.items.map(toRun), nextCursor: page.nextCursor })
+      return HttpResponse.json({ items: page.items.map((r) => toRun(r, g.user)), nextCursor: page.nextCursor })
     }),
     http.post(`${B}/workspaces/:ws/runs`, async ({ params, request }) => {
       await slow()
@@ -547,19 +548,20 @@ export function createHandlers(): HttpHandler[] {
         const schema = parseFormSchema(rel.definition.inputSchema)
         const fields = buildFields(schema, {})
         const issues = validateJsonInput(schema, input.input ?? {})
-        if (issues.length > 0) {
+        const horizon = issues.length === 0 ? waitHorizonErrors(rel.definition, input.input ?? {}, clock.now()) : []
+        if (issues.length > 0 || horizon.length > 0) {
           return problem(422, 'VALIDATION_FAILED', 'The request has invalid fields', {
-            fieldErrors: issues.map((i) => ({
+            fieldErrors: [...issues.map((i) => ({
               pointer: `/input${i.pointer}`,
               code: i.keyword,
               message: `${fields.find((f) => `/${f.key}` === i.pointer)?.label ?? i.pointer.slice(1)} is not valid (${i.keyword}).`,
-            })),
+            })), ...horizon],
           })
         }
         const active = [...db.runs.values()].filter((r) => r.workflowId === wf.id && (r.lifecycle === 'running' || r.lifecycle === 'waiting' || r.lifecycle === 'needsAttention')).length
         if (active >= rel.definition.execution.maxConcurrentRuns) return problem(429, 'QUOTA_EXCEEDED', 'Too many open requests', {}, { 'Retry-After': '60' })
         const run = createRun({ wsId: str(params.ws), workflow: wf, release: rel, initiator: g.user, input: input.input, businessKey: input.businessKey ?? null })
-        return { status: 201, body: toRun(run), headers: { Location: `/api/v1/workspaces/${run.wsId}/runs/${run.id}` } }
+        return { status: 201, body: toRun(run, g.user), headers: { Location: `/api/v1/workspaces/${run.wsId}/runs/${run.id}` } }
       })
     }),
     http.get(`${B}/workspaces/:ws/runs/:id`, async ({ params }) => {
@@ -680,7 +682,7 @@ export function createHandlers(): HttpHandler[] {
       if (lifecycle) runs = runs.filter((r) => r.lifecycle === lifecycle)
       runs.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       const page = paginate(runs, url)
-      return HttpResponse.json({ items: page.items.map(toRun), nextCursor: page.nextCursor })
+      return HttpResponse.json({ items: page.items.map((r) => toRun(r, g.user)), nextCursor: page.nextCursor })
     }),
 
     // Notifications ------------------------------------------------------------------------------------------------------------
@@ -693,7 +695,10 @@ export function createHandlers(): HttpHandler[] {
       const unreadCount = items.filter((n) => !n.readAt).length
       if (url.searchParams.get('unread') === 'true') items = items.filter((n) => !n.readAt)
       const page = paginate(items, url)
-      return HttpResponse.json({ items: page.items.map(({ wsId: _w, userId: _u, ...n }) => ({ ...n, runReference: (n.runId ? db.runs.get(n.runId)?.reference : undefined) ?? null })), nextCursor: page.nextCursor, unreadCount })
+      return HttpResponse.json({ items: page.items.map(({ wsId: _w, userId: _u, ...n }) => {
+        const run = n.runId ? db.runs.get(n.runId) : undefined
+        return { ...n, runReference: run?.reference ?? null, requestTitle: run && canSeeRunData(run, g.user) ? requestTitleOf(run) : null }
+      }), nextCursor: page.nextCursor, unreadCount })
     }),
     http.post(`${B}/workspaces/:ws/notifications/:id/read`, async ({ params }) => {
       await slow()

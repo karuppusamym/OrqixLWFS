@@ -1,3 +1,4 @@
+import { isCalendarDate } from '../dates'
 import type { FormFieldSchema, FormSchema } from './schema'
 
 /**
@@ -14,6 +15,9 @@ export type IssueKeyword =
   | 'required'
   | 'additionalProperties'
   | 'enum'
+  | 'format'
+  | 'formatMinimum'
+  | 'formatMaximum'
   | 'minLength'
   | 'maxLength'
   | 'minimum'
@@ -95,6 +99,15 @@ export function validateJsonInput(schema: FormSchema, data: unknown): JsonIssue[
     // ajv evaluates enum for any value; the keywords below only apply to strings and numbers respectively.
     if (field.enum && !field.enum.includes(value as string)) issues.push({ pointer, keyword: 'enum' })
     if (!typeOk) continue
+    if (typeof value === 'string' && field.format === 'date') {
+      if (!isCalendarDate(value)) issues.push({ pointer, keyword: 'format' })
+      else {
+        // YYYY-MM-DD strings order the same way as the dates they name.
+        if (field.formatMinimum !== undefined && value < field.formatMinimum) issues.push({ pointer, keyword: 'formatMinimum' })
+        if (field.formatMaximum !== undefined && value > field.formatMaximum) issues.push({ pointer, keyword: 'formatMaximum' })
+      }
+      continue
+    }
     if (typeof value === 'string') {
       const length = codePointLength(value)
       if (field.minLength !== undefined && length < field.minLength) issues.push({ pointer, keyword: 'minLength' })

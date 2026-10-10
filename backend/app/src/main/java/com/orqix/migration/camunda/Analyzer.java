@@ -19,13 +19,13 @@ import java.util.regex.Pattern;
 import com.orqix.migration.camunda.Analysis.Need;
 
 /**
- * Adapter {@code camunda-bpmn-0.2}: reads a Camunda 7 / Camunda 8 / plain BPMN 2.0 file and gives every source element
+ * Adapter {@code camunda-bpmn-0.3}: reads a Camunda 7 / Camunda 8 / plain BPMN 2.0 file and gives every source element
  * and every nested construct a disposition (S11 section 2, doc 05). Nothing is silently omitted: unknown elements are
  * blockers, dropped settings are info items that need acknowledgement. Pure Java; no Spring, no database.
  */
 public final class Analyzer {
 
-    public static final String ADAPTER_VERSION = "camunda-bpmn-0.2";
+    public static final String ADAPTER_VERSION = "camunda-bpmn-0.3";
 
     private static final String BPMN = Namespaces.BPMN;
     private static final String C7 = Namespaces.CAMUNDA7;
@@ -99,7 +99,7 @@ public final class Analyzer {
                     + "' was imported.");
         }
         analysis.assumptions.add("Diagram layout (bpmndi) is not imported; the canvas layout is generated.");
-        add(process, "targetPolicy", Report.INFO, "TARGET_POLICY_REVIEW",
+        add(process, "targetPolicy", Report.REVIEW, "TARGET_POLICY_REVIEW",
                 "The target workflow denies self-approval and requires a reason for every rejected approval. Review these target policies and inferred request fields.",
                 "Acknowledge the target policies and validate behavior before publishing.", Need.ACKNOWLEDGE, null);
 
@@ -503,6 +503,9 @@ public final class Analyzer {
             code = "JAVA_DELEGATE_NOT_PORTABLE";
             detail = "no implementation declared";
         }
+        String group = "external".equals(type) && topic != null ? "topic:" + topic : taskDefinition != null && taskDefinition.attr("type") != null ? "jobType:" + taskDefinition.attr("type") : null;
+        if (group != null && group.length() <= 250 && !group.contains("${") && !group.contains("#{") && !group.contains("="))
+            analysis.serviceGroups.computeIfAbsent(group,ignored -> new ArrayList<>()).add(node.id);
         analysis.services.put(node.id, new Analysis.Service(node, code, detail));
         add(e, "serviceTask", Report.BLOCKER, code,
                 "This service task runs " + detail + ". Source code is never imported or executed by Orqix.",

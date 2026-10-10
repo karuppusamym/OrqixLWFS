@@ -280,7 +280,13 @@ public final class BpmnGenerator {
         if (t.condition() != null) {
             Condition c = t.condition();
             x.open("", "extensionElements", BPMN_NS);
-            x.leaf("orqix", "condition", ORQIX_NS)
+            if (c.compound()) {
+                x.open("orqix", "condition", ORQIX_NS).attr("group", c.group());
+                for (Condition term : c.terms()) x.leaf("orqix", "term", ORQIX_NS)
+                        .attr("fieldRef", term.fieldRef()).attr("operator", term.operator().json())
+                        .attr("valueType", term.value().typeName()).attr("value", term.value().text());
+                x.close();
+            } else x.leaf("orqix", "condition", ORQIX_NS)
                     .attr("fieldRef", c.fieldRef())
                     .attr("operator", c.operator().json())
                     .attr("valueType", c.value().typeName())

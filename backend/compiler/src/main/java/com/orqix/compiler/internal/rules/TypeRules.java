@@ -156,49 +156,35 @@ final class TypeRules {
 
     private static void branches(RuleContext rc) {
         Map<Node, List<Transition>> byBranch = new LinkedHashMap<>();
-        Map<Transition, Disjointness.Typed> typed = new LinkedHashMap<>();
+        Map<Transition, List<Disjointness.Typed>> typed = new LinkedHashMap<>();
         for (Transition t : rc.definition().transitions()) {
-            if (t.condition() == null) {
-                continue;
-            }
+            if (t.condition() == null) continue;
             Node from = rc.graph().node(t.from());
-            String base = t.path() + "/condition";
-            Disjointness.Typed checked = Conditions.check(rc, t.condition(), base, from == null ? null : from.id(),
-                    t.id());
-            if (checked != null) {
-                typed.put(t, checked);
-            }
-            Conditions.availability(rc, t.condition().fieldRef(), from, base + "/fieldRef", t.id());
-            if (from != null && from.kind() == NodeKind.BRANCH && t.on() == Route.CONDITION) {
-                byBranch.computeIfAbsent(from, k -> new ArrayList<>()).add(t);
-            }
+            var checked = LogicalConditions.check(rc, t.condition(), t.path() + "/condition", from == null ? null : from.id(), t.id());
+            if (checked != null) typed.put(t, checked);
+            if (from != null && from.kind() == NodeKind.BRANCH && t.on() == Route.CONDITION)
+                byBranch.computeIfAbsent(from, key -> new ArrayList<>()).add(t);
         }
-        for (Map.Entry<Node, List<Transition>> e : byBranch.entrySet()) {
-            Node branch = e.getKey();
-            List<Transition> routes = e.getValue();
-            String field = routes.get(0).condition().fieldRef();
+        for (var e : byBranch.entrySet()) {
+            Node branch = e.getKey(); List<Transition> routes = e.getValue();
+            boolean scalar = routes.stream().noneMatch(t -> t.condition().compound());
+            String field = scalar ? routes.get(0).condition().fieldRef() : null;
             boolean mixed = false;
-            for (Transition t : routes) {
+            if (scalar) for (Transition t : routes) {
                 if (!t.condition().fieldRef().equals(field)) {
                     mixed = true;
-                    rc.issues().blocker("WF_BRANCH_MIXED_FIELDS", t.path() + "/condition/fieldRef", branch.id(),
-                            t.id(), "Every condition of " + q(branch) + " must test the same field (" + field
-                                    + ").");
+                    rc.issues().blocker("WF_BRANCH_MIXED_FIELDS", t.path() + "/condition/fieldRef", branch.id(), t.id(),
+                            "Every condition of " + q(branch) + " must test the same field (" + field + ").");
                 }
             }
-            if (mixed || !routes.stream().allMatch(typed::containsKey)) {
-                continue;
-            }
-            for (int i = 0; i < routes.size(); i++) {
-                for (int j = i + 1; j < routes.size(); j++) {
-                    Transition a = routes.get(i);
-                    Transition b = routes.get(j);
-                    if (Disjointness.overlap(typed.get(a), typed.get(b))) {
-                        rc.issues().blocker("WF_BRANCH_OVERLAP", b.path() + "/condition", branch.id(), b.id(),
-                                "The conditions of paths " + pathName(a) + " and " + pathName(b) + " of "
-                                        + q(branch) + " can both be true. Make the conditions exclusive.");
-                    }
-                }
+            if (mixed || !routes.stream().allMatch(typed::containsKey)) continue;
+            for (int i = 0; i < routes.size(); i++) for (int j = i + 1; j < routes.size(); j++) {
+                Transition x = routes.get(i), y = routes.get(j);
+                boolean overlap = scalar ? Disjointness.overlap(typed.get(x).get(0), typed.get(y).get(0))
+                        : LogicalConditions.overlap(x.condition(), typed.get(x), y.condition(), typed.get(y));
+                if (overlap) rc.issues().blocker("WF_BRANCH_OVERLAP", y.path() + "/condition", branch.id(), y.id(),
+                        "The conditions of paths " + pathName(x) + " and " + pathName(y) + " of " + q(branch)
+                                + " can both be true. Make the conditions exclusive.");
             }
         }
     }

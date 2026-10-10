@@ -41,7 +41,9 @@ public record WorkflowDefinition(
     }
 
     /** A structured comparison; {@code operator} is never null after schema validation. */
-    public record Condition(String fieldRef, Operator operator, Literal value) {
+    public record Condition(String fieldRef, Operator operator, Literal value, String group, List<Condition> terms) {
+        public Condition(String fieldRef, Operator operator, Literal value) { this(fieldRef, operator, value, null, List.of()); }
+        public boolean compound() { return group != null; }
     }
 
     /** @param defaultOutput sorted by key */

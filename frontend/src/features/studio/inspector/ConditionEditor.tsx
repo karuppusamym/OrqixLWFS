@@ -2,7 +2,8 @@ import { Select } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { chipLabel, type FieldInfo } from '../model/fieldRefs'
 import { OPERATOR_LABEL } from '../model/summary'
-import type { Condition, Literal, Operator } from '../model/types'
+import { conditionTerms, type AtomicCondition, type Condition, type Literal, type Operator } from '../model/types'
+import { Button } from '@/components/ui/button'
 import { CommitInput, CommitNumber } from './controls'
 
 export function defaultLiteral(type: FieldInfo['type'] | undefined, enumValues?: string[]): Literal {
@@ -61,7 +62,7 @@ export function LiteralInput({
  * Condition = field + operator + value, shown with human field chips ("Request -> Amount (USD)").
  * The stored form is a structured reference, never an expression.
  */
-export function ConditionEditor({
+function AtomicConditionEditor({
   idBase,
   condition,
   fields,
@@ -71,9 +72,9 @@ export function ConditionEditor({
   fixedField,
 }: {
   idBase: string
-  condition: Condition
+  condition: AtomicCondition
   fields: FieldInfo[]
-  onChange: (next: Condition) => void
+  onChange: (next: AtomicCondition) => void
   disabled?: boolean
   dataFieldBase: string
   /** Rule table rows all test the same field, so the row does not offer a field choice. */
@@ -81,7 +82,7 @@ export function ConditionEditor({
 }) {
   const info = fields.find((f) => f.ref === condition.fieldRef)
   const numeric = info?.type === 'number' || info?.type === 'integer'
-  const operators: Operator[] = numeric || !info ? ['eq', 'gte', 'lt'] : ['eq']
+  const operators: Operator[] = numeric || !info ? ['eq', 'ne', 'gte', 'gt', 'lt', 'lte'] : ['eq', 'ne']
   return (
     <div className="grid gap-3">
       {!fixedField ? (
@@ -129,4 +130,28 @@ export function ConditionEditor({
       </div>
     </div>
   )
+}
+
+export function ConditionEditor(props: {
+  idBase: string; condition: Condition; fields: FieldInfo[]; onChange: (next: Condition) => void;
+  disabled?: boolean; dataFieldBase: string; fixedField?: boolean
+}) {
+  const { condition, onChange, idBase, disabled, fields } = props
+  const mode = 'all' in condition ? 'all' : 'any' in condition ? 'any' : 'single'
+  const terms = conditionTerms(condition)
+  const blank: AtomicCondition = { fieldRef: fields.find(f => f.type !== 'array')?.ref ?? '', operator: 'eq', value: defaultLiteral(fields.find(f => f.type !== 'array')?.type) }
+  const update = (next: AtomicCondition[]) => onChange(mode === 'single' ? next[0]! : mode === 'all' ? { all: next } : { any: next })
+  if (props.fixedField) return <AtomicConditionEditor {...props} condition={terms[0] ?? blank} onChange={onChange} />
+  return <div className="space-y-4">
+    <Label htmlFor={`${idBase}-mode`}>Condition group</Label>
+    <Select id={`${idBase}-mode`} value={mode} disabled={disabled} onChange={event => {
+      const next = terms.length >= 2 ? terms : [terms[0] ?? blank, { ...blank }]
+      onChange(event.target.value === 'single' ? terms[0] ?? blank : event.target.value === 'all' ? { all: next } : { any: next })
+    }}><option value="single">One comparison</option><option value="all">All comparisons (AND)</option><option value="any">Any comparison (OR)</option></Select>
+    {terms.map((term, index) => <div key={index} className={mode === 'single' ? '' : 'rounded-card border border-border p-3'}>
+      <AtomicConditionEditor {...props} idBase={mode === 'single' ? idBase : `${idBase}-${index}`} dataFieldBase={mode === 'single' ? props.dataFieldBase : `${props.dataFieldBase}.${mode}.${index}`} condition={term} onChange={value => update(terms.map((old, i) => i === index ? value : old))} />
+      {mode !== 'single' ? <Button variant="ghost" disabled={disabled || terms.length <= 2} onClick={() => update(terms.filter((_, i) => i !== index))}>Remove comparison {index + 1}</Button> : null}
+    </div>)}
+    {mode !== 'single' ? <Button variant="secondary" disabled={disabled || terms.length >= 8} onClick={() => update([...terms, { ...blank }])}>Add comparison</Button> : null}
+  </div>
 }

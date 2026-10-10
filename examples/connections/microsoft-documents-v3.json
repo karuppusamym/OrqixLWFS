@@ -1,0 +1,567 @@
+{
+  "schemaVersion": "0.1",
+  "kind": "microsoftGraph",
+  "key": "microsoft-documents",
+  "version": 3,
+  "name": "SharePoint and OneDrive documents",
+  "description": "Resolve administrator-approved SharePoint/OneDrive URLs to an approved drive, inspect bounded version history, or capture immutable current content. Replace tenant URL pattern and approved drive ID in this sample before production use.",
+  "operations": {
+    "getMetadata": {
+      "label": "Read document metadata",
+      "method": "POST",
+      "path": "/metadata",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "driveId": {
+            "type": "string",
+            "enum": [
+              "drive"
+            ]
+          },
+          "itemId": {
+            "type": "string"
+          },
+          "versionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "driveId",
+          "itemId",
+          "versionId"
+        ],
+        "additionalProperties": false
+      },
+      "responseSchema": {
+        "type": "object",
+        "properties": {
+          "driveId": {
+            "type": "string"
+          },
+          "itemId": {
+            "type": "string"
+          },
+          "versionId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "webUrl": {
+            "type": "string"
+          },
+          "eTag": {
+            "type": "string"
+          },
+          "lastModifiedDateTime": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "driveId",
+          "itemId",
+          "versionId",
+          "name",
+          "webUrl",
+          "eTag",
+          "lastModifiedDateTime",
+          "size"
+        ],
+        "additionalProperties": false
+      },
+      "successStatuses": [
+        200
+      ],
+      "effectClass": "readOnly",
+      "maxTimeoutSeconds": 30,
+      "testable": true
+    },
+    "readText": {
+      "label": "Read pinned text document",
+      "method": "POST",
+      "path": "/text",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "driveId": {
+            "type": "string",
+            "enum": [
+              "drive"
+            ]
+          },
+          "itemId": {
+            "type": "string"
+          },
+          "versionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "driveId",
+          "itemId",
+          "versionId"
+        ],
+        "additionalProperties": false
+      },
+      "responseSchema": {
+        "type": "object",
+        "properties": {
+          "driveId": {
+            "type": "string"
+          },
+          "itemId": {
+            "type": "string"
+          },
+          "versionId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "webUrl": {
+            "type": "string"
+          },
+          "eTag": {
+            "type": "string"
+          },
+          "lastModifiedDateTime": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "text": {
+            "type": "string"
+          },
+          "contentSha256": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "driveId",
+          "itemId",
+          "versionId",
+          "name",
+          "webUrl",
+          "eTag",
+          "lastModifiedDateTime",
+          "size",
+          "text",
+          "contentSha256"
+        ],
+        "additionalProperties": false
+      },
+      "successStatuses": [
+        200
+      ],
+      "effectClass": "readOnly",
+      "maxTimeoutSeconds": 30,
+      "testable": true
+    },
+    "extractDocument": {
+      "label": "Extract a pinned PDF or Office document",
+      "method": "POST",
+      "path": "/extract",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "driveId": {
+            "type": "string",
+            "enum": [
+              "drive"
+            ]
+          },
+          "itemId": {
+            "type": "string"
+          },
+          "versionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "driveId",
+          "itemId",
+          "versionId"
+        ],
+        "additionalProperties": false
+      },
+      "responseSchema": {
+        "type": "object",
+        "properties": {
+          "driveId": {
+            "type": "string"
+          },
+          "itemId": {
+            "type": "string"
+          },
+          "versionId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "webUrl": {
+            "type": "string"
+          },
+          "eTag": {
+            "type": "string"
+          },
+          "lastModifiedDateTime": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "text": {
+            "type": "string"
+          },
+          "contentSha256": {
+            "type": "string"
+          },
+          "extractionFormat": {
+            "type": "string"
+          },
+          "extractedTextSha256": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "driveId",
+          "itemId",
+          "versionId",
+          "name",
+          "webUrl",
+          "eTag",
+          "lastModifiedDateTime",
+          "size",
+          "text",
+          "contentSha256",
+          "extractionFormat",
+          "extractedTextSha256"
+        ],
+        "additionalProperties": false
+      },
+      "successStatuses": [
+        200
+      ],
+      "effectClass": "readOnly",
+      "maxTimeoutSeconds": 30,
+      "testable": true
+    },
+    "pinLatest": {
+      "label": "Capture latest document as immutable snapshot",
+      "method": "POST",
+      "path": "/pinLatest",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "driveId": {
+            "type": "string",
+            "enum": [
+              "drive"
+            ]
+          },
+          "itemId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "driveId",
+          "itemId"
+        ],
+        "additionalProperties": false
+      },
+      "responseSchema": {
+        "type": "object",
+        "properties": {
+          "driveId": {
+            "type": "string"
+          },
+          "itemId": {
+            "type": "string"
+          },
+          "versionId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "webUrl": {
+            "type": "string"
+          },
+          "eTag": {
+            "type": "string"
+          },
+          "lastModifiedDateTime": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "snapshotId": {
+            "type": "string"
+          },
+          "snapshotExpiresAt": {
+            "type": "string"
+          },
+          "contentSha256": {
+            "type": "string"
+          },
+          "pinMode": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "driveId",
+          "itemId",
+          "versionId",
+          "name",
+          "webUrl",
+          "eTag",
+          "lastModifiedDateTime",
+          "size",
+          "snapshotId",
+          "snapshotExpiresAt",
+          "contentSha256",
+          "pinMode"
+        ],
+        "additionalProperties": false
+      },
+      "successStatuses": [
+        200
+      ],
+      "effectClass": "readOnly",
+      "maxTimeoutSeconds": 30,
+      "testable": true
+    },
+    "extractSnapshot": {
+      "label": "Extract an immutable captured snapshot",
+      "method": "POST",
+      "path": "/extractSnapshot",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "driveId": {
+            "type": "string",
+            "enum": [
+              "drive"
+            ]
+          },
+          "itemId": {
+            "type": "string"
+          },
+          "snapshotId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "driveId",
+          "itemId",
+          "snapshotId"
+        ],
+        "additionalProperties": false
+      },
+      "responseSchema": {
+        "type": "object",
+        "properties": {
+          "driveId": {
+            "type": "string"
+          },
+          "itemId": {
+            "type": "string"
+          },
+          "versionId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "webUrl": {
+            "type": "string"
+          },
+          "eTag": {
+            "type": "string"
+          },
+          "lastModifiedDateTime": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "text": {
+            "type": "string"
+          },
+          "contentSha256": {
+            "type": "string"
+          },
+          "extractionFormat": {
+            "type": "string"
+          },
+          "extractedTextSha256": {
+            "type": "string"
+          },
+          "snapshotId": {
+            "type": "string"
+          },
+          "snapshotExpiresAt": {
+            "type": "string"
+          },
+          "pinMode": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "driveId",
+          "itemId",
+          "versionId",
+          "name",
+          "webUrl",
+          "eTag",
+          "lastModifiedDateTime",
+          "size",
+          "text",
+          "contentSha256",
+          "extractionFormat",
+          "extractedTextSha256",
+          "snapshotId",
+          "snapshotExpiresAt",
+          "pinMode"
+        ],
+        "additionalProperties": false
+      },
+      "successStatuses": [
+        200
+      ],
+      "effectClass": "readOnly",
+      "maxTimeoutSeconds": 30,
+      "testable": true
+    },
+    "resolveLink": {
+      "label": "Resolve approved Microsoft document link",
+      "method": "POST",
+      "path": "/resolveLink",
+      "requestSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "shareUrl"
+        ],
+        "properties": {
+          "shareUrl": {
+            "type": "string",
+            "maxLength": 2000,
+            "pattern": "^https://tenant\\.sharepoint\\.com/(?:sites/|:)[^#]+$",
+            "description": "Approved tenant document or sharing URL; customize this allowlist before use."
+          },
+          "driveId": {
+            "type": "string",
+            "enum": [
+              "drive"
+            ],
+            "description": "Administrator approved resolved-drive policy; callers need not supply this field."
+          }
+        }
+      },
+      "responseSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "driveId": {
+            "type": "string"
+          },
+          "itemId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "webUrl": {
+            "type": "string"
+          },
+          "eTag": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "driveId",
+          "itemId",
+          "name",
+          "webUrl",
+          "eTag",
+          "size"
+        ]
+      },
+      "successStatuses": [
+        200
+      ],
+      "effectClass": "readOnly",
+      "maxTimeoutSeconds": 30,
+      "testable": true
+    },
+    "listVersions": {
+      "label": "List bounded document version history",
+      "method": "POST",
+      "path": "/versions",
+      "requestSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "driveId": {
+            "type": "string",
+            "enum": [
+              "drive"
+            ]
+          },
+          "itemId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "driveId",
+          "itemId"
+        ]
+      },
+      "responseSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "driveId": {
+            "type": "string"
+          },
+          "itemId": {
+            "type": "string"
+          },
+          "versionsJson": {
+            "type": "string"
+          },
+          "versionCount": {
+            "type": "integer"
+          },
+          "hasMore": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "driveId",
+          "itemId",
+          "versionsJson",
+          "versionCount",
+          "hasMore"
+        ]
+      },
+      "successStatuses": [
+        200
+      ],
+      "effectClass": "readOnly",
+      "maxTimeoutSeconds": 30,
+      "testable": true
+    }
+  }
+}

@@ -188,6 +188,7 @@ public final class Analysis {
     final Map<String, UserTask> userTasks = new LinkedHashMap<>();
     final Map<String, Branch> branches = new LinkedHashMap<>();
     final Map<String, Service> services = new LinkedHashMap<>();
+    final Map<String,List<String>> serviceGroups = new LinkedHashMap<>();
     final Map<String, String> waits = new LinkedHashMap<>();
     final Map<String, String> parallelJoins = new LinkedHashMap<>();
     final Set<String> children = new LinkedHashSet<>();

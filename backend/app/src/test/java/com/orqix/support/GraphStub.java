@@ -33,6 +33,20 @@ public final class GraphStub {
         if (!"Bearer graph-stub-only".equals(request.getHeader("Authorization"))) {
             return response(401, "application/json", "{}");
         }
+        if (path.startsWith("/graph/shares/u!") && path.contains("/driveItem?")) {
+            if (request.getHeader("Prefer") != null) { return response(400, "application/json", "{}"); }
+            return response(200, "application/json", """
+                    {"id":"item","name":"policy.txt","file":{"mimeType":"text/plain"},
+                     "parentReference":{"driveId":"drive"},"eTag":"current-%s","size":%s,
+                     "webUrl":"https://tenant.sharepoint.com/sites/Team/policy.txt?sig=must-not-return"}
+                    """.formatted(currentVersion, currentText.getBytes(java.nio.charset.StandardCharsets.UTF_8).length));
+        }
+        if (path.startsWith("/graph/drives/drive/items/item/versions?")) {
+            return response(200, "application/json", """
+                    {"value":[{"id":"2.0","size":20,"lastModifiedDateTime":"2026-02-01T00:00:00Z"},
+                              {"id":"1.0","size":14,"lastModifiedDateTime":"2026-01-01T00:00:00Z"}]}
+                    """);
+        }
         return switch (path) {
             case "/graph/drives/drive/items/item" -> response(200, "application/json", """
                     {"id":"item","name":"policy.txt","file":{"mimeType":"text/plain"},

@@ -9,11 +9,12 @@ import tools.jackson.databind.JsonNode;
 final class ConversionRequest {
     private static final String KEY = "^[a-z][a-z0-9-]{0,62}[a-z0-9]$";
     static void validate(JsonNode request) {
-        object(request, Set.of("workflowKey", "name", "groupMappings", "approvalRoutes", "serviceTaskMappings", "childWorkflowMappings", "inputSchema", "acknowledgeInfo"), "request");
+        object(request, Set.of("workflowKey", "name", "groupMappings", "approvalRoutes", "serviceTaskMappings", "serviceGroupMappings", "childWorkflowMappings", "inputSchema", "acknowledgeInfo", "acknowledgeReview"), "request");
         if (Json.depth(request) > 64) fail("request", "must have at most 64 levels");
         key(request.path("workflowKey"), "workflowKey");
         text(request.path("name"), "name", 200);
         if (request.has("acknowledgeInfo") && !request.path("acknowledgeInfo").isBoolean()) fail("acknowledgeInfo", "must be boolean");
+        if (request.has("acknowledgeReview") && !request.path("acknowledgeReview").isBoolean()) fail("acknowledgeReview", "must be boolean");
         if (request.has("inputSchema") && !request.path("inputSchema").isObject()) fail("inputSchema", "must be an object");
         if (request.has("groupMappings")) {
             strings(request.path("groupMappings"), "groupMappings");
@@ -38,10 +39,10 @@ final class ConversionRequest {
                 strings(value.path("resultMapping"), path + "/resultMapping");
             });
         }
-        if (request.has("serviceTaskMappings")) {
-            object(request.path("serviceTaskMappings"), null, "serviceTaskMappings");
-            request.path("serviceTaskMappings").properties().forEach(e -> {
-                String path = "serviceTaskMappings/" + e.getKey(); JsonNode value = e.getValue();
+        for (String mappingKind : java.util.List.of("serviceTaskMappings","serviceGroupMappings")) if (request.has(mappingKind)) {
+            object(request.path(mappingKind), null, mappingKind);
+            request.path(mappingKind).properties().forEach(e -> {
+                String path = mappingKind + "/" + e.getKey(); JsonNode value = e.getValue();
                 object(value, Set.of("connectionRef", "operation", "inputMapping", "resultMapping", "timeoutSeconds", "definitionVersion"), path);
                 key(value.path("connectionRef"), path + "/connectionRef");
                 text(value.path("operation"), path + "/operation", 1000);

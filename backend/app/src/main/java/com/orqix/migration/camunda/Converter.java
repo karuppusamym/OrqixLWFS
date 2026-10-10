@@ -14,43 +14,44 @@ public final class Converter {
                 a.sourceHash(), a.processId(), a.processName(), Report.ElementCounts.of(issues), issues,
                 a.assumptions(), new Report.RequiredMappings(a.userTasks().values().stream()
                     .flatMap(t -> (t.mappingKeys().isEmpty() ? List.of(t.id()) : t.mappingKeys()).stream()).distinct().toList(),
-                    a.userTasks().keySet().stream().toList(), a.services().keySet().stream().toList(), a.children.stream().toList()),
+                    a.userTasks().keySet().stream().toList(), a.services().keySet().stream().toList(), a.children.stream().toList(), a.serviceGroups),
                 issues.stream().noneMatch(Report.Issue::blocksPublishing)
-                    && issues.stream().noneMatch(i -> Report.INFO.equals(i.severity()) && Report.OPEN.equals(i.resolutionStatus())));
+                    && issues.stream().noneMatch(i -> (Report.INFO.equals(i.severity()) || Report.REVIEW.equals(i.severity())) && Report.OPEN.equals(i.resolutionStatus())));
     }
 
     public static Result convert(Analysis a, JsonNode request, Json json, Map<String, JsonNode> serviceInputTypes) {
+        JsonNode effectiveRequest = expandServiceGroups(a,request,json);
         Set<String> assignments = new HashSet<>(report(a, List.of()).requiredMappings().groups());
-        rejectUnknownMappings(request.path("groupMappings"), assignments, "groupMappings");
-        rejectUnknownMappings(request.path("approvalRoutes"), a.userTasks.keySet(), "approvalRoutes");
-        rejectUnknownMappings(request.path("serviceTaskMappings"), a.services.keySet(), "serviceTaskMappings");
-        rejectUnknownMappings(request.path("childWorkflowMappings"), a.children, "childWorkflowMappings");
+        rejectUnknownMappings(effectiveRequest.path("groupMappings"), assignments, "groupMappings");
+        rejectUnknownMappings(effectiveRequest.path("approvalRoutes"), a.userTasks.keySet(), "approvalRoutes");
+        rejectUnknownMappings(effectiveRequest.path("serviceTaskMappings"), a.services.keySet(), "serviceTaskMappings");
+        rejectUnknownMappings(effectiveRequest.path("childWorkflowMappings"), a.children, "childWorkflowMappings");
         Map<String, String> groups = new LinkedHashMap<>();
         Map<String, Analysis.Route> routes = new LinkedHashMap<>();
         for (var task : a.userTasks.values()) {
             Set<String> targets = new LinkedHashSet<>();
             for (String key : task.mappingKeys) {
-                String mapped = request.path("groupMappings").path(key).asString("");
+                String mapped = effectiveRequest.path("groupMappings").path(key).asString("");
                 if (!mapped.isBlank()) targets.add(mapped);
             }
             // Tasks without a source assignment can be mapped explicitly by their source id.
             if (task.mappingKeys.isEmpty()) {
-                String mapped = request.path("groupMappings").path(task.id()).asString("");
+                String mapped = effectiveRequest.path("groupMappings").path(task.id()).asString("");
                 if (!mapped.isBlank()) targets.add(mapped);
             }
             if (targets.size() == 1 && (task.mappingKeys.isEmpty() || task.mappingKeys.stream()
-                    .allMatch(k -> !request.path("groupMappings").path(k).asString("").isBlank()))) {
+                    .allMatch(k -> !effectiveRequest.path("groupMappings").path(k).asString("").isBlank()))) {
                 groups.put(task.id(), targets.iterator().next());
             }
             if (task.recognized != null) {
-                var supplied = request.path("approvalRoutes").path(task.id());
+                var supplied = effectiveRequest.path("approvalRoutes").path(task.id());
                 if (supplied.isObject() && (!task.recognized.approvedFlowId().equals(supplied.path("approvedFlowId").asString())
                         || !task.recognized.rejectedFlowId().equals(supplied.path("rejectedFlowId").asString())))
                     throw SourceException.invalid("Explicit approval routes disagree with the recognized source gateway for '" + task.id() + "'.");
                 routes.put(task.id(), task.recognized);
             }
             else {
-                var supplied = request.path("approvalRoutes").path(task.id());
+                var supplied = effectiveRequest.path("approvalRoutes").path(task.id());
                 String approved = supplied.path("approvedFlowId").asString("");
                 String rejected = supplied.path("rejectedFlowId").asString("");
                 Set<String> candidates = new HashSet<>(task.candidateFlows.stream().map(Analysis.Flow::id).toList());
@@ -65,9 +66,9 @@ public final class Converter {
             boolean resolved = switch (item.need) {
                 case TASK -> groups.containsKey(item.subject) && routes.containsKey(item.subject);
                 case OUTCOME_GATEWAY -> routes.containsKey(item.subject);
-                case SERVICE -> request.path("serviceTaskMappings").path(item.subject).isObject();
-                case CHILD -> request.path("childWorkflowMappings").path(item.subject).isObject();
-                case ACKNOWLEDGE -> request.path("acknowledgeInfo").asBoolean(false);
+                case SERVICE -> effectiveRequest.path("serviceTaskMappings").path(item.subject).isObject();
+                case CHILD -> effectiveRequest.path("childWorkflowMappings").path(item.subject).isObject();
+                case ACKNOWLEDGE -> effectiveRequest.path(Report.REVIEW.equals(item.issue.severity()) ? "acknowledgeReview" : "acknowledgeInfo").asBoolean(false);
                 default -> false;
             };
             issues.add(resolved ? item.issue.withResolution(item.need == Analysis.Need.ACKNOWLEDGE
@@ -76,8 +77,8 @@ public final class Converter {
         var compatibility = report(a, issues);
         if (!compatibility.publishable()) return new Result(null, compatibility, Map.of());
         ObjectNode def = json.object();
-        def.put("schemaVersion", "0.1"); def.put("workflowKey", request.path("workflowKey").asString());
-        def.put("name", request.path("name").asString());
+        def.put("schemaVersion", "0.1"); def.put("workflowKey", effectiveRequest.path("workflowKey").asString());
+        def.put("name", effectiveRequest.path("name").asString());
         def.set("metadata", json.toTree(Map.of("description", "Imported BPMN draft; review source report and test before publishing.")));
         ObjectNode input = json.object(); input.put("type", "object"); input.put("additionalProperties", false);
         ObjectNode properties = input.putObject("properties");
@@ -89,7 +90,7 @@ public final class Converter {
             if (previous != null && !previous.equals(type) && !(Set.of(previous, type).contains("number") && Set.of(previous, type).contains("integer")))
                 throw SourceException.invalid("Incompatible inferred types for request field '" + key + "'. Supply a reviewed request schema.");
         });
-        request.path("serviceTaskMappings").properties().forEach(e -> e.getValue().path("inputMapping").properties()
+        effectiveRequest.path("serviceTaskMappings").properties().forEach(e -> e.getValue().path("inputMapping").properties()
                 .forEach(m -> { String ref = m.getValue().asString(""); if (ref.matches("/input/[a-z][A-Za-z0-9]{0,63}")) inferred.putIfAbsent(ref.substring(7), "string"); }));
         inferred.forEach((key, type) -> { var field = properties.putObject(key); field.put("type", type); field.put("title", key); });
         serviceInputTypes.forEach((key, schema) -> {
@@ -98,7 +99,7 @@ public final class Converter {
             properties.set(key, field);
         });
         input.set("required", json.toTree(inferred.keySet()));
-        def.set("inputSchema", request.path("inputSchema").isObject() ? request.path("inputSchema").deepCopy() : input);
+        def.set("inputSchema", effectiveRequest.path("inputSchema").isObject() ? effectiveRequest.path("inputSchema").deepCopy() : input);
         def.set("outputSchema", json.toTree(Map.of("type", "object", "additionalProperties", false, "properties", Map.of())));
         def.set("outputMapping", json.object()); def.set("decisions", json.toTree(List.of()));
         def.set("triggers", json.toTree(List.of("manual", "api")));
@@ -120,14 +121,14 @@ public final class Converter {
             };
             if (type.equals("parallelSplit")) config.put("joinRef", a.nodes.get(a.parallelJoins.get(node.id)).canonicalId);
             else if (type.equals("wait")) config.put("duration", a.waits.get(node.id));
-            else if (type.equals("startWorkflow")) config = (ObjectNode) request.path("childWorkflowMappings").path(node.id).deepCopy();
+            else if (type.equals("startWorkflow")) config = (ObjectNode) effectiveRequest.path("childWorkflowMappings").path(node.id).deepCopy();
             else if (type.equals("end")) {
                 String outcome = node.name == null || node.name.isBlank() ? "Completed" : node.name;
                 config.put("businessOutcome", outcome);
                 config.put("outcomeKind", outcome.toLowerCase(Locale.ROOT).matches(".*(reject|denied|decline|refus).*") ? "rejected" : "success");
             } else if (type.equals("approval")) { config.put("candidateGroupRef", groups.get(node.id)); config.put("rejectReasonRequired", true); }
             else if (type.equals("http")) {
-                config = (ObjectNode) request.path("serviceTaskMappings").path(node.id).deepCopy();
+                config = (ObjectNode) effectiveRequest.path("serviceTaskMappings").path(node.id).deepCopy();
                 int version = config.path("definitionVersion").asInt(1); config.remove("definitionVersion");
                 String key = config.path("connectionRef").asString();
                 Integer previous = versions.putIfAbsent(key, version);
@@ -186,6 +187,13 @@ public final class Converter {
         compatibility = report(a, issues.stream().map(i -> sourceMap.containsKey(i.sourceElementId())
                 ? i.withTarget(sourceMap.get(i.sourceElementId())) : i).toList());
         return new Result(def, compatibility, sourceMap);
+    }
+    public static JsonNode expandServiceGroups(Analysis analysis,JsonNode request,Json json) {
+        rejectUnknownMappings(request.path("serviceGroupMappings"),analysis.serviceGroups.keySet(),"serviceGroupMappings");
+        ObjectNode expanded=(ObjectNode)request.deepCopy(); ObjectNode tasks=json.object();
+        request.path("serviceGroupMappings").properties().forEach(entry -> analysis.serviceGroups.get(entry.getKey()).forEach(task -> tasks.set(task,entry.getValue().deepCopy())));
+        request.path("serviceTaskMappings").properties().forEach(entry -> tasks.set(entry.getKey(),entry.getValue().deepCopy()));
+        expanded.set("serviceTaskMappings",tasks); return expanded;
     }
     private static void rejectUnknownMappings(JsonNode mappings, Set<String> known, String kind) {
         for (String key : mappings.propertyNames()) if (!known.contains(key))

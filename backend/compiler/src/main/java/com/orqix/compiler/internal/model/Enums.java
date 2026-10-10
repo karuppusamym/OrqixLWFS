@@ -76,7 +76,7 @@ public final class Enums {
 
     /** Comparison operators. */
     public enum Operator {
-        EQ("is"), GTE("is at least"), LT("is less than");
+        EQ("is"), NE("is not"), GTE("is at least"), GT("is greater than"), LT("is less than"), LTE("is at most");
 
         private final String phrase;
 

@@ -40,6 +40,239 @@ tags:
   - name: Conversation
 
 paths:
+  /workspaces/{workspaceId}/migration-policy:
+    parameters:
+    - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags:
+      - Migrations
+      operationId: getMigrationPolicy
+      x-orqix-permission: workspace.manage-access
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MigrationPolicy'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+    put:
+      tags:
+      - Migrations
+      operationId: setMigrationPolicy
+      x-orqix-permission: workspace.manage-access
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MigrationPolicy'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MigrationPolicyRequest'
+  /workspaces/{workspaceId}/workflows/{workflowId}/migration-review:
+    parameters:
+    - $ref: '#/components/parameters/WorkspaceId'
+    - $ref: '#/components/parameters/WorkflowId'
+    get:
+      tags:
+      - Migrations
+      operationId: getMigrationReview
+      x-orqix-permission: workflow.read
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MigrationReview'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+    post:
+      tags:
+      - Migrations
+      operationId: approveMigrationReview
+      x-orqix-permission: workflow.publish
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MigrationReview'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MigrationReviewRequest'
+  /workspaces/{workspaceId}/migrations/projects:
+    parameters:
+    - $ref: '#/components/parameters/WorkspaceId'
+    post:
+      tags:
+      - Migrations
+      operationId: uploadMigrationProject
+      x-orqix-permission: workflow.edit
+      responses:
+        '201':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MigrationProject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadMigrationProjectRequest'
+  /workspaces/{workspaceId}/migrations/projects/{projectId}:
+    parameters:
+    - $ref: '#/components/parameters/WorkspaceId'
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Uuid'
+    get:
+      tags:
+      - Migrations
+      operationId: getMigrationProject
+      x-orqix-permission: workflow.read
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MigrationProject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /workspaces/{workspaceId}/migrations/projects/{projectId}/convert-next:
+    parameters:
+    - $ref: '#/components/parameters/WorkspaceId'
+    - name: projectId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Uuid'
+    post:
+      tags:
+      - Migrations
+      operationId: convertMigrationProjectNext
+      x-orqix-permission: workflow.edit
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MigrationProjectConversion'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConvertMigrationProjectRequest'
+
   /workspaces/{workspaceId}/conversations/messages:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
     post:
@@ -1775,6 +2008,237 @@ components:
       content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } }
 
   schemas:
+    MigrationPolicy:
+      type: object
+      additionalProperties: false
+      required:
+      - required
+      - version
+      - reason
+      - updatedAt
+      properties:
+        required:
+          type: boolean
+        version: &id001
+          type: integer
+          minimum: 0
+        reason: &id003
+          type:
+          - string
+          - 'null'
+        updatedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    MigrationPolicyRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - required
+      - expectedVersion
+      - reason
+      properties:
+        required:
+          type: boolean
+        expectedVersion: *id001
+        reason: &id002
+          type: string
+          minLength: 1
+          maxLength: 1000
+    MigrationReviewRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - draftRevision
+      - expectedVersion
+      - reason
+      properties:
+        draftRevision:
+          type: integer
+          minimum: 1
+        expectedVersion: *id001
+        reason: *id002
+    MigrationReview:
+      type: object
+      additionalProperties: false
+      required:
+      - migration
+      - required
+      - draftRevision
+      - definitionHash
+      - sourceHash
+      - mappingsHash
+      - mapper
+      - reviewedBy
+      - reviewedAt
+      - reviewReason
+      - reviewVersion
+      - approved
+      - canApprove
+      - detail
+      properties:
+        migration:
+          type: boolean
+        required:
+          type: boolean
+        draftRevision:
+          type: integer
+        definitionHash: &id004
+          type: string
+        sourceHash: *id003
+        mappingsHash: *id003
+        mapper:
+          oneOf:
+          - $ref: '#/components/schemas/SubjectRef'
+          - type: 'null'
+        reviewedBy:
+          oneOf:
+          - $ref: '#/components/schemas/SubjectRef'
+          - type: 'null'
+        reviewedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        reviewReason: *id003
+        reviewVersion: *id001
+        approved:
+          type: boolean
+        canApprove:
+          type: boolean
+        detail: *id004
+    UploadMigrationProjectRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - name
+      - files
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        files:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items:
+            type: object
+            additionalProperties: false
+            required:
+            - fileName
+            - content
+            properties:
+              fileName:
+                type: string
+                minLength: 1
+                maxLength: 200
+              content:
+                type: string
+                minLength: 1
+                maxLength: 1048576
+              sourceFormat:
+                type: string
+                enum:
+                - bpmn
+                - dmn
+                - form
+    MigrationProject:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - name
+      - status
+      - files
+      - conversionOrder
+      - issues
+      - createdAt
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        name: *id004
+        status:
+          type: string
+          enum:
+          - analyzed
+          - blocked
+          - converting
+          - converted
+        files:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+            - fileName
+            - migrationId
+            - processId
+            - dependencies
+            properties:
+              fileName: *id004
+              migrationId:
+                oneOf:
+                - $ref: '#/components/schemas/Uuid'
+                - type: 'null'
+              processId: *id003
+              dependencies:
+                type: array
+                items: *id004
+        conversionOrder:
+          type: array
+          items:
+            $ref: '#/components/schemas/Uuid'
+        issues:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+            - fileName
+            - code
+            - detail
+            properties:
+              fileName: *id004
+              code: *id004
+              detail: *id004
+        createdAt:
+          $ref: '#/components/schemas/Timestamp'
+    ConvertMigrationProjectRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - expectedMigrationId
+      - mappings
+      properties:
+        expectedMigrationId:
+          $ref: '#/components/schemas/Uuid'
+        mappings:
+          $ref: '#/components/schemas/ConvertMigrationRequest'
+    MigrationProjectConversion:
+      type: object
+      additionalProperties: false
+      required:
+      - project
+      - converted
+      properties:
+        project:
+          $ref: '#/components/schemas/MigrationProject'
+        converted:
+          type: object
+          required:
+          - workflow
+          - draft
+          - report
+          properties:
+            workflow:
+              $ref: '#/components/schemas/Workflow'
+            draft:
+              $ref: '#/components/schemas/WorkflowDraft'
+            report:
+              $ref: '#/components/schemas/CompatibilityReport'
+
     ConversationMessageRequest:
       type: object
       additionalProperties: false
@@ -2790,7 +3254,7 @@ components:
         sourceElementId: { type: string }
         sourceName: { type: [string, 'null'] }
         sourceKind: { type: string }
-        severity: { type: string, enum: [supported, info, action, blocker] }
+        severity: { type: string, enum: [supported, info, review, action, blocker] }
         reasonCode: { type: string }
         explanation: { type: string }
         suggestedAction: { type: [string, 'null'] }

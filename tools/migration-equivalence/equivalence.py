@@ -105,7 +105,7 @@ def live_observations(suite, suite_path, timeout):
         "sourceFormat": "bpmn", "content": source_path.read_text(encoding="utf-8")}), {201})
     service = next(node["config"] for node in template["nodes"] if node["id"] == "procure")
     conversion = {"workflowKey": "golden-" + uuid.uuid4().hex[:12], "name": "Golden scenario migration",
-        "inputSchema": template["inputSchema"], "acknowledgeInfo": True,
+        "inputSchema": template["inputSchema"], "acknowledgeInfo": True, "acknowledgeReview": True,
         "groupMappings": {"source-managers": "managers", "source-finance": "finance-approvers"},
         "serviceTaskMappings": {"procure": service}}
     target = response_json(designer.post(f"/workspaces/{ws}/migrations/{job['id']}/convert", conversion), {201})

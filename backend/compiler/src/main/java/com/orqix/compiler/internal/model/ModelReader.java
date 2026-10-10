@@ -154,6 +154,17 @@ public final class ModelReader {
      */
     public static Condition readCondition(JsonNode c) {
         require(c != null && c.isObject(), "condition must be an object");
+        if (c.has("all") || c.has("any")) {
+            String group = c.has("all") ? "all" : "any";
+            require(c.size() == 1 && c.path(group).isArray() && c.path(group).size() >= 2 && c.path(group).size() <= 8,
+                    "logical conditions require 2 to 8 atomic terms");
+            List<Condition> terms = new ArrayList<>();
+            for (JsonNode term : c.path(group)) {
+                require(!term.has("all") && !term.has("any"), "nested logical conditions are not supported");
+                terms.add(readCondition(term));
+            }
+            return new Condition(null, null, null, group, List.copyOf(terms));
+        }
         JsonNode fieldRef = c.get("fieldRef");
         JsonNode operator = c.get("operator");
         JsonNode value = c.get("value");

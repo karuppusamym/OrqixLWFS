@@ -3,15 +3,17 @@
  * Drafts may be incomplete, so every container is normalized on load and every accessor is defensive.
  */
 export type NodeKind = 'start' | 'approval' | 'decision' | 'branch' | 'http' | 'notification' | 'parallelSplit' | 'parallelJoin' | 'wait' | 'startWorkflow' | 'end'
-export type Operator = 'eq' | 'gte' | 'lt'
+export type Operator = 'eq' | 'ne' | 'gte' | 'gt' | 'lt' | 'lte'
 export type RouteKind = 'next' | 'approved' | 'rejected' | 'timedOut' | 'condition' | 'default'
 export type Literal = string | number | boolean
 
-export interface Condition {
+export interface AtomicCondition {
   fieldRef: string
   operator: Operator
   value: Literal
 }
+export type Condition = AtomicCondition | { all?: AtomicCondition[]; any?: AtomicCondition[]; fieldRef?: never; operator?: never; value?: never }
+export function conditionTerms(c: Condition): AtomicCondition[] { return 'all' in c ? c.all ?? [] : 'any' in c ? c.any ?? [] : [c as AtomicCondition] }
 
 export interface WorkflowNode {
   id: string
@@ -30,7 +32,7 @@ export interface Transition {
 }
 
 export interface DecisionRow {
-  when: Condition
+  when: AtomicCondition
   then: Record<string, Literal>
 }
 

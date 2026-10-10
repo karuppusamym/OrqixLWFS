@@ -38,6 +38,18 @@ public class OrqixRoute {
             throw new IllegalStateException(transitionId + " is not a sequence flow");
         }
         ExtensionElement condition = OrqixModel.requireExtension(element, "condition");
+        String group = OrqixModel.attribute(condition, "group");
+        if (group != null) {
+            var terms = OrqixModel.children(condition, "term");
+            if (terms.size() < 2 || terms.size() > 8) throw new IllegalStateException("Invalid logical condition bound");
+            if ("all".equals(group)) return terms.stream().allMatch(term -> matches(execution, term));
+            if ("any".equals(group)) return terms.stream().anyMatch(term -> matches(execution, term));
+            throw new IllegalStateException("Unknown logical condition group");
+        }
+        return matches(execution, condition);
+    }
+
+    private boolean matches(DelegateExecution execution, ExtensionElement condition) {
         String fieldRef = OrqixModel.attribute(condition, "fieldRef");
         String operator = OrqixModel.attribute(condition, "operator");
         Object literal = literal(OrqixModel.attribute(condition, "valueType"), OrqixModel.attribute(condition, "value"));

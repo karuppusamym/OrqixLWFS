@@ -66,6 +66,7 @@ public class ReleaseService {
     private final WorkflowCompiler compiler;
     private final CompileContextFactory contexts;
     private final AgentAvailabilityCheck agentCheck;
+    private final MigrationGovernance migrationGovernance;
     private final EngineDeployer deployer;
     private final IdempotencyService idempotency;
     private final ConnectionService connections;
@@ -77,7 +78,8 @@ public class ReleaseService {
     public ReleaseService(CatalogStore store, WorkflowService workflows, PolicyService policy, SubjectService subjects,
             WorkflowCompiler compiler, CompileContextFactory contexts, EngineDeployer deployer,
             IdempotencyService idempotency, ConnectionService connections, AuditWriter audit, CursorCodec cursors,
-            Json json, Clock clock, AgentAvailabilityCheck agentCheck) {
+            Json json, Clock clock, AgentAvailabilityCheck agentCheck, MigrationGovernance migrationGovernance) {
+        this.migrationGovernance = migrationGovernance;
         this.agentCheck = agentCheck;
         this.store = store;
         this.workflows = workflows;
@@ -118,6 +120,7 @@ public class ReleaseService {
                 .orElseThrow(() -> new ApiException(ProblemCode.VALIDATION_FAILED, "The draft revision does not exist.")
                         .withFieldErrors(List.of(new ApiException.FieldError("/draftRevision", "minimum",
                                 "Unknown draft revision"))));
+        migrationGovernance.requirePublish(caller, workspaceId, workflowId, draft);
         CompileContext context = contexts.create(access.workspace(), draft.definitionJson());
         ValidationReport report = compiler.validate(draft.definitionJson(), context);
         if (!report.publishable()) {

@@ -346,28 +346,55 @@
       ]
     },
     "condition": {
-      "type": "object",
-      "properties": {
-        "fieldRef": {
-          "$ref": "#/$defs/fieldRef"
+      "if": {
+        "required": [
+          "all"
+        ]
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "all": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 8,
+            "items": {
+              "$ref": "#/$defs/atomicCondition"
+            }
+          }
         },
-        "operator": {
-          "enum": [
-            "eq",
-            "gte",
-            "lt"
+        "required": [
+          "all"
+        ],
+        "additionalProperties": false
+      },
+      "else": {
+        "if": {
+          "required": [
+            "any"
           ]
         },
-        "value": {
-          "$ref": "#/$defs/literal"
+        "then": {
+          "type": "object",
+          "properties": {
+            "any": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 8,
+              "items": {
+                "$ref": "#/$defs/atomicCondition"
+              }
+            }
+          },
+          "required": [
+            "any"
+          ],
+          "additionalProperties": false
+        },
+        "else": {
+          "$ref": "#/$defs/atomicCondition"
         }
-      },
-      "required": [
-        "fieldRef",
-        "operator",
-        "value"
-      ],
-      "additionalProperties": false
+      }
     },
     "formSchema": {
       "description": "Approved JSON Schema keyword subset for request/output forms. No pattern, format, $ref, nested objects, arrays or remote schemas in v0.",
@@ -975,7 +1002,7 @@
             "type": "object",
             "properties": {
               "when": {
-                "$ref": "#/$defs/condition"
+                "$ref": "#/$defs/atomicCondition"
               },
               "then": {
                 "$ref": "#/$defs/decisionOutput"
@@ -1100,6 +1127,33 @@
         "items",
         "minItems",
         "maxItems"
+      ],
+      "additionalProperties": false
+    },
+    "atomicCondition": {
+      "type": "object",
+      "properties": {
+        "fieldRef": {
+          "$ref": "#/$defs/fieldRef"
+        },
+        "operator": {
+          "enum": [
+            "eq",
+            "ne",
+            "gte",
+            "gt",
+            "lt",
+            "lte"
+          ]
+        },
+        "value": {
+          "$ref": "#/$defs/literal"
+        }
+      },
+      "required": [
+        "fieldRef",
+        "operator",
+        "value"
       ],
       "additionalProperties": false
     }

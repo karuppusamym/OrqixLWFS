@@ -214,6 +214,10 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 4000
+        },
+        "pattern": {
+          "type": "string",
+          "maxLength": 500
         }
       },
       "required": [
@@ -480,7 +484,9 @@
                     "/text",
                     "/extract",
                     "/pinLatest",
-                    "/extractSnapshot"
+                    "/extractSnapshot",
+                    "/resolveLink",
+                    "/versions"
                   ]
                 },
                 "effectClass": {
@@ -490,47 +496,123 @@
                   "const": [
                     200
                   ]
-                },
-                "requestSchema": {
-                  "properties": {
-                    "required": {
-                      "allOf": [
-                        {
-                          "contains": {
-                            "const": "driveId"
-                          }
-                        },
-                        {
-                          "contains": {
-                            "const": "itemId"
+                }
+              },
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "path": {
+                        "const": "/resolveLink"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "requestSchema": {
+                        "required": [
+                          "required",
+                          "properties"
+                        ],
+                        "properties": {
+                          "required": {
+                            "contains": {
+                              "const": "shareUrl"
+                            }
+                          },
+                          "properties": {
+                            "required": [
+                              "shareUrl",
+                              "driveId"
+                            ],
+                            "properties": {
+                              "shareUrl": {
+                                "required": [
+                                  "type"
+                                ],
+                                "properties": {
+                                  "type": {
+                                    "const": "string"
+                                  }
+                                },
+                                "anyOf": [
+                                  {
+                                    "required": [
+                                      "pattern"
+                                    ]
+                                  },
+                                  {
+                                    "required": [
+                                      "enum"
+                                    ]
+                                  }
+                                ]
+                              },
+                              "driveId": {
+                                "required": [
+                                  "type",
+                                  "enum"
+                                ],
+                                "properties": {
+                                  "type": {
+                                    "const": "string"
+                                  },
+                                  "enum": {
+                                    "minItems": 1
+                                  }
+                                }
+                              }
+                            }
                           }
                         }
-                      ]
-                    },
+                      }
+                    }
+                  },
+                  "else": {
                     "properties": {
-                      "required": [
-                        "driveId",
-                        "itemId"
-                      ],
-                      "properties": {
-                        "driveId": {
+                      "requestSchema": {
+                        "properties": {
+                          "required": {
+                            "allOf": [
+                              {
+                                "contains": {
+                                  "const": "driveId"
+                                }
+                              },
+                              {
+                                "contains": {
+                                  "const": "itemId"
+                                }
+                              }
+                            ]
+                          },
                           "properties": {
-                            "type": {
-                              "const": "string"
-                            }
-                          }
-                        },
-                        "itemId": {
-                          "properties": {
-                            "type": {
-                              "const": "string"
-                            }
-                          }
-                        },
-                        "versionId": {
-                          "properties": {
-                            "type": {
-                              "const": "string"
+                            "required": [
+                              "driveId",
+                              "itemId"
+                            ],
+                            "properties": {
+                              "driveId": {
+                                "properties": {
+                                  "type": {
+                                    "const": "string"
+                                  }
+                                }
+                              },
+                              "itemId": {
+                                "properties": {
+                                  "type": {
+                                    "const": "string"
+                                  }
+                                }
+                              },
+                              "versionId": {
+                                "properties": {
+                                  "type": {
+                                    "const": "string"
+                                  }
+                                }
+                              }
                             }
                           }
                         }
@@ -538,7 +620,7 @@
                     }
                   }
                 }
-              }
+              ]
             }
           }
         }

@@ -32,17 +32,20 @@ public final class ConditionMatcher {
             int c = an.number().compareTo(ln.number());
             return switch (op) {
                 case EQ -> c == 0;
+                case NE -> c != 0;
                 case GTE -> c >= 0;
+                case GT -> c > 0;
                 case LT -> c < 0;
+                case LTE -> c <= 0;
             };
         }
         if (!a.typeName().equals(l.typeName())) {
             throw new IllegalArgumentException("Cannot compare " + a.typeName() + " with " + l.typeName());
         }
-        if (op != Operator.EQ) {
+        if (op != Operator.EQ && op != Operator.NE) {
             throw new IllegalArgumentException("Operator " + operator + " compares numbers only, not "
                     + a.typeName());
         }
-        return a.value().equals(l.value());
+        return op == Operator.EQ ? a.value().equals(l.value()) : !a.value().equals(l.value());
     }
 }

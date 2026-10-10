@@ -90,7 +90,7 @@ public class MigrationService {
                 definition=(ObjectNode)pkg.path("definition").deepCopy(); sourceMap=pkg.path("fileMappings");
             } else {
                 var analysis=Analyzer.analyze(new String(job.source,StandardCharsets.UTF_8),Limits.DEFAULT);
-                var result=Converter.convert(analysis,request,json,serviceInputTypes(ws,request));
+                var result=Converter.convert(analysis,request,json,serviceInputTypes(ws,Converter.expandServiceGroups(analysis,request,json)));
                 definition=result.definition(); report=result.report(); sourceMap=result.sourceMap();
             }
             if (!report.publishable()) throw new ApiException(ProblemCode.MIGRATION_BLOCKED,"Resolve mappings and acknowledge documented losses before converting.")
@@ -104,9 +104,9 @@ public class MigrationService {
             }
             jdbc.sql("""
                 UPDATE migration_job SET report=CAST(:report AS jsonb),source_map=CAST(:map AS jsonb),mappings=CAST(:mappings AS jsonb),
-                    status='converted',converted_workflow_id=:workflow,updated_at=now() WHERE workspace_id=:ws AND id=:id
+                    status='converted',converted_workflow_id=:workflow,converted_by_subject_id=:mapper,updated_at=now() WHERE workspace_id=:ws AND id=:id
                 """).param("report",json.write(report)).param("map",json.write(sourceMap)).param("mappings",json.write(request))
-                .param("workflow",created.workflowId()).param("ws",ws).param("id",id).update();
+                .param("workflow",created.workflowId()).param("mapper",caller.subjectId()).param("ws",ws).param("id",id).update();
             audit(caller,ws,id,"migration.converted",Map.of("workflowId",created.workflowId().toString(),"sourceFormat",job.format));
             return new Converted(created.workflow(),created.draft(),report);
         } catch (SourceException e) { throw sourceProblem(e); }

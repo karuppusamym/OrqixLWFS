@@ -75,16 +75,18 @@ public final class MicrosoftGraphDocuments {
                 || !schemas.getSchema(operation.requestSchema()).validate(input).isEmpty()) {
             throw fail("DOCUMENT_INPUT_INVALID");
         }
-        String drive = segment(input.path("driveId").asString(""));
-        String item = segment(input.path("itemId").asString(""));
-        String version = input.path("versionId").asString("");
-        if (!version.isEmpty()) { version = segment(version); }
         String path = operation.path();
-        if (!java.util.Set.of("/metadata", "/text", "/extract", "/pinLatest", "/extractSnapshot").contains(path)
+        if (!java.util.Set.of("/metadata", "/text", "/extract", "/pinLatest", "/extractSnapshot", "/resolveLink", "/versions").contains(path)
                 || operation.effectClass() != ConnectionDefinition.EffectClass.READ_ONLY) {
             throw fail("DOCUMENT_OPERATION_INVALID");
         }
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(Math.max(1, timeoutSeconds));
+        if ("/resolveLink".equals(path)) { return resolveLink(target, operation, input, token, deadline); }
+        String drive = segment(input.path("driveId").asString(""));
+        String item = segment(input.path("itemId").asString(""));
+        String version = input.path("versionId").asString("");
+        if (!version.isEmpty()) { version = segment(version); }
+        if ("/versions".equals(path)) { return versions(target, drive, item, token, deadline); }
         if ("/extractSnapshot".equals(path)) {
             requireSnapshots(target);
             java.util.UUID id;
@@ -149,6 +151,95 @@ public final class MicrosoftGraphDocuments {
         }
         if (text) { return result.put("text", decodeText(bytes)); }
         return extracted(result, bytes, mime, deadline);
+    }
+
+    private ObjectNode resolveLink(Target target, ConnectionDefinition.Operation operation, JsonNode input,
+            String token, long deadline) {
+        JsonNode linkPolicy = operation.requestSchema().path("properties").path("shareUrl");
+        JsonNode approvedDrives = operation.requestSchema().path("properties").path("driveId").path("enum");
+        if (!(linkPolicy.has("pattern") || linkPolicy.path("enum").isArray())
+                || !approvedDrives.isArray() || approvedDrives.isEmpty()) { throw fail("DOCUMENT_LINK_POLICY_REQUIRED"); }
+        String url = input.path("shareUrl").asString("");
+        URI share = sharingUrl(url);
+        String encoded = "u!" + java.util.Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(share.toString().getBytes(StandardCharsets.UTF_8));
+        String base = target.baseUrl().replaceAll("/+$", "");
+        URI api = URI.create(base + "/shares/" + encoded
+                + "/driveItem?$select=id,name,webUrl,parentReference,file,eTag,size");
+        check(api, false);
+        // Do not use Prefer:redeemSharingLink: link resolution must not grant durable permission to the service.
+        JsonNode response = parse(send(api, token, deadline, "application/json"));
+        JsonNode file = response.path("remoteItem").isObject() ? response.path("remoteItem") : response;
+        String drive = segment(file.path("parentReference").path("driveId").asString(""));
+        String item = segment(file.path("id").asString(""));
+        boolean approved = false;
+        for (JsonNode candidate : approvedDrives) { approved |= drive.equals(candidate.asString()); }
+        if (!approved || (input.hasNonNull("driveId") && !drive.equals(input.path("driveId").asString()))) {
+            throw fail("DOCUMENT_DRIVE_NOT_APPROVED");
+        }
+        if (!file.path("file").isObject()) { throw fail("DOCUMENT_NOT_A_FILE"); }
+        String canonical = file.path("webUrl").asString("");
+        // A returned canonical URL is only provenance; strip its query/fragment so signed links are never outputs.
+        URI web = sharingUrl(canonical);
+        try { canonical = new URI(web.getScheme(), null, web.getHost(), -1, web.getPath(), null, null).toString(); }
+        catch (URISyntaxException e) { throw fail("DOCUMENT_RESPONSE_INVALID"); }
+        return json.object().put("driveId", drive).put("itemId", item).put("name", file.path("name").asString(""))
+                .put("webUrl", canonical).put("eTag", file.path("eTag").asString(""))
+                .put("size", file.path("size").asLong(0));
+    }
+
+    private static URI sharingUrl(String value) {
+        try {
+            URI uri = URI.create(value);
+            String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(Locale.ROOT);
+            boolean microsoft = host.equals("onedrive.live.com") || host.equals("1drv.ms")
+                    || host.matches("[a-z0-9][a-z0-9-]*\\.sharepoint\\.(?:com|us|de|cn)");
+            if (!"https".equalsIgnoreCase(uri.getScheme()) || !microsoft || uri.getRawUserInfo() != null
+                    || (uri.getPort() != -1 && uri.getPort() != 443) || uri.getRawFragment() != null
+                    || uri.getRawPath() == null || uri.getRawPath().isBlank() || value.length() > 2000) {
+                throw fail("DOCUMENT_LINK_INVALID");
+            }
+            return uri;
+        } catch (IllegalArgumentException e) { throw fail("DOCUMENT_LINK_INVALID"); }
+    }
+
+    private ObjectNode versions(Target target, String drive, String item, String token, long deadline) {
+        String base = target.baseUrl().replaceAll("/+$", "");
+        URI origin = URI.create(base);
+        String path = origin.getPath().replaceAll("/+$", "") + "/drives/" + drive + "/items/" + item + "/versions";
+        URI next = URI.create(base + "/drives/" + drive + "/items/" + item
+                + "/versions?$select=id,size,lastModifiedDateTime&$top=100");
+        var entries = json.object().putArray("versions");
+        java.util.Set<String> visited = new java.util.HashSet<>(), ids = new java.util.HashSet<>();
+        int pages = 0;
+        while (next != null) {
+            if (++pages > 10 || !visited.add(next.toString())) { throw fail("DOCUMENT_VERSION_LIST_LIMIT_EXCEEDED"); }
+            if (!origin.getScheme().equalsIgnoreCase(next.getScheme()) || !origin.getHost().equalsIgnoreCase(next.getHost())
+                    || origin.getPort() != next.getPort() || !path.equals(next.getPath()) || next.getRawUserInfo() != null
+                    || next.getRawFragment() != null) { throw fail("DOCUMENT_VERSION_PAGING_REJECTED"); }
+            check(next, false);
+            JsonNode page = parse(send(next, token, deadline, "application/json"));
+            if (!page.path("value").isArray()) { throw fail("DOCUMENT_RESPONSE_INVALID"); }
+            for (JsonNode entry : page.path("value")) {
+                String id = segment(entry.path("id").asString(""));
+                if (!ids.add(id)) { throw fail("DOCUMENT_RESPONSE_INVALID"); }
+                if (entries.size() >= 100) { throw fail("DOCUMENT_VERSION_LIST_LIMIT_EXCEEDED"); }
+                entries.addObject().put("versionId", id).put("size", entry.path("size").asLong(0))
+                        .put("lastModifiedDateTime", entry.path("lastModifiedDateTime").asString(""))
+                        .put("newestListed", entries.size() == 1);
+            }
+            JsonNode cursor = page.get("@odata.nextLink");
+            if (cursor == null || cursor.isNull()) { next = null; }
+            else {
+                if (!cursor.isString() || cursor.asString().length() > 4000) { throw fail("DOCUMENT_VERSION_PAGING_REJECTED"); }
+                try { next = URI.create(cursor.asString()); }
+                catch (IllegalArgumentException e) { throw fail("DOCUMENT_VERSION_PAGING_REJECTED"); }
+            }
+        }
+        String listing = json.write(entries);
+        if (listing.getBytes(StandardCharsets.UTF_8).length > MAX_TEXT_BYTES) { throw fail("DOCUMENT_VERSION_LIST_LIMIT_EXCEEDED"); }
+        return json.object().put("driveId", drive).put("itemId", item).put("versionsJson", listing)
+                .put("versionCount", entries.size()).put("hasMore", false);
     }
 
     private void requireSnapshots(Target target) {

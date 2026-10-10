@@ -48,7 +48,7 @@ class MigrationSafetyTest {
             """;
         var json = new Json(JsonMapper.builder().build());
         var analysis = Analyzer.analyze(xml, Limits.DEFAULT);
-        var request = json.parse("{\"workflowKey\":\"imported-pattern\",\"name\":\"Imported patterns\",\"acknowledgeInfo\":true}");
+        var request = json.parse("{\"workflowKey\":\"imported-pattern\",\"name\":\"Imported patterns\",\"acknowledgeInfo\":true,\"acknowledgeReview\":true}");
         assertThat(Converter.convert(analysis, request, json, java.util.Map.of()).definition()).isNull();
         ((tools.jackson.databind.node.ObjectNode) request).putObject("childWorkflowMappings").putObject("child")
             .put("workflowRef", "purchase-request").putObject("inputMapping");

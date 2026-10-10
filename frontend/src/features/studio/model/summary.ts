@@ -1,12 +1,13 @@
 import { chipFor, fieldInfo, type ConnectionLookup } from './fieldRefs'
 import { nodeById } from './graph'
 import { KINDS, ROUTE_LABEL } from './kinds'
-import type { Condition, Definition, Operator, Transition, WorkflowNode } from './types'
+import { conditionTerms, type Condition, type Definition, type Operator, type Transition, type WorkflowNode } from './types'
 
-export const OPERATOR_LABEL: Record<Operator, string> = { eq: 'is', gte: 'at least', lt: 'less than' }
+export const OPERATOR_LABEL: Record<Operator, string> = { eq: 'is', ne: 'is not', gte: 'at least', gt: 'greater than', lt: 'less than', lte: 'at most' }
 
 /** "Request → Amount (USD) is at least 5000" */
 export function describeCondition(def: Definition, c: Condition, lookup?: ConnectionLookup): string {
+  if ('all' in c || 'any' in c) return conditionTerms(c).map(term => `(${describeCondition(def, term, lookup)})`).join('all' in c ? ' and ' : ' or ')
   return `${chipFor(def, c.fieldRef, lookup)} ${OPERATOR_LABEL[c.operator]} ${String(c.value)}`
 }
 
@@ -22,7 +23,7 @@ export function routeText(def: Definition, t: Transition, lookup?: ConnectionLoo
     case 'default':
       return t.label ? `Otherwise (${t.label})` : 'Otherwise'
     case 'condition':
-      return t.label || (t.condition && t.condition.fieldRef ? `When ${describeCondition(def, t.condition, lookup)}` : 'When (condition not set)')
+      return t.label || (t.condition && conditionTerms(t.condition).length ? `When ${describeCondition(def, t.condition, lookup)}` : 'When (condition not set)')
     case 'next':
       return t.label ?? ''
   }

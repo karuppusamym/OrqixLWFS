@@ -9,6 +9,7 @@ import java.util.List;
 public final class Report {
 
     public static final String SUPPORTED = "supported";
+    public static final String REVIEW = "review";
     public static final String INFO = "info";
     public static final String ACTION = "action";
     public static final String BLOCKER = "blocker";
@@ -40,9 +41,11 @@ public final class Report {
         }
     }
 
-    public record ElementCounts(int total, int supported, int info, int action, int blocker) {
+    public record ElementCounts(int total, int supported, int info, int action, int blocker, int review) {
 
+        public ElementCounts(int total,int supported,int info,int action,int blocker) { this(total,supported,info,action,blocker,0); }
         public static ElementCounts of(List<Issue> issues) {
+            int review = 0;
             int supported = 0;
             int info = 0;
             int action = 0;
@@ -50,19 +53,21 @@ public final class Report {
             for (Issue issue : issues) {
                 switch (issue.severity()) {
                     case SUPPORTED -> supported++;
+                    case REVIEW -> review++;
                     case INFO -> info++;
                     case ACTION -> action++;
                     default -> blocker++;
                 }
             }
-            return new ElementCounts(issues.size(), supported, info, action, blocker);
+            return new ElementCounts(issues.size(), supported, info, action, blocker, review);
         }
     }
 
     public record RequiredMappings(List<String> groups, List<String> approvalTasks, List<String> serviceTasks,
-            List<String> childWorkflows) {
+            List<String> childWorkflows, java.util.Map<String,List<String>> serviceGroups) {
+        public RequiredMappings(List<String> groups,List<String> approvalTasks,List<String> serviceTasks,List<String> childWorkflows) { this(groups,approvalTasks,serviceTasks,childWorkflows,java.util.Map.of()); }
         public RequiredMappings(List<String> groups, List<String> approvalTasks, List<String> serviceTasks) {
-            this(groups, approvalTasks, serviceTasks, List.of());
+            this(groups, approvalTasks, serviceTasks, List.of(),java.util.Map.of());
         }
     }
 

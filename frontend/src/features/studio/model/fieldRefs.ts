@@ -1,6 +1,6 @@
 import { humanize } from '@/lib/text'
 import { guaranteedBefore, nodeById } from './graph'
-import type { Definition, Literal, WorkflowNode } from './types'
+import { conditionTerms, type Definition, type Literal, type WorkflowNode } from './types'
 
 export type FieldType = 'string' | 'number' | 'integer' | 'boolean' | 'array'
 
@@ -146,7 +146,7 @@ export function chipFor(def: Definition, ref: string, lookup?: ConnectionLookup)
 
 /** Rewrite every reference in the document with `map`. Used when a field key or step id changes. */
 export function rewriteRefs(def: Definition, map: (ref: string) => string): void {
-  for (const t of def.transitions) if (t.condition) t.condition.fieldRef = map(t.condition.fieldRef)
+  for (const t of def.transitions) if (t.condition) for (const term of conditionTerms(t.condition)) term.fieldRef = map(term.fieldRef)
   for (const d of def.decisions) {
     for (const r of d.rows) r.when.fieldRef = map(r.when.fieldRef)
   }
@@ -165,7 +165,7 @@ export function rewriteRefs(def: Definition, map: (ref: string) => string): void
 export function usagesOfRef(def: Definition, predicate: (ref: string) => boolean): string[] {
   const places: string[] = []
   for (const t of def.transitions) {
-    if (t.condition && predicate(t.condition.fieldRef)) places.push(`the path "${t.label ?? t.id}" from ${nodeById(def, t.from)?.label ?? t.from}`)
+    if (t.condition && conditionTerms(t.condition).some(term => predicate(term.fieldRef))) places.push(`the path "${t.label ?? t.id}" from ${nodeById(def, t.from)?.label ?? t.from}`)
   }
   for (const d of def.decisions) {
     if (d.rows.some((r) => predicate(r.when.fieldRef))) places.push(`the rule table "${d.key}"`)

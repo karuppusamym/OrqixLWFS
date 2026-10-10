@@ -22,7 +22,7 @@ class MigrationApiTest extends RuntimeTestBase {
     private ObjectNode request() throws Exception {
         var template=json.parse(Files.readString(Path.of("../../examples/purchase-approval.json")));
         var request=json.object(); request.put("workflowKey","import-"+UUID.randomUUID().toString().substring(0,8)); request.put("name","Imported purchase");
-        request.put("acknowledgeInfo",true); request.set("inputSchema",template.path("inputSchema"));
+        request.put("acknowledgeInfo",true); request.put("acknowledgeReview",true); request.set("inputSchema",template.path("inputSchema"));
         request.set("groupMappings",json.toTree(Map.of("source-managers","managers","source-finance","finance-approvers")));
         for(var node:template.path("nodes")) if(node.path("id").asString().equals("procure"))
             request.set("serviceTaskMappings",json.toTree(Map.of("procure",node.path("config"))));
@@ -71,14 +71,14 @@ class MigrationApiTest extends RuntimeTestBase {
         String childSource = "<definitions xmlns=\"http://www.omg.org/spec/BPMN/20100524/MODEL\" targetNamespace=\"urn:test\"><process id=\"simpleChild\" isExecutable=\"true\"><startEvent id=\"start\"/><endEvent id=\"end\"/><sequenceFlow id=\"route\" sourceRef=\"start\" targetRef=\"end\"/></process></definitions>";
         var childRequest = json.object();
         String childKey = "migration-child-" + UUID.randomUUID().toString().substring(0,8);
-        childRequest.put("workflowKey", childKey); childRequest.put("name", "Imported child"); childRequest.put("acknowledgeInfo", true);
+        childRequest.put("workflowKey", childKey); childRequest.put("name", "Imported child"); childRequest.put("acknowledgeInfo", true); childRequest.put("acknowledgeReview", true);
         var child = convert(upload(childSource, "bpmn"), childRequest);
         assertThat(child.status()).as(child.toString()).isEqualTo(201);
         var publishedChild = api("paul.publisher").post(Map.of("draftRevision",1,"acknowledgeWarnings",true), UUID.randomUUID().toString(),
             "/workspaces/{ws}/workflows/{id}/publish", PURCHASING, child.body().path("workflow").path("id").asString());
         assertThat(publishedChild.status()).as(publishedChild.toString()).isEqualTo(201);
         var parentRequest = json.object(); parentRequest.put("workflowKey", "migration-parent-" + UUID.randomUUID().toString().substring(0,8));
-        parentRequest.put("name", "Imported parallel timer child"); parentRequest.put("acknowledgeInfo", true);
+        parentRequest.put("name", "Imported parallel timer child"); parentRequest.put("acknowledgeInfo", true); parentRequest.put("acknowledgeReview", true);
         parentRequest.set("childWorkflowMappings", json.toTree(Map.of("child", Map.of("workflowRef", childKey, "inputMapping", Map.of(), "resultMapping", Map.of()))));
         var parent = convert(upload(Files.readString(Path.of("../../examples/migration/parallel-timer-child.bpmn")), "bpmn"), parentRequest);
         assertThat(parent.status()).as(parent.toString()).isEqualTo(201);
@@ -123,7 +123,7 @@ class MigrationApiTest extends RuntimeTestBase {
         pkg.set("fileMappings",json.toTree(Map.of("rules/process.xml",Map.of("disposition","mapped","targetNodeIds",nodeIds,"explanation","Hand-authored test mapping, not a native Pega conversion."))));
         var mapping=upload(json.write(pkg),"pegaMapping"); var request=request(); request.put("acknowledgeInfo",false);
         assertThat(convert(mapping,request).status()).isEqualTo(422);
-        request.put("acknowledgeInfo",true); var converted=convert(mapping,request);
+        request.put("acknowledgeInfo",true); request.put("acknowledgeReview",true); var converted=convert(mapping,request);
         assertThat(converted.status()).as(converted.toString()).isEqualTo(201);
         assertThat(converted.body().path("report").path("sourceSystem").asString()).isEqualTo("pega");
         pkg.put("sourceArchiveHash","0".repeat(64));

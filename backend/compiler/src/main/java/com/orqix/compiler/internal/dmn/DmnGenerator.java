@@ -83,8 +83,11 @@ public final class DmnGenerator {
         String operand = c.value() instanceof Literal.Str s ? "\"" + s.string() + "\"" : c.value().text();
         return switch (c.operator()) {
             case GTE -> ">= " + operand;
+            case GT -> "> " + operand;
             case LT -> "< " + operand;
+            case LTE -> "<= " + operand;
             case EQ -> "== " + operand;
+            case NE -> "!= " + operand;
         };
     }
 

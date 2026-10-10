@@ -91,6 +91,8 @@ public class AuditWriter {
             Map.entry("migration.uploaded", Set.of("migrationId", "sourceSystem", "sourceSha256", "adapterVersion",
                     "elementCount", "blockerCount", "actionCount")),
             Map.entry("migration.converted", Set.of("migrationId", "workflowId", "workflowKey")),
+            Map.entry("migration.policy.changed", Set.of("required", "version")),
+            Map.entry("migration.review.approved", Set.of("revision", "definitionHash", "reviewVersion")),
             Map.entry("conversation.message", Set.of("stage", "version")),
             Map.entry("agent.call", Set.of("key", "operation", "profile", "model", "outcome", "toolCalls", "inputTokens",
                     "outputTokens", "costUsd", "durationMs", "effectId")));

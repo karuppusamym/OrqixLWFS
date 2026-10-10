@@ -42,7 +42,7 @@ function ConversationScreen({ ws, subject }: { ws: string; subject: string }) {
   return <div className="mx-auto w-full max-w-3xl">
     <PageHeader title="Assistant" description="Start a request, collect its details, and review task actions in a guided conversation." actions={<Button variant="secondary" onClick={startNew} disabled={mutation.isPending}>New conversation</Button>} />
     <div className="mb-4 rounded-card border border-border bg-surface-muted p-4 text-sm">
-      <p>Try “start Purchase approval”, “my tasks”, “my requests”, or “status ORQ-1001”. Request and task actions require your review and confirmation.</p>
+      <p>Describe what you need, such as “I need a laptop”, or try “my tasks”, “my requests”, or “status ORQ-1001”. For natural-language matching and form prefill, your request, available workflow names, and selected form field definitions are sent to your configured AI provider under Orqix’s model and budget controls. Request and task actions still require your review and confirmation.</p>
       <div className="mt-3 flex flex-wrap gap-2">{['workflows', 'my tasks', 'my requests'].map((command) => <Button key={command} size="sm" variant="secondary" disabled={mutation.isPending} onClick={() => send(command)}>{command}</Button>)}</div>
     </div>
     <section aria-label="Conversation" aria-live="polite" className="space-y-3">
@@ -60,7 +60,7 @@ function ConversationScreen({ ws, subject }: { ws: string; subject: string }) {
     <form className="mt-6 space-y-2" onSubmit={(event) => { event.preventDefault(); send(text) }}>
       <Label htmlFor="conversation-message">{current?.field?.title ? `Your answer: ${String(current.field.title)}` : 'Message'}</Label>
       <Textarea id="conversation-message" maxLength={4000} value={text} disabled={mutation.isPending} onChange={(event) => setText(event.target.value)} aria-describedby="conversation-help" />
-      <p id="conversation-help" className="text-xs text-muted-foreground">For a collection, enter a JSON list such as ["Laptop", "Monitor"]. To change a reviewed value, use fieldName=value.</p>
+      <p id="conversation-help" className="text-xs text-muted-foreground">For a collection, enter a JSON list such as ["Laptop", "Monitor"]. To change a reviewed value, use fieldName=value. If natural-language matching is unavailable, say “start” followed by the workflow name.</p>
       <Button variant="primary" type="submit" disabled={!text.trim() || mutation.isPending}>{mutation.isPending ? 'Sending…' : 'Send'}</Button>
     </form>
   </div>

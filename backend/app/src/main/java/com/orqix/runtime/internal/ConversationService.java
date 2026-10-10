@@ -27,7 +27,7 @@ import com.orqix.shared.web.Sql;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.ObjectNode;
 
-/** Deterministic, resumable field collection and reviewed commands; no provider is required. */
+/** Resumable guided execution with deterministic commands and optional natural-language workflow matching. */
 @Service
 public class ConversationService {
     public record Reply(JsonNode body, boolean replayed) {}
@@ -54,6 +54,23 @@ public class ConversationService {
         this.idempotency=idempotency; this.audit=audit; this.clock=clock; this.properties=properties;
     }
 
+    public void validateMessage(Caller caller, UUID ws, String key, JsonNode body) {
+        policy.requireMember(caller, ws);
+        IdempotencyService.requireKey(key);
+        if (body==null || !body.isObject() || !body.path("message").isString()
+                || body.path("message").asString().isBlank() || body.path("message").asString().length()>4000)
+            throw ApiException.malformed("message must be between 1 and 4000 characters.");
+        body.properties().forEach(e -> {
+            if (!Set.of("message", "conversationId", "expectedVersion").contains(e.getKey()))
+                throw ApiException.malformed("Unknown conversation request property.");
+        });
+    }
+
+    public boolean isCompletedReplay(Caller caller, UUID ws, String key, JsonNode body) {
+        return idempotency.hasCompletedReplay(ws, caller.subjectId(), "sendConversationMessage", key,
+                idempotency.requestHash("sendConversationMessage", Map.of("workspaceId", ws.toString()), body));
+    }
+
     @Transactional(readOnly=true)
     public JsonNode get(Caller caller, UUID ws, UUID id) {
         policy.requireMember(caller, ws);
@@ -62,16 +79,10 @@ public class ConversationService {
     }
 
     @Transactional
-    public Reply message(Caller caller, UUID ws, String key, JsonNode body) {
-        policy.requireMember(caller, ws);
+    public Reply message(Caller caller, UUID ws, String key, JsonNode body,
+            ConversationIntentService.Interpretation interpretation) {
+        validateMessage(caller, ws, key, body);
         key=IdempotencyService.requireKey(key);
-        if (body==null || !body.isObject() || !body.path("message").isString()
-                || body.path("message").asString().isBlank() || body.path("message").asString().length()>4000)
-            throw ApiException.malformed("message must be between 1 and 4000 characters.");
-        body.properties().forEach(e -> {
-            if (!Set.of("message", "conversationId", "expectedVersion").contains(e.getKey()))
-                throw ApiException.malformed("Unknown conversation request property.");
-        });
         UUID existing=null;
         if (body.hasNonNull("conversationId")) existing=uuid(body.path("conversationId").asString());
         Session current=existing==null ? null : load(caller, ws, existing, true);
@@ -102,7 +113,7 @@ public class ConversationService {
         }
         ObjectNode state=current.state();
         state.remove("choices");
-        handle(caller,ws,state,body.path("message").asString().trim(),key);
+        handle(caller,ws,state,body.path("message").asString().trim(),key,interpretation);
         Session saved=new Session(current.id(),state,current.version()+1);
         jdbc.sql("INSERT INTO conversation(id,workspace_id,subject_id,state,version,expires_at,updated_at) "
                 + "VALUES(:id,:ws,:subject,CAST(:state AS jsonb),:version,:expiry,:now) "
@@ -143,7 +154,8 @@ public class ConversationService {
         if (!result.has("choices")) result.putArray("choices");
         return result;
     }
-    private void handle(Caller caller,UUID ws,ObjectNode state,String text,String key) {
+    private void handle(Caller caller,UUID ws,ObjectNode state,String text,String key,
+            ConversationIntentService.Interpretation interpretation) {
         String lower=text.toLowerCase(Locale.ROOT);
         if (lower.equals("cancel") || lower.equals("reset")) {
             state.removeAll();state.put("stage","idle").put("message","Draft cleared. Say start followed by a workflow name, my tasks, my requests, or status followed by a request reference.");return;
@@ -190,17 +202,59 @@ public class ConversationService {
         if (state.path("stage").asString().equals("collecting") || state.path("stage").asString().equals("review")) {
             collect(state,text);return;
         }
+        if (interpretation != null) {
+            if (!interpretation.message().isBlank()) {
+                state.removeAll();
+                state.put("stage", "idle").put("message", interpretation.message());
+                return;
+            }
+            if (interpretation.choices().size() == 1) {
+                begin(caller, ws, state, interpretation.choices().getFirst().id(), interpretation.input());
+                return;
+            }
+            state.removeAll().put("stage", "idle").put("message",
+                    "These workflows may fit your request. Choose one to continue:");
+            var choices = state.putArray("choices");
+            for (var choice : interpretation.choices()) {
+                choices.addObject().put("label", choice.name()).put("command", "start " + choice.key());
+            }
+            return;
+        }
         state.put("stage","idle").put("message","Say start followed by a workflow name, workflows, my tasks, my requests, or status followed by a request reference. Commands are guided and do not need an AI provider.");
     }
     private void begin(Caller caller,UUID ws,ObjectNode state,UUID workflow) {
+        begin(caller, ws, state, workflow, null);
+    }
+    private void begin(Caller caller,UUID ws,ObjectNode state,UUID workflow,ObjectNode extracted) {
         var form=workflows.form(caller,ws,workflow);
         state.removeAll();state.put("stage","collecting").put("workflowId",workflow.toString())
                 .put("workflowName",form.workflowName()).put("releaseId",form.releaseId().toString());
         state.set("schema",form.inputSchema());state.putObject("input");state.putArray("skipped");
+        List<String> filled = new ArrayList<>();
+        if (extracted != null) {
+            for (var entry : form.inputSchema().path("properties").properties()) {
+                if (!extracted.has(entry.getKey())) {
+                    continue;
+                }
+                ObjectNode one = json.object().put("type", "object").put("additionalProperties", false);
+                one.putObject("properties").set(entry.getKey(), entry.getValue().deepCopy());
+                one.putArray("required").add(entry.getKey());
+                ObjectNode candidate = json.object();
+                candidate.set(entry.getKey(), extracted.get(entry.getKey()).deepCopy());
+                if (forms.validate(json.write(one), json.write(candidate)).isEmpty()) {
+                    ((ObjectNode) state.path("input")).set(entry.getKey(), extracted.get(entry.getKey()).deepCopy());
+                    filled.add(entry.getValue().path("title").asString(entry.getKey()));
+                }
+            }
+        }
         var order=state.putArray("order");Set<String> ordered=new LinkedHashSet<>();
         if(form.inputUi()!=null)for(JsonNode name:form.inputUi().path("order"))ordered.add(name.asString());
         form.inputSchema().path("properties").properties().forEach(e->ordered.add(e.getKey()));
         ordered.forEach(order::add);ask(state);
+        if (!filled.isEmpty()) {
+            state.put("message", "I matched " + form.workflowName() + " and picked up " + String.join(", ", filled)
+                    + " from your message. " + state.path("message").asString());
+        }
     }
     private void collect(ObjectNode state,String text) {
         String name=state.path("field").path("name").asString(null),raw=text;

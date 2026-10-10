@@ -13,7 +13,7 @@ import { useStudio, useStudioContext } from '../StudioContext'
 import { availableFields, chipLabel } from '../model/fieldRefs'
 import { renameDecisionKey, upsertDecision } from '../model/ops'
 import { outputsInWords } from '@/lib/events'
-import type { Condition, DecisionTable, Literal, WorkflowNode } from '../model/types'
+import { isAtomicCondition, type Condition, type DecisionTable, type Literal, type WorkflowNode } from '../model/types'
 import { Advanced, CommitInput, CommitNumber, InspectorSection } from './controls'
 import { ConditionEditor, defaultLiteral, LiteralInput } from './ConditionEditor'
 
@@ -72,7 +72,10 @@ export function DecisionInspector({ node }: { node: WorkflowNode }) {
     save({ ...table, rows: [...table.rows, row] })
   }
 
-  const setRowWhen = (index: number, when: Condition) => save({ ...table, rows: table.rows.map((r, i) => (i === index ? { ...r, when } : r)) })
+  const setRowWhen = (index: number, when: Condition) => {
+    if (!isAtomicCondition(when)) throw new Error('Decision table row conditions must be atomic.')
+    save({ ...table, rows: table.rows.map((r, i) => (i === index ? { ...r, when } : r)) })
+  }
   const setRowOutput = (index: number, key: string, value: Literal) => save({ ...table, rows: table.rows.map((r, i) => (i === index ? { ...r, then: { ...r.then, [key]: value } } : r)) })
   const setDefaultOutput = (key: string, value: Literal) => save({ ...table, default: { ...table.default, [key]: value } })
   const removeRow = (index: number) => save({ ...table, rows: table.rows.filter((_, i) => i !== index) })

@@ -1,7 +1,7 @@
 import type { ValidationIssue } from '@/api/types'
 import { allFields, availableFields, parseRef } from '@/features/studio/model/fieldRefs'
 import { hasCycle, incoming, nodeById, outgoing, reachableFrom, startNode } from '@/features/studio/model/graph'
-import type { Condition, Definition, Literal, WorkflowNode } from '@/features/studio/model/types'
+import { isAtomicCondition, type Condition, type Definition, type Literal, type WorkflowNode } from '@/features/studio/model/types'
 
 /**
  * A faithful-enough subset of the compiler rule catalog (docs/build/S4-workflow-compiler.md section 5)
@@ -285,6 +285,13 @@ function checkRef(def: Definition, at: WorkflowNode, ref: string, path: string, 
 }
 
 function checkCondition(def: Definition, at: WorkflowNode, c: Condition, path: string, issues: Issue[], transitionId?: string): void {
+  if (!isAtomicCondition(c)) {
+    const group = 'all' in c ? 'all' : 'any'
+    for (const [index, term] of (c[group] ?? []).entries()) {
+      checkCondition(def, at, term, `${path}/${group}/${index}`, issues, transitionId)
+    }
+    return
+  }
   const known = allFields(def).find((f) => f.ref === c.fieldRef)
   if (!known) {
     issues.push(issue('WF_FIELDREF_UNKNOWN', 'blocker', `"${c.fieldRef}" does not exist.`, `${path}/fieldRef`, at.id, transitionId))

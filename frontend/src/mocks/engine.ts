@@ -1,5 +1,5 @@
 import type { Effect, Run, RunDetail, TaskDecision, TaskSummary } from '@/api/types'
-import type { Condition, Definition, Literal, WorkflowNode } from '@/features/studio/model/types'
+import { isAtomicCondition, type Condition, type Definition, type Literal, type WorkflowNode } from '@/features/studio/model/types'
 import { nodeById, outgoing } from '@/features/studio/model/graph'
 import {
   WORKSPACES,
@@ -56,15 +56,28 @@ function resolveRef(run: MockRun, ref: string): Literal | undefined {
 }
 
 export function evaluateCondition(c: Condition, value: Literal | undefined): boolean {
-  if (value === undefined) return false
+  if (value === undefined || !isAtomicCondition(c)) return false
   switch (c.operator) {
     case 'eq':
       return typeof c.value === 'number' && typeof value === 'number' ? c.value === value : value === c.value
+    case 'ne':
+      return !(typeof c.value === 'number' && typeof value === 'number' ? c.value === value : value === c.value)
     case 'gte':
       return typeof value === 'number' && typeof c.value === 'number' && value >= c.value
+    case 'gt':
+      return typeof value === 'number' && typeof c.value === 'number' && value > c.value
     case 'lt':
       return typeof value === 'number' && typeof c.value === 'number' && value < c.value
+    case 'lte':
+      return typeof value === 'number' && typeof c.value === 'number' && value <= c.value
   }
+}
+
+function evaluateRunCondition(run: MockRun, c: Condition): boolean {
+  if (isAtomicCondition(c)) return evaluateCondition(c, resolveRef(run, c.fieldRef))
+  if ('all' in c) return (c.all ?? []).length > 0 && (c.all ?? []).every((term) => evaluateRunCondition(run, term))
+  if ('any' in c) return (c.any ?? []).some((term) => evaluateRunCondition(run, term))
+  return false
 }
 
 export function evaluateTable(
@@ -269,7 +282,7 @@ export function advance(run: MockRun, nodeId: string): void {
       }
       case 'branch': {
         const routes = outgoing(def, node.id)
-        const chosen = routes.find((t) => t.on === 'condition' && t.condition && evaluateCondition(t.condition, resolveRef(run, t.condition.fieldRef))) ?? routes.find((t) => t.on === 'default')
+        const chosen = routes.find((t) => t.on === 'condition' && t.condition && evaluateRunCondition(run, t.condition)) ?? routes.find((t) => t.on === 'default')
         current = chosen?.to
         break
       }

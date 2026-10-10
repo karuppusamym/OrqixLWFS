@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import com.orqix.identity.PolicyService;
+import com.orqix.support.AgentLlmStub;
 import com.orqix.support.RuntimeTestBase;
 
 import tools.jackson.databind.JsonNode;
@@ -57,6 +58,36 @@ class ConversationApiTest extends RuntimeTestBase {
     private long runCount(UUID workflow) {
         return jdbc.sql("SELECT count(*) FROM workflow_run WHERE workflow_id = :id")
                 .param("id", workflow).query(Long.class).single();
+    }
+
+    @Test
+    void naturalLanguageFindsAnAllowedWorkflowButStillCollectsAndReviewsBeforeStarting() throws Exception {
+        AgentLlmStub.reset();
+        UUID workflow = publishPurchase(PURCHASING, null);
+        AgentLlmStub.answer("{\"workflowIds\":[\"" + workflow + "\"]}", 0.0001);
+        AgentLlmStub.answer("{\"title\":\"Replacement laptop\",\"purpose\":\"Current device failed\"}", 0.0001);
+        String key = UUID.randomUUID().toString();
+
+        Response response = send("rhea.requester", PURCHASING, null,
+                "I need a replacement laptop because my current device failed", key);
+
+        assertThat(response.status()).as(response.toString()).isEqualTo(200);
+        assertThat(response.body().path("stage").asString()).isEqualTo("collecting");
+        assertThat(response.body().path("field").path("name").asString()).isEqualTo("costCenter");
+        assertThat(response.body().path("message").asString()).contains("picked up Purchase title, Purpose");
+        assertThat(runCount(workflow)).isZero();
+        assertThat(AgentLlmStub.requests()).hasSize(2);
+        assertThat(AgentLlmStub.requests().getFirst().path("messages").toString())
+                .contains("I need a replacement laptop");
+        assertThat(AgentLlmStub.requests().getFirst().path("messages").toString()).contains("Purchase");
+        assertThat(AgentLlmStub.requests().getLast().path("messages").toString()).contains("Purchase title", "Purpose");
+        assertThat(AgentLlmStub.requests().getLast().path("response_format").toString()).contains("title", "purpose");
+
+        Response replay = send("rhea.requester", PURCHASING, null,
+                "I need a replacement laptop because my current device failed", key);
+        assertThat(replay.status()).as(replay.toString()).isEqualTo(200);
+        assertThat(replay.header("Idempotent-Replayed")).isEqualTo("true");
+        assertThat(AgentLlmStub.requests()).hasSize(1);
     }
 
     @Test

@@ -80,6 +80,39 @@ public class IdempotencyService {
         return requestHash(operation, pathParams, body == null ? null : json.toTree(body));
     }
 
+    /**
+     * Read-only fast path for callers that must avoid repeating expensive pre-command work on an identical replay.
+     * The command must still call {@link #claim} in its transaction before returning the stored response.
+     */
+    @Transactional(readOnly = true)
+    public boolean hasCompletedReplay(UUID workspaceId, UUID principalId, String operation, String key,
+            String requestHash) {
+        key = requireKey(key);
+        Optional<Prior> prior = jdbc.sql("""
+                SELECT request_hash, resource_id, response_status, expires_at
+                FROM idempotency_record
+                WHERE workspace_id = :ws AND principal_subject_id = :principal AND operation = :operation
+                  AND idem_key = :key
+                """)
+                .param("ws", workspaceId).param("principal", principalId).param("operation", operation)
+                .param("key", key)
+                .query((rs, n) -> new Prior(rs.getString("request_hash").trim(), rs.getString("resource_id"),
+                        (Integer) rs.getObject("response_status"), Sql.instant(rs, "expires_at")))
+                .optional();
+        if (prior.isEmpty() || !prior.get().expiresAt().isAfter(clock.instant())) {
+            return false;
+        }
+        Prior existing = prior.get();
+        if (!existing.requestHash().equals(requestHash)) {
+            throw new ApiException(ProblemCode.IDEMPOTENCY_KEY_REUSED,
+                    "This Idempotency-Key was already used with a different request.");
+        }
+        if (existing.resourceId() == null || existing.responseStatus() == null) {
+            throw new IllegalStateException("Idempotency record without completion");
+        }
+        return true;
+    }
+
     @Transactional(propagation = Propagation.MANDATORY)
     public Claim claim(UUID workspaceId, UUID principalId, String operation, String key, String requestHash) {
         Instant now = clock.instant();
@@ -159,5 +192,8 @@ public class IdempotencyService {
 
     private record Existing(String requestHash, String resourceType, String resourceId, Integer responseStatus,
             Instant expiresAt) {
+    }
+
+    private record Prior(String requestHash, String resourceId, Integer responseStatus, Instant expiresAt) {
     }
 }

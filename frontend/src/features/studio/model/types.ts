@@ -13,6 +13,9 @@ export interface AtomicCondition {
   value: Literal
 }
 export type Condition = AtomicCondition | { all?: AtomicCondition[]; any?: AtomicCondition[]; fieldRef?: never; operator?: never; value?: never }
+export function isAtomicCondition(c: Condition): c is AtomicCondition {
+  return typeof c.fieldRef === 'string' && typeof c.operator === 'string' && 'value' in c
+}
 export function conditionTerms(c: Condition): AtomicCondition[] { return 'all' in c ? c.all ?? [] : 'any' in c ? c.any ?? [] : [c as AtomicCondition] }
 
 export interface WorkflowNode {

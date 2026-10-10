@@ -5,7 +5,7 @@ import org.springframework.web.bind.annotation.*;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import com.orqix.catalog.internal.MigrationGovernance;
-import com.orqix.identity.CallerProvider;
+import com.orqix.identity.CallerResolver;
 
 @RestController
 @RequestMapping("/api/v1/workspaces/{workspaceId}")
@@ -13,8 +13,8 @@ public class MigrationGovernanceController {
     public record PolicyRequest(@NotNull Boolean required, @Min(0) int expectedVersion, @NotBlank @Size(max=1000) String reason) {}
     public record ReviewRequest(@Min(1) int draftRevision, @Min(0) int expectedVersion, @NotBlank @Size(max=1000) String reason) {}
     private final MigrationGovernance governance;
-    private final CallerProvider callers;
-    public MigrationGovernanceController(MigrationGovernance governance, CallerProvider callers) { this.governance=governance; this.callers=callers; }
+    private final CallerResolver callers;
+    public MigrationGovernanceController(MigrationGovernance governance, CallerResolver callers) { this.governance=governance; this.callers=callers; }
     @GetMapping("/migration-policy")
     public MigrationGovernance.Policy policy(@PathVariable UUID workspaceId) { return governance.policy(callers.current(),workspaceId); }
     @PutMapping("/migration-policy")

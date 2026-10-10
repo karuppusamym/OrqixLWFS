@@ -46,5 +46,20 @@ class BoundedIterationTest {
         assertThat(validator.validate(schema, "{\"items\":[1,\"two\"]}")).extracting(FormValidator.FieldError::pointer).containsExactly("/items/1");
         assertThat(validator.validate(schema, "{\"items\":[1,2]}")).isEmpty();
     }
+
+    @Test
+    void collectedOutcomesHaveTypedArrayResultsAndRejectIncompatibleItems() {
+        ObjectNode d = TestSupport.onboarding();
+        ObjectNode config = (ObjectNode) childNode(d).path("config");
+        ((ObjectNode) d.path("inputSchema").path("properties")).set("equipment", com.orqix.compiler.internal.json.StrictJson.parse("{\"type\":\"array\",\"title\":\"Equipment\",\"minItems\":1,\"maxItems\":3,\"items\":{\"type\":\"string\",\"title\":\"Item\"}}"));
+        ((ObjectNode) config.path("inputMapping")).remove("title");
+        config.set("forEach", com.orqix.compiler.internal.json.StrictJson.parse("{\"itemsRef\":\"/input/equipment\",\"itemInput\":\"title\",\"maxItems\":3,\"mode\":\"parallel\"}"));
+        config.set("collectionMapping", com.orqix.compiler.internal.json.StrictJson.parse("{\"outcomeItems\":\"outcome\"}"));
+        ((ObjectNode) d.path("outputSchema").path("properties")).set("outcomeItems", com.orqix.compiler.internal.json.StrictJson.parse("{\"type\":\"array\",\"title\":\"Outcomes\",\"minItems\":1,\"maxItems\":3,\"items\":{\"type\":\"string\",\"title\":\"Outcome\"}}"));
+        ((ObjectNode) d.path("outputMapping")).set("outcomeItems", com.orqix.compiler.internal.json.StrictJson.parse("{\"fieldRef\":\"/steps/orderEquipment/outcomeItems\",\"required\":false}"));
+        assertThat(compiler.validate(d.toString(), TestSupport.onboardingContext()).publishable()).isTrue();
+        ((ObjectNode) d.path("outputSchema").path("properties").path("outcomeItems").path("items")).put("type", "integer");
+        assertThat(compiler.validate(d.toString(), TestSupport.onboardingContext()).issues()).extracting(ValidationIssue::code).contains("WF_OUTPUT_MAPPING_UNKNOWN");
+    }
 }
 

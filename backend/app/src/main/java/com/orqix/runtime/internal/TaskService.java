@@ -270,9 +270,35 @@ public class TaskService {
     @Transactional
     public RuntimeDtos.TaskDetail reassign(Caller caller, UUID workspaceId, String taskId,
             RuntimeDtos.ReassignRequest request) {
+        return changeAssignee(caller, workspaceId, taskId, request, false);
+    }
+
+    @Transactional
+    public RuntimeDtos.TaskDetail delegate(Caller caller, UUID workspaceId, String taskId,
+            RuntimeDtos.ReassignRequest request) {
+        return changeAssignee(caller, workspaceId, taskId, request, true);
+    }
+
+    @Transactional(readOnly = true)
+    public List<SubjectService.SubjectRef> delegates(Caller caller, UUID workspaceId, String taskId) {
+        var visible = visible(caller, workspaceId, taskId);
+        requireEligible(visible.access(), visible.task(), "listTaskDelegates");
+        if (!visible.task().isOpen() || !caller.subjectId().equals(visible.task().assignee()))
+            throw ApiException.forbidden();
+        return subjects.knownSubjects(500).stream().filter(s -> !s.id().equals(caller.subjectId()))
+                .filter(s -> eligibleSubject(workspaceId, visible.task(), s.id()))
+                .limit(100).map(s -> new SubjectService.SubjectRef(s.id(), s.displayName())).toList();
+    }
+
+    private RuntimeDtos.TaskDetail changeAssignee(Caller caller, UUID workspaceId, String taskId,
+            RuntimeDtos.ReassignRequest request, boolean delegation) {
         VisibleTask visible = visibleLocked(caller, workspaceId, taskId);
         TaskStore.TaskRow task = visible.task();
-        policy.require(visible.access(), Permission.RUN_OPERATE, "reassignTask", true);
+        if (delegation) {
+            requireEligible(visible.access(), task, "delegateTask");
+            if (!caller.subjectId().equals(task.assignee()) || request.assigneeSubjectId() == null
+                    || caller.subjectId().equals(request.assigneeSubjectId())) throw ApiException.forbidden();
+        } else policy.require(visible.access(), Permission.RUN_OPERATE, "reassignTask", true);
         if (!task.isOpen()) {
             throw new ApiException(ProblemCode.TASK_NOT_OPEN, "This task is no longer open.");
         }
@@ -307,7 +333,7 @@ public class TaskService {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("taskId", taskId);
         metadata.put("toSubjectId", target == null ? null : target.toString());
-        audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.USER, caller.subjectId(), "task.reassigned",
+        audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.USER, caller.subjectId(), delegation ? "task.delegated" : "task.reassigned",
                 "task", taskId, AuditWriter.Outcome.SUCCESS, metadata));
         return detail(visible(caller, workspaceId, taskId));
     }
@@ -366,7 +392,7 @@ public class TaskService {
     }
 
     /** Eligibility of another subject, using its stored IdP groups from the latest login (V4). */
-    private boolean eligibleSubject(UUID workspaceId, TaskStore.TaskRow task, UUID subjectId) {
+    boolean eligibleSubject(UUID workspaceId, TaskStore.TaskRow task, UUID subjectId) {
         if (!task.selfApprovalAllowed() && task.initiator().equals(subjectId)) {
             return false;
         }
@@ -376,7 +402,7 @@ public class TaskService {
         }
         Caller other = new Caller(subjectId, subject.displayName(), subject.email(), subject.issuer(),
                 subject.externalSubject(), subjects.storedGroups(subjectId), false);
-        WorkspaceAccess access = policy.access(other, workspaceId).orElse(null);
+        WorkspaceAccess access = policy.freshAccess(other, workspaceId).orElse(null);
         return access != null && access.has(Permission.TASK_ACT)
                 && policy.groupKeys(workspaceId, subjectId, other.groups()).contains(task.candidateGroupKey());
     }

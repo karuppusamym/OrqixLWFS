@@ -1,5 +1,5 @@
 # Competitive analysis, banking direction and the Pega/Camunda conversion execution plan
-Revision 0.1 · 9 October 2026 · **Documentation only. No code was changed and no development is scheduled by this document.** Development resumes after the parallel build session finishes; sequencing is in [§9](#9-delivery-sequence-and-dependencies).
+Revision 0.1 · 9 October 2026 · **Research and proposed roadmap.** The user subsequently authorized continued implementation. Current build status is tracked in [doc 19](19-product-build-tracker.md); sequencing is in [§9](#9-delivery-sequence-and-dependencies).
 
 ## How to read this document
 
@@ -26,7 +26,7 @@ This document extends [05 Migration strategy](05-migration.md) and [17 Migration
 ### Conclusions
 
 1. **Orqix's conversion foundation is sound and unusually honest.** Every source element gets a disposition, blockers stop publishing, originals are preserved with a checksum, and AI never converts anything. Keep this stance; it is a differentiator against vendor converters that report "% converted".
-2. **Camunda conversion is a breadth and ergonomics problem.** The adapter works for a declared subset. The gaps are a missing "converted but changed, please verify" severity, no DMN or form import, one-file-at-a-time imports, no exportable/grouped report, and the unsupported constructs that real models use most (multi-instance, boundary events, message events).
+2. **Camunda conversion is a breadth and ergonomics problem.** The adapter works for a declared subset. The gaps are a missing "converted but changed, please verify" severity, no DMN or form import, one-file-at-a-time imports, no cross-file migration project or XLSX report (per-process grouped findings and JSON/CSV exports are now built), and the unsupported constructs that real models use most (multi-instance, boundary events, message events).
 3. **Pega conversion is an intake problem before it is a mapping problem.** Pega's own documentation sources disagree on whether an exported archive contains readable rule XML or opaque binaries (§6.4). Until a real export from the bank's Pega version is inspected, no automatic rule conversion should be promised. The strongest approach is **behavior-first**: capture the source system's observed outcomes as golden scenarios, then map and prove equivalence against them.
 4. **AI should propose, humans and the compiler should decide.** Pega Blueprint's useful ideas are an editable design reviewed before build, and a review branch before merge. Orqix should apply both: AI proposes mappings and a design brief; a person accepts each; the normal compiler validates; nothing publishes without separate approval.
 5. **For banking, do not copy Pega's breadth. Beat it on provable control.** Pega's strengths are packaged domain solutions (KYC lifecycle, disputes, lending) and a marketing-oriented decision engine. Orqix's opportunity is independently reviewable decisions, maker-checker on every consequential change including conversion, effect safety (no duplicate payment or letter), pinned versions, and an evidence pack a regulator or auditor can follow.
@@ -167,17 +167,17 @@ Verified by reading the repository on 9 October 2026 ([feature status](feature-s
 | # | Gap | Evidence | Competitor reference |
 |---|---|---|---|
 | G1 | No "converted but changed — verify" severity. Current: supported, info, action, blocker | `Report.java` constants | Camunda REVIEW |
-| G2 | Findings are not exportable or grouped by reason across files | `Report.CompatibilityReport` is per process | Camunda grouped view, CSV/XLSX/JSON |
+| G2 | Per-process findings are grouped by source kind with kind/severity/unresolved filters; full JSON/CSV exports exist. Cross-file projects/grouping and XLSX remain open | `MigrationPage`, `reportExport`; filters retain complete-report exports and conversion | Camunda grouped view, CSV/XLSX/JSON |
 | G3 | One BPMN file per import; no project of many files; no dependency ordering for call activities | `MigrationService`, `ConversionRequest` | Converter takes BPMN+DMN+forms together |
 | G4 | DMN and form files are not imported (`DMN_IMPORT_NOT_SUPPORTED`, `FORM_NOT_IMPORTED`) | Reason codes in `Analyzer` | Converter handles all three |
 | G5 | Unsupported: multi-instance, inclusive/event gateways, boundary timers/errors, message events, subprocesses, expressions beyond `eq/gte/lt` (no `>`, `<=`, `!=`, and/or) | Reason codes `MULTI_INSTANCE_NOT_SUPPORTED`, `GATEWAY_NOT_SUPPORTED_IN_V0`, `EVENT_NOT_SUPPORTED_IN_V0`, `SUBPROCESS_NOT_SUPPORTED`, `EXPRESSION_NOT_SUPPORTED` | Camunda 8 supports these |
 | G6 | Service-task conversion requires hand mapping of every task; Camunda 8 connector element templates are not recognized | `GROUP_MAPPING_REQUIRED`, `WORKER_NOT_PORTABLE`, `JAVA_DELEGATE_NOT_PORTABLE` | Camunda connectors |
-| G7 | Pega: mapping package is hand-authored; no assisted proposal; no behavior-capture or equivalence harness | [17](17-migration-workbench.md) | Blueprint-style assisted analysis |
-| G8 | No test harness that replays golden scenarios against source and target and compares | Not present | Required by [05](05-migration.md) but not built |
+| G7 | Pega: mapping package remains hand-authored. Bounded XML identities, dependency evidence and rule-type mapping suggestions are built; effective rule resolution, native conversion and source behavior capture remain open | [17](17-migration-workbench.md); target golden harness described in G8 | Blueprint-style assisted analysis |
+| G8 | A six-case target golden-scenario runner and deterministic evidence ZIP are built and verified on synthetic BPMN with local stubbed effects. Direct source-runtime replay and genuine-source equivalence remain open | [Acceptance harness](../tools/migration-equivalence/README.md), [spec](build/migration-equivalence-acceptance.md) | Source-owner baselines and signed differences still required by [05](05-migration.md) |
 | G9 | No maker-checker on mapping approval or publish; no segregation between mapper and approver | `workflow.edit` converts, separate publish permission only | Banking control, §5 |
-| G10 | Graphs are acyclic; no bounded rework | [S12](build/S12-workflow-patterns.md) | Banking referrals and "send back" are common |
+| G10 | Bounded child rework, sequential/parallel scalar collections and ordered collected child output arrays are implemented; arbitrary graph cycles, mutable correction forms and nested/object collections remain open | [S14](build/S14-bounded-iteration.md), [tracker](19-product-build-tracker.md) | Banking referrals need domain-specific correction and acceptance |
 | G11 | No incident-style variable correction with audit; no "waiting on nothing" detection | Operator retry exists; variable edit does not | Camunda incident workflow |
-| G12 | No element comments, version compare, swimlanes, templates | Studio has auto-layout | Web Modeler, Lucidchart |
+| G12 | Request comments, template workflows and publish-review changes exist; element comments, general version comparison and swimlanes remain open | Studio auto-layout, template catalog, publish review, run comments | Web Modeler, Lucidchart |
 
 ---
 
@@ -203,7 +203,7 @@ Each item is a proposal. Milestones are in [§8](#8-recommendations-mapped-to-th
 3. **Rule packs with effective dates.** Pega's card-network updates ship as periodic releases. Orqix equivalent: a decision table or policy set with `effectiveFrom`/`effectiveTo`, an approved change record and test fixtures, so a regulatory change is a reviewed, dated, testable release rather than an edit. A run records which pack version applied.
 4. **Jurisdiction matrices.** Pega drives due diligence by country, booking entity and product. Model as a decision table whose output is a required-checks list; the workflow instantiates the required tasks (parallel regions already supported).
 5. **Parent/child cases with aggregation.** Claim → Dispute, Customer review → Document requests. Parent status derived from children, with a stated rule, and child SLAs shown on the parent.
-6. **Queues, priority and aging.** Pega shows prioritized queues with SLA. Orqix has group tasks; add priority, due date, ageing display and breach reminders (E04 and E06 already describe durable deadlines). Business-calendar handling must be explicit and tested.
+6. **Queues, delegation and reminders.** Pega shows prioritized queues with SLA. Orqix has group tasks, eligible-user delegation and durable one-shot in-app assignee reminders; queue priority, ageing, repeated breach escalation and business calendars remain open (E04 and E06 already describe durable deadlines). Business-calendar handling must be explicit and tested.
 7. **Agents with validation gates.** For KYC (collect → check → follow up) and payment exceptions: each agent step has a schema-validated output; failure or low confidence routes to a human task; every tool call, token cost and decision recorded on the run; write tools stay out of scope until separately approved ([S13](build/S13-agents-mcp.md)).
 8. **Money correctness as a first-class rule.** Decimal arithmetic only, currency and scale declared per field, explicit rounding mode, no floating point, boundary tests (the existing 4,999.99 / 5,000 / 5,000.01 pattern generalizes).
 9. **Effect safety for payments and letters.** Idempotency keys, unknown-outcome reconciliation (already implemented) and an "external effects" count asserted in tests. A converted workflow must not be able to duplicate an irreversible action.
@@ -293,7 +293,7 @@ In-flight cases finish in the source system unless a separate migration project 
 
 ### 6.4 Pega: execution detail
 
-**Honest starting point.** Pega's own migration mechanism is the product rule: an archive of rulesets and data instances moved between environments. Older Pega documentation describes the archive as XML; a community answer for Pega 8 and later says the archive contains `rules.jar` (binary) and `schema.jar` (readable table XML), and that logic is not exportable as text. That answer is itself flagged as AI-assisted and must be validated. A third-party accelerator claims to generate XML for rules and is unverified. [Doc/community] **Therefore the Pega adapter cannot be designed until a real export is inspected.**
+**Honest starting point.** Pega's own migration mechanism is the product rule: an archive of rulesets and data instances moved between environments. Older Pega documentation describes the archive as XML; a community answer for Pega 8 and later says the archive contains `rules.jar` (binary) and `schema.jar` (readable table XML), and that logic is not exportable as text. That answer is itself flagged as AI-assisted and must be validated. A third-party accelerator claims to generate XML for rules and is unverified. [Doc/community] **Therefore automatic Pega semantic conversion scope cannot be established until a real export is inspected.**
 
 **Discovery spike (do first, before any Pega adapter work).** In a bank sandbox on the bank's Pega version: build or choose one case type with one flow, one decision table, one data page, one REST connector and one SLA; export it by every available mechanism; record what each contains. Mechanisms to test:
 
@@ -336,7 +336,7 @@ The spike ends with a written finding per channel: *readable / partially readabl
 
 ### 6.5 Equivalence and validation for banking
 
-The equivalence harness is the missing piece (G8) and the real publish gate.
+The target-side golden-scenario harness in G8 is now delivered: six synthetic purchase scenarios execute through normal import/publish/start/task APIs and compare admission, routing, outcomes, successful effects and matching stub orders. Four standalone tests verify comparison failures and reproducible evidence ZIPs. This is local target acceptance, not a source-semantic-equivalence claim or an enforced customer publishing gate. Source-runtime capture/replay, owner review and signed deviations remain required for banking cutover.
 
 | Test class | What it asserts | Example |
 |---|---|---|
@@ -429,7 +429,7 @@ Conversion produces a canonical definition that compiles to the same executable 
 | Audit | Sensitive actions audited; export is secret-free |
 | Versioning | New release does not alter running instances; rollback re-points new starts only |
 
-Not yet available and needed for many banking processes: bounded rework loops (G10), multi-instance approvals (G5), message correlation for waiting on customer documents (E13), and queue priority/aging (§5.2 item 6). These are called out in [§8](#8-recommendations-mapped-to-the-backlog).
+Implemented platform slices include bounded child rework, sequential/parallel scalar iteration, ordered collected child output arrays, delegation and durable one-shot assignee reminders ([S14](build/S14-bounded-iteration.md)). Still needed for many banking processes: mutable correction forms, nested/object collection policies and native BPMN multi-instance/loop import (G5), message correlation for waiting on customer documents (E13), and queue priority/aging (§5.2 item 6). These are called out in [§8](#8-recommendations-mapped-to-the-backlog).
 
 ---
 
@@ -442,7 +442,7 @@ Relative size: **S** a few days, **M** one to three weeks, **L** more than three
 | # | Item | Epic | Size | Gate |
 |---|---|---|---|---|
 | 1.1 | Add `review` severity; update OpenAPI, frontend and report tests together | E16 | S | Contract check passes |
-| 1.2 | Grouped findings and CSV/JSON export | E16 | S | Export matches report counts |
+| 1.2 | Per-process grouped findings and CSV/JSON export delivered; cross-file project grouping remains open | E16 | S | Focused UI/export checks pass; exports preserve full report counts |
 | 1.3 | Migration project (many files, dependency order, child-before-parent) | E16 | M | Multi-file fixture converts in order |
 | 1.4 | Group service tasks by job type/topic; one mapping per group | E16 | S | Fixture with 5 identical tasks needs one mapping |
 | 1.5 | Maker-checker on mapping approval and publish (banking workspace setting) | E14, E16 | M | Same person cannot hold two of mapper/approver/publisher |
@@ -452,7 +452,7 @@ Relative size: **S** a few days, **M** one to three weeks, **L** more than three
 | # | Item | Epic | Size | Gate |
 |---|---|---|---|---|
 | 2.1 | **Pega discovery spike** (§6.4) with real bank export | E16 | S–M | Written finding per channel (B2, B3) |
-| 2.2 | Golden-scenario store and equivalence runner with stubbed effects | E16, E17 | L | Replays fixture scenarios; effect count asserted |
+| 2.2 | Target golden-scenario runner and deterministic evidence pack delivered; source-runtime replay remains open | E16, E17 | L | Six synthetic live cases pass with successful-effect and matching stub-order checks; genuine source baselines pending |
 | 2.3 | Evidence pack export | E16, E18 | M | Deterministic ZIP; contains approvals and results |
 | 2.4 | DMN import to decision tables with generated boundary tests | E07, E16 | M | Hit-policy fixtures; unsupported policies blocked |
 | 2.5 | Form import (supported field types) | E06, E16 | M | Form validator parity fixtures |
@@ -487,12 +487,12 @@ Relative size: **S** a few days, **M** one to three weeks, **L** more than three
 
 ## 9. Delivery sequence and dependencies
 
-Development is paused for the parallel session. When it resumes, this order minimizes risk:
+The user authorized implementation after this research was written. Platform work proceeds with the existing scope; banking-specific decisions B1–B6 and source exports remain open. The proposed sequence is:
 
 1. **Before coding:** resolve B1–B6 in the [decision register](13-decision-register.md); obtain one real export and 20+ observed scenarios per source (B2, B3).
 2. **Wave 1** can start immediately after the parallel session merges: it touches the importer, report and permissions and needs no new engine capability. Do it on a separate branch and confirm the other session has not modified `com.orqix.migration` or `contracts/openapi.yaml` first.
 3. **Run the Pega spike (2.1) in parallel with Wave 1.** Its result decides the Pega adapter scope and whether "design-assisted rebuild" replaces automatic conversion.
-4. **Wave 2** next; the equivalence runner is the keystone because it converts "converted" into "proven".
+4. **Wave 2** target-side runner and deterministic packs are delivered. Genuine-source intake, observed baselines and owner-signed differences are the next acceptance dependencies; passing a synthetic target suite does not prove source equivalence.
 5. **Wave 3** constructs are ordered by observed blocker frequency in real imports, not by this document's guess. Record every `reasonCode` from real projects and re-rank.
 6. **Wave 4** after B1 selects domains.
 
@@ -517,3 +517,7 @@ Acceptance for the whole conversion program: for each source process, every gold
 **Inputs still needed:** named source owners and processes (B2); Pega version and sandbox access (B3); AI permission decision (B4); banking domain choice (B1); jurisdiction (B6); a Camunda 8 model that uses connector templates; at least one Camunda DMN and one form from the bank's real models.
 
 **What this document did not verify:** Pega's rule archive contents; Camunda Marketplace contents (page unreadable); the Nov 2025 Pega CLM capability sheet (PDF not extractable); Pega's banking industry page (404). Items labeled [Knowledge] are untested assumptions.
+
+## Current integration follow-up
+
+Repository capabilities in this research are a snapshot, not a completion tracker. The active build includes guided conversational execution, Microsoft Graph document reads, immutable comments, bounded child rework, sequential/parallel scalar collections, ordered collected child output arrays, eligible-user delegation and durable one-shot in-app assignee reminders. JSON/CSV report exports and per-process finding groups/filters are built. A six-case target acceptance runner passes on synthetic imported workflows with local stubbed effects and exports deterministic provenance/result ZIPs. PDF/OOXML snapshots and text extraction pass local integration and executable-jar/container parser checks; customer Graph tenant acceptance remains external. The current checks and limitations are recorded in [doc 19](19-product-build-tracker.md). The research's vendor claims have not been independently revalidated in this integration pass. Banking templates, genuine-source equivalence, multi-file migration projects, mapping maker-checker, business-calendar deadlines and the remaining proposed waves retain their own acceptance criteria and are not claimed complete.

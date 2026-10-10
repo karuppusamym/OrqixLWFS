@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test'
 import { expect, test } from '../support/fixtures'
-import { MOCK } from '../support/env'
+import { MOCK, type Username } from '../support/env'
 import { apiGet, selectStep, workflowIdByKey, workspaceId } from '../support/app'
 
 /**
@@ -92,7 +92,7 @@ test.describe('workflow patterns (mock API)', () => {
     await expect(requester.getByTestId('run-status')).toContainText('Desk and building pass')
 
     // Both groups decide; the request now waits on its timer.
-    const approve = async (user: string, label: string) => {
+    const approve = async (user: Username, label: string) => {
       const page = await sessions.as(user)
       const tasks = await apiGet<{ items: Array<{ id: string; label: string; version: number }> }>(page, `/workspaces/${ws}/tasks?view=claimable`)
       const task = tasks.items.find((t) => t.label === label)!

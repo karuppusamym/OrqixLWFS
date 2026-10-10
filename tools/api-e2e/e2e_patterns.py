@@ -162,7 +162,18 @@ def main():
     check("exactly one purchase order exists", len(stub_orders()) == 1, str(len(stub_orders())))
     check("the child's result is mapped to the parent's output", bool(done["output"]) and
           done["output"].get("equipmentOrderId") is not None, str(done["output"]))
-    events = rhea.get(f"/workspaces/{ws}/runs/{run['id']}/events", limit=200).json()["items"]
+    events = []
+    after = 0
+    while True:
+        response = rhea.get(f"/workspaces/{ws}/runs/{run['id']}/events", after=after, limit=100)
+        response.raise_for_status()
+        page = response.json()
+        events.extend(page["items"])
+        if not page["hasMore"]:
+            break
+        if page["nextAfter"] <= after:
+            raise RuntimeError("Timeline pagination did not advance")
+        after = page["nextAfter"]
     types = [e["type"] for e in events]
     check("the parent timeline shows the child start and finish", "CHILD_STARTED" in types and "CHILD_ENDED" in types
           and types.index("CHILD_STARTED") < types.index("CHILD_ENDED"))

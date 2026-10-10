@@ -105,6 +105,29 @@ class ConversationApiTest extends RuntimeTestBase {
     }
 
     @Test
+    void collectionAnswersValidateItemsAndBoundsBeforeSubmission() throws Exception {
+        UUID workflow = publishPurchase(PURCHASING, definition -> {
+            var properties = (tools.jackson.databind.node.ObjectNode) definition.path("inputSchema").path("properties");
+            var collection = properties.putObject("quantities").put("type", "array").put("title", "Quantities")
+                    .put("minItems", 1).put("maxItems", 2);
+            collection.putObject("items").put("type", "integer").put("title", "Quantity").put("minimum", 1).put("maximum", 5);
+        });
+        JsonNode conversation = begin(workflow);
+        for (String answer : new String[] {"Laptop", "Replacement", "OPS", "10.00"})
+            conversation = next("rhea.requester", conversation, answer);
+        assertThat(conversation.path("field").path("name").asString()).isEqualTo("quantities");
+        for (String invalid : new String[] {"invalid JSON", "[0]", "[1,2,3]", "[1,\"two\"]"}) {
+            conversation = next("rhea.requester", conversation, invalid);
+            assertThat(conversation.path("stage").asString()).isEqualTo("collecting");
+        }
+        conversation = next("rhea.requester", conversation, "[1,2]");
+        assertThat(conversation.path("review").path("input").path("quantities")).isEqualTo(json.parse("[1,2]"));
+        JsonNode completed = next("rhea.requester", conversation, "confirm");
+        assertThat(completed.path("stage").asString()).isEqualTo("completed");
+        assertThat(runCount(workflow)).isEqualTo(1);
+    }
+
+    @Test
     void draftCanBeResumedButStaleMessagesCannotOverwriteIt() throws Exception {
         JsonNode original = begin(publishPurchase(PURCHASING, null));
         JsonNode updated = next("rhea.requester", original, "Laptop");

@@ -48,7 +48,11 @@ public class ChildRuns {
     @Transactional(propagation = Propagation.MANDATORY)
     public void start(UUID workspaceId, UUID parentId, String nodeId, JsonNode input) {
         RunStore.RunRow parent = runs.lock(workspaceId, parentId).orElseThrow();
-        start(parent, nodeId, input, 1);
+        JsonNode each = releases.require(workspaceId, parent.releaseId()).node(nodeId).path("config").path("forEach");
+        int count = "parallel".equals(each.path("mode").asString())
+                ? parent.input().at(each.path("itemsRef").asString().substring("/input".length())).size() : 1;
+        if (count < 1 || count > 25) throw new IllegalStateException("Collection is outside its iteration bound");
+        for (int i = 1; i <= count; i++) start(parent, nodeId, input, i);
     }
 
     private void start(RunStore.RunRow parent, String nodeId, JsonNode input, int occurrence) {
@@ -112,7 +116,9 @@ public class ChildRuns {
         boolean matched = !repeat.isMissingNode() && repeat.path("untilOutcome").asString().equals(child.outcome());
         boolean exhausted = !repeat.isMissingNode() && !matched && iteration >= repeat.path("maxIterations").asInt();
         JsonNode each = node.path("config").path("forEach");
-        boolean moreItems = !each.isMissingNode() && iteration < parent.input().at(each.path("itemsRef").asString().substring("/input".length())).size();
+        int itemCount = each.isMissingNode() ? 1 : parent.input().at(each.path("itemsRef").asString().substring("/input".length())).size();
+        boolean parallel = "parallel".equals(each.path("mode").asString());
+        boolean moreItems = !each.isMissingNode() && !parallel && iteration < itemCount;
         events.append(parent.workspaceId(), parent.id(), "CHILD_ENDED", child.parentNodeId(), null,
                 Map.of("childRunId", child.id().toString(), "childReference", child.reference(),
                         "workflowName", releases.require(child.workspaceId(), child.releaseId()).workflowName(),
@@ -122,6 +128,14 @@ public class ChildRuns {
         if (((!repeat.isMissingNode() && !matched && !exhausted) || moreItems) && !RunStore.CANCELLED.equals(child.lifecycle())) {
             start(parent, child.parentNodeId(), child.input(), iteration + 1);
             return;
+        }
+        if (parallel) {
+            for (int i = 1; i <= itemCount; i++) {
+                var sibling = runs.findChild(parent.workspaceId(), parent.id(), child.parentNodeId(), i);
+                if (sibling.isEmpty() || sibling.get().isActive()) return;
+            }
+            iteration = itemCount;
+            child = runs.findChild(parent.workspaceId(), parent.id(), child.parentNodeId(), itemCount).orElseThrow();
         }
         ObjectNode result = json.object();
         result.put("iterations", iteration).put("limitReached", exhausted);
@@ -134,14 +148,34 @@ public class ChildRuns {
         result.put("outcome", child.outcome() == null ? "Cancelled" : child.outcome());
         result.put("outcomeKind", child.outcomeKind() == null ? "cancelled" : child.outcomeKind());
         result.put("reference", child.reference());
+        RunStore.RunRow lastChild = child;
         node.path("config").path("resultMapping").properties().forEach(e -> {
-            JsonNode value = child.output() == null ? null : child.output().get(e.getValue().asString());
+            JsonNode value = lastChild.output() == null ? null : lastChild.output().get(e.getValue().asString());
             if (value != null) result.set(e.getKey(), value);
         });
+        for (var mapping : node.path("config").path("collectionMapping").properties()) {
+            var values = tools.jackson.databind.node.JsonNodeFactory.instance.arrayNode();
+            boolean available = true;
+            for (int i = 1; i <= iteration; i++) {
+                var occurrence = runs.findChild(parent.workspaceId(), parent.id(), child.parentNodeId(), i).orElseThrow();
+                String field = mapping.getValue().asString();
+                switch (field) {
+                    case "outcome" -> values.add(occurrence.outcome() == null ? "Cancelled" : occurrence.outcome());
+                    case "outcomeKind" -> values.add(occurrence.outcomeKind() == null ? "cancelled" : occurrence.outcomeKind());
+                    case "reference" -> values.add(occurrence.reference());
+                    default -> {
+                        JsonNode value = occurrence.output() == null ? null : occurrence.output().get(field);
+                        if (value == null || value.isNull()) available = false;
+                        else values.add(value);
+                    }
+                }
+            }
+            if (available) result.set(mapping.getKey(), values);
+        }
         engine.resumeChild(parent.engineProcessInstanceId(), child.parentNodeId(),
                 Map.of(ProcessData.stepVariable(child.parentNodeId()), json.write(result)));
         runs.mutate(parent.workspaceId(), parent.id(), m -> {
-            m.removeStep(child.parentNodeId());
+            m.removeStep(lastChild.parentNodeId());
             m.settle();
         });
     }

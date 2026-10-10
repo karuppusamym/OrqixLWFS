@@ -115,6 +115,24 @@ Every operator action asks for a reason and is recorded. Operators cannot change
 
 ## Request collections and comments
 
-Collection questions let requesters add or remove bounded scalar items. The form validates each item's type and constraints plus the configured count; the studio supports collection questions with text, number, whole-number or Yes/No items (1 to 25). Published child for-each steps process these values sequentially according to their pinned contract.
+Collection questions let requesters add or remove bounded scalar items. The form validates each item's type and constraints plus the configured count; the studio supports collection questions with text, number, whole-number or Yes/No items (1 to 25). Published child for-each steps process these values sequentially or in parallel according to their pinned contract; collected result lists retain input order.
 
 People allowed to see request data can read permanent comments on the request page. The initiator, task participants and operators can add comments. Comments are plain text, limited to 2,000 characters, retain their author/time, and cannot be edited or deleted through the application. Summary-only visibility does not expose comments. A failed save retains your text and retries use the same idempotency key.
+
+## Starting requests in a conversation
+
+Open **Assistant** in your workspace. Choose **workflows**, then a workflow, or enter `start Purchase approval`. Answer each question; optional questions can be skipped. Invalid answers leave the current question open. Review the collected answers and select **Submit request**. A request is created only after confirmation. Reloading resumes your current conversation.
+
+Use `fieldName=value` to change an answer before submission. **My tasks** lists work available to you; `approve taskId`, `claim taskId` and `reject taskId: reason` prepare an action for your confirmation. **Discard proposed action** clears the proposal. Use `status ORQ-1001` to check a request you can view. These are guided commands; unrestricted language interpretation is not part of this release.
+
+## Document references and repeated work
+
+A workflow can read an approved SharePoint or OneDrive document through a configured Microsoft document connection. Supply the drive, item and version identifiers requested by the form. Approved operations read pinned UTF-8 text and metadata, extract bounded PDF/DOCX/XLSX/PPTX text, or retain current content as an immutable snapshot before extraction. A snapshot ID and hash identify the captured bytes. Scanned PDFs require a separate OCR capability; encrypted or unsupported files fail visibly. Document browsing in a picker remains planned. An administrator must configure tenant access first.
+
+A child-workflow step can repeat up to its configured bound, stopping on the selected outcome, or process a bounded list of scalar values sequentially or in parallel. Each child has its own request and history. The parent can route on the final result or whether all children succeeded, and collect selected child outputs into lists in input order. Runnable simple, medium and complex definitions and setup instructions are in [S14](build/S14-bounded-iteration.md).
+
+## Delegating an assigned approval
+
+Open a task assigned to you and select **Delegate to a colleague**. Choose an eligible named colleague, enter a reason and select **Confirm delegation**. The colleague becomes responsible for the decision, and the reason is saved in request history. If ownership changed while the page was open, reload before trying again. Administrators can still use operator reassignment for other cases.
+
+Assigned open tasks receive one in-app reminder after the configured delay (24 hours by default). Eligibility and current assignment are checked again before delivery. These reminders do not send email or broadcast to an unassigned group.

@@ -110,6 +110,13 @@
         </dependency>
 
         <!-- Tests -->
+        <!-- PDF extraction runs in a bounded isolated worker JVM; Office OOXML is read with bounded ZIP/StAX. -->
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>3.0.6</version>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

@@ -22,7 +22,7 @@ test('Camunda source analysis, guided connector mapping, draft conversion and pr
   await page.getByRole('button', { name: 'Apply operation mapping' }).click()
   await expect(page.getByLabel('Service task mappings (JSON)')).toHaveValue(/definitionVersion/)
   await page.getByLabel('Workflow key', { exact: true }).fill('browser-import-' + Date.now())
-  await page.getByRole('checkbox').check()
+  await page.getByRole('checkbox', { name: /I reviewed the assumptions/ }).check()
   const sourceId = page.url().split('/').pop()!
   await page.getByRole('button', { name: 'Convert to draft' }).click()
   await expect(page.getByTestId('studio')).toBeVisible()
@@ -59,7 +59,7 @@ test('Pega archive inventory and a reviewed checksum-linked manual mapping creat
   await page.getByRole('button', { name: 'Analyze source' }).click()
   await expect(page.getByRole('button', { name: 'Convert to draft' })).toBeVisible()
   await page.getByLabel('Workflow key', { exact: true }).fill('pega-review-' + Date.now())
-  await page.getByRole('checkbox').check()
+  await page.getByRole('checkbox', { name: /I reviewed the assumptions/ }).check()
   await page.getByRole('button', { name: 'Convert to draft' }).click()
   await expect(page.getByTestId('studio')).toBeVisible()
   await expect(page.getByText(/Imported from pega/)).toBeVisible()

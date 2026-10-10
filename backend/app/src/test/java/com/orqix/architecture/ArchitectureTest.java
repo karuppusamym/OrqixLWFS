@@ -18,13 +18,18 @@ import com.tngtech.archunit.core.importer.ImportOption;
  */
 class ArchitectureTest {
 
+    // Exclude test output regardless of the enclosing Maven build directory (including isolated verification builds).
+    static final ImportOption PRODUCTION_CLASSES = location ->
+            !location.asURI().toString().replace('\\', '/').contains("/test-classes/")
+            && ImportOption.Predefined.DO_NOT_INCLUDE_TESTS.includes(location);
+
     static final JavaClasses CLASSES = new ClassFileImporter()
-            .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
+            .withImportOption(PRODUCTION_CLASSES)
             .importPackages("com.orqix");
 
     @Test
     void modulithStructureIsValid() {
-        ApplicationModules.of(OrqixApplication.class).verify();
+        ApplicationModules.of(OrqixApplication.class, PRODUCTION_CLASSES).verify();
     }
 
     @Test

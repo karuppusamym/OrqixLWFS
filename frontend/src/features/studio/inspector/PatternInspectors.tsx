@@ -48,7 +48,8 @@ export function ChildInspector({ node }: { node: WorkflowNode }) {
   const inputs = cfg<Record<string, string>>(node, 'inputMapping') ?? {}
   const results = cfg<Record<string, string>>(node, 'resultMapping') ?? {}
   const repeat = cfg<{ maxIterations: number; untilOutcome: string }>(node, 'repeat')
-  const each = cfg<{ itemsRef: string; itemInput: string; maxItems: number }>(node, 'forEach')
+  const each = cfg<{ itemsRef: string; itemInput: string; maxItems: number; mode?: 'sequential' | 'parallel' }>(node, 'forEach')
+  const collections = cfg<Record<string, string>>(node, 'collectionMapping') ?? {}
   const fields = availableFields(def, node.id, connections)
   const patch = (p: Record<string, unknown>) => store.getState().updateNodeConfig(node.id, p)
   return <>
@@ -94,6 +95,7 @@ export function ChildInspector({ node }: { node: WorkflowNode }) {
           else store.getState().apply((draft) => ({ ...draft, nodes: draft.nodes.map((n) => {
             if (n.id !== node.id) return n
             const config = { ...n.config }; delete config.forEach
+            delete config.collectionMapping
             return { ...n, config }
           }) }))
         }} />
@@ -115,9 +117,27 @@ export function ChildInspector({ node }: { node: WorkflowNode }) {
             {Object.entries(childDef?.inputSchema.properties ?? {}).filter(([, field]) => field.type !== 'array').map(([key, field]) => <option key={key} value={key}>{field.title || key}</option>)}
           </Select>}
         </FormField>
-        <FormField label="Maximum items" required id={`foreach-bound-${node.id}`} description="1 to 25. Items run sequentially with separate task history. Results contain the final child result and iteration count.">
+        <FormField label="Execution order" id={`foreach-mode-${node.id}`} description="Parallel starts all bounded items together and waits for every result. Collected results always follow input order.">
+          {(ids) => <Select id={ids.input} value={each.mode ?? 'sequential'} disabled={readOnly} onChange={(e) => patch({ forEach: { ...each, mode: e.target.value } })}>
+            <option value="sequential">One item at a time</option><option value="parallel">All items in parallel</option>
+          </Select>}
+        </FormField>
+        <FormField label="Maximum items" required id={`foreach-bound-${node.id}`} description="1 to 25. Every item has separate task history. Scalar results contain the final input item's child result.">
           {(ids) => <CommitInput id={ids.input} type="number" min={1} max={25} value={String(each.maxItems)} disabled={readOnly} onCommit={(value) => patch({ forEach: { ...each, maxItems: Number(value) } })} />}
         </FormField>
+        <p className="text-xs text-muted-foreground">Collect arrays of child results. Add an array result field with a matching scalar item type to expose it on the request.</p>
+        {[['outcome', 'Outcome'], ['outcomeKind', 'Outcome kind'], ['reference', 'Request reference'], ...Object.entries(childDef?.outputSchema.properties ?? {}).filter(([, field]) => field.type !== 'array').map(([key, field]) => [key, field.title || key])].map(([key, title]) => {
+          const name = Object.keys(collections).find((k) => collections[k] === key)
+          return <div key={key} className="flex items-center gap-2">
+            <Checkbox id={`collect-${node.id}-${key}`} checked={!!name} disabled={readOnly} onCheckedChange={(checked) => {
+              const next = { ...collections }
+              if (checked === true) next[name ?? `${key}Items`] = key!
+              else if (name) delete next[name]
+              patch({ collectionMapping: next })
+            }} />
+            <Label htmlFor={`collect-${node.id}-${key}`}>{title} collection</Label>
+          </div>
+        })}
       </> : null}
     </InspectorSection>
     {childDef ? <>

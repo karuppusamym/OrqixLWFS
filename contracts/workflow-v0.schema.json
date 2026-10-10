@@ -811,6 +811,13 @@
                   "type": "integer",
                   "minimum": 1,
                   "maximum": 25
+                },
+                "mode": {
+                  "enum": [
+                    "sequential",
+                    "parallel"
+                  ],
+                  "default": "sequential"
                 }
               },
               "required": [
@@ -819,6 +826,16 @@
                 "maxItems"
               ],
               "additionalProperties": false
+            },
+            "collectionMapping": {
+              "description": "Collected output name -> guaranteed scalar child result field, or outcome/outcomeKind/reference. For collection iteration only. Values follow input item order.",
+              "type": "object",
+              "propertyNames": {
+                "$ref": "#/$defs/fieldKey"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/fieldKey"
+              }
             }
           },
           "required": [

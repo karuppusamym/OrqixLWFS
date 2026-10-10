@@ -164,6 +164,9 @@ services:
       ORQIX_EGRESS_ALLOWED_PRIVATE_HOSTS: procurement-stub:8090
       ORQIX_EGRESS_PLAIN_HTTP_HOSTS: procurement-stub:8090
       ORQIX_SECRETS_DIR: /var/run/secrets/orqix
+      ORQIX_REMINDERS_ENABLED: ${ORQIX_REMINDERS_ENABLED:-true}
+      ORQIX_REMINDERS_AFTER: ${ORQIX_REMINDERS_AFTER:-24h}
+      ORQIX_REMINDERS_POLL_DELAY: ${ORQIX_REMINDERS_POLL_DELAY:-60s}
       # AI assistance (S10). Empty = rules-only. Read unprefixed on purpose; set it in deploy/compose/.env (gitignored).
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
     healthcheck:

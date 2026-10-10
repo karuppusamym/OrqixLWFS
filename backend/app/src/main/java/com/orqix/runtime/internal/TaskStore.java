@@ -33,9 +33,11 @@ public class TaskStore {
             """;
 
     private final JdbcClient jdbc;
+    private final TaskReminderSettings reminders;
 
-    public TaskStore(JdbcClient jdbc) {
+    public TaskStore(JdbcClient jdbc, TaskReminderSettings reminders) {
         this.jdbc = jdbc;
+        this.reminders = reminders;
     }
 
     /**
@@ -64,6 +66,9 @@ public class TaskStore {
         if (inserted != 1) {
             throw new IllegalStateException("Run " + runId + " not found for task " + taskId);
         }
+        jdbc.sql("INSERT INTO task_reminder(workspace_id,task_id,next_attempt_at) VALUES(:ws,:task,:due) ON CONFLICT DO NOTHING")
+                .param("ws",workspaceId).param("task",taskId)
+                .param("due",Sql.ts(createdAt.plus(reminders.after()))).update();
     }
 
     @Transactional(readOnly = true)
@@ -75,6 +80,13 @@ public class TaskStore {
     @Transactional(propagation = Propagation.MANDATORY)
     public Optional<TaskRow> lock(UUID workspaceId, String taskId) {
         return jdbc.sql("SELECT " + COLUMNS + " FROM task_context WHERE workspace_id = :ws AND engine_task_id = :task FOR UPDATE")
+                .param("ws", workspaceId).param("task", taskId).query(TaskStore::map).optional();
+    }
+
+    /** Background reminders never wait for a task lock while holding their queue batch locks. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public Optional<TaskRow> tryLock(UUID workspaceId, String taskId) {
+        return jdbc.sql("SELECT " + COLUMNS + " FROM task_context WHERE workspace_id = :ws AND engine_task_id = :task FOR UPDATE SKIP LOCKED")
                 .param("ws", workspaceId).param("task", taskId).query(TaskStore::map).optional();
     }
 

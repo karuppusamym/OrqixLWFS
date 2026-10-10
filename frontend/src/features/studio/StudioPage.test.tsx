@@ -22,6 +22,25 @@ async function openSteps(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe('studio (Steps tab, inspector, autosave, check, conflicts)', () => {
+  it('saves bounded parallel collection settings and ordered outcome collection', async () => {
+    signInAs('dana.designer')
+    const draft = db.workflows.get(PURCHASE_WORKFLOW_ID)!.drafts.at(-1)!.definition
+    const node = draft.nodes.find((n) => n.id === 'procure')!
+    node.type = 'startWorkflow'
+    node.config = { workflowRef: 'review-request', inputMapping: {}, resultMapping: {}, forEach: { itemsRef: '/input/items', itemInput: 'title', maxItems: 3 } }
+    draft.inputSchema.properties.items = { type: 'array', title: 'Purchase titles', items: { type: 'string', title: 'Title' }, minItems: 1, maxItems: 3 }
+    draft.inputSchema.required = [...(draft.inputSchema.required ?? []), 'items']
+    const user = userEvent.setup()
+    renderApp(EDIT)
+    await openSteps(user)
+    await user.click(stepButton('procure'))
+    await user.selectOptions(await screen.findByLabelText('Execution order'), 'parallel')
+    await user.click(screen.getByLabelText('Outcome collection'))
+    await waitFor(() => expect(screen.getByTestId('save-state')).toHaveTextContent('Saved'), { timeout: 5000 })
+    const saved = db.workflows.get(PURCHASE_WORKFLOW_ID)!.drafts.at(-1)!.definition.nodes.find((n) => n.id === 'procure')!
+    expect(saved.config.forEach).toMatchObject({ mode: 'parallel', maxItems: 3, itemsRef: '/input/items' })
+    expect(saved.config.collectionMapping).toEqual({ outcomeItems: 'outcome' })
+  })
   it('edits a wait duration and saves the timer configuration', async () => {
     signInAs('dana.designer')
     const draft = db.workflows.get(PURCHASE_WORKFLOW_ID)!.drafts.at(-1)!.definition

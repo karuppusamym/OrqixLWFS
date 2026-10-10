@@ -1,0 +1,429 @@
+{
+  "schemaVersion": "0.1",
+  "kind": "microsoftGraph",
+  "key": "microsoft-documents",
+  "version": 2,
+  "name": "SharePoint and OneDrive documents",
+  "description": "Read pinned historical documents, capture immutable current snapshots, and extract PDF/Office text using isolated bounded parsers. Restrict approved drive IDs in tenant-specific contracts.",
+  "operations": {
+    "getMetadata": {
+      "label": "Read document metadata",
+      "method": "POST",
+      "path": "/metadata",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "driveId": {
+            "type": "string"
+          },
+          "itemId": {
+            "type": "string"
+          },
+          "versionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "driveId",
+          "itemId",
+          "versionId"
+        ],
+        "additionalProperties": false
+      },
+      "responseSchema": {
+        "type": "object",
+        "properties": {
+          "driveId": {
+            "type": "string"
+          },
+          "itemId": {
+            "type": "string"
+          },
+          "versionId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "webUrl": {
+            "type": "string"
+          },
+          "eTag": {
+            "type": "string"
+          },
+          "lastModifiedDateTime": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "driveId",
+          "itemId",
+          "versionId",
+          "name",
+          "webUrl",
+          "eTag",
+          "lastModifiedDateTime",
+          "size"
+        ],
+        "additionalProperties": false
+      },
+      "successStatuses": [
+        200
+      ],
+      "effectClass": "readOnly",
+      "maxTimeoutSeconds": 30,
+      "testable": true
+    },
+    "readText": {
+      "label": "Read pinned text document",
+      "method": "POST",
+      "path": "/text",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "driveId": {
+            "type": "string"
+          },
+          "itemId": {
+            "type": "string"
+          },
+          "versionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "driveId",
+          "itemId",
+          "versionId"
+        ],
+        "additionalProperties": false
+      },
+      "responseSchema": {
+        "type": "object",
+        "properties": {
+          "driveId": {
+            "type": "string"
+          },
+          "itemId": {
+            "type": "string"
+          },
+          "versionId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "webUrl": {
+            "type": "string"
+          },
+          "eTag": {
+            "type": "string"
+          },
+          "lastModifiedDateTime": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "text": {
+            "type": "string"
+          },
+          "contentSha256": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "driveId",
+          "itemId",
+          "versionId",
+          "name",
+          "webUrl",
+          "eTag",
+          "lastModifiedDateTime",
+          "size",
+          "text",
+          "contentSha256"
+        ],
+        "additionalProperties": false
+      },
+      "successStatuses": [
+        200
+      ],
+      "effectClass": "readOnly",
+      "maxTimeoutSeconds": 30,
+      "testable": true
+    },
+    "extractDocument": {
+      "label": "Extract a pinned PDF or Office document",
+      "method": "POST",
+      "path": "/extract",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "driveId": {
+            "type": "string"
+          },
+          "itemId": {
+            "type": "string"
+          },
+          "versionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "driveId",
+          "itemId",
+          "versionId"
+        ],
+        "additionalProperties": false
+      },
+      "responseSchema": {
+        "type": "object",
+        "properties": {
+          "driveId": {
+            "type": "string"
+          },
+          "itemId": {
+            "type": "string"
+          },
+          "versionId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "webUrl": {
+            "type": "string"
+          },
+          "eTag": {
+            "type": "string"
+          },
+          "lastModifiedDateTime": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "text": {
+            "type": "string"
+          },
+          "contentSha256": {
+            "type": "string"
+          },
+          "extractionFormat": {
+            "type": "string"
+          },
+          "extractedTextSha256": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "driveId",
+          "itemId",
+          "versionId",
+          "name",
+          "webUrl",
+          "eTag",
+          "lastModifiedDateTime",
+          "size",
+          "text",
+          "contentSha256",
+          "extractionFormat",
+          "extractedTextSha256"
+        ],
+        "additionalProperties": false
+      },
+      "successStatuses": [
+        200
+      ],
+      "effectClass": "readOnly",
+      "maxTimeoutSeconds": 30,
+      "testable": true
+    },
+    "pinLatest": {
+      "label": "Capture latest document as immutable snapshot",
+      "method": "POST",
+      "path": "/pinLatest",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "driveId": {
+            "type": "string"
+          },
+          "itemId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "driveId",
+          "itemId"
+        ],
+        "additionalProperties": false
+      },
+      "responseSchema": {
+        "type": "object",
+        "properties": {
+          "driveId": {
+            "type": "string"
+          },
+          "itemId": {
+            "type": "string"
+          },
+          "versionId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "webUrl": {
+            "type": "string"
+          },
+          "eTag": {
+            "type": "string"
+          },
+          "lastModifiedDateTime": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "snapshotId": {
+            "type": "string"
+          },
+          "snapshotExpiresAt": {
+            "type": "string"
+          },
+          "contentSha256": {
+            "type": "string"
+          },
+          "pinMode": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "driveId",
+          "itemId",
+          "versionId",
+          "name",
+          "webUrl",
+          "eTag",
+          "lastModifiedDateTime",
+          "size",
+          "snapshotId",
+          "snapshotExpiresAt",
+          "contentSha256",
+          "pinMode"
+        ],
+        "additionalProperties": false
+      },
+      "successStatuses": [
+        200
+      ],
+      "effectClass": "readOnly",
+      "maxTimeoutSeconds": 30,
+      "testable": true
+    },
+    "extractSnapshot": {
+      "label": "Extract an immutable captured snapshot",
+      "method": "POST",
+      "path": "/extractSnapshot",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "driveId": {
+            "type": "string"
+          },
+          "itemId": {
+            "type": "string"
+          },
+          "snapshotId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "driveId",
+          "itemId",
+          "snapshotId"
+        ],
+        "additionalProperties": false
+      },
+      "responseSchema": {
+        "type": "object",
+        "properties": {
+          "driveId": {
+            "type": "string"
+          },
+          "itemId": {
+            "type": "string"
+          },
+          "versionId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "webUrl": {
+            "type": "string"
+          },
+          "eTag": {
+            "type": "string"
+          },
+          "lastModifiedDateTime": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "text": {
+            "type": "string"
+          },
+          "contentSha256": {
+            "type": "string"
+          },
+          "extractionFormat": {
+            "type": "string"
+          },
+          "extractedTextSha256": {
+            "type": "string"
+          },
+          "snapshotId": {
+            "type": "string"
+          },
+          "snapshotExpiresAt": {
+            "type": "string"
+          },
+          "pinMode": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "driveId",
+          "itemId",
+          "versionId",
+          "name",
+          "webUrl",
+          "eTag",
+          "lastModifiedDateTime",
+          "size",
+          "text",
+          "contentSha256",
+          "extractionFormat",
+          "extractedTextSha256",
+          "snapshotId",
+          "snapshotExpiresAt",
+          "pinMode"
+        ],
+        "additionalProperties": false
+      },
+      "successStatuses": [
+        200
+      ],
+      "effectClass": "readOnly",
+      "maxTimeoutSeconds": 30,
+      "testable": true
+    }
+  }
+}

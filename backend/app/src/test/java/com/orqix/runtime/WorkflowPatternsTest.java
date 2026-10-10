@@ -220,6 +220,78 @@ class WorkflowPatternsTest extends RuntimeTestBase {
         });
     }
 
+    private UUID parallelCollectionParent(UUID childWf) throws Exception {
+        String key = api("dana.designer").get("/workspaces/{ws}/workflows/{id}", PURCHASING, childWf).body().path("key").asString();
+        return publishPurchase(PURCHASING, d -> {
+            graph(d, "[" + START + ",{\"id\":\"child\",\"type\":\"startWorkflow\",\"label\":\"Review all purchases\",\"config\":{\"workflowRef\":\"" + key
+                    + "\",\"inputMapping\":{\"purpose\":\"/input/purpose\",\"amount\":\"/input/amount\",\"costCenter\":\"/input/costCenter\"},\"resultMapping\":{},"
+                    + "\"forEach\":{\"itemsRef\":\"/input/items\",\"itemInput\":\"title\",\"maxItems\":3,\"mode\":\"parallel\"},"
+                    + "\"collectionMapping\":{\"outcomeItems\":\"outcome\",\"referenceItems\":\"reference\"}}}," + END + "]",
+                    "[" + flow("t1", "start", "child", "next") + "," + flow("t2", "child", "end", "next") + "]");
+            ((ObjectNode) d.path("inputSchema").path("properties")).set("items", json.parse("{\"type\":\"array\",\"title\":\"Items\",\"minItems\":1,\"maxItems\":3,\"items\":{\"type\":\"string\",\"title\":\"Purchase title\",\"minLength\":1,\"maxLength\":200}}"));
+            ((tools.jackson.databind.node.ArrayNode) d.path("inputSchema").path("required")).add("items");
+            var properties = json.object();
+            for (String name : java.util.List.of("outcomeItems", "referenceItems")) properties.set(name, json.parse("{\"type\":\"array\",\"title\":\"" + name + "\",\"minItems\":1,\"maxItems\":3,\"items\":{\"type\":\"string\",\"title\":\"Result\"}}"));
+            properties.set("allSucceeded", json.parse("{\"type\":\"boolean\",\"title\":\"All succeeded\"}"));
+            ((ObjectNode) d.path("outputSchema")).set("properties", properties);
+            for (String name : java.util.List.of("outcomeItems", "referenceItems", "allSucceeded"))
+                ((ObjectNode) d.path("outputMapping")).set(name, json.parse("{\"fieldRef\":\"/steps/child/" + name + "\",\"required\":false}"));
+        });
+    }
+
+    private UUID startCollection(UUID workflow) throws Exception {
+        var values = new java.util.LinkedHashMap<>(input(BigDecimal.TEN));
+        values.put("items", java.util.List.of("Laptop", "Monitor", "Keyboard"));
+        var started = api("rhea.requester").post(Map.of("workflowId", workflow, "input", values), UUID.randomUUID().toString(), "/workspaces/{ws}/runs", PURCHASING);
+        assertThat(started.status()).as(started.toString()).isEqualTo(201);
+        return UUID.fromString(started.body().path("id").asString());
+    }
+
+    @Test
+    void parallelCollectionWaitsForAllAndCollectsResultsInInputOrderAfterRestart() throws Exception {
+        UUID simple = publishExample("simple-review.json", null);
+        UUID parent = startCollection(parallelCollectionParent(simple));
+        UUID first = occurrence(parent, 1), second = occurrence(parent, 2), third = occurrence(parent, 3);
+        assertThat(openTask(PURCHASING, first, "review")).isNotNull();
+        assertThat(openTask(PURCHASING, second, "review")).isNotNull();
+        String task = openTask(PURCHASING, third, "review").path("id").asString();
+        assertThat(claim("mani.manager", PURCHASING, task).status()).isEqualTo(200);
+        assertThat(decide("mani.manager", PURCHASING, task, "reject", "Not needed").status()).isEqualTo(201);
+        approve("mani.manager", PURCHASING, second, "review");
+        assertThat(lifecycle(PURCHASING, parent)).isEqualTo("waiting");
+        processEngine.getProcessEngineConfiguration().getAsyncExecutor().shutdown();
+        processEngine.getProcessEngineConfiguration().getAsyncExecutor().start();
+        approve("mani.manager", PURCHASING, first, "review");
+        awaitLifecycle(PURCHASING, parent, "completed");
+        var output = api("olga.operator").get("/workspaces/{ws}/runs/{id}", PURCHASING, parent).body().path("output");
+        assertThat(output.path("outcomeItems").toString()).isEqualTo("[\"Accepted\",\"Accepted\",\"Rejected\"]");
+        assertThat(output.path("referenceItems").size()).isEqualTo(3);
+        assertThat(output.path("allSucceeded").asBoolean()).isFalse();
+        assertThat(eventTypes(PURCHASING, parent).stream().filter("RUN_COMPLETED"::equals).count()).isEqualTo(1);
+    }
+
+    @Test
+    void cancellingParallelCollectionCancelsEveryActiveOccurrence() throws Exception {
+        UUID parent = startCollection(parallelCollectionParent(publishExample("simple-review.json", null)));
+        for (int i = 1; i <= 3; i++) occurrence(parent, i);
+        var detail = api("olga.operator").get("/workspaces/{ws}/runs/{id}", PURCHASING, parent).body();
+        assertThat(api("olga.operator").post(Map.of("expectedVersion", detail.path("version").asInt(), "reason", "Batch no longer needed"), UUID.randomUUID().toString(),
+                "/workspaces/{ws}/runs/{id}/cancel", PURCHASING, parent).status()).isEqualTo(200);
+        assertThat(jdbc.sql("SELECT lifecycle FROM workflow_run WHERE parent_run_id = :id").param("id", parent).query(String.class).list()).containsExactly("cancelled", "cancelled", "cancelled");
+        assertThat(jdbc.sql("SELECT count(*) FROM task_context WHERE run_id IN (SELECT id FROM workflow_run WHERE parent_run_id = :id) AND status = 'open'").param("id", parent).query(Long.class).single()).isZero();
+    }
+
+    @Test
+    void parallelCollectionKeepsExternalEffectIdentitiesDistinctAcrossOccurrences() throws Exception {
+        UUID parent = startCollection(parallelCollectionParent(publishPurchase(PURCHASING, null)));
+        for (int i = 3; i >= 1; i--) approve("mani.manager", PURCHASING, occurrence(parent, i), "manager");
+        awaitLifecycle(PURCHASING, parent, "completed");
+        assertThat(jdbc.sql("SELECT count(DISTINCT run_id) FROM effect_journal WHERE run_id IN (SELECT id FROM workflow_run WHERE parent_run_id = :id)")
+                .param("id", parent).query(Long.class).single()).isEqualTo(3);
+        assertThat(jdbc.sql("SELECT count(DISTINCT effect_key) FROM effect_journal WHERE run_id IN (SELECT id FROM workflow_run WHERE parent_run_id = :id)")
+                .param("id", parent).query(Long.class).single()).isEqualTo(3);
+    }
+
     @Test
     void simpleMediumAndComplexExamplesPublishAndExecuteThroughThePublicApi() throws Exception {
         UUID simple = publishExample("simple-review.json", null);

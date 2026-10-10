@@ -14,7 +14,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input, Select, Textarea } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { downloadJson } from '@/lib/download'
+import { downloadBlob, downloadJson } from '@/lib/download'
+import { reportCsv } from './reportExport'
 import { toKey } from '@/lib/text'
 import { ServiceMappingGuide } from './ServiceMappingGuide'
 
@@ -89,6 +90,11 @@ function JobReview({ job, editable }: { job: Job; editable: boolean }) {
   const [ack, setAck] = useState(false)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [findingKind, setFindingKind] = useState('all')
+  const [findingSeverity, setFindingSeverity] = useState('all')
+  const [onlyOpen, setOnlyOpen] = useState(false)
+  const visibleFindings = report.issues.filter(issue => (findingKind === 'all' || issue.sourceKind === findingKind) && (findingSeverity === 'all' || issue.severity === findingSeverity) && (!onlyOpen || issue.resolutionStatus === 'open'))
+  const findingGroups = [...new Set(visibleFindings.map(issue => issue.sourceKind))].sort()
   const mappingTemplate = () => downloadJson({ format: 'orqix-pega-mapping-0.1', archiveJobId: job.id,
     sourceArchiveHash: report.sourceHash, sourceVersion: 'ENTER-PEGA-VERSION', definition: {},
     fileMappings: Object.fromEntries(report.issues.map(i => [i.sourceElementId, { disposition: 'unresolved', targetNodeIds: [], explanation: '' }])) }, 'pega-mapping-template.json')
@@ -114,15 +120,21 @@ function JobReview({ job, editable }: { job: Job; editable: boolean }) {
     finally { setPending(false) }
   }
   return <section className="space-y-5" aria-label="Compatibility report">
-    <div className="flex flex-wrap items-center justify-between gap-3"><h2>{job.fileName}</h2><Button onClick={() => downloadJson(job, 'migration-report.json')}>Download compatibility report</Button></div>
+    <div className="flex flex-wrap items-center justify-between gap-3"><h2>{job.fileName}</h2><div className="flex gap-2"><Button onClick={() => downloadJson(job, 'migration-report.json')}>Download compatibility report</Button><Button onClick={() => downloadBlob(new Blob([reportCsv(report)], { type: 'text/csv;charset=utf-8' }), 'migration-findings.csv')}>Download findings CSV</Button></div></div>
     <p className="break-all text-xs text-muted-foreground">Source: {report.sourceSystem} · adapter {report.adapterVersion} · SHA-256 {report.sourceHash}</p>
     <div className="flex flex-wrap gap-2">{Object.entries(report.elementCounts).map(([kind, count]) => <Badge key={kind}>{kind}: {count}</Badge>)}</div>
     <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">{report.assumptions.map((a, i) => <li key={i}>{a}</li>)}</ul>
-    <div className="space-y-3">{report.issues.map((issue, index) => <article key={index} className="rounded-card border border-border bg-surface p-4">
+    <div className="flex flex-wrap items-end gap-3">
+      <div><Label htmlFor="findings-kind">Finding kind</Label><Select id="findings-kind" value={findingKind} onChange={event => setFindingKind(event.target.value)}><option value="all">All kinds</option>{[...new Set(report.issues.map(issue => issue.sourceKind))].sort().map(kind => <option key={kind} value={kind}>{kind}</option>)}</Select></div>
+      <div><Label htmlFor="findings-severity">Severity</Label><Select id="findings-severity" value={findingSeverity} onChange={event => setFindingSeverity(event.target.value)}><option value="all">All severities</option>{['blocker','action','info','supported'].map(severity => <option key={severity} value={severity}>{severity}</option>)}</Select></div>
+      <Label className="flex gap-2 items-center"><input type="checkbox" checked={onlyOpen} onChange={event => setOnlyOpen(event.target.checked)} />Unresolved findings only</Label>
+    </div>
+    <p className="text-sm text-muted-foreground">Showing {visibleFindings.length} of {report.issues.length} findings. Exports and conversion use the complete report.</p>
+    <div className="space-y-5">{findingGroups.map(kind => <section key={kind} className="space-y-3" aria-label={`${kind} findings`}><h3>{kind}</h3>{visibleFindings.filter(issue => issue.sourceKind === kind).map((issue, index) => <article key={index} className="rounded-card border border-border bg-surface p-4">
       <div className="flex flex-wrap items-center gap-2"><Badge tone={issue.severity === 'blocker' ? 'danger' : issue.severity === 'action' ? 'warning' : undefined}>{issue.severity}</Badge><span className="break-all font-semibold">{issue.sourceName ?? issue.sourceElementId}</span><span className="text-xs text-muted-foreground">{issue.sourceKind} · {issue.resolutionStatus}</span></div>
       <p className="mt-2 text-sm">{issue.explanation}</p>{issue.suggestedAction ? <p className="mt-1 text-sm text-muted-foreground">{issue.suggestedAction}</p> : null}
       <p className="mt-2 break-all font-mono text-xs text-muted-foreground">{issue.reasonCode} · {issue.sourcePath ?? issue.sourceElementId}</p>
-    </article>)}</div>
+    </article>)}</section>)}</div>
     {job.convertedWorkflowId ? <Button asChild variant="primary"><Link to={`/w/${workspace.id}/workflows/${job.convertedWorkflowId}/edit?migration=${job.id}`}>Open imported draft</Link></Button> : archive ? <Alert tone="warning" title="Manual Pega mapping required">Native rules are not automatically executable here. Download a template, map or explicitly exclude every archive file with an explanation, and upload the reviewed JSON package.<div className="mt-3"><Button onClick={mappingTemplate}>Download mapping package template</Button></div></Alert> : editable ? <form onSubmit={(event) => { event.preventDefault(); void convert() }} className="space-y-4 rounded-card border border-border bg-surface p-5">
       <h2>Resolve mappings and create a draft</h2>
       <Label htmlFor="migration-key">Workflow key</Label><Input id="migration-key" required value={key} onChange={e => setKey(e.target.value)} />

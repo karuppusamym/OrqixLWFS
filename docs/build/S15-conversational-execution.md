@@ -1,6 +1,6 @@
 # S15 — Guided conversational execution
 
-Status: implemented slice; verification is recorded in the release tracker. This is a deterministic, resumable command interface over the existing workflow and task services. It does not require an AI provider and does not claim unrestricted natural-language intent recognition.
+Status: verified slice; verification is recorded in the release tracker. This is a deterministic, resumable command interface over the existing workflow and task services. It does not require an AI provider and does not claim unrestricted natural-language intent recognition.
 
 ## 1. Supported commands
 
@@ -27,7 +27,7 @@ Conversations are scoped to a workspace and their author. The GET endpoint resum
 
 Every message uses the normal idempotency header. Responses are retained as conversation turns so replay of a submitted confirmation returns the same run or task result. Request creation uses the existing run-start service with the selected published release and validated input. Task actions use the existing task visibility, ownership, version, eligibility, self-approval, and decision services. Confirmation rechecks current task state and authorization; an earlier suggestion is not authorization to execute later.
 
-The service stores collected field values, the review state, and replayable responses. It does not store raw conversational messages or include them in audit metadata. Audit entries record conversation stage and version; run starts, claims, and decisions keep their existing domain audit entries. Drafts expire using the configured idempotency retention period, with replay records protected until their keys expire. The first slice limits an author to 50 active conversations per workspace.
+The service stores collected field values, the review state, and replayable responses. It does not store raw conversational messages or include them in audit metadata. Audit entries record conversation stage and version; run starts, claims, and decisions keep their existing domain audit entries. Drafts expire using the configured idempotency retention period, with replay records protected until their keys expire. The first slice limits an author to 50 active conversations per workspace and 200 messages per conversation. New-session admission is serialized per author and workspace.
 
 ## 3. API
 

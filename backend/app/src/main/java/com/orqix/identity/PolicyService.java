@@ -69,6 +69,12 @@ public class PolicyService {
         return computed;
     }
 
+    /** Current effective access for background work and another subject; bypasses the session cache. */
+    @Transactional(readOnly = true)
+    public Optional<WorkspaceAccess> freshAccess(Caller caller, UUID workspaceId) {
+        return compute(caller, workspaceId);
+    }
+
     /** Workspace visible to the caller (member or manage-access), else 404 (S6 section 4 step 3). */
     public WorkspaceAccess requireVisible(Caller caller, UUID workspaceId) {
         WorkspaceAccess access = access(caller, workspaceId).orElseThrow(ApiException::notFound);

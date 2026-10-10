@@ -22,6 +22,7 @@ import { formatDateTime } from '@/lib/dates'
 import { describeProblem } from '@/lib/problemMessages'
 import { dueInfo } from '@/lib/dates'
 import { requestReference } from '@/lib/runText'
+import { TaskDelegation } from './TaskDelegation'
 
 type Banner = { tone: 'success' | 'warning' | 'info'; text: string }
 
@@ -65,7 +66,7 @@ export function TaskPanel({ taskId, onClaimed }: { taskId: string; onClaimed?: (
   const [commentError, setCommentError] = useState<string>()
   const [banner, setBanner] = useState<Banner | null>(null)
   const [error, setError] = useState<ProblemError | null>(null)
-  const [pending, setPending] = useState<null | 'claim' | 'release' | 'approve' | 'reject'>(null)
+  const [pending, setPending] = useState<null | 'claim' | 'release' | 'approve' | 'reject' | 'delegate'>(null)
   const bannerRef = useRef<HTMLDivElement>(null)
   const commentRef = useRef<HTMLTextAreaElement>(null)
   const focusComment = useRef(false)
@@ -342,6 +343,7 @@ export function TaskPanel({ taskId, onClaimed }: { taskId: string; onClaimed?: (
             </div>
           </div>
         ) : null}
+        {canDecide && isMine ? <TaskDelegation ws={ws} task={task} busy={busy} onBusy={value => setPending(value ? 'delegate' : null)} /> : null}
         {!canClaim && !canDecide && !reason ? <p className="text-sm text-muted-foreground">No actions are available for this task.</p> : null}
       </div>
     </div>

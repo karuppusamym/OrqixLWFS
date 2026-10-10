@@ -95,9 +95,11 @@ function stepOutputs(def: Definition, node: WorkflowNode, lookup?: ConnectionLoo
     }
     case 'startWorkflow': {
       const mapping = (node.config.resultMapping ?? {}) as Record<string, string>
+      const collections = (node.config.collectionMapping ?? {}) as Record<string, string>
       return [base('outcome', 'string'), base('outcomeKind', 'string'), base('reference', 'string'),
         base('iterations', 'integer'), base('limitReached', 'boolean'), base('allSucceeded', 'boolean'),
-        ...Object.entries(mapping).map(([key, output]) => base(key, lookup?.workflowOutputType?.(node.config.workflowRef as string, output) ?? 'string'))]
+        ...Object.entries(mapping).map(([key, output]) => base(key, lookup?.workflowOutputType?.(node.config.workflowRef as string, output) ?? 'string')),
+        ...Object.keys(collections).map((key) => base(key, 'array'))]
     }
     default:
       return []

@@ -4,7 +4,7 @@ import { useState } from 'react'
 import * as endpoints from '@/api/endpoints'
 import type { ProblemError } from '@/api/problem'
 import { keys, useConnection, useConnections } from '@/api/queries'
-import type { ConnectionBinding, ConnectionSummary, ConnectionTestResult } from '@/api/types'
+import type { ConnectionBinding, ConnectionSummary, ConnectionTestResult, ConnectionDetail } from '@/api/types'
 import { useWorkspace } from '@/app/workspace'
 import { useAnnounce } from '@/components/common/Announcer'
 import { FormField } from '@/components/common/FormField'
@@ -125,7 +125,7 @@ function ManageConnection({ connection }: { connection: ConnectionSummary }) {
   return (
     <div className="grid gap-8 border-t border-border p-5 lg:grid-cols-2">
       <BindingForm key={binding?.revision ?? 0} connectionKey={connection.key} binding={binding} graph={connection.kind === 'microsoftGraph'} />
-      {connection.kind === 'agent' ? <AgentTest connection={connection} /> : <TestConnection connection={connection} />}
+      {connection.kind === 'agent' ? <AgentTest connection={connection} /> : <TestConnection connection={connection} detail={detail.data} />}
     </div>
   )
 }
@@ -254,7 +254,7 @@ function BindingForm({ connectionKey, binding, graph }: { connectionKey: string;
   )
 }
 
-function TestConnection({ connection }: { connection: ConnectionSummary }) {
+function TestConnection({ connection, detail }: { connection: ConnectionSummary; detail: ConnectionDetail }) {
   const { workspace } = useWorkspace()
   const testable = connection.operations.filter((o) => o.testable)
   const [operation, setOperation] = useState(testable[0]?.name ?? '')
@@ -262,7 +262,11 @@ function TestConnection({ connection }: { connection: ConnectionSummary }) {
   const [result, setResult] = useState<ConnectionTestResult | null>(null)
   const [error, setError] = useState<ProblemError | null>(null)
   const graph = connection.kind === 'microsoftGraph'
-  const [documentRef, setDocumentRef] = useState({ driveId: '', itemId: '', versionId: '' })
+  const [documentRef, setDocumentRef] = useState<Record<string, string>>({ driveId: '', itemId: '', versionId: '', snapshotId: '' })
+  const definition = detail.definitions.find((item) => item.version === connection.latestVersion)?.definition
+  const operationSchema = (definition?.operations as Record<string, { requestSchema?: { required?: string[]; properties?: Record<string, unknown> } }> | undefined)?.[operation]?.requestSchema
+  const documentFields = Object.keys(operationSchema?.properties ?? { driveId: {}, itemId: {}, versionId: {} })
+  const requiredFields = operationSchema?.required ?? documentFields
 
   const run = async () => {
     setPending(true)
@@ -270,7 +274,7 @@ function TestConnection({ connection }: { connection: ConnectionSummary }) {
     setResult(null)
     try {
       setResult(await endpoints.testConnection(workspace.id, connection.key, connection.latestVersion, operation,
-        graph ? Object.fromEntries(Object.entries(documentRef).map(([key, value]) => [key, value.trim()])) : undefined))
+        graph ? Object.fromEntries(documentFields.filter((field) => requiredFields.includes(field) || documentRef[field]?.trim()).map((field) => [field, (documentRef[field] ?? '').trim()])) : undefined))
     } catch (cause) {
       setError(toProblem(cause))
     } finally {
@@ -298,16 +302,16 @@ function TestConnection({ connection }: { connection: ConnectionSummary }) {
           </div>
           {graph ? (
             <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">Choose a specific document version using its drive, item and version identifiers. Text reads support archived UTF-8 text versions up to 64 KiB. Your platform team controls document access.</p>
-              {(['driveId', 'itemId', 'versionId'] as const).map((field) => (
-                <FormField key={field} label={{ driveId: 'Drive ID', itemId: 'Document item ID', versionId: 'Document version ID' }[field]} required id={`test-${field}-${connection.key}`}>
-                  {(ids) => <Input id={ids.input} value={documentRef[field]} onChange={(event) => setDocumentRef({ ...documentRef, [field]: event.target.value })} autoComplete="off" spellCheck={false} />}
+              <p className="text-sm text-muted-foreground">Historical reads need a document version. Capture latest creates an immutable snapshot; use the returned snapshot ID for later extraction. PDF and Office extraction accepts files up to 5 MiB and returns at most 64 KiB of text. Your platform team controls document access.</p>
+              {documentFields.map((field) => (
+                <FormField key={field} label={({ driveId: 'Drive ID', itemId: 'Document item ID', versionId: 'Document version ID', snapshotId: 'Captured snapshot ID' } as Record<string, string>)[field] ?? field} required={requiredFields.includes(field)} id={`test-${field}-${connection.key}`}>
+                  {(ids) => <Input id={ids.input} value={documentRef[field] ?? ''} onChange={(event) => setDocumentRef({ ...documentRef, [field]: event.target.value })} autoComplete="off" spellCheck={false} />}
                 </FormField>
               ))}
             </div>
           ) : null}
           {!connection.binding.configured || !connection.binding.enabled ? <p className="text-sm text-muted-foreground">Save an enabled connection address before testing.</p> : null}
-          <Button variant="secondary" onClick={() => void run()} loading={pending} disabled={!connection.binding.configured || !connection.binding.enabled || (graph && Object.values(documentRef).some((value) => !value.trim()))}>
+          <Button variant="secondary" onClick={() => void run()} loading={pending} disabled={!connection.binding.configured || !connection.binding.enabled || (graph && requiredFields.some((field) => !documentRef[field]?.trim()))}>
             Test connection
           </Button>
         </>
@@ -319,6 +323,7 @@ function TestConnection({ connection }: { connection: ConnectionSummary }) {
               <span className="inline-flex items-center gap-1.5">
                 <CheckCircle2 className="size-4" aria-hidden="true" /> HTTP {result.httpStatus ?? '—'} in {result.durationMs} ms
               </span>
+              {graph && result.output ? <dl className="mt-3 space-y-1 text-xs">{Object.entries(result.output).map(([field, value]) => <div key={field}><dt className="inline font-semibold">{field}: </dt><dd className="inline break-all font-mono">{String(value)}</dd></div>)}</dl> : null}
             </Alert>
           ) : (
             <Alert tone="danger" live="off" title="The test failed">

@@ -88,3 +88,9 @@ From the [decision register](../13-decision-register.md): **D01** (team size and
 - Contract changes (OpenAPI, schemas, DDL) ship in the same PR as code and tests; breaking changes need an ADR.
 - A change to a build decision (BD-xx) or a fixed decision (doc 09) needs an ADR and an update here.
 - Fixtures are shared: never copy them into test folders; load them from `examples/`.
+
+Current extensions: [S14 bounded iteration](S14-bounded-iteration.md), [S15 guided conversation](S15-conversational-execution.md), [Microsoft documents](../microsoft-documents.md), and [active product tracker](../19-product-build-tracker.md).
+
+Additional build slices: [task collaboration](S17-task-collaboration.md) and [migration equivalence acceptance](migration-equivalence-acceptance.md). The active tracker records current integration evidence rather than treating future roadmap items as completed.
+
+When an IDE Java compiler is active, run coordinated verification with `./mvnw.cmd clean verify "-Dorqix.buildDirectory=target/verification" "-Dsurefire.useManifestOnlyJar=false"` from `backend/` (PowerShell). This leaves the IDE's default `target/classes` untouched; each module writes below its own ignored `target/verification`. The default build and Docker artifact path stay unchanged.

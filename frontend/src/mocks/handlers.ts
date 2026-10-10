@@ -561,7 +561,7 @@ export function createHandlers(): HttpHandler[] {
       const g = guard(params.ws); if (!g.ok) return g.res
       const run = db.runs.get(str(params.id))
       if (!run || run.wsId !== str(params.ws) || !canReadRun(g.user, g.perms, run)) return notFound()
-      if (!toRunDetail(run,g.user).input) return forbidden()
+      if (!toRunDetail(run,g.user).input) return problem(403, 'FORBIDDEN', 'You do not have permission to delegate this task')
       const before = new URL(request.url).searchParams.get('before')
       const comments = [...(run.comments ?? [])].reverse()
       const start = before ? comments.findIndex(c => c.id === before) + 1 : 0
@@ -572,7 +572,7 @@ export function createHandlers(): HttpHandler[] {
       const run = db.runs.get(str(params.id))
       if (!run || run.wsId !== str(params.ws) || !canReadRun(g.user, g.perms, run)) return notFound()
       const participant = run.tasks.some(t => t.assigneeId === g.user.id || t.completedById === g.user.id || (g.perms.includes('task.act') && inGroup(g.user,t.candidateGroup) && (selfApprovalAllowed(run, currentRelease(run)) || run.initiatorId !== g.user.id)))
-      if (!toRunDetail(run,g.user).input || !(run.initiatorId === g.user.id || participant || g.perms.includes('run.operate'))) return forbidden()
+      if (!toRunDetail(run,g.user).input || !(run.initiatorId === g.user.id || participant || g.perms.includes('run.operate'))) return problem(403, 'FORBIDDEN', 'You do not have permission to delegate this task')
       const input = await body<{ text: string }>(request)
       if (typeof input.text !== 'string' || !input.text.trim() || input.text.length > 2000) return problem(422, 'VALIDATION_FAILED', 'Some values are not valid', { fieldErrors: [{ pointer: '/text', code: 'maxLength', message: 'Comment must contain 1 to 2000 characters.' }] })
       return idempotent(request, g.user, `comment-${run.id}`, input, () => {
@@ -764,6 +764,43 @@ export function createHandlers(): HttpHandler[] {
         const decision = decide(run, task, g.user, input.action, input.action === 'reject' ? (input.reason?.trim() ?? null) : null, input.comment?.trim() || null)
         return { status: 201, body: decision }
       })
+    }),
+    http.get(`${B}/workspaces/:ws/tasks/:id/delegates`, async ({ params }) => {
+      await slow()
+      const g = guard(params.ws, 'task.act')
+      if (!g.ok) return g.res
+      const found = findTask(str(params.ws), str(params.id))
+      if (!found) return notFound()
+      const { run, task } = found
+      if (task.status !== 'open' || task.assigneeId !== g.user.id || !inGroup(g.user, task.candidateGroup)) return problem(403, 'FORBIDDEN', 'You do not have permission to delegate this task')
+      if (run.initiatorId === g.user.id && !selfApprovalAllowed(run, currentRelease(run))) return problem(403, 'SELF_APPROVAL_DENIED', 'You cannot act on your own request')
+      const candidates = USERS.slice(0, 500).filter((user) => user.id !== g.user.id && isMember(user, run.wsId)
+        && permissionsOf(user, run.wsId).includes('task.act') && inGroup(user, task.candidateGroup)
+        && (user.id !== run.initiatorId || selfApprovalAllowed(run, currentRelease(run))))
+      return HttpResponse.json(candidates.slice(0, 100).map((user) => ({ id: user.id, displayName: user.displayName })))
+    }),
+    http.post(`${B}/workspaces/:ws/tasks/:id/delegate`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws, 'task.act')
+      if (!g.ok) return g.res
+      const found = findTask(str(params.ws), str(params.id))
+      if (!found) return notFound()
+      const { run, task } = found
+      const input = await body<{ expectedVersion: number; assigneeSubjectId: string; reason: string }>(request)
+      if (task.assigneeId !== g.user.id || !inGroup(g.user, task.candidateGroup) || !input.assigneeSubjectId || input.assigneeSubjectId === g.user.id) return problem(403, 'FORBIDDEN', 'You do not have permission to delegate this task')
+      if (run.initiatorId === g.user.id && !selfApprovalAllowed(run, currentRelease(run))) return problem(403, 'SELF_APPROVAL_DENIED', 'You cannot act on your own request')
+      if (!input.reason?.trim()) return problem(422, 'REASON_REQUIRED', 'A reason is required', { fieldErrors: [{ pointer: '/reason', code: 'required', message: 'Add a reason.' }] })
+      if (task.status !== 'open') return problem(409, 'TASK_NOT_OPEN', 'The task is no longer open')
+      if (input.expectedVersion !== task.version) return problem(409, 'TASK_VERSION_CONFLICT', 'The task changed', { currentVersion: task.version })
+      const target = userById(input.assigneeSubjectId)
+      if (!target || !isMember(target, run.wsId) || !permissionsOf(target, run.wsId).includes('task.act')
+          || !inGroup(target, task.candidateGroup) || (target.id === run.initiatorId && !selfApprovalAllowed(run, currentRelease(run))))
+        return problem(422, 'VALIDATION_FAILED', 'Not eligible', { fieldErrors: [{ pointer: '/assigneeSubjectId', code: 'enum', message: 'Not an eligible member of the candidate group.' }] })
+      task.assigneeId = target.id
+      task.version += 1
+      run.version += 1
+      addEvent(run, 'TASK_REASSIGNED', { nodeId: task.nodeId, actorId: g.user.id, data: { label: task.label, from: g.user.displayName, to: target.displayName, reason: input.reason.trim() } })
+      return HttpResponse.json(taskDetail(g.user, g.perms, run, task))
     }),
     http.post(`${B}/workspaces/:ws/tasks/:id/reassign`, async ({ params, request }) => {
       await slow()

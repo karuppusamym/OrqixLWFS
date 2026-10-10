@@ -82,7 +82,11 @@ public class HttpExecutor {
     }
 
     /** Credentials resolved for one call; built from the binding and the secret file. */
-    public record Target(String baseUrl, String authType, String authHeaderName, String secretRef) {
+    public record Target(String baseUrl, String authType, String authHeaderName, String secretRef,
+            java.util.UUID workspaceId) {
+        public Target(String baseUrl, String authType, String authHeaderName, String secretRef) {
+            this(baseUrl, authType, authHeaderName, secretRef, null);
+        }
     }
 
     private final Json json;
@@ -110,7 +114,7 @@ public class HttpExecutor {
         long started = System.nanoTime();
         if (definition.isMicrosoftGraph()) {
             try {
-                ObjectNode response = documents.read(target, operation, body, secretValue, timeoutSeconds);
+                ObjectNode response = documents.read(target, definition.key(), operation, body, secretValue, timeoutSeconds);
                 return mapResponse(started, definition, operation, resultMapping, 200,
                         json.write(response).getBytes(StandardCharsets.UTF_8));
             } catch (MicrosoftGraphDocuments.Failure e) {

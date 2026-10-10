@@ -107,7 +107,9 @@ public final class ModelReader {
                     c.get("repeat") == null ? null : new Node.Repeat(c.get("repeat").get("maxIterations").intValue(),
                             c.get("repeat").get("untilOutcome").stringValue()),
                     c.get("forEach") == null ? null : new Node.ForEach(c.get("forEach").get("itemsRef").stringValue(),
-                            c.get("forEach").get("itemInput").stringValue(), c.get("forEach").get("maxItems").intValue()));
+                            c.get("forEach").get("itemInput").stringValue(), c.get("forEach").get("maxItems").intValue(),
+                            "parallel".equals(c.get("forEach").path("mode").asString())),
+                    c.has("collectionMapping") ? stringMap(c.get("collectionMapping")) : Map.of());
             case END -> new Node.End(index, id, label, c.get("businessOutcome").stringValue(),
                     c.get("outcomeKind").stringValue());
         };

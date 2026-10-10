@@ -27,6 +27,8 @@
     <properties>
         <java.version>21</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <!-- Isolate verification from IDE incremental compilation when needed. -->
+        <orqix.buildDirectory>target</orqix.buildDirectory>
         <flowable.version>8.0.0</flowable.version>
         <spring-modulith.version>2.0.8</spring-modulith.version>
         <json-schema-validator.version>3.0.8</json-schema-validator.version>
@@ -35,6 +37,10 @@
         <archunit.version>1.5.1</archunit.version>
         <wiremock.version>3.13.2</wiremock.version>
     </properties>
+
+    <build>
+        <directory>${project.basedir}/${orqix.buildDirectory}</directory>
+    </build>
 
     <dependencyManagement>
         <dependencies>

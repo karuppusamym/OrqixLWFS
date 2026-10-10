@@ -1065,6 +1065,53 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
 
+  /workspaces/{workspaceId}/tasks/{taskId}/delegates:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/TaskId'
+    get:
+      tags: [Tasks]
+      operationId: listTaskDelegates
+      summary: Eligible known colleagues for the caller's assigned task
+      x-orqix-permission: task.act & currentAssignee
+      responses:
+        '200':
+          description: Up to 100 eligible known colleagues from a bounded directory scan
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/SubjectRef' } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/tasks/{taskId}/delegate:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/TaskId'
+    post:
+      tags: [Tasks]
+      operationId: delegateTask
+      summary: Current assignee delegates to an eligible colleague with a reason
+      x-orqix-permission: task.act & currentAssignee
+      x-orqix-audit: task.delegated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReassignRequest' }
+      responses:
+        '200':
+          description: Task delegated; expectedVersion prevents repeated assignment
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskDetail' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
   /workspaces/{workspaceId}/connections:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
     get:
@@ -2581,7 +2628,7 @@ components:
         detail: { type: [string, 'null'] }
         output:
           type: [object, 'null']
-          description: Agent test only. The schema-valid structured result of the operation.
+          description: Agent tests return the schema-valid structured result. Microsoft document tests return safe provenance including document, version or snapshot identifiers and hashes; extracted content and signed URLs are excluded.
         summary:
           type: [string, 'null']
           description: Agent test only. The business sentence the run timeline would show.

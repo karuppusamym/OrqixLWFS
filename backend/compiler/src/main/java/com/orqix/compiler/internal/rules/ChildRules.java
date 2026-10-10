@@ -121,7 +121,7 @@ final class ChildRules {
             }
             if (rc.types().resolve(e.getValue()) instanceof Resolved r) {
                 Set<String> targetEnum = target.enumValues() == null ? null : new TreeSet<>(target.enumValues());
-                String problem = FieldTypes.incompatibility(r.type(), target.type(), targetEnum);
+                String problem = FieldTypes.incompatibility(r.type(), target);
                 if (problem != null) {
                     rc.issues().blocker("WF_CHILD_MAPPING_TYPE", path, n.id(), null, "The field " + q(target.title())
                             + " of " + name + " " + problem + " (" + e.getValue() + ").");
@@ -147,6 +147,20 @@ final class ChildRules {
                 rc.issues().blocker("WF_CHILD_RESULT_UNKNOWN", path, n.id(), null, name + " has no result field "
                         + q(e.getValue()) + (out.properties().isEmpty() ? " (it returns no result fields)."
                         : ". It returns: " + String.join(", ", out.properties().keySet()) + "."));
+            }
+        }
+        for (Map.Entry<String, String> e : n.collectionMapping().entrySet()) {
+            String path = JsonPointers.append(n.configPath("collectionMapping"), e.getKey());
+            if (n.forEach() == null || RESERVED_OUTPUTS.contains(e.getKey()) || n.resultMapping().containsKey(e.getKey())) {
+                rc.issues().blocker("WF_COLLECTION_MAPPING", path, n.id(), null,
+                        "Collected results require for-each and a unique non-reserved output name.");
+            }
+            if (!Set.of("outcome", "outcomeKind", "reference").contains(e.getValue())) {
+                FormSchema.Field field = out.properties().get(e.getValue());
+                if (field == null || field.type() == FieldKind.ARRAY || !child.guaranteedOutputs().contains(e.getValue())) {
+                    rc.issues().blocker("WF_COLLECTION_RESULT", path, n.id(), null,
+                            "Choose a scalar child result guaranteed on every completion path.");
+                }
             }
         }
     }

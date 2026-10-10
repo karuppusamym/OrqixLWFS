@@ -168,7 +168,7 @@ public class EffectDispatcher {
             return dispatchAgent(request, record, operation, target, secretValue, effect, attempt, effectClass);
         }
         HttpExecutor.CallResult call = executor.call(new HttpExecutor.Target(target.baseUrl(), target.authType(),
-                target.authHeaderName(), target.secretRef()), definition, operation, request.body(),
+                target.authHeaderName(), target.secretRef(), request.workspaceId()), definition, operation, request.body(),
                 request.resultMapping(), effectKey, request.timeoutSeconds(), secretValue);
         switch (call.outcome()) {
             case SUCCEEDED -> {

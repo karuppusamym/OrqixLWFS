@@ -3,7 +3,7 @@
   "workflowKey": "batch-review",
   "name": "Complex batch review",
   "metadata": {
-    "description": "Publish Simple review request first. Two reviewers act in parallel, a durable timer waits one minute, then every collection item receives a separate child review. Any rejected child routes the batch to Rejected.",
+    "description": "Publish Simple review request first. Two reviewers act in parallel, a durable timer waits one minute, then all collection items receive a separate child review. Any rejected child routes the batch to Rejected.",
     "tags": [
       "complex",
       "parallel",
@@ -84,7 +84,28 @@
   "outputSchema": {
     "type": "object",
     "additionalProperties": false,
-    "properties": {}
+    "properties": {
+      "outcomeItems": {
+        "type": "array",
+        "title": "outcomeItems",
+        "items": {
+          "type": "string",
+          "title": "Item result"
+        },
+        "minItems": 1,
+        "maxItems": 5
+      },
+      "referenceItems": {
+        "type": "array",
+        "title": "referenceItems",
+        "items": {
+          "type": "string",
+          "title": "Item result"
+        },
+        "minItems": 1,
+        "maxItems": 5
+      }
+    }
   },
   "triggers": [
     "manual",
@@ -152,7 +173,12 @@
         "forEach": {
           "itemsRef": "/input/items",
           "itemInput": "title",
-          "maxItems": 5
+          "maxItems": 5,
+          "mode": "parallel"
+        },
+        "collectionMapping": {
+          "outcomeItems": "outcome",
+          "referenceItems": "reference"
         }
       }
     },
@@ -272,5 +298,14 @@
   "dependencies": {
     "connections": []
   },
-  "outputMapping": {}
+  "outputMapping": {
+    "outcomeItems": {
+      "fieldRef": "/steps/child/outcomeItems",
+      "required": false
+    },
+    "referenceItems": {
+      "fieldRef": "/steps/child/referenceItems",
+      "required": false
+    }
+  }
 }

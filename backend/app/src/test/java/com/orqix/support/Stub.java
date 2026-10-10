@@ -69,6 +69,7 @@ public final class Stub {
     }
 
     public static synchronized void reset() {
+        GraphStub.reset();
         requireKey = true;
         ORDERS.clear();
         FAULTS.clear();

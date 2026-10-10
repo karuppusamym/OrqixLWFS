@@ -1,17 +1,17 @@
 # Feature implementation status (R0)
 Updated 9 October 2026 · deliverable 18 · status vocabulary from [doc 09](09-master-plan.md#definition-of-a-build-ticket)
 
-**Verified** = automated tests pass against real PostgreSQL/Flowable (and, where stated, the Docker stack with real Keycloak and the procurement stub). **Implemented** = code exists and works in manual checks, but its S9 tests are not automated yet. Nothing is marked Verified on mocks alone.
+**Verified** = automated tests pass against real PostgreSQL/Flowable (and, where stated, the Docker stack with real Keycloak and the procurement stub). **Implemented** = code exists; integration or acceptance verification is pending or limited as stated in the row. Nothing is marked Verified on mocks alone.
 
-## Evidence at this revision
+## Historical combined verification baseline
 
-The earlier broad verification was run on 9 October 2026 against a freshly rebuilt Docker image and clean database. The subsequent [release code audit](18-release-code-audit.md) reran compiler/application, frontend and browser checks while preserving existing local data; other rows retain the earlier evidence.
+The earlier broad verification was run on 9 October 2026 against a freshly rebuilt Docker image and clean database. The subsequent [release code audit](18-release-code-audit.md) reran compiler/application, frontend and browser checks while preserving existing local data; other rows retain the earlier evidence. The counts below are historical baseline totals; they do not include or certify every later extension described at the end of this document.
 
 | Suite | Result |
 |---|---|
-| Compiler (`backend/compiler`) | 263 tests pass; JaCoCo gate passes |
-| Application (`backend/app`, Testcontainers PostgreSQL 18, WireMock) | 180 tests run, 1 skipped (opt-in live AI test), no failures; API responses validated against `contracts/openapi.yaml` |
-| Frontend (`frontend`, Vitest) | 421 tests pass, including contrast checks of both palettes and a no-hard-coded-color scan; typecheck, lint, build and API-type drift check pass |
+| Compiler (`backend/compiler`) | 266 tests pass; JaCoCo gate passes |
+| Application (`backend/app`, Testcontainers PostgreSQL 18, WireMock) | 223 tests run, 2 skipped (opt-in live AI/agent tests), no failures; API responses validated against `contracts/openapi.yaml` |
+| Frontend (`frontend`, Vitest) | 444 tests pass, including contrast checks of both palettes and a no-hard-coded-color scan; typecheck, lint, build and API-type drift check pass |
 | Browser E2E, Docker stack (`tests/e2e`, Playwright, Edge) | 25 checks pass across the final runs: 24 in the broad run plus the corrected Procurement connection check; 3 mock-only checks skipped. All five accessibility checks pass; no serious or critical axe findings or CSP violations |
 | Browser E2E, mock mode | Final selected checks: 7 pass (both AI flows and five theme/canvas/mobile checks). Earlier broad evidence: 22 pass, 2 migration checks skipped |
 | API E2E, Docker stack (`tools/api-e2e`) | Scenarios 1–9 with fault injection: 26 / 26. Scenarios 10–14 (rollback, reconcile, cancel, forged fields): 33 / 33 |
@@ -88,9 +88,41 @@ Current code review and verification: [release audit](18-release-code-audit.md).
 
 | Capability | Spec | Status | Evidence / limits |
 |---|---|---|---|
-| Matched parallel branches, wait timers, approval time limits and pinned child workflows | [S12](build/S12-workflow-patterns.md) | Verified | 58 compiler pattern tests and 7 runtime tests; editor route, configuration and reference tests. Graphs remain acyclic; bounded rework is future work |
+| Matched parallel branches, wait timers, approval time limits and pinned child workflows | [S12](build/S12-workflow-patterns.md) | Verified | 58 compiler pattern tests and 7 runtime tests; editor route, configuration and reference tests. Outer graphs remain acyclic; bounded child rework and scalar collections are extended in S14, including parallel iteration and collected output arrays |
 | Bounded agent connections and approved read-only MCP tools | [S13](build/S13-agents-mcp.md) | Verified with scripted services; one live run | 24 executor, 12 MCP client and 10 full-stack scenario tests (PostgreSQL, Flowable, WireMock OpenRouter and MCP), 2 AI-off tests, 87 stub tests (29 MCP); opt-in live DeepSeek tool-calling run cost USD 0.0006. Real provider accuracy and customer tools require acceptance |
 
 ## Later milestones
 
-The [migration workbench](17-migration-workbench.md) now provides a tested Camunda 7/8 subset and Pega archive assessment with compiler-validated manual mappings. Synthetic fixtures verify these boundaries; native Pega automatic conversion and customer equivalence remain open. Remaining R1–R3 capabilities (bounded rework, Teams, full PEGA/LWFS adapters, advanced BPMN/CMMN and Git promotion) remain **Planned** per the [full backlog](10-full-product-backlog.md). Production readiness requires the [production gates](06-delivery-plan.md#production-release-gates), none of which has been passed.
+The [migration workbench](17-migration-workbench.md) now provides a tested Camunda 7/8 subset and Pega archive assessment with compiler-validated manual mappings. Synthetic fixtures verify these boundaries; native Pega automatic conversion and customer equivalence remain open. Remaining R1–R3 capabilities (mutable correction forms, nested/object collections, business-calendar SLAs, Teams, full PEGA/LWFS adapters, advanced BPMN/CMMN and Git promotion) remain **Planned** per the [full backlog](10-full-product-backlog.md). Production readiness requires the [production gates](06-delivery-plan.md#production-release-gates), none of which has been passed.
+
+## Combined product build baseline (9 October 2026)
+
+The [active tracker](19-product-build-tracker.md) records integration of the other model's changes and [competitive analysis](20-competitive-analysis.md). The historical coordinated clean backend run passed 266 compiler and 223 application tests (2 opt-in live tests skipped); verify/package passed the compiler coverage gate. At that revision, the frontend run passed 444 tests, typecheck and lint; production build and API drift checks passed. Standard application and stub images built, migrations completed without removing local data, and the refreshed stack was healthy. Subsequent extensions require their own checks.
+
+| Capability | Status | Evidence and limits |
+|---|---|---|
+| Bounded repeat and scalar collection children | Verified: bounded repeat, sequential/parallel scalar collections and collected arrays | Historical repeat/sequential evidence: 3 focused compiler and 11 runtime pattern tests, including packaged simple/medium/complex definitions. The current extension supports sequential or parallel child iteration and ordered `collectionMapping` arrays, preserving occurrence identities and aggregate success. Same mapped inputs on rework; mutable correction forms and nested/object collections remain open. Current extension verification is tracked separately in [doc 19](19-product-build-tracker.md) and [S14](build/S14-bounded-iteration.md) |
+| Camunda parallel/duration/child conversion | Verified | MigrationApiTest publishes and executes the imported fixture; unsupported timer/event/loop semantics remain blocked |
+| Pega XML rule identities/dependency evidence | Verified on synthetic fixtures | Metadata inventory and reviewed mappings; source-rule resolution and native semantic equivalence remain external/unbuilt |
+| SharePoint/OneDrive document reads | Verified baseline with scripted Graph | Historical evidence: 14 adapter tests and 1 runtime test; pinned text, version/hash output, size and redirect safeguards. Real tenant acceptance and document picker remain open |
+| PDF/OOXML snapshots and extraction | Verified locally | 7 parser tests, 4 snapshot integration tests, historical-document workflow tests and executable-jar/container PDF/DOCX probes pass. Version/hash-linked captured bytes, quotas and active-run retention are bounded. OCR and real-tenant acceptance remain open |
+| Guided conversational execution | Verified | 7 API tests, 4 UI tests and real-browser request/resume/confirmation/comment flow. Explicit commands and confirmation; no general AI intent interpreter |
+| Immutable request comments | Verified | 2 API tests and real-browser save/reload; data visibility, participants, idempotency, audit and immutable grants |
+| Task delegation and durable reminders | Verified locally | Task holders can delegate only to eligible users with permission/separation-of-duties checks, version checks and audit. Durable reminders deliver one in-app notification to a currently eligible assignee; they are not group broadcasts, email reminders, recurring escalation or business-calendar SLAs |
+| Migration findings review/export | Verified in focused UI checks | JSON job export and CSV findings/provenance; spreadsheet formula protection and per-process source-kind grouping with kind/severity/unresolved filters. Eight focused migration/export tests pass. Cross-file projects/grouping and XLSX export remain open |
+| Target migration golden scenarios and evidence packs | Verified on synthetic source fixtures | Six live imported-workflow cases pass: manager approval, below/at finance threshold, manager/finance rejection and invalid input. Checks include task route, terminal outcome, successful effects and matching stub orders. Four standalone Python tests pass; deterministic ZIP includes source/report/mappings/release/run/results/checksums. Offline simulated mode is labeled separately. Genuine customer-source equivalence and source-owner approval remain external |
+| Other-model agent/pattern additions | Verified in combined suites | 10 agent-flow tests, 2 disabled-agent tests, 4 mock-browser checks; real agent API 17/17 passed with existing configured provider and scripted MCP registry |
+
+Historical combined browser regression: 11 checks passed on the Docker stack (keyboard studio,5 accessibility checks, CSP tour,2 migration checks, conversation/comments). Four mock-browser checks pass for agent configuration and workflow patterns. Prior broad browser, performance, resilience and deployment evidence is retained above; these were not all rerun in this integration pass.
+
+The extended Docker pattern API demo passed 33/33 checks: parallel approvals, real durable wait, pinned child execution, mapped output, exactly one external order, gap-free timeline, republish pinning, recursive cancellation and rejected-branch termination. Assistant/comment browser acceptance also includes axe scans with no serious or critical findings.
+
+The earlier focused conversation rerun passed all 7 cases, including malformed JSON collections, item constraints, collection bounds and confirmed submission. This adds one regression case after the 223-test full application run.
+
+## Extension reconciliation after the historical baseline
+
+The historical suite totals above remain evidence for their original revision. Later additions do not inherit those counts automatically. Parallel scalar child iteration and collected child output arrays, delegation and durable one-shot assignee reminders are reflected in the current implementation rows; their current coordinated checks are recorded in [doc 19](19-product-build-tracker.md). PDF/OOXML snapshots/extraction are **Verified locally**: 7 parser tests, 4 snapshot integration tests, historical-document tests, and executable-jar/container parser probes pass. Scripted Graph fixtures do not establish customer tenant access.
+
+The six-case migration acceptance harness has separate live local evidence at `evidence/migration-live.zip`, four standalone comparator/archive tests, and an explicitly simulated offline fixture. It verifies the target against declared synthetic expectations. Native Pega rule resolution, actual source-system equivalence, source-owner sign-off and production cutover acceptance remain open.
+
+Current completed extension verification: 267 compiler tests; 241 application cases (239 pass, 2 opt-in live skipped) with corrected architecture/security suites; coverage/package verification passes. Frontend452, contracts57 and 4 live browser checks pass. The standard image is rebuilt, V15/V16 are applied and all four services are healthy. Full details and retained logs are in [doc 19](19-product-build-tracker.md).

@@ -38,7 +38,10 @@ public final class FieldTypes {
      * @param maximum     inclusive upper bound from the request form, or null
      */
     public record FieldType(FieldKind kind, Set<String> domain, boolean mayBeAbsent, BigDecimal minimum,
-                            BigDecimal maximum) {
+                            BigDecimal maximum, FieldType items) {
+        public FieldType(FieldKind kind, Set<String> domain, boolean mayBeAbsent, BigDecimal minimum, BigDecimal maximum) {
+            this(kind, domain, mayBeAbsent, minimum, maximum, null);
+        }
         static FieldType of(FieldKind kind) {
             return new FieldType(kind, null, false, null, null);
         }
@@ -91,7 +94,8 @@ public final class FieldTypes {
             }
             Set<String> domain = field.type() == FieldKind.STRING && field.enumValues() != null
                     ? Collections.unmodifiableSet(new TreeSet<>(field.enumValues())) : null;
-            return new Resolved(new FieldType(field.type(), domain, false, field.minimum(), field.maximum()), null,
+            return new Resolved(new FieldType(field.type(), domain, false, field.minimum(), field.maximum(),
+                    field.items() == null ? null : formType(field.items(), false)), null,
                     key);
         }
         String rest = fieldRef.substring("/steps/".length());
@@ -153,10 +157,23 @@ public final class FieldTypes {
                 return new Resolved(FieldType.of(FieldKind.STRING), w, key);
             }
             default -> {
+                if (w.collectionMapping().containsKey(key)) {
+                    String childKey = w.collectionMapping().get(key);
+                    FieldType item = Set.of("outcome", "outcomeKind", "reference").contains(childKey)
+                            ? FieldType.of(FieldKind.STRING) : null;
+                    if (item == null) {
+                        FormSchema.Field field = ModelReader.readFormSchema("/outputSchema", StrictJson.parse(child.outputSchemaJson())).properties().get(childKey);
+                        if (field == null || field.type() == FieldKind.ARRAY) return new Indeterminate();
+                        item = formType(field, false);
+                    }
+                    return new Resolved(new FieldType(FieldKind.ARRAY, null,
+                            !Set.of("outcome", "outcomeKind", "reference").contains(childKey), null, null, item), w, key);
+                }
                 String childKey = w.resultMapping().get(key);
                 if (childKey == null) {
                     Set<String> keys = new TreeSet<>(List.of("outcome", "outcomeKind", "reference", "iterations", "limitReached", "allSucceeded"));
                     keys.addAll(w.resultMapping().keySet());
+                    keys.addAll(w.collectionMapping().keySet());
                     return new Unknown("\"" + w.label() + "\" does not produce \"" + key + "\". It produces: "
                             + String.join(", ", keys) + ".");
                 }
@@ -168,7 +185,8 @@ public final class FieldTypes {
                 Set<String> domain = field.type() == FieldKind.STRING && field.enumValues() != null
                         ? Collections.unmodifiableSet(new TreeSet<>(field.enumValues())) : null;
                 boolean optional = !child.guaranteedOutputs().contains(childKey);
-                return new Resolved(new FieldType(field.type(), domain, optional, null, null), w, key);
+                return new Resolved(new FieldType(field.type(), domain, optional, null, null,
+                        field.items() == null ? null : formType(field.items(), false)), w, key);
             }
         }
     }
@@ -270,5 +288,18 @@ public final class FieldTypes {
                     + ", but the source can have other values";
         }
         return null;
+    }
+
+    private static FieldType formType(FormSchema.Field field, boolean optional) {
+        return new FieldType(field.type(), field.enumValues() == null ? null : new TreeSet<>(field.enumValues()), optional,
+                field.minimum(), field.maximum(), field.items() == null ? null : formType(field.items(), false));
+    }
+
+    public static String incompatibility(FieldType source, FormSchema.Field target) {
+        if (target.type() == FieldKind.ARRAY) {
+            if (source.kind() != FieldKind.ARRAY || source.items() == null) return "expects a typed collection";
+            return incompatibility(source.items(), target.items());
+        }
+        return incompatibility(source, target.type(), target.enumValues() == null ? null : new TreeSet<>(target.enumValues()));
     }
 }

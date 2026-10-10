@@ -1,0 +1,178 @@
+{
+  "format": "orqix-migration-golden-0.1",
+  "name": "Synthetic Camunda purchase behavior",
+  "source": {
+    "file": "../../examples/migration/camunda7-purchase.bpmn",
+    "format": "bpmn",
+    "validationStatus": "syntheticFixture",
+    "ownerAcceptance": "pending genuine source export and owner-reviewed scenario evidence"
+  },
+  "targetTemplate": "../../examples/purchase-approval.json",
+  "cases": [
+    {
+      "id": "simple-manager-approval",
+      "input": {
+        "title": "simple-manager-approval",
+        "purpose": "Reviewed synthetic golden scenario",
+        "costCenter": "OPS",
+        "amount": 1800
+      },
+      "decisions": [
+        {
+          "nodeId": "manager",
+          "actor": "mani.manager",
+          "action": "approve",
+          "reason": null
+        }
+      ],
+      "expected": {
+        "startStatus": 201,
+        "lifecycle": "completed",
+        "outcome": "Fulfilled",
+        "approvalNodes": [
+          "manager"
+        ],
+        "succeededEffects": 1,
+        "matchedStubOrders": 1
+      }
+    },
+    {
+      "id": "below-finance-boundary",
+      "input": {
+        "title": "below-finance-boundary",
+        "purpose": "Reviewed synthetic golden scenario",
+        "costCenter": "OPS",
+        "amount": 4999.99
+      },
+      "decisions": [
+        {
+          "nodeId": "manager",
+          "actor": "mani.manager",
+          "action": "approve",
+          "reason": null
+        }
+      ],
+      "expected": {
+        "startStatus": 201,
+        "lifecycle": "completed",
+        "outcome": "Fulfilled",
+        "approvalNodes": [
+          "manager"
+        ],
+        "succeededEffects": 1,
+        "matchedStubOrders": 1
+      }
+    },
+    {
+      "id": "finance-boundary-approval",
+      "input": {
+        "title": "finance-boundary-approval",
+        "purpose": "Reviewed synthetic golden scenario",
+        "costCenter": "OPS",
+        "amount": 5000
+      },
+      "decisions": [
+        {
+          "nodeId": "manager",
+          "actor": "mani.manager",
+          "action": "approve",
+          "reason": null
+        },
+        {
+          "nodeId": "finance",
+          "actor": "fin.finance",
+          "action": "approve",
+          "reason": null
+        }
+      ],
+      "expected": {
+        "startStatus": 201,
+        "lifecycle": "completed",
+        "outcome": "Fulfilled",
+        "approvalNodes": [
+          "manager",
+          "finance"
+        ],
+        "succeededEffects": 1,
+        "matchedStubOrders": 1
+      }
+    },
+    {
+      "id": "manager-rejection",
+      "input": {
+        "title": "manager-rejection",
+        "purpose": "Reviewed synthetic golden scenario",
+        "costCenter": "OPS",
+        "amount": 1800
+      },
+      "decisions": [
+        {
+          "nodeId": "manager",
+          "actor": "mani.manager",
+          "action": "reject",
+          "reason": "Golden scenario rejection"
+        }
+      ],
+      "expected": {
+        "startStatus": 201,
+        "lifecycle": "completed",
+        "outcome": "Rejected",
+        "approvalNodes": [
+          "manager"
+        ],
+        "succeededEffects": 0,
+        "matchedStubOrders": 0
+      }
+    },
+    {
+      "id": "finance-rejection",
+      "input": {
+        "title": "finance-rejection",
+        "purpose": "Reviewed synthetic golden scenario",
+        "costCenter": "OPS",
+        "amount": 5000
+      },
+      "decisions": [
+        {
+          "nodeId": "manager",
+          "actor": "mani.manager",
+          "action": "approve",
+          "reason": null
+        },
+        {
+          "nodeId": "finance",
+          "actor": "fin.finance",
+          "action": "reject",
+          "reason": "Golden scenario rejection"
+        }
+      ],
+      "expected": {
+        "startStatus": 201,
+        "lifecycle": "completed",
+        "outcome": "Rejected",
+        "approvalNodes": [
+          "manager",
+          "finance"
+        ],
+        "succeededEffects": 0,
+        "matchedStubOrders": 0
+      }
+    },
+    {
+      "id": "invalid-zero-amount",
+      "input": {
+        "title": "Invalid amount",
+        "purpose": "Input validation scenario",
+        "costCenter": "OPS",
+        "amount": 0
+      },
+      "decisions": [],
+      "expected": {
+        "startStatus": 422,
+        "approvalNodes": [],
+        "succeededEffects": 0,
+        "matchedStubOrders": 0
+      }
+    }
+  ]
+}

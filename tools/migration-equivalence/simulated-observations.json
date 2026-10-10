@@ -1,0 +1,70 @@
+{
+  "format": "orqix-migration-observations-0.1",
+  "executionMode": "simulatedFixture",
+  "cases": [
+    {
+      "id": "simple-manager-approval",
+      "startStatus": 201,
+      "lifecycle": "completed",
+      "outcome": "Fulfilled",
+      "approvalNodes": [
+        "manager"
+      ],
+      "succeededEffects": 1,
+      "matchedStubOrders": 1
+    },
+    {
+      "id": "below-finance-boundary",
+      "startStatus": 201,
+      "lifecycle": "completed",
+      "outcome": "Fulfilled",
+      "approvalNodes": [
+        "manager"
+      ],
+      "succeededEffects": 1,
+      "matchedStubOrders": 1
+    },
+    {
+      "id": "finance-boundary-approval",
+      "startStatus": 201,
+      "lifecycle": "completed",
+      "outcome": "Fulfilled",
+      "approvalNodes": [
+        "manager",
+        "finance"
+      ],
+      "succeededEffects": 1,
+      "matchedStubOrders": 1
+    },
+    {
+      "id": "manager-rejection",
+      "startStatus": 201,
+      "lifecycle": "completed",
+      "outcome": "Rejected",
+      "approvalNodes": [
+        "manager"
+      ],
+      "succeededEffects": 0,
+      "matchedStubOrders": 0
+    },
+    {
+      "id": "finance-rejection",
+      "startStatus": 201,
+      "lifecycle": "completed",
+      "outcome": "Rejected",
+      "approvalNodes": [
+        "manager",
+        "finance"
+      ],
+      "succeededEffects": 0,
+      "matchedStubOrders": 0
+    },
+    {
+      "id": "invalid-zero-amount",
+      "startStatus": 422,
+      "approvalNodes": [],
+      "succeededEffects": 0,
+      "matchedStubOrders": 0
+    }
+  ]
+}

@@ -228,7 +228,7 @@ final class TypeRules {
             }
             if (target != null) {
                 Set<String> targetEnum = target.enumValues() == null ? null : new TreeSet<>(target.enumValues());
-                String problem = FieldTypes.incompatibility(r.type(), target.type(), targetEnum);
+                String problem = FieldTypes.incompatibility(r.type(), target);
                 if (problem != null) {
                     rc.issues().blocker("WF_OUTPUT_MAPPING_UNKNOWN", path + "/fieldRef", null, null,
                             "The result field " + q(entry.key()) + " " + problem + ".");

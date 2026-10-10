@@ -180,6 +180,18 @@ public class RuntimeController {
         return tasks.reassign(callers.current(), workspaceId, taskId(taskId), request);
     }
 
+    @GetMapping("/tasks/{taskId}/delegates")
+    public java.util.List<com.orqix.identity.SubjectService.SubjectRef> listTaskDelegates(@PathVariable UUID workspaceId,
+            @PathVariable String taskId) {
+        return tasks.delegates(callers.current(), workspaceId, taskId(taskId));
+    }
+
+    @PostMapping("/tasks/{taskId}/delegate")
+    public RuntimeDtos.TaskDetail delegateTask(@PathVariable UUID workspaceId, @PathVariable String taskId,
+            @Valid @RequestBody RuntimeDtos.ReassignRequest request) {
+        return tasks.delegate(callers.current(), workspaceId, taskId(taskId), request);
+    }
+
     // ---------------------------------------------------------------- notifications
 
     @GetMapping("/me/notifications")

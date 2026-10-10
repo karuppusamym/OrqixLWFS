@@ -40,3 +40,7 @@ The plan can be reviewed now without supplying any secret. Access is configured 
 ## Gate decision record
 
 At a checkpoint, record: gate ID; tested release/image; environment; evidence link; responsible reviewer; Pass/Fail/Not run; unresolved defects; impact on declared scope; next owner/action. “Conditional pass” must list the exact excluded capabilities and must not be presented as full production approval.
+
+## Banking research follow-up
+
+[Competitive analysis](20-competitive-analysis.md) adds proposed decisions B1–B6: first banking domain, source owners and golden scenarios, Pega version/export, permitted AI environment, mapping/publishing maker-checker, and jurisdictions. These remain open. The user's authorization to continue platform implementation is recorded by the [active build tracker](19-product-build-tracker.md); it does not establish these domain-specific answers.

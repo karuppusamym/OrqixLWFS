@@ -72,6 +72,15 @@ public class SubjectService {
                 .param("id", subjectId).query(String.class).list();
     }
 
+    /** Bounded directory of users already known to Orqix; callers must apply workspace eligibility before returning it. */
+    @Transactional(readOnly = true)
+    public List<Subject> knownSubjects(int limit) {
+        return jdbc.sql("SELECT id,issuer,external_subject,display_name,email FROM subject WHERE disabled_at IS NULL ORDER BY display_name,id LIMIT :limit")
+                .param("limit", Math.min(500, Math.max(1, limit)))
+                .query((rs,n) -> new Subject(Sql.uuid(rs,"id"),rs.getString("issuer"),rs.getString("external_subject"),
+                        rs.getString("display_name"),rs.getString("email"),false)).list();
+    }
+
     @Transactional(readOnly = true)
     public Optional<Subject> find(String issuer, String externalSubject) {
         return jdbc.sql("""

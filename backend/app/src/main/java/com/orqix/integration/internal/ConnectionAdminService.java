@@ -336,13 +336,23 @@ public class ConnectionAdminService {
                 result = new ConnectionDtos.TestResult("failed", null, elapsed(started), "CONNECTION_UNAVAILABLE",
                         "The credential is not available.");
             } else {
+                Map<String, String> testMapping = new LinkedHashMap<>();
+                if (record.definition().isMicrosoftGraph()) {
+                    for (String field : List.of("driveId", "itemId", "versionId", "name", "eTag", "snapshotId",
+                            "snapshotExpiresAt", "contentSha256", "pinMode")) {
+                        if (operation.responseSchema().path("properties").has(field)) {
+                            testMapping.put(field, "/" + field);
+                        }
+                    }
+                }
                 HttpExecutor.CallResult call = executor.call(new HttpExecutor.Target(binding.baseUrl(),
-                        binding.authType(), binding.authHeaderName(), binding.secretRef()), record.definition(), operation,
-                        record.definition().isMicrosoftGraph() ? input : null, Map.of(),
+                        binding.authType(), binding.authHeaderName(), binding.secretRef(), binding.workspaceId()), record.definition(), operation,
+                        record.definition().isMicrosoftGraph() ? input : null, testMapping,
                         "connection-test-" + UUID.randomUUID(), operation.maxTimeoutSeconds(), secret);
                 boolean ok = call.outcome() == HttpExecutor.Outcome.SUCCEEDED;
                 result = new ConnectionDtos.TestResult(ok ? "succeeded" : "failed", call.httpStatus(), call.durationMs(),
-                        ok ? null : call.errorCode(), ok ? null : call.detail());
+                        ok ? null : call.errorCode(), ok ? null : call.detail(),
+                        ok && record.definition().isMicrosoftGraph() ? call.result() : null, null);
             }
         } catch (EgressPolicy.EgressDeniedException e) {
             result = new ConnectionDtos.TestResult("failed", null, elapsed(started), "EGRESS_NOT_ALLOWED", e.getMessage());

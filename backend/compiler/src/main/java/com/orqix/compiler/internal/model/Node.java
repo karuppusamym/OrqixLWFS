@@ -106,7 +106,8 @@ public sealed interface Node {
      * {@code resultMapping}: output name here to child result field. Both sorted by key.
      */
     record StartWorkflow(int index, String id, String label, String workflowRef, Map<String, String> inputMapping,
-                         Map<String, String> resultMapping, Repeat repeat, ForEach forEach) implements Node {
+                         Map<String, String> resultMapping, Repeat repeat, ForEach forEach,
+                         Map<String, String> collectionMapping) implements Node {
         @Override
         public NodeKind kind() {
             return NodeKind.START_WORKFLOW;
@@ -116,7 +117,7 @@ public sealed interface Node {
     /** Bounded sequential child occurrences; the outer workflow remains acyclic. */
     record Repeat(int maxIterations, String untilOutcome) { }
 
-    record ForEach(String itemsRef, String itemInput, int maxItems) { }
+    record ForEach(String itemsRef, String itemInput, int maxItems, boolean parallel) { }
 
     /** Finish. */
     record End(int index, String id, String label, String businessOutcome, String outcomeKind) implements Node {

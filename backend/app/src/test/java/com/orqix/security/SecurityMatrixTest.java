@@ -231,6 +231,8 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "claimTask", "releaseTask" -> Map.of("expectedVersion", 1);
             case "decideTask" -> Map.of("expectedVersion", 1, "action", "approve");
             case "reassignTask" -> Map.of("expectedVersion", 1, "reason", "Foreign attempt");
+            case "delegateTask" -> Map.of("expectedVersion", 1, "assigneeSubjectId", UUID.randomUUID().toString(),
+                    "reason", "Foreign attempt");
             case "registerConnectionVersion" -> {
                 ObjectNode definition = (ObjectNode) Fixtures.procurementConnection();
                 definition.put("version", 99);
@@ -252,7 +254,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
         for (String table : List.of("organization", "workspace", "subject", "role_binding", "permission_grant",
                 "workspace_group", "workspace_group_member", "migration_job", "workflow", "workflow_draft_revision", "workflow_release",
                 "release_artifact", "connection_definition", "connection_binding", "workflow_run", "task_context",
-                "task_decision", "effect_journal", "run_event", "notification", "idempotency_record",
+                "task_decision", "task_reminder", "document_snapshot", "effect_journal", "run_event", "notification", "idempotency_record",
                 "act_re_deployment", "act_ru_execution", "act_ru_task", "act_ru_job", "act_ru_deadletter_job")) {
             counts.put(table, jdbc.sql("SELECT count(*) FROM " + table).query(Long.class).single());
         }

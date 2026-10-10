@@ -1,6 +1,6 @@
 # S14 — Bounded iteration and rework
 
-Status: implemented slice; verify against `BoundedIterationTest` and `WorkflowPatternsTest` before release. Source contract is `contracts/workflow-v0.schema.json`.
+Status: verified slice; `BoundedIterationTest` and `WorkflowPatternsTest` pass in the combined clean build. Source contract is `contracts/workflow-v0.schema.json`.
 
 ## Execution contract
 
@@ -16,7 +16,7 @@ Repeat reuses the initial mapped inputs. It stops on the named published child o
 "forEach": { "itemsRef": "/input/items", "itemInput": "title", "maxItems": 5 }
 ```
 
-For each runs one child at a time in collection order. Common values come from `inputMapping`; `itemInput` receives that occurrence's item and must not also appear in `inputMapping`. The referenced parent input field must be a required typed scalar array. Its `minItems` is at least 1 and `maxItems` at most 25; the iteration policy must cover that maximum. String, integer, number and boolean items are supported with their scalar validation constraints. Nested objects, nested arrays, empty collections and parallel collection iteration are not supported in this slice.
+For each runs one child at a time by default. Set `mode` to `parallel` to start all bounded children together and wait for all of them. Common values come from `inputMapping`; `itemInput` receives that occurrence's item and must not also appear in `inputMapping`. The referenced parent input field must be a required typed scalar array. Its `minItems` is at least 1 and `maxItems` at most 25; the iteration policy must cover that maximum. String, integer, number and boolean items are supported with their scalar validation constraints. Nested objects, nested arrays and empty collections are not supported in this slice.
 
 ```json
 "items": {
@@ -36,7 +36,7 @@ Every child step exposes its final `outcome`, `outcomeKind`, `reference`, mapped
 | `limitReached` | boolean | Repeat bound reached without matching the desired outcome; false for collection iteration |
 | `allSucceeded` | boolean | Every occurrence ended with outcome kind `success` |
 
-Use a branch condition on `limitReached` to route repeat exhaustion. Use `allSucceeded` for a collection-wide success decision; the last child outcome alone cannot describe earlier rejected items. Individual results are retained on the child runs; collecting mapped values into an output array is additional work.
+Use a branch condition on `limitReached` to route repeat exhaustion. Use `allSucceeded` for a collection-wide success decision; the last child outcome alone cannot describe earlier rejected items. Use `collectionMapping` to collect scalar values into arrays in input order, regardless of completion order. For example `{"outcomeItems":"outcome","referenceItems":"reference"}`. Child `outcome`, `outcomeKind`, and `reference` are always collectable; a custom child output must be a scalar guaranteed on every completion path. Custom collected results can be absent when an operator cancels a child before producing its output, so those output mappings must be optional. Individual results also remain on their child runs.
 
 ## Runnable complexity examples
 
@@ -46,10 +46,10 @@ Publish `examples/simple-review.json` first. The medium and complex examples ref
 | --- | --- |
 | `simple-review.json` | Submit → one approval → accepted/rejected |
 | `medium-bounded-rework.json` | Repeated child review, up to three occurrences, explicit exhaustion route |
-| `complex-batch-review.json` | Parallel approvals → durable timer → sequential item child reviews → aggregate success/rejection |
+| `complex-batch-review.json` | Parallel approvals → durable timer → parallel item child reviews with ordered result arrays → aggregate success/rejection |
 
 `WorkflowPatternsTest.simpleMediumAndComplexExamplesPublishAndExecuteThroughThePublicApi` publishes and executes these source files against PostgreSQL and Flowable. The complex scenario rejects the first item and accepts the last to verify that aggregate rejection is preserved.
 
 ## Remaining work
 
-Arbitrary graph cycles; mutable correction forms between iterations; nested/object collections; parallel for-each; output-array aggregation; dynamic repeat conditions beyond a child outcome; business-calendar deadlines; native imported BPMN loop characteristics. These are not implied by bounded child repetition.
+Arbitrary graph cycles; mutable correction forms between iterations; nested/object collections; dynamic repeat conditions beyond a child outcome; business-calendar deadlines; native imported BPMN loop characteristics. These are not implied by bounded child repetition.

@@ -694,6 +694,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/tasks/{taskId}/delegates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                /** @description Engine task identifier; always resolved through the workspace's task projection first. */
+                taskId: components["parameters"]["TaskId"];
+            };
+            cookie?: never;
+        };
+        /** Eligible known colleagues for the caller's assigned task */
+        get: operations["listTaskDelegates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/tasks/{taskId}/delegate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                /** @description Engine task identifier; always resolved through the workspace's task projection first. */
+                taskId: components["parameters"]["TaskId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Current assignee delegates to an eligible colleague with a reason */
+        post: operations["delegateTask"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/connections": {
         parameters: {
             query?: never;
@@ -1700,7 +1742,7 @@ export interface components {
             /** @description e.g. EGRESS_NOT_ALLOWED, TIMEOUT, CONNECT_FAILED, UNEXPECTED_STATUS, RESPONSE_INVALID; agents: AI_PROVIDER_UNAVAILABLE, AI_BUDGET_EXCEEDED, MCP_UNAVAILABLE, OUTPUT_INVALID */
             errorCode?: string | null;
             detail?: string | null;
-            /** @description Agent test only. The schema-valid structured result of the operation. */
+            /** @description Agent tests return the schema-valid structured result. Microsoft document tests return safe provenance including document, version or snapshot identifiers and hashes; extracted content and signed URLs are excluded. */
             output?: Record<string, never> | null;
             /** @description Agent test only. The business sentence the run timeline would show. */
             summary?: string | null;
@@ -2113,6 +2155,15 @@ export interface components {
                     itemsRef: string;
                     itemInput: components["schemas"]["fieldKey"];
                     maxItems: number;
+                    /**
+                     * @default sequential
+                     * @enum {unknown}
+                     */
+                    mode: "sequential" | "parallel";
+                };
+                /** @description Collected output name -> guaranteed scalar child result field, or outcome/outcomeKind/reference. For collection iteration only. Values follow input item order. */
+                collectionMapping?: {
+                    [key: string]: components["schemas"]["fieldKey"];
                 };
             };
         } & components["schemas"]["nodeBase"];
@@ -2383,6 +2434,15 @@ export interface components {
                             itemsRef: string;
                             itemInput: components["schemas"]["fieldKey"];
                             maxItems: number;
+                            /**
+                             * @default sequential
+                             * @enum {unknown}
+                             */
+                            mode: "sequential" | "parallel";
+                        };
+                        /** @description Collected output name -> guaranteed scalar child result field, or outcome/outcomeKind/reference. For collection iteration only. Values follow input item order. */
+                        collectionMapping?: {
+                            [key: string]: components["schemas"]["fieldKey"];
                         };
                     };
                 } & components["schemas"]["nodeBase"];
@@ -4039,6 +4099,67 @@ export interface operations {
                     "application/json": components["schemas"]["TaskDetail"];
                 };
             };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listTaskDelegates: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                /** @description Engine task identifier; always resolved through the workspace's task projection first. */
+                taskId: components["parameters"]["TaskId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Up to 100 eligible known colleagues from a bounded directory scan */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubjectRef"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    delegateTask: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                /** @description Engine task identifier; always resolved through the workspace's task projection first. */
+                taskId: components["parameters"]["TaskId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReassignRequest"];
+            };
+        };
+        responses: {
+            /** @description Task delegated; expectedVersion prevents repeated assignment */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];

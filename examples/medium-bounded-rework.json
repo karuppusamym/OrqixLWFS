@@ -1,0 +1,191 @@
+{
+  "schemaVersion": "0.1",
+  "workflowKey": "bounded-review",
+  "name": "Medium bounded rework",
+  "metadata": {
+    "description": "Publish Simple review request first. Repeat its review up to three times. Inputs are reused; reviewers use the rejection reason to rework the next review. Exhaustion routes to Rejected.",
+    "tags": [
+      "medium",
+      "rework"
+    ]
+  },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "title",
+      "purpose",
+      "costCenter",
+      "amount"
+    ],
+    "properties": {
+      "title": {
+        "type": "string",
+        "title": "What are you buying?",
+        "description": "A short name for the purchase, for example 'Replacement laptop'.",
+        "minLength": 1,
+        "maxLength": 120
+      },
+      "purpose": {
+        "type": "string",
+        "title": "Business purpose",
+        "description": "Why the purchase is needed. Approvers read this first.",
+        "minLength": 1,
+        "maxLength": 1000
+      },
+      "costCenter": {
+        "type": "string",
+        "title": "Cost center",
+        "enum": [
+          "OPS",
+          "IT",
+          "HR"
+        ]
+      },
+      "amount": {
+        "type": "number",
+        "title": "Amount (USD)",
+        "description": "Total including tax and shipping.",
+        "minimum": 0.01,
+        "maximum": 1000000,
+        "multipleOf": 0.01
+      }
+    }
+  },
+  "inputUi": {
+    "order": [
+      "title",
+      "purpose",
+      "costCenter",
+      "amount"
+    ],
+    "widgets": {
+      "purpose": "textarea",
+      "costCenter": "select",
+      "amount": "money"
+    },
+    "currency": "USD"
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "iterations": {
+        "type": "integer",
+        "title": "Reviews"
+      },
+      "limitReached": {
+        "type": "boolean",
+        "title": "Limit reached"
+      }
+    }
+  },
+  "triggers": [
+    "manual",
+    "api"
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "label": "Submitted",
+      "config": {}
+    },
+    {
+      "id": "child",
+      "type": "startWorkflow",
+      "label": "Review until accepted",
+      "config": {
+        "workflowRef": "review-request",
+        "inputMapping": {
+          "title": "/input/title",
+          "purpose": "/input/purpose",
+          "costCenter": "/input/costCenter",
+          "amount": "/input/amount"
+        },
+        "resultMapping": {},
+        "repeat": {
+          "maxIterations": 3,
+          "untilOutcome": "Accepted"
+        }
+      }
+    },
+    {
+      "id": "limit",
+      "type": "branch",
+      "label": "Check review limit",
+      "config": {}
+    },
+    {
+      "id": "done",
+      "type": "end",
+      "label": "Accepted",
+      "config": {
+        "businessOutcome": "Accepted",
+        "outcomeKind": "success"
+      }
+    },
+    {
+      "id": "reject",
+      "type": "end",
+      "label": "Rejected",
+      "config": {
+        "businessOutcome": "Rejected",
+        "outcomeKind": "rejected"
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t1",
+      "from": "start",
+      "to": "child",
+      "on": "next"
+    },
+    {
+      "id": "t2",
+      "from": "child",
+      "to": "limit",
+      "on": "next"
+    },
+    {
+      "id": "t3",
+      "from": "limit",
+      "to": "reject",
+      "on": "condition",
+      "condition": {
+        "fieldRef": "/steps/child/limitReached",
+        "operator": "eq",
+        "value": true
+      }
+    },
+    {
+      "id": "t4",
+      "from": "limit",
+      "to": "done",
+      "on": "default"
+    }
+  ],
+  "decisions": [],
+  "execution": {
+    "maxConcurrentRuns": 500,
+    "maxAttempts": 3,
+    "retryDelaySeconds": 30
+  },
+  "security": {
+    "selfApproval": "deny"
+  },
+  "dependencies": {
+    "connections": []
+  },
+  "outputMapping": {
+    "iterations": {
+      "fieldRef": "/steps/child/iterations",
+      "required": false
+    },
+    "limitReached": {
+      "fieldRef": "/steps/child/limitReached",
+      "required": false
+    }
+  }
+}

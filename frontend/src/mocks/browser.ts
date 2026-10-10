@@ -1,6 +1,6 @@
 import { FetchInterceptor } from '@mswjs/interceptors/fetch'
 import { getResponse } from 'msw'
-import { claim, decide, engineConfig } from './engine'
+import { claim, decide, engineConfig, resumeTimers } from './engine'
 import { createAiHandlers } from '@/features/ai/mocks'
 import { createHandlers, setCurrentUser } from './handlers'
 import { seedDb } from './seed'
@@ -47,6 +47,7 @@ export async function startMock(): Promise<void> {
       persist()
     }, ms)
   }
+  resumeTimers()
 
   // In-page fetch interception (no service worker): works in every browser context, including embedded previews.
   const handlers = [...createAiHandlers(), ...createHandlers()]

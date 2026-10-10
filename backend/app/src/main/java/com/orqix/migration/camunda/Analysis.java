@@ -16,7 +16,7 @@ public final class Analysis {
 
     /** What a designer has to provide before an item counts as resolved. */
     public enum Need {
-        NONE, TASK, OUTCOME_GATEWAY, SERVICE, ACKNOWLEDGE
+        NONE, TASK, OUTCOME_GATEWAY, SERVICE, CHILD, ACKNOWLEDGE
     }
 
     /** One inventory entry. */
@@ -188,6 +188,9 @@ public final class Analysis {
     final Map<String, UserTask> userTasks = new LinkedHashMap<>();
     final Map<String, Branch> branches = new LinkedHashMap<>();
     final Map<String, Service> services = new LinkedHashMap<>();
+    final Map<String, String> waits = new LinkedHashMap<>();
+    final Map<String, String> parallelJoins = new LinkedHashMap<>();
+    final Set<String> children = new LinkedHashSet<>();
     /** Exclusive gateways with at most one outgoing flow: removed, their incoming flows go straight to the target. */
     final Set<String> mergeGateways = new LinkedHashSet<>();
     /** Gateways that would carry approval outcomes, by user task id (recognised or candidates). */

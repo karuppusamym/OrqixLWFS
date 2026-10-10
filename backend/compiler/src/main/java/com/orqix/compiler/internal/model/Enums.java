@@ -109,7 +109,7 @@ public final class Enums {
 
     /** Scalar field types of forms, request/response schemas and step outputs. */
     public enum FieldKind {
-        STRING("text"), NUMBER("a number"), INTEGER("a whole number"), BOOLEAN("true or false");
+        STRING("text"), NUMBER("a number"), INTEGER("a whole number"), BOOLEAN("true or false"), ARRAY("a list");
 
         private final String description;
 

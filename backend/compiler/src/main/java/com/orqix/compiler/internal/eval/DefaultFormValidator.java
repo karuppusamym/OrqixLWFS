@@ -65,11 +65,14 @@ public final class DefaultFormValidator implements FormValidator {
 
     private static void field(String pointer, JsonNode schema, JsonNode value, List<FieldError> errors) {
         String type = schema.path("type").stringValue("");
+        if ("array".equals(type) && (!schema.path("items").isObject() || !schema.has("minItems") || !schema.has("maxItems")))
+            throw new IllegalArgumentException("Collections require a scalar item schema and size bounds");
         boolean typeOk = switch (type) {
             case "string" -> value.isString();
             case "number" -> value.isNumber();
             case "integer" -> value.isNumber() && integral(value.decimalValue());
             case "boolean" -> value.isBoolean();
+            case "array" -> value.isArray();
             default -> throw new IllegalArgumentException("Unsupported field type in input schema: " + type);
         };
         if (!typeOk) {
@@ -77,10 +80,18 @@ public final class DefaultFormValidator implements FormValidator {
                 case "string" -> "Enter text.";
                 case "number" -> "Enter a number.";
                 case "integer" -> "Enter a whole number.";
+                case "array" -> "Enter a list of values.";
                 default -> "Choose true or false.";
             };
             errors.add(new FieldError(pointer, "type", expected));
             return;
+        }
+        if (value.isArray()) {
+            if (value.size() < schema.path("minItems").asInt(1))
+                errors.add(new FieldError(pointer, "minItems", "Enter at least " + schema.path("minItems").asInt(1) + " items."));
+            if (value.size() > schema.path("maxItems").asInt(25))
+                errors.add(new FieldError(pointer, "maxItems", "Enter at most " + schema.path("maxItems").asInt(25) + " items."));
+            for (int i = 0; i < value.size(); i++) field(pointer + "/" + i, schema.path("items"), value.get(i), errors);
         }
         if (value.isString()) {
             String text = value.stringValue();

@@ -1,5 +1,8 @@
 import purchaseExample from '../../../examples/purchase-approval.json'
+import onboardingExample from '../../../examples/new-hire-onboarding.json'
 import procurementConnection from '../../../examples/connections/procurement.connection.json'
+import vendorAgentConnection from '../../../examples/connections/vendor-risk-assistant.connection.json'
+import type { components } from '@/api/schema'
 import type { Effect, Permission, TaskDecision } from '@/api/types'
 import { normalizeDefinition, type Definition } from '@/features/studio/model/types'
 import { uuid } from '@/lib/text'
@@ -86,11 +89,16 @@ const MEMBERSHIPS: Record<string, Record<string, string[]>> = {
 const GROUP_MEMBERS: Record<string, string[]> = {
   managers: ['mani.manager', 'max.manager'],
   'finance-approvers': ['fin.finance'],
+  // Like the dev seed: the IT desk and Facilities groups are backed by existing identity groups.
+  'it-desk': ['mani.manager', 'max.manager'],
+  'facilities-team': ['fin.finance'],
 }
 
 export const GROUPS = [
   { key: 'managers', name: 'Managers', revision: 1 },
   { key: 'finance-approvers', name: 'Finance approvers', revision: 1 },
+  { key: 'it-desk', name: 'IT service desk', revision: 1 },
+  { key: 'facilities-team', name: 'Facilities team', revision: 1 },
 ]
 
 export function userByName(username: string): MockUser {
@@ -208,6 +216,7 @@ export interface MockTask {
 }
 
 export interface MockRun {
+  comments?: components['schemas']['RunComment'][]
   id: string
   /** Optional for compatibility with older persisted mock fixtures. */
   reference?: string
@@ -234,6 +243,15 @@ export interface MockRun {
   /** Node waiting on an external effect, if any. */
   pendingHttpNode: string | null
   cancelledEffects: string[]
+  /** Run that started this one ("Start another workflow") and the step that did. */
+  parentRunId?: string
+  parentNodeId?: string
+  /** Waits in progress: node id -> due time (mock timers are shortened, see startWait in engine.ts). */
+  waits?: Record<string, { dueAt: string }>
+  /** Parallel joins: node id -> number of branches that arrived. */
+  joins?: Record<string, number>
+  /** Child runs this run waits for: node id -> child run id. */
+  childWaits?: Record<string, string>
 }
 
 export interface MockNotification {
@@ -276,6 +294,8 @@ export const PURCHASE_WORKFLOW_ID = 'bbbbbbbb-0000-4000-8000-000000000001'
 export const COMPILER_VERSION = '0.1.0-mock'
 
 export const connectionDefinition = procurementConnection
+/** The AI agent connection of Demo 2 (docs/build/S13-agents-mcp.md); the mock lists, binds and tests it like the real one. */
+export const agentConnectionDefinition = vendorAgentConnection
 
 export function purchaseTemplate(): Definition {
   return normalizeDefinition(purchaseExample)
@@ -290,8 +310,23 @@ export const TEMPLATES = [
     requiredInputs: ['What are you buying?', 'Business purpose', 'Cost center', 'Amount (USD)'],
     requiredGroups: ['managers', 'finance-approvers'],
     requiredConnections: ['procurement'],
+    requiredWorkflows: [],
+  },
+  {
+    id: 'new-hire-onboarding',
+    name: 'New hire onboarding',
+    description: 'IT and Facilities approve in parallel (IT escalates after 4 hours), the request waits a minute, then the equipment is ordered as a separate purchase request.',
+    typicalOwner: 'People operations',
+    requiredInputs: ['New colleague', 'Job title', 'Cost center', 'Equipment to order', 'Equipment budget (USD)', 'Why this equipment'],
+    requiredGroups: ['it-desk', 'managers', 'facilities-team'],
+    requiredConnections: [],
+    requiredWorkflows: ['purchase-approval'],
   },
 ]
+
+export function onboardingTemplate(): Definition {
+  return normalizeDefinition(onboardingExample)
+}
 
 export function newId(): string {
   return uuid()

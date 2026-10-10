@@ -91,6 +91,20 @@ export function notify(run: MockRun, userId: string, kind: 'workflowMessage' | '
   db.notifications.unshift({ id: newId(), wsId: run.wsId, userId, runId: run.id, kind, message, createdAt: clock.iso(), readAt: null })
 }
 
+/** Whole minutes of a PT/P duration (days, hours, minutes); null when it is not one. */
+export function durationMs(text: string): number | null {
+  const m = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?)?$/.exec(text)
+  if (!m || text === 'P' || text.endsWith('T')) return null
+  return (Number(m[1] ?? 0) * 1440 + Number(m[2] ?? 0) * 60 + Number(m[3] ?? 0)) * 60_000
+}
+
+/** Mock timers never take longer than this, so a demo moves on; the due time shown is the shortened one. */
+const MOCK_TIMER_CAP_MS = 6000
+
+function active(run: MockRun): boolean {
+  return run.lifecycle === 'running' || run.lifecycle === 'waiting' || run.lifecycle === 'needsAttention'
+}
+
 function createTask(run: MockRun, node: WorkflowNode): void {
   db.taskCounter += 1
   const hours = node.config.dueAfterHours as number | undefined
@@ -112,9 +126,94 @@ function createTask(run: MockRun, node: WorkflowNode): void {
   run.tasks.push(task)
   run.lifecycle = 'waiting'
   addEvent(run, 'TASK_CREATED', { nodeId: node.id, data: { label: node.label, candidateGroup: task.candidateGroup, dueAt } })
+  const limit = typeof node.config.timeoutAfter === 'string' ? durationMs(node.config.timeoutAfter) : null
+  if (limit !== null) engineConfig.schedule(() => fireTimeout(run, task, node), Math.min(limit, MOCK_TIMER_CAP_MS))
+}
+
+function fireTimeout(run: MockRun, task: MockTask, node: WorkflowNode): void {
+  if (task.status !== 'open' || !active(run)) return
+  task.status = 'cancelled'
+  task.version += 1
+  run.version += 1
+  run.steps[node.id] = { decision: 'timedOut', decidedAt: clock.iso() }
+  addEvent(run, 'TASK_TIMED_OUT', { nodeId: node.id, data: { label: node.label, after: node.config.timeoutAfter } })
+  const route = outgoing(currentRelease(run).definition, node.id).find((t) => t.on === 'timedOut')
+  if (route) advance(run, route.to)
+}
+
+function fireWait(run: MockRun, node: WorkflowNode): void {
+  if (!run.waits?.[node.id] || !active(run)) return
+  delete run.waits[node.id]
+  addEvent(run, 'WAIT_ENDED', { nodeId: node.id, data: { label: node.label } })
+  const next = outgoing(currentRelease(run).definition, node.id).find((t) => t.on === 'next')
+  if (next) advance(run, next.to)
+}
+
+/**
+ * Timers live in the page, so after a reload the ones that were running are scheduled again for the time that is
+ * left (mock mode only; the server persists real timers).
+ */
+export function resumeTimers(): void {
+  for (const run of db.runs.values()) {
+    if (!active(run)) continue
+    const def = currentRelease(run).definition
+    for (const [nodeId, w] of Object.entries(run.waits ?? {})) {
+      const node = nodeById(def, nodeId)
+      if (node) engineConfig.schedule(() => fireWait(run, node), Math.max(0, new Date(w.dueAt).getTime() - clock.now().getTime()))
+    }
+    for (const task of run.tasks.filter((t) => t.status === 'open')) {
+      const node = nodeById(def, task.nodeId)
+      const limit = typeof node?.config.timeoutAfter === 'string' ? durationMs(node.config.timeoutAfter) : null
+      if (node && limit !== null) {
+        const left = new Date(task.createdAt).getTime() + Math.min(limit, MOCK_TIMER_CAP_MS) - clock.now().getTime()
+        engineConfig.schedule(() => fireTimeout(run, task, node), Math.max(0, left))
+      }
+    }
+  }
+}
+
+function startWait(run: MockRun, node: WorkflowNode): void {
+  const ms = Math.min(durationMs(String(node.config.duration)) ?? 0, MOCK_TIMER_CAP_MS)
+  const dueAt = new Date(clock.now().getTime() + ms).toISOString()
+  run.waits = { ...(run.waits ?? {}), [node.id]: { dueAt } }
+  run.lifecycle = 'waiting'
+  addEvent(run, 'WAIT_STARTED', { nodeId: node.id, data: { label: node.label, duration: node.config.duration, until: dueAt } })
+  engineConfig.schedule(() => fireWait(run, node), ms)
+}
+
+function startChild(run: MockRun, node: WorkflowNode): void {
+  const ref = String(node.config.workflowRef)
+  const child = [...db.workflows.values()].find((w) => w.wsId === run.wsId && w.key === ref)
+  const release = child?.releases.find((r) => r.id === child.activeReleaseId)
+  if (!child || !release) return
+  const input: Record<string, unknown> = {}
+  for (const [key, ref2] of Object.entries((node.config.inputMapping ?? {}) as Record<string, string>)) input[key] = resolveRef(run, ref2)
+  run.lifecycle = 'waiting'
+  const initiator = userById(run.initiatorId) as MockUser
+  createRun({ wsId: run.wsId, workflow: child, release, initiator, input, businessKey: run.businessKey, parent: { run, nodeId: node.id } })
+}
+
+/** A child run ended: the waiting parent continues with its outcome and mapped results. */
+function onChildEnded(child: MockRun): void {
+  const parent = child.parentRunId ? db.runs.get(child.parentRunId) : undefined
+  const nodeId = child.parentNodeId
+  if (!parent || !nodeId || parent.childWaits?.[nodeId] !== child.id || !active(parent)) return
+  delete parent.childWaits[nodeId]
+  const def = currentRelease(parent).definition
+  const node = nodeById(def, nodeId)
+  const result: Record<string, unknown> = { outcome: child.outcome ?? 'Cancelled', outcomeKind: child.outcomeKind ?? 'cancelled', reference: child.reference }
+  for (const [name, key] of Object.entries(((node?.config.resultMapping ?? {}) as Record<string, string>))) {
+    const value = child.output?.[key]
+    if (value !== undefined) result[name] = value
+  }
+  parent.steps[nodeId] = result
+  addEvent(parent, 'CHILD_ENDED', { nodeId, data: { childRunId: child.id, childReference: child.reference, workflowName: (db.workflows.get(child.workflowId) as MockWorkflow).name, outcome: result.outcome, outcomeKind: result.outcomeKind } })
+  const next = outgoing(def, nodeId).find((t) => t.on === 'next')
+  if (next) advance(parent, next.to)
 }
 
 function finish(run: MockRun, release: MockRelease, node: WorkflowNode): void {
+  if (!active(run)) return
   run.lifecycle = 'completed'
   run.outcome = (node.config.businessOutcome as string) ?? 'Completed'
   run.outcomeKind = (node.config.outcomeKind as 'success' | 'rejected') ?? 'success'
@@ -126,6 +225,15 @@ function finish(run: MockRun, release: MockRelease, node: WorkflowNode): void {
   }
   run.output = out
   addEvent(run, 'RUN_COMPLETED', { nodeId: node.id, data: { outcome: run.outcome, outcomeKind: run.outcomeKind } })
+  // A rejection ends the whole request: branches, waits and child requests that are still open end with it.
+  for (const t of run.tasks) if (t.status === 'open') { t.status = 'cancelled'; t.version += 1 }
+  run.waits = {}
+  for (const childId of Object.values(run.childWaits ?? {})) {
+    const c = db.runs.get(childId)
+    if (c && active(c)) cancelRun(c, userById(run.initiatorId) as MockUser, 'The request that started this one has ended.', true)
+  }
+  run.childWaits = {}
+  onChildEnded(run)
 }
 
 /** Walk the graph from `nodeId` until a wait state, a failure that needs attention, or the end. */
@@ -177,6 +285,24 @@ export function advance(run: MockRun, nodeId: string): void {
         current = next('next')
         break
       }
+      case 'parallelSplit':
+        for (const t of outgoing(def, node.id)) {
+          if (!active(run)) break
+          advance(run, t.to)
+        }
+        return
+      case 'parallelJoin': {
+        run.joins = { ...(run.joins ?? {}), [node.id]: (run.joins?.[node.id] ?? 0) + 1 }
+        if ((run.joins[node.id] ?? 0) < def.transitions.filter((t) => t.to === node.id).length) return
+        current = next('next')
+        break
+      }
+      case 'wait':
+        startWait(run, node)
+        return
+      case 'startWorkflow':
+        startChild(run, node)
+        return
       case 'end':
         finish(run, release, node)
         return
@@ -318,6 +444,7 @@ export function createRun(opts: {
   initiator: MockUser
   input: Record<string, unknown>
   businessKey: string | null
+  parent?: { run: MockRun; nodeId: string }
  }): MockRun {
   const references = [...db.runs.values()].filter((run) => run.wsId === opts.wsId)
     .map((run) => run.reference ?? run.businessKey ?? '')
@@ -351,8 +478,14 @@ export function createRun(opts: {
     pendingHttpNode: null,
     cancelledEffects: [],
   }
+  if (opts.parent) {
+    run.parentRunId = opts.parent.run.id
+    run.parentNodeId = opts.parent.nodeId
+    opts.parent.run.childWaits = { ...(opts.parent.run.childWaits ?? {}), [opts.parent.nodeId]: run.id }
+    addEvent(opts.parent.run, 'CHILD_STARTED', { nodeId: opts.parent.nodeId, data: { childRunId: run.id, childReference: reference, workflowName: opts.workflow.name } })
+  }
   db.runs.set(run.id, run)
-  addEvent(run, 'RUN_STARTED', { actorId: opts.initiator.id, data: { releaseNumber: opts.release.releaseNumber, businessKey: opts.businessKey } })
+  addEvent(run, 'RUN_STARTED', { actorId: opts.initiator.id, data: { releaseNumber: opts.release.releaseNumber, businessKey: opts.businessKey, ...(opts.parent ? { parentRunId: opts.parent.run.id } : {}) } })
   const start = opts.release.definition.nodes.find((n) => n.type === 'start')
   if (start) advance(run, start.id)
   run.version = 1
@@ -447,7 +580,13 @@ export function reconcileRun(
   }
 }
 
-export function cancelRun(run: MockRun, user: MockUser, reason: string): void {
+export function cancelRun(run: MockRun, user: MockUser, reason: string, cascade = false): void {
+  for (const childId of Object.values(run.childWaits ?? {})) {
+    const c = db.runs.get(childId)
+    if (c && active(c)) cancelRun(c, user, 'The request that started this one was cancelled.', true)
+  }
+  run.childWaits = {}
+  run.waits = {}
   const succeeded = run.effects.filter((e) => e.state === 'succeeded')
   run.lifecycle = 'cancelled'
   run.endedAt = clock.iso()
@@ -457,7 +596,8 @@ export function cancelRun(run: MockRun, user: MockUser, reason: string): void {
   run.cancelledEffects = succeeded.map((e) => e.id)
   for (const t of run.tasks) if (t.status === 'open') { t.status = 'cancelled'; t.version += 1 }
   addEvent(run, 'RUN_CANCELLED', { actorId: user.id, data: { reason, completedEffects: succeeded.length } })
-  notify(run, run.initiatorId, 'workflowMessage', `Your request was cancelled: ${reason}`)
+  if (!cascade) notify(run, run.initiatorId, 'workflowMessage', `Your request was cancelled: ${reason}`)
+  if (!cascade) onChildEnded(run)
 }
 
 // Representations -----------------------------------------------------------------------------------
@@ -478,6 +618,12 @@ export function toRun(run: MockRun): Run {
       assignee: assignee ? { id: assignee.id, displayName: assignee.displayName } : null,
       dueAt: t.dueAt,
     })
+  }
+  for (const [nodeId, w] of Object.entries(run.waits ?? {})) {
+    steps.push({ nodeId, label: nodeById(rel.definition, nodeId)?.label ?? nodeId, kind: 'wait', since: run.updatedAt, candidateGroup: null, assignee: null, dueAt: w.dueAt })
+  }
+  for (const nodeId of Object.keys(run.childWaits ?? {})) {
+    steps.push({ nodeId, label: nodeById(rel.definition, nodeId)?.label ?? nodeId, kind: 'child', since: run.updatedAt, candidateGroup: null, assignee: null, dueAt: null })
   }
   if (run.pendingHttpNode && (run.lifecycle === 'running' || run.lifecycle === 'needsAttention')) {
     const node = nodeById(rel.definition, run.pendingHttpNode)
@@ -505,6 +651,11 @@ export function toRun(run: MockRun): Run {
     endedAt: run.endedAt,
     isTest: WORKSPACES.find((w) => w.id === run.wsId)?.isTest ?? false,
     version: run.version,
+    parentRun: ((): Run['parentRun'] => {
+      const parent = run.parentRunId ? db.runs.get(run.parentRunId) : undefined
+      if (!parent || !run.parentNodeId) return null
+      return { id: parent.id, reference: parent.reference ?? parent.id, nodeId: run.parentNodeId, nodeLabel: nodeById(currentRelease(parent).definition, run.parentNodeId)?.label ?? null }
+    })(),
   }
   return summary
 }
@@ -557,6 +708,25 @@ export function toRunDetail(run: MockRun, user: MockUser): RunDetail {
     inputLabels: labels,
     output: (canSeeData ? run.output : null) as never,
     tasks: run.tasks.map((t) => toTaskSummary(run, t)),
+    children: [...db.runs.values()].filter((c) => c.parentRunId === run.id).map((c) => {
+      const wf = db.workflows.get(c.workflowId) as MockWorkflow
+      const crel = currentRelease(c)
+      return {
+        id: c.id,
+        reference: c.reference ?? c.id,
+        workflow: { id: wf.id, key: wf.key, name: wf.name },
+        release: { id: crel.id, releaseNumber: crel.releaseNumber },
+        nodeId: c.parentNodeId ?? '',
+        nodeLabel: nodeById(currentRelease(run).definition, c.parentNodeId ?? '')?.label ?? null,
+        lifecycle: c.lifecycle,
+        outcome: c.outcome,
+        outcomeKind: c.outcomeKind,
+        attention: c.attention ? { reason: c.attention.reason as never, nodeId: c.attention.nodeId, effectId: c.attention.effectId, message: c.attention.message, since: c.attention.since } : null,
+        startedAt: c.createdAt,
+        endedAt: c.endedAt,
+        iteration: 1,
+      }
+    }),
     ...(operator ? { effects: run.effects.map(({ runId: _runId, ...e }) => e) } : {}),
     ...(run.lifecycle === 'cancelled' ? { completedEffectsNotReversed: run.effects.filter((e) => run.cancelledEffects.includes(e.id)).map(({ runId: _runId, ...e }) => e) } : {}),
     allowedActions: {

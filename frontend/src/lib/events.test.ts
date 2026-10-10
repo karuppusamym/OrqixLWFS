@@ -36,6 +36,9 @@ describe('timeline text in business language (docs/build/S7-frontend.md section 
 
   it('effects: success, failure with attempts, unknown outcome', () => {
     expect(describeEvent(event('EFFECT_SUCCEEDED', { nodeId: 'procure', data: { remoteReference: 'PO-1001' } }), ctx)).toBe('Create purchase order completed (reference PO-1001)')
+    expect(
+      describeEvent(event('EFFECT_SUCCEEDED', { nodeId: 'procure', data: { summary: "Vendor risk assistant checked 'Acme Ltd' using Vendor registry: risk 72 (high)" } }), ctx),
+    ).toBe("Vendor risk assistant checked 'Acme Ltd' using Vendor registry: risk 72 (high)")
     expect(describeEvent(event('EFFECT_FAILED', { nodeId: 'procure', data: { attempt: 2, maxAttempts: 3, nextRetryAt: '2026-10-08T14:35:00Z' } }), ctx)).toMatch(/^Create purchase order did not respond\. Attempt 2 of 3\. Next retry at .*\.$/)
     expect(describeEvent(event('EFFECT_FAILED', { nodeId: 'procure', data: { attempt: 1 } }), ctx)).toBe('Create purchase order did not respond. Attempt 1.')
     for (const type of ['EFFECT_UNKNOWN', 'RUN_NEEDS_ATTENTION']) {

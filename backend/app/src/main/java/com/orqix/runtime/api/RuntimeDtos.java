@@ -67,6 +67,16 @@ public final class RuntimeDtos {
             SubjectRef assignee, Instant dueAt) {
     }
 
+    /** The run that started this one ("Start another workflow", S12). */
+    public record ParentRef(UUID id, String reference, String nodeId, String nodeLabel) {
+    }
+
+    /** A run started by a step of this run: shown on the parent so a child that needs attention is visible. */
+    public record ChildRun(UUID id, String reference, WorkflowRef workflow, ReleaseRef release, String nodeId,
+            String nodeLabel, String lifecycle, String outcome, String outcomeKind, Attention attention,
+            Instant startedAt, Instant endedAt, int iteration) {
+    }
+
     public record Attention(String reason, String nodeId, UUID effectId, String message, Instant since) {
     }
 
@@ -85,12 +95,13 @@ public final class RuntimeDtos {
             @JsonInclude(JsonInclude.Include.ALWAYS) Instant endedAt, boolean isTest, int version,
             @JsonInclude(JsonInclude.Include.ALWAYS) JsonNode input, Map<String, String> inputLabels,
             @JsonInclude(JsonInclude.Include.ALWAYS) JsonNode output, List<TaskSummary> tasks, List<Effect> effects,
-            List<Effect> completedEffectsNotReversed, AllowedRunActions allowedActions) {
+            List<Effect> completedEffectsNotReversed, AllowedRunActions allowedActions, ParentRef parentRun,
+            List<ChildRun> children) {
     }
 
     public record RunSummary(UUID id, String reference, WorkflowRef workflow, ReleaseRef release, String businessKey, SubjectRef initiator,
             String lifecycle, String outcome, String outcomeKind, List<CurrentStep> currentSteps, Attention attention,
-            Instant createdAt, Instant updatedAt, Instant endedAt, boolean isTest, int version) {
+            Instant createdAt, Instant updatedAt, Instant endedAt, boolean isTest, int version, ParentRef parentRun) {
     }
 
     public record RunPage(List<RunSummary> items, String nextCursor) {

@@ -103,7 +103,7 @@ export function ConditionEditor({
             }}
           >
             {!info ? <option value={condition.fieldRef}>{condition.fieldRef || 'Choose a value'}</option> : null}
-            {fields.map((f) => (
+            {fields.filter(f => f.type !== 'array').map((f) => (
               <option key={f.ref} value={f.ref}>
                 {chipLabel(f)}
               </option>

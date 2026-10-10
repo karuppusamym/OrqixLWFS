@@ -4,6 +4,8 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input, Select, Textarea } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { buildFields } from '@/lib/form/schema'
+import { Button } from '@/components/ui/button'
 import type { FieldDef } from '@/lib/form/schema'
 import type { FieldErrors, RawValue, RawValues } from '@/lib/form/values'
 
@@ -52,6 +54,24 @@ function FieldControl({
   disabled: boolean | undefined
 }) {
   const text = typeof value === 'string' ? value : ''
+
+  if (f.widget === 'collection' && f.schema.items) {
+    const entries = Array.isArray(value) ? value : []
+    const itemField = buildFields({ type: 'object', additionalProperties: false, required: ['item'], properties: { item: f.schema.items } }, {})[0]!
+    return <fieldset className="space-y-3" disabled={disabled} id={id} aria-describedby={error ? `${id}-error` : undefined}>
+      <legend className="text-sm font-semibold">{f.label}{f.required ? ' (required)' : ''}</legend>
+      <p className="text-sm text-muted-foreground">{f.description} Add {f.schema.minItems} to {f.schema.maxItems} items.</p>
+      {entries.map((entry, index) => <div key={index} className="rounded-card border border-border p-3 space-y-2">
+        <FieldControl field={{ ...itemField, label: `${f.label}: item ${index + 1}` }} value={entry} onChange={next => {
+          if (Array.isArray(next)) return
+          onChange(entries.map((current, i) => i === index ? next : current))
+        }} error={undefined} id={`${id}-${index}`} disabled={disabled} />
+        <Button type="button" variant="ghost" size="sm" disabled={disabled} onClick={() => onChange(entries.filter((_, i) => i !== index))} aria-label={`Remove ${f.label} item ${index + 1}`}>Remove item</Button>
+      </div>)}
+      <Button type="button" variant="secondary" disabled={disabled || entries.length >= (f.schema.maxItems ?? 25)} onClick={() => onChange([...entries, f.schema.items?.type === 'boolean' ? false : ''])}>Add {f.label} item</Button>
+      {error ? <FieldError id={`${id}-error`} message={error} /> : null}
+    </fieldset>
+  }
 
   if (f.widget === 'checkbox') {
     const descId = `${id}-desc`

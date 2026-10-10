@@ -7,8 +7,9 @@ import { Label } from '@/components/ui/label'
 import { useStudio, useStudioContext } from '../StudioContext'
 import { availableFields, chipLabel } from '../model/fieldRefs'
 import { cfg, normalizeDefinition, type WorkflowNode } from '../model/types'
-import { Advanced, CommitInput, InspectorSection } from './controls'
+import { Advanced, CommitInput, DurationPreview, InspectorSection } from './controls'
 import { StepIdField } from './SimpleInspectors'
+
 
 export function ParallelInspector({ node }: { node: WorkflowNode }) {
   const { store, readOnly } = useStudioContext()
@@ -30,6 +31,7 @@ export function WaitInspector({ node }: { node: WorkflowNode }) {
     <FormField label="Wait duration" required id={`wait-duration-${node.id}`} description="Use a duration such as PT30M (30 minutes), PT2H (2 hours), or P1D (1 day).">
       {(ids) => <CommitInput id={ids.input} value={cfg<string>(node, 'duration') ?? ''} disabled={readOnly} aria-describedby={ids.describedBy} onCommit={(duration) => store.getState().updateNodeConfig(node.id, { duration: duration.trim() })} />}
     </FormField>
+    <DurationPreview text={cfg<string>(node, 'duration') ?? ''} verb="waits" />
     <Advanced><StepIdField node={node} /></Advanced>
   </>
 }
@@ -45,6 +47,8 @@ export function ChildInspector({ node }: { node: WorkflowNode }) {
   const childDef = release.data?.definition ? normalizeDefinition(release.data.definition) : null
   const inputs = cfg<Record<string, string>>(node, 'inputMapping') ?? {}
   const results = cfg<Record<string, string>>(node, 'resultMapping') ?? {}
+  const repeat = cfg<{ maxIterations: number; untilOutcome: string }>(node, 'repeat')
+  const each = cfg<{ itemsRef: string; itemInput: string; maxItems: number }>(node, 'forEach')
   const fields = availableFields(def, node.id, connections)
   const patch = (p: Record<string, unknown>) => store.getState().updateNodeConfig(node.id, p)
   return <>
@@ -59,9 +63,66 @@ export function ChildInspector({ node }: { node: WorkflowNode }) {
       {list.hasNextPage ? <Button variant="secondary" disabled={list.isFetchingNextPage} onClick={() => void list.fetchNextPage()}>Load more workflows</Button> : null}
       {list.isError || release.isError ? <p role="alert" className="text-sm text-danger">Could not load the child workflow. Reload the page to try again.</p> : null}
     </InspectorSection>
+    <InspectorSection title="Repeat and rework">
+      <div className="flex items-center gap-2">
+        <Checkbox id={`repeat-${node.id}`} checked={!!repeat} disabled={readOnly || !!each} onCheckedChange={(checked) => {
+          if (checked === true) patch({ repeat: { maxIterations: 3, untilOutcome: childDef?.nodes.find((n) => n.type === 'end' && cfg(n, 'outcomeKind') === 'success')?.config.businessOutcome ?? '' } })
+          else store.getState().apply((draft) => ({ ...draft, nodes: draft.nodes.map((n) => {
+            if (n.id !== node.id) return n
+            const config = { ...n.config }; delete config.repeat
+            return { ...n, config }
+          }) }))
+        }} />
+        <Label htmlFor={`repeat-${node.id}`}>Repeat until an outcome is reached</Label>
+      </div>
+      {repeat ? <>
+        <FormField label="Stop when outcome is" required id={`repeat-outcome-${node.id}`}>
+          {(ids) => <Select id={ids.input} value={repeat.untilOutcome} disabled={readOnly} onChange={(e) => patch({ repeat: { ...repeat, untilOutcome: e.target.value } })}>
+            <option value="">Choose an outcome</option>
+            {Array.from(new Set(childDef?.nodes.filter((n) => n.type === 'end').map((n) => cfg<string>(n, 'businessOutcome')) ?? [])).filter(Boolean).map((outcome) => <option key={outcome} value={outcome}>{outcome}</option>)}
+          </Select>}
+        </FormField>
+        <FormField label="Maximum iterations" required id={`repeat-bound-${node.id}`} description="1 to 25. Each iteration creates a separate request with its own task history. Inputs are reused. Route on Limit reached to handle exhaustion.">
+          {(ids) => <CommitInput id={ids.input} type="number" min={1} max={25} value={String(repeat.maxIterations)} disabled={readOnly} onCommit={(value) => patch({ repeat: { ...repeat, maxIterations: Number(value) } })} />}
+        </FormField>
+      </> : null}
+    </InspectorSection>
+    <InspectorSection title="Collection iteration">
+      <div className="flex items-center gap-2">
+        <Checkbox id={`foreach-${node.id}`} checked={!!each} disabled={readOnly || !!repeat} onCheckedChange={(checked) => {
+          if (checked === true) patch({ forEach: { itemsRef: '', itemInput: '', maxItems: 25 } })
+          else store.getState().apply((draft) => ({ ...draft, nodes: draft.nodes.map((n) => {
+            if (n.id !== node.id) return n
+            const config = { ...n.config }; delete config.forEach
+            return { ...n, config }
+          }) }))
+        }} />
+        <Label htmlFor={`foreach-${node.id}`}>Run once for each collection item</Label>
+      </div>
+      {each ? <>
+        <FormField label="Request collection" required id={`foreach-items-${node.id}`}>
+          {(ids) => <Select id={ids.input} value={each.itemsRef} disabled={readOnly} onChange={(e) => patch({ forEach: { ...each, itemsRef: e.target.value } })}>
+            <option value="">Choose a required collection</option>
+            {Object.entries(def.inputSchema.properties).filter(([key, field]) => field.type === 'array' && def.inputSchema.required?.includes(key)).map(([key, field]) => <option key={key} value={`/input/${key}`}>{field.title || key}</option>)}
+          </Select>}
+        </FormField>
+        <FormField label="Child field receiving each item" required id={`foreach-input-${node.id}`}>
+          {(ids) => <Select id={ids.input} value={each.itemInput} disabled={readOnly} onChange={(e) => {
+            const next = { ...inputs }; delete next[e.target.value]
+            patch({ forEach: { ...each, itemInput: e.target.value }, inputMapping: next })
+          }}>
+            <option value="">Choose a request field</option>
+            {Object.entries(childDef?.inputSchema.properties ?? {}).filter(([, field]) => field.type !== 'array').map(([key, field]) => <option key={key} value={key}>{field.title || key}</option>)}
+          </Select>}
+        </FormField>
+        <FormField label="Maximum items" required id={`foreach-bound-${node.id}`} description="1 to 25. Items run sequentially with separate task history. Results contain the final child result and iteration count.">
+          {(ids) => <CommitInput id={ids.input} type="number" min={1} max={25} value={String(each.maxItems)} disabled={readOnly} onCommit={(value) => patch({ forEach: { ...each, maxItems: Number(value) } })} />}
+        </FormField>
+      </> : null}
+    </InspectorSection>
     {childDef ? <>
       <InspectorSection title="Request values">
-        {Object.entries(childDef.inputSchema.properties).map(([key, field]) => <FormField key={key} label={field.title || key} required={childDef.inputSchema.required?.includes(key)} id={`child-input-${node.id}-${key}`}>
+        {Object.entries(childDef.inputSchema.properties).filter(([key]) => key !== each?.itemInput).map(([key, field]) => <FormField key={key} label={field.title || key} required={childDef.inputSchema.required?.includes(key)} id={`child-input-${node.id}-${key}`}>
           {(ids) => <Select id={ids.input} value={inputs[key] ?? ''} disabled={readOnly} onChange={(e) => {
             const next = { ...inputs }
             if (e.target.value) next[key] = e.target.value

@@ -9,9 +9,10 @@ const problem = (code: ProblemCode | 'NETWORK_ERROR' | 'UNKNOWN_ERROR', extra: P
 
 /** Problem codes listed in the OpenAPI contract (the enum under components.schemas.Problem.properties.code). */
 function contractCodes(): string[] {
-  const start = openapi.indexOf('        code:\n          type: string\n          enum:')
+  const normalized = openapi.replace(/\r\n/g, '\n')
+  const start = normalized.indexOf('        code:\n          type: string\n          enum:')
   expect(start).toBeGreaterThan(0)
-  const block = openapi.slice(start).split('\n').slice(3)
+  const block = normalized.slice(start).split('\n').slice(3)
   const codes: string[] = []
   for (const line of block) {
     const m = /^\s+- ([A-Z_]+)\s*$/.exec(line)

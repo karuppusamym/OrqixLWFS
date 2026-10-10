@@ -12,7 +12,7 @@ is never duplicated.
 
 ```bash
 cd tools/procurement-stub
-./mvnw -B -ntp verify                       # 58 tests over real HTTP (random port)
+./mvnw -B -ntp verify                       # 87 tests over real HTTP (random port)
 ./mvnw -B -ntp spring-boot:run              # http://localhost:8095   (override: --server.port=... or SERVER_PORT)
 docker build -f tools/procurement-stub/Dockerfile -t orqix/procurement-stub:dev .   # from the repository root
 ```
@@ -51,6 +51,17 @@ Fault modes (they apply to `POST /orders` only, so health checks and reconciliat
 
 Faults are consumed in request order; use `times` for "fail twice, then succeed". Sleeping requests run on virtual threads,
 so many concurrent delayed requests are fine.
+
+## MCP endpoint (Demo 2)
+
+`POST /mcp` is a Model Context Protocol server (Streamable HTTP, protocol 2025-06-18 and 2025-03-26, replies as `application/json`) for the agent connection of `docs/build/S13-agents-mcp.md`. `initialize` issues an `Mcp-Session-Id` that later requests must send (missing: 400, unknown: 404; `DELETE /mcp` ends it); `GET /mcp` is 405. With `stub.mcp-token` set (`STUB_MCP_TOKEN`) every request needs `Authorization: Bearer <token>`.
+
+| Tool | Result (also as `structuredContent`) |
+|---|---|
+| `vendor_risk_lookup(vendorName)` | `vendorName`, `registryId` (VR-XXXXXX), `riskScore` 0-100, `riskBand` (under 40 low, 40-69 medium, 70+ high), `sanctionsHit`. Acme Ltd 72, Globex Corporation 18, Initech 45, Umbrella Trading 91 with a hit, a name containing "sanctioned" 95 with a hit; any other name is derived from a hash of its lower-cased name (5-95, no hit) |
+| `vendor_financials(vendorName)` | `annualRevenueUsd`, `creditRating` (deterministic) |
+
+Invalid arguments are a JSON-RPC error `-32602`; a blank name is a tool error (`isError: true`). Control surface: `GET /__mcp/calls` (every request with tool and arguments), `POST|GET /__mcp/faults` `{"mode","times","delayMs","on"}` with modes `delay`, `status500`, `status429`, `status401`, `toolError`, `invalidJson`, `sse` (an event-stream reply); `on` is `toolsCall` (default) or `any`. `POST /__reset` clears sessions, faults and the call log too.
 
 ## Implementation notes
 

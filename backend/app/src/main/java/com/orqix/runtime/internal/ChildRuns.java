@@ -48,11 +48,26 @@ public class ChildRuns {
     @Transactional(propagation = Propagation.MANDATORY)
     public void start(UUID workspaceId, UUID parentId, String nodeId, JsonNode input) {
         RunStore.RunRow parent = runs.lock(workspaceId, parentId).orElseThrow();
+        start(parent, nodeId, input, 1);
+    }
+
+    private void start(RunStore.RunRow parent, String nodeId, JsonNode input, int occurrence) {
+        UUID workspaceId = parent.workspaceId();
+        UUID parentId = parent.id();
         if (!parent.isActive()) throw new IllegalStateException("Parent run has ended");
         if (parent.callDepth() >= 3) throw new IllegalStateException("Child workflow depth limit exceeded");
-        if (runs.findChild(workspaceId, parentId, nodeId, 1).isPresent()) return;
+        if (runs.findChild(workspaceId, parentId, nodeId, occurrence).isPresent()) return;
         ReleaseQueries.ReleaseView parentRelease = releases.require(workspaceId, parent.releaseId());
         JsonNode pin = parentRelease.childPin(nodeId);
+        JsonNode each = parentRelease.node(nodeId).path("config").path("forEach");
+        if (!each.isMissingNode()) {
+            JsonNode items = parent.input().at(each.path("itemsRef").asString().substring("/input".length()));
+            if (!items.isArray() || items.isEmpty() || items.size() > each.path("maxItems").asInt())
+                throw new IllegalStateException("Collection is outside its declared iteration bound");
+            ObjectNode mapped = (ObjectNode) input.deepCopy();
+            mapped.set(each.path("itemInput").asString(), items.get(occurrence - 1));
+            input = mapped;
+        }
         if (pin == null) throw new IllegalStateException("Child release was not pinned at publication");
         ReleaseQueries.ReleaseView child = releases.require(workspaceId, UUID.fromString(pin.path("releaseId").asString()));
         if (!forms.validate(json.write(child.inputSchema()), json.write(input)).isEmpty()) {
@@ -63,7 +78,7 @@ public class ChildRuns {
         }
         UUID id = Ids.newId();
         runs.insertChild(id, workspaceId, child.workflowId(), child.id(), null, parent.initiator(), input,
-                parent, nodeId, 1);
+                parent, nodeId, occurrence);
         runs.mutate(workspaceId, parentId, m -> {
             ObjectNode step = json.object();
             step.put("nodeId", nodeId).put("label", parentRelease.node(nodeId).path("label").asString())
@@ -72,7 +87,10 @@ public class ChildRuns {
             m.addStep(step);
             m.settle();
         });
-        events.append(workspaceId, parentId, "CHILD_STARTED", nodeId, null, Map.of("childRunId", id.toString()));
+        events.append(workspaceId, parentId, "CHILD_STARTED", nodeId, null,
+                Map.of("childRunId", id.toString(), "iteration", occurrence,
+                        "childReference", runs.find(workspaceId, id).orElseThrow().reference(),
+                        "workflowName", child.workflowName(), "releaseNumber", child.releaseNumber()));
         events.append(workspaceId, id, "RUN_STARTED", null, parent.initiator(),
                 Map.of("releaseNumber", child.releaseNumber(), "parentRunId", parentId.toString()));
         String tenant = jdbc.sql("SELECT engine_tenant_id FROM workspace WHERE id = :ws")
@@ -89,7 +107,30 @@ public class ChildRuns {
         RunStore.RunRow parent = runs.lock(child.workspaceId(), child.parentRunId()).orElseThrow();
         if (!parent.isActive()) return;
         JsonNode node = releases.require(parent.workspaceId(), parent.releaseId()).node(child.parentNodeId());
+        JsonNode repeat = node.path("config").path("repeat");
+        int iteration = child.parentOccurrence();
+        boolean matched = !repeat.isMissingNode() && repeat.path("untilOutcome").asString().equals(child.outcome());
+        boolean exhausted = !repeat.isMissingNode() && !matched && iteration >= repeat.path("maxIterations").asInt();
+        JsonNode each = node.path("config").path("forEach");
+        boolean moreItems = !each.isMissingNode() && iteration < parent.input().at(each.path("itemsRef").asString().substring("/input".length())).size();
+        events.append(parent.workspaceId(), parent.id(), "CHILD_ENDED", child.parentNodeId(), null,
+                Map.of("childRunId", child.id().toString(), "childReference", child.reference(),
+                        "workflowName", releases.require(child.workspaceId(), child.releaseId()).workflowName(),
+                        "outcome", child.outcome() == null ? "Cancelled" : child.outcome(),
+                        "outcomeKind", child.outcomeKind() == null ? "cancelled" : child.outcomeKind(),
+                        "iteration", iteration));
+        if (((!repeat.isMissingNode() && !matched && !exhausted) || moreItems) && !RunStore.CANCELLED.equals(child.lifecycle())) {
+            start(parent, child.parentNodeId(), child.input(), iteration + 1);
+            return;
+        }
         ObjectNode result = json.object();
+        result.put("iterations", iteration).put("limitReached", exhausted);
+        boolean allSucceeded = true;
+        for (int i = 1; i <= iteration; i++) {
+            var previous = runs.findChild(parent.workspaceId(), parent.id(), child.parentNodeId(), i).orElseThrow();
+            if (!"success".equals(previous.outcomeKind())) allSucceeded = false;
+        }
+        result.put("allSucceeded", allSucceeded);
         result.put("outcome", child.outcome() == null ? "Cancelled" : child.outcome());
         result.put("outcomeKind", child.outcomeKind() == null ? "cancelled" : child.outcomeKind());
         result.put("reference", child.reference());
@@ -103,8 +144,6 @@ public class ChildRuns {
             m.removeStep(child.parentNodeId());
             m.settle();
         });
-        events.append(parent.workspaceId(), parent.id(), "CHILD_ENDED", child.parentNodeId(), null,
-                Map.of("childRunId", child.id().toString(), "outcome", result.path("outcome").asString()));
     }
 
     @Transactional(propagation = Propagation.MANDATORY)

@@ -2,7 +2,7 @@ import { humanize } from '@/lib/text'
 import { guaranteedBefore, nodeById } from './graph'
 import type { Definition, Literal, WorkflowNode } from './types'
 
-export type FieldType = 'string' | 'number' | 'integer' | 'boolean'
+export type FieldType = 'string' | 'number' | 'integer' | 'boolean' | 'array'
 
 export interface FieldInfo {
   /** Structured reference stored in the document, e.g. /input/amount or /steps/manager/decision. Never an expression. */
@@ -96,6 +96,7 @@ function stepOutputs(def: Definition, node: WorkflowNode, lookup?: ConnectionLoo
     case 'startWorkflow': {
       const mapping = (node.config.resultMapping ?? {}) as Record<string, string>
       return [base('outcome', 'string'), base('outcomeKind', 'string'), base('reference', 'string'),
+        base('iterations', 'integer'), base('limitReached', 'boolean'), base('allSucceeded', 'boolean'),
         ...Object.entries(mapping).map(([key, output]) => base(key, lookup?.workflowOutputType?.(node.config.workflowRef as string, output) ?? 'string'))]
     }
     default:
@@ -151,6 +152,8 @@ export function rewriteRefs(def: Definition, map: (ref: string) => string): void
     if (n.type === 'http' || n.type === 'startWorkflow') {
       const mapping = n.config.inputMapping as Record<string, string> | undefined
       if (mapping) for (const k of Object.keys(mapping)) mapping[k] = map(mapping[k] as string)
+      const each = n.config.forEach as { itemsRef: string } | undefined
+      if (each) each.itemsRef = map(each.itemsRef)
     }
   }
   for (const m of Object.values(def.outputMapping)) m.fieldRef = map(m.fieldRef)
@@ -169,6 +172,8 @@ export function usagesOfRef(def: Definition, predicate: (ref: string) => boolean
     if (n.type === 'http' || n.type === 'startWorkflow') {
       const mapping = (n.config.inputMapping ?? {}) as Record<string, string>
       if (Object.values(mapping).some(predicate)) places.push(`the step "${n.label}"`)
+      const each = n.config.forEach as { itemsRef: string } | undefined
+      if (each && predicate(each.itemsRef)) places.push(`the collection of "${n.label}"`)
     }
   }
   for (const [k, m] of Object.entries(def.outputMapping)) if (predicate(m.fieldRef)) places.push(`the output "${k}"`)

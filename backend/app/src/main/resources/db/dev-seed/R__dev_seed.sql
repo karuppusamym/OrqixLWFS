@@ -147,3 +147,22 @@ SELECT '00000000-0000-7000-8000-000000000201', '00000000-0000-7000-8000-00000000
 FROM (SELECT $orqix_json$ ${dev_vendor_template} $orqix_json$::jsonb AS doc) t
 WHERE EXISTS (SELECT 1 FROM workflow WHERE id = '00000000-0000-7000-8000-000000000702')
 ON CONFLICT DO NOTHING;
+
+-- Groups of the new-hire-onboarding template (S12, Demo 4). Backed by existing identity groups of the dev realm:
+-- the IT service desk is the managers' group (mani.manager, max.manager) and Facilities is the finance group
+-- (fin.finance), so every approval of the demo can be done by a seeded user. The template also needs `managers`
+-- (IT lead escalation) and the published purchase-approval workflow (the child).
+INSERT INTO workspace_group (id, workspace_id, key, name, revision)
+VALUES ('00000000-0000-7000-8000-000000000504', '00000000-0000-7000-8000-000000000201', 'it-desk', 'IT service desk', 1),
+       ('00000000-0000-7000-8000-000000000505', '00000000-0000-7000-8000-000000000201', 'facilities-team', 'Facilities team', 1),
+       ('00000000-0000-7000-8000-000000000514', '00000000-0000-7000-8000-000000000202', 'it-desk', 'IT service desk', 1),
+       ('00000000-0000-7000-8000-000000000515', '00000000-0000-7000-8000-000000000202', 'facilities-team', 'Facilities team', 1)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO workspace_group_member (workspace_id, group_id, principal_type, principal_value, created_by)
+VALUES ('00000000-0000-7000-8000-000000000201', '00000000-0000-7000-8000-000000000504', 'idpGroup', 'orqix-purchasing-managers', '00000000-0000-7000-8000-000000000001'),
+       ('00000000-0000-7000-8000-000000000201', '00000000-0000-7000-8000-000000000505', 'idpGroup', 'orqix-purchasing-finance', '00000000-0000-7000-8000-000000000001'),
+       ('00000000-0000-7000-8000-000000000202', '00000000-0000-7000-8000-000000000514', 'idpGroup', 'orqix-purchasing-managers', '00000000-0000-7000-8000-000000000001'),
+       ('00000000-0000-7000-8000-000000000202', '00000000-0000-7000-8000-000000000514', 'idpGroup', 'orqix-purchasing-designers', '00000000-0000-7000-8000-000000000001'),
+       ('00000000-0000-7000-8000-000000000202', '00000000-0000-7000-8000-000000000515', 'idpGroup', 'orqix-purchasing-finance', '00000000-0000-7000-8000-000000000001')
+ON CONFLICT DO NOTHING;

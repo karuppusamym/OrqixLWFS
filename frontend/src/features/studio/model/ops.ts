@@ -380,7 +380,7 @@ export function literalOf(text: string, type: 'string' | 'number' | 'integer' | 
 
 // Request form fields -----------------------------------------------------------------------------------------
 
-export type FieldKind = 'text' | 'longText' | 'number' | 'money' | 'integer' | 'yesNo' | 'choice'
+export type FieldKind = 'text' | 'longText' | 'number' | 'money' | 'integer' | 'yesNo' | 'choice' | 'collection'
 
 export const FIELD_KIND_LABELS: Record<FieldKind, string> = {
   text: 'Text',
@@ -390,6 +390,7 @@ export const FIELD_KIND_LABELS: Record<FieldKind, string> = {
   integer: 'Whole number',
   yesNo: 'Yes/No',
   choice: 'Choice',
+  collection: 'Collection',
 }
 
 export interface FormFieldModel {
@@ -403,6 +404,9 @@ export interface FormFieldModel {
   maximum?: number | undefined
   minLength?: number | undefined
   maxLength?: number | undefined
+  itemSchema?: Definition['inputSchema']['properties'][string] | undefined
+  minItems?: number | undefined
+  maxItems?: number | undefined
 }
 
 export function fieldsFromDefinition(def: Definition): FormFieldModel[] {
@@ -413,7 +417,8 @@ export function fieldsFromDefinition(def: Definition): FormFieldModel[] {
     const f = def.inputSchema.properties[key]!
     const widget = def.inputUi?.widgets?.[key]
     let kind: FieldKind = 'text'
-    if (f.type === 'boolean') kind = 'yesNo'
+    if (f.type === 'array') kind = 'collection'
+    else if (f.type === 'boolean') kind = 'yesNo'
     else if (f.enum && f.enum.length > 0) kind = 'choice'
     else if (f.type === 'integer') kind = 'integer'
     else if (f.type === 'number') kind = widget === 'money' || f.multipleOf === 0.01 ? 'money' : 'number'
@@ -429,6 +434,7 @@ export function fieldsFromDefinition(def: Definition): FormFieldModel[] {
       maximum: f.maximum,
       minLength: f.minLength,
       maxLength: f.maxLength,
+      itemSchema: f.items, minItems: f.minItems, maxItems: f.maxItems,
     }
   })
 }
@@ -442,6 +448,12 @@ export function applyFields(def: Definition, fields: FormFieldModel[]): Definiti
     const schema: Definition['inputSchema']['properties'][string] = { type: 'string', title: f.label || f.key }
     if (f.help.trim()) schema.description = f.help.trim()
     switch (f.kind) {
+      case 'collection':
+        schema.type = 'array'
+        schema.items = f.itemSchema ?? { type: 'string', title: 'Item', minLength: 1, maxLength: 200 }
+        schema.minItems = f.minItems ?? 1
+        schema.maxItems = f.maxItems ?? 25
+        break
       case 'text':
         schema.maxLength = f.maxLength ?? 200
         if (f.minLength !== undefined) schema.minLength = f.minLength

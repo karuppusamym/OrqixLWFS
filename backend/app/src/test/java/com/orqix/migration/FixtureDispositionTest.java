@@ -57,7 +57,7 @@ class FixtureDispositionTest {
         var reasons = reasonsById(analysis);
         Map<String, String> expected = new LinkedHashMap<>();
         expected.put("reviewTimeout", "EVENT_NOT_SUPPORTED_IN_V0");
-        expected.put("waitOneDay", "EVENT_NOT_SUPPORTED_IN_V0");
+        expected.put("waitOneDay", "DURATION_TIMER_MAPPED");
         for (String task : List.of("calculate", "sendConfirmation", "awaitPayment", "fileRecord")) {
             expected.put(task, "TASK_TYPE_NOT_SUPPORTED");
         }
@@ -67,12 +67,12 @@ class FixtureDispositionTest {
         expected.put("nested", "SUBPROCESS_NOT_SUPPORTED");
         expected.put("nestedStart", "INSIDE_UNSUPPORTED_SCOPE");
         expected.put("nestedFlow", "INSIDE_UNSUPPORTED_SCOPE");
-        expected.put("callChild", "CALL_ACTIVITY_NOT_SUPPORTED");
+        expected.put("callChild", "CHILD_WORKFLOW_MAPPING_REQUIRED");
         expected.forEach((id, code) -> assertThat(reasons.get(id)).as("reason codes of %s", id).contains(code));
 
         var issues = analysis.items().stream().map(Analysis.Item::issue).toList();
         assertThat(issues).extracting(Report.Issue::reasonCode).contains("LISTENER_DROPPED", "EXPRESSION_NOT_SUPPORTED");
-        assertThat(issues.stream().filter(i -> i.severity().equals(Report.BLOCKER)).count()).isGreaterThanOrEqualTo(expected.size());
+        assertThat(issues.stream().filter(i -> i.severity().equals(Report.BLOCKER)).count()).isGreaterThanOrEqualTo(expected.size() - 2);
         assertThat(Converter.report(analysis, issues).publishable()).isFalse();
     }
 

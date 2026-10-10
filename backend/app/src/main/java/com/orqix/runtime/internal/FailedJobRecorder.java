@@ -110,6 +110,11 @@ public class FailedJobRecorder {
         data.put("reason", reason);
         data.put("effectId", effectId == null ? null : effectId.toString());
         events.append(f.workspaceId(), f.runId(), "RUN_NEEDS_ATTENTION", f.nodeId(), null, data);
+        if (run.isChild()) {
+            // A child that needs attention is visible from its parent's timeline (S12 section 4).
+            events.append(f.workspaceId(), run.parentRunId(), "CHILD_NEEDS_ATTENTION", run.parentNodeId(), null,
+                    Map.of("childRunId", run.id().toString(), "childReference", run.reference(), "reason", reason));
+        }
         int attempt = failure == null ? 0 : failure.attempt();
         String dedup = f.runId() + ":attention:" + (effectId == null ? f.nodeId() : effectId) + ":" + attempt;
         if (notifications.create(f.workspaceId(), f.initiator(), f.runId(), NotificationService.Kind.RUN_ATTENTION, dedup,

@@ -4,6 +4,45 @@
  */
 
 export interface paths {
+    "/workspaces/{workspaceId}/conversations/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Collect request fields or review an authorized task action in a resumable guided conversation */
+        post: operations["sendConversationMessage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/conversations/{conversationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                conversationId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        /** Resume your own workspace conversation */
+        get: operations["getConversation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/me": {
         parameters: {
             query?: never;
@@ -360,6 +399,27 @@ export interface paths {
         get: operations["getRun"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/runs/{runId}/comments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        /** Read immutable comments with request-data authorization */
+        get: operations["listRunComments"];
+        put?: never;
+        /** Add an immutable plain-text collaboration note */
+        post: operations["createRunComment"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1023,6 +1083,34 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        ConversationMessageRequest: {
+            conversationId?: components["schemas"]["Uuid"];
+            expectedVersion?: number;
+            message: string;
+        };
+        Conversation: {
+            id: components["schemas"]["Uuid"];
+            version: number;
+            /** @enum {string} */
+            stage: "idle" | "collecting" | "review" | "confirmingTask" | "completed";
+            message: string;
+            choices: {
+                label: string;
+                command: string;
+            }[];
+            /** @description Current request field schema and its name/required flag */
+            field?: {
+                [key: string]: unknown;
+            };
+            review?: {
+                workflowName: string;
+                input: {
+                    [key: string]: unknown;
+                };
+            };
+            runId?: components["schemas"]["Uuid"];
+            taskId?: string;
+        };
         /** Format: uuid */
         Uuid: string;
         Key: string;
@@ -1135,6 +1223,8 @@ export interface components {
             requiredInputs: string[];
             requiredGroups?: components["schemas"]["Key"][];
             requiredConnections?: components["schemas"]["Key"][];
+            /** @description Workflows the template starts as child requests; they must be published first. */
+            requiredWorkflows?: components["schemas"]["Key"][];
         };
         WorkflowSummary: {
             id: components["schemas"]["Uuid"];
@@ -1324,6 +1414,37 @@ export interface components {
             endedAt: components["schemas"]["Timestamp"] | null;
             isTest: boolean;
             version: number;
+            /** @description The run that started this one through a "Start another workflow" step (S12); null for ordinary runs. */
+            parentRun?: null | components["schemas"]["ParentRun"];
+        };
+        ParentRun: {
+            id: components["schemas"]["Uuid"];
+            /** @description e.g. ORQ-1011 */
+            reference: string;
+            nodeId: string;
+            nodeLabel?: string | null;
+        };
+        ChildRun: {
+            id: components["schemas"]["Uuid"];
+            reference: string;
+            workflow: {
+                id: components["schemas"]["Uuid"];
+                key: components["schemas"]["Key"];
+                name: string;
+            };
+            release: {
+                id: components["schemas"]["Uuid"];
+                releaseNumber: number;
+            };
+            nodeId: string;
+            nodeLabel?: string | null;
+            lifecycle: components["schemas"]["Lifecycle"];
+            outcome?: string | null;
+            outcomeKind?: components["schemas"]["OutcomeKind"] | null;
+            attention?: components["schemas"]["Attention"] | null;
+            startedAt: components["schemas"]["Timestamp"];
+            endedAt?: components["schemas"]["Timestamp"] | null;
+            iteration?: number;
         };
         RunPage: {
             items: components["schemas"]["Run"][];
@@ -1336,6 +1457,8 @@ export interface components {
                 [key: string]: string;
             };
             output?: Record<string, never> | null;
+            /** @description Runs started by steps of this run, oldest first. A child that needs attention is visible here. */
+            children?: components["schemas"]["ChildRun"][];
             tasks: components["schemas"]["TaskSummary"][];
             /** @description Present only for run.operate holders. */
             effects?: components["schemas"]["Effect"][];
@@ -1350,6 +1473,21 @@ export interface components {
         ActionAvailability: {
             allowed: boolean;
             reasonCode?: string | null;
+        };
+        RunComment: {
+            id: components["schemas"]["Uuid"];
+            runId: components["schemas"]["Uuid"];
+            author: {
+                id: components["schemas"]["Uuid"];
+                displayName: string;
+            };
+            text: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        RunCommentPage: {
+            comments: components["schemas"]["RunComment"][];
+            hasMore: boolean;
         };
         RunEvent: {
             seq: number;
@@ -1504,7 +1642,7 @@ export interface components {
              * @description http (default) or agent (an AI task over an MCP server, docs/build/S13-agents-mcp.md)
              * @enum {string}
              */
-            kind?: "http" | "agent";
+            kind?: "http" | "agent" | "microsoftGraph";
             latestVersion: number;
             versions: number[];
             binding: {
@@ -1720,6 +1858,7 @@ export interface components {
                 groups?: string[];
                 approvalTasks?: string[];
                 serviceTasks?: string[];
+                childWorkflows?: string[];
             };
             /** @description True when no blocker or open action remains */
             publishable: boolean;
@@ -1771,6 +1910,18 @@ export interface components {
             inputSchema?: {
                 [key: string]: unknown;
             };
+            /** @description callActivity id to a published workflow in the same workspace; publication pins its release */
+            childWorkflowMappings?: {
+                [key: string]: {
+                    workflowRef: components["schemas"]["Key"];
+                    inputMapping: {
+                        [key: string]: string;
+                    };
+                    resultMapping: {
+                        [key: string]: string;
+                    };
+                };
+            };
             /**
              * @description Accept info-level losses such as dropped listeners
              * @default false
@@ -1782,7 +1933,8 @@ export interface components {
         /** @description Comparison/output literal. String literals are additionally restricted by compiler rule WF_LITERAL_UNSAFE. */
         literal: string | number | boolean;
         fieldKey: string;
-        formField: {
+        label: string;
+        scalarFormField: {
             /** @enum {unknown} */
             type: "string" | "number" | "integer" | "boolean";
             title: string;
@@ -1795,9 +1947,17 @@ export interface components {
             /** @enum {unknown} */
             multipleOf?: 0.01 | 1;
         };
+        arrayFormField: {
+            /** @constant */
+            type: "array";
+            title: components["schemas"]["label"];
+            items: components["schemas"]["scalarFormField"];
+            minItems: number;
+            maxItems: number;
+        };
+        formField: unknown;
         /** @description Node/transition identifier. Stable through compilation; becomes the BPMN element ID. Double underscore is reserved for compiler-generated elements. */
         id: string;
-        label: string;
         nodeBase: {
             id: components["schemas"]["id"];
             type: string;
@@ -1935,6 +2095,11 @@ export interface components {
             config?: {
                 /** @description Key of the workflow to start. */
                 workflowRef: components["schemas"]["key"];
+                /** @description Repeat sequential pinned child requests until an outcome matches, or the bound is reached. Every occurrence preserves its own tasks and effects. Inputs are reused. Cancellation stops repetition. Results include iterations and limitReached. */
+                repeat?: {
+                    maxIterations: number;
+                    untilOutcome: string;
+                };
                 /** @description Child request field -> value from this request. */
                 inputMapping: {
                     [key: string]: components["schemas"]["fieldRef"];
@@ -1942,6 +2107,12 @@ export interface components {
                 /** @description Output name in this request -> result field of the child (its outputSchema). */
                 resultMapping: {
                     [key: string]: components["schemas"]["fieldKey"];
+                };
+                /** @description Sequentially start one pinned child per scalar item. The collection must contain 1 to 25 items. Inputs share inputMapping and itemInput receives the current item. Results are the last child result plus iterations and limitReached=false. */
+                forEach?: {
+                    itemsRef: string;
+                    itemInput: components["schemas"]["fieldKey"];
+                    maxItems: number;
                 };
             };
         } & components["schemas"]["nodeBase"];
@@ -2077,19 +2248,7 @@ export interface components {
                         [key: string]: components["schemas"]["formField"];
                     };
                 };
-                formField: {
-                    /** @enum {unknown} */
-                    type: "string" | "number" | "integer" | "boolean";
-                    title: string;
-                    description?: string;
-                    enum?: string[];
-                    minLength?: number;
-                    maxLength?: number;
-                    minimum?: number;
-                    maximum?: number;
-                    /** @enum {unknown} */
-                    multipleOf?: 0.01 | 1;
-                };
+                formField: unknown;
                 nodeBase: {
                     id: components["schemas"]["id"];
                     type: string;
@@ -2206,6 +2365,11 @@ export interface components {
                     config?: {
                         /** @description Key of the workflow to start. */
                         workflowRef: components["schemas"]["key"];
+                        /** @description Repeat sequential pinned child requests until an outcome matches, or the bound is reached. Every occurrence preserves its own tasks and effects. Inputs are reused. Cancellation stops repetition. Results include iterations and limitReached. */
+                        repeat?: {
+                            maxIterations: number;
+                            untilOutcome: string;
+                        };
                         /** @description Child request field -> value from this request. */
                         inputMapping: {
                             [key: string]: components["schemas"]["fieldRef"];
@@ -2213,6 +2377,12 @@ export interface components {
                         /** @description Output name in this request -> result field of the child (its outputSchema). */
                         resultMapping: {
                             [key: string]: components["schemas"]["fieldKey"];
+                        };
+                        /** @description Sequentially start one pinned child per scalar item. The collection must contain 1 to 25 items. Inputs share inputMapping and itemInput receives the current item. Results are the last child result plus iterations and limitReached=false. */
+                        forEach?: {
+                            itemsRef: string;
+                            itemInput: components["schemas"]["fieldKey"];
+                            maxItems: number;
                         };
                     };
                 } & components["schemas"]["nodeBase"];
@@ -2255,6 +2425,27 @@ export interface components {
                 };
                 decisionOutput: {
                     [key: string]: components["schemas"]["literal"];
+                };
+                scalarFormField: {
+                    /** @enum {unknown} */
+                    type: "string" | "number" | "integer" | "boolean";
+                    title: string;
+                    description?: string;
+                    enum?: string[];
+                    minLength?: number;
+                    maxLength?: number;
+                    minimum?: number;
+                    maximum?: number;
+                    /** @enum {unknown} */
+                    multipleOf?: 0.01 | 1;
+                };
+                arrayFormField: {
+                    /** @constant */
+                    type: "array";
+                    title: components["schemas"]["label"];
+                    items: components["schemas"]["scalarFormField"];
+                    minItems: number;
+                    maxItems: number;
                 };
             };
         };
@@ -2353,10 +2544,10 @@ export interface components {
             /** @constant */
             schemaVersion: "0.1";
             /**
-             * @description http (default): operations are HTTP calls. agent: operations are bounded AI tasks that call allow-listed tools of the MCP server in the binding; effect class is always readOnly.
+             * @description http (default): operations are HTTP calls. agent: operations are bounded AI tasks that call allow-listed tools of the MCP server in the binding; effect class is always readOnly. microsoftGraph: read-only document metadata or pinned-version UTF-8 text through Microsoft Graph.
              * @enum {unknown}
              */
-            kind?: "http" | "agent";
+            kind?: "http" | "agent" | "microsoftGraph";
             key: string;
             version: number;
             name: string;
@@ -2451,7 +2642,7 @@ export interface components {
                     description?: string;
                 };
             };
-        } & unknown;
+        } & (unknown & unknown);
     };
     responses: {
         /** @description Malformed request or missing Idempotency-Key */
@@ -2589,6 +2780,68 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    sendConversationMessage: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConversationMessageRequest"];
+            };
+        };
+        responses: {
+            /** @description Conversation reply; confirm explicitly to execute a reviewed action */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Conversation"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getConversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                conversationId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current conversation state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Conversation"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     getMe: {
         parameters: {
             query?: never;
@@ -3292,6 +3545,80 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    listRunComments: {
+        parameters: {
+            query?: {
+                before?: components["schemas"]["Uuid"];
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Newest 50 comments; pass the last comment ID as before for older comments. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunCommentPage"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createRunComment: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    text: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Idempotent replay of the original comment */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunComment"];
+                };
+            };
+            /** @description Comment created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunComment"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
     listRunEvents: {
         parameters: {
             query?: {
@@ -3856,7 +4183,7 @@ export interface operations {
                 "application/json": {
                     version: number;
                     operation: string;
-                    /** @description Sample input of an agent operation (kind agent), validated against its requestSchema. Ignored for HTTP operations. */
+                    /** @description Sample input for agent or Microsoft Graph operations, validated against the operation requestSchema. */
                     input?: Record<string, never>;
                 };
             };

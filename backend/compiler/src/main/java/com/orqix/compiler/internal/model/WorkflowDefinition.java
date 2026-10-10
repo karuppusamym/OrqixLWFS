@@ -61,7 +61,8 @@ public record WorkflowDefinition(
 
         /** All numeric/length members may be null. {@code enumValues} is null when absent. */
         public record Field(String key, FieldKind type, String title, List<String> enumValues, Integer minLength,
-                            Integer maxLength, BigDecimal minimum, BigDecimal maximum, BigDecimal multipleOf) {
+                            Integer maxLength, BigDecimal minimum, BigDecimal maximum, BigDecimal multipleOf,
+                            Field items, Integer minItems, Integer maxItems) {
         }
     }
 

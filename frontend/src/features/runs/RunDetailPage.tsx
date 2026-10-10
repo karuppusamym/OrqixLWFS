@@ -2,7 +2,7 @@ import { AlertTriangle, Ban, CheckCircle2, Clock, RefreshCw, Wrench, XCircle } f
 import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { asRecord, type Effect, type RunDetail, type RunEvent } from '@/api/types'
-import { useRelease, useRun, useRunEvents } from '@/api/queries'
+import { useMe, useRelease, useRun, useRunEvents } from '@/api/queries'
 import { useWorkspace } from '@/app/workspace'
 import { LoadingBlock } from '@/components/common/LoadingBlock'
 import { PageHeader } from '@/components/common/PageHeader'
@@ -22,6 +22,7 @@ import { ownReference, requestId, stepOwnerText } from '@/lib/runText'
 import { humanize } from '@/lib/text'
 import { isTerminal } from '@/lib/status'
 import { CancelDialog, ReassignDialog, ReconcileDialog, RetryDialog } from './OperatorDialogs'
+import { RunCommentsPanel } from './RunCommentsPanel'
 import { candidateEffects, EFFECT_CLASS_LABEL, EFFECT_STATE_LABEL, reasonText } from './operatorText'
 
 const TONE_DOT: Record<EventTone, string> = {
@@ -56,6 +57,7 @@ export function RunDetailPage() {
 function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: RunDetail; events: RunEvent[]; eventsUpdatedAt: number; releaseDefinition: { inputSchema: unknown; inputUi?: unknown } | undefined }) {
   const { workspace, can } = useWorkspace()
   const ws = workspace.id
+  const me = useMe()
   const [dialog, setDialog] = useState<DialogName>(null)
   const [reconcileId, setReconcileId] = useState<string | undefined>()
   const operator = can('run.operate') || run.effects !== undefined
@@ -109,7 +111,8 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
         description={
           <>
             Request <span className="font-semibold tabular-nums" data-testid="run-reference">{requestId(run)}</span>
-            {ownReference(run) ? <> (your reference {ownReference(run)})</> : null} &middot; Version {run.release.releaseNumber} &middot; submitted by {run.initiator.displayName} on {formatDateTime(run.createdAt)}
+            {ownReference(run) ? <> (your reference {ownReference(run)})</> : null}
+            {run.parentRun ? <> &middot; started by <Link className="font-semibold underline" data-testid="parent-run-link" to={`/w/${ws}/runs/${run.parentRun.id}`}>{run.parentRun.reference}</Link>{run.parentRun.nodeLabel ? <> ({run.parentRun.nodeLabel})</> : null}</> : null} &middot; Version {run.release.releaseNumber} &middot; submitted by {run.initiator.displayName} on {formatDateTime(run.createdAt)}
           </>
         }
         actions={
@@ -266,6 +269,31 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
               )}
             </CardContent>
           </Card>
+
+          {run.children && run.children.length > 0 ? (
+            <Card data-testid="child-runs">
+              <CardHeader>
+                <h2>Other requests started by this one</h2>
+              </CardHeader>
+              <CardContent>
+                <ul className="space-y-2">
+                  {run.children.map((c) => (
+                    <li key={c.id} className="rounded-control border border-border px-4 py-3 text-sm">
+                      <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <Link className="font-semibold underline" to={`/w/${ws}/runs/${c.id}`}>{c.workflow.name} {c.reference}</Link>
+                        <StatusBadge lifecycle={c.lifecycle} outcome={c.outcome} outcomeKind={c.outcomeKind} />
+                        <span className="text-xs text-muted-foreground">version {c.release.releaseNumber}{c.nodeLabel ? ` · started by "${c.nodeLabel}"` : ''}</span>
+                      </p>
+                      {c.attention ? <p role="alert" className="mt-1 flex items-center gap-1.5 font-semibold text-danger"><AlertTriangle className="size-4" aria-hidden="true" />This request needs attention: {c.attention.message}</p> : null}
+                      <p className="mt-1 text-xs text-muted-foreground">Started {formatDateTime(c.startedAt)}{c.endedAt ? ` · ended ${formatDateTime(c.endedAt)}` : ''}</p>
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {input ? <RunCommentsPanel ws={ws} runId={run.id} canPost={run.initiator.id === me.data?.subject.id || can('run.operate') || can('task.act')} /> : null}
 
           {operator ? <TechnicalDetails run={run} effects={effects} onReconcile={(id) => { setReconcileId(id); setDialog('reconcile') }} /> : null}
         </div>

@@ -246,6 +246,14 @@ describe('graph helpers', () => {
 })
 
 describe('request form fields', () => {
+  it('rewrites collection references when a request field is renamed', () => {
+    const def = template()
+    def.inputSchema.properties.items = { type: 'array', title: 'Items', items: { type: 'string', title: 'Item' }, minItems: 1, maxItems: 3 }
+    def.nodes.push({ id: 'each', type: 'startWorkflow', label: 'Each item', config: { workflowRef: 'review-request', inputMapping: {}, resultMapping: {}, forEach: { itemsRef: '/input/items', itemInput: 'title', maxItems: 3 } } })
+    const renamed = renameFieldKey(def, 'items', 'purchases')
+    expect(renamed.ok).toBe(true)
+    if (renamed.ok) expect(renamed.def.nodes.find((n) => n.id === 'each')?.config.forEach).toMatchObject({ itemsRef: '/input/purchases' })
+  })
   it('reads the purchase form into editor fields and writes the same schema back', () => {
     const def = template()
     const fields = fieldsFromDefinition(def)

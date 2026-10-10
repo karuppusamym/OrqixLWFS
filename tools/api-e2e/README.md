@@ -45,3 +45,31 @@ The unknown-outcome reconcile of T-EFF-04 needs a `nonIdempotent` operation, whi
 (it requires an idempotency key); that path is covered against PostgreSQL/Flowable/WireMock by `EffectsTest` and
 `ReconcileResumeTest`.
 
+
+## Demo 2 scenarios 20-23 (`e2e_agents.py`)
+
+```bash
+python tools/api-e2e/e2e_agents.py [--faults]   # needs the stack rebuilt with the dev seed; real model calls cost about USD 0.0006 per run
+```
+
+| # | Scenario | Checks |
+|---|---|---|
+| 20 | Agent -> MCP tool -> rule -> approval | Acme Ltd (risk 72) waits at Compliance review, the timeline carries the business sentence, the event lists model and tool names only, the stub saw exactly one `vendor_risk_lookup`, `fin.finance` approves -> Approved with the result in the output; Globex Corporation (18) is approved automatically; Umbrella Trading (sanctions hit) goes to compliance and is rejected |
+| 21 | Connection test | Admin test with a sample input returns the structured output and the sentence; mismatching input -> 422; requester -> 403; the connection list marks `kind: agent` |
+| 22 (`--faults`) | Tool server HTTP 500 twice | The step is retried (attempts >= 2) and the run completes |
+| 23 | AI not configured | Skips 20-22; validation warns `WF_AGENT_AI_UNAVAILABLE`, publish needs the acknowledgement, the test is 422 `AI_NOT_CONFIGURED`, the tool server is never contacted |
+
+## Workflow patterns, scenarios 15-17 (`e2e_patterns.py`)
+
+```bash
+python tools/api-e2e/e2e_patterns.py     # ~3 minutes: the template's one-minute wait is real
+```
+
+Needs the dev seed groups `it-desk` and `facilities-team` (restart the dev stack after pulling) and publishes
+`purchase-approval` when it has no active release.
+
+| # | Scenario | Checks |
+|---|---|---|
+| 15 | Demo 4: parent -> child -> result -> continue | Both approvals open at once for different groups; the join waits for the second; the timer step shows its due time; the purchase starts as its own run (own ORQ reference, `parentRun` link, release pinned in the parent's manifest); no order before the child is approved; one order after; the parent finishes `Ready` with the mapped `equipmentOrderId`; timeline has `CHILD_STARTED` before `CHILD_ENDED`, gap-free |
+| 16 | Pinning and cancellation | Republishing `purchase-approval` while a parent waits does not change the release the parent starts; cancelling the parent cancels the child and its task; no order |
+| 17 | Rejection ends everything | One rejected branch completes the request as Rejected and cancels the other branch's task |

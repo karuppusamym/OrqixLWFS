@@ -7,7 +7,7 @@ import { Select } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useStudio, useStudioContext } from '../StudioContext'
 import { cfg, type WorkflowNode } from '../model/types'
-import { Advanced, CommitInput, CommitNumber, CommitTextarea, InspectorSection } from './controls'
+import { Advanced, CommitInput, CommitNumber, CommitTextarea, DurationPreview, InspectorSection } from './controls'
 
 /** Rename a step ID in Advanced: IDs are stable references, so the change is validated and applied everywhere. */
 export function StepIdField({ node }: { node: WorkflowNode }) {
@@ -99,6 +99,7 @@ export function ApprovalInspector({ node }: { node: WorkflowNode }) {
             transitions: v.trim() ? d.transitions : d.transitions.filter((t) => t.from !== node.id || t.on !== 'timedOut'),
           }))} />}
         </FormField>
+        {cfg<string>(node, 'timeoutAfter') ? <DurationPreview text={cfg<string>(node, 'timeoutAfter') ?? ''} verb="allows" /> : null}
       </InspectorSection>
       <Advanced>
         <StepIdField node={node} />

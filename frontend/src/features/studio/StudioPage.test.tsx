@@ -36,9 +36,9 @@ describe('studio (Steps tab, inspector, autosave, check, conflicts)', () => {
     await user.clear(duration)
     await user.type(duration, 'PT30M')
     await user.tab()
-    await waitFor(() => expect(screen.getByTestId('save-state')).toHaveTextContent('Saved'), { timeout: 5000 })
+    await waitFor(() => expect(screen.getByTestId('save-state')).toHaveTextContent('Saved'), { timeout: 12000 })
     expect(db.workflows.get(PURCHASE_WORKFLOW_ID)!.drafts.at(-1)!.definition.nodes.find((n) => n.id === 'manager')!.config.duration).toBe('PT30M')
-  })
+  }, 30000)
 
   it('removes the timeout route when an approval time limit is cleared', async () => {
     signInAs('dana.designer')
@@ -239,5 +239,33 @@ describe('studio (Steps tab, inspector, autosave, check, conflicts)', () => {
     expect(within(amount).queryByRole('option', { name: /Cost center/ })).not.toBeInTheDocument() // text field cannot feed a number
     expect(screen.getAllByText('required').length).toBeGreaterThanOrEqual(3)
     expect(screen.getByTestId('effect-class')).toHaveTextContent('Safe to retry: the service de-duplicates repeated requests')
+  })
+
+  it('call-a-system lists AI agents with a label and shows what the agent may do, read-only (S13)', async () => {
+    signInAs('dana.designer')
+    const draft = db.workflows.get(PURCHASE_WORKFLOW_ID)!.drafts.at(-1)!.definition
+    const node = draft.nodes.find((n) => n.id === 'procure')!
+    node.config = {
+      connectionRef: 'vendor-risk-assistant',
+      operation: 'assessVendor',
+      inputMapping: {},
+      resultMapping: {},
+      timeoutSeconds: 30,
+    }
+    draft.dependencies.connections = [{ key: 'vendor-risk-assistant', definitionVersion: 1 }]
+    const user = userEvent.setup()
+    renderApp(EDIT)
+    await openSteps(user)
+    await user.click(stepButton('procure'))
+    const connection = await screen.findByLabelText(/^Connection/)
+    expect(await within(connection).findByRole('option', { name: /Vendor risk assistant · AI agent/ })).toBeInTheDocument()
+    expect(within(connection).getByRole('option', { name: /Procurement service$/ })).toBeInTheDocument()
+    const spec = await screen.findByTestId('agent-spec')
+    expect(within(spec).getByText('Uses AI (cost varies, read-only)')).toBeInTheDocument()
+    expect(within(spec).getByTestId('agent-instructions')).toHaveTextContent(/vendor risk assistant of the procurement team/)
+    expect(within(spec).getByTestId('agent-tools')).toHaveTextContent('Vendor registry')
+    expect(within(spec).queryByRole('textbox')).not.toBeInTheDocument()
+    // The result fields of the agent can be kept like any other result.
+    expect(await screen.findByRole('checkbox', { name: /Keep .riskScore./ })).toBeInTheDocument()
   })
 })

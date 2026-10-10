@@ -43,7 +43,7 @@ export interface DecisionTable {
 }
 
 export interface FieldSchemaDoc {
-  type: 'string' | 'number' | 'integer' | 'boolean'
+  type: 'string' | 'number' | 'integer' | 'boolean' | 'array'
   title: string
   description?: string
   enum?: string[]
@@ -52,6 +52,9 @@ export interface FieldSchemaDoc {
   minimum?: number
   maximum?: number
   multipleOf?: number
+  items?: FieldSchemaDoc
+  minItems?: number
+  maxItems?: number
 }
 
 export interface FormSchemaDoc {

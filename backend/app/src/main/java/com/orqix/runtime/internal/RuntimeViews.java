@@ -29,8 +29,11 @@ public class RuntimeViews {
     private final ReleaseQueries releases;
     private final GroupDirectory groups;
     private final TaskQueries taskQueries;
+    private final RunStore runs;
 
-    public RuntimeViews(SubjectService subjects, ReleaseQueries releases, GroupDirectory groups, TaskQueries taskQueries) {
+    public RuntimeViews(SubjectService subjects, ReleaseQueries releases, GroupDirectory groups, TaskQueries taskQueries,
+            RunStore runs) {
+        this.runs = runs;
         this.subjects = subjects;
         this.releases = releases;
         this.groups = groups;
@@ -71,7 +74,37 @@ public class RuntimeViews {
                 new RuntimeDtos.ReleaseRef(release.id(), release.releaseNumber()), run.businessKey(),
                 subjects.ref(run.initiator(), names), run.lifecycle(), run.outcome(), run.outcomeKind(),
                 steps(run, names), attention(run.attention()), run.createdAt(), run.updatedAt(), run.endedAt(), isTest,
-                run.version());
+                run.version(), parentRef(run));
+    }
+
+    /** Link from a child run to the run that started it; null for ordinary runs. */
+    public RuntimeDtos.ParentRef parentRef(RunStore.RunRow run) {
+        if (!run.isChild()) {
+            return null;
+        }
+        RunStore.RunRow parent = runs.find(run.workspaceId(), run.parentRunId()).orElse(null);
+        if (parent == null) {
+            return null;
+        }
+        ReleaseQueries.ReleaseView release = releases.require(parent.workspaceId(), parent.releaseId());
+        return new RuntimeDtos.ParentRef(parent.id(), parent.reference(), run.parentNodeId(),
+                release.nodeLabel(run.parentNodeId()));
+    }
+
+    /** Runs started by steps of this run, oldest first. */
+    public java.util.List<RuntimeDtos.ChildRun> children(RunStore.RunRow run) {
+        java.util.List<RuntimeDtos.ChildRun> result = new ArrayList<>();
+        ReleaseQueries.ReleaseView parentRelease = releases.require(run.workspaceId(), run.releaseId());
+        for (RunStore.RunRow child : runs.children(run.workspaceId(), run.id())) {
+            ReleaseQueries.ReleaseView release = releases.require(child.workspaceId(), child.releaseId());
+            result.add(new RuntimeDtos.ChildRun(child.id(), child.reference(),
+                    new RuntimeDtos.WorkflowRef(child.workflowId(), release.workflowKey(), release.workflowName()),
+                    new RuntimeDtos.ReleaseRef(release.id(), release.releaseNumber()), child.parentNodeId(),
+                    parentRelease.nodeLabel(child.parentNodeId()), child.lifecycle(), child.outcome(),
+                    child.outcomeKind(), attention(child.attention()), child.createdAt(), child.endedAt(),
+                    child.parentOccurrence() == null ? 1 : child.parentOccurrence()));
+        }
+        return result;
     }
 
     public List<RuntimeDtos.CurrentStep> steps(RunStore.RunRow run, Map<UUID, String> names) {

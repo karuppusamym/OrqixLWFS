@@ -16,6 +16,7 @@ import {
   blankDefinition,
   clock,
   connectionDefinition,
+  agentConnectionDefinition,
   db,
   groupMembers,
   inGroup,
@@ -23,6 +24,7 @@ import {
   newId,
   permissionsOf,
   purchaseTemplate,
+  onboardingTemplate,
   rolesOf,
   userById,
   userByName,
@@ -191,6 +193,7 @@ function validationContext(wsId: string): ValidationContext {
   return {
     groups: wsId === WORKSPACES[2]?.id ? [] : GROUPS.map((g) => g.key),
     isTestWorkspace: ws?.isTest ?? false,
+    publishedWorkflows: [...db.workflows.values()].filter((w) => w.wsId === wsId && w.activeReleaseId).map((w) => w.key),
     connections:
       wsId === WORKSPACES[2]?.id
         ? []
@@ -317,7 +320,7 @@ export function createHandlers(): HttpHandler[] {
       if (workflowsOf(str(params.ws)).some((w) => w.key === input.key)) {
         return problem(409, 'DUPLICATE_KEY', 'A workflow with this key already exists', { fieldErrors: [{ pointer: '/key', code: 'duplicate', message: 'A workflow with this key already exists.' }] })
       }
-      const definition: Definition = input.templateId === 'purchase-approval' ? purchaseTemplate() : blankDefinition(input.key, input.name)
+      const definition: Definition = input.templateId === 'purchase-approval' ? purchaseTemplate() : input.templateId === 'new-hire-onboarding' ? onboardingTemplate() : blankDefinition(input.key, input.name)
       definition.workflowKey = input.key
       definition.name = input.name
       if (input.description) definition.metadata.description = input.description
@@ -554,6 +557,30 @@ export function createHandlers(): HttpHandler[] {
       if (!run || run.wsId !== str(params.ws) || !canReadRun(g.user, g.perms, run)) return notFound()
       return HttpResponse.json(toRunDetail(run, g.user))
     }),
+    http.get(`${B}/workspaces/:ws/runs/:id/comments`, async ({ params, request }) => {
+      const g = guard(params.ws); if (!g.ok) return g.res
+      const run = db.runs.get(str(params.id))
+      if (!run || run.wsId !== str(params.ws) || !canReadRun(g.user, g.perms, run)) return notFound()
+      if (!toRunDetail(run,g.user).input) return forbidden()
+      const before = new URL(request.url).searchParams.get('before')
+      const comments = [...(run.comments ?? [])].reverse()
+      const start = before ? comments.findIndex(c => c.id === before) + 1 : 0
+      return HttpResponse.json({ comments: comments.slice(start,start+50), hasMore: comments.length > start+50 })
+    }),
+    http.post(`${B}/workspaces/:ws/runs/:id/comments`, async ({ params, request }) => {
+      const g = guard(params.ws); if (!g.ok) return g.res
+      const run = db.runs.get(str(params.id))
+      if (!run || run.wsId !== str(params.ws) || !canReadRun(g.user, g.perms, run)) return notFound()
+      const participant = run.tasks.some(t => t.assigneeId === g.user.id || t.completedById === g.user.id || (g.perms.includes('task.act') && inGroup(g.user,t.candidateGroup) && (selfApprovalAllowed(run, currentRelease(run)) || run.initiatorId !== g.user.id)))
+      if (!toRunDetail(run,g.user).input || !(run.initiatorId === g.user.id || participant || g.perms.includes('run.operate'))) return forbidden()
+      const input = await body<{ text: string }>(request)
+      if (typeof input.text !== 'string' || !input.text.trim() || input.text.length > 2000) return problem(422, 'VALIDATION_FAILED', 'Some values are not valid', { fieldErrors: [{ pointer: '/text', code: 'maxLength', message: 'Comment must contain 1 to 2000 characters.' }] })
+      return idempotent(request, g.user, `comment-${run.id}`, input, () => {
+        const comment = { id: newId(), runId: run.id, author: { id: g.user.id, displayName: g.user.displayName }, text: input.text.trim(), createdAt: clock.iso() }
+        run.comments ??= []; run.comments.push(comment)
+        return { status: 201, body: comment }
+      })
+    }),
     http.get(`${B}/workspaces/:ws/runs/:id/events`, async ({ params, request }) => {
       await slow()
       const g = guard(params.ws)
@@ -764,30 +791,17 @@ export function createHandlers(): HttpHandler[] {
       const g = guard(params.ws, 'connection.read')
       if (!g.ok) return g.res
       if (str(params.ws) === WORKSPACES[2]?.id) return HttpResponse.json({ items: [] })
-      const binding = db.bindings.get(`${str(params.ws)}:procurement`)
-      const ops = connectionDefinition.operations as Record<string, { label: string; effectClass: string; testable: boolean }>
-      return HttpResponse.json({
-        items: [
-          {
-            key: 'procurement',
-            name: connectionDefinition.name,
-            latestVersion: 1,
-            versions: [1],
-            binding: { configured: !!binding, enabled: !!binding?.enabled, host: binding ? new URL(binding.baseUrl).host : null },
-            operations: Object.entries(ops).map(([name, op]) => ({ name, label: op.label, effectClass: op.effectClass, testable: op.testable })),
-          },
-        ],
-      })
+      return HttpResponse.json({ items: Object.keys(CONNECTIONS).map((key) => connectionSummary(str(params.ws), key)) })
     }),
     http.get(`${B}/workspaces/:ws/connections/:key`, async ({ params }) => {
       await slow()
       const g = guard(params.ws, 'connection.read')
       if (!g.ok) return g.res
-      if (str(params.key) !== 'procurement' || str(params.ws) === WORKSPACES[2]?.id) return notFound()
-      const binding = db.bindings.get(`${str(params.ws)}:procurement`)
+      if (!(str(params.key) in CONNECTIONS) || str(params.ws) === WORKSPACES[2]?.id) return notFound()
+      const binding = db.bindings.get(`${str(params.ws)}:${str(params.key)}`)
       return HttpResponse.json({
-        key: 'procurement',
-        definitions: [{ version: 1, definition: connectionDefinition, definitionHash: 'a'.repeat(64), createdAt: '2026-10-01T09:00:00Z', createdBy: subjectRef(userByName('wade.admin')) }],
+        key: str(params.key),
+        definitions: [{ version: 1, definition: CONNECTIONS[str(params.key)], definitionHash: 'a'.repeat(64), createdAt: '2026-10-01T09:00:00Z', createdBy: subjectRef(userByName('wade.admin')) }],
         binding: g.perms.includes('connection.manage') && binding ? { ...binding, updatedBy: subjectRef(userById(binding.updatedById)) } : null,
       })
     }),
@@ -795,8 +809,11 @@ export function createHandlers(): HttpHandler[] {
       await slow()
       const g = guard(params.ws, 'connection.manage')
       if (!g.ok) return g.res
-      if (str(params.key) !== 'procurement') return notFound()
-      const bindingKey = `${str(params.ws)}:procurement`
+      if (!(str(params.key) in CONNECTIONS)) return notFound()
+      const bindingKey = `${str(params.ws)}:${str(params.key)}`
+      if (str(params.key) === 'vendor-risk-assistant' && (await peekAuthType(request)) === 'apiKeyHeader') {
+        return problem(422, 'VALIDATION_FAILED', 'The credential reference is incomplete', { fieldErrors: [{ pointer: '/auth/type', code: 'enum', message: 'An agent connection supports the auth types none and bearerToken' }] })
+      }
       const existing = db.bindings.get(bindingKey)
       const ifMatch = request.headers.get('If-Match')
       if (existing) {
@@ -814,7 +831,7 @@ export function createHandlers(): HttpHandler[] {
       }
       const allowed = /(^|\.)example\.(internal|com)(:\d+)?$/.test(host)
       if (!allowed) return problem(422, 'EGRESS_NOT_ALLOWED', 'Address not allowed', { fieldErrors: [{ pointer: '/baseUrl', code: 'egress', message: 'This address is not on the network allowlist.' }] })
-      const next = { connectionKey: 'procurement', baseUrl: input.baseUrl, auth: input.auth, enabled: input.enabled, revision: (existing?.revision ?? 0) + 1, updatedAt: clock.iso(), updatedById: g.user.id }
+      const next = { connectionKey: str(params.key), baseUrl: input.baseUrl, auth: input.auth, enabled: input.enabled, revision: (existing?.revision ?? 0) + 1, updatedAt: clock.iso(), updatedById: g.user.id }
       db.bindings.set(bindingKey, next)
       return HttpResponse.json({ ...next, updatedBy: subjectRef(g.user) }, { headers: { ETag: `"r${next.revision}"` } })
     }),
@@ -822,13 +839,16 @@ export function createHandlers(): HttpHandler[] {
       await slow()
       const g = guard(params.ws, 'connection.manage')
       if (!g.ok) return g.res
-      const input = await body<{ version: number; operation: string }>(request)
-      const ops = connectionDefinition.operations as Record<string, { testable: boolean }>
+      const input = await body<{ version: number; operation: string; input?: Record<string, unknown> }>(request)
+      const definition = CONNECTIONS[str(params.key)]
+      if (!definition) return notFound()
+      const ops = definition.operations as Record<string, { testable: boolean }>
       const op = ops[input.operation]
       if (!op) return notFound()
       if (!op.testable) return problem(422, 'OPERATION_NOT_TESTABLE', 'Operation not testable')
-      const binding = db.bindings.get(`${str(params.ws)}:procurement`)
+      const binding = db.bindings.get(`${str(params.ws)}:${str(params.key)}`)
       if (!binding?.enabled) return problem(422, 'CONNECTION_NOT_BOUND', 'No enabled binding')
+      if (str(params.key) === 'vendor-risk-assistant') return agentTest(input.input)
       if (db.procurementFault === 'down') return HttpResponse.json({ outcome: 'failed', httpStatus: null, durationMs: 3012, errorCode: 'CONNECT_FAILED', detail: 'The service did not answer in time.' })
       return HttpResponse.json({ outcome: 'succeeded', httpStatus: 200, durationMs: 41, errorCode: null, detail: null })
     }),
@@ -879,3 +899,59 @@ export function createHandlers(): HttpHandler[] {
 }
 
 export { USERS, rolesOf }
+
+// Connections shared by the list, detail, binding and test handlers ----------------------------------------------------------------------
+type ConnectionDoc = { key: string; name: string; kind?: string; operations: Record<string, { label: string; effectClass: string; testable: boolean }> }
+const CONNECTIONS: Record<string, ConnectionDoc> = {
+  procurement: connectionDefinition as unknown as ConnectionDoc,
+  'vendor-risk-assistant': agentConnectionDefinition as unknown as ConnectionDoc,
+}
+
+function connectionSummary(ws: string, key: string) {
+  const definition = CONNECTIONS[key]!
+  const binding = db.bindings.get(`${ws}:${key}`)
+  return {
+    key,
+    name: definition.name,
+    kind: definition.kind ?? 'http',
+    latestVersion: 1,
+    versions: [1],
+    binding: { configured: !!binding, enabled: !!binding?.enabled, host: binding ? new URL(binding.baseUrl).host : null },
+    operations: Object.entries(definition.operations).map(([name, op]) => ({ name, label: op.label, effectClass: op.effectClass, testable: op.testable })),
+  }
+}
+
+async function peekAuthType(request: Request): Promise<string | undefined> {
+  try {
+    const parsed = (await request.clone().json()) as { auth?: { type?: string } }
+    return parsed.auth?.type
+  } catch {
+    return undefined
+  }
+}
+
+/** Deterministic stand-in for the demo vendor registry (same fixtures as tools/procurement-stub). */
+const VENDOR_FIXTURES: Record<string, { riskScore: number; sanctionsHit: boolean }> = {
+  'acme ltd': { riskScore: 72, sanctionsHit: false },
+  'globex corporation': { riskScore: 18, sanctionsHit: false },
+  initech: { riskScore: 45, sanctionsHit: false },
+  'umbrella trading': { riskScore: 91, sanctionsHit: true },
+}
+
+function agentTest(sample: Record<string, unknown> | undefined) {
+  const vendorName = typeof sample?.vendorName === 'string' ? sample.vendorName.trim() : ''
+  if (!vendorName || typeof sample?.country !== 'string' || typeof sample?.annualSpend !== 'number') {
+    return problem(422, 'VALIDATION_FAILED', 'The sample input does not match the operation.', { fieldErrors: [{ pointer: '/input', code: 'required', message: 'Provide vendorName, country and annualSpend' }] })
+  }
+  const fixture = VENDOR_FIXTURES[vendorName.toLowerCase()] ?? { riskScore: 33, sanctionsHit: false }
+  const riskBand = fixture.riskScore >= 70 ? 'high' : fixture.riskScore >= 40 ? 'medium' : 'low'
+  return HttpResponse.json({
+    outcome: 'succeeded',
+    httpStatus: null,
+    durationMs: 4210,
+    errorCode: null,
+    detail: 'model deepseek/deepseek-v3.2; 2 turns; tools vendor_risk_lookup ok 38 ms; tokens 1850/96; USD 0.0006',
+    output: { ...fixture, riskBand, registryId: 'VR-3FA9C2' },
+    summary: `Vendor risk assistant checked '${vendorName}' using Vendor registry: risk ${fixture.riskScore} (${riskBand})`,
+  })
+}

@@ -48,3 +48,9 @@ Workflows → **Import** → upload a `.bpmn` file → compatibility report (cou
 ## 5. Fixtures and tests
 
 `examples/migration/`: `camunda7-purchase.bpmn` and `camunda8-purchase.bpmn` (hand-authored compatibility fixtures, clearly labelled as such — they are not customer exports), `unsupported-features.bpmn` (one of each blocked construct) and `xxe-attack.bpmn`; the expected dispositions are asserted in `FixtureDispositionTest`. Tests: every element of every fixture has a disposition; XXE and oversized files rejected; purchase fixtures convert (with mappings) into drafts that pass the compiler and run end to end like the template (approval, threshold, procurement); behavior comparison against the original BPMN for the decision boundaries (4,999.99 / 5,000).
+
+## Revision 0.2 migration expansion
+
+The adapter now imports unambiguous paired parallel gateways, fixed positive intermediate duration timers (one minute to 90 days), and call activities after explicit `childWorkflowMappings` review. The normal compiler still validates all converted graphs, child contracts and publish-time release pins. Date/recurring/boundary timers and ambiguous gateway regions remain blocked. See `docs/17-migration-workbench.md` for the supported surface.
+
+Pega archive inspection recognizes bounded XML identity fields and unresolved dependency references, and suggests reviewed target mappings according to recognized rule class. It retains file-level disposition and provenance; no rule-resolution equivalence or automatic native conversion is claimed. Genuine customer exports and expected scenarios remain acceptance inputs.

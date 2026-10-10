@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://orqix.example/schemas/connection-definition-v0.schema.json",
-  "title": "Orqix connection definition v0.1 — portable HTTP operation or AI agent contract",
+  "title": "Orqix connection definition v0.1 \u2014 portable HTTP operation or AI agent contract",
   "description": "Immutable, versioned, secret-free description of an approved integration: kind http (default) is an HTTP operation contract, kind agent is a bounded AI task that may call allow-listed tools of one MCP server (S13). Environment details (base URL or MCP endpoint, credential reference, enabled flag) live in the connection binding, which is not portable and never exported. See docs/build/S5-runtime.md for retry and effect semantics and docs/build/S13-agents-mcp.md for agents.",
   "type": "object",
   "properties": {
@@ -9,10 +9,11 @@
       "const": "0.1"
     },
     "kind": {
-      "description": "http (default): operations are HTTP calls. agent: operations are bounded AI tasks that call allow-listed tools of the MCP server in the binding; effect class is always readOnly.",
+      "description": "http (default): operations are HTTP calls. agent: operations are bounded AI tasks that call allow-listed tools of the MCP server in the binding; effect class is always readOnly. microsoftGraph: read-only document metadata or pinned-version UTF-8 text through Microsoft Graph.",
       "enum": [
         "http",
-        "agent"
+        "agent",
+        "microsoftGraph"
       ]
     },
     "key": {
@@ -449,6 +450,92 @@
           "operations": {
             "additionalProperties": {
               "$ref": "#/$defs/operation"
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "microsoftGraph"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "operations": {
+            "additionalProperties": {
+              "properties": {
+                "method": {
+                  "const": "POST"
+                },
+                "path": {
+                  "enum": [
+                    "/metadata",
+                    "/text"
+                  ]
+                },
+                "effectClass": {
+                  "const": "readOnly"
+                },
+                "successStatuses": {
+                  "const": [
+                    200
+                  ]
+                },
+                "requestSchema": {
+                  "properties": {
+                    "required": {
+                      "allOf": [
+                        {
+                          "contains": {
+                            "const": "driveId"
+                          }
+                        },
+                        {
+                          "contains": {
+                            "const": "itemId"
+                          }
+                        }
+                      ]
+                    },
+                    "properties": {
+                      "required": [
+                        "driveId",
+                        "itemId"
+                      ],
+                      "properties": {
+                        "driveId": {
+                          "properties": {
+                            "type": {
+                              "const": "string"
+                            }
+                          }
+                        },
+                        "itemId": {
+                          "properties": {
+                            "type": {
+                              "const": "string"
+                            }
+                          }
+                        },
+                        "versionId": {
+                          "properties": {
+                            "type": {
+                              "const": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
             }
           }
         }

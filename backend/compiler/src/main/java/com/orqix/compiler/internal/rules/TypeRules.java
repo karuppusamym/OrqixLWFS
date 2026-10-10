@@ -280,6 +280,23 @@ final class TypeRules {
             }
         }
         for (FormSchema.Field f : form.properties().values()) {
+            if (f.type() == FieldKind.ARRAY && f.minItems() > f.maxItems()) {
+                invalid(rc, "/" + member + "/properties/" + f.key() + "/minItems", "The minimum collection size exceeds its maximum.");
+            }
+            if (f.type() == FieldKind.ARRAY) {
+                FormSchema.Field item = f.items();
+                String itemBase = "/" + member + "/properties/" + f.key() + "/items";
+                if (item.minLength() != null && item.maxLength() != null && item.minLength() > item.maxLength())
+                    invalid(rc, itemBase + "/minLength", "The item's minimum text length exceeds its maximum.");
+                if (item.minimum() != null && item.maximum() != null && item.minimum().compareTo(item.maximum()) > 0)
+                    invalid(rc, itemBase + "/minimum", "The item's minimum value exceeds its maximum.");
+                if (item.type() != FieldKind.STRING && (item.minLength() != null || item.maxLength() != null || item.enumValues() != null))
+                    invalid(rc, itemBase, "Text constraints require a text item type.");
+                if (!item.type().numeric() && (item.minimum() != null || item.maximum() != null || item.multipleOf() != null))
+                    invalid(rc, itemBase, "Numeric constraints require a numeric item type.");
+                if (item.type() == FieldKind.INTEGER && item.multipleOf() != null && item.multipleOf().compareTo(BigDecimal.ONE) != 0)
+                    invalid(rc, itemBase + "/multipleOf", "Whole-number items cannot allow cents.");
+            }
             String base = JsonPointers.of(member, "properties", f.key());
             String title = q(f.title());
             String is = title + " is " + f.type().description() + ", so it cannot ";

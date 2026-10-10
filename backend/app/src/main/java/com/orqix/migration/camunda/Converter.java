@@ -14,7 +14,7 @@ public final class Converter {
                 a.sourceHash(), a.processId(), a.processName(), Report.ElementCounts.of(issues), issues,
                 a.assumptions(), new Report.RequiredMappings(a.userTasks().values().stream()
                     .flatMap(t -> (t.mappingKeys().isEmpty() ? List.of(t.id()) : t.mappingKeys()).stream()).distinct().toList(),
-                    a.userTasks().keySet().stream().toList(), a.services().keySet().stream().toList()),
+                    a.userTasks().keySet().stream().toList(), a.services().keySet().stream().toList(), a.children.stream().toList()),
                 issues.stream().noneMatch(Report.Issue::blocksPublishing)
                     && issues.stream().noneMatch(i -> Report.INFO.equals(i.severity()) && Report.OPEN.equals(i.resolutionStatus())));
     }
@@ -24,6 +24,7 @@ public final class Converter {
         rejectUnknownMappings(request.path("groupMappings"), assignments, "groupMappings");
         rejectUnknownMappings(request.path("approvalRoutes"), a.userTasks.keySet(), "approvalRoutes");
         rejectUnknownMappings(request.path("serviceTaskMappings"), a.services.keySet(), "serviceTaskMappings");
+        rejectUnknownMappings(request.path("childWorkflowMappings"), a.children, "childWorkflowMappings");
         Map<String, String> groups = new LinkedHashMap<>();
         Map<String, Analysis.Route> routes = new LinkedHashMap<>();
         for (var task : a.userTasks.values()) {
@@ -65,6 +66,7 @@ public final class Converter {
                 case TASK -> groups.containsKey(item.subject) && routes.containsKey(item.subject);
                 case OUTCOME_GATEWAY -> routes.containsKey(item.subject);
                 case SERVICE -> request.path("serviceTaskMappings").path(item.subject).isObject();
+                case CHILD -> request.path("childWorkflowMappings").path(item.subject).isObject();
                 case ACKNOWLEDGE -> request.path("acknowledgeInfo").asBoolean(false);
                 default -> false;
             };
@@ -112,9 +114,14 @@ public final class Converter {
             String type = switch (node.type) {
                 case "startEvent" -> "start"; case "endEvent" -> "end"; case "userTask" -> "approval";
                 case "serviceTask" -> "http"; case "exclusiveGateway" -> "branch";
+                case "parallelGateway" -> a.parallelJoins.containsKey(node.id) ? "parallelSplit" : "parallelJoin";
+                case "intermediateCatchEvent" -> "wait"; case "callActivity" -> "startWorkflow";
                 default -> throw new IllegalStateException("Unresolved source element");
             };
-            if (type.equals("end")) {
+            if (type.equals("parallelSplit")) config.put("joinRef", a.nodes.get(a.parallelJoins.get(node.id)).canonicalId);
+            else if (type.equals("wait")) config.put("duration", a.waits.get(node.id));
+            else if (type.equals("startWorkflow")) config = (ObjectNode) request.path("childWorkflowMappings").path(node.id).deepCopy();
+            else if (type.equals("end")) {
                 String outcome = node.name == null || node.name.isBlank() ? "Completed" : node.name;
                 config.put("businessOutcome", outcome);
                 config.put("outcomeKind", outcome.toLowerCase(Locale.ROOT).matches(".*(reject|denied|decline|refus).*") ? "rejected" : "success");

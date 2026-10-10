@@ -243,7 +243,7 @@ function NewWorkflowDialog({ onClose }: { onClose: () => void }) {
                     <span className="font-semibold">{t.name}</span>
                     <span className="block text-muted-foreground">{t.description}</span>
                     <span className="mt-1 block text-xs text-muted-foreground">
-                      Needs approver groups: {(t.requiredGroups ?? []).map(humanize).join(', ') || 'none'} &middot; connections: {(t.requiredConnections ?? []).map(humanize).join(', ') || 'none'}
+                      Needs approver groups: {(t.requiredGroups ?? []).map(humanize).join(', ') || 'none'} &middot; connections: {(t.requiredConnections ?? []).map(humanize).join(', ') || 'none'}{(t.requiredWorkflows ?? []).length > 0 ? <> &middot; starts workflows: {(t.requiredWorkflows ?? []).map(humanize).join(', ')}</> : null}
                     </span>
                   </Label>
                 </div>

@@ -33,6 +33,7 @@ final class IntegerRangeCheck {
             for (Map.Entry<String, JsonNode> e : doc.path(form).path("properties").properties()) {
                 String base = JsonPointers.of(form, "properties", e.getKey());
                 check(e.getValue().get("minLength"), base + "/minLength", problems);
+                check(e.getValue().path("items").get("minLength"), base + "/items/minLength", problems);
             }
         }
         return problems;

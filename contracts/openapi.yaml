@@ -37,8 +37,54 @@ tags:
   - name: Access
   - name: AI
   - name: Migration
+  - name: Conversation
 
 paths:
+  /workspaces/{workspaceId}/conversations/messages:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    post:
+      tags: [Conversation]
+      operationId: sendConversationMessage
+      summary: Collect request fields or review an authorized task action in a resumable guided conversation
+      x-orqix-permission: workspace.member + underlying action permission
+      x-orqix-audit: conversation.message
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConversationMessageRequest' }
+      responses:
+        '200':
+          description: Conversation reply; confirm explicitly to execute a reviewed action
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Conversation' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /workspaces/{workspaceId}/conversations/{conversationId}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: conversationId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    get:
+      tags: [Conversation]
+      operationId: getConversation
+      summary: Resume your own workspace conversation
+      x-orqix-permission: workspace.member + conversation.author
+      responses:
+        '200':
+          description: Current conversation state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Conversation' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /me:
     get:
       tags: [Identity]
@@ -611,6 +657,63 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /workspaces/{workspaceId}/runs/{runId}/comments:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+    get:
+      tags: [Runs]
+      operationId: listRunComments
+      summary: Read immutable comments with request-data authorization
+      x-orqix-permission: run.read-data | initiator | taskParticipant
+      parameters:
+        - name: before
+          in: query
+          schema: { $ref: '#/components/schemas/Uuid' }
+      responses:
+        '200':
+          description: Newest 50 comments; pass the last comment ID as before for older comments.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RunCommentPage' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Runs]
+      operationId: createRunComment
+      summary: Add an immutable plain-text collaboration note
+      x-orqix-permission: run.operate | initiator | taskParticipant
+      x-orqix-audit: comment.created
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [text]
+              properties:
+                text: { type: string, minLength: 1, maxLength: 2000 }
+      responses:
+        '201':
+          description: Comment created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RunComment' }
+        '200':
+          description: Idempotent replay of the original comment
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RunComment' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
   /workspaces/{workspaceId}/runs/{runId}/events:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -1094,7 +1197,7 @@ paths:
                 operation: { type: string, pattern: '^[a-z][A-Za-z0-9]{0,63}$' }
                 input:
                   type: object
-                  description: Sample input of an agent operation (kind agent), validated against its requestSchema. Ignored for HTTP operations.
+                  description: Sample input for agent or Microsoft Graph operations, validated against the operation requestSchema.
       responses:
         '200':
           description: Test outcome (a failed remote call is a 200 with outcome=failed). An agent test uses AI and is metered like any AI use.
@@ -1625,6 +1728,43 @@ components:
       content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } }
 
   schemas:
+    ConversationMessageRequest:
+      type: object
+      additionalProperties: false
+      required: [message]
+      properties:
+        conversationId: { $ref: '#/components/schemas/Uuid' }
+        expectedVersion: { type: integer, minimum: 1 }
+        message: { type: string, minLength: 1, maxLength: 4000 }
+    Conversation:
+      type: object
+      additionalProperties: false
+      required: [id, version, stage, message, choices]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        version: { type: integer, minimum: 1 }
+        stage: { type: string, enum: [idle, collecting, review, confirmingTask, completed] }
+        message: { type: string }
+        choices:
+          type: array
+          items:
+            type: object
+            required: [label, command]
+            properties:
+              label: { type: string }
+              command: { type: string }
+        field:
+          type: object
+          description: Current request field schema and its name/required flag
+          additionalProperties: true
+        review:
+          type: object
+          required: [workflowName, input]
+          properties:
+            workflowName: { type: string }
+            input: { type: object, additionalProperties: true }
+        runId: { $ref: '#/components/schemas/Uuid' }
+        taskId: { type: string }
     Uuid: { type: string, format: uuid }
     Key: { type: string, pattern: '^[a-z][a-z0-9-]{0,62}[a-z0-9]$' }
     Name: { type: string, minLength: 1, maxLength: 200 }
@@ -1831,6 +1971,7 @@ components:
         requiredInputs: { type: array, items: { type: string } }
         requiredGroups: { type: array, items: { $ref: '#/components/schemas/Key' } }
         requiredConnections: { type: array, items: { $ref: '#/components/schemas/Key' } }
+        requiredWorkflows: { type: array, items: { $ref: '#/components/schemas/Key' }, description: 'Workflows the template starts as child requests; they must be published first.' }
 
     WorkflowSummary:
       type: object
@@ -2071,6 +2212,47 @@ components:
         endedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
         isTest: { type: boolean }
         version: { type: integer }
+        parentRun:
+          description: The run that started this one through a "Start another workflow" step (S12); null for ordinary runs.
+          oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/ParentRun'
+    ParentRun:
+      type: object
+      required: [id, reference, nodeId]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        reference: { type: string, description: 'e.g. ORQ-1011' }
+        nodeId: { type: string }
+        nodeLabel: { type: [string, 'null'] }
+    ChildRun:
+      type: object
+      required: [id, reference, workflow, release, nodeId, lifecycle, startedAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        reference: { type: string }
+        workflow:
+          type: object
+          required: [id, key, name]
+          properties:
+            id: { $ref: '#/components/schemas/Uuid' }
+            key: { $ref: '#/components/schemas/Key' }
+            name: { type: string }
+        release:
+          type: object
+          required: [id, releaseNumber]
+          properties:
+            id: { $ref: '#/components/schemas/Uuid' }
+            releaseNumber: { type: integer }
+        nodeId: { type: string }
+        nodeLabel: { type: [string, 'null'] }
+        lifecycle: { $ref: '#/components/schemas/Lifecycle' }
+        outcome: { type: [string, 'null'] }
+        outcomeKind: { oneOf: [{ $ref: '#/components/schemas/OutcomeKind' }, { type: 'null' }] }
+        attention: { oneOf: [{ $ref: '#/components/schemas/Attention' }, { type: 'null' }] }
+        startedAt: { $ref: '#/components/schemas/Timestamp' }
+        endedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+        iteration: { type: integer, minimum: 1 }
     RunPage:
       type: object
       required: [items, nextCursor]
@@ -2086,6 +2268,10 @@ components:
             input: { type: [object, 'null'], description: 'Null unless the caller is the initiator, a task participant, or holds run.read-data' }
             inputLabels: { type: object, additionalProperties: { type: string } }
             output: { type: [object, 'null'] }
+            children:
+              description: Runs started by steps of this run, oldest first. A child that needs attention is visible here.
+              type: array
+              items: { $ref: '#/components/schemas/ChildRun' }
             tasks: { type: array, items: { $ref: '#/components/schemas/TaskSummary' } }
             effects:
               description: Present only for run.operate holders.
@@ -2108,6 +2294,32 @@ components:
       properties:
         allowed: { type: boolean }
         reasonCode: { type: [string, 'null'] }
+    RunComment:
+      type: object
+      additionalProperties: false
+      required: [id, runId, author, text, createdAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        runId: { $ref: '#/components/schemas/Uuid' }
+        author:
+          type: object
+          additionalProperties: false
+          required: [id, displayName]
+          properties:
+            id: { $ref: '#/components/schemas/Uuid' }
+            displayName: { type: string }
+        text: { type: string, minLength: 1, maxLength: 2000 }
+        createdAt: { type: string, format: date-time }
+    RunCommentPage:
+      type: object
+      additionalProperties: false
+      required: [comments, hasMore]
+      properties:
+        comments:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/RunComment' }
+        hasMore: { type: boolean }
     RunEvent:
       type: object
       required: [seq, type, occurredAt, data]
@@ -2294,7 +2506,7 @@ components:
         name: { type: string }
         kind:
           type: string
-          enum: [http, agent]
+          enum: [http, agent, microsoftGraph]
           description: http (default) or agent (an AI task over an MCP server, docs/build/S13-agents-mcp.md)
         latestVersion: { type: integer }
         versions: { type: array, items: { type: integer } }
@@ -2564,6 +2776,7 @@ components:
             groups: { type: array, items: { type: string } }
             approvalTasks: { type: array, items: { type: string } }
             serviceTasks: { type: array, items: { type: string } }
+            childWorkflows: { type: array, items: { type: string } }
         publishable: { type: boolean, description: 'True when no blocker or open action remains' }
     MigrationJob:
       type: object
@@ -2618,4 +2831,15 @@ components:
           type: object
           description: Reviewed canonical request schema; otherwise inferred from BPMN comparisons and service input mappings
           additionalProperties: true
+        childWorkflowMappings:
+          type: object
+          description: callActivity id to a published workflow in the same workspace; publication pins its release
+          additionalProperties:
+            type: object
+            additionalProperties: false
+            required: [workflowRef, inputMapping, resultMapping]
+            properties:
+              workflowRef: { $ref: '#/components/schemas/Key' }
+              inputMapping: { type: object, additionalProperties: { type: string } }
+              resultMapping: { type: object, additionalProperties: { type: string } }
         acknowledgeInfo: { type: boolean, default: false, description: 'Accept info-level losses such as dropped listeners' }

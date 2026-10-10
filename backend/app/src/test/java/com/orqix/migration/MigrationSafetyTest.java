@@ -27,6 +27,41 @@ class MigrationSafetyTest {
         mapping.put("disposition", "excluded");
         assertThatThrownBy(() -> PegaSource.mapping(pkg, source, true)).isInstanceOf(SourceException.class).hasMessageContaining("Excluded files");
     }
+    @Test void pegaXmlInventoryReportsRuleIdentityDependenciesAndSuggestedMapping() throws Exception {
+        String xml = "<pagedata><pxObjClass>Rule-Obj-Flow</pxObjClass><pyRuleName>Purchase</pyRuleName><pyRuleSet>Procurement</pyRuleSet><pyRuleSetVersion>01-02-03</pyRuleSetVersion><pySubFlowName>Compliance</pySubFlowName></pagedata>";
+        var report = PegaSource.archive(archive("rules.xml", xml.getBytes(StandardCharsets.UTF_8)));
+        assertThat(report.issues().get(0).explanation()).contains("Rule-Obj-Flow", "Purchase", "Procurement", "Compliance", "child workflows");
+        assertThat(report.publishable()).isFalse();
+    }
+    @Test void importedParallelTimersAndMappedChildKeepExplicitSemantics() {
+        String xml = """
+            <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" targetNamespace="urn:test">
+             <process id="pattern" isExecutable="true"><startEvent id="start"/><parallelGateway id="split"/>
+              <intermediateCatchEvent id="left"><timerEventDefinition><timeDuration>PT1M</timeDuration></timerEventDefinition></intermediateCatchEvent>
+              <intermediateCatchEvent id="right"><timerEventDefinition><timeDuration>PT2M</timeDuration></timerEventDefinition></intermediateCatchEvent>
+              <parallelGateway id="join"/><callActivity id="child" calledElement="Purchase"/><endEvent id="end"/>
+              <sequenceFlow id="a" sourceRef="start" targetRef="split"/><sequenceFlow id="b" sourceRef="split" targetRef="left"/>
+              <sequenceFlow id="c" sourceRef="split" targetRef="right"/><sequenceFlow id="d" sourceRef="left" targetRef="join"/>
+              <sequenceFlow id="e" sourceRef="right" targetRef="join"/><sequenceFlow id="f" sourceRef="join" targetRef="child"/>
+              <sequenceFlow id="g" sourceRef="child" targetRef="end"/>
+             </process></definitions>
+            """;
+        var json = new Json(JsonMapper.builder().build());
+        var analysis = Analyzer.analyze(xml, Limits.DEFAULT);
+        var request = json.parse("{\"workflowKey\":\"imported-pattern\",\"name\":\"Imported patterns\",\"acknowledgeInfo\":true}");
+        assertThat(Converter.convert(analysis, request, json, java.util.Map.of()).definition()).isNull();
+        ((tools.jackson.databind.node.ObjectNode) request).putObject("childWorkflowMappings").putObject("child")
+            .put("workflowRef", "purchase-request").putObject("inputMapping");
+        ((tools.jackson.databind.node.ObjectNode) request.path("childWorkflowMappings").path("child")).putObject("resultMapping");
+        var converted = Converter.convert(analysis, request, json, java.util.Map.of());
+        assertThat(converted.report().publishable()).isTrue();
+        assertThat(converted.definition().path("nodes")).anySatisfy(n -> {
+            assertThat(n.path("type").asString()).isEqualTo("parallelSplit");
+            assertThat(n.path("config").path("joinRef").asString()).isEqualTo("join");
+        });
+        assertThat(converted.definition().path("nodes")).anyMatch(n -> n.path("type").asString().equals("wait"));
+        assertThat(converted.definition().path("nodes")).anyMatch(n -> n.path("config").path("workflowRef").asString().equals("purchase-request"));
+    }
     private byte[] archive(String name,byte[] content) throws IOException {
         var bytes=new ByteArrayOutputStream();
         try(var zip=new ZipOutputStream(bytes)) { zip.putNextEntry(new ZipEntry(name)); zip.write(content); zip.closeEntry(); }

@@ -1,3 +1,4 @@
+import { durationPreview } from '@/lib/duration'
 import { useState, type ComponentProps, type ReactNode } from 'react'
 import { Input, Textarea } from '@/components/ui/input'
 import { cn } from '@/lib/cn'
@@ -131,4 +132,10 @@ export function Advanced({ children, label = 'Advanced', open }: { children: Rea
       <div className="space-y-4 border-t border-border p-3">{children}</div>
     </details>
   )
+}
+
+/** Plain-language reading of a duration, announced politely as it changes ("Waits 2 days."). */
+export function DurationPreview({ text, verb }: { text: string; verb: 'waits' | 'allows' }) {
+  const preview = durationPreview(text, verb)
+  return <p role="status" data-testid="duration-preview" className={preview.ok ? 'text-sm text-muted-foreground' : 'text-sm text-danger'}>{preview.text}</p>
 }

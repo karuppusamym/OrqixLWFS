@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://orqix.example/schemas/workflow-v0.schema.json",
-  "title": "Orqix canonical workflow v0.1 — R0 executable subset",
+  "title": "Orqix canonical workflow v0.1 \u2014 R0 executable subset",
   "description": "Structural contract for the R0 business-editor subset. Passing this schema does not establish graph correctness, type safety, authorization or deployability; the compiler rules in docs/build/S4-workflow-compiler.md are mandatory. Pre-freeze revision 2026-10-07: effect class moved to the connection operation, form keyword subset constrained, generic end outcomes, security block redefined.",
   "type": "object",
   "properties": {
@@ -405,63 +405,22 @@
       "additionalProperties": false
     },
     "formField": {
-      "type": "object",
-      "properties": {
-        "type": {
-          "enum": [
-            "string",
-            "number",
-            "integer",
-            "boolean"
-          ]
-        },
-        "title": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 100
-        },
-        "description": {
-          "type": "string",
-          "maxLength": 500
-        },
-        "enum": {
-          "type": "array",
-          "minItems": 1,
-          "maxItems": 50,
-          "uniqueItems": true,
-          "items": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 100
+      "if": {
+        "properties": {
+          "type": {
+            "const": "array"
           }
         },
-        "minLength": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "maxLength": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 4000
-        },
-        "minimum": {
-          "type": "number"
-        },
-        "maximum": {
-          "type": "number"
-        },
-        "multipleOf": {
-          "enum": [
-            0.01,
-            1
-          ]
-        }
+        "required": [
+          "type"
+        ]
       },
-      "required": [
-        "type",
-        "title"
-      ],
-      "additionalProperties": false
+      "then": {
+        "$ref": "#/$defs/arrayFormField"
+      },
+      "else": {
+        "$ref": "#/$defs/scalarFormField"
+      }
     },
     "nodeBase": {
       "type": "object",
@@ -796,6 +755,27 @@
               "description": "Key of the workflow to start.",
               "$ref": "#/$defs/key"
             },
+            "repeat": {
+              "description": "Repeat sequential pinned child requests until an outcome matches, or the bound is reached. Every occurrence preserves its own tasks and effects. Inputs are reused. Cancellation stops repetition. Results include iterations and limitReached.",
+              "type": "object",
+              "properties": {
+                "maxIterations": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 25
+                },
+                "untilOutcome": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                }
+              },
+              "required": [
+                "maxIterations",
+                "untilOutcome"
+              ],
+              "additionalProperties": false
+            },
             "inputMapping": {
               "description": "Child request field -> value from this request.",
               "type": "object",
@@ -815,6 +795,30 @@
               "additionalProperties": {
                 "$ref": "#/$defs/fieldKey"
               }
+            },
+            "forEach": {
+              "type": "object",
+              "description": "Sequentially start one pinned child per scalar item. The collection must contain 1 to 25 items. Inputs share inputMapping and itemInput receives the current item. Results are the last child result plus iterations and limitReached=false.",
+              "properties": {
+                "itemsRef": {
+                  "type": "string",
+                  "pattern": "^/input/[a-z][A-Za-z0-9]{0,63}$"
+                },
+                "itemInput": {
+                  "$ref": "#/$defs/fieldKey"
+                },
+                "maxItems": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 25
+                }
+              },
+              "required": [
+                "itemsRef",
+                "itemInput",
+                "maxItems"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [
@@ -822,7 +826,13 @@
             "inputMapping",
             "resultMapping"
           ],
-          "additionalProperties": false
+          "additionalProperties": false,
+          "not": {
+            "required": [
+              "repeat",
+              "forEach"
+            ]
+          }
         }
       },
       "additionalProperties": false
@@ -984,6 +994,97 @@
       "additionalProperties": {
         "$ref": "#/$defs/literal"
       }
+    },
+    "scalarFormField": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "enum": [
+            "string",
+            "number",
+            "integer",
+            "boolean"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "enum": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "minLength": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxLength": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4000
+        },
+        "minimum": {
+          "type": "number"
+        },
+        "maximum": {
+          "type": "number"
+        },
+        "multipleOf": {
+          "enum": [
+            0.01,
+            1
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "title"
+      ],
+      "additionalProperties": false
+    },
+    "arrayFormField": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "array"
+        },
+        "title": {
+          "$ref": "#/$defs/label"
+        },
+        "items": {
+          "$ref": "#/$defs/scalarFormField"
+        },
+        "minItems": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 25
+        },
+        "maxItems": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 25
+        }
+      },
+      "required": [
+        "type",
+        "title",
+        "items",
+        "minItems",
+        "maxItems"
+      ],
+      "additionalProperties": false
     }
   }
 }

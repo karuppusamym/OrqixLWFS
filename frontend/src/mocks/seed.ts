@@ -83,6 +83,15 @@ export function seedDb(options: SeedOptions = {}): void {
     updatedAt: clock.iso(),
     updatedById: userByName('wade.admin').id,
   })
+  db.bindings.set(`${WS_PURCHASING}:vendor-risk-assistant`, {
+    connectionKey: 'vendor-risk-assistant',
+    baseUrl: 'https://procurement.example.internal/mcp',
+    auth: { type: 'none' },
+    enabled: true,
+    revision: 1,
+    updatedAt: clock.iso(),
+    updatedById: userByName('wade.admin').id,
+  })
 
   if (published) {
     const release = makeRelease(wf.id, 1, 1, definition, publisher.id, 'First version')

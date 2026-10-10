@@ -19,6 +19,8 @@ export type IssueKeyword =
   | 'minimum'
   | 'maximum'
   | 'multipleOf'
+  | 'minItems'
+  | 'maxItems'
 
 export interface JsonIssue {
   /** JSON Pointer relative to the input object, e.g. "/amount". */
@@ -42,6 +44,7 @@ function codePointLength(text: string): number {
 
 function typeMatches(type: FormFieldSchema['type'], value: unknown): boolean {
   switch (type) {
+    case 'array': return Array.isArray(value)
     case 'string':
       return typeof value === 'string'
     case 'boolean':
@@ -80,6 +83,15 @@ export function validateJsonInput(schema: FormSchema, data: unknown): JsonIssue[
     const pointer = `/${escapePointer(key)}`
     const typeOk = typeMatches(field.type, value)
     if (!typeOk) issues.push({ pointer, keyword: 'type' })
+    if (typeOk && Array.isArray(value)) {
+      if (field.minItems !== undefined && value.length < field.minItems) issues.push({ pointer, keyword: 'minItems' })
+      if (field.maxItems !== undefined && value.length > field.maxItems) issues.push({ pointer, keyword: 'maxItems' })
+      if (field.items) value.forEach((entry, index) => {
+        const nested = validateJsonInput({ type: 'object', additionalProperties: false, required: ['item'], properties: { item: field.items! } }, { item: entry })
+        nested.forEach(issue => issues.push({ ...issue, pointer: `${pointer}/${index}` }))
+      })
+      continue
+    }
     // ajv evaluates enum for any value; the keywords below only apply to strings and numbers respectively.
     if (field.enum && !field.enum.includes(value as string)) issues.push({ pointer, keyword: 'enum' })
     if (!typeOk) continue

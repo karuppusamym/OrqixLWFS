@@ -1,4 +1,4 @@
-import { Activity, Check, ClipboardList, ChevronsUpDown, FlaskConical, House, Inbox, LogOut, Menu, Settings, Workflow, X } from 'lucide-react'
+import { Activity, Check, ClipboardList, ChevronsUpDown, FlaskConical, House, Inbox, LogOut, Menu, MessageSquare, Settings, Workflow, X } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, NavLink, Outlet, useLocation, useMatches, useNavigate } from 'react-router'
 import { signOut } from '@/api/auth'
@@ -71,6 +71,7 @@ export function Shell() {
   const items: NavItem[] = [
     { to: base, label: 'Home', icon: House, end: true, visible: true },
     { to: `${base}/requests`, label: 'My requests', icon: ClipboardList, visible: true },
+    { to: `${base}/assistant`, label: 'Assistant', icon: MessageSquare, visible: true },
     { to: `${base}/tasks`, label: 'My tasks', icon: Inbox, visible: can('task.act'), badge: assigned },
     { to: `${base}/workflows`, label: 'Workflows', icon: Workflow, visible: can('workflow.read', 'workflow.start') },
     { to: `${base}/runs`, label: 'Runs', icon: Activity, visible: can('run.read') },

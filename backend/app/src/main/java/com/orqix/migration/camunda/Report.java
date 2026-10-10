@@ -59,7 +59,11 @@ public final class Report {
         }
     }
 
-    public record RequiredMappings(List<String> groups, List<String> approvalTasks, List<String> serviceTasks) {
+    public record RequiredMappings(List<String> groups, List<String> approvalTasks, List<String> serviceTasks,
+            List<String> childWorkflows) {
+        public RequiredMappings(List<String> groups, List<String> approvalTasks, List<String> serviceTasks) {
+            this(groups, approvalTasks, serviceTasks, List.of());
+        }
     }
 
     public record CompatibilityReport(String sourceSystem, String sourceVersion, String adapterVersion, String sourceHash,

@@ -51,7 +51,7 @@ export function MigrationPage() {
   }
   return <>
     <PageHeader title="Import workflow" description="Analyze source behavior, resolve mappings, then create a draft for review." actions={<Button asChild><Link to={`/w/${workspace.id}/workflows`}>Back to workflows</Link></Button>} />
-    <Alert tone="info" live="off">Camunda 7/8 BPMN can be converted within the supported subset. Pega archives are inventoried; a reviewed, checksum-linked manual mapping package creates the target draft. Live instances, history and credentials stay in the source system.</Alert>
+    <Alert tone="info" live="off">Camunda 7/8 BPMN can be converted within the supported subset. Pega XML archives include rule identity, dependency evidence and reviewed mapping suggestions; a reviewed, checksum-linked manual mapping package creates the target draft. Live instances, history and credentials stay in the source system.</Alert>
     {can('workflow.edit') ? <form className="my-6 space-y-4 rounded-card border border-border bg-surface p-5" onSubmit={(event) => { event.preventDefault(); void upload() }}>
       <h2>Analyze a source file</h2>
       <Label htmlFor="migration-format">Source format</Label>
@@ -82,6 +82,7 @@ function JobReview({ job, editable }: { job: Job; editable: boolean }) {
   const [name, setName] = useState(report.processName ?? job.fileName.replace(/\.[^.]+$/, ''))
   const [groupMappings, setGroupMappings] = useState<Record<string, string>>({})
   const [routes, setRoutes] = useState('{}')
+  const [children, setChildren] = useState('{}')
   const [services, setServices] = useState('{}')
   const [input, setInput] = useState('')
   const [failedItems, setFailedItems] = useState<string[]>([])
@@ -95,7 +96,7 @@ function JobReview({ job, editable }: { job: Job; editable: boolean }) {
     setPending(true); setError(null); setFailedItems([])
     try {
       const request: Request = { workflowKey: key, name, groupMappings, approvalRoutes: JSON.parse(routes) as Request['approvalRoutes'],
-        serviceTaskMappings: JSON.parse(services) as Request['serviceTaskMappings'], acknowledgeInfo: ack,
+        serviceTaskMappings: JSON.parse(services) as Request['serviceTaskMappings'], childWorkflowMappings: JSON.parse(children) as Request['childWorkflowMappings'], acknowledgeInfo: ack,
         ...(input.trim() ? { inputSchema: JSON.parse(input) as Request['inputSchema'] } : {}) }
       const result = await endpoints.convertMigration(workspace.id, job.id, request)
       const queryKey = ['ws', workspace.id, 'migration', job.id]
@@ -131,6 +132,7 @@ function JobReview({ job, editable }: { job: Job; editable: boolean }) {
       {(report.requiredMappings?.approvalTasks ?? []).length ? <><Label htmlFor="migration-routes">Approval routes (JSON; optional for recognized approval gateways)</Label><Textarea id="migration-routes" value={routes} onChange={e => setRoutes(e.target.value)} rows={4} spellCheck={false} /><p className="text-sm text-muted-foreground">Task IDs: {report.requiredMappings?.approvalTasks?.join(', ')}. Example: {JSON.stringify({ taskId: { approvedFlowId: 'approvedFlow', rejectedFlowId: 'rejectedFlow' } })}</p></> : null}
       {(report.requiredMappings?.serviceTasks ?? []).length ? <><ServiceMappingGuide tasks={report.requiredMappings?.serviceTasks ?? []} value={services} onChange={setServices} /><Label htmlFor="migration-services">Service task mappings (JSON)</Label><Textarea id="migration-services" value={services} onChange={e => setServices(e.target.value)} rows={7} spellCheck={false} /><p className="text-sm text-muted-foreground">Source tasks: {report.requiredMappings?.serviceTasks?.join(', ')}. Review each approved connectionRef, definitionVersion, operation, inputMapping and resultMapping.</p></> : null}
       {report.sourceSystem !== 'pega' ? <><Label htmlFor="migration-input">Request schema (optional JSON)</Label><Textarea id="migration-input" value={input} onChange={e => setInput(e.target.value)} rows={5} spellCheck={false} /><p className="text-sm text-muted-foreground">If omitted, branch comparisons and approved service contracts supply field types. Review the inferred request form before publishing.</p></> : null}
+      {(report.requiredMappings?.childWorkflows ?? []).length ? <><Label htmlFor="migration-children">Child workflow mappings (JSON)</Label><Textarea id="migration-children" value={children} onChange={e => setChildren(e.target.value)} rows={7} spellCheck={false} /><p className="text-sm text-muted-foreground">Source calls: {report.requiredMappings?.childWorkflows?.join(', ')}. Each mapping needs workflowRef, inputMapping and resultMapping. Publish the child first; the parent pins its release when published.</p></> : null}
       <Label className="flex items-start gap-2"><input type="checkbox" checked={ack} onChange={e => setAck(e.target.checked)} />I reviewed the assumptions, manual mappings and explicitly excluded source behavior.</Label>
       <Alert tone="info" live="off">Conversion must pass compiler validation. A publisher must separately review and publish; no run starts here.</Alert>
       {error ? <Alert tone="danger">{error}</Alert> : null}

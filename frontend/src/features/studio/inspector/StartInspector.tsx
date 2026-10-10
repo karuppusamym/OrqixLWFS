@@ -12,7 +12,7 @@ import { addField, applyFields, fieldsFromDefinition, FIELD_KIND_LABELS, renameF
 import type { WorkflowNode } from '../model/types'
 import { Advanced, CommitInput, CommitNumber, CommitTextarea, InspectorSection } from './controls'
 
-const KIND_ORDER: FieldKind[] = ['text', 'longText', 'number', 'money', 'integer', 'yesNo', 'choice']
+const KIND_ORDER: FieldKind[] = ['text', 'longText', 'number', 'money', 'integer', 'yesNo', 'choice', 'collection']
 
 /** Request form editor: an ordered list of questions (docs/build/S7-frontend.md section 5, inspector table). */
 export function StartInspector({ node }: { node: WorkflowNode }) {
@@ -166,6 +166,17 @@ function FieldCard({
       <FormField label="Help text" optionalText id={`${p}-help`}>
         {(ids) => <CommitInput id={ids.input} value={f.help} maxLength={500} disabled={readOnly} onCommit={(v) => onChange({ help: v })} />}
       </FormField>
+      {f.kind === 'collection' ? <>
+        <FormField label="Item type" id={`${p}-item-type`}>
+          {ids => <Select id={ids.input} value={f.itemSchema?.type ?? 'string'} disabled={readOnly} onChange={e => onChange({ itemSchema: { type: e.target.value as 'string' | 'number' | 'integer' | 'boolean', title: 'Item', ...(e.target.value === 'string' ? { minLength: 1, maxLength: 200 } : {}) } })}>
+            <option value="string">Text</option><option value="number">Number</option><option value="integer">Whole number</option><option value="boolean">Yes/No</option>
+          </Select>}
+        </FormField>
+        <div className="grid grid-cols-2 gap-3">
+          <FormField label="Minimum items" id={`${p}-minitems`}>{ids => <CommitNumber id={ids.input} integer value={f.minItems ?? 1} disabled={readOnly} onCommit={v => onChange({ minItems: v ?? 1 })} />}</FormField>
+          <FormField label="Maximum items" id={`${p}-maxitems`}>{ids => <CommitNumber id={ids.input} integer value={f.maxItems ?? 25} disabled={readOnly} onCommit={v => onChange({ maxItems: v ?? 25 })} />}</FormField>
+        </div><p className="text-xs text-muted-foreground">Collections contain 1 to 25 scalar values. Nested objects and collections are unsupported.</p>
+      </> : null}
       {f.kind === 'choice' ? (
         <FormField label="Choices" id={`${p}-choices`} description="One choice per line.">
           {(ids) => (

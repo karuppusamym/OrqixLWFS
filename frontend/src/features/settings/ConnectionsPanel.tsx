@@ -21,6 +21,8 @@ import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table'
 import { formatDateTime } from '@/lib/dates'
 import { describeProblem, fieldErrorMap } from '@/lib/problemMessages'
 import { EFFECT_CLASS_LABEL } from '@/features/runs/operatorText'
+import { AgentTest } from './AgentTest'
+import { AGENT_USES_AI, AiAgentBadge } from './AgentSpecView'
 
 export function ConnectionsPanel() {
   const { workspace } = useWorkspace()
@@ -54,10 +56,14 @@ function ConnectionCard({ connection: c }: { connection: ConnectionSummary }) {
     <section aria-labelledby={`conn-${c.key}`} className="rounded-card border border-border bg-surface">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border p-5">
         <div>
-          <h2 id={`conn-${c.key}`}>{c.name}</h2>
+          <h2 id={`conn-${c.key}`} className="flex flex-wrap items-center gap-2">
+            {c.name}
+            {c.kind === 'agent' ? <AiAgentBadge /> : null}
+          </h2>
           <p className="font-mono text-xs text-muted-foreground">
             {c.key} &middot; version {c.latestVersion}
           </p>
+          {c.kind === 'agent' ? <p className="mt-1 text-sm text-muted-foreground">{AGENT_USES_AI}. The address is the tool server (MCP) the agent may call.</p> : null}
         </div>
         <div className="flex flex-wrap items-center gap-2" data-testid={`binding-status-${c.key}`}>
           {!c.binding.configured ? (
@@ -118,19 +124,19 @@ function ManageConnection({ connection }: { connection: ConnectionSummary }) {
   const binding = detail.data.binding
   return (
     <div className="grid gap-8 border-t border-border p-5 lg:grid-cols-2">
-      <BindingForm key={binding?.revision ?? 0} connectionKey={connection.key} binding={binding} />
-      <TestConnection connection={connection} />
+      <BindingForm key={binding?.revision ?? 0} connectionKey={connection.key} binding={binding} graph={connection.kind === 'microsoftGraph'} />
+      {connection.kind === 'agent' ? <AgentTest connection={connection} /> : <TestConnection connection={connection} />}
     </div>
   )
 }
 
-function BindingForm({ connectionKey, binding }: { connectionKey: string; binding: ConnectionBinding | null }) {
+function BindingForm({ connectionKey, binding, graph }: { connectionKey: string; binding: ConnectionBinding | null; graph: boolean }) {
   const { workspace } = useWorkspace()
   const ws = workspace.id
   const client = useQueryClient()
   const announce = useAnnounce()
-  const [baseUrl, setBaseUrl] = useState(binding?.baseUrl ?? '')
-  const [authType, setAuthType] = useState<keyof typeof AUTH_LABELS>(binding?.auth.type ?? 'none')
+  const [baseUrl, setBaseUrl] = useState(binding?.baseUrl ?? (graph ? 'https://graph.microsoft.com/v1.0' : ''))
+  const [authType, setAuthType] = useState<keyof typeof AUTH_LABELS>(binding?.auth.type ?? (graph ? 'bearerToken' : 'none'))
   const [headerName, setHeaderName] = useState(binding?.auth.headerName ?? '')
   const [secretRef, setSecretRef] = useState(binding?.auth.secretRef ?? '')
   const [enabled, setEnabled] = useState(binding?.enabled ?? true)
@@ -208,7 +214,7 @@ function BindingForm({ connectionKey, binding }: { connectionKey: string; bindin
       <div className="space-y-1.5">
         <Label htmlFor={`bind-auth-${connectionKey}`}>Sign-in method</Label>
         <Select id={`bind-auth-${connectionKey}`} value={authType} onChange={(e) => setAuthType(e.target.value as keyof typeof AUTH_LABELS)}>
-          {Object.entries(AUTH_LABELS).map(([value, label]) => (
+          {Object.entries(AUTH_LABELS).filter(([value]) => !graph || value === 'bearerToken').map(([value, label]) => (
             <option key={value} value={value}>
               {label}
             </option>
@@ -255,13 +261,16 @@ function TestConnection({ connection }: { connection: ConnectionSummary }) {
   const [pending, setPending] = useState(false)
   const [result, setResult] = useState<ConnectionTestResult | null>(null)
   const [error, setError] = useState<ProblemError | null>(null)
+  const graph = connection.kind === 'microsoftGraph'
+  const [documentRef, setDocumentRef] = useState({ driveId: '', itemId: '', versionId: '' })
 
   const run = async () => {
     setPending(true)
     setError(null)
     setResult(null)
     try {
-      setResult(await endpoints.testConnection(workspace.id, connection.key, connection.latestVersion, operation))
+      setResult(await endpoints.testConnection(workspace.id, connection.key, connection.latestVersion, operation,
+        graph ? Object.fromEntries(Object.entries(documentRef).map(([key, value]) => [key, value.trim()])) : undefined))
     } catch (cause) {
       setError(toProblem(cause))
     } finally {
@@ -287,8 +296,18 @@ function TestConnection({ connection }: { connection: ConnectionSummary }) {
               ))}
             </Select>
           </div>
+          {graph ? (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">Choose a specific document version using its drive, item and version identifiers. Text reads support archived UTF-8 text versions up to 64 KiB. Your platform team controls document access.</p>
+              {(['driveId', 'itemId', 'versionId'] as const).map((field) => (
+                <FormField key={field} label={{ driveId: 'Drive ID', itemId: 'Document item ID', versionId: 'Document version ID' }[field]} required id={`test-${field}-${connection.key}`}>
+                  {(ids) => <Input id={ids.input} value={documentRef[field]} onChange={(event) => setDocumentRef({ ...documentRef, [field]: event.target.value })} autoComplete="off" spellCheck={false} />}
+                </FormField>
+              ))}
+            </div>
+          ) : null}
           {!connection.binding.configured || !connection.binding.enabled ? <p className="text-sm text-muted-foreground">Save an enabled connection address before testing.</p> : null}
-          <Button variant="secondary" onClick={() => void run()} loading={pending} disabled={!connection.binding.configured || !connection.binding.enabled}>
+          <Button variant="secondary" onClick={() => void run()} loading={pending} disabled={!connection.binding.configured || !connection.binding.enabled || (graph && Object.values(documentRef).some((value) => !value.trim()))}>
             Test connection
           </Button>
         </>

@@ -89,7 +89,7 @@ Current code review and verification: [release audit](18-release-code-audit.md).
 | Capability | Spec | Status | Evidence / limits |
 |---|---|---|---|
 | Matched parallel branches, wait timers, approval time limits and pinned child workflows | [S12](build/S12-workflow-patterns.md) | Verified | 58 compiler pattern tests and 7 runtime tests; editor route, configuration and reference tests. Graphs remain acyclic; bounded rework is future work |
-| Bounded agent connections and approved read-only MCP tools | [S13](build/S13-agents-mcp.md) | Verified with scripted services | 24 executor tests, 12 MCP client tests and 2 full workflow tests; stub endpoint/auth/fault tests. Real provider accuracy and customer tools require acceptance |
+| Bounded agent connections and approved read-only MCP tools | [S13](build/S13-agents-mcp.md) | Verified with scripted services; one live run | 24 executor, 12 MCP client and 10 full-stack scenario tests (PostgreSQL, Flowable, WireMock OpenRouter and MCP), 2 AI-off tests, 87 stub tests (29 MCP); opt-in live DeepSeek tool-calling run cost USD 0.0006. Real provider accuracy and customer tools require acceptance |
 
 ## Later milestones
 

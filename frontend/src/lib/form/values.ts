@@ -4,7 +4,8 @@ import { buildFields, type FormSchema, type FormUi } from './schema'
 import { validateJsonInput, type IssueKeyword } from './validate'
 
 /** What the user typed. Money and numbers stay strings until submission. */
-export type RawValue = string | boolean
+export type ScalarRawValue = string | boolean
+export type RawValue = ScalarRawValue | ScalarRawValue[]
 export type RawValues = Record<string, RawValue>
 export type FieldErrors = Record<string, string>
 
@@ -13,7 +14,7 @@ export const INTEGER_PATTERN = /^-?\d+$/
 
 export function emptyValues(fields: FieldDef[]): RawValues {
   const values: RawValues = {}
-  for (const f of fields) values[f.key] = f.schema.type === 'boolean' ? false : ''
+  for (const f of fields) values[f.key] = f.schema.type === 'array' ? [] : f.schema.type === 'boolean' ? false : ''
   return values
 }
 
@@ -24,7 +25,8 @@ export function valuesFromJson(fields: FieldDef[], input: Record<string, unknown
   for (const f of fields) {
     const v = input[f.key]
     if (v === undefined || v === null) continue
-    if (f.schema.type === 'boolean') values[f.key] = v === true
+    if (f.schema.type === 'array') values[f.key] = Array.isArray(v) ? v.map(item => typeof item === 'boolean' ? item : String(item)) : []
+    else if (f.schema.type === 'boolean') values[f.key] = v === true
     else values[f.key] = typeof v === 'string' ? v : String(v)
   }
   return values
@@ -36,7 +38,9 @@ export function carryOverValues(previous: RawValues, fields: FieldDef[]): RawVal
   for (const f of fields) {
     const prev = previous[f.key]
     if (prev === undefined) continue
-    if (f.schema.type === 'boolean') {
+    if (f.schema.type === 'array') {
+      if (Array.isArray(prev)) next[f.key] = prev.slice(0, f.schema.maxItems ?? 25)
+    } else if (f.schema.type === 'boolean') {
       if (typeof prev === 'boolean') next[f.key] = prev
     } else if (typeof prev === 'string') {
       if (f.schema.enum && prev !== '' && !f.schema.enum.includes(prev)) continue
@@ -73,6 +77,22 @@ export function buildPayload(fields: FieldDef[], raw: RawValues): BuildResult {
   for (const f of fields) {
     const value = raw[f.key]
     switch (f.schema.type) {
+      case 'array': {
+        const entries = Array.isArray(value) ? value : []
+        if (entries.length === 0 && !f.required) break
+        const itemSchema = f.schema.items
+        if (!itemSchema) { parseErrors[f.key] = 'This collection has no item schema.'; break }
+        const itemFields = buildFields({ type: 'object', additionalProperties: false, required: ['item'], properties: { item: itemSchema } }, {})
+        const items: unknown[] = []
+        entries.forEach((entry, index) => {
+          const result = buildPayload(itemFields, { item: entry })
+          if (result.parseErrors.item) parseErrors[f.key] = `Item ${index + 1}: ${result.parseErrors.item}`
+          else if (!('item' in result.payload)) parseErrors[f.key] = `Item ${index + 1} is required.`
+          else items.push(result.payload.item)
+        })
+        payload[f.key] = items
+        break
+      }
       case 'boolean':
         payload[f.key] = value === true
         break
@@ -101,6 +121,8 @@ export function buildPayload(fields: FieldDef[], raw: RawValues): BuildResult {
 function messageFor(f: FieldDef, keyword: IssueKeyword, typedLength: number): string {
   const s = f.schema
   switch (keyword) {
+    case 'minItems': return `Add at least ${s.minItems} item${s.minItems === 1 ? '' : 's'}.`
+    case 'maxItems': return `Use at most ${s.maxItems} items.`
     case 'required':
       if (f.widget === 'select' || f.widget === 'radio') return 'Choose an option.'
       if (f.widget === 'checkbox') return 'Confirm this to continue.'
@@ -145,7 +167,9 @@ export function validateForm(schema: FormSchema, ui: FormUi, raw: RawValues): Va
     if (!field) continue
     if (issue.keyword === 'required' && key in parseErrors) continue
     const raw0 = raw[key]
-    errors[key] = messageFor(field, issue.keyword, typeof raw0 === 'string' ? [...raw0].length : 0)
+    const itemIndex = issue.pointer.split('/')[2]
+    const item = field.schema.type === 'array' && itemIndex !== undefined && field.schema.items ? { ...field, schema: field.schema.items, isMoney: false } : field
+    errors[key] = `${item !== field ? `Item ${Number(itemIndex) + 1}: ` : ''}${messageFor(item, issue.keyword, typeof raw0 === 'string' ? [...raw0].length : 0)}`
   }
   return { payload, errors, valid: Object.keys(errors).length === 0 }
 }

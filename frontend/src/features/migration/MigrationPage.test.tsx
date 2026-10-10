@@ -46,6 +46,24 @@ describe('migration workbench', () => {
     expect(body).toMatchObject({ groupMappings: { 'source-managers': 'managers' }, acknowledgeInfo: true })
     expect(await screen.findByText(/Imported from camunda7/)).toBeInTheDocument()
   })
+  it('collects explicit child mappings before converting imported calls', async () => {
+    signInAs('dana.designer')
+    const source = job(); source.report.requiredMappings = { groups: [], approvalTasks: [], serviceTasks: [], childWorkflows: ['childCall'] }
+    let body: Record<string, unknown> | null = null
+    server.use(http.get('*/api/v1/workspaces/:ws/migrations/:id', () => HttpResponse.json(source)),
+      http.post('*/api/v1/workspaces/:ws/migrations/:id/convert', async ({ request }) => {
+        body = await request.json() as Record<string, unknown>
+        return HttpResponse.json({ code: 'MIGRATION_BLOCKED', detail: 'Review mapping', status: 422 }, { status: 422 })
+      }))
+    const user = userEvent.setup()
+    renderApp(`/w/${WS}/migrations/${id}`)
+    const field = await screen.findByLabelText('Child workflow mappings (JSON)')
+    await user.clear(field)
+    await user.paste(JSON.stringify({ childCall: { workflowRef: 'purchase-approval', inputMapping: {}, resultMapping: {} } }))
+    await user.click(screen.getByRole('checkbox'))
+    await user.click(screen.getByRole('button', { name: 'Convert to draft' }))
+    await waitFor(() => expect(body).toMatchObject({ childWorkflowMappings: { childCall: { workflowRef: 'purchase-approval', inputMapping: {}, resultMapping: {} } } }))
+  })
   it('shows native Pega inventory as manual mapping work, without a conversion button', async () => {
     signInAs('dana.designer')
     const archive = job(); archive.report.sourceSystem = 'pega'

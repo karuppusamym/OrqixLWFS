@@ -191,6 +191,11 @@ public class ConnectionAdminService {
         policy.require(access, Permission.CONNECTION_MANAGE, "putConnectionBinding", true);
         ConnectionDtos.Auth auth = request.auth();
         List<ApiException.FieldError> errors = new ArrayList<>();
+        if (connections.definitions(workspaceId, key).stream().anyMatch(d -> d.definition().isMicrosoftGraph())
+                && !"bearerToken".equals(auth.type())) {
+            errors.add(new ApiException.FieldError("/auth/type", "enum",
+                    "A Microsoft Graph document connection requires bearerToken authentication"));
+        }
         switch (auth.type()) {
             case "none" -> {
                 if (auth.secretRef() != null || auth.headerName() != null) {
@@ -308,7 +313,7 @@ public class ConnectionAdminService {
         long started = System.nanoTime();
         ConnectionDtos.TestResult result = record.definition().isAgent()
                 ? testAgent(caller, workspaceId, record, operation, binding, request.input(), started)
-                : testHttp(record, operation, binding, started);
+                : testHttp(record, operation, binding, request.input(), started);
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("key", key);
         metadata.put("operation", request.operation());
@@ -319,7 +324,7 @@ public class ConnectionAdminService {
     }
 
     private ConnectionDtos.TestResult testHttp(ConnectionService.DefinitionRecord record,
-            ConnectionDefinition.Operation operation, ConnectionService.Binding binding, long started) {
+            ConnectionDefinition.Operation operation, ConnectionService.Binding binding, JsonNode input, long started) {
         ConnectionDtos.TestResult result;
         try {
             egress.check(binding.baseUrl());
@@ -333,7 +338,8 @@ public class ConnectionAdminService {
             } else {
                 HttpExecutor.CallResult call = executor.call(new HttpExecutor.Target(binding.baseUrl(),
                         binding.authType(), binding.authHeaderName(), binding.secretRef()), record.definition(), operation,
-                        null, Map.of(), "connection-test-" + UUID.randomUUID(), operation.maxTimeoutSeconds(), secret);
+                        record.definition().isMicrosoftGraph() ? input : null, Map.of(),
+                        "connection-test-" + UUID.randomUUID(), operation.maxTimeoutSeconds(), secret);
                 boolean ok = call.outcome() == HttpExecutor.Outcome.SUCCEEDED;
                 result = new ConnectionDtos.TestResult(ok ? "succeeded" : "failed", call.httpStatus(), call.durationMs(),
                         ok ? null : call.errorCode(), ok ? null : call.detail());

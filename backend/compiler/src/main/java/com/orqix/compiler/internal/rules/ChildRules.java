@@ -12,6 +12,8 @@ import com.orqix.compiler.internal.json.JsonPointers;
 import com.orqix.compiler.internal.json.StrictJson;
 import com.orqix.compiler.internal.model.ModelReader;
 import com.orqix.compiler.internal.model.Node;
+import com.orqix.compiler.internal.model.Enums.FieldKind;
+import com.orqix.compiler.internal.rules.FieldTypes.FieldType;
 import com.orqix.compiler.internal.model.WorkflowDefinition.FormSchema;
 import com.orqix.compiler.internal.rules.FieldTypes.Resolution;
 import com.orqix.compiler.internal.rules.FieldTypes.Resolved;
@@ -26,7 +28,7 @@ final class ChildRules {
     /** Longest chain of workflows starting workflows (a workflow, its child, its grandchild, ...): 3 levels below. */
     static final int MAX_CALL_DEPTH = 3;
     /** Output names that every child step provides itself. */
-    static final Set<String> RESERVED_OUTPUTS = Set.of("outcome", "outcomeKind", "reference");
+    static final Set<String> RESERVED_OUTPUTS = Set.of("outcome", "outcomeKind", "reference", "iterations", "limitReached", "allSucceeded");
 
     private ChildRules() {
     }
@@ -64,6 +66,10 @@ final class ChildRules {
             return;
         }
         String self = rc.definition().workflowKey();
+        if (n.repeat() != null && !child.outcomes().contains(n.repeat().untilOutcome())) {
+            rc.issues().blocker("WF_REPEAT_OUTCOME_UNKNOWN", n.configPath("repeat") + "/untilOutcome", n.id(), null,
+                    "Choose a completion outcome of " + q(child.name()) + ": " + String.join(", ", child.outcomes()) + ".");
+        }
         if (n.workflowRef().equals(self)) {
             rc.issues().blocker("WF_CHILD_CYCLE", refPath, n.id(), null, q(n) + " starts this same workflow. A"
                     + " workflow cannot start itself.");
@@ -81,6 +87,28 @@ final class ChildRules {
         }
         FormSchema in = ModelReader.readFormSchema("/inputSchema", StrictJson.parse(child.inputSchemaJson()));
         FormSchema out = ModelReader.readFormSchema("/outputSchema", StrictJson.parse(child.outputSchemaJson()));
+        if (n.forEach() != null) {
+            Node.ForEach each = n.forEach();
+            String key = each.itemsRef().substring("/input/".length());
+            FormSchema.Field source = rc.definition().inputSchema().properties().get(key);
+            FormSchema.Field target = in.properties().get(each.itemInput());
+            if (source == null || source.type() != FieldKind.ARRAY || !rc.definition().inputSchema().required().contains(key)) {
+                rc.issues().blocker("WF_FOREACH_COLLECTION", n.configPath("forEach") + "/itemsRef", n.id(), null,
+                        "Choose a required request collection with bounded scalar items.");
+            } else if (source.maxItems() > each.maxItems()) {
+                rc.issues().blocker("WF_FOREACH_BOUND", n.configPath("forEach") + "/maxItems", n.id(), null,
+                        "The iteration limit must cover the collection's maximum item count (" + source.maxItems() + ").");
+            } else if (target != null) {
+                FormSchema.Field item = source.items();
+                String problem = FieldTypes.incompatibility(new FieldType(item.type(), item.enumValues() == null ? null : new TreeSet<>(item.enumValues()), false, item.minimum(), item.maximum()),
+                        target.type(), target.enumValues() == null ? null : new TreeSet<>(target.enumValues()));
+                if (problem != null) rc.issues().blocker("WF_FOREACH_ITEM_TYPE", n.configPath("forEach") + "/itemInput", n.id(), null, problem);
+            }
+            if (target == null || n.inputMapping().containsKey(each.itemInput())) {
+                rc.issues().blocker("WF_FOREACH_INPUT", n.configPath("forEach") + "/itemInput", n.id(), null,
+                        "Choose an existing child request field which is not also supplied by inputMapping.");
+            }
+        }
         String name = q(child.name());
         for (Map.Entry<String, String> e : n.inputMapping().entrySet()) {
             String path = JsonPointers.append(n.configPath("inputMapping"), e.getKey());
@@ -102,7 +130,8 @@ final class ChildRules {
         }
         List<String> required = in.required();
         for (String key : required) {
-            if (!n.inputMapping().containsKey(key) && in.properties().containsKey(key)) {
+            if (!n.inputMapping().containsKey(key) && in.properties().containsKey(key)
+                    && (n.forEach() == null || !key.equals(n.forEach().itemInput()))) {
                 rc.issues().blocker("WF_CHILD_MAPPING_MISSING_REQUIRED", n.configPath("inputMapping"), n.id(), null,
                         name + " requires " + q(in.properties().get(key).title()) + ", but " + q(n)
                                 + " does not provide it.");

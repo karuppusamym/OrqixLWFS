@@ -31,6 +31,7 @@ export const routes: RouteObject[] = [
           { path: 'tasks/:taskId', element: <TasksPage /> },
           { path: 'runs', element: <RunsPage /> },
           { path: 'runs/:runId', element: <RunDetailPage /> },
+          { path: 'assistant', lazy: async () => ({ Component: (await import('@/features/conversation/ConversationPage')).ConversationPage }) },
           {
             path: 'migrations',
             lazy: async () => ({ Component: (await import('@/features/migration/MigrationPage')).MigrationPage }),

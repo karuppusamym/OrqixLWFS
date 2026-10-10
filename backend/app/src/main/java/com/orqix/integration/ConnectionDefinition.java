@@ -18,6 +18,11 @@ public record ConnectionDefinition(String key, int version, String name, JsonNod
 
     public static final String KIND_HTTP = "http";
     public static final String KIND_AGENT = "agent";
+    public static final String KIND_MICROSOFT_GRAPH = "microsoftGraph";
+
+    public boolean isMicrosoftGraph() {
+        return KIND_MICROSOFT_GRAPH.equals(kind);
+    }
 
     /** True for connections whose operations are AI tasks over an MCP server (S13). */
     public boolean isAgent() {

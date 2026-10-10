@@ -87,13 +87,15 @@ public class HttpExecutor {
 
     private final Json json;
     private final SecretStore secrets;
+    private final MicrosoftGraphDocuments documents;
     private final Map<Integer, HttpClient> clients = new ConcurrentHashMap<>();
     private final Map<String, Schema> responseSchemas = new ConcurrentHashMap<>();
     private final SchemaRegistry schemaRegistry = SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12);
 
-    public HttpExecutor(Json json, SecretStore secrets) {
+    public HttpExecutor(Json json, SecretStore secrets, MicrosoftGraphDocuments documents) {
         this.json = json;
         this.secrets = secrets;
+        this.documents = documents;
     }
 
     /**
@@ -106,6 +108,16 @@ public class HttpExecutor {
     public CallResult call(Target target, ConnectionDefinition definition, Operation operation, JsonNode body,
             Map<String, String> resultMapping, String effectKey, int timeoutSeconds, String secretValue) {
         long started = System.nanoTime();
+        if (definition.isMicrosoftGraph()) {
+            try {
+                ObjectNode response = documents.read(target, operation, body, secretValue, timeoutSeconds);
+                return mapResponse(started, definition, operation, resultMapping, 200,
+                        json.write(response).getBytes(StandardCharsets.UTF_8));
+            } catch (MicrosoftGraphDocuments.Failure e) {
+                return finish(started, e.observation(), operation.effectClass(), e.status(), e.code(),
+                        "Microsoft document read failed (" + e.code() + ")", null, null);
+            }
+        }
         HttpRequest request;
         try {
             request = buildRequest(target, operation, body, effectKey, timeoutSeconds, secretValue);
@@ -154,7 +166,11 @@ public class HttpExecutor {
             return finish(started, Observation.INVALID_RESPONSE, operation.effectClass(), status, "UNEXPECTED_STATUS",
                     "HTTP " + status + " is not a declared success status", null, null);
         }
-        byte[] bytes = response.body();
+        return mapResponse(started, definition, operation, resultMapping, status, response.body());
+    }
+
+    private CallResult mapResponse(long started, ConnectionDefinition definition, Operation operation,
+            Map<String, String> resultMapping, int status, byte[] bytes) {
         if (bytes == null) {
             return finish(started, Observation.INVALID_RESPONSE, operation.effectClass(), status, "RESPONSE_TOO_LARGE",
                     "Response body exceeds 1 MiB", null, null);
@@ -322,6 +338,10 @@ public class HttpExecutor {
         private final List<ByteBuffer> buffers = new ArrayList<>();
         private Flow.Subscription subscription;
         private long size;
+        private final int limit;
+
+        LimitedSubscriber() { this(MAX_RESPONSE_BYTES); }
+        LimitedSubscriber(int limit) { this.limit = limit; }
 
         @Override
         public CompletionStage<byte[]> getBody() {
@@ -336,11 +356,17 @@ public class HttpExecutor {
 
         @Override
         public void onNext(List<ByteBuffer> items) {
+            if (result.isDone()) {
+                return;
+            }
             for (ByteBuffer item : items) {
                 size += item.remaining();
-                if (size > MAX_RESPONSE_BYTES) {
-                    subscription.cancel();
+                if (size > limit) {
+                    // Publish the classified failure before cancelling: JDK clients can synchronously deliver a
+                    // generic cancellation error through onError, which must not replace the body-limit reason.
                     result.completeExceptionally(new ResponseTooLargeException());
+                    buffers.clear();
+                    subscription.cancel();
                     return;
                 }
                 buffers.add(item);
@@ -354,6 +380,9 @@ public class HttpExecutor {
 
         @Override
         public void onComplete() {
+            if (result.isDone()) {
+                return;
+            }
             byte[] bytes = new byte[(int) size];
             int offset = 0;
             for (ByteBuffer buffer : buffers) {

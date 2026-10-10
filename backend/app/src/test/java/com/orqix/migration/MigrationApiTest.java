@@ -67,6 +67,33 @@ class MigrationApiTest extends RuntimeTestBase {
             awaitLifecycle(PURCHASING,rejected,"completed"); assertThat(run(PURCHASING,rejected).path("effects").isEmpty()).isTrue();
         }
     }
+    @Test void importedParallelTimersAndPinnedChildExecuteToCompletion() throws Exception {
+        String childSource = "<definitions xmlns=\"http://www.omg.org/spec/BPMN/20100524/MODEL\" targetNamespace=\"urn:test\"><process id=\"simpleChild\" isExecutable=\"true\"><startEvent id=\"start\"/><endEvent id=\"end\"/><sequenceFlow id=\"route\" sourceRef=\"start\" targetRef=\"end\"/></process></definitions>";
+        var childRequest = json.object();
+        String childKey = "migration-child-" + UUID.randomUUID().toString().substring(0,8);
+        childRequest.put("workflowKey", childKey); childRequest.put("name", "Imported child"); childRequest.put("acknowledgeInfo", true);
+        var child = convert(upload(childSource, "bpmn"), childRequest);
+        assertThat(child.status()).as(child.toString()).isEqualTo(201);
+        var publishedChild = api("paul.publisher").post(Map.of("draftRevision",1,"acknowledgeWarnings",true), UUID.randomUUID().toString(),
+            "/workspaces/{ws}/workflows/{id}/publish", PURCHASING, child.body().path("workflow").path("id").asString());
+        assertThat(publishedChild.status()).as(publishedChild.toString()).isEqualTo(201);
+        var parentRequest = json.object(); parentRequest.put("workflowKey", "migration-parent-" + UUID.randomUUID().toString().substring(0,8));
+        parentRequest.put("name", "Imported parallel timer child"); parentRequest.put("acknowledgeInfo", true);
+        parentRequest.set("childWorkflowMappings", json.toTree(Map.of("child", Map.of("workflowRef", childKey, "inputMapping", Map.of(), "resultMapping", Map.of()))));
+        var parent = convert(upload(Files.readString(Path.of("../../examples/migration/parallel-timer-child.bpmn")), "bpmn"), parentRequest);
+        assertThat(parent.status()).as(parent.toString()).isEqualTo(201);
+        UUID workflow = UUID.fromString(parent.body().path("workflow").path("id").asString());
+        var published = api("paul.publisher").post(Map.of("draftRevision",1,"acknowledgeWarnings",true), UUID.randomUUID().toString(),
+            "/workspaces/{ws}/workflows/{id}/publish", PURCHASING, workflow);
+        assertThat(published.status()).as(published.toString()).isEqualTo(201);
+        var started = api("rhea.requester").post(Map.of("workflowId",workflow,"input",Map.of()), UUID.randomUUID().toString(), "/workspaces/{ws}/runs", PURCHASING);
+        assertThat(started.status()).as(started.toString()).isEqualTo(201);
+        UUID runId = UUID.fromString(started.body().path("id").asString());
+        awaitLifecycle(PURCHASING, runId, "completed", "needsAttention");
+        assertThat(lifecycle(PURCHASING, runId)).isEqualTo("completed");
+        assertThat(jdbc.sql("SELECT count(*) FROM workflow_run WHERE workspace_id=:ws AND parent_run_id=:parent AND lifecycle='completed'")
+            .param("ws",PURCHASING).param("parent",runId).query(Integer.class).single()).isEqualTo(1);
+    }
     @Test void permissionsXxeUnmappedTasksAndCompilerFailureNeverCreateDrafts() throws Exception {
         assertThat(api("rhea.requester").post(Map.of("fileName","x","content",fixture("7")),"/workspaces/{ws}/migrations",PURCHASING).status()).isEqualTo(403);
         assertThat(api("dana.designer").post(Map.of("fileName","x","content","<!DOCTYPE x [<!ENTITY e SYSTEM 'file:///etc/passwd'>]><x>&e;</x>"),"/workspaces/{ws}/migrations",PURCHASING).status()).isEqualTo(422);
@@ -138,3 +165,4 @@ class MigrationApiTest extends RuntimeTestBase {
         assertThat(map.path("mergeToProcure").asString()).isEqualTo("procure");
     }
 }
+

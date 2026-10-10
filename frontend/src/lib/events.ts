@@ -82,6 +82,7 @@ export function eventTone(event: Pick<RunEvent, 'type' | 'data'>): EventTone {
     case 'EFFECT_FAILED':
     case 'EFFECT_UNKNOWN':
     case 'RUN_NEEDS_ATTENTION':
+    case 'CHILD_NEEDS_ATTENTION':
       return 'danger'
     default:
       return 'neutral'
@@ -150,10 +151,18 @@ export function describeEvent(event: RunEvent, ctx: EventContext): string {
       return `${label}: waiting for the timer`
     case 'WAIT_ENDED':
       return `${label}: the wait finished`
-    case 'CHILD_STARTED':
-      return `${label}: a child request was started`
-    case 'CHILD_ENDED':
-      return `${label}: child request finished${str(event.data.outcome) ? ` (${str(event.data.outcome)})` : ''}`
+    case 'CHILD_STARTED': {
+      const name = str(event.data.workflowName)
+      const reference = str(event.data.childReference)
+      return name && reference ? `Started ${name} ${reference}` : `${label}: a child request was started`
+    }
+    case 'CHILD_ENDED': {
+      const name = str(event.data.workflowName)
+      const outcome = str(event.data.outcome)
+      return name ? `${name} ${str(event.data.childReference) ?? ''} finished${outcome ? `: ${outcome}` : ''}`.replace('  ', ' ') : `${label}: child request finished${outcome ? ` (${outcome})` : ''}`
+    }
+    case 'CHILD_NEEDS_ATTENTION':
+      return `${str(event.data.childReference) ?? 'A child request'} needs attention`
     case 'TASK_CLAIMED':
       return `${actorName(event, ctx)} picked up ${label}`
     case 'TASK_RELEASED':
@@ -169,6 +178,9 @@ export function describeEvent(event: RunEvent, ctx: EventContext): string {
     case 'DECISION_EVALUATED':
       return `${label}: ${outputsForTimeline(event.data.outputs)}`
     case 'EFFECT_SUCCEEDED': {
+      // An AI agent step carries a business sentence built from its connection definition (S13).
+      const summary = str(event.data.summary)
+      if (summary) return summary
       const ref = str(event.data.remoteReference)
       return `${label} completed${ref ? ` (reference ${ref})` : ''}`
     }

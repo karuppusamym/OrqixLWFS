@@ -56,6 +56,7 @@ public class AuditWriter {
     }
 
     private static final Map<String, Set<String>> METADATA_WHITELIST = Map.ofEntries(
+            Map.entry("comment.created", Set.of("runId")),
             Map.entry("auth.login", Set.of("method")),
             Map.entry("auth.logout", Set.of("method")),
             Map.entry("auth.denied", Set.of("permission", "operationId")),
@@ -89,6 +90,7 @@ public class AuditWriter {
             Map.entry("migration.uploaded", Set.of("migrationId", "sourceSystem", "sourceSha256", "adapterVersion",
                     "elementCount", "blockerCount", "actionCount")),
             Map.entry("migration.converted", Set.of("migrationId", "workflowId", "workflowKey")),
+            Map.entry("conversation.message", Set.of("stage", "version")),
             Map.entry("agent.call", Set.of("key", "operation", "profile", "model", "outcome", "toolCalls", "inputTokens",
                     "outputTokens", "costUsd", "durationMs", "effectId")));
 

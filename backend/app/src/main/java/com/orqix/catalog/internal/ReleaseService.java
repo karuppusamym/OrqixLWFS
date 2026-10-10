@@ -24,6 +24,7 @@ import com.orqix.catalog.EngineDeployer;
 import com.orqix.catalog.api.CatalogDtos;
 import com.orqix.compiler.CompilationException;
 import com.orqix.compiler.CompileContext;
+import com.orqix.compiler.ValidationIssue;
 import com.orqix.compiler.CompiledWorkflow;
 import com.orqix.compiler.ValidationReport;
 import com.orqix.compiler.WorkflowCompiler;
@@ -64,6 +65,7 @@ public class ReleaseService {
     private final SubjectService subjects;
     private final WorkflowCompiler compiler;
     private final CompileContextFactory contexts;
+    private final AgentAvailabilityCheck agentCheck;
     private final EngineDeployer deployer;
     private final IdempotencyService idempotency;
     private final ConnectionService connections;
@@ -75,7 +77,8 @@ public class ReleaseService {
     public ReleaseService(CatalogStore store, WorkflowService workflows, PolicyService policy, SubjectService subjects,
             WorkflowCompiler compiler, CompileContextFactory contexts, EngineDeployer deployer,
             IdempotencyService idempotency, ConnectionService connections, AuditWriter audit, CursorCodec cursors,
-            Json json, Clock clock) {
+            Json json, Clock clock, AgentAvailabilityCheck agentCheck) {
+        this.agentCheck = agentCheck;
         this.store = store;
         this.workflows = workflows;
         this.policy = policy;
@@ -122,9 +125,12 @@ public class ReleaseService {
                     .with("issues", WorkflowService.issues(report.issues()));
         }
         boolean acknowledged = Boolean.TRUE.equals(request.acknowledgeWarnings());
-        if (!report.warnings().isEmpty() && !acknowledged) {
+        List<ValidationIssue> agentWarnings = agentCheck.warnings(draft.definitionJson(), context);
+        List<ValidationIssue> allWarnings = new ArrayList<>(report.warnings());
+        allWarnings.addAll(agentWarnings);
+        if (!allWarnings.isEmpty() && !acknowledged) {
             throw new ApiException(ProblemCode.WARNINGS_NOT_ACKNOWLEDGED, "Review and acknowledge the warnings.")
-                    .with("issues", WorkflowService.issues(report.warnings()));
+                    .with("issues", WorkflowService.issues(allWarnings));
         }
         CompiledWorkflow compiled;
         try {
@@ -147,7 +153,8 @@ public class ReleaseService {
         store.insertRelease(new CatalogStore.ReleaseRow(releaseId, workspaceId, workflowId, number, draft.revision(),
                 draft.definitionJson(), "0.1", compiled.sourceHash(), compiled.semanticHash(), compiled.compilerVersion(),
                 json.write(manifest), compiled.sourceMapJson(),
-                json.write(WorkflowService.issues(compiled.warnings())), deployed.deploymentId(),
+                json.write(WorkflowService.issues(withAgentWarnings(compiled.warnings(), agentWarnings))),
+                deployed.deploymentId(),
                 deployed.processDefinitionId(), request.releaseNote(), caller.subjectId(), now));
         resources.forEach((name, bytes) -> store.insertArtifact(releaseId, new CatalogStore.Artifact(name,
                 "application/xml", bytes, Json.sha256Hex(bytes))));
@@ -169,6 +176,12 @@ public class ReleaseService {
         idempotency.complete(claim, "release", releaseId.toString(), 201);
         CatalogStore.ReleaseRow release = store.release(workspaceId, workflowId, releaseId).orElseThrow();
         return new Published(releaseView(release, store.workflow(workspaceId, workflowId).orElseThrow(), true), false);
+    }
+
+    private static List<ValidationIssue> withAgentWarnings(List<ValidationIssue> warnings, List<ValidationIssue> extra) {
+        List<ValidationIssue> all = new ArrayList<>(warnings);
+        all.addAll(extra);
+        return all;
     }
 
     private ObjectNode manifest(UUID releaseId, String workflowKey, CompiledWorkflow compiled, String processDefinitionId) {

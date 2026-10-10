@@ -19,19 +19,19 @@ import java.util.regex.Pattern;
 import com.orqix.migration.camunda.Analysis.Need;
 
 /**
- * Adapter {@code camunda-bpmn-0.1}: reads a Camunda 7 / Camunda 8 / plain BPMN 2.0 file and gives every source element
+ * Adapter {@code camunda-bpmn-0.2}: reads a Camunda 7 / Camunda 8 / plain BPMN 2.0 file and gives every source element
  * and every nested construct a disposition (S11 section 2, doc 05). Nothing is silently omitted: unknown elements are
  * blockers, dropped settings are info items that need acknowledgement. Pure Java; no Spring, no database.
  */
 public final class Analyzer {
 
-    public static final String ADAPTER_VERSION = "camunda-bpmn-0.1";
+    public static final String ADAPTER_VERSION = "camunda-bpmn-0.2";
 
     private static final String BPMN = Namespaces.BPMN;
     private static final String C7 = Namespaces.CAMUNDA7;
     private static final String ZB = Namespaces.ZEEBE;
 
-    private static final Set<String> GATEWAY_BLOCKED = Set.of("parallelGateway", "inclusiveGateway", "eventBasedGateway",
+    private static final Set<String> GATEWAY_BLOCKED = Set.of("inclusiveGateway", "eventBasedGateway",
             "complexGateway");
     private static final Set<String> TASK_BLOCKED = Set.of("scriptTask", "sendTask", "receiveTask", "manualTask", "task");
     private static final Set<String> EVENT_BLOCKED = Set.of("intermediateCatchEvent", "intermediateThrowEvent", "boundaryEvent");
@@ -334,6 +334,25 @@ public final class Analyzer {
                         "Business rule tasks call a DMN decision. DMN files are not imported in this version.",
                         "Rebuild the decision as a decision table in the studio.", Need.NONE, null);
             }
+            case "parallelGateway" -> scanNodeChildren(node);
+            case "intermediateCatchEvent" -> {
+                scanNodeChildren(node);
+                XElement timer = e.child(BPMN, "timerEventDefinition");
+                XElement duration = timer == null ? null : timer.child(BPMN, "timeDuration");
+                String value = duration == null ? "" : duration.text().trim();
+                boolean valid = timer != null && e.children().stream().filter(c -> c.name().endsWith("EventDefinition")).count() == 1 && timer.children().size() == 1 && value.matches("P(?:[0-9]+D)?(?:T(?:[0-9]+H)?(?:[0-9]+M)?)?");
+                try { valid = valid && java.time.Duration.parse(value).compareTo(java.time.Duration.ofMinutes(1)) >= 0 && java.time.Duration.parse(value).compareTo(java.time.Duration.ofDays(90)) <= 0; }
+                catch (RuntimeException ignored) { valid = false; }
+                if (valid && node.in.size() == 1 && node.out.size() == 1) {
+                    analysis.waits.put(node.id, value);
+                    add(e, type, Report.SUPPORTED, "DURATION_TIMER_MAPPED", "A constant duration timer becomes a durable wait.", null, Need.NONE, null);
+                } else blockedEvent(node);
+            }
+            case "callActivity" -> {
+                scanNodeChildren(node);
+                analysis.children.add(node.id);
+                add(e, type, Report.ACTION, "CHILD_WORKFLOW_MAPPING_REQUIRED", "Called process '" + e.attr("calledElement") + "' requires a reviewed workspace workflow and explicit input/result mappings.", "Import and publish the child first; map its key and fields. Its release is pinned when the parent is published.", Need.CHILD, node.id);
+            }
             case "exclusiveGateway" -> scanNodeChildren(node); // disposition after the graph analysis
             default -> {
                 if (TASK_BLOCKED.contains(type)) {
@@ -357,11 +376,6 @@ public final class Analyzer {
                             "Sub-processes are not supported in v0.1.", "Flatten the sub-process into the main process.",
                             Need.NONE, null);
                     descendantsInsideBlocked(e, e);
-                } else if ("callActivity".equals(type)) {
-                    scanNodeChildren(node);
-                    add(e, type, Report.BLOCKER, "CALL_ACTIVITY_NOT_SUPPORTED",
-                            "Call activities (reusable child processes) are not supported in v0.1.",
-                            "Inline the called process or import it separately.", Need.NONE, null);
                 } else {
                     unknown(e);
                 }
@@ -518,12 +532,43 @@ public final class Analyzer {
                 analyseGateway(node);
             }
         }
+        analyseParallel();
         for (Analysis.UserTask task : analysis.userTasks.values()) {
             userTaskItem(task);
         }
         for (Analysis.Flow flow : analysis.flows.values()) {
             flowItem(flow);
         }
+    }
+
+    /** Only paired, acyclic split/join regions are supported; the compiler verifies branch boundaries. */
+    private void analyseParallel() {
+        Set<String> paired = new HashSet<>();
+        for (Analysis.Node split : analysis.nodes.values()) {
+            if (!"parallelGateway".equals(split.type) || split.in.size() != 1 || split.out.size() < 2) continue;
+            Set<String> candidates = null;
+            for (Analysis.Flow branch : split.out) {
+                Set<String> reached = new HashSet<>();
+                Deque<Analysis.Node> pending = new java.util.ArrayDeque<>(); pending.add(branch.target);
+                while (!pending.isEmpty()) {
+                    Analysis.Node current = pending.remove();
+                    if (!reached.add(current.id)) continue;
+                    current.out.forEach(f -> pending.add(f.target));
+                }
+                if (candidates == null) candidates = reached; else candidates.retainAll(reached);
+            }
+            List<Analysis.Node> joins = candidates == null ? List.of() : candidates.stream().map(analysis.nodes::get)
+                .filter(n -> "parallelGateway".equals(n.type) && n.in.size() == split.out.size() && n.out.size() == 1)
+                .toList();
+            if (joins.size() == 1 && paired.add(joins.get(0).id)) {
+                analysis.parallelJoins.put(split.id, joins.get(0).id);
+                add(split.element, split.type, Report.SUPPORTED, "PARALLEL_SPLIT_MAPPED", "All branches execute; continuation waits at the paired join.", null, Need.NONE, null);
+                add(joins.get(0).element, joins.get(0).type, Report.SUPPORTED, "PARALLEL_JOIN_MAPPED", "Waits for every branch of the paired split.", null, Need.NONE, null);
+            }
+        }
+        for (Analysis.Node n : analysis.nodes.values()) if ("parallelGateway".equals(n.type)
+                && !analysis.parallelJoins.containsKey(n.id) && !paired.contains(n.id))
+            add(n.element, n.type, Report.BLOCKER, "GATEWAY_NOT_SUPPORTED_IN_V0", "The parallel gateway is not an unambiguous paired split/join.", "Use separate split and join gateways with matching branch counts.", Need.NONE, null);
     }
 
     private void analyseUserTask(Analysis.UserTask task) {
@@ -835,7 +880,7 @@ public final class Analyzer {
         for (Analysis.Node node : analysis.nodes.values()) {
             boolean becomesNode = switch (node.type) {
                 case "startEvent", "endEvent" -> eventDefinition(node.element) == null;
-                case "userTask", "serviceTask" -> true;
+                case "userTask", "serviceTask", "parallelGateway", "intermediateCatchEvent", "callActivity" -> true;
                 case "exclusiveGateway" -> true;
                 default -> false;
             };
@@ -920,9 +965,8 @@ public final class Analyzer {
                         }
                     }
                     case "in", "out" -> {
-                        if (!"callActivity".equals(owner.name())) {
-                            unknown(c);
-                        }
+                        if (!"callActivity".equals(owner.name())) unknown(c);
+                        else ioMapping(c);
                     }
                     default -> unknown(c);
                 }
@@ -939,7 +983,8 @@ public final class Analyzer {
                             unknown(c);
                         }
                     }
-                    case "userTask", "calledElement", "calledDecision", "script", "subscription", "loopCharacteristics" -> {
+                    case "calledElement" -> setting(c);
+                    case "userTask", "calledDecision", "script", "subscription", "loopCharacteristics" -> {
                         // marker or detail of an element that is reported on its own
                     }
                     case "taskListeners", "executionListeners" -> listener(c);

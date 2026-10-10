@@ -1,5 +1,5 @@
 # Full product backlog and acceptance contracts
-Revision 0.3. All epics below are Planned unless marked Needs input. Implementation has not started.
+Revision 0.4, 9 October 2026. The epics below describe the full product scope. Core and selected later slices are implemented; authoritative completion evidence is in [feature status](feature-status.md). Current parallel work and remaining acceptance requirements are tracked in [the product build tracker](19-product-build-tracker.md).
 R0/R1/R2/R3 are defined in the [master plan](09-master-plan.md). Effort for R1–R3 must be estimated after the R0 integration spike and relevant discovery; no unsupported completion date is implied.
 
 ## E01 — Workspace and asset organization

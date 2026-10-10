@@ -49,6 +49,7 @@ public class WorkflowService {
     private final WorkflowCompiler compiler;
     private final DecisionEvaluator evaluator;
     private final CompileContextFactory contexts;
+    private final AgentAvailabilityCheck agentCheck;
     private final AuditWriter audit;
     private final CursorCodec cursors;
     private final OrqixProperties properties;
@@ -56,7 +57,8 @@ public class WorkflowService {
 
     public WorkflowService(CatalogStore store, PolicyService policy, SubjectService subjects, TemplateCatalog templates,
             WorkflowCompiler compiler, DecisionEvaluator evaluator, CompileContextFactory contexts, AuditWriter audit,
-            CursorCodec cursors, OrqixProperties properties, Json json) {
+            CursorCodec cursors, OrqixProperties properties, Json json, AgentAvailabilityCheck agentCheck) {
+        this.agentCheck = agentCheck;
         this.store = store;
         this.policy = policy;
         this.subjects = subjects;
@@ -209,8 +211,10 @@ public class WorkflowService {
         CatalogStore.DraftRow draft = store.draft(workspaceId, workflowId, revision).orElseThrow(ApiException::notFound);
         CompileContext context = contexts.create(visible.access().workspace(), draft.definitionJson());
         ValidationReport report = compiler.validate(draft.definitionJson(), context);
+        List<ValidationIssue> all = new java.util.ArrayList<>(report.issues());
+        all.addAll(agentCheck.warnings(draft.definitionJson(), context));
         return new CatalogDtos.ValidationReport(revision, report.compilerVersion(), report.publishable(),
-                report.semanticHash(), issues(report.issues()));
+                report.semanticHash(), issues(all));
     }
 
     @Transactional(readOnly = true)

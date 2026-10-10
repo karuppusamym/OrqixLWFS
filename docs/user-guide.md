@@ -112,3 +112,9 @@ Every operator action asks for a reason and is recorded. Operators cannot change
 | Task | A step waiting for a person |
 | Needs attention | Stopped until an operator acts |
 | Fulfilled / Rejected | The business outcome of a completed request |
+
+## Request collections and comments
+
+Collection questions let requesters add or remove bounded scalar items. The form validates each item's type and constraints plus the configured count; the studio supports collection questions with text, number, whole-number or Yes/No items (1 to 25). Published child for-each steps process these values sequentially according to their pinned contract.
+
+People allowed to see request data can read permanent comments on the request page. The initiator, task participants and operators can add comments. Comments are plain text, limited to 2,000 characters, retain their author/time, and cannot be edited or deleted through the application. Summary-only visibility does not expose comments. A failed save retains your text and retries use the same idempotency key.

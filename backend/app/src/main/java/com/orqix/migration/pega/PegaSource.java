@@ -9,7 +9,7 @@ import tools.jackson.databind.JsonNode;
 
 /** Native Pega archives are inventoried, never interpreted as executable BPMN or run as source code. */
 public final class PegaSource {
-    public static final String ADAPTER = "pega-review-0.1";
+    public static final String ADAPTER = "pega-review-0.2";
     public static Report.CompatibilityReport archive(byte[] bytes) {
         List<Report.Issue> issues = new ArrayList<>(); Set<String> names = new HashSet<>();
         long expanded = 0;
@@ -20,18 +20,58 @@ public final class PegaSource {
                 if (name.length() > 500 || name.startsWith("/") || name.contains(":") || Arrays.asList(name.split("/")).contains("..")
                         || !names.add(name)) throw SourceException.invalid("Unsafe or duplicate archive path.");
                 if (names.size() > 200) throw new SourceException("Archive exceeds 200 entries.", true);
+                var content = new ByteArrayOutputStream();
                 long size = 0; byte[] buffer = new byte[8192]; int read;
                 while ((read = zip.read(buffer)) != -1) {
                     size += read; expanded += read;
+                    content.write(buffer, 0, read);
                     if (size > 1_048_576 || expanded > 4_194_304) throw new SourceException("Archive exceeds extraction limits.", true);
                 }
-                if (!entry.isDirectory()) issues.add(new Report.Issue(name, name, "archiveEntry", Report.BLOCKER,
-                        "PEGA_RULE_REQUIRES_MAPPING", "Native Pega rules/data require explicit target mapping and behavior verification.",
+                if (!entry.isDirectory()) {
+                    String inventory = inspect(name, content.toByteArray());
+                    issues.add(new Report.Issue(name, name, "archiveEntry", Report.BLOCKER,
+                        "PEGA_RULE_REQUIRES_MAPPING", "Native Pega rules/data require explicit target mapping and behavior verification. " + inventory,
                         "Prepare an Orqix Pega mapping package for this archive; preserve each file disposition.", null, Report.OPEN, name));
+                }
             }
         } catch (IOException e) { throw SourceException.invalid("The archive is corrupt or unsupported."); }
         if (issues.isEmpty()) throw SourceException.invalid("The archive contains no files.");
         return report(null, Json.sha256Hex(bytes), issues, false);
+    }
+
+    /** Descriptive evidence only: field names do not establish effective Pega rule resolution. */
+    private static String inspect(String name, byte[] bytes) {
+        if (!name.toLowerCase(Locale.ROOT).endsWith(".xml")) return "Binary/non-XML entry; inspect with the source owner.";
+        try {
+            XElement root = SafeXml.parse(new String(bytes, java.nio.charset.StandardCharsets.UTF_8), Limits.DEFAULT);
+            List<XElement> elements = new ArrayList<>(); Deque<XElement> pending = new ArrayDeque<>(); pending.add(root);
+            while (!pending.isEmpty()) { XElement e = pending.remove(); elements.add(e); pending.addAll(e.children()); }
+            Map<String, String> metadata = new LinkedHashMap<>(); List<Map<String,String>> rules = new ArrayList<>(); Set<String> dependencies = new LinkedHashSet<>();
+            Set<String> identifiers = Set.of("pxObjClass", "pyClassName", "pyRuleName", "pyRuleSet", "pyRuleSetVersion", "pyRuleAvailable", "pyCircumstanceProp", "pzInsKey");
+            Set<String> references = Set.of("pyFlowName", "pySubFlowName", "pyActivityName", "pyWhenName", "pyDecisionName", "pyConnectorName", "pyDataPageName", "pySLAName");
+            for (XElement e : elements) {
+                String key = e.name(); String value = e.text();
+                if (value.isBlank() || value.length() > 300) continue;
+                if (identifiers.contains(key)) metadata.putIfAbsent(key, value);
+                if (references.contains(key) && dependencies.size() < 30) dependencies.add(key + "=" + value);
+            }
+            for (XElement container : elements) {
+                Map<String,String> rule = new LinkedHashMap<>();
+                for (XElement field : container.children()) if (identifiers.contains(field.name()) && !field.text().isBlank() && field.text().length() <= 300)
+                    rule.put(field.name(), field.text());
+                if ((rule.containsKey("pxObjClass") || rule.containsKey("pzInsKey")) && rules.size() < 50) rules.add(rule);
+            }
+            if (metadata.isEmpty()) return "XML inspected; no recognized rule identity fields. Manual disposition remains required.";
+            String kind = metadata.getOrDefault("pxObjClass", metadata.getOrDefault("pyClassName", "unknown"));
+            String suggestion = kind.contains("Rule-Obj-Flow") ? "Review flow assignments, routes and subflow references against approvals, branches and child workflows."
+                : kind.contains("Rule-Declare-Decision") || kind.contains("Rule-Obj-When") ? "Review conditions against a decision table; verify boundary cases."
+                : kind.contains("Rule-Obj-Property") ? "Review property constraints against request/output schema."
+                : kind.contains("Rule-Connect") ? "Review connector against an approved connection operation; exclude credentials."
+                : "Review rule semantics and dependencies before deciding its target.";
+            return "Rule evidence (up to 50 identities): " + (rules.isEmpty() ? metadata : rules) + ". Referenced dependencies (unresolved): " + dependencies + ". Suggested mapping: " + suggestion;
+        } catch (SourceException e) {
+            return "XML could not be safely inventoried; review this file manually. No content was executed.";
+        }
     }
 
     public static Report.CompatibilityReport mapping(JsonNode packageNode, Report.CompatibilityReport archive, boolean acknowledged) {

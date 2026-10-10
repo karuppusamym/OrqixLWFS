@@ -135,6 +135,12 @@ public final class FieldTypes {
             return new Indeterminate();
         }
         switch (key) {
+            case "iterations" -> {
+                return new Resolved(FieldType.of(FieldKind.INTEGER), w, key);
+            }
+            case "limitReached", "allSucceeded" -> {
+                return new Resolved(FieldType.of(FieldKind.BOOLEAN), w, key);
+            }
             case "outcome" -> {
                 return new Resolved(new FieldType(FieldKind.STRING, Collections.unmodifiableSet(
                         new TreeSet<>(child.outcomes())), false, null, null), w, key);
@@ -149,7 +155,7 @@ public final class FieldTypes {
             default -> {
                 String childKey = w.resultMapping().get(key);
                 if (childKey == null) {
-                    Set<String> keys = new TreeSet<>(List.of("outcome", "outcomeKind", "reference"));
+                    Set<String> keys = new TreeSet<>(List.of("outcome", "outcomeKind", "reference", "iterations", "limitReached", "allSucceeded"));
                     keys.addAll(w.resultMapping().keySet());
                     return new Unknown("\"" + w.label() + "\" does not produce \"" + key + "\". It produces: "
                             + String.join(", ", keys) + ".");
@@ -253,6 +259,7 @@ public final class FieldTypes {
             case NUMBER -> source.kind().numeric();
             case INTEGER -> source.kind() == FieldKind.INTEGER;
             case BOOLEAN -> source.kind() == FieldKind.BOOLEAN;
+            case ARRAY -> false;
         };
         if (!kindOk) {
             return "expects " + targetKind.description() + ", but the source is " + source.kind().description();

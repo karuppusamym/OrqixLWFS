@@ -9,7 +9,7 @@ import tools.jackson.databind.JsonNode;
 final class ConversionRequest {
     private static final String KEY = "^[a-z][a-z0-9-]{0,62}[a-z0-9]$";
     static void validate(JsonNode request) {
-        object(request, Set.of("workflowKey", "name", "groupMappings", "approvalRoutes", "serviceTaskMappings", "inputSchema", "acknowledgeInfo"), "request");
+        object(request, Set.of("workflowKey", "name", "groupMappings", "approvalRoutes", "serviceTaskMappings", "childWorkflowMappings", "inputSchema", "acknowledgeInfo"), "request");
         if (Json.depth(request) > 64) fail("request", "must have at most 64 levels");
         key(request.path("workflowKey"), "workflowKey");
         text(request.path("name"), "name", 200);
@@ -26,6 +26,16 @@ final class ConversionRequest {
                 object(e.getValue(), Set.of("approvedFlowId", "rejectedFlowId"), path);
                 text(e.getValue().path("approvedFlowId"), path + "/approvedFlowId", 1000);
                 text(e.getValue().path("rejectedFlowId"), path + "/rejectedFlowId", 1000);
+            });
+        }
+        if (request.has("childWorkflowMappings")) {
+            object(request.path("childWorkflowMappings"), null, "childWorkflowMappings");
+            request.path("childWorkflowMappings").properties().forEach(e -> {
+                String path = "childWorkflowMappings/" + e.getKey(); JsonNode value = e.getValue();
+                object(value, Set.of("workflowRef", "inputMapping", "resultMapping"), path);
+                key(value.path("workflowRef"), path + "/workflowRef");
+                strings(value.path("inputMapping"), path + "/inputMapping");
+                strings(value.path("resultMapping"), path + "/resultMapping");
             });
         }
         if (request.has("serviceTaskMappings")) {

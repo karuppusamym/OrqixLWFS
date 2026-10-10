@@ -8,6 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Select } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { EFFECT_CLASS_LABEL } from '@/features/runs/operatorText'
+import { AGENT_USES_AI, AgentSpecView, type AgentSpec } from '@/features/settings/AgentSpecView'
 import { humanize } from '@/lib/text'
 import { useStudio, useStudioContext } from '../StudioContext'
 import { availableFields, chipLabel, type FieldInfo } from '../model/fieldRefs'
@@ -30,6 +31,8 @@ interface OperationDoc {
   responseSchema: { properties?: Record<string, ScalarSchema> }
   effectClass: keyof typeof EFFECT_CLASS_LABEL
   maxTimeoutSeconds: number
+  /** Present on operations of an agent connection (S13). */
+  agent?: AgentSpec
 }
 
 function compatible(source: FieldInfo['type'], target: ScalarSchema['type']): boolean {
@@ -119,6 +122,7 @@ export function HttpInspector({ node }: { node: WorkflowNode }) {
               {(list.data?.items ?? []).map((c) => (
                 <option key={c.key} value={c.key}>
                   {c.name}
+                  {c.kind === 'agent' ? ' · AI agent' : ''}
                   {!c.binding.configured ? ' (no address configured)' : !c.binding.enabled ? ' (disabled)' : ''}
                 </option>
               ))}
@@ -152,6 +156,7 @@ export function HttpInspector({ node }: { node: WorkflowNode }) {
           )}
         </FormField>
         {operation?.description ? <p className="text-xs text-muted-foreground">{operation.description}</p> : null}
+        {operation?.agent ? <AgentSpecView operation={operation} /> : null}
 
         {operation?.requestSchema ? (
           <fieldset className="space-y-3" data-field="config.inputMapping">
@@ -239,7 +244,7 @@ export function HttpInspector({ node }: { node: WorkflowNode }) {
             <p className="text-sm text-muted-foreground" data-testid="effect-class">
               {EFFECT_CLASS_LABEL[operation.effectClass]}
             </p>
-            <p className="mt-1 text-xs text-muted-foreground">Set by the connection, not by the workflow.</p>
+            <p className="mt-1 text-xs text-muted-foreground">Set by the connection, not by the workflow.{operation.agent ? ` ${AGENT_USES_AI}.` : ''}</p>
           </div>
         ) : null}
         <StepIdField node={node} />

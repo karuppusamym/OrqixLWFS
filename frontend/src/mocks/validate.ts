@@ -17,6 +17,8 @@ export interface ValidationContext {
     operations: Record<string, { requestRequired: string[]; requestProps: string[]; responseProps: string[]; maxTimeoutSeconds: number }>
   }>
   isTestWorkspace: boolean
+  /** Keys of the workflows with an active release (they can be started as a child). */
+  publishedWorkflows?: string[]
 }
 
 type Issue = ValidationIssue
@@ -26,6 +28,13 @@ function issue(code: string, severity: 'blocker' | 'warning', message: string, p
 }
 
 const PLACEHOLDER_LABEL = /^(step|task|node)\s*\d*$/i
+
+/** Minutes of a day/hour/minute ISO duration, or null when it is not one. */
+function durationMinutes(text: string): number | null {
+  const m = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?)?$/.exec(text)
+  if (!m || text === 'P' || text.endsWith('T')) return null
+  return Number(m[1] ?? 0) * 1440 + Number(m[2] ?? 0) * 60 + Number(m[3] ?? 0)
+}
 
 function isNumericRange(op: string): boolean {
   return op === 'gte' || op === 'lt'
@@ -79,14 +88,17 @@ export function validateDefinition(def: Definition, ctx: ValidationContext): Iss
     if (n.type === 'start' && incoming(def, n.id).length > 0) issues.push(issue('WF_START_INCOMING', 'blocker', 'Nothing can lead back into the request form.', nodePath(n), n.id))
     if (n.type === 'end' && out.length > 0) issues.push(issue('WF_END_OUTGOING', 'blocker', `"${n.label}" ends the workflow, so it cannot lead anywhere.`, nodePath(n), n.id))
     if (n.type === 'approval') {
-      if (count('approved') !== 1 || count('rejected') !== 1 || out.length !== 2)
-        issues.push(issue('WF_APPROVAL_ROUTES', 'blocker', `"${n.label}" needs exactly one route for Approved and one for Rejected.`, nodePath(n), n.id))
+      const limited = typeof n.config.timeoutAfter === 'string'
+      if (count('approved') !== 1 || count('rejected') !== 1 || out.length !== (limited ? 3 : 2) || (limited && count('timedOut') !== 1))
+        issues.push(issue(limited && count('timedOut') !== 1 ? 'WF_TIMEOUT_ROUTE' : 'WF_APPROVAL_ROUTES', 'blocker', limited ? `"${n.label}" needs one route each for Approved, Rejected and when nobody decides in time.` : `"${n.label}" needs exactly one route for Approved and one for Rejected.`, nodePath(n), n.id))
     } else if (n.type === 'branch') {
       if (count('default') !== 1) issues.push(issue('WF_BRANCH_DEFAULT', 'blocker', `"${n.label}" needs exactly one Otherwise route.`, nodePath(n), n.id))
       if (count('condition') < 1) issues.push(issue('WF_BRANCH_NO_CONDITION', 'blocker', `"${n.label}" needs at least one route with a condition.`, nodePath(n), n.id))
       if (out.some((t) => t.on !== 'condition' && t.on !== 'default')) issues.push(issue('WF_OUTGOING_INVALID', 'blocker', `"${n.label}" has a route that does not belong on a path choice.`, nodePath(n), n.id))
       const targets = new Set(out.map((t) => t.to))
       if (out.length > 1 && targets.size === 1) issues.push(issue('WF_BRANCH_SINGLE_TARGET', 'warning', `All routes of "${n.label}" lead to the same step, so the choice has no effect.`, nodePath(n), n.id))
+    } else if (n.type === 'parallelSplit') {
+      if (out.length < 2 || out.some((t) => t.on !== 'next')) issues.push(issue('WF_PARALLEL_BRANCHES', 'blocker', `"${n.label}" needs at least two paths to run in parallel.`, nodePath(n), n.id))
     } else if (n.type !== 'end') {
       if (out.length !== 1 || out[0]?.on !== 'next') issues.push(issue('WF_OUTGOING_INVALID', 'blocker', `"${n.label}" needs exactly one route to the next step.`, nodePath(n), n.id))
     }
@@ -118,6 +130,24 @@ export function validateDefinition(def: Definition, ctx: ValidationContext): Iss
         const group = c.candidateGroupRef as string | undefined
         if (!group) issues.push(issue('WF_SCHEMA_INVALID', 'blocker', `"${n.label}" needs an approver group.`, nodePath(n, '/config/candidateGroupRef'), n.id))
         else if (!ctx.groups.includes(group)) issues.push(issue('WF_GROUP_UNBOUND', 'blocker', `The group "${group}" does not exist in this workspace.`, nodePath(n, '/config/candidateGroupRef'), n.id))
+        break
+      }
+      case 'parallelSplit':
+        if (!def.nodes.some((x) => x.type === 'parallelJoin' && x.id === c.joinRef))
+          issues.push(issue('WF_PARALLEL_JOIN_UNKNOWN', 'blocker', `"${n.label}" needs a matching "Wait for all" step.`, nodePath(n, '/config/joinRef'), n.id))
+        break
+      case 'wait': {
+        const minutes = durationMinutes(String(c.duration ?? ''))
+        if (minutes === null) issues.push(issue('WF_DURATION_INVALID', 'blocker', `"${n.label}" has a time that is not valid. Use days, hours and minutes, for example PT30M or P2D.`, nodePath(n, '/config/duration'), n.id))
+        else if (minutes < 1) issues.push(issue('WF_DURATION_TOO_SHORT', 'blocker', `"${n.label}" waits no time at all. The shortest time is 1 minute.`, nodePath(n, '/config/duration'), n.id))
+        else if (minutes > 90 * 1440) issues.push(issue('WF_DURATION_TOO_LONG', 'blocker', `"${n.label}" waits longer than 90 days.`, nodePath(n, '/config/duration'), n.id))
+        break
+      }
+      case 'startWorkflow': {
+        const ref = c.workflowRef as string | undefined
+        if (!ref) issues.push(issue('WF_SCHEMA_INVALID', 'blocker', `"${n.label}" needs a workflow to start.`, nodePath(n, '/config/workflowRef'), n.id))
+        else if (ref === def.workflowKey) issues.push(issue('WF_CHILD_CYCLE', 'blocker', `"${n.label}" starts this same workflow.`, nodePath(n, '/config/workflowRef'), n.id))
+        else if (!(ctx.publishedWorkflows ?? []).includes(ref)) issues.push(issue('WF_CHILD_NOT_PUBLISHED', 'blocker', `"${ref}" is not a published workflow of this workspace.`, nodePath(n, '/config/workflowRef'), n.id))
         break
       }
       case 'decision': {

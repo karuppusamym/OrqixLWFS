@@ -6,7 +6,7 @@ Implemented 9 October 2026. Open **Workflows → Import workflow** at http://loc
 
 Upload BPMN XML, inspect the compatibility report, map source assignments to workspace groups, and map service tasks to registered connection operations. The operation helper pins the selected contract version and proposes request/result mappings for review. Review inferred input fields, approval/rejection routes and target policies before acknowledging assumptions and converting.
 
-The supported subset includes none start/end events, sequence flows, group approval tasks, recognized approval outcomes, typed exclusive conditions and explicitly mapped HTTP service tasks. Source delegates and workers are never executed. Unsupported constructs, expressions and unresolved mappings block conversion. Self-approval is denied and rejection requires a reason in the resulting draft; these assumptions are displayed for review.
+The supported subset includes none start/end events, sequence flows, group approval tasks, recognized approval outcomes, typed exclusive conditions explicitly mapped HTTP service tasks, unambiguous parallel split/join regions, constant duration timer catches and explicitly mapped child-process calls. Source delegates and workers are never executed. Unsupported constructs, expressions and unresolved mappings block conversion. Self-approval is denied and rejection requires a reason in the resulting draft; these assumptions are displayed for review.
 
 Conversion validates the canonical definition with the normal compiler before creating a workflow. Invalid mappings create no draft. Repeating the same successful conversion returns the original workflow; changing that conversion request is rejected. The studio links back to the source report. Original uploaded bytes, SHA-256, adapter version, approved mappings and source-to-target IDs persist in the workspace.
 
@@ -14,9 +14,17 @@ Conversion rejects unknown request properties, incorrect field types, fractional
 
 After conversion commits, the created draft opens independently of report refresh. A failed report fetch shows a retry action and keeps the report link available.
 
+### Parallel work, waits and child processes
+
+The `camunda-bpmn-0.2` adapter maps separate diverging/converging parallel gateways only when a unique matching join is identifiable. The normal compiler verifies branch boundaries; inclusive/event gateways, mixed split/join gateways, ambiguous pairs and unsupported scopes remain blockers.
+
+Intermediate timer catches support fixed positive day/hour/minute durations, bounded from one minute to 90 days. Date, recurring, expression-based and boundary timers remain blocked. Each wait survives runtime restarts.
+
+Call activities require `childWorkflowMappings` keyed by source call ID. A value contains `workflowRef`, `inputMapping` and `resultMapping` using canonical field references. Import and publish the child separately first; publishing the parent pins the child release. Source binding/version settings and input/output extensions require reviewed interpretation; execution of source code is never implied.
+
 ## Pega
 
-Select **Pega archive** and upload a ZIP/RAP package. This inventories archive files; it does not parse native rule semantics or establish runtime equivalence. Every file starts with a mapping blocker. Download the mapping package template, supply a manually authored canonical definition, source version and a disposition for every file, then upload it as **Pega reviewed mapping**.
+Select **Pega archive** and upload a ZIP/RAP package. This safely inventories archive files and recognizes selected XML rule identity fields (class, name, ruleset/version, availability and circumstance). Recognized dependency fields and rule-type mapping suggestions appear in each file report. These are descriptive source evidence; they do not resolve effective rules or establish runtime equivalence. Every file starts with a mapping blocker. Download the mapping package template, supply a manually authored canonical definition, source version and a disposition for every file, then upload it as **Pega reviewed mapping**.
 
 The `orqix-pega-mapping-0.1` package must reference the stored archive job in the same workspace and match its checksum. Each file needs either valid target node IDs or an explicit exclusion, with an explanation. Every target node needs source provenance. Unresolved items block conversion; accepted manual mappings require acknowledgement and normal compiler validation. The package can consolidate multiple rules into target nodes, so file-level provenance alone does not prove that every rule inside a file was preserved.
 

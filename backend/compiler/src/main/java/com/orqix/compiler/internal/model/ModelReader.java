@@ -103,7 +103,11 @@ public final class ModelReader {
             case PARALLEL_JOIN -> new Node.ParallelJoin(index, id, label);
             case WAIT -> new Node.Wait(index, id, label, c.get("duration").stringValue());
             case START_WORKFLOW -> new Node.StartWorkflow(index, id, label, c.get("workflowRef").stringValue(),
-                    stringMap(c.get("inputMapping")), stringMap(c.get("resultMapping")));
+                    stringMap(c.get("inputMapping")), stringMap(c.get("resultMapping")),
+                    c.get("repeat") == null ? null : new Node.Repeat(c.get("repeat").get("maxIterations").intValue(),
+                            c.get("repeat").get("untilOutcome").stringValue()),
+                    c.get("forEach") == null ? null : new Node.ForEach(c.get("forEach").get("itemsRef").stringValue(),
+                            c.get("forEach").get("itemInput").stringValue(), c.get("forEach").get("maxItems").intValue()));
             case END -> new Node.End(index, id, label, c.get("businessOutcome").stringValue(),
                     c.get("outcomeKind").stringValue());
         };
@@ -193,9 +197,22 @@ public final class ModelReader {
             fields.put(e.getKey(), new FormSchema.Field(e.getKey(), FieldKind.fromJson(f.get("type").stringValue()),
                     f.get("title").stringValue(), enumValues, intOrNull(f.get("minLength")),
                     intOrNull(f.get("maxLength")), decimalOrNull(f.get("minimum")), decimalOrNull(f.get("maximum")),
-                    decimalOrNull(f.get("multipleOf"))));
+                    decimalOrNull(f.get("multipleOf")), f.has("items") ? readField(e.getKey(), f.get("items")) : null,
+                    intOrNull(f.get("minItems")), intOrNull(f.get("maxItems"))));
         }
         return new FormSchema(path, List.copyOf(required), Collections.unmodifiableMap(fields));
+    }
+
+    private static FormSchema.Field readField(String key, JsonNode f) {
+        List<String> enums = null;
+        if (f.has("enum")) {
+            List<String> values = new ArrayList<>();
+            f.get("enum").forEach(v -> values.add(v.stringValue()));
+            enums = List.copyOf(values);
+        }
+        return new FormSchema.Field(key, FieldKind.fromJson(f.get("type").stringValue()), f.get("title").stringValue(),
+                enums, intOrNull(f.get("minLength")), intOrNull(f.get("maxLength")), decimalOrNull(f.get("minimum")),
+                decimalOrNull(f.get("maximum")), decimalOrNull(f.get("multipleOf")), null, null, null);
     }
 
     private static InputUi readInputUi(JsonNode ui) {

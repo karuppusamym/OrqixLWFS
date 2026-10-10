@@ -235,11 +235,11 @@ export async function putConnectionBinding(
   return data
 }
 
-export const testConnection = (ws: string, connectionKey: string, version: number, operation: string) =>
+export const testConnection = (ws: string, connectionKey: string, version: number, operation: string, input?: Record<string, string>) =>
   call(
     api.POST('/workspaces/{workspaceId}/connections/{connectionKey}/test', {
       params: { path: { workspaceId: ws, connectionKey } },
-      body: { version, operation },
+      body: { version, operation, ...(input ? { input: input as Record<string, never> } : {}) },
     }),
   )
 

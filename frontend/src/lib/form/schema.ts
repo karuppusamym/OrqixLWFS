@@ -3,8 +3,8 @@
  * and the presentation hints (`inputUi`). Server data is untrusted, so parsing is defensive.
  */
 
-export type FieldType = 'string' | 'number' | 'integer' | 'boolean'
-export type Widget = 'text' | 'textarea' | 'number' | 'money' | 'select' | 'radio' | 'checkbox'
+export type FieldType = 'string' | 'number' | 'integer' | 'boolean' | 'array'
+export type Widget = 'text' | 'textarea' | 'number' | 'money' | 'select' | 'radio' | 'checkbox' | 'collection'
 
 export interface FormFieldSchema {
   type: FieldType
@@ -16,6 +16,9 @@ export interface FormFieldSchema {
   minimum?: number
   maximum?: number
   multipleOf?: number
+  items?: FormFieldSchema
+  minItems?: number
+  maxItems?: number
 }
 
 export interface FormSchema {
@@ -31,7 +34,7 @@ export interface FormUi {
   currency?: 'USD'
 }
 
-const FIELD_TYPES: readonly string[] = ['string', 'number', 'integer', 'boolean']
+const FIELD_TYPES: readonly string[] = ['string', 'number', 'integer', 'boolean', 'array']
 const WIDGETS: readonly string[] = ['text', 'textarea', 'number', 'money', 'select', 'radio', 'checkbox']
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -64,6 +67,13 @@ export function parseFormSchema(raw: unknown): FormSchema {
     if (minimum !== undefined) field.minimum = minimum
     if (maximum !== undefined) field.maximum = maximum
     if (multipleOf !== undefined) field.multipleOf = multipleOf
+    if (field.type === 'array') {
+      if (!isRecord(value.items) || value.items.type === 'array') continue
+      const item = parseFormSchema({ properties: { item: value.items } }).properties.item
+      const min = num(value.minItems), max = num(value.maxItems)
+      if (!item || min === undefined || max === undefined || !Number.isInteger(min) || !Number.isInteger(max) || min < 1 || max > 25 || max < min) continue
+      field.items = item; field.minItems = min; field.maxItems = max
+    }
     properties[key] = field
   }
   const required =
@@ -100,6 +110,7 @@ export interface FieldDef {
 /** Pick the widget: explicit hint when compatible with the type, otherwise inferred from the schema. */
 export function widgetFor(schema: FormFieldSchema, hint: Widget | undefined): Widget {
   switch (schema.type) {
+    case 'array': return 'collection'
     case 'boolean':
       return 'checkbox'
     case 'string':

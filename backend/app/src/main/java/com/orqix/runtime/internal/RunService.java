@@ -120,6 +120,15 @@ public class RunService {
             throw new ApiException(ProblemCode.RELEASE_NOT_ACTIVE, "A newer release of this workflow is active; reload the form.");
         }
         ReleaseQueries.ReleaseView release = releases.require(workspaceId, workflow.activeReleaseId());
+        // Child workflows start on behalf of the requester, who therefore needs the right to start them (S12 section 4).
+        for (JsonNode pin : release.manifest().path("workflows")) {
+            ReleaseQueries.ReleaseView child = releases.require(workspaceId, UUID.fromString(pin.path("releaseId").asString()));
+            if (!access.canStart(child.workflowId())) {
+                throw policy.deny(workspaceId, caller.subjectId(), "workflow.start", "startRun", false,
+                        new ApiException(ProblemCode.FORBIDDEN, "This request starts \"" + child.workflowName()
+                                + "\" for you, and you are not allowed to start that workflow."));
+            }
+        }
         List<FormValidator.FieldError> errors = formValidator.validate(json.write(release.inputSchema()),
                 json.write(request.input()));
         if (!errors.isEmpty()) {
@@ -251,7 +260,7 @@ public class RunService {
                 summary.attention(), summary.createdAt(), summary.updatedAt(), summary.endedAt(), summary.isTest(),
                 summary.version(), data ? run.input() : null, RuntimeViews.inputLabels(release),
                 data ? run.output() : null, taskViews, effectViews, reversedViews,
-                allowedActions(run, operate, effects));
+                allowedActions(run, operate, effects), summary.parentRun(), views.children(run));
     }
 
     static RuntimeDtos.AllowedRunActions allowedActions(RunStore.RunRow run, boolean operate,

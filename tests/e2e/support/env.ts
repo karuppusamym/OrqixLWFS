@@ -20,6 +20,8 @@ export type Username =
   | 'fin.finance'
   | 'fred.facilities'
   | 'otto.outsider'
+  // Mock-mode persona only (a second publisher); the dev realm has no such user.
+  | 'pia.publisher'
 
 /** "rhea.requester" -> "E2E_PASSWORD_RHEA_REQUESTER" */
 export function passwordVariable(username: string): string {

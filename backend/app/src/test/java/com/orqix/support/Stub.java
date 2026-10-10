@@ -70,6 +70,7 @@ public final class Stub {
 
     public static synchronized void reset() {
         GraphStub.reset();
+        BankingStub.reset();
         requireKey = true;
         ORDERS.clear();
         FAULTS.clear();
@@ -101,6 +102,9 @@ public final class Stub {
         String method = request.getMethod().getName();
         if (path.startsWith("/graph/")) {
             return GraphStub.handle(request);
+        }
+        if (path.startsWith("/banking/")) {
+            return BankingStub.handle(request);
         }
         if (path.equals("/mcp") || path.startsWith("/mcp?")) {
             return McpStub.handle(request);

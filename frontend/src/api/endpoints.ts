@@ -249,9 +249,27 @@ export const getAccessOverview = (ws: string) => call(api.GET('/workspaces/{work
 export const listGroups = (ws: string) => call(api.GET('/workspaces/{workspaceId}/groups', { params: { path: { workspaceId: ws } } }))
 
 // Migration sources are immutable; conversion creates a validated draft, never a release.
-export const uploadMigration = (ws: string, body: { fileName: string; content: string; sourceFormat?: 'bpmn' | 'pegaArchive' | 'pegaMapping' }) =>
+export const uploadMigration = (ws: string, body: { fileName: string; content: string; sourceFormat?: 'bpmn' | 'dmn' | 'pegaArchive' | 'pegaMapping' }) =>
   call(api.POST('/workspaces/{workspaceId}/migrations', { params: { path: { workspaceId: ws } }, body }))
 export const getMigration = (ws: string, migrationId: string) =>
   call(api.GET('/workspaces/{workspaceId}/migrations/{migrationId}', { params: { path: { workspaceId: ws, migrationId } } }))
 export const convertMigration = (ws: string, migrationId: string, body: S['ConvertMigrationRequest']) =>
   call(api.POST('/workspaces/{workspaceId}/migrations/{migrationId}/convert', { params: { path: { workspaceId: ws, migrationId } }, body }))
+
+// Multi-file projects: child processes are converted before the parents that call them.
+export const uploadMigrationProject = (ws: string, body: S['UploadMigrationProjectRequest']) =>
+  call(api.POST('/workspaces/{workspaceId}/migrations/projects', { params: { path: { workspaceId: ws } }, body }))
+export const getMigrationProject = (ws: string, projectId: string) =>
+  call(api.GET('/workspaces/{workspaceId}/migrations/projects/{projectId}', { params: { path: { workspaceId: ws, projectId } } }))
+export const convertMigrationProjectNext = (ws: string, projectId: string, body: S['ConvertMigrationProjectRequest']) =>
+  call(api.POST('/workspaces/{workspaceId}/migrations/projects/{projectId}/convert-next', { params: { path: { workspaceId: ws, projectId } }, body }))
+
+// Maker-checker governance of migrated workflows (independent review before publishing).
+export const getMigrationPolicy = (ws: string) =>
+  call(api.GET('/workspaces/{workspaceId}/migration-policy', { params: { path: { workspaceId: ws } } }))
+export const setMigrationPolicy = (ws: string, body: S['MigrationPolicyRequest']) =>
+  call(api.PUT('/workspaces/{workspaceId}/migration-policy', { params: { path: { workspaceId: ws } }, body }))
+export const getMigrationReview = (ws: string, workflowId: string) =>
+  call(api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/migration-review', { params: { path: { workspaceId: ws, workflowId } } }))
+export const approveMigrationReview = (ws: string, workflowId: string, body: S['MigrationReviewRequest']) =>
+  call(api.POST('/workspaces/{workspaceId}/workflows/{workflowId}/migration-review', { params: { path: { workspaceId: ws, workflowId } }, body }))

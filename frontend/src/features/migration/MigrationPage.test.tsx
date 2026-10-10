@@ -64,6 +64,41 @@ describe('migration workbench', () => {
     await user.click(screen.getByRole('button', { name: 'Convert to draft' }))
     await waitFor(() => expect(body).toMatchObject({ childWorkflowMappings: { childCall: { workflowRef: 'purchase-approval', inputMapping: {}, resultMapping: {} } } }))
   })
+  it('shows review items, requires their acknowledgement flag in the request and offers grouped service and decision mappings', async () => {
+    signInAs('dana.designer')
+    const source = job(); source.report.elementCounts = { total: 3, action: 1, review: 2 }
+    source.report.issues.push({ sourceElementId: 'flow1', sourceKind: 'sequenceFlow', severity: 'review', reasonCode: 'CONDITION_CONVERTED', explanation: 'Condition converted; original text kept.', resolutionStatus: 'open' })
+    source.report.requiredMappings = { groups: [], approvalTasks: [], serviceTasks: ['a', 'b'], serviceGroups: { 'topic:send-mail': ['a', 'b'] }, decisionTasks: ['rule1'] }
+    let body: Record<string, unknown> | null = null
+    server.use(http.get('*/api/v1/workspaces/:ws/migrations/:id', () => HttpResponse.json(source)),
+      http.post('*/api/v1/workspaces/:ws/migrations/:id/convert', async ({ request }) => {
+        body = await request.json() as Record<string, unknown>
+        return HttpResponse.json({ code: 'MIGRATION_BLOCKED', detail: 'Review mapping', status: 422 }, { status: 422 })
+      }))
+    const user = userEvent.setup()
+    renderApp(`/w/${WS}/migrations/${id}`)
+    expect(await screen.findByText('review: 2')).toBeInTheDocument()
+    await user.selectOptions(screen.getByLabelText('Severity'), 'review')
+    expect(screen.getByText('CONDITION_CONVERTED', { exact: false })).toBeInTheDocument()
+    expect(screen.getByText(/topic:send-mail \(2 tasks\)/)).toBeInTheDocument()
+    await user.click(screen.getByRole('checkbox', { name: /I reviewed the 2 converted items marked review/ }))
+    await user.click(screen.getByRole('checkbox', { name: /I reviewed the assumptions/ }))
+    await user.click(screen.getByRole('button', { name: 'Convert to draft' }))
+    await waitFor(() => expect(body).toMatchObject({ acknowledgeReview: true, acknowledgeInfo: true, serviceGroupMappings: {}, decisionMappings: {} }))
+  })
+  it('lists generated decision checks for a DMN source and hides the request schema field', async () => {
+    signInAs('dana.designer')
+    const source = job(); source.report.sourceSystem = 'dmn'
+    source.report.requiredMappings = { groups: [], approvalTasks: [], serviceTasks: [] }
+    source.report.testCases = [{ decision: 'tier', name: 'at 5000', input: { amount: 5000 }, expected: { tier: 'finance' }, actual: { tier: 'finance' }, matchedRow: 1, status: 'passed' }]
+    server.use(http.get('*/api/v1/workspaces/:ws/migrations/:id', () => HttpResponse.json(source)))
+    renderApp(`/w/${WS}/migrations/${id}`)
+    expect(await screen.findByRole('region', { name: 'Generated decision checks' })).toBeInTheDocument()
+    expect(screen.getByText('at 5000')).toBeInTheDocument()
+    expect(screen.getByText('passed')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Request schema (optional JSON)')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Decision to convert (optional)')).toBeInTheDocument()
+  })
   it('groups and filters findings without changing the complete report', async () => {
     signInAs('dana.designer'); const user = userEvent.setup(); const source = job()
     source.report.issues.push({ sourceElementId: 'timer', sourceKind: 'boundaryEvent', severity: 'blocker', reasonCode: 'UNSUPPORTED', explanation: 'Boundary timers require manual review.', resolutionStatus: 'open' })

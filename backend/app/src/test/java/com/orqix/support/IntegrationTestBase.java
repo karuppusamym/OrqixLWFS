@@ -81,13 +81,24 @@ public abstract class IntegrationTestBase {
         return new Api(user);
     }
 
+    /** Request as a user with explicit IdP groups (a person who is not one of the seeded accounts). */
+    protected Api api(String user, java.util.List<String> groups) {
+        return new Api(user, groups);
+    }
+
     /** Small fluent client over MockMvc that validates every response against the OpenAPI contract. */
     public final class Api {
 
         private final String user;
+        private final java.util.List<String> groups;
 
         Api(String user) {
+            this(user, null);
+        }
+
+        Api(String user, java.util.List<String> groups) {
             this.user = user;
+            this.groups = groups;
         }
 
         public Response get(String path, Object... vars) throws Exception {
@@ -122,7 +133,7 @@ public abstract class IntegrationTestBase {
 
         public Response send(MockHttpServletRequestBuilder builder) throws Exception {
             if (user != null) {
-                builder.with(TestUsers.as(user));
+                builder.with(groups == null ? TestUsers.as(user) : TestUsers.as(user, groups));
             }
             MvcResult result = mvc.perform(builder).andReturn();
             Response response = new Response(result);

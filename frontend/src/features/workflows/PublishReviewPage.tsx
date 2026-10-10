@@ -24,6 +24,8 @@ import { describeProblem } from '@/lib/problemMessages'
 import { normalizeDefinition } from '@/features/studio/model/types'
 import { locateIssue } from '@/features/studio/model/issues'
 import { groupIssues } from '@/features/studio/CheckPanel'
+import { MigrationReviewPanel, useMigrationReview } from '@/features/migration/MigrationReviewPanel'
+import { publishBlock } from '@/features/migration/reviewGate'
 import { diffDefinitions, type Change } from './diff'
 
 const KIND_LABEL = { added: 'Added', removed: 'Removed', changed: 'Changed' } as const
@@ -37,7 +39,7 @@ const KIND_TONE = { added: 'success', removed: 'danger', changed: 'warning' } as
 export function PublishReviewPage() {
   const { workflowId = '' } = useParams()
   const [params] = useSearchParams()
-  const { workspace, can } = useWorkspace()
+  const { workspace, can, me } = useWorkspace()
   const ws = workspace.id
   const client = useQueryClient()
   const announce = useAnnounce()
@@ -59,6 +61,7 @@ export function PublishReviewPage() {
   const active = useQuery({ queryKey: keys.release(ws, workflowId, activeId ?? 'none'), queryFn: () => endpoints.getRelease(ws, workflowId, activeId as string), enabled: !!activeId, staleTime: Infinity })
   const connections = useConnections(ws, can('connection.read'))
   const groups = useGroups(ws)
+  const review = useMigrationReview(ws, workflowId, can('workflow.read'))
 
   const [acknowledged, setAcknowledged] = useState(false)
   const [activate, setActivate] = useState(true)
@@ -84,7 +87,9 @@ export function PublishReviewPage() {
   const warnings = issues.filter((i) => i.severity === 'warning')
   const stale = reviewRevision === null
   const reportReady = report.isSuccess
-  const canPublishNow = can('workflow.publish') && !stale && reportReady && blockers.length === 0 && (warnings.length === 0 || acknowledged) && !published
+  // Independent migration review (maker-checker): the server enforces it; this explains it and keeps the button honest.
+  const reviewGate = publishBlock(review.data, { meId: me.subject.id, draftAuthorId: draft.data?.draft.savedBy?.id }, requested)
+  const canPublishNow = can('workflow.publish') && !stale && reportReady && blockers.length === 0 && (warnings.length === 0 || acknowledged) && !reviewGate && !published
   const groupNames = Object.fromEntries((groups.data?.items ?? []).map((g) => [g.key, g.name]))
 
   const usedGroups = after ? [...new Set(after.nodes.filter((n) => n.type === 'approval').map((n) => n.config.candidateGroupRef as string).filter(Boolean))] : []
@@ -277,6 +282,8 @@ export function PublishReviewPage() {
           </CardContent>
         </Card>
 
+        {review.data?.migration ? <MigrationReviewPanel workflowId={workflowId} review={review.data} draftAuthorId={draft.data?.draft.savedBy?.id} requestedRevision={requested} /> : null}
+
         <Card>
           <CardHeader>
             <h2>Publish</h2>
@@ -311,8 +318,9 @@ export function PublishReviewPage() {
               </Alert>
             ) : null}
             {!can('workflow.publish') ? <Alert tone="warning">You can review this draft, but you need permission to publish it.</Alert> : null}
+            {reviewGate ? <Alert tone="warning" id="publish-blocked-by-review" title="Publishing is blocked by the migration review policy">See Migration review above for what is needed before this draft can be published.</Alert> : null}
             <div className="flex flex-wrap gap-3">
-              <Button variant="primary" size="lg" onClick={() => void publish()} loading={pending} disabled={!canPublishNow}>
+              <Button variant="primary" size="lg" onClick={() => void publish()} loading={pending} disabled={!canPublishNow} aria-describedby={reviewGate ? 'publish-blocked-by-review' : undefined}>
                 <Rocket aria-hidden="true" /> Publish version {nextNumber}
               </Button>
             </div>

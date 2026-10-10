@@ -130,10 +130,20 @@ public class RuntimeViews {
 
     public RuntimeDtos.TaskSummary task(TaskStore.TaskRow task, RunStore.RunRow run, Map<UUID, String> names,
             TaskQueries.DecisionRow decision) {
+        return task(task, run, names, decision, true);
+    }
+
+    /**
+     * {@code titleVisible} is false for a caller who may not read the request data: the title is the first text field
+     * of that data (for example a customer name), so it is withheld together with {@code input}.
+     */
+    public RuntimeDtos.TaskSummary task(TaskStore.TaskRow task, RunStore.RunRow run, Map<UUID, String> names,
+            TaskQueries.DecisionRow decision, boolean titleVisible) {
         ReleaseQueries.ReleaseView release = releases.require(task.workspaceId(), run.releaseId());
         return new RuntimeDtos.TaskSummary(task.taskId(), task.runId(), run.reference(), release.workflowName(),
                 run.businessKey(),
-                task.nodeId(), task.label(), requestTitle(run.input(), release), subjects.ref(task.initiator(), names),
+                task.nodeId(), task.label(), titleVisible ? requestTitle(run.input(), release) : null,
+                subjects.ref(task.initiator(), names),
                 new RuntimeDtos.GroupRef(task.candidateGroupKey(), groupName(task.workspaceId(), task.candidateGroupKey())),
                 task.assignee() == null ? null : subjects.ref(task.assignee(), names), task.status(), task.dueAt(),
                 task.createdAt(), task.version(), decision == null ? null : decision(decision, task.label(), names));

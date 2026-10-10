@@ -74,20 +74,20 @@ class ConversationApiTest extends RuntimeTestBase {
         assertThat(response.status()).as(response.toString()).isEqualTo(200);
         assertThat(response.body().path("stage").asString()).isEqualTo("collecting");
         assertThat(response.body().path("field").path("name").asString()).isEqualTo("costCenter");
-        assertThat(response.body().path("message").asString()).contains("picked up Purchase title, Purpose");
+        assertThat(response.body().path("message").asString()).contains("picked up What are you buying?, Business purpose");
         assertThat(runCount(workflow)).isZero();
         assertThat(AgentLlmStub.requests()).hasSize(2);
         assertThat(AgentLlmStub.requests().getFirst().path("messages").toString())
                 .contains("I need a replacement laptop");
         assertThat(AgentLlmStub.requests().getFirst().path("messages").toString()).contains("Purchase");
-        assertThat(AgentLlmStub.requests().getLast().path("messages").toString()).contains("Purchase title", "Purpose");
+        assertThat(AgentLlmStub.requests().getLast().path("messages").toString()).contains("What are you buying?", "Business purpose");
         assertThat(AgentLlmStub.requests().getLast().path("response_format").toString()).contains("title", "purpose");
 
         Response replay = send("rhea.requester", PURCHASING, null,
                 "I need a replacement laptop because my current device failed", key);
         assertThat(replay.status()).as(replay.toString()).isEqualTo(200);
         assertThat(replay.header("Idempotent-Replayed")).isEqualTo("true");
-        assertThat(AgentLlmStub.requests()).hasSize(1);
+        assertThat(AgentLlmStub.requests()).as("a replay never calls the provider again").hasSize(2);
     }
 
     @Test

@@ -1,31 +1,56 @@
 package com.orqix.migration.camunda;
 
 import java.util.*;
+import com.orqix.migration.dmn.DmnConverter;
+import com.orqix.migration.dmn.DmnTable;
 import com.orqix.shared.json.Json;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
 /** Converts only the analysed subset. Original executable extensions are never evaluated. */
 public final class Converter {
     public record Result(ObjectNode definition, Report.CompatibilityReport report, Map<String, String> sourceMap) { }
 
+    /**
+     * Only open blockers, open actions and open info items stop a conversion. Review items never do: they are
+     * converted constructs that need a human check, kept (open or acknowledged) in the report as evidence.
+     */
     public static Report.CompatibilityReport report(Analysis a, List<Report.Issue> issues) {
         return new Report.CompatibilityReport(a.sourceSystem(), a.sourceVersion(), Analyzer.ADAPTER_VERSION,
                 a.sourceHash(), a.processId(), a.processName(), Report.ElementCounts.of(issues), issues,
                 a.assumptions(), new Report.RequiredMappings(a.userTasks().values().stream()
                     .flatMap(t -> (t.mappingKeys().isEmpty() ? List.of(t.id()) : t.mappingKeys()).stream()).distinct().toList(),
-                    a.userTasks().keySet().stream().toList(), a.services().keySet().stream().toList(), a.children.stream().toList(), a.serviceGroups),
+                    a.userTasks().keySet().stream().toList(), a.services().keySet().stream().toList(), a.children.stream().toList(), a.serviceGroups,
+                    a.decisions.keySet().stream().toList()),
                 issues.stream().noneMatch(Report.Issue::blocksPublishing)
-                    && issues.stream().noneMatch(i -> (Report.INFO.equals(i.severity()) || Report.REVIEW.equals(i.severity())) && Report.OPEN.equals(i.resolutionStatus())));
+                    && issues.stream().noneMatch(i -> Report.INFO.equals(i.severity()) && Report.OPEN.equals(i.resolutionStatus())));
     }
 
     public static Result convert(Analysis a, JsonNode request, Json json, Map<String, JsonNode> serviceInputTypes) {
+        return convert(a, request, json, serviceInputTypes, Map.of());
+    }
+
+    /**
+     * @param decisionTables business rule task id to the converted DMN table the designer mapped it to (already checked to be
+     *                       convertible by the caller)
+     */
+    public static Result convert(Analysis a, JsonNode request, Json json, Map<String, JsonNode> serviceInputTypes,
+            Map<String, DmnTable> decisionTables) {
         JsonNode effectiveRequest = expandServiceGroups(a,request,json);
         Set<String> assignments = new HashSet<>(report(a, List.of()).requiredMappings().groups());
         rejectUnknownMappings(effectiveRequest.path("groupMappings"), assignments, "groupMappings");
         rejectUnknownMappings(effectiveRequest.path("approvalRoutes"), a.userTasks.keySet(), "approvalRoutes");
         rejectUnknownMappings(effectiveRequest.path("serviceTaskMappings"), a.services.keySet(), "serviceTaskMappings");
         rejectUnknownMappings(effectiveRequest.path("childWorkflowMappings"), a.children, "childWorkflowMappings");
+        rejectUnknownMappings(effectiveRequest.path("decisionMappings"), a.decisions.keySet(), "decisionMappings");
+        for (var entry : effectiveRequest.path("childWorkflowMappings").properties()) {
+            if (entry.getValue().has("forEach") && !a.multiInstance.containsKey(entry.getKey()))
+                throw SourceException.invalid("childWorkflowMappings/" + entry.getKey() + " sets forEach, but this call activity is not a "
+                        + "multi-instance call over a plain collection.");
+            if (entry.getValue().has("collectionMapping") && !entry.getValue().has("forEach"))
+                throw SourceException.invalid("childWorkflowMappings/" + entry.getKey() + " sets collectionMapping, which needs forEach.");
+        }
         Map<String, String> groups = new LinkedHashMap<>();
         Map<String, Analysis.Route> routes = new LinkedHashMap<>();
         for (var task : a.userTasks.values()) {
@@ -62,17 +87,28 @@ public final class Converter {
             }
         }
         List<Report.Issue> issues = new ArrayList<>();
+        boolean acknowledgeInfo = effectiveRequest.path("acknowledgeInfo").asBoolean(false);
+        boolean acknowledgeReview = effectiveRequest.path("acknowledgeReview").asBoolean(false);
         for (var item : a.items) {
             boolean resolved = switch (item.need) {
                 case TASK -> groups.containsKey(item.subject) && routes.containsKey(item.subject);
                 case OUTCOME_GATEWAY -> routes.containsKey(item.subject);
                 case SERVICE -> effectiveRequest.path("serviceTaskMappings").path(item.subject).isObject();
-                case CHILD -> effectiveRequest.path("childWorkflowMappings").path(item.subject).isObject();
-                case ACKNOWLEDGE -> effectiveRequest.path(Report.REVIEW.equals(item.issue.severity()) ? "acknowledgeReview" : "acknowledgeInfo").asBoolean(false);
+                case SERVICE_GROUP -> a.serviceGroups.get(item.subject).stream()
+                        .allMatch(task -> effectiveRequest.path("serviceTaskMappings").path(task).isObject());
+                case CHILD -> childMapped(a, item.subject, effectiveRequest.path("childWorkflowMappings").path(item.subject), effectiveRequest);
+                case DECISION -> effectiveRequest.path("decisionMappings").path(item.subject).isObject() && decisionTables.containsKey(item.subject);
+                case ACKNOWLEDGE -> Report.REVIEW.equals(item.issue.severity()) ? acknowledgeReview : acknowledgeInfo;
                 default -> false;
             };
-            issues.add(resolved ? item.issue.withResolution(item.need == Analysis.Need.ACKNOWLEDGE
-                    ? Report.ACKNOWLEDGED : Report.RESOLVED) : item.issue);
+            Report.Issue shown = item.issue;
+            if (resolved && item.reviewAfterResolution != null) {
+                // A designer mapping converts the construct; its behaviour can still differ, so it becomes a review item.
+                shown = item.reviewAfterResolution.withResolution(acknowledgeReview ? Report.ACKNOWLEDGED : Report.OPEN);
+            } else if (resolved) {
+                shown = item.issue.withResolution(item.need == Analysis.Need.ACKNOWLEDGE ? Report.ACKNOWLEDGED : Report.RESOLVED);
+            }
+            issues.add(shown);
         }
         var compatibility = report(a, issues);
         if (!compatibility.publishable()) return new Result(null, compatibility, Map.of());
@@ -83,7 +119,21 @@ public final class Converter {
         ObjectNode input = json.object(); input.put("type", "object"); input.put("additionalProperties", false);
         ObjectNode properties = input.putObject("properties");
         Map<String, String> inferred = new LinkedHashMap<>();
-        a.branches.values().forEach(b -> inferred.put(Analyzer.fieldKey(b.variable), b.valueType));
+        Map<String, ObjectNode> structured = new LinkedHashMap<>();
+        Map<String, DecisionUse> decisionUses = decisionUses(a, effectiveRequest, decisionTables, json);
+        for (var branch : a.branches.values()) {
+            for (var variable : branch.variables().entrySet()) {
+                if (a.decisionResults.containsKey(variable.getKey())) continue; // read from the decision step, not the request
+                mergeType(inferred, Analyzer.fieldKey(variable.getKey()), variable.getValue());
+            }
+        }
+        for (DecisionUse use : decisionUses.values()) {
+            if (use.fieldRef.startsWith("/input/") && use.fieldRef.indexOf('/', 7) < 0) {
+                String key = use.fieldRef.substring(7);
+                mergeType(inferred, key, use.table.inputType());
+                if (use.table.inputEnum() != null) structured.put(key, use.table.inputField(json));
+            }
+        }
         serviceInputTypes.forEach((key, schema) -> {
             String type = schema.path("type").asString();
             String previous = inferred.putIfAbsent(key, type);
@@ -92,16 +142,30 @@ public final class Converter {
         });
         effectiveRequest.path("serviceTaskMappings").properties().forEach(e -> e.getValue().path("inputMapping").properties()
                 .forEach(m -> { String ref = m.getValue().asString(""); if (ref.matches("/input/[a-z][A-Za-z0-9]{0,63}")) inferred.putIfAbsent(ref.substring(7), "string"); }));
+        // Multi-instance collections are arrays with a designer-set bound; they are not scalar fields.
+        Map<String, ObjectNode> collections = new LinkedHashMap<>();
+        a.multiInstance.forEach((task, mi) -> {
+            JsonNode forEach = effectiveRequest.path("childWorkflowMappings").path(task).path("forEach");
+            ObjectNode field = json.object(); field.put("type", "array"); field.put("title", mi.fieldKey());
+            ObjectNode items = field.putObject("items"); items.put("type", forEach.path("itemType").asString("string")); items.put("title", "Item");
+            field.put("minItems", 1); field.put("maxItems", forEach.path("maxItems").asInt(1));
+            if (collections.putIfAbsent(mi.fieldKey(), field) != null || inferred.containsKey(mi.fieldKey()))
+                throw SourceException.invalid("The collection field '" + mi.fieldKey() + "' is also used as another request field. Supply a reviewed request schema.");
+        });
         inferred.forEach((key, type) -> { var field = properties.putObject(key); field.put("type", type); field.put("title", key); });
+        structured.forEach(properties::set);
         serviceInputTypes.forEach((key, schema) -> {
             ObjectNode field = (ObjectNode) schema.deepCopy();
             if (!field.has("title")) field.put("title", key);
             properties.set(key, field);
         });
-        input.set("required", json.toTree(inferred.keySet()));
+        collections.forEach(properties::set);
+        Set<String> required = new LinkedHashSet<>(inferred.keySet()); required.addAll(collections.keySet());
+        input.set("required", json.toTree(required));
         def.set("inputSchema", effectiveRequest.path("inputSchema").isObject() ? effectiveRequest.path("inputSchema").deepCopy() : input);
         def.set("outputSchema", json.toTree(Map.of("type", "object", "additionalProperties", false, "properties", Map.of())));
-        def.set("outputMapping", json.object()); def.set("decisions", json.toTree(List.of()));
+        def.set("outputMapping", json.object());
+        ArrayNode tables = def.putArray("decisions");
         def.set("triggers", json.toTree(List.of("manual", "api")));
         def.set("security", json.toTree(Map.of("selfApproval", "deny")));
         def.set("execution", json.toTree(Map.of("maxConcurrentRuns", 20, "maxAttempts", 3, "retryDelaySeconds", 30)));
@@ -109,19 +173,34 @@ public final class Converter {
         Map<String, String> sourceMap = new LinkedHashMap<>();
         Set<String> outcomeGateways = new HashSet<>(a.outcomeGatewayOf.values());
         Map<String, Integer> versions = new TreeMap<>();
+        Map<String, String> tableKeys = new LinkedHashMap<>();
+        Set<String> usedTableKeys = new HashSet<>();
         for (var node : a.nodes.values()) {
             if (outcomeGateways.contains(node.id) || a.mergeGateways.contains(node.id)) continue;
             ObjectNode config = json.object();
             String type = switch (node.type) {
                 case "startEvent" -> "start"; case "endEvent" -> "end"; case "userTask" -> "approval";
-                case "serviceTask" -> "http"; case "exclusiveGateway" -> "branch";
+                case "serviceTask" -> "http"; case "exclusiveGateway" -> "branch"; case "businessRuleTask" -> "decision";
                 case "parallelGateway" -> a.parallelJoins.containsKey(node.id) ? "parallelSplit" : "parallelJoin";
                 case "intermediateCatchEvent" -> "wait"; case "callActivity" -> "startWorkflow";
                 default -> throw new IllegalStateException("Unresolved source element");
             };
             if (type.equals("parallelSplit")) config.put("joinRef", a.nodes.get(a.parallelJoins.get(node.id)).canonicalId);
             else if (type.equals("wait")) config.put("duration", a.waits.get(node.id));
-            else if (type.equals("startWorkflow")) config = (ObjectNode) effectiveRequest.path("childWorkflowMappings").path(node.id).deepCopy();
+            else if (type.equals("startWorkflow")) config = childConfig(a, node, effectiveRequest, json);
+            else if (type.equals("decision")) {
+                DecisionUse use = decisionUses.get(node.id);
+                String shareKey = use.table.decisionId() + "@" + use.fieldRef;
+                String key = tableKeys.get(shareKey);
+                if (key == null) {
+                    key = Identifiers.unique(DmnConverter.tableKey(use.table.decisionId()), usedTableKeys);
+                    tableKeys.put(shareKey, key);
+                    ObjectNode table = use.table.table(key, use.fieldRef, json);
+                    if (table == null) throw SourceException.invalid("The decision '" + use.table.decisionId() + "' cannot be converted.");
+                    tables.add(table);
+                }
+                config.put("decisionRef", key);
+            }
             else if (type.equals("end")) {
                 String outcome = node.name == null || node.name.isBlank() ? "Completed" : node.name;
                 config.put("businessOutcome", outcome);
@@ -165,8 +244,7 @@ public final class Converter {
             if (branch != null) {
                 var entry = branch.entries.stream().filter(e -> e.flowId().equals(flow.id)).findFirst().orElseThrow();
                 on = entry.isDefault() ? "default" : "condition";
-                if (!entry.isDefault()) transition.set("condition", json.toTree(Map.of("fieldRef", "/input/" + Analyzer.fieldKey(branch.variable),
-                        "operator", entry.op().canonical(), "value", entry.literal())));
+                if (!entry.isDefault()) transition.set("condition", condition(a, entry, decisionUses, json));
             }
             transition.put("on", on); if (flow.name != null && !flow.name.isBlank()) transition.put("label", flow.name);
             sourceMap.put(flow.id, id);
@@ -188,6 +266,82 @@ public final class Converter {
                 ? i.withTarget(sourceMap.get(i.sourceElementId())) : i).toList());
         return new Result(def, compatibility, sourceMap);
     }
+
+    // ------------------------------------------------------------------------------------------------ helpers
+
+    /** A mapped business rule task: the table, and the field it tests (request field unless the designer chose another). */
+    private record DecisionUse(DmnTable table, String fieldRef, String taskId) { }
+
+    private static Map<String, DecisionUse> decisionUses(Analysis a, JsonNode request, Map<String, DmnTable> tables, Json json) {
+        Map<String, DecisionUse> uses = new LinkedHashMap<>();
+        for (String task : a.decisions.keySet()) {
+            DmnTable table = tables.get(task);
+            JsonNode mapping = request.path("decisionMappings").path(task);
+            if (table == null || !mapping.isObject()) continue;
+            String ref = mapping.path("inputRef").asString("");
+            if (ref.isBlank()) ref = "/input/" + table.inputKey();
+            uses.put(task, new DecisionUse(table, ref, task));
+        }
+        return uses;
+    }
+
+    private static void mergeType(Map<String, String> inferred, String key, String type) {
+        String previous = inferred.putIfAbsent(key, type);
+        if (previous != null && !previous.equals(type) && !(Set.of(previous, type).contains("number") && Set.of(previous, type).contains("integer")))
+            throw SourceException.invalid("Incompatible inferred types for request field '" + key + "'. Supply a reviewed request schema.");
+    }
+
+    /** True once the call activity has a complete mapping; a multi-instance call also needs its for-each settings. */
+    private static boolean childMapped(Analysis a, String task, JsonNode mapping, JsonNode request) {
+        if (!mapping.isObject()) return false;
+        if (!a.multiInstance.containsKey(task)) return true;
+        JsonNode each = mapping.path("forEach");
+        boolean typed = request.path("inputSchema").isObject() || each.has("itemType");
+        return each.isObject() && each.has("itemInput") && each.has("maxItems") && typed;
+    }
+
+    /** startWorkflow configuration from the reviewed mapping; a multi-instance call becomes a bounded for-each. */
+    private static ObjectNode childConfig(Analysis a, Analysis.Node node, JsonNode request, Json json) {
+        ObjectNode config = (ObjectNode) request.path("childWorkflowMappings").path(node.id).deepCopy();
+        Analysis.MultiInstance mi = a.multiInstance.get(node.id);
+        if (mi == null) return config;
+        ObjectNode each = (ObjectNode) config.remove("forEach");
+        ObjectNode forEach = json.object();
+        forEach.put("itemsRef", "/input/" + mi.fieldKey());
+        forEach.put("itemInput", each.path("itemInput").asString());
+        forEach.put("maxItems", each.path("maxItems").asInt());
+        forEach.put("mode", mi.sequential() ? "sequential" : "parallel");
+        config.set("forEach", forEach);
+        return config;
+    }
+
+    /** Transition condition of a branch path: one comparison, or a flat all/any group. Original operators are kept exactly. */
+    private static JsonNode condition(Analysis a, Analysis.BranchEntry entry, Map<String, DecisionUse> decisionUses, Json json) {
+        List<Map<String, Object>> terms = new ArrayList<>();
+        for (Expressions.Comparison term : entry.terms()) {
+            String ref = "/input/" + Analyzer.fieldKey(term.variable());
+            String task = a.decisionResults.get(term.variable());
+            if (task != null) {
+                DecisionUse use = decisionUses.get(task);
+                if (use == null || use.table.outputs().size() != 1)
+                    throw SourceException.invalid("The result variable '" + term.variable() + "' needs a decision with exactly one output, but "
+                            + (use == null ? "the business rule task '" + task + "' is not mapped." : "'" + use.table.decisionId() + "' has "
+                            + use.table.outputs().size() + "."));
+                DmnTable.Output output = use.table.outputs().get(0);
+                String type = term.valueType();
+                boolean numeric = Set.of("number", "integer").contains(output.type()) && type.equals("number");
+                if (!numeric && !output.type().equals(type))
+                    throw SourceException.invalid("The gateway compares '" + term.variable() + "' as " + type + ", but output '" + output.key()
+                            + "' of decision '" + use.table.decisionId() + "' is " + output.type() + ".");
+                ref = "/steps/" + a.nodes.get(task).canonicalId + "/" + output.key();
+            }
+            Map<String, Object> atom = new LinkedHashMap<>();
+            atom.put("fieldRef", ref); atom.put("operator", term.op().canonical()); atom.put("value", term.literal());
+            terms.add(atom);
+        }
+        return json.toTree(entry.compound() ? Map.of(entry.group(), terms) : terms.get(0));
+    }
+
     public static JsonNode expandServiceGroups(Analysis analysis,JsonNode request,Json json) {
         rejectUnknownMappings(request.path("serviceGroupMappings"),analysis.serviceGroups.keySet(),"serviceGroupMappings");
         ObjectNode expanded=(ObjectNode)request.deepCopy(); ObjectNode tasks=json.object();

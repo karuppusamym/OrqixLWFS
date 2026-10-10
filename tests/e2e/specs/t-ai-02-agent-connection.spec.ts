@@ -21,8 +21,9 @@ test('administrator sees the AI agent connection, its tools, and tests it with a
   await agent.getByLabel(/Country/).fill('United Kingdom')
   await agent.getByLabel(/Annual spend/).fill('12000')
   await agent.getByRole('button', { name: 'Test the agent' }).click()
+  // A real model call (real stack) takes 5-40 s; the mock answers at once.
   await expect(agent.getByTestId('agent-test-summary')).toContainText(
-    "Vendor risk assistant checked 'Acme Ltd' using Vendor registry: risk 72 (high)",
+    "Vendor risk assistant checked 'Acme Ltd' using Vendor registry: risk 72 (high)", { timeout: 90_000 },
   )
   await expect(agent.getByTestId('agent-test-output')).toContainText('high')
 })

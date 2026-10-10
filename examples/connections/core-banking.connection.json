@@ -1,0 +1,135 @@
+{
+  "schemaVersion": "0.1",
+  "key": "core-banking",
+  "version": 1,
+  "name": "Core banking and card processing (stub contract)",
+  "description": "Illustrative contract for booking an approved loan and raising a card chargeback. The bank's real core system and card processor are not part of Orqix; this definition is what the local test stub implements. Both operations are deduplicated by the Idempotency-Key. The key is the platform's effect key, not a business key (see docs/banking-capability-matrix.md).",
+  "operations": {
+    "bookLoan": {
+      "label": "Book an approved loan",
+      "description": "Books one loan. Amount is a decimal with two places in USD.",
+      "method": "POST",
+      "path": "/bookings",
+      "requestSchema": {
+        "type": "object",
+        "required": [
+          "applicationReference",
+          "product",
+          "amount",
+          "termMonths"
+        ],
+        "properties": {
+          "applicationReference": {
+            "type": "string",
+            "maxLength": 60
+          },
+          "product": {
+            "type": "string",
+            "enum": [
+              "personalLoan",
+              "smallBusinessLoan",
+              "overdraft"
+            ]
+          },
+          "amount": {
+            "type": "number"
+          },
+          "termMonths": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false
+      },
+      "responseSchema": {
+        "type": "object",
+        "required": [
+          "bookingId",
+          "status"
+        ],
+        "properties": {
+          "bookingId": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "BOOKED"
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
+      "successStatuses": [
+        200,
+        201
+      ],
+      "effectClass": "idempotentWithKey",
+      "idempotencyHeader": "Idempotency-Key",
+      "maxTimeoutSeconds": 20,
+      "testable": false
+    },
+    "openChargeback": {
+      "label": "Raise a chargeback",
+      "description": "Raises one chargeback for one disputed card transaction.",
+      "method": "POST",
+      "path": "/chargebacks",
+      "requestSchema": {
+        "type": "object",
+        "required": [
+          "claimReference",
+          "transactionReference",
+          "reasonCode"
+        ],
+        "properties": {
+          "claimReference": {
+            "type": "string",
+            "maxLength": 60
+          },
+          "transactionReference": {
+            "type": "string",
+            "maxLength": 60
+          },
+          "reasonCode": {
+            "type": "string",
+            "enum": [
+              "fraud",
+              "merchantDispute",
+              "duplicateCharge",
+              "goodsNotReceived"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "responseSchema": {
+        "type": "object",
+        "required": [
+          "chargebackId",
+          "status"
+        ],
+        "properties": {
+          "chargebackId": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "OPEN"
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
+      "successStatuses": [
+        200,
+        201
+      ],
+      "effectClass": "idempotentWithKey",
+      "idempotencyHeader": "Idempotency-Key",
+      "maxTimeoutSeconds": 20,
+      "testable": false
+    }
+  }
+}

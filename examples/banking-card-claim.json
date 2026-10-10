@@ -1,0 +1,220 @@
+{
+  "schemaVersion": "0.1",
+  "workflowKey": "card-dispute-claim",
+  "name": "Card dispute claim",
+  "metadata": {
+    "description": "Illustrative template, not a regulatory-compliant product; no jurisdiction is assumed. A Claim starts one pinned Dispute child per disputed transaction (up to five, in parallel) and finishes only when every dispute has finished. Per-dispute outcomes and references are collected in transaction order.",
+    "tags": [
+      "banking",
+      "disputes",
+      "illustrative"
+    ]
+  },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "claimReference",
+      "cardToken",
+      "reasonCode",
+      "transactions"
+    ],
+    "properties": {
+      "claimReference": {
+        "type": "string",
+        "title": "Claim reference",
+        "minLength": 1,
+        "maxLength": 60
+      },
+      "cardToken": {
+        "type": "string",
+        "title": "Card token",
+        "minLength": 1,
+        "maxLength": 40,
+        "description": "The masked card reference from your card system. Never enter a card number."
+      },
+      "reasonCode": {
+        "type": "string",
+        "title": "Reason",
+        "enum": [
+          "fraud",
+          "merchantDispute",
+          "duplicateCharge",
+          "goodsNotReceived"
+        ]
+      },
+      "transactions": {
+        "type": "array",
+        "title": "Disputed transactions",
+        "items": {
+          "type": "string",
+          "title": "Transaction reference",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "minItems": 1,
+        "maxItems": 5
+      }
+    }
+  },
+  "inputUi": {
+    "order": [
+      "claimReference",
+      "cardToken",
+      "reasonCode",
+      "transactions"
+    ],
+    "widgets": {
+      "reasonCode": "select"
+    },
+    "currency": "USD"
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "outcomeItems": {
+        "type": "array",
+        "title": "Dispute outcomes",
+        "items": {
+          "type": "string",
+          "title": "Outcome"
+        },
+        "minItems": 1,
+        "maxItems": 5
+      },
+      "referenceItems": {
+        "type": "array",
+        "title": "Dispute references",
+        "items": {
+          "type": "string",
+          "title": "Reference"
+        },
+        "minItems": 1,
+        "maxItems": 5
+      },
+      "allSucceeded": {
+        "type": "boolean",
+        "title": "Every dispute accepted"
+      }
+    }
+  },
+  "triggers": [
+    "manual",
+    "api"
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "label": "Claim received",
+      "config": {}
+    },
+    {
+      "id": "disputes",
+      "type": "startWorkflow",
+      "label": "Dispute each transaction",
+      "config": {
+        "workflowRef": "card-dispute",
+        "inputMapping": {
+          "claimReference": "/input/claimReference",
+          "reasonCode": "/input/reasonCode"
+        },
+        "resultMapping": {},
+        "forEach": {
+          "itemsRef": "/input/transactions",
+          "itemInput": "transactionReference",
+          "maxItems": 5,
+          "mode": "parallel"
+        },
+        "collectionMapping": {
+          "outcomeItems": "outcome",
+          "referenceItems": "reference"
+        }
+      }
+    },
+    {
+      "id": "result",
+      "type": "branch",
+      "label": "Every dispute accepted?",
+      "config": {}
+    },
+    {
+      "id": "resolved",
+      "type": "end",
+      "label": "Claim resolved",
+      "config": {
+        "businessOutcome": "Claim resolved",
+        "outcomeKind": "success"
+      }
+    },
+    {
+      "id": "partial",
+      "type": "end",
+      "label": "Claim has declined items",
+      "config": {
+        "businessOutcome": "Claim has declined items",
+        "outcomeKind": "rejected"
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t1",
+      "from": "start",
+      "to": "disputes",
+      "on": "next"
+    },
+    {
+      "id": "t2",
+      "from": "disputes",
+      "to": "result",
+      "on": "next"
+    },
+    {
+      "id": "t3",
+      "from": "result",
+      "to": "resolved",
+      "on": "condition",
+      "label": "Every dispute accepted",
+      "condition": {
+        "fieldRef": "/steps/disputes/allSucceeded",
+        "operator": "eq",
+        "value": true
+      }
+    },
+    {
+      "id": "t4",
+      "from": "result",
+      "to": "partial",
+      "on": "default",
+      "label": "At least one dispute declined or lapsed"
+    }
+  ],
+  "decisions": [],
+  "execution": {
+    "maxConcurrentRuns": 200,
+    "maxAttempts": 3,
+    "retryDelaySeconds": 30
+  },
+  "security": {
+    "selfApproval": "deny"
+  },
+  "dependencies": {
+    "connections": []
+  },
+  "outputMapping": {
+    "outcomeItems": {
+      "fieldRef": "/steps/disputes/outcomeItems",
+      "required": false
+    },
+    "referenceItems": {
+      "fieldRef": "/steps/disputes/referenceItems",
+      "required": false
+    },
+    "allSucceeded": {
+      "fieldRef": "/steps/disputes/allSucceeded",
+      "required": false
+    }
+  }
+}

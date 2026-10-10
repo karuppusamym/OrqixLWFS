@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC hand-authored fixture, not a customer export. Multi-instance constructs that stay blocked
+     (MULTI_INSTANCE_NOT_SUPPORTED): a user task per item, a fixed loop cardinality, an early completion condition, a Camunda 8
+     output collection, a collection that is an expression and a standard loop. -->
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" targetNamespace="urn:orqix:migration-fixture">
+  <bpmn:process id="multi-instance-unsupported" name="Unsupported loops" isExecutable="true">
+    <bpmn:startEvent id="start" />
+    <bpmn:userTask id="approveEach" name="Approve each" camunda:candidateGroups="source-managers">
+      <bpmn:multiInstanceLoopCharacteristics id="approveLoop" camunda:collection="approvers" camunda:elementVariable="approver" />
+    </bpmn:userTask>
+    <bpmn:callActivity id="fixedCount" name="Fixed count" calledElement="review-request">
+      <bpmn:multiInstanceLoopCharacteristics id="fixedLoop"><bpmn:loopCardinality id="cardinality">3</bpmn:loopCardinality></bpmn:multiInstanceLoopCharacteristics>
+    </bpmn:callActivity>
+    <bpmn:callActivity id="earlyStop" name="Early stop" calledElement="review-request">
+      <bpmn:multiInstanceLoopCharacteristics id="earlyLoop" camunda:collection="items" camunda:elementVariable="item"><bpmn:completionCondition id="early">${nrOfCompletedInstances &gt;= 2}</bpmn:completionCondition></bpmn:multiInstanceLoopCharacteristics>
+    </bpmn:callActivity>
+    <bpmn:callActivity id="collectResults" name="Collect results" calledElement="review-request">
+      <bpmn:multiInstanceLoopCharacteristics id="collectLoop"><bpmn:extensionElements><zeebe:loopCharacteristics inputCollection="=items" inputElement="item" outputCollection="results" outputElement="=result" /></bpmn:extensionElements></bpmn:multiInstanceLoopCharacteristics>
+    </bpmn:callActivity>
+    <bpmn:callActivity id="computedCollection" name="Computed collection" calledElement="review-request">
+      <bpmn:multiInstanceLoopCharacteristics id="computedLoop" camunda:collection="${order.items}" camunda:elementVariable="item" />
+    </bpmn:callActivity>
+    <bpmn:callActivity id="repeatWhile" name="Repeat while" calledElement="review-request">
+      <bpmn:standardLoopCharacteristics id="repeatLoop" testBefore="false"><bpmn:loopCondition id="repeatCondition">${retry}</bpmn:loopCondition></bpmn:standardLoopCharacteristics>
+    </bpmn:callActivity>
+    <bpmn:endEvent id="done" name="Done" />
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="approveEach" />
+    <bpmn:sequenceFlow id="f2" sourceRef="approveEach" targetRef="fixedCount" />
+    <bpmn:sequenceFlow id="f3" sourceRef="fixedCount" targetRef="earlyStop" />
+    <bpmn:sequenceFlow id="f4" sourceRef="earlyStop" targetRef="collectResults" />
+    <bpmn:sequenceFlow id="f5" sourceRef="collectResults" targetRef="computedCollection" />
+    <bpmn:sequenceFlow id="f6" sourceRef="computedCollection" targetRef="repeatWhile" />
+    <bpmn:sequenceFlow id="f7" sourceRef="repeatWhile" targetRef="done" />
+  </bpmn:process>
+</bpmn:definitions>

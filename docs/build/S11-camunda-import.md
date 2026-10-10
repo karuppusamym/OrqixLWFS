@@ -9,7 +9,7 @@ Upload → safe parse → detect source (Camunda 7 `camunda:` namespace, Camunda
 
 **Safe parsing:** XML only, ≤ 1 MiB, ≤ 2,000 elements; DTDs and external entities disabled (XXE), no external schema fetching; exactly one executable `process` (others are reported, not converted).
 
-## 2. Element dispositions (adapter `camunda-bpmn-0.1`)
+## 2. Element dispositions (baseline adapter `camunda-bpmn-0.1`; changes in the revisions below)
 
 | Source element | Disposition | Canonical result |
 |---|---|---|
@@ -29,7 +29,7 @@ Upload → safe parse → detect source (Camunda 7 `camunda:` namespace, Camunda
 | `subProcess`, `callActivity`, multi-instance, execution/task listeners, `camunda:inputOutput`, forms | Blocked or Info | Reported with reason; listeners/forms are Info (dropped knowingly, acknowledgement required) |
 | Unknown elements | Blocked | `UNKNOWN_ELEMENT` — never silently omitted |
 
-Report severities: `blocker` (cannot convert), `action` (needs a designer mapping), `info` (acknowledged loss, e.g. listeners), `supported`. Element counts are an inventory metric only.
+Report severities: `blocker` (cannot convert), `action` (needs a designer mapping), `review` (converted, behaviour could differ; never blocks), `info` (acknowledged loss, e.g. listeners), `supported`. Element counts are an inventory metric only.
 
 ## 3. API (OpenAPI tag *Migration*)
 
@@ -54,3 +54,30 @@ Workflows → **Import** → upload a `.bpmn` file → compatibility report (cou
 The adapter now imports unambiguous paired parallel gateways, fixed positive intermediate duration timers (one minute to 90 days), and call activities after explicit `childWorkflowMappings` review. The normal compiler still validates all converted graphs, child contracts and publish-time release pins. Date/recurring/boundary timers and ambiguous gateway regions remain blocked. See `docs/17-migration-workbench.md` for the supported surface.
 
 Pega archive inspection recognizes bounded XML identity fields and unresolved dependency references, and suggests reviewed target mappings according to recognized rule class. It retains file-level disposition and provenance; no rule-resolution equivalence or automatic native conversion is claimed. Genuine customer exports and expected scenarios remain acceptance inputs.
+
+## Revision 0.3 projects and independent review
+
+Multi-file projects (`MigrationProjects`, `ProjectAnalyzer`, V17) order BPMN files by call-activity dependencies and convert them one at a time through `convert-next`; the independent review policy (`MigrationGovernance`, V18) binds an approval to the draft, source and mappings hashes and requires mapper, reviewer and publisher to be three people before a migrated workflow can be published. Behavior, limits and the permission matrix are in `docs/17-migration-workbench.md`; integration tests are `MigrationProjectApiTest` and `MigrationGovernanceApiTest`.
+
+## Revision 0.4 conversion expansion (adapter `camunda-bpmn-0.4`, DMN adapter `dmn-0.1`)
+
+The section 2 table is the 0.1 baseline; this revision changes these rows. See `docs/17-migration-workbench.md` for the user-facing description, the severity model and the exact limits.
+
+| Source element | Disposition now | Canonical result |
+|---|---|---|
+| Any converted construct whose behaviour can differ | **`review`** (non-blocking, counted in `elementCounts.review`, persisted in the report, acknowledged with `acknowledgeReview`) | the target policy, finish outcome kind, inferred approval routes and request fields, converted conditions, mapped timers, parallel regions, mapped service/child/decision calls, multi-instance, DMN rules |
+| `exclusiveGateway` | Mapped (`review` per condition, original text kept) | `branch` with `eq ne gte gt lt lte` and flat `all` / `any` groups of 2 to 8 comparisons, JUEL and FEEL. The compiler proves the paths exclusive |
+| Gateway with `not(...)` over a comparison, mixed and/or, nested groups, functions, property access | Blocked | `EXPRESSION_NOT_SUPPORTED` on the gateway and on the flow, with the source text and the reason |
+| `serviceTask` (delegate class, delegate expression, expression, external task topic, Zeebe job type) | Blocked until mapped; tasks with the same implementation also get one grouped `action` item (`SERVICE_TASK_GROUP`) | `http`; `serviceGroupMappings` (one mapping per group) or `serviceTaskMappings` (per task, overrides the group) |
+| `businessRuleTask` with a literal decision id | Blocked until `decisionMappings` points at an uploaded DMN migration, then `review` | `decision` step with the converted table; a gateway on its single-entry result variable reads `/steps/<task>/<output>` |
+| `businessRuleTask` with a delegate/expression/worker or a dynamic decision id | Blocked (`DMN_IMPORT_NOT_SUPPORTED`) | none |
+| `callActivity` with `multiInstanceLoopCharacteristics` over a plain collection | `action` until the child mapping carries `forEach`, then `review` | `startWorkflow` with `forEach {itemsRef, itemInput, maxItems, mode}`; the collection becomes a required bounded array field |
+| Other multi-instance (user task, fixed cardinality, completion condition, output collection, expression collection, standard loop) | Blocked | `MULTI_INSTANCE_NOT_SUPPORTED` with the specific reason; loop child elements are dispositioned too |
+
+Dropped listeners keep `info` (acknowledgement required): the importer cannot judge executable code harmless.
+
+**DMN adapter.** Source format `dmn`; `sourceSystem` `dmn`; the file is stored like any source (bytes, SHA-256, adapter version) in `migration_job` (migration V19 allows the format). The report has a disposition for the definitions, every decision, table, column and rule. Hit policies UNIQUE and FIRST with one tested input and literal unary tests and outputs convert; all else is a blocker with a `DMN_*` reason code. The converted table is built by exact set algebra (`Region`: number intervals with open/closed bounds, integer normalisation, finite and co-finite value sets), so that overlap, gap, order and default decisions are proofs, not heuristics. Because decision tables exist only inside workflows, converting a DMN migration creates a draft that hosts one decision (start, decision, finish; request form from the input, result from the outputs); a business rule task attaches the same table to a BPMN draft. `report.testCases` holds the generated boundary cases: each is answered by the source semantics and by the compiler's `DecisionEvaluator`; a mismatch refuses the table.
+
+**API additions** (additive): upload `sourceFormat: dmn`; convert request `serviceGroupMappings`, `decisionMappings`, `decisionId`, `acknowledgeReview`, `childWorkflowMappings[*].forEach` and `collectionMapping`; report `elementCounts.review`, `requiredMappings.serviceGroups` and `decisionTasks`, `testCases`, `sourceSystem: dmn`. Existing request keys are unchanged. `publishable` is not affected by review items.
+
+**Tests.** `ExpressionsTest` (operators, groups, every unsupported form), `ConverterExpansionTest` (review items, groups, operators validated by the compiler and walked with its condition matcher, multi-instance validated against a published child), `DmnImportTest` (fixtures, hand-written boundary expectations through the compiler's evaluator, every unsupported construct, and 600 seeded random tables checked against an independent oracle), `FixtureDispositionTest` (every element of every new fixture) and `MigrationApiTest` (review counts persisted, grouped mapping, operators executed by Flowable, DMN converted and boundary values run through the rule tester and a published release, business rule task attached to a decision, multi-instance executed with two child runs). All fixtures are hand-authored and synthetic.

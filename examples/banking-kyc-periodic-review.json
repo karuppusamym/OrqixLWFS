@@ -1,0 +1,165 @@
+{
+  "schemaVersion": "0.1",
+  "workflowKey": "kyc-periodic-review",
+  "name": "KYC periodic review",
+  "metadata": {
+    "description": "Illustrative template. Child of KYC customer onboarding review: waits until the review is due, then an analyst re-reviews the customer. The wait is fixed at 90 days for every risk tier because durations cannot yet come from data.",
+    "tags": [
+      "banking",
+      "kyc",
+      "illustrative"
+    ]
+  },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "customerName",
+      "customerType"
+    ],
+    "properties": {
+      "customerName": {
+        "type": "string",
+        "title": "Customer name",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "customerType": {
+        "type": "string",
+        "title": "Customer type",
+        "enum": [
+          "individual",
+          "corporate"
+        ]
+      }
+    }
+  },
+  "inputUi": {
+    "order": [
+      "customerName",
+      "customerType"
+    ],
+    "widgets": {
+      "customerType": "radio"
+    },
+    "currency": "USD"
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "reviewedBy": {
+        "type": "string",
+        "title": "Reviewed by"
+      }
+    }
+  },
+  "triggers": [
+    "manual",
+    "api"
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "label": "Review scheduled",
+      "config": {}
+    },
+    {
+      "id": "due",
+      "type": "wait",
+      "label": "Wait until the review is due",
+      "config": {
+        "duration": "P90D"
+      }
+    },
+    {
+      "id": "review",
+      "type": "approval",
+      "label": "Re-review the customer",
+      "config": {
+        "candidateGroupRef": "kyc-analysts",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 72
+      }
+    },
+    {
+      "id": "done",
+      "type": "end",
+      "label": "Review completed",
+      "config": {
+        "businessOutcome": "Review completed",
+        "outcomeKind": "success"
+      }
+    },
+    {
+      "id": "notifyEscalated",
+      "type": "notification",
+      "label": "Tell requester the review found a problem",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "The periodic review did not confirm the customer. Open the request to see the reason."
+      }
+    },
+    {
+      "id": "escalated",
+      "type": "end",
+      "label": "Review escalated",
+      "config": {
+        "businessOutcome": "Review escalated",
+        "outcomeKind": "rejected"
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t1",
+      "from": "start",
+      "to": "due",
+      "on": "next"
+    },
+    {
+      "id": "t2",
+      "from": "due",
+      "to": "review",
+      "on": "next"
+    },
+    {
+      "id": "t3",
+      "from": "review",
+      "to": "done",
+      "on": "approved"
+    },
+    {
+      "id": "t4",
+      "from": "review",
+      "to": "notifyEscalated",
+      "on": "rejected"
+    },
+    {
+      "id": "t5",
+      "from": "notifyEscalated",
+      "to": "escalated",
+      "on": "next"
+    }
+  ],
+  "decisions": [],
+  "execution": {
+    "maxConcurrentRuns": 200,
+    "maxAttempts": 3,
+    "retryDelaySeconds": 30
+  },
+  "security": {
+    "selfApproval": "deny"
+  },
+  "dependencies": {
+    "connections": []
+  },
+  "outputMapping": {
+    "reviewedBy": {
+      "fieldRef": "/steps/review/decidedBy",
+      "required": true
+    }
+  }
+}

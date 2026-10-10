@@ -19,7 +19,7 @@ public final class ProjectAnalyzer {
             bytes+=source.content().getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
             if(bytes>4_194_304) throw new SourceException("Project source exceeds 4 MiB total.",true);
             if(source.sourceFormat()!=null && !"bpmn".equals(source.sourceFormat())) {
-                issues.add(new Issue(source.fileName(),"PROJECT_FORMAT_NOT_SUPPORTED","This project preserves the source but converts BPMN only; DMN/forms need separate reviewed reconstruction."));
+                issues.add(new Issue(source.fileName(),"PROJECT_FORMAT_NOT_SUPPORTED","This project preserves the source but converts BPMN only. Upload a DMN file as its own migration (source format dmn) and attach it with decisionMappings; forms need separate reviewed reconstruction."));
                 files.add(new File(source.fileName(),null,List.of(),null)); continue;
             }
             Analysis analysis=Analyzer.analyze(source.content(),Limits.DEFAULT);

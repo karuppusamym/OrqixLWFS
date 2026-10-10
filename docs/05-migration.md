@@ -1,5 +1,5 @@
 # Migration strategy: PEGA, Camunda and LWFS
-Status: a supported Camunda 7/8 subset and Pega archive assessment with reviewed manual mappings are implemented. Synthetic fixtures are tested; customer source exports have not been supplied. See the [migration workbench](17-migration-workbench.md) for current behavior and limits. The broader adapters below remain a strategy.
+Status: a supported Camunda 7/8 subset (including comparison operators and and/or groups, grouped service mappings, bounded multi-instance calls and DMN decision tables with hit policies UNIQUE and FIRST) and Pega archive assessment with reviewed manual mappings are implemented. Synthetic fixtures are tested; customer source exports have not been supplied. See the [migration workbench](17-migration-workbench.md) for current behavior and limits. The broader adapters below remain a strategy.
 
 ## Migration product contract
 
@@ -19,17 +19,18 @@ BPMN syntax alone does not guarantee runtime equivalence. Record whether the sou
 |---|---|---|
 | None start / end, sequence flow | Map to canonical start/end/transitions | Conditional stretch |
 | User task | Map assignment and form only when supported | Group/form remediation often required |
-| Exclusive gateway | Translate only recognized typed conditions | Raw expression blocked |
+| Exclusive gateway | Translate only recognized typed conditions: `== != > >= < <=` and flat and/or groups; each is a review item with the source text | Raw expression, `not` over a comparison, mixed and/or blocked |
 | Parallel fork/join | Preserve matched pattern | After medium pattern is tested |
 | Service task | Map to an approved target connector operation | Never execute source Java delegate/worker automatically |
 | Camunda 7 Java/external tasks | Replace with target connector/agent contract | Manual implementation and behavior test |
-| Camunda 8 job type/headers | Map to registered worker operation and schema | No automatic semantic equivalence |
+| Camunda 8 job type/headers | Map to registered worker operation and schema; tasks with the same job type, topic or delegate class share one mapping | No automatic semantic equivalence |
 | Camunda expressions / FEEL / JUEL | Translate explicit supported subset | Unsupported expressions block |
 | Timer | Preserve supported duration and tested semantics | Cron/timezone/calendar details require review |
 | Call activity | Resolve and lock child definition | Missing child blocks conversion |
 | Forms | Map supported field schema | Rebuild unsupported layout/behavior |
-| DMN | Inspect hit policy, expressions and types | Revalidate/recompile supported tables |
-| Listeners, scripts, compensation, multi-instance | Preserve source evidence and report | Deferred or manual redesign |
+| DMN | Inspect hit policy, expressions and types; convert UNIQUE and FIRST tables with literal tests into a decision table hosted in a draft or attached to a business rule task, with generated boundary cases | Other hit policies, expressions, several tested inputs and gaps blocked; revalidate on real samples |
+| Listeners, scripts, compensation | Preserve source evidence and report | Deferred or manual redesign |
+| Multi-instance | Call activity over a plain collection becomes a bounded for-each (designer sets the bound, 1 to 25); everything else stays blocked | Other multi-instance forms manual |
 | Running instances/history | Separate migration project | Out of initial scope |
 
 For a three-day import demo, use one real customer/source BPMN file in the tested subset. If none is available, a clearly identified hand-authored compatibility fixture tests the adapter, but is not proof of customer migration.
@@ -81,7 +82,7 @@ A normalized intermediate format may be designed after inspection. The Orqix can
 
 ## Compatibility report contract
 
-Fields: sourceSystem, sourceVersion, adapterVersion, sourceHash, elementCounts, mappings, issues, assumptions, requiredBindings, testCases and publishable.
+Fields: sourceSystem, sourceVersion, adapterVersion, sourceHash, elementCounts (supported, info, review, action, blocker), mappings, issues, assumptions, requiredBindings, testCases (generated and run for DMN tables) and publishable. Severity `review` means converted but verify: it never blocks and is acknowledged separately from `info` losses.
 
 Each issue: sourceElementId, sourcePath, sourceKind, severity, reasonCode, explanation, targetNodeId if any, suggestedAction, owner and resolutionStatus.
 

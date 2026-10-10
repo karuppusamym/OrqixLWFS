@@ -245,15 +245,15 @@ public class RunService {
         Map<UUID, String> names = views.names(List.of(run), runTasks, decisions);
         Map<String, TaskQueries.DecisionRow> byTask = new HashMap<>();
         decisions.forEach(d -> byTask.put(d.taskId(), d));
+        boolean data = visible.dataVisible();
         List<RuntimeDtos.TaskSummary> taskViews = runTasks.stream()
-                .map(t -> views.task(t, run, names, byTask.get(t.taskId()))).toList();
+                .map(t -> views.task(t, run, names, byTask.get(t.taskId()), data)).toList();
         boolean operate = access.has(Permission.RUN_OPERATE);
         List<EffectJournal.Effect> effects = journal.forRun(run.workspaceId(), run.id());
         List<RuntimeDtos.Effect> effectViews = operate ? effects.stream()
                 .map(e -> views.effect(e, label(release, e.nodeId()))).toList() : null;
         List<RuntimeDtos.Effect> reversedViews = notReversed.isEmpty() ? null : notReversed.stream()
                 .map(e -> views.effect(e, label(release, e.nodeId()))).toList();
-        boolean data = visible.dataVisible();
         RuntimeDtos.RunSummary summary = views.run(run, names, access.workspace().isTest());
         return new RuntimeDtos.RunDetail(summary.id(), summary.reference(), summary.workflow(), summary.release(), summary.businessKey(),
                 summary.initiator(), summary.lifecycle(), summary.outcome(), summary.outcomeKind(), summary.currentSteps(),

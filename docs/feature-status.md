@@ -1,7 +1,40 @@
 # Feature implementation status (R0)
-Updated 9 October 2026 · deliverable 18 · status vocabulary from [doc 09](09-master-plan.md#definition-of-a-build-ticket)
+Updated 10 October 2026 · deliverable 18 · status vocabulary from [doc 09](09-master-plan.md#definition-of-a-build-ticket)
 
 **Verified** = automated tests pass against real PostgreSQL/Flowable (and, where stated, the Docker stack with real Keycloak and the procurement stub). **Implemented** = code exists; integration or acceptance verification is pending or limited as stated in the row. Nothing is marked Verified on mocks alone.
+
+## Latest verification — 10 October 2026 (demo release candidate)
+
+Everything below ran against the working tree committed with this revision, on a Docker stack rebuilt from it with a clean database and the demo data from `tools/demo/seed_demo.py`. It supersedes the counts in the older baseline below.
+
+| Suite | Result |
+|---|---|
+| Compiler | 267 tests pass |
+| Application (Testcontainers PostgreSQL 18, WireMock) | 436 tests pass, 2 skipped (opt-in live AI and agent tests) |
+| Frontend (Vitest) | 490 tests pass; typecheck, lint, build and API-type drift check pass |
+| Browser E2E, Docker stack | 29 pass, 8 skipped (mock-only checks); one agent-test wait was too short for a real model call, fixed and rerun green; no serious accessibility findings |
+| Browser E2E, mock mode | 33 pass, 4 skipped (real-stack-only checks) |
+| API E2E, Docker stack | Purchase scenarios with fault injection 26/26; rollback, reconcile, cancel and forged-field scenarios 33/33; agent scenarios (Demo 2) 19/19; AI drafting (Demo 7, live provider) 21/21; parallel, timer and child-workflow scenarios (Demo 4) 33/33 |
+| Contract check / manifests | 67 checks / 132 checks across 3 overlays pass |
+
+### Demo readiness
+
+| Demo | Status | Evidence and limits |
+|---|---|---|
+| 1 Business approval | Verified | Real stack end to end including restart, finance routing, rejection, version pinning, cross-workspace denial, fault recovery. Real procurement endpoint (D07) still needed for the final acceptance |
+| 2 Agent → MCP tool → rule | Verified | `AgentFlowsTest`, `AgentExecutorTest`, `McpClientTest`, stub MCP (87 tests), live DeepSeek run for USD 0.00065, API scenarios 20–23. One MCP server per agent connection; read-only tools only; no Teams or write tools ([S13](build/S13-agents-mcp.md)) |
+| 3 Teams approval | Deferred | Secured in-app inbox is the baseline; needs a Teams tenant (R2) |
+| 4 Child workflow | Verified | Parallel branches, timers and pinned child workflows: `WorkflowPatternsTest`, compiler rules (267), API scenarios 15–17 on the real stack including the real one-minute timer. No "wait until a date"; cancelled child not restartable ([S12](build/S12-workflow-patterns.md)) |
+| 5 Camunda import | Verified (supported subset) | Report with a disposition for every element, XXE and size limits, equivalence at the 5,000 boundary |
+| 6 Pega import | Blocked | Needs a genuine Pega export; only inventory and manual mappings on a synthetic archive exist |
+| 7 AI workflow builder | Verified | Background generation, review panel, explain, model policy and breaker; API scenarios 30–31 on the real stack; eval results in the older baseline below ([S10](build/S10-ai-assistance.md)) |
+
+Defects found and fixed in this round: run comments returned 400 instead of the hidden 404 to outsiders (security matrix); the frontend did not typecheck after the Assistant and comments work; `openapi.yaml` had acquired Windows line endings, which broke a contract test; phone layouts overflowed sideways on long titles (819 px wide at 375 px).
+
+### Known limits to state when asked
+- AI generation takes 10–60 s and depends on the provider; budgets cap spend (USD 10 a month, 0.50 a request). Jev Router cannot be restricted to a candidate list, so its chosen model is checked after the call and the profile is paused for the day if it is forbidden.
+- The conversational Assistant is new and has not been demonstrated or reviewed in this round; it is not part of the demo script.
+- Nothing here has run on a real OpenShift cluster, real PingFederate, a CI host or the real procurement API; the production gates remain open.
 
 ## Historical combined verification baseline
 

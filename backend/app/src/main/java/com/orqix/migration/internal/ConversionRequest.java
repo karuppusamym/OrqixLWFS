@@ -9,7 +9,7 @@ import tools.jackson.databind.JsonNode;
 final class ConversionRequest {
     private static final String KEY = "^[a-z][a-z0-9-]{0,62}[a-z0-9]$";
     static void validate(JsonNode request) {
-        object(request, Set.of("workflowKey", "name", "groupMappings", "approvalRoutes", "serviceTaskMappings", "serviceGroupMappings", "childWorkflowMappings", "inputSchema", "acknowledgeInfo", "acknowledgeReview"), "request");
+        object(request, Set.of("workflowKey", "name", "groupMappings", "approvalRoutes", "serviceTaskMappings", "serviceGroupMappings", "childWorkflowMappings", "decisionMappings", "decisionId", "inputSchema", "acknowledgeInfo", "acknowledgeReview"), "request");
         if (Json.depth(request) > 64) fail("request", "must have at most 64 levels");
         key(request.path("workflowKey"), "workflowKey");
         text(request.path("name"), "name", 200);
@@ -29,14 +29,36 @@ final class ConversionRequest {
                 text(e.getValue().path("rejectedFlowId"), path + "/rejectedFlowId", 1000);
             });
         }
+        if (request.has("decisionId")) text(request.path("decisionId"), "decisionId", 128);
+        if (request.has("decisionMappings")) {
+            object(request.path("decisionMappings"), null, "decisionMappings");
+            request.path("decisionMappings").properties().forEach(e -> {
+                String path = "decisionMappings/" + e.getKey(); JsonNode value = e.getValue();
+                object(value, Set.of("migrationId", "decisionId", "inputRef"), path);
+                try { java.util.UUID.fromString(value.path("migrationId").asString("")); }
+                catch (IllegalArgumentException ex) { fail(path + "/migrationId", "must be the id of an uploaded DMN migration"); }
+                if (value.has("decisionId")) text(value.path("decisionId"), path + "/decisionId", 128);
+                if (value.has("inputRef") && !value.path("inputRef").asString("").matches("^/(input/[a-z][A-Za-z0-9]{0,63}|steps/[A-Za-z][A-Za-z0-9_-]{0,63}/[a-z][A-Za-z0-9]{0,63})$"))
+                    fail(path + "/inputRef", "must be a /input/<field> or /steps/<node>/<output> reference");
+            });
+        }
         if (request.has("childWorkflowMappings")) {
             object(request.path("childWorkflowMappings"), null, "childWorkflowMappings");
             request.path("childWorkflowMappings").properties().forEach(e -> {
                 String path = "childWorkflowMappings/" + e.getKey(); JsonNode value = e.getValue();
-                object(value, Set.of("workflowRef", "inputMapping", "resultMapping"), path);
+                object(value, Set.of("workflowRef", "inputMapping", "resultMapping", "forEach", "collectionMapping"), path);
                 key(value.path("workflowRef"), path + "/workflowRef");
                 strings(value.path("inputMapping"), path + "/inputMapping");
                 strings(value.path("resultMapping"), path + "/resultMapping");
+                if (value.has("collectionMapping")) strings(value.path("collectionMapping"), path + "/collectionMapping");
+                if (value.has("forEach")) {
+                    JsonNode each = value.path("forEach");
+                    object(each, Set.of("itemInput", "maxItems", "itemType"), path + "/forEach");
+                    if (!each.path("itemInput").asString("").matches("^[a-z][A-Za-z0-9]{0,63}$")) fail(path + "/forEach/itemInput", "must be a field name of the child request form");
+                    integer(each, "maxItems", 1, 25, path + "/forEach");
+                    if (!each.has("maxItems")) fail(path + "/forEach/maxItems", "is required: the source collection has no bound");
+                    if (each.has("itemType") && !java.util.List.of("string", "integer", "number", "boolean").contains(each.path("itemType").asString(""))) fail(path + "/forEach/itemType", "must be string, integer, number or boolean");
+                }
             });
         }
         for (String mappingKind : java.util.List.of("serviceTaskMappings","serviceGroupMappings")) if (request.has(mappingKind)) {

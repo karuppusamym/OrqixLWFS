@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC hand-authored fixture (Camunda 7), not a customer export. A call activity that runs once per item of the
+     process variable 'items', in parallel. It converts to a bounded for-each once the mapping gives the item field and the
+     maximum number of items (the source collection has no bound). -->
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" targetNamespace="urn:orqix:migration-fixture">
+  <bpmn:process id="multi-instance-call" name="Review every item" isExecutable="true">
+    <bpmn:startEvent id="start" />
+    <bpmn:callActivity id="reviewEach" name="Review each item" calledElement="review-request">
+      <bpmn:multiInstanceLoopCharacteristics id="eachItem" isSequential="false" camunda:collection="items" camunda:elementVariable="item" />
+    </bpmn:callActivity>
+    <bpmn:endEvent id="done" name="Reviewed" />
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="reviewEach" />
+    <bpmn:sequenceFlow id="f2" sourceRef="reviewEach" targetRef="done" />
+  </bpmn:process>
+</bpmn:definitions>

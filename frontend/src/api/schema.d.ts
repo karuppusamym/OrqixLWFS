@@ -4,6 +4,99 @@
  */
 
 export interface paths {
+    "/workspaces/{workspaceId}/migration-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        get: operations["getMigrationPolicy"];
+        put: operations["setMigrationPolicy"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/migration-review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        get: operations["getMigrationReview"];
+        put?: never;
+        post: operations["approveMigrationReview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/migrations/projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["uploadMigrationProject"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/migrations/projects/{projectId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                projectId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get: operations["getMigrationProject"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/migrations/projects/{projectId}/convert-next": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                projectId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["convertMigrationProjectNext"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/conversations/messages": {
         parameters: {
             query?: never;
@@ -1125,6 +1218,83 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        MigrationPolicy: {
+            required: boolean;
+            version: number;
+            reason: string | null;
+            /** Format: date-time */
+            updatedAt: string | null;
+        };
+        MigrationPolicyRequest: {
+            required: boolean;
+            expectedVersion: number;
+            reason: string;
+        };
+        MigrationReviewRequest: {
+            draftRevision: number;
+            expectedVersion: number;
+            reason: string;
+        };
+        MigrationReview: {
+            migration: boolean;
+            required: boolean;
+            draftRevision: number;
+            definitionHash: string;
+            sourceHash: string | null;
+            mappingsHash: string | null;
+            mapper: components["schemas"]["SubjectRef"] | null;
+            reviewedBy: components["schemas"]["SubjectRef"] | null;
+            /** Format: date-time */
+            reviewedAt: string | null;
+            reviewReason: string | null;
+            reviewVersion: number;
+            approved: boolean;
+            canApprove: boolean;
+            detail: string;
+        };
+        UploadMigrationProjectRequest: {
+            name: string;
+            files: {
+                fileName: string;
+                content: string;
+                /** @enum {string} */
+                sourceFormat?: "bpmn" | "dmn" | "form";
+            }[];
+        };
+        MigrationProject: {
+            id: components["schemas"]["Uuid"];
+            name: string;
+            /** @enum {string} */
+            status: "analyzed" | "blocked" | "converting" | "converted";
+            files: {
+                fileName: string;
+                migrationId: components["schemas"]["Uuid"] | null;
+                processId: string | null;
+                dependencies: string[];
+                /** @enum {string} */
+                status: "analyzed" | "converted" | "failed" | "blocked";
+                convertedWorkflowId: components["schemas"]["Uuid"] | null;
+            }[];
+            conversionOrder: components["schemas"]["Uuid"][];
+            issues: {
+                fileName: string;
+                code: string;
+                detail: string;
+            }[];
+            createdAt: components["schemas"]["Timestamp"];
+        };
+        ConvertMigrationProjectRequest: {
+            expectedMigrationId: components["schemas"]["Uuid"];
+            mappings: components["schemas"]["ConvertMigrationRequest"];
+        };
+        MigrationProjectConversion: {
+            project: components["schemas"]["MigrationProject"];
+            converted: {
+                workflow: components["schemas"]["Workflow"];
+                draft: components["schemas"]["WorkflowDraft"];
+                report: components["schemas"]["CompatibilityReport"];
+            };
+        };
         ConversationMessageRequest: {
             conversationId?: components["schemas"]["Uuid"];
             expectedVersion?: number;
@@ -1870,7 +2040,7 @@ export interface components {
             sourceName?: string | null;
             sourceKind: string;
             /** @enum {string} */
-            severity: "supported" | "info" | "action" | "blocker";
+            severity: "supported" | "info" | "review" | "action" | "blocker";
             reasonCode: string;
             explanation: string;
             suggestedAction?: string | null;
@@ -1881,7 +2051,7 @@ export interface components {
         };
         CompatibilityReport: {
             /** @enum {string} */
-            sourceSystem: "camunda7" | "camunda8" | "bpmn" | "pega";
+            sourceSystem: "camunda7" | "camunda8" | "bpmn" | "dmn" | "pega";
             sourceVersion?: string | null;
             adapterVersion: string;
             sourceHash: string;
@@ -1891,6 +2061,8 @@ export interface components {
                 total?: number;
                 supported?: number;
                 info?: number;
+                /** @description Converted items whose behaviour could differ; they never block conversion */
+                review?: number;
                 action?: number;
                 blocker?: number;
             };
@@ -1901,9 +2073,47 @@ export interface components {
                 approvalTasks?: string[];
                 serviceTasks?: string[];
                 childWorkflows?: string[];
+                /** @description Implementation key (topic:..., jobType:..., class:..., delegateExpression:..., expression:...) to the service task ids that share it; one serviceGroupMappings entry covers all of them */
+                serviceGroups?: {
+                    [key: string]: string[];
+                };
+                /** @description Business rule tasks that call a DMN decision by a literal id and need a decisionMappings entry */
+                decisionTasks?: string[];
             };
-            /** @description True when no blocker or open action remains */
+            /** @description Generated behaviour checks (DMN): the source semantics versus the converted table evaluated by the compiler */
+            testCases?: components["schemas"]["MigrationTestCase"][];
+            /** @description True when no blocker, open action or unacknowledged info item remains. Review items never affect it. */
             publishable: boolean;
+        };
+        MigrationTestCase: {
+            decision: string;
+            name: string;
+            input: {
+                [key: string]: string | number | boolean;
+            };
+            expected: {
+                [key: string]: string | number | boolean;
+            };
+            actual: {
+                [key: string]: string | number | boolean;
+            };
+            /** @description Zero-based row of the converted table, null when its default applied */
+            matchedRow?: number | null;
+            /** @enum {string} */
+            status: "passed" | "failed";
+        };
+        ServiceTaskMapping: {
+            connectionRef: components["schemas"]["Key"];
+            operation: string;
+            inputMapping: {
+                [key: string]: string;
+            };
+            resultMapping: {
+                [key: string]: string;
+            };
+            timeoutSeconds?: number;
+            /** @default 1 */
+            definitionVersion: number;
         };
         MigrationJob: {
             id: components["schemas"]["Uuid"];
@@ -1932,22 +2142,26 @@ export interface components {
                     rejectedFlowId: string;
                 };
             };
-            /** @description serviceTask id to a registered connection operation */
+            /** @description serviceTask id to a registered connection operation; overrides a serviceGroupMappings entry for that task */
             serviceTaskMappings?: {
+                [key: string]: components["schemas"]["ServiceTaskMapping"];
+            };
+            /** @description Implementation key from requiredMappings.serviceGroups (for example topic:send-mail or class:com.example.AuditDelegate) to one mapping that covers every service task of that implementation */
+            serviceGroupMappings?: {
+                [key: string]: components["schemas"]["ServiceTaskMapping"];
+            };
+            /** @description Business rule task id to an uploaded DMN migration of this workspace; the task becomes a decision step with the converted table */
+            decisionMappings?: {
                 [key: string]: {
-                    connectionRef: components["schemas"]["Key"];
-                    operation: string;
-                    inputMapping: {
-                        [key: string]: string;
-                    };
-                    resultMapping: {
-                        [key: string]: string;
-                    };
-                    timeoutSeconds?: number;
-                    /** @default 1 */
-                    definitionVersion: number;
+                    migrationId: components["schemas"]["Uuid"];
+                    /** @description Decision of the DMN file; defaults to the id the task calls */
+                    decisionId?: string;
+                    /** @description Field the table tests, /input/<field> or /steps/<node>/<output>; defaults to /input/<DMN input name> */
+                    inputRef?: string;
                 };
             };
+            /** @description DMN migrations only: the decision to convert; optional when the file has exactly one decision */
+            decisionId?: string;
             /** @description Reviewed canonical request schema; otherwise inferred from BPMN comparisons and service input mappings */
             inputSchema?: {
                 [key: string]: unknown;
@@ -1962,6 +2176,21 @@ export interface components {
                     resultMapping: {
                         [key: string]: string;
                     };
+                    /** @description Required for a multi-instance call activity over a plain collection. The source collection has no bound, so the designer sets one (1 to 25). Mode follows the source (isSequential). */
+                    forEach?: {
+                        /** @description Request field of the child that receives each item */
+                        itemInput: string;
+                        maxItems: number;
+                        /**
+                         * @description Item type of the generated collection field; not needed with an explicit inputSchema
+                         * @enum {string}
+                         */
+                        itemType?: "string" | "integer" | "number" | "boolean";
+                    };
+                    /** @description Collected output name to a guaranteed child result (only with forEach) */
+                    collectionMapping?: {
+                        [key: string]: string;
+                    };
                 };
             };
             /**
@@ -1969,11 +2198,22 @@ export interface components {
              * @default false
              */
             acknowledgeInfo: boolean;
+            /**
+             * @description Mark review items as acknowledged in the report. Review items never block conversion, with or without it.
+             * @default false
+             */
+            acknowledgeReview: boolean;
         };
         /** @description /input/<fieldKey> or /steps/<nodeId>/<outputKey>. Exactly one level below input or a step in v0. */
         fieldRef: string;
         /** @description Comparison/output literal. String literals are additionally restricted by compiler rule WF_LITERAL_UNSAFE. */
         literal: string | number | boolean;
+        atomicCondition: {
+            fieldRef: components["schemas"]["fieldRef"];
+            /** @enum {unknown} */
+            operator: "eq" | "ne" | "gte" | "gt" | "lt" | "lte";
+            value: components["schemas"]["literal"];
+        };
         fieldKey: string;
         label: string;
         scalarFormField: {
@@ -2009,12 +2249,7 @@ export interface components {
         key: string;
         /** @description ISO-8601 duration in days, hours and minutes only (for example PT1M, PT48H, P2D, P1DT12H). The compiler enforces PT1M to P90D (WF_DURATION_TOO_SHORT, WF_DURATION_TOO_LONG). */
         duration: string;
-        condition: {
-            fieldRef: components["schemas"]["fieldRef"];
-            /** @enum {unknown} */
-            operator: "eq" | "gte" | "lt";
-            value: components["schemas"]["literal"];
-        };
+        condition: unknown;
         decisionOutput: {
             [key: string]: components["schemas"]["literal"];
         };
@@ -2199,7 +2434,7 @@ export interface components {
             /** @constant */
             hitPolicy: "UNIQUE";
             rows: {
-                when: components["schemas"]["condition"];
+                when: components["schemas"]["atomicCondition"];
                 then: components["schemas"]["decisionOutput"];
             }[];
             default: components["schemas"]["decisionOutput"];
@@ -2282,12 +2517,7 @@ export interface components {
                 fieldRef: string;
                 /** @description Comparison/output literal. String literals are additionally restricted by compiler rule WF_LITERAL_UNSAFE. */
                 literal: string | number | boolean;
-                condition: {
-                    fieldRef: components["schemas"]["fieldRef"];
-                    /** @enum {unknown} */
-                    operator: "eq" | "gte" | "lt";
-                    value: components["schemas"]["literal"];
-                };
+                condition: unknown;
                 /** @description Approved JSON Schema keyword subset for request/output forms. No pattern, format, $ref, nested objects, arrays or remote schemas in v0. */
                 formSchema: {
                     /** @constant */
@@ -2478,7 +2708,7 @@ export interface components {
                     /** @constant */
                     hitPolicy: "UNIQUE";
                     rows: {
-                        when: components["schemas"]["condition"];
+                        when: components["schemas"]["atomicCondition"];
                         then: components["schemas"]["decisionOutput"];
                     }[];
                     default: components["schemas"]["decisionOutput"];
@@ -2507,6 +2737,12 @@ export interface components {
                     minItems: number;
                     maxItems: number;
                 };
+                atomicCondition: {
+                    fieldRef: components["schemas"]["fieldRef"];
+                    /** @enum {unknown} */
+                    operator: "eq" | "ne" | "gte" | "gt" | "lt" | "lte";
+                    value: components["schemas"]["literal"];
+                };
             };
         };
         scalarField: {
@@ -2515,6 +2751,7 @@ export interface components {
             description?: string;
             enum?: string[];
             maxLength?: number;
+            pattern?: string;
         };
         requestObject: {
             /** @constant */
@@ -2641,6 +2878,7 @@ export interface components {
                     description?: string;
                     enum?: string[];
                     maxLength?: number;
+                    pattern?: string;
                 };
                 requestObject: {
                     /** @constant */
@@ -2840,6 +3078,229 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    getMigrationPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful operation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MigrationPolicy"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    setMigrationPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MigrationPolicyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful operation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MigrationPolicy"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    getMigrationReview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful operation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MigrationReview"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    approveMigrationReview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MigrationReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful operation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MigrationReview"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    uploadMigrationProject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UploadMigrationProjectRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful operation */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MigrationProject"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    getMigrationProject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                projectId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful operation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MigrationProject"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    convertMigrationProjectNext: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                projectId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConvertMigrationProjectRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful operation */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MigrationProjectConversion"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
     sendConversationMessage: {
         parameters: {
             query?: never;
@@ -4681,13 +5142,14 @@ export interface operations {
             content: {
                 "application/json": {
                     fileName: string;
-                    /** @description BPMN XML or mapping JSON text; base64 for Pega archives. Decoded sources are limited to 1 MiB. */
+                    /** @description BPMN or DMN XML, or mapping JSON text; base64 for Pega archives. Decoded sources are limited to 1 MiB. */
                     content: string;
                     /**
+                     * @description bpmn is Camunda 7/8 BPMN 2.0; dmn is a Camunda DMN 1.1-1.4 file with decision tables.
                      * @default bpmn
                      * @enum {string}
                      */
-                    sourceFormat?: "bpmn" | "pegaArchive" | "pegaMapping";
+                    sourceFormat?: "bpmn" | "dmn" | "pegaArchive" | "pegaMapping";
                 };
             };
         };

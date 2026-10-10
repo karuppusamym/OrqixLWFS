@@ -416,10 +416,10 @@ public class TaskService {
         Map<UUID, String> names = views.names(List.of(run), List.of(task), history);
         TaskQueries.DecisionRow own = history.stream().filter(d -> d.taskId().equals(task.taskId())).findFirst()
                 .orElse(null);
-        RuntimeDtos.TaskSummary summary = views.task(task, run, names, own);
         boolean participant = !access.has(Permission.RUN_READ) || access.has(Permission.RUN_READ_DATA)
                 || access.subjectId().equals(task.assignee()) || access.groupKeys().contains(task.candidateGroupKey())
                 || run.initiator().equals(access.subjectId());
+        RuntimeDtos.TaskSummary summary = views.task(task, run, names, own, participant);
         JsonNode input = participant ? run.input() : json.object();
         JsonNode node = release.node(task.nodeId());
         boolean reasonRequired = node == null || node.path("config").path("rejectReasonRequired").asBoolean(true);

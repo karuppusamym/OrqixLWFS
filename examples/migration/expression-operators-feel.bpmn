@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC hand-authored fixture (Camunda 8, FEEL), not a customer export. Same decisions as expression-operators.bpmn
+     written with FEEL: > <= != and a flat 'and' / 'or' group, with a default path on every gateway. -->
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" targetNamespace="urn:orqix:migration-fixture">
+  <bpmn:process id="expression-operators-feel" name="Expression operators (FEEL)" isExecutable="true">
+    <bpmn:startEvent id="start" />
+    <bpmn:exclusiveGateway id="amountTier" name="Amount tier" default="tierSmall" />
+    <bpmn:exclusiveGateway id="regionCheck" name="Region" default="regionEu" />
+    <bpmn:exclusiveGateway id="riskCheck" name="Risk" default="riskNormal" />
+    <bpmn:endEvent id="largeEnd" name="Large" />
+    <bpmn:endEvent id="mediumEnd" name="Medium" />
+    <bpmn:endEvent id="outsideEnd" name="Outside" />
+    <bpmn:endEvent id="escalatedEnd" name="Escalated" />
+    <bpmn:endEvent id="routineEnd" name="Routine" />
+    <bpmn:sequenceFlow id="begin" sourceRef="start" targetRef="amountTier" />
+    <bpmn:sequenceFlow id="tierLarge" name="Over 10,000" sourceRef="amountTier" targetRef="largeEnd"><bpmn:conditionExpression>= amount &gt; 10000</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="tierMedium" name="1,000 to 10,000" sourceRef="amountTier" targetRef="mediumEnd"><bpmn:conditionExpression>= amount &gt; 1000 and amount &lt;= 10000</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="tierSmall" sourceRef="amountTier" targetRef="regionCheck" />
+    <bpmn:sequenceFlow id="regionOutside" name="Outside the EU" sourceRef="regionCheck" targetRef="outsideEnd"><bpmn:conditionExpression>= region != "EU"</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="regionEu" sourceRef="regionCheck" targetRef="riskCheck" />
+    <bpmn:sequenceFlow id="riskEscalate" name="High risk" sourceRef="riskCheck" targetRef="escalatedEnd"><bpmn:conditionExpression>= riskLevel = "high" or riskScore &gt;= 80</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="riskNormal" sourceRef="riskCheck" targetRef="routineEnd" />
+  </bpmn:process>
+</bpmn:definitions>

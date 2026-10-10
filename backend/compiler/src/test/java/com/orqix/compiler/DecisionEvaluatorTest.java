@@ -121,13 +121,26 @@ class DecisionEvaluatorTest {
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> ConditionMatcher.matches("lt", true, false))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> ConditionMatcher.matches("ne", 1, 1)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> ConditionMatcher.matches("between", 1, 1)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> ConditionMatcher.matches("gt", "b", "a")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> ConditionMatcher.matches("lte", true, false))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> ConditionMatcher.matches("ne", "5000", new BigDecimal("5000")))
+                .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> ConditionMatcher.matches(null, 1, 1)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> ConditionMatcher.matches("eq", null, 1)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> ConditionMatcher.matches("eq", Double.NaN, 1))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> ConditionMatcher.matches("eq", new Object(), 1))
                 .isInstanceOf(IllegalArgumentException.class);
+        assertThat(ConditionMatcher.matches("ne", 5000, new BigDecimal("5000.0"))).isFalse();
+        assertThat(ConditionMatcher.matches("ne", new BigDecimal("4999.99"), new BigDecimal("5000"))).isTrue();
+        assertThat(ConditionMatcher.matches("ne", "standard", "Standard")).isTrue();
+        assertThat(ConditionMatcher.matches("ne", true, true)).isFalse();
+        assertThat(ConditionMatcher.matches("gt", new BigDecimal("5000.00"), new BigDecimal("5000"))).isFalse();
+        assertThat(ConditionMatcher.matches("gt", new BigDecimal("5000.01"), new BigDecimal("5000"))).isTrue();
+        assertThat(ConditionMatcher.matches("lte", new BigDecimal("5000.00"), new BigDecimal("5000"))).isTrue();
+        assertThat(ConditionMatcher.matches("lte", new BigDecimal("5000.01"), new BigDecimal("5000"))).isFalse();
         assertThat(ConditionMatcher.matches("eq", 5000, new BigDecimal("5000.0"))).isTrue();
         assertThat(ConditionMatcher.matches("gte", 1.5f, new BigDecimal("1.5"))).isTrue();
         assertThat(ConditionMatcher.matches("lt", new java.math.BigInteger("10"), (short) 11)).isTrue();

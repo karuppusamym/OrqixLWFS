@@ -32,3 +32,6 @@ evidence/
 
 # Maven wrapper download cache (wrapper scripts and properties are committed)
 .mvn/wrapper/maven-wrapper.jar
+
+# Claude Code local worktrees
+.claude/worktrees/

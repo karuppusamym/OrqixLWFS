@@ -1,0 +1,75 @@
+{
+  "schemaVersion": "0.1",
+  "key": "sanctions-screening",
+  "version": 1,
+  "name": "Sanctions screening service (stub contract)",
+  "description": "Illustrative contract for a party screening service. The bank's real service, its list sources and its matching rules are not part of Orqix; this definition is what the local test stub implements. A screening call records one screening and is deduplicated by the Idempotency-Key.",
+  "operations": {
+    "screenParty": {
+      "label": "Screen a party",
+      "description": "Screens one customer against the lists the bank's screening service maintains. Returns whether there is a possible match and the screening reference.",
+      "method": "POST",
+      "path": "/sanctions/screen",
+      "requestSchema": {
+        "type": "object",
+        "required": [
+          "partyName",
+          "partyType",
+          "countryGroup"
+        ],
+        "properties": {
+          "partyName": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "partyType": {
+            "type": "string",
+            "enum": [
+              "individual",
+              "corporate"
+            ]
+          },
+          "countryGroup": {
+            "type": "string",
+            "enum": [
+              "domestic",
+              "partner",
+              "elevated",
+              "restricted"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "responseSchema": {
+        "type": "object",
+        "required": [
+          "hit",
+          "referenceId"
+        ],
+        "properties": {
+          "hit": {
+            "type": "boolean"
+          },
+          "referenceId": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "listVersion": {
+            "type": "string",
+            "maxLength": 64
+          }
+        },
+        "additionalProperties": true
+      },
+      "successStatuses": [
+        200,
+        201
+      ],
+      "effectClass": "idempotentWithKey",
+      "idempotencyHeader": "Idempotency-Key",
+      "maxTimeoutSeconds": 20,
+      "testable": false
+    }
+  }
+}

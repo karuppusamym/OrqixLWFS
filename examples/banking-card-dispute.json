@@ -1,0 +1,266 @@
+{
+  "schemaVersion": "0.1",
+  "workflowKey": "card-dispute",
+  "name": "Card dispute",
+  "metadata": {
+    "description": "Illustrative template. Child of Card dispute claim: one disputed transaction. A fraud claim goes to the fraud investigation group, any other reason to the dispute analysts. An accepted dispute raises one chargeback; a dispute nobody decides in 10 days lapses.",
+    "tags": [
+      "banking",
+      "disputes",
+      "illustrative"
+    ]
+  },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "claimReference",
+      "transactionReference",
+      "reasonCode"
+    ],
+    "properties": {
+      "claimReference": {
+        "type": "string",
+        "title": "Claim reference",
+        "minLength": 1,
+        "maxLength": 60
+      },
+      "transactionReference": {
+        "type": "string",
+        "title": "Transaction reference",
+        "minLength": 1,
+        "maxLength": 60
+      },
+      "reasonCode": {
+        "type": "string",
+        "title": "Reason",
+        "enum": [
+          "fraud",
+          "merchantDispute",
+          "duplicateCharge",
+          "goodsNotReceived"
+        ]
+      }
+    }
+  },
+  "inputUi": {
+    "order": [
+      "claimReference",
+      "transactionReference",
+      "reasonCode"
+    ],
+    "widgets": {
+      "reasonCode": "select"
+    },
+    "currency": "USD"
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  },
+  "triggers": [
+    "manual",
+    "api"
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "label": "Dispute opened",
+      "config": {}
+    },
+    {
+      "id": "kind",
+      "type": "branch",
+      "label": "Is it fraud?",
+      "config": {}
+    },
+    {
+      "id": "fraudReview",
+      "type": "approval",
+      "label": "Fraud investigation",
+      "config": {
+        "candidateGroupRef": "fraud-investigators",
+        "rejectReasonRequired": true,
+        "timeoutAfter": "P10D"
+      }
+    },
+    {
+      "id": "analystReview",
+      "type": "approval",
+      "label": "Dispute analyst review",
+      "config": {
+        "candidateGroupRef": "dispute-analysts",
+        "rejectReasonRequired": true,
+        "timeoutAfter": "P10D"
+      }
+    },
+    {
+      "id": "chargeback",
+      "type": "http",
+      "label": "Raise the chargeback",
+      "config": {
+        "connectionRef": "core-banking",
+        "operation": "openChargeback",
+        "inputMapping": {
+          "claimReference": "/input/claimReference",
+          "transactionReference": "/input/transactionReference",
+          "reasonCode": "/input/reasonCode"
+        },
+        "resultMapping": {
+          "chargebackId": "/chargebackId"
+        },
+        "timeoutSeconds": 20
+      }
+    },
+    {
+      "id": "raised",
+      "type": "end",
+      "label": "Chargeback raised",
+      "config": {
+        "businessOutcome": "Chargeback raised",
+        "outcomeKind": "success"
+      }
+    },
+    {
+      "id": "notifyDeclined",
+      "type": "notification",
+      "label": "Tell requester the dispute was declined",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "The dispute was declined. Open the request to see the reason."
+      }
+    },
+    {
+      "id": "declined",
+      "type": "end",
+      "label": "Dispute declined",
+      "config": {
+        "businessOutcome": "Dispute declined",
+        "outcomeKind": "rejected"
+      }
+    },
+    {
+      "id": "notifyLapsed",
+      "type": "notification",
+      "label": "Tell requester the dispute lapsed",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "Nobody decided the dispute in the allowed time, so it lapsed."
+      }
+    },
+    {
+      "id": "lapsed",
+      "type": "end",
+      "label": "Dispute lapsed",
+      "config": {
+        "businessOutcome": "Dispute lapsed",
+        "outcomeKind": "rejected"
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t1",
+      "from": "start",
+      "to": "kind",
+      "on": "next"
+    },
+    {
+      "id": "t2",
+      "from": "kind",
+      "to": "fraudReview",
+      "on": "condition",
+      "label": "Customer says it is fraud",
+      "condition": {
+        "fieldRef": "/input/reasonCode",
+        "operator": "eq",
+        "value": "fraud"
+      }
+    },
+    {
+      "id": "t3",
+      "from": "kind",
+      "to": "analystReview",
+      "on": "default",
+      "label": "Other reasons"
+    },
+    {
+      "id": "t4",
+      "from": "fraudReview",
+      "to": "chargeback",
+      "on": "approved"
+    },
+    {
+      "id": "t5",
+      "from": "analystReview",
+      "to": "chargeback",
+      "on": "approved"
+    },
+    {
+      "id": "t6",
+      "from": "fraudReview",
+      "to": "notifyDeclined",
+      "on": "rejected"
+    },
+    {
+      "id": "t7",
+      "from": "analystReview",
+      "to": "notifyDeclined",
+      "on": "rejected"
+    },
+    {
+      "id": "t8",
+      "from": "fraudReview",
+      "to": "notifyLapsed",
+      "on": "timedOut",
+      "label": "Not decided in 10 days"
+    },
+    {
+      "id": "t9",
+      "from": "analystReview",
+      "to": "notifyLapsed",
+      "on": "timedOut",
+      "label": "Not decided in 10 days"
+    },
+    {
+      "id": "t10",
+      "from": "chargeback",
+      "to": "raised",
+      "on": "next"
+    },
+    {
+      "id": "t11",
+      "from": "notifyDeclined",
+      "to": "declined",
+      "on": "next"
+    },
+    {
+      "id": "t12",
+      "from": "notifyLapsed",
+      "to": "lapsed",
+      "on": "next"
+    }
+  ],
+  "decisions": [],
+  "execution": {
+    "maxConcurrentRuns": 200,
+    "maxAttempts": 3,
+    "retryDelaySeconds": 30
+  },
+  "security": {
+    "selfApproval": "deny"
+  },
+  "dependencies": {
+    "connections": [
+      {
+        "key": "core-banking",
+        "definitionVersion": 1
+      }
+    ]
+  },
+  "outputMapping": {}
+}

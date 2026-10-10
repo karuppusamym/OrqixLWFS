@@ -1,0 +1,191 @@
+{
+  "schemaVersion": "0.1",
+  "workflowKey": "credit-review-round",
+  "name": "Credit review round",
+  "metadata": {
+    "description": "Illustrative template. Child of Credit and loan approval: one review round by a credit manager. A rejection sends the application back to the applicant with a required reason; the parent repeats the round up to its bound. A round nobody decides in 72 hours escalates to a credit director.",
+    "tags": [
+      "banking",
+      "credit",
+      "illustrative"
+    ]
+  },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "applicantReference",
+      "product",
+      "amount",
+      "termMonths"
+    ],
+    "properties": {
+      "applicantReference": {
+        "type": "string",
+        "title": "Applicant reference",
+        "minLength": 1,
+        "maxLength": 60,
+        "description": "The customer or application number. Do not enter names or document numbers."
+      },
+      "product": {
+        "type": "string",
+        "title": "Product",
+        "enum": [
+          "personalLoan",
+          "smallBusinessLoan",
+          "overdraft"
+        ]
+      },
+      "amount": {
+        "type": "number",
+        "title": "Amount (USD)",
+        "minimum": 0.01,
+        "maximum": 10000000,
+        "multipleOf": 0.01,
+        "description": "Requested amount in USD, with cents."
+      },
+      "termMonths": {
+        "type": "integer",
+        "title": "Term (months)",
+        "minimum": 1,
+        "maximum": 360
+      }
+    }
+  },
+  "inputUi": {
+    "order": [
+      "applicantReference",
+      "product",
+      "amount",
+      "termMonths"
+    ],
+    "widgets": {
+      "product": "select",
+      "amount": "money"
+    },
+    "currency": "USD"
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  },
+  "triggers": [
+    "manual",
+    "api"
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "label": "Round started",
+      "config": {}
+    },
+    {
+      "id": "manager",
+      "type": "approval",
+      "label": "Credit manager review",
+      "config": {
+        "candidateGroupRef": "credit-managers",
+        "rejectReasonRequired": true,
+        "timeoutAfter": "PT72H"
+      }
+    },
+    {
+      "id": "director",
+      "type": "approval",
+      "label": "Credit director review",
+      "config": {
+        "candidateGroupRef": "credit-directors",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 24
+      }
+    },
+    {
+      "id": "approvedEnd",
+      "type": "end",
+      "label": "Approved",
+      "config": {
+        "businessOutcome": "Approved",
+        "outcomeKind": "success"
+      }
+    },
+    {
+      "id": "notifyReturned",
+      "type": "notification",
+      "label": "Tell requester it was sent back",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "The application was sent back to the applicant. Open the request to see the reason."
+      }
+    },
+    {
+      "id": "returnedEnd",
+      "type": "end",
+      "label": "Returned",
+      "config": {
+        "businessOutcome": "Returned",
+        "outcomeKind": "rejected"
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t1",
+      "from": "start",
+      "to": "manager",
+      "on": "next"
+    },
+    {
+      "id": "t2",
+      "from": "manager",
+      "to": "approvedEnd",
+      "on": "approved"
+    },
+    {
+      "id": "t3",
+      "from": "manager",
+      "to": "notifyReturned",
+      "on": "rejected"
+    },
+    {
+      "id": "t4",
+      "from": "manager",
+      "to": "director",
+      "on": "timedOut",
+      "label": "Not decided in 72 hours"
+    },
+    {
+      "id": "t5",
+      "from": "director",
+      "to": "approvedEnd",
+      "on": "approved"
+    },
+    {
+      "id": "t6",
+      "from": "director",
+      "to": "notifyReturned",
+      "on": "rejected"
+    },
+    {
+      "id": "t7",
+      "from": "notifyReturned",
+      "to": "returnedEnd",
+      "on": "next"
+    }
+  ],
+  "decisions": [],
+  "execution": {
+    "maxConcurrentRuns": 200,
+    "maxAttempts": 3,
+    "retryDelaySeconds": 30
+  },
+  "security": {
+    "selfApproval": "deny"
+  },
+  "dependencies": {
+    "connections": []
+  },
+  "outputMapping": {}
+}

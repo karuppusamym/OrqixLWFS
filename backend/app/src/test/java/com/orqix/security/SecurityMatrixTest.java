@@ -219,6 +219,12 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "createWorkflow" -> Map.of("key", "foreign-wf", "name", "Foreign");
             case "uploadMigration" -> Map.of("fileName", "foreign.bpmn", "content", "<definitions/>", "sourceFormat", "bpmn");
             case "convertMigration" -> Map.of("key", "foreign-import", "name", "Foreign", "acknowledgeInfo", true);
+            case "uploadMigrationProject" -> Map.of("name", "Foreign", "files",
+                    List.of(Map.of("fileName", "foreign.bpmn", "content", "<definitions/>")));
+            case "convertMigrationProjectNext" -> Map.of("expectedMigrationId", UUID.randomUUID().toString(),
+                    "mappings", Map.of("workflowKey", "foreign-import", "name", "Foreign"));
+            case "setMigrationPolicy" -> Map.of("required", true, "expectedVersion", 0, "reason", "Foreign attempt");
+            case "approveMigrationReview" -> Map.of("draftRevision", 1, "expectedVersion", 0, "reason", "Foreign attempt");
             case "saveDraft" -> Map.of("definition", Map.of("schemaVersion", "0.1"));
             case "validateDraft" -> Map.of("revision", 1);
             case "evaluateDecision" -> Map.of("revision", 1, "values", Map.of("/input/amount", 1));
@@ -252,7 +258,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
     private Map<String, Long> snapshot() {
         Map<String, Long> counts = new LinkedHashMap<>();
         for (String table : List.of("organization", "workspace", "subject", "role_binding", "permission_grant",
-                "workspace_group", "workspace_group_member", "migration_job", "workflow", "workflow_draft_revision", "workflow_release",
+                "workspace_group", "workspace_group_member", "migration_job", "migration_project", "migration_policy", "migration_review", "workflow", "workflow_draft_revision", "workflow_release",
                 "release_artifact", "connection_definition", "connection_binding", "workflow_run", "task_context",
                 "task_decision", "task_reminder", "document_snapshot", "effect_journal", "run_event", "notification", "idempotency_record",
                 "act_re_deployment", "act_ru_execution", "act_ru_task", "act_ru_job", "act_ru_deadletter_job")) {

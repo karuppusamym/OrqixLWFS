@@ -11,6 +11,10 @@ import com.orqix.catalog.DraftAuthoring;
 import com.orqix.identity.*;
 import com.orqix.integration.ConnectionService;
 import com.orqix.migration.camunda.*;
+import com.orqix.migration.dmn.DmnAnalysis;
+import com.orqix.migration.dmn.DmnAnalyzer;
+import com.orqix.migration.dmn.DmnConverter;
+import com.orqix.migration.dmn.DmnTable;
 import com.orqix.migration.pega.PegaSource;
 import com.orqix.shared.Ids;
 import com.orqix.shared.json.Json;
@@ -51,6 +55,8 @@ public class MigrationService {
                 JsonNode pkg=parsePackage(content);
                 Stored original=archiveForPackage(ws,pkg);
                 report=PegaSource.mapping(pkg, original.view.report(),false);
+            } else if (format.equals("dmn")) {
+                report=DmnAnalyzer.analyze(content,Limits.DEFAULT,json).report();
             } else if (format.equals("bpmn")) {
                 var analysis=Analyzer.analyze(content,Limits.DEFAULT); format=analysis.sourceSystem();
                 report=Converter.report(analysis,analysis.items().stream().map(Analysis.Item::issue).toList());
@@ -62,7 +68,7 @@ public class MigrationService {
                 """).param("id",id).param("ws",ws).param("actor",caller.subjectId()).param("file",fileName)
                 .param("format",format).param("hash",Json.sha256Hex(bytes)).param("source",bytes)
                 .param("adapter",report.adapterVersion()).param("report",json.write(report)).update();
-            audit(caller,ws,id,"migration.uploaded",Map.of("sourceFormat",format,"sourceHash",Json.sha256Hex(bytes)));
+            audit(caller,ws,id,"migration.uploaded",Map.of("migrationId",id.toString(),"sourceSystem",format,"sourceSha256",Json.sha256Hex(bytes),"adapterVersion",report.adapterVersion()));
             return stored(ws,id,false).view;
         } catch (SourceException e) { throw sourceProblem(e); }
     }
@@ -88,9 +94,19 @@ public class MigrationService {
                 var original=archiveForPackage(ws,pkg);
                 report=PegaSource.mapping(pkg,original.view.report(),request.path("acknowledgeInfo").asBoolean(false));
                 definition=(ObjectNode)pkg.path("definition").deepCopy(); sourceMap=pkg.path("fileMappings");
+            } else if (job.format.equals("dmn")) {
+                var dmn=DmnAnalyzer.analyze(new String(job.source,StandardCharsets.UTF_8),Limits.DEFAULT,json);
+                String decisionId=selectedDecision(dmn,request);
+                DmnTable table=dmn.table(decisionId);
+                var selected=Set.of(decisionId);
+                var analysed=dmn.report(selected,request.path("acknowledgeInfo").asBoolean(false),request.path("acknowledgeReview").asBoolean(false));
+                if (table == null) throw new ApiException(ProblemCode.MIGRATION_BLOCKED,"The decision '"+decisionId+"' cannot be converted. Resolve its blockers first.")
+                        .with("openItems",analysed.issues().stream().filter(i -> Report.OPEN.equals(i.resolutionStatus())).toList());
+                definition=DmnConverter.workflow(table,request.path("workflowKey").asString(null),request.path("name").asString(null),json);
+                var map=DmnConverter.sourceMap(dmn,decisionId); sourceMap=map; report=DmnConverter.withTargets(analysed,map);
             } else {
                 var analysis=Analyzer.analyze(new String(job.source,StandardCharsets.UTF_8),Limits.DEFAULT);
-                var result=Converter.convert(analysis,request,json,serviceInputTypes(ws,Converter.expandServiceGroups(analysis,request,json)));
+                var result=Converter.convert(analysis,request,json,serviceInputTypes(ws,Converter.expandServiceGroups(analysis,request,json)),decisionTables(ws,analysis,request));
                 definition=result.definition(); report=result.report(); sourceMap=result.sourceMap();
             }
             if (!report.publishable()) throw new ApiException(ProblemCode.MIGRATION_BLOCKED,"Resolve mappings and acknowledge documented losses before converting.")
@@ -107,9 +123,38 @@ public class MigrationService {
                     status='converted',converted_workflow_id=:workflow,converted_by_subject_id=:mapper,updated_at=now() WHERE workspace_id=:ws AND id=:id
                 """).param("report",json.write(report)).param("map",json.write(sourceMap)).param("mappings",json.write(request))
                 .param("workflow",created.workflowId()).param("mapper",caller.subjectId()).param("ws",ws).param("id",id).update();
-            audit(caller,ws,id,"migration.converted",Map.of("workflowId",created.workflowId().toString(),"sourceFormat",job.format));
+            audit(caller,ws,id,"migration.converted",Map.of("migrationId",id.toString(),"workflowId",created.workflowId().toString(),"workflowKey",request.path("workflowKey").asString("")));
             return new Converted(created.workflow(),created.draft(),report);
         } catch (SourceException e) { throw sourceProblem(e); }
+    }
+    /** The decision a DMN job converts: the named one, or the only decision of the file. */
+    private static String selectedDecision(DmnAnalysis dmn,JsonNode request) {
+        String requested=request.path("decisionId").asString(null);
+        var names=dmn.decisionNames();
+        if (requested != null) {
+            if (!names.containsKey(requested)) throw SourceException.invalid("The file has no decision '"+requested+"'. Decisions: "+String.join(", ",names.keySet())+".");
+            return requested;
+        }
+        if (names.size() != 1) throw SourceException.invalid("The file has "+names.size()+" decisions ("+String.join(", ",names.keySet())+"). Name the one to convert with decisionId.");
+        return names.keySet().iterator().next();
+    }
+    /** Converted DMN tables for the business rule tasks the designer mapped, read from DMN migrations of this workspace. */
+    private Map<String,DmnTable> decisionTables(UUID ws,Analysis analysis,JsonNode request) {
+        Map<String,DmnTable> tables=new LinkedHashMap<>();
+        for (var entry:request.path("decisionMappings").properties()) {
+            String task=entry.getKey();
+            if (!analysis.decisions().containsKey(task)) continue; // reported as an unknown mapping by the converter
+            JsonNode mapping=entry.getValue();
+            Stored source=stored(ws,UUID.fromString(mapping.path("migrationId").asString()),false);
+            if (!"dmn".equals(source.format)) throw SourceException.invalid("decisionMappings/"+task+"/migrationId must reference an uploaded DMN file of this workspace.");
+            var dmn=DmnAnalyzer.analyze(new String(source.source,StandardCharsets.UTF_8),Limits.DEFAULT,json);
+            String decisionId=mapping.path("decisionId").asString(analysis.decisions().get(task).decisionId());
+            DmnTable table=dmn.table(decisionId);
+            if (table == null) throw SourceException.invalid("The decision '"+decisionId+"' in the DMN file '"+source.view.fileName()+"' cannot be converted ("
+                    +(dmn.decisionNames().containsKey(decisionId) ? dmn.blockersOf(decisionId).stream().map(Report.Issue::reasonCode).distinct().toList() : "no such decision")+").");
+            tables.put(task,table);
+        }
+        return tables;
     }
     private Stored archiveForPackage(UUID ws,JsonNode pkg) {
         UUID archiveId;

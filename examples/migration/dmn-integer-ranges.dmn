@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC hand-authored fixture, not a customer export. Integer input with an inclusive range [6..10]. Integer bounds
+     are normalised, so '<= 5', '[6..10]' and '> 10' cover every integer exactly; the bounded middle becomes the default.
+     Boundary values to try: 5 / 6 / 10 / 11. -->
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="size-definitions" name="Batch size" namespace="urn:orqix:migration-fixture">
+  <decision id="batchSize" name="Batch size class">
+    <decisionTable id="batchSizeTable">
+      <input id="countColumn" label="Items">
+        <inputExpression id="countExpression" typeRef="integer"><text>items</text></inputExpression>
+      </input>
+      <output id="sizeColumn" label="Size" name="sizeClass" typeRef="string" />
+      <rule id="ruleSmall">
+        <inputEntry id="smallCount"><text>&lt;= 5</text></inputEntry>
+        <outputEntry id="smallClass"><text>"small"</text></outputEntry>
+      </rule>
+      <rule id="ruleMedium">
+        <inputEntry id="mediumCount"><text>[6..10]</text></inputEntry>
+        <outputEntry id="mediumClass"><text>"medium"</text></outputEntry>
+      </rule>
+      <rule id="ruleLarge">
+        <inputEntry id="largeCount"><text>&gt; 10</text></inputEntry>
+        <outputEntry id="largeClass"><text>"large"</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+</definitions>

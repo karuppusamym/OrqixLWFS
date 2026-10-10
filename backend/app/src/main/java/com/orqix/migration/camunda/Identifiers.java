@@ -4,11 +4,11 @@ import java.util.Locale;
 import java.util.Set;
 
 /** Deterministic, bounded identifiers matching the canonical workflow schema. */
-final class Identifiers {
+public final class Identifiers {
     private Identifiers() {
     }
 
-    static String sanitize(String source, boolean workflowKey) {
+    public static String sanitize(String source, boolean workflowKey) {
         String value = source == null ? "" : source;
         if (workflowKey) {
             value = value.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9-]+", "-");
@@ -33,7 +33,7 @@ final class Identifiers {
         return value;
     }
 
-    static String unique(String base, Set<String> used) {
+    public static String unique(String base, Set<String> used) {
         String candidate = base;
         int index = 2;
         while (!used.add(candidate)) {

@@ -74,6 +74,7 @@ paths:
       - Migrations
       operationId: setMigrationPolicy
       x-orqix-permission: workspace.manage-access
+      x-orqix-audit: migration.policy.changed
       responses:
         '200':
           description: Successful operation
@@ -136,6 +137,7 @@ paths:
       - Migrations
       operationId: approveMigrationReview
       x-orqix-permission: workflow.publish
+      x-orqix-audit: migration.review.approved
       responses:
         '200':
           description: Successful operation
@@ -171,6 +173,7 @@ paths:
       - Migrations
       operationId: uploadMigrationProject
       x-orqix-permission: workflow.edit
+      x-orqix-audit: migration.project.created
       responses:
         '201':
           description: Successful operation
@@ -245,8 +248,9 @@ paths:
       - Migrations
       operationId: convertMigrationProjectNext
       x-orqix-permission: workflow.edit
+      x-orqix-audit: migration.converted
       responses:
-        '200':
+        '201':
           description: Successful operation
           content:
             application/json:
@@ -1799,8 +1803,8 @@ paths:
               required: [fileName, content]
               properties:
                 fileName: { type: string, minLength: 1, maxLength: 200 }
-                content: { type: string, minLength: 1, maxLength: 1398104, description: 'BPMN XML or mapping JSON text; base64 for Pega archives. Decoded sources are limited to 1 MiB.' }
-                sourceFormat: { type: string, enum: [bpmn, pegaArchive, pegaMapping], default: bpmn }
+                content: { type: string, minLength: 1, maxLength: 1398104, description: 'BPMN or DMN XML, or mapping JSON text; base64 for Pega archives. Decoded sources are limited to 1 MiB.' }
+                sourceFormat: { type: string, enum: [bpmn, dmn, pegaArchive, pegaMapping], default: bpmn, description: 'bpmn is Camunda 7/8 BPMN 2.0; dmn is a Camunda DMN 1.1-1.4 file with decision tables.' }
       responses:
         '201':
           description: Job created with its compatibility report
@@ -2176,6 +2180,8 @@ components:
             - migrationId
             - processId
             - dependencies
+            - status
+            - convertedWorkflowId
             properties:
               fileName: *id004
               migrationId:
@@ -2186,6 +2192,17 @@ components:
               dependencies:
                 type: array
                 items: *id004
+              status:
+                type: string
+                enum:
+                - analyzed
+                - converted
+                - failed
+                - blocked
+              convertedWorkflowId:
+                oneOf:
+                - $ref: '#/components/schemas/Uuid'
+                - type: 'null'
         conversionOrder:
           type: array
           items:
@@ -3265,7 +3282,7 @@ components:
       type: object
       required: [sourceSystem, adapterVersion, sourceHash, elementCounts, issues, assumptions, publishable]
       properties:
-        sourceSystem: { type: string, enum: [camunda7, camunda8, bpmn, pega] }
+        sourceSystem: { type: string, enum: [camunda7, camunda8, bpmn, dmn, pega] }
         sourceVersion: { type: [string, 'null'] }
         adapterVersion: { type: string }
         sourceHash: { type: string }
@@ -3277,6 +3294,7 @@ components:
             total: { type: integer }
             supported: { type: integer }
             info: { type: integer }
+            review: { type: integer, description: 'Converted items whose behaviour could differ; they never block conversion' }
             action: { type: integer }
             blocker: { type: integer }
         issues: { type: array, items: { $ref: '#/components/schemas/CompatibilityIssue' } }
@@ -3288,7 +3306,38 @@ components:
             approvalTasks: { type: array, items: { type: string } }
             serviceTasks: { type: array, items: { type: string } }
             childWorkflows: { type: array, items: { type: string } }
-        publishable: { type: boolean, description: 'True when no blocker or open action remains' }
+            serviceGroups:
+              type: object
+              description: 'Implementation key (topic:..., jobType:..., class:..., delegateExpression:..., expression:...) to the service task ids that share it; one serviceGroupMappings entry covers all of them'
+              additionalProperties: { type: array, items: { type: string } }
+            decisionTasks: { type: array, items: { type: string }, description: 'Business rule tasks that call a DMN decision by a literal id and need a decisionMappings entry' }
+        testCases:
+          type: array
+          description: 'Generated behaviour checks (DMN): the source semantics versus the converted table evaluated by the compiler'
+          items: { $ref: '#/components/schemas/MigrationTestCase' }
+        publishable: { type: boolean, description: 'True when no blocker, open action or unacknowledged info item remains. Review items never affect it.' }
+    MigrationTestCase:
+      type: object
+      required: [decision, name, input, expected, actual, status]
+      properties:
+        decision: { type: string }
+        name: { type: string }
+        input: { type: object, additionalProperties: { type: [string, number, boolean] } }
+        expected: { type: object, additionalProperties: { type: [string, number, boolean] } }
+        actual: { type: object, additionalProperties: { type: [string, number, boolean] } }
+        matchedRow: { type: [integer, 'null'], description: 'Zero-based row of the converted table, null when its default applied' }
+        status: { type: string, enum: [passed, failed] }
+    ServiceTaskMapping:
+      type: object
+      additionalProperties: false
+      required: [connectionRef, operation, inputMapping, resultMapping]
+      properties:
+        connectionRef: { $ref: '#/components/schemas/Key' }
+        operation: { type: string }
+        inputMapping: { type: object, additionalProperties: { type: string } }
+        resultMapping: { type: object, additionalProperties: { type: string } }
+        timeoutSeconds: { type: integer, minimum: 1, maximum: 30 }
+        definitionVersion: { type: integer, minimum: 1, default: 1 }
     MigrationJob:
       type: object
       required: [id, fileName, status, report, createdAt]
@@ -3326,18 +3375,24 @@ components:
               rejectedFlowId: { type: string }
         serviceTaskMappings:
           type: object
-          description: serviceTask id to a registered connection operation
+          description: serviceTask id to a registered connection operation; overrides a serviceGroupMappings entry for that task
+          additionalProperties: { $ref: '#/components/schemas/ServiceTaskMapping' }
+        serviceGroupMappings:
+          type: object
+          description: 'Implementation key from requiredMappings.serviceGroups (for example topic:send-mail or class:com.example.AuditDelegate) to one mapping that covers every service task of that implementation'
+          additionalProperties: { $ref: '#/components/schemas/ServiceTaskMapping' }
+        decisionMappings:
+          type: object
+          description: 'Business rule task id to an uploaded DMN migration of this workspace; the task becomes a decision step with the converted table'
           additionalProperties:
             type: object
             additionalProperties: false
-            required: [connectionRef, operation, inputMapping, resultMapping]
+            required: [migrationId]
             properties:
-              connectionRef: { $ref: '#/components/schemas/Key' }
-              operation: { type: string }
-              inputMapping: { type: object, additionalProperties: { type: string } }
-              resultMapping: { type: object, additionalProperties: { type: string } }
-              timeoutSeconds: { type: integer, minimum: 1, maximum: 30 }
-              definitionVersion: { type: integer, minimum: 1, default: 1 }
+              migrationId: { $ref: '#/components/schemas/Uuid' }
+              decisionId: { type: string, minLength: 1, maxLength: 128, description: 'Decision of the DMN file; defaults to the id the task calls' }
+              inputRef: { type: string, description: 'Field the table tests, /input/<field> or /steps/<node>/<output>; defaults to /input/<DMN input name>' }
+        decisionId: { type: string, minLength: 1, maxLength: 128, description: 'DMN migrations only: the decision to convert; optional when the file has exactly one decision' }
         inputSchema:
           type: object
           description: Reviewed canonical request schema; otherwise inferred from BPMN comparisons and service input mappings
@@ -3353,4 +3408,15 @@ components:
               workflowRef: { $ref: '#/components/schemas/Key' }
               inputMapping: { type: object, additionalProperties: { type: string } }
               resultMapping: { type: object, additionalProperties: { type: string } }
+              forEach:
+                type: object
+                description: 'Required for a multi-instance call activity over a plain collection. The source collection has no bound, so the designer sets one (1 to 25). Mode follows the source (isSequential).'
+                additionalProperties: false
+                required: [itemInput, maxItems]
+                properties:
+                  itemInput: { type: string, description: 'Request field of the child that receives each item' }
+                  maxItems: { type: integer, minimum: 1, maximum: 25 }
+                  itemType: { type: string, enum: [string, integer, number, boolean], description: 'Item type of the generated collection field; not needed with an explicit inputSchema' }
+              collectionMapping: { type: object, additionalProperties: { type: string }, description: 'Collected output name to a guaranteed child result (only with forEach)' }
         acknowledgeInfo: { type: boolean, default: false, description: 'Accept info-level losses such as dropped listeners' }
+        acknowledgeReview: { type: boolean, default: false, description: 'Mark review items as acknowledged in the report. Review items never block conversion, with or without it.' }

@@ -14,7 +14,7 @@ import tools.jackson.databind.JsonNode;
 @RequestMapping("/api/v1/workspaces/{workspaceId}/migrations")
 public class MigrationController {
     public record Upload(@NotBlank @Size(max=200) String fileName, @NotBlank @Size(max=1_398_104) String content,
-            @Pattern(regexp="bpmn|pegaArchive|pegaMapping") String sourceFormat) { }
+            @Pattern(regexp="bpmn|dmn|pegaArchive|pegaMapping") String sourceFormat) { }
     private final CallerResolver callers; private final MigrationService service;
     public MigrationController(CallerResolver callers, MigrationService service) { this.callers=callers; this.service=service; }
     @PostMapping

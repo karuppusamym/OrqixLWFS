@@ -5,6 +5,7 @@ import java.util.*;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.orqix.audit.AuditWriter;
 import com.orqix.identity.*;
 import com.orqix.migration.camunda.*;
 import com.orqix.shared.Ids;
@@ -18,8 +19,8 @@ public class MigrationProjects {
     public record File(String fileName,UUID migrationId,String processId,List<String> dependencies,String status,UUID convertedWorkflowId) {}
     public record Project(UUID id,String name,String status,List<File> files,List<UUID> conversionOrder,List<ProjectAnalyzer.Issue> issues,Instant createdAt) {}
     public record Converted(Project project,MigrationService.Converted converted) {}
-    private final JdbcClient jdbc; private final Json json; private final PolicyService policy; private final MigrationService migrations;
-    public MigrationProjects(JdbcClient jdbc,Json json,PolicyService policy,MigrationService migrations) { this.jdbc=jdbc;this.json=json;this.policy=policy;this.migrations=migrations; }
+    private final JdbcClient jdbc; private final Json json; private final PolicyService policy; private final MigrationService migrations; private final AuditWriter audit;
+    public MigrationProjects(JdbcClient jdbc,Json json,PolicyService policy,MigrationService migrations,AuditWriter audit) { this.jdbc=jdbc;this.json=json;this.policy=policy;this.migrations=migrations;this.audit=audit; }
     private void authorize(Caller caller,UUID ws,boolean edit) {
         policy.require(policy.requireVisible(caller,ws),edit?Permission.WORKFLOW_EDIT:Permission.WORKFLOW_READ,edit?"editMigrationProject":"getMigrationProject",false);
     }
@@ -39,6 +40,8 @@ public class MigrationProjects {
         Project project=new Project(id,name,"analyzed",files,plan.conversionOrder().stream().map(ids::get).toList(),plan.issues(),created);
         jdbc.sql("INSERT INTO migration_project(id,workspace_id,created_by,name,sources,report,created_at) VALUES(:id,:ws,:actor,:name,CAST(:sources AS jsonb),CAST(:report AS jsonb),:created)")
             .param("id",id).param("ws",ws).param("actor",caller.subjectId()).param("name",name).param("sources",json.write(sources)).param("report",json.write(project)).param("created",Sql.ts(created)).update();
+        audit.write(new AuditWriter.Entry(ws,AuditWriter.ActorType.USER,caller.subjectId(),"migration.project.created","migrationProject",id.toString(),
+            AuditWriter.Outcome.SUCCESS,Map.of("fileCount",files.size(),"issueCount",plan.issues().size())));
         return get(caller,ws,id);
     }
     @Transactional(readOnly=true) public Project get(Caller caller,UUID ws,UUID id) {

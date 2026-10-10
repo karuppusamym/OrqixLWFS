@@ -1,0 +1,393 @@
+{
+  "schemaVersion": "0.1",
+  "workflowKey": "credit-approval",
+  "name": "Credit and loan approval",
+  "metadata": {
+    "description": "Illustrative template, not a regulatory-compliant product; no jurisdiction is assumed. A rule table sets the approval level from the amount: under USD 5,000 is booked automatically, USD 50,000 or more also needs the credit committee, anything between needs a credit manager. The manager review is repeated up to three times when it is returned to the applicant; after that Operations decides. The requester can never approve their own request. The loan is booked exactly once.",
+    "tags": [
+      "banking",
+      "credit",
+      "illustrative"
+    ]
+  },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "applicantReference",
+      "product",
+      "amount",
+      "termMonths"
+    ],
+    "properties": {
+      "applicantReference": {
+        "type": "string",
+        "title": "Applicant reference",
+        "minLength": 1,
+        "maxLength": 60,
+        "description": "The customer or application number. Do not enter names or document numbers."
+      },
+      "product": {
+        "type": "string",
+        "title": "Product",
+        "enum": [
+          "personalLoan",
+          "smallBusinessLoan",
+          "overdraft"
+        ]
+      },
+      "amount": {
+        "type": "number",
+        "title": "Amount (USD)",
+        "minimum": 0.01,
+        "maximum": 10000000,
+        "multipleOf": 0.01,
+        "description": "Requested amount in USD, with cents."
+      },
+      "termMonths": {
+        "type": "integer",
+        "title": "Term (months)",
+        "minimum": 1,
+        "maximum": 360
+      }
+    }
+  },
+  "inputUi": {
+    "order": [
+      "applicantReference",
+      "product",
+      "amount",
+      "termMonths"
+    ],
+    "widgets": {
+      "product": "select",
+      "amount": "money"
+    },
+    "currency": "USD"
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "bookingId": {
+        "type": "string",
+        "title": "Booking ID"
+      },
+      "reviewRounds": {
+        "type": "integer",
+        "title": "Review rounds"
+      }
+    }
+  },
+  "triggers": [
+    "manual",
+    "api"
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "label": "Application submitted",
+      "config": {}
+    },
+    {
+      "id": "limits",
+      "type": "decision",
+      "label": "Set the approval level",
+      "config": {
+        "decisionRef": "credit-limits"
+      }
+    },
+    {
+      "id": "route",
+      "type": "branch",
+      "label": "Needs a person?",
+      "config": {}
+    },
+    {
+      "id": "review",
+      "type": "startWorkflow",
+      "label": "Credit manager review",
+      "config": {
+        "workflowRef": "credit-review-round",
+        "inputMapping": {
+          "applicantReference": "/input/applicantReference",
+          "product": "/input/product",
+          "amount": "/input/amount",
+          "termMonths": "/input/termMonths"
+        },
+        "resultMapping": {},
+        "repeat": {
+          "maxIterations": 3,
+          "untilOutcome": "Approved"
+        }
+      }
+    },
+    {
+      "id": "rework",
+      "type": "branch",
+      "label": "Review passed or out of rounds?",
+      "config": {}
+    },
+    {
+      "id": "referred",
+      "type": "approval",
+      "label": "Operations decision on a referred case",
+      "config": {
+        "candidateGroupRef": "credit-operations",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 24
+      }
+    },
+    {
+      "id": "level",
+      "type": "branch",
+      "label": "Committee needed?",
+      "config": {}
+    },
+    {
+      "id": "committee",
+      "type": "approval",
+      "label": "Credit committee approval",
+      "config": {
+        "candidateGroupRef": "credit-committee",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 48
+      }
+    },
+    {
+      "id": "book",
+      "type": "http",
+      "label": "Book the loan",
+      "config": {
+        "connectionRef": "core-banking",
+        "operation": "bookLoan",
+        "inputMapping": {
+          "applicationReference": "/input/applicantReference",
+          "product": "/input/product",
+          "amount": "/input/amount",
+          "termMonths": "/input/termMonths"
+        },
+        "resultMapping": {
+          "bookingId": "/bookingId"
+        },
+        "timeoutSeconds": 20
+      }
+    },
+    {
+      "id": "notifyApproved",
+      "type": "notification",
+      "label": "Tell requester the loan is booked",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "The loan was approved and booked."
+      }
+    },
+    {
+      "id": "approved",
+      "type": "end",
+      "label": "Approved",
+      "config": {
+        "businessOutcome": "Approved",
+        "outcomeKind": "success"
+      }
+    },
+    {
+      "id": "notifyDeclined",
+      "type": "notification",
+      "label": "Tell requester it was declined",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "The application was declined. Open the request to see the reason."
+      }
+    },
+    {
+      "id": "declined",
+      "type": "end",
+      "label": "Declined",
+      "config": {
+        "businessOutcome": "Declined",
+        "outcomeKind": "rejected"
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t1",
+      "from": "start",
+      "to": "limits",
+      "on": "next"
+    },
+    {
+      "id": "t2",
+      "from": "limits",
+      "to": "route",
+      "on": "next"
+    },
+    {
+      "id": "t3",
+      "from": "route",
+      "to": "book",
+      "on": "condition",
+      "label": "Under USD 5,000: automatic",
+      "condition": {
+        "fieldRef": "/steps/limits/tier",
+        "operator": "eq",
+        "value": "auto"
+      }
+    },
+    {
+      "id": "t4",
+      "from": "route",
+      "to": "review",
+      "on": "default",
+      "label": "USD 5,000 or more"
+    },
+    {
+      "id": "t5",
+      "from": "review",
+      "to": "rework",
+      "on": "next"
+    },
+    {
+      "id": "t6",
+      "from": "rework",
+      "to": "referred",
+      "on": "condition",
+      "label": "Returned three times",
+      "condition": {
+        "fieldRef": "/steps/review/limitReached",
+        "operator": "eq",
+        "value": true
+      }
+    },
+    {
+      "id": "t7",
+      "from": "rework",
+      "to": "level",
+      "on": "default",
+      "label": "Review passed"
+    },
+    {
+      "id": "t8",
+      "from": "level",
+      "to": "committee",
+      "on": "condition",
+      "label": "USD 50,000 or more",
+      "condition": {
+        "fieldRef": "/steps/limits/tier",
+        "operator": "eq",
+        "value": "committee"
+      }
+    },
+    {
+      "id": "t9",
+      "from": "level",
+      "to": "book",
+      "on": "default",
+      "label": "Under USD 50,000"
+    },
+    {
+      "id": "t10",
+      "from": "committee",
+      "to": "book",
+      "on": "approved"
+    },
+    {
+      "id": "t11",
+      "from": "committee",
+      "to": "notifyDeclined",
+      "on": "rejected"
+    },
+    {
+      "id": "t12",
+      "from": "referred",
+      "to": "book",
+      "on": "approved"
+    },
+    {
+      "id": "t13",
+      "from": "referred",
+      "to": "notifyDeclined",
+      "on": "rejected"
+    },
+    {
+      "id": "t14",
+      "from": "book",
+      "to": "notifyApproved",
+      "on": "next"
+    },
+    {
+      "id": "t15",
+      "from": "notifyApproved",
+      "to": "approved",
+      "on": "next"
+    },
+    {
+      "id": "t16",
+      "from": "notifyDeclined",
+      "to": "declined",
+      "on": "next"
+    }
+  ],
+  "decisions": [
+    {
+      "key": "credit-limits",
+      "version": 1,
+      "hitPolicy": "UNIQUE",
+      "rows": [
+        {
+          "when": {
+            "fieldRef": "/input/amount",
+            "operator": "lt",
+            "value": 5000
+          },
+          "then": {
+            "tier": "auto"
+          }
+        },
+        {
+          "when": {
+            "fieldRef": "/input/amount",
+            "operator": "gte",
+            "value": 50000
+          },
+          "then": {
+            "tier": "committee"
+          }
+        }
+      ],
+      "default": {
+        "tier": "manager"
+      }
+    }
+  ],
+  "execution": {
+    "maxConcurrentRuns": 200,
+    "maxAttempts": 3,
+    "retryDelaySeconds": 30
+  },
+  "security": {
+    "selfApproval": "deny"
+  },
+  "dependencies": {
+    "connections": [
+      {
+        "key": "core-banking",
+        "definitionVersion": 1
+      }
+    ]
+  },
+  "outputMapping": {
+    "bookingId": {
+      "fieldRef": "/steps/book/bookingId",
+      "required": false
+    },
+    "reviewRounds": {
+      "fieldRef": "/steps/review/iterations",
+      "required": false
+    }
+  }
+}

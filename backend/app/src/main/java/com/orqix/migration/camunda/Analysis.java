@@ -16,7 +16,7 @@ public final class Analysis {
 
     /** What a designer has to provide before an item counts as resolved. */
     public enum Need {
-        NONE, TASK, OUTCOME_GATEWAY, SERVICE, CHILD, ACKNOWLEDGE
+        NONE, TASK, OUTCOME_GATEWAY, SERVICE, SERVICE_GROUP, CHILD, DECISION, ACKNOWLEDGE
     }
 
     /** One inventory entry. */
@@ -27,6 +27,11 @@ public final class Analysis {
         final String subject;
         final int ordinal;
         final int sequence;
+        /**
+         * Shown instead of {@link #issue} once the designer's mapping resolved it: a mapped service call, child call or
+         * decision converts, but its behaviour (retries, timeouts, results) can differ, so it stays a REVIEW item.
+         */
+        Report.Issue reviewAfterResolution;
 
         Item(Report.Issue issue, Need need, String subject, int ordinal, int sequence) {
             this.issue = issue;
@@ -50,6 +55,13 @@ public final class Analysis {
 
         void target(String nodeId) {
             issue = issue.withTarget(nodeId);
+            if (reviewAfterResolution != null) {
+                reviewAfterResolution = reviewAfterResolution.withTarget(nodeId);
+            }
+        }
+
+        public Report.Issue reviewAfterResolution() {
+            return reviewAfterResolution;
         }
     }
 
@@ -144,36 +156,69 @@ public final class Analysis {
         }
     }
 
-    /** One comparison of a branch gateway. */
-    public record BranchEntry(String flowId, Expressions.Op op, Object literal, boolean isDefault) {
+    /**
+     * One outgoing path of a branch gateway: a single comparison ({@code group} null), a flat {@code all}/{@code any}
+     * group, or the default path ({@code terms} empty). {@code sourceText} keeps the original condition.
+     */
+    public record BranchEntry(String flowId, String group, List<Expressions.Comparison> terms, boolean isDefault,
+            String sourceText) {
+
+        public BranchEntry {
+            terms = List.copyOf(terms);
+        }
+
+        public boolean compound() {
+            return group != null;
+        }
+
+        /** The one comparison of a scalar entry. */
+        public Expressions.Comparison scalar() {
+            return terms.get(0);
+        }
     }
 
     /** An exclusive gateway that becomes a branch. */
     public static final class Branch {
         final Node gateway;
-        final String variable;
-        /** number | string | boolean */
-        final String valueType;
+        /** Variable to value type (number | string | boolean), in order of first use. */
+        final Map<String, String> variables;
         final List<BranchEntry> entries;
+        /** Flow that became the default only because the other condition complements it; null otherwise. */
+        String derivedDefaultFlowId;
 
-        Branch(Node gateway, String variable, String valueType, List<BranchEntry> entries) {
+        Branch(Node gateway, Map<String, String> variables, List<BranchEntry> entries) {
             this.gateway = gateway;
-            this.variable = variable;
-            this.valueType = valueType;
+            this.variables = new LinkedHashMap<>(variables);
             this.entries = List.copyOf(entries);
         }
 
+        /** First variable; a scalar branch has exactly one. */
         public String variable() {
-            return variable;
+            return variables.keySet().iterator().next();
         }
 
         public String valueType() {
-            return valueType;
+            return variables.values().iterator().next();
+        }
+
+        public Map<String, String> variables() {
+            return variables;
         }
     }
 
     /** A service task that needs a designer mapping. */
     public record Service(Node node, String reasonCode, String detail) {
+    }
+
+    /**
+     * A call activity with multiInstanceLoopCharacteristics that can become a bounded for-each: the collection
+     * variable, the element variable and whether the instances run one after another.
+     */
+    public record MultiInstance(String collectionVariable, String fieldKey, String elementVariable, boolean sequential) {
+    }
+
+    /** A business rule task that calls a DMN decision by a literal id; {@code resultVariable} and mapping may be null. */
+    public record DecisionRef(String decisionId, String resultVariable, String resultMapping) {
     }
 
     final String sourceSystem;
@@ -189,6 +234,10 @@ public final class Analysis {
     final Map<String, Branch> branches = new LinkedHashMap<>();
     final Map<String, Service> services = new LinkedHashMap<>();
     final Map<String,List<String>> serviceGroups = new LinkedHashMap<>();
+    final Map<String, MultiInstance> multiInstance = new LinkedHashMap<>();
+    final Map<String, DecisionRef> decisions = new LinkedHashMap<>();
+    /** Result variable name to the business rule task that sets it. */
+    final Map<String, String> decisionResults = new LinkedHashMap<>();
     final Map<String, String> waits = new LinkedHashMap<>();
     final Map<String, String> parallelJoins = new LinkedHashMap<>();
     final Set<String> children = new LinkedHashSet<>();
@@ -247,6 +296,14 @@ public final class Analysis {
 
     public Map<String, Branch> branches() {
         return branches;
+    }
+
+    public Map<String, DecisionRef> decisions() {
+        return decisions;
+    }
+
+    public Map<String, MultiInstance> multiInstance() {
+        return multiInstance;
     }
 
     public Map<String, Node> nodes() {

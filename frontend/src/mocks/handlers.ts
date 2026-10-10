@@ -3,6 +3,7 @@ import type { Permission, ProblemCode, TaskDetail, ValidationIssue } from '@/api
 import { nodeById } from '@/features/studio/model/graph'
 import { addEvent, evaluateTable, claim, createRun, decide, cancelRun, currentRelease, reconcileRun, retryRun, release as releaseTask, selfApprovalAllowed, toRun, toRunDetail, toTaskSummary } from './engine'
 import { makeRelease } from './seed'
+import { migrationPublishDenial } from './migration'
 import { normalizeDefinition, type Definition, type Literal } from '@/features/studio/model/types'
 import { buildFields, parseFormSchema } from '@/lib/form/schema'
 import { validateJsonInput } from '@/lib/form/validate'
@@ -146,6 +147,16 @@ function summary(wf: MockWorkflow, perms: Permission[]) {
     canStart: !!active && perms.includes('workflow.start'),
     updatedAt: wf.updatedAt,
   }
+}
+
+/** Workflow and draft as returned by createWorkflow / getDraft, shared with the migration mocks. */
+export function workflowResource(wf: MockWorkflow, perms: Permission[]) {
+  return { ...summary(wf, perms), version: wf.version, createdAt: wf.createdAt, permissions: perms }
+}
+
+export function draftResource(wf: MockWorkflow) {
+  const d = wf.drafts.at(-1)!
+  return { workflowId: wf.id, revision: d.revision, savedAt: d.savedAt, savedBy: subjectRef(userById(d.savedById)), definition: d.definition }
 }
 
 function releaseSummary(wf: MockWorkflow, r: MockWorkflow['releases'][number]) {
@@ -423,6 +434,8 @@ export function createHandlers(): HttpHandler[] {
       return idempotent(request, g.user, 'publishDraft', input, () => {
         const draft = wf.drafts.find((d) => d.revision === input.draftRevision)
         if (!draft) return notFound()
+        const denial = migrationPublishDenial(wf, g.user, draft.revision)
+        if (denial) return problem(denial.status, denial.code, denial.title, { detail: denial.detail })
         const issues = validateDefinition(draft.definition, validationContext(wf.wsId))
         if (issues.some((i) => i.severity === 'blocker')) return problem(422, 'WORKFLOW_INVALID', 'The workflow has blocking problems', problemFromValidation(issues))
         const warnings = issues.filter((i) => i.severity === 'warning')

@@ -471,7 +471,10 @@
         "additionalProperties": false,
         "properties": {
           "driveId": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "drive"
+            ]
           },
           "itemId": {
             "type": "string"

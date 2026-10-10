@@ -1,0 +1,642 @@
+{
+  "schemaVersion": "0.1",
+  "workflowKey": "kyc-onboarding-review",
+  "name": "KYC customer onboarding review",
+  "metadata": {
+    "description": "Illustrative template, not a regulatory-compliant product; no jurisdiction is assumed. A relationship manager submits a new customer. Country, product and expected volume are rated by rule tables. Identity, sanctions screening and document completeness run in parallel. High-risk or sanctions-flagged customers need compliance approval within 24 hours, then escalate to the head of compliance. A rejection always needs a reason. After approval the first periodic review runs as a pinned child workflow.",
+    "tags": [
+      "banking",
+      "kyc",
+      "illustrative"
+    ]
+  },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "customerName",
+      "customerType",
+      "countryGroup",
+      "product",
+      "expectedMonthlyVolume",
+      "politicallyExposed"
+    ],
+    "properties": {
+      "customerName": {
+        "type": "string",
+        "title": "Customer name",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "customerType": {
+        "type": "string",
+        "title": "Customer type",
+        "enum": [
+          "individual",
+          "corporate"
+        ]
+      },
+      "countryGroup": {
+        "type": "string",
+        "title": "Country group",
+        "enum": [
+          "domestic",
+          "partner",
+          "elevated",
+          "restricted"
+        ],
+        "description": "The group your compliance team assigns to the customer's country. The country list itself is maintained outside this template."
+      },
+      "product": {
+        "type": "string",
+        "title": "Product",
+        "enum": [
+          "currentAccount",
+          "savingsAccount",
+          "businessLoan",
+          "tradeFinance"
+        ]
+      },
+      "expectedMonthlyVolume": {
+        "type": "number",
+        "title": "Expected monthly volume (USD)",
+        "minimum": 0,
+        "maximum": 1000000000,
+        "multipleOf": 0.01,
+        "description": "Expected monthly turnover in USD, with cents."
+      },
+      "politicallyExposed": {
+        "type": "boolean",
+        "title": "Politically exposed person"
+      }
+    }
+  },
+  "inputUi": {
+    "order": [
+      "customerName",
+      "customerType",
+      "countryGroup",
+      "product",
+      "expectedMonthlyVolume",
+      "politicallyExposed"
+    ],
+    "widgets": {
+      "customerType": "radio",
+      "countryGroup": "select",
+      "product": "select",
+      "expectedMonthlyVolume": "money",
+      "politicallyExposed": "checkbox"
+    },
+    "currency": "USD"
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "screeningReference": {
+        "type": "string",
+        "title": "Screening reference"
+      },
+      "periodicReviewer": {
+        "type": "string",
+        "title": "Periodic reviewer"
+      }
+    }
+  },
+  "triggers": [
+    "manual",
+    "api"
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "label": "Onboarding requested",
+      "config": {}
+    },
+    {
+      "id": "countryPolicy",
+      "type": "decision",
+      "label": "Rate country risk",
+      "config": {
+        "decisionRef": "country-policy"
+      }
+    },
+    {
+      "id": "productPolicy",
+      "type": "decision",
+      "label": "Rate product risk",
+      "config": {
+        "decisionRef": "product-policy"
+      }
+    },
+    {
+      "id": "volumePolicy",
+      "type": "decision",
+      "label": "Rate expected volume",
+      "config": {
+        "decisionRef": "volume-policy"
+      }
+    },
+    {
+      "id": "split",
+      "type": "parallelSplit",
+      "label": "Run the checks together",
+      "config": {
+        "joinRef": "join"
+      }
+    },
+    {
+      "id": "identity",
+      "type": "approval",
+      "label": "Verify identity",
+      "config": {
+        "candidateGroupRef": "kyc-analysts",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 8
+      }
+    },
+    {
+      "id": "screen",
+      "type": "http",
+      "label": "Screen against sanctions lists",
+      "config": {
+        "connectionRef": "sanctions-screening",
+        "operation": "screenParty",
+        "inputMapping": {
+          "partyName": "/input/customerName",
+          "partyType": "/input/customerType",
+          "countryGroup": "/input/countryGroup"
+        },
+        "resultMapping": {
+          "hit": "/hit",
+          "referenceId": "/referenceId"
+        },
+        "timeoutSeconds": 20
+      }
+    },
+    {
+      "id": "documents",
+      "type": "approval",
+      "label": "Check documents are complete",
+      "config": {
+        "candidateGroupRef": "document-controllers",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 8
+      }
+    },
+    {
+      "id": "join",
+      "type": "parallelJoin",
+      "label": "All checks finished",
+      "config": {}
+    },
+    {
+      "id": "riskHigh",
+      "type": "branch",
+      "label": "High risk?",
+      "config": {}
+    },
+    {
+      "id": "riskMedium",
+      "type": "branch",
+      "label": "Medium risk?",
+      "config": {}
+    },
+    {
+      "id": "compliance",
+      "type": "approval",
+      "label": "Compliance approval",
+      "config": {
+        "candidateGroupRef": "compliance-officers",
+        "rejectReasonRequired": true,
+        "timeoutAfter": "PT24H"
+      }
+    },
+    {
+      "id": "escalation",
+      "type": "approval",
+      "label": "Head of compliance approval",
+      "config": {
+        "candidateGroupRef": "head-of-compliance",
+        "rejectReasonRequired": true,
+        "timeoutAfter": "PT48H"
+      }
+    },
+    {
+      "id": "seniorReview",
+      "type": "approval",
+      "label": "Senior analyst review",
+      "config": {
+        "candidateGroupRef": "kyc-seniors",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 24
+      }
+    },
+    {
+      "id": "notifyApproved",
+      "type": "notification",
+      "label": "Tell requester the customer is approved",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "The customer passed onboarding review. Periodic review has been scheduled."
+      }
+    },
+    {
+      "id": "periodic",
+      "type": "startWorkflow",
+      "label": "Run the first periodic review",
+      "config": {
+        "workflowRef": "kyc-periodic-review",
+        "inputMapping": {
+          "customerName": "/input/customerName",
+          "customerType": "/input/customerType"
+        },
+        "resultMapping": {
+          "reviewedBy": "reviewedBy"
+        }
+      }
+    },
+    {
+      "id": "onboarded",
+      "type": "end",
+      "label": "Onboarded",
+      "config": {
+        "businessOutcome": "Onboarded",
+        "outcomeKind": "success"
+      }
+    },
+    {
+      "id": "notifyRejected",
+      "type": "notification",
+      "label": "Tell requester it was rejected",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "The onboarding request was rejected. Open the request to see the reason."
+      }
+    },
+    {
+      "id": "rejected",
+      "type": "end",
+      "label": "Rejected",
+      "config": {
+        "businessOutcome": "Rejected",
+        "outcomeKind": "rejected"
+      }
+    },
+    {
+      "id": "notifyExpired",
+      "type": "notification",
+      "label": "Tell requester nobody decided in time",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "Nobody decided in the allowed time, so the onboarding request was closed."
+      }
+    },
+    {
+      "id": "expired",
+      "type": "end",
+      "label": "Expired",
+      "config": {
+        "businessOutcome": "Expired",
+        "outcomeKind": "rejected"
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t1",
+      "from": "start",
+      "to": "countryPolicy",
+      "on": "next"
+    },
+    {
+      "id": "t2",
+      "from": "countryPolicy",
+      "to": "productPolicy",
+      "on": "next"
+    },
+    {
+      "id": "t3",
+      "from": "productPolicy",
+      "to": "volumePolicy",
+      "on": "next"
+    },
+    {
+      "id": "t4",
+      "from": "volumePolicy",
+      "to": "split",
+      "on": "next"
+    },
+    {
+      "id": "t5",
+      "from": "split",
+      "to": "identity",
+      "on": "next"
+    },
+    {
+      "id": "t6",
+      "from": "split",
+      "to": "screen",
+      "on": "next"
+    },
+    {
+      "id": "t7",
+      "from": "split",
+      "to": "documents",
+      "on": "next"
+    },
+    {
+      "id": "t8",
+      "from": "identity",
+      "to": "join",
+      "on": "approved"
+    },
+    {
+      "id": "t9",
+      "from": "screen",
+      "to": "join",
+      "on": "next"
+    },
+    {
+      "id": "t10",
+      "from": "documents",
+      "to": "join",
+      "on": "approved"
+    },
+    {
+      "id": "t11",
+      "from": "identity",
+      "to": "notifyRejected",
+      "on": "rejected"
+    },
+    {
+      "id": "t12",
+      "from": "documents",
+      "to": "notifyRejected",
+      "on": "rejected"
+    },
+    {
+      "id": "t13",
+      "from": "join",
+      "to": "riskHigh",
+      "on": "next"
+    },
+    {
+      "id": "t14",
+      "from": "riskHigh",
+      "to": "compliance",
+      "on": "condition",
+      "label": "Country, PEP, volume or sanctions flag",
+      "condition": {
+        "any": [
+          {
+            "fieldRef": "/steps/countryPolicy/countryTier",
+            "operator": "eq",
+            "value": "high"
+          },
+          {
+            "fieldRef": "/input/politicallyExposed",
+            "operator": "eq",
+            "value": true
+          },
+          {
+            "fieldRef": "/steps/volumePolicy/volumeBand",
+            "operator": "eq",
+            "value": "large"
+          },
+          {
+            "fieldRef": "/steps/screen/hit",
+            "operator": "eq",
+            "value": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "t15",
+      "from": "riskHigh",
+      "to": "riskMedium",
+      "on": "default",
+      "label": "No high-risk flag"
+    },
+    {
+      "id": "t16",
+      "from": "riskMedium",
+      "to": "seniorReview",
+      "on": "condition",
+      "label": "Medium country, complex product or corporate",
+      "condition": {
+        "any": [
+          {
+            "fieldRef": "/steps/countryPolicy/countryTier",
+            "operator": "eq",
+            "value": "medium"
+          },
+          {
+            "fieldRef": "/steps/productPolicy/productTier",
+            "operator": "eq",
+            "value": "complex"
+          },
+          {
+            "fieldRef": "/input/customerType",
+            "operator": "eq",
+            "value": "corporate"
+          }
+        ]
+      }
+    },
+    {
+      "id": "t17",
+      "from": "riskMedium",
+      "to": "notifyApproved",
+      "on": "default",
+      "label": "Low risk"
+    },
+    {
+      "id": "t18",
+      "from": "compliance",
+      "to": "notifyApproved",
+      "on": "approved"
+    },
+    {
+      "id": "t19",
+      "from": "compliance",
+      "to": "notifyRejected",
+      "on": "rejected"
+    },
+    {
+      "id": "t20",
+      "from": "compliance",
+      "to": "escalation",
+      "on": "timedOut",
+      "label": "Not decided in 24 hours"
+    },
+    {
+      "id": "t21",
+      "from": "escalation",
+      "to": "notifyApproved",
+      "on": "approved"
+    },
+    {
+      "id": "t22",
+      "from": "escalation",
+      "to": "notifyRejected",
+      "on": "rejected"
+    },
+    {
+      "id": "t23",
+      "from": "escalation",
+      "to": "notifyExpired",
+      "on": "timedOut",
+      "label": "Not decided in 48 hours"
+    },
+    {
+      "id": "t24",
+      "from": "seniorReview",
+      "to": "notifyApproved",
+      "on": "approved"
+    },
+    {
+      "id": "t25",
+      "from": "seniorReview",
+      "to": "notifyRejected",
+      "on": "rejected"
+    },
+    {
+      "id": "t26",
+      "from": "notifyApproved",
+      "to": "periodic",
+      "on": "next"
+    },
+    {
+      "id": "t27",
+      "from": "periodic",
+      "to": "onboarded",
+      "on": "next"
+    },
+    {
+      "id": "t28",
+      "from": "notifyRejected",
+      "to": "rejected",
+      "on": "next"
+    },
+    {
+      "id": "t29",
+      "from": "notifyExpired",
+      "to": "expired",
+      "on": "next"
+    }
+  ],
+  "decisions": [
+    {
+      "key": "country-policy",
+      "version": 1,
+      "hitPolicy": "UNIQUE",
+      "rows": [
+        {
+          "when": {
+            "fieldRef": "/input/countryGroup",
+            "operator": "eq",
+            "value": "restricted"
+          },
+          "then": {
+            "countryTier": "high"
+          }
+        },
+        {
+          "when": {
+            "fieldRef": "/input/countryGroup",
+            "operator": "eq",
+            "value": "elevated"
+          },
+          "then": {
+            "countryTier": "medium"
+          }
+        }
+      ],
+      "default": {
+        "countryTier": "low"
+      }
+    },
+    {
+      "key": "product-policy",
+      "version": 1,
+      "hitPolicy": "UNIQUE",
+      "rows": [
+        {
+          "when": {
+            "fieldRef": "/input/product",
+            "operator": "eq",
+            "value": "tradeFinance"
+          },
+          "then": {
+            "productTier": "complex"
+          }
+        },
+        {
+          "when": {
+            "fieldRef": "/input/product",
+            "operator": "eq",
+            "value": "businessLoan"
+          },
+          "then": {
+            "productTier": "complex"
+          }
+        }
+      ],
+      "default": {
+        "productTier": "standard"
+      }
+    },
+    {
+      "key": "volume-policy",
+      "version": 1,
+      "hitPolicy": "UNIQUE",
+      "rows": [
+        {
+          "when": {
+            "fieldRef": "/input/expectedMonthlyVolume",
+            "operator": "gte",
+            "value": 1000000
+          },
+          "then": {
+            "volumeBand": "large"
+          }
+        }
+      ],
+      "default": {
+        "volumeBand": "normal"
+      }
+    }
+  ],
+  "execution": {
+    "maxConcurrentRuns": 200,
+    "maxAttempts": 3,
+    "retryDelaySeconds": 30
+  },
+  "security": {
+    "selfApproval": "deny"
+  },
+  "dependencies": {
+    "connections": [
+      {
+        "key": "sanctions-screening",
+        "definitionVersion": 1
+      }
+    ]
+  },
+  "outputMapping": {
+    "screeningReference": {
+      "fieldRef": "/steps/screen/referenceId",
+      "required": false
+    },
+    "periodicReviewer": {
+      "fieldRef": "/steps/periodic/reviewedBy",
+      "required": false
+    }
+  }
+}

@@ -19,13 +19,13 @@ import java.util.regex.Pattern;
 import com.orqix.migration.camunda.Analysis.Need;
 
 /**
- * Adapter {@code camunda-bpmn-0.3}: reads a Camunda 7 / Camunda 8 / plain BPMN 2.0 file and gives every source element
+ * Adapter {@code camunda-bpmn-0.4}: reads a Camunda 7 / Camunda 8 / plain BPMN 2.0 file and gives every source element
  * and every nested construct a disposition (S11 section 2, doc 05). Nothing is silently omitted: unknown elements are
  * blockers, dropped settings are info items that need acknowledgement. Pure Java; no Spring, no database.
  */
 public final class Analyzer {
 
-    public static final String ADAPTER_VERSION = "camunda-bpmn-0.3";
+    public static final String ADAPTER_VERSION = "camunda-bpmn-0.4";
 
     private static final String BPMN = Namespaces.BPMN;
     private static final String C7 = Namespaces.CAMUNDA7;
@@ -43,7 +43,7 @@ public final class Analyzer {
             "partnerRole", "endPoint", "eventDefinition", "globalTask", "correlationProperty");
     private static final Set<String> FORM_ATTRIBUTES = Set.of("formKey", "formRef", "formRefBinding", "formRefVersion");
     private static final Set<String> CONSUMED_ATTRIBUTES = Set.of("candidateGroups", "candidateUsers", "assignee", "class",
-            "delegateExpression", "expression", "type", "topic", "resultVariable", "decisionRef", "modelerTemplate",
+            "delegateExpression", "expression", "type", "topic", "resultVariable", "decisionRef", "mapDecisionResult", "collection", "elementVariable", "modelerTemplate",
             "modelerTemplateVersion", "diagramRelationId", "modelerTemplateIcon");
     private static final Pattern REJECTING_NAME = Pattern.compile("(?i).*(reject|denied|decline|refus).*");
 
@@ -115,6 +115,7 @@ public final class Analyzer {
         }
         processLevel(process);
         graphAnalysis();
+        serviceGroupItems();
         items.sort(Comparator.<Analysis.Item>comparingInt(i -> i.ordinal).thenComparingInt(i -> i.sequence));
         analysis.items.addAll(items);
         return analysis;
@@ -313,9 +314,14 @@ public final class Analyzer {
                     blockedEvent(node);
                 } else {
                     analysis.endIds.add(node.id);
-                    add(e, type, Report.SUPPORTED, "END_EVENT_MAPPED",
-                            "A none end event becomes a finish step with a business outcome taken from its name.", null,
-                            Need.NONE, null);
+                    String outcome = blankToNull(e.attr("name")) == null ? "Completed" : e.attr("name");
+                    String kind = REJECTING_NAME.matcher(outcome).matches() ? "rejected" : "success";
+                    add(e, type, Report.REVIEW, "END_EVENT_MAPPED",
+                            "A none end event becomes a finish step. Its business outcome '" + outcome + "' is taken from the "
+                                    + "name and classified as '" + kind + "' because " + (kind.equals("rejected")
+                                    ? "the name means rejection" : "the name does not mean rejection") + ".",
+                            "Check the outcome classification: it decides whether the request counts as rejected or successful.",
+                            Need.ACKNOWLEDGE, null);
                 }
             }
             case "userTask" -> {
@@ -330,9 +336,7 @@ public final class Analyzer {
             }
             case "businessRuleTask" -> {
                 scanNodeChildren(node);
-                add(e, type, Report.BLOCKER, "DMN_IMPORT_NOT_SUPPORTED",
-                        "Business rule tasks call a DMN decision. DMN files are not imported in this version.",
-                        "Rebuild the decision as a decision table in the studio.", Need.NONE, null);
+                businessRule(node);
             }
             case "parallelGateway" -> scanNodeChildren(node);
             case "intermediateCatchEvent" -> {
@@ -345,13 +349,26 @@ public final class Analyzer {
                 catch (RuntimeException ignored) { valid = false; }
                 if (valid && node.in.size() == 1 && node.out.size() == 1) {
                     analysis.waits.put(node.id, value);
-                    add(e, type, Report.SUPPORTED, "DURATION_TIMER_MAPPED", "A constant duration timer becomes a durable wait.", null, Need.NONE, null);
+                    add(e, type, Report.REVIEW, "DURATION_TIMER_MAPPED",
+                            "The constant duration " + value + " becomes a durable wait of the same length. The wait starts when "
+                                    + "the previous step finishes; business calendars, time zones and timer reset behaviour of the "
+                                    + "source engine are not carried over.",
+                            "Check that a fixed elapsed duration is what the source process meant.", Need.ACKNOWLEDGE, null);
                 } else blockedEvent(node);
             }
             case "callActivity" -> {
                 scanNodeChildren(node);
                 analysis.children.add(node.id);
-                add(e, type, Report.ACTION, "CHILD_WORKFLOW_MAPPING_REQUIRED", "Called process '" + e.attr("calledElement") + "' requires a reviewed workspace workflow and explicit input/result mappings.", "Import and publish the child first; map its key and fields. Its release is pinned when the parent is published.", Need.CHILD, node.id);
+                boolean multi = analysis.multiInstance.containsKey(node.id);
+                Analysis.Item call = add(e, type, Report.ACTION, "CHILD_WORKFLOW_MAPPING_REQUIRED", "Called process '" + e.attr("calledElement") + "' requires a reviewed workspace workflow and explicit input/result mappings."
+                        + (multi ? " It runs once per item of the collection '" + analysis.multiInstance.get(node.id).collectionVariable()
+                        + "'; the mapping must also give the for-each settings (itemInput, maxItems, itemType) because the source collection has no bound." : ""),
+                        "Import and publish the child first; map its key and fields. Its release is pinned when the parent is published.", Need.CHILD, node.id);
+                call.reviewAfterResolution = reviewOf(call.issue, "CHILD_WORKFLOW_MAPPED",
+                        "The call becomes a pinned child workflow request" + (multi ? " started once per collection item (bounded for-each)" : "")
+                                + ". Outcomes, rejections and cancellation of the child are handled by the Orqix start-workflow step, "
+                                + "not by the source engine's call semantics; variable propagation follows only the mapping you gave.",
+                        "Check the input and result mapping and the child's outcomes against the source behaviour.");
             }
             case "exclusiveGateway" -> scanNodeChildren(node); // disposition after the graph analysis
             default -> {
@@ -418,6 +435,94 @@ public final class Analyzer {
     }
 
     // ------------------------------------------------------------------------------------------------ user and service tasks
+
+    private static final Pattern PLAIN_VARIABLE = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
+
+    /**
+     * Multi-instance on a call activity over a plain collection variable becomes a bounded for-each (S14); the source
+     * collection has no bound, so the designer must set one. Everything else keeps blocking with the reason.
+     */
+    private void multiInstance(Analysis.Node node, XElement loop) {
+        scanAttributes(loop, "multiInstanceLoopCharacteristics");
+        XElement extensions = loop.child(BPMN, "extensionElements");
+        if (extensions != null) {
+            scanExtensions(loop, extensions);
+        }
+        XElement zeebeLoop = extensions == null ? null : extensions.child(ZB, "loopCharacteristics");
+        String collection = zeebeLoop != null ? zeebeLoop.attr("inputCollection") : loop.attr(C7, "collection");
+        String element = zeebeLoop != null ? zeebeLoop.attr("inputElement") : loop.attr(C7, "elementVariable");
+        boolean sequential = "true".equalsIgnoreCase(loop.attr("isSequential"));
+        String plain = plainVariable(collection);
+        String reason = null;
+        if (!"callActivity".equals(node.type)) {
+            reason = "Only a call activity can run once per item; a " + node.type + " with multi-instance has no bounded "
+                    + "equivalent in workflows.";
+        } else if (loop.child(BPMN, "loopCardinality") != null) {
+            reason = "It repeats a fixed count (loopCardinality) instead of reading a collection, so there is no item to pass on.";
+        } else if (loop.child(BPMN, "completionCondition") != null) {
+            reason = "It has a completion condition that ends the loop early, which a for-each cannot express.";
+        } else if (zeebeLoop != null && blankToNull(zeebeLoop.attr("outputCollection")) != null) {
+            reason = "It aggregates item results into an output collection by expression. Collected results are configured with "
+                    + "collectionMapping, not translated.";
+        } else if (plain == null) {
+            reason = "Its collection (" + (blankToNull(collection) == null ? "none" : "'" + collection + "'") + ") is not a plain "
+                    + "variable name, so the items cannot be taken from a request field.";
+        } else if (element == null || !PLAIN_VARIABLE.matcher(element.strip()).matches()) {
+            reason = "It declares no element variable, so no item is handed to the called process.";
+        } else if (fieldKey(plain) == null) {
+            reason = "The collection name '" + plain + "' cannot be used as a request field name.";
+        }
+        if (reason == null) {
+            analysis.multiInstance.put(node.id, new Analysis.MultiInstance(plain, fieldKey(plain), element.strip(), sequential));
+            analysis.assumptions.add("The collection '" + plain + "' becomes the required request field '" + fieldKey(plain)
+                    + "' (an array of 1 to the maximum you set, scalar items only).");
+            add(loop, "multiInstanceLoopCharacteristics", Report.REVIEW, "MULTI_INSTANCE_MAPPED",
+                    "Runs the called process once per item of '" + plain + "' (" + (sequential ? "one after another" : "all at the "
+                            + "same time, then waits for all") + "), handing each item over as the child field you name in the "
+                            + "mapping (source element variable '" + element.strip() + "'). The source collection is unbounded; Orqix "
+                            + "needs a limit of 1 to 25 items that you set in the mapping. Only text, number, integer and yes/no "
+                            + "items are supported, and every item starts its own child run.",
+                    "Set forEach.maxItems and forEach.itemInput in the child mapping and check that no run has more items.",
+                    Need.ACKNOWLEDGE, null);
+        } else {
+            add(loop, "multiInstanceLoopCharacteristics", Report.BLOCKER, "MULTI_INSTANCE_NOT_SUPPORTED",
+                    "Multi-instance execution cannot be converted. " + reason,
+                    "Model one pass in a child workflow and call it once per item from a call activity over a plain collection, "
+                            + "or start the workflow once per item.", Need.NONE, null);
+        }
+        loopParts(loop);
+    }
+
+    /** Child elements of a loop definition (cardinality, completion condition, loop condition) are never translated. */
+    private void loopParts(XElement loop) {
+        for (XElement part : loop.children()) {
+            if (part.is(BPMN, "extensionElements") || part.is(BPMN, "documentation")) {
+                continue;
+            }
+            if (BPMN.equals(part.ns()) && part.attr("id") != null) {
+                add(part, part.name(), Report.BLOCKER, "MULTI_INSTANCE_NOT_SUPPORTED",
+                        "The " + part.name() + " of a multi-instance activity (" + (part.text().isBlank() ? "no text" : "'" + part.text()
+                                + "'") + ") is not translated.",
+                        "Remove it in the source model or rebuild the loop in the studio.", Need.NONE, null);
+            } else if (!BPMN.equals(part.ns())) {
+                unknown(part);
+            }
+        }
+    }
+
+    /** The variable name of a plain {@code items}, {@code ${items}} or {@code =items} reference, or null. */
+    private static String plainVariable(String text) {
+        if (text == null) {
+            return null;
+        }
+        String value = text.strip();
+        if ((value.startsWith("${") || value.startsWith("#{")) && value.endsWith("}")) {
+            value = value.substring(2, value.length() - 1).strip();
+        } else if (value.startsWith("=")) {
+            value = value.substring(1).strip();
+        }
+        return PLAIN_VARIABLE.matcher(value).matches() ? value : null;
+    }
 
     private record Assignment(String kind, List<String> values) {
     }
@@ -503,15 +608,127 @@ public final class Analyzer {
             code = "JAVA_DELEGATE_NOT_PORTABLE";
             detail = "no implementation declared";
         }
-        String group = "external".equals(type) && topic != null ? "topic:" + topic : taskDefinition != null && taskDefinition.attr("type") != null ? "jobType:" + taskDefinition.attr("type") : null;
-        if (group != null && group.length() <= 250 && !group.contains("${") && !group.contains("#{") && !group.contains("="))
-            analysis.serviceGroups.computeIfAbsent(group,ignored -> new ArrayList<>()).add(node.id);
+        String group = serviceGroupKey(javaClass, delegate, expression, type, topic, taskDefinition);
+        if (group != null) {
+            analysis.serviceGroups.computeIfAbsent(group, ignored -> new ArrayList<>()).add(node.id);
+        }
         analysis.services.put(node.id, new Analysis.Service(node, code, detail));
-        add(e, "serviceTask", Report.BLOCKER, code,
+        Analysis.Item item = add(e, "serviceTask", Report.BLOCKER, code,
                 "This service task runs " + detail + ". Source code is never imported or executed by Orqix.",
                 "Register a connection operation that does the same work, then map this step to it (request fields and "
                         + "result) and test the behavior.",
                 Need.SERVICE, node.id);
+        item.reviewAfterResolution = reviewOf(item.issue, "SERVICE_MAPPED",
+                "The service task (" + detail + ") is replaced by a call to the registered connection operation you chose. "
+                        + "Request fields, the result, timeout (default 10 seconds) and retries now follow the connection "
+                        + "definition, not the source implementation, which is never executed.",
+                "Compare request, result, error and retry behaviour of the operation with the source implementation.");
+    }
+
+    /**
+     * Identity of the implementation behind a service task: tasks with the same key can share one mapping. Only literal
+     * identifiers group (an expression that is computed at run time cannot be compared); the text is never evaluated.
+     */
+    private static String serviceGroupKey(String javaClass, String delegate, String expression, String type, String topic,
+            XElement taskDefinition) {
+        String key = null;
+        if (javaClass != null) {
+            key = "class:" + javaClass.strip();
+        } else if (delegate != null) {
+            key = "delegateExpression:" + delegate.strip();
+        } else if (expression != null) {
+            key = "expression:" + expression.strip();
+        } else if ("external".equals(type) && topic != null && !topic.isBlank()) {
+            key = "topic:" + topic.strip();
+        } else if (type == null && taskDefinition != null && taskDefinition.attr("type") != null
+                && !taskDefinition.attr("type").isBlank()) {
+            key = "jobType:" + taskDefinition.attr("type").strip();
+        }
+        if (key == null || key.length() > 250) {
+            return null;
+        }
+        boolean computed = key.startsWith("topic:") || key.startsWith("jobType:") || key.startsWith("class:")
+                ? key.contains("${") || key.contains("#{") || key.substring(key.indexOf(':') + 1).startsWith("=")
+                : false;
+        return computed ? null : key;
+    }
+
+    /** One item per implementation shared by two or more service tasks: one mapping resolves all of them. */
+    private void serviceGroupItems() {
+        for (Map.Entry<String, List<String>> group : analysis.serviceGroups.entrySet()) {
+            List<String> ids = group.getValue();
+            if (ids.size() < 2) {
+                continue;
+            }
+            Analysis.Node first = analysis.nodes.get(ids.get(0));
+            String kind = group.getKey().substring(0, group.getKey().indexOf(':'));
+            Report.Issue issue = new Report.Issue(group.getKey(), group.getKey().substring(group.getKey().indexOf(':') + 1),
+                    "serviceTaskGroup", Report.ACTION, "SERVICE_TASK_GROUP",
+                    ids.size() + " service tasks share the " + describeKind(kind) + " '"
+                            + group.getKey().substring(group.getKey().indexOf(':') + 1) + "': " + quoted(ids)
+                            + ". One mapping under serviceGroupMappings['" + group.getKey() + "'] covers all of them; a mapping "
+                            + "under serviceTaskMappings overrides it for a single task.",
+                    "Register one connection operation for this implementation and map the group once.", null, Report.OPEN,
+                    pathOf(first.element));
+            items.add(new Analysis.Item(issue, Need.SERVICE_GROUP, group.getKey(), first.element.ordinal(), sequence++));
+        }
+    }
+
+    private static String describeKind(String kind) {
+        return switch (kind) {
+            case "topic" -> "external task topic";
+            case "jobType" -> "job type";
+            case "class" -> "delegate class";
+            case "delegateExpression" -> "delegate expression";
+            default -> "expression";
+        };
+    }
+
+    /** DMN decision called by a business rule task: mapped to an uploaded DMN decision, or blocked. */
+    private void businessRule(Analysis.Node node) {
+        XElement e = node.element;
+        String ref = e.attr(C7, "decisionRef");
+        String resultVariable = e.attr(C7, "resultVariable");
+        String resultMapping = e.attr(C7, "mapDecisionResult");
+        XElement ext = e.child(BPMN, "extensionElements");
+        XElement called = ext == null ? null : ext.child(ZB, "calledDecision");
+        if (called != null) {
+            ref = called.attr("decisionId");
+            resultVariable = called.attr("resultVariable");
+            resultMapping = null;
+        }
+        boolean literal = ref != null && ref.matches("[A-Za-z_][A-Za-z0-9_.-]{0,127}");
+        boolean otherImplementation = e.attr(C7, "class") != null || e.attr(C7, "delegateExpression") != null
+                || e.attr(C7, "expression") != null || "external".equals(e.attr(C7, "type"));
+        if (!literal || otherImplementation) {
+            add(e, node.type, Report.BLOCKER, "DMN_IMPORT_NOT_SUPPORTED",
+                    otherImplementation ? "This business rule task runs a delegate, expression or external worker instead of a DMN "
+                            + "decision, which is never executed by Orqix."
+                            : "This business rule task does not name a literal DMN decision id (" + (ref == null ? "none"
+                            : "'" + ref + "'") + "), so no decision table can be attached.",
+                    "Rebuild the logic as a decision table in the studio, or name the decision with a literal id.", Need.NONE, null);
+            return;
+        }
+        analysis.decisions.put(node.id, new Analysis.DecisionRef(ref, blankToNull(resultVariable), blankToNull(resultMapping)));
+        if (blankToNull(resultVariable) != null) {
+            analysis.decisionResults.putIfAbsent(resultVariable.strip(), node.id);
+        }
+        Analysis.Item item = add(e, node.type, Report.BLOCKER, "DMN_IMPORT_NOT_SUPPORTED",
+                "This business rule task calls the DMN decision '" + ref + "'. It becomes a decision step once you upload that "
+                        + "DMN file as a separate migration and map the task to it under decisionMappings.",
+                "Upload the DMN file (source format dmn), then map this task: {\"migrationId\": <DMN migration id>, "
+                        + "\"decisionId\": \"" + ref + "\"}.",
+                Need.DECISION, node.id);
+        item.reviewAfterResolution = reviewOf(item.issue, "DECISION_MAPPED",
+                "The call becomes a decision step that evaluates the converted decision table of '" + ref + "'. Orqix tables "
+                        + "test one request or step field and return the first-and-only matching row (or the default); the "
+                        + "source engine's variable scoping, result variable shapes and decision versioning are not carried over.",
+                "Run the generated boundary cases of the DMN report and compare with the source decision on real samples.");
+    }
+
+    private static Report.Issue reviewOf(Report.Issue base, String code, String explanation, String suggestion) {
+        return new Report.Issue(base.sourceElementId(), base.sourceName(), base.sourceKind(), Report.REVIEW, code, explanation,
+                suggestion, base.targetNodeId(), Report.OPEN, base.sourcePath());
     }
 
     // ------------------------------------------------------------------------------------------------ graph analysis
@@ -565,7 +782,10 @@ public final class Analyzer {
                 .toList();
             if (joins.size() == 1 && paired.add(joins.get(0).id)) {
                 analysis.parallelJoins.put(split.id, joins.get(0).id);
-                add(split.element, split.type, Report.SUPPORTED, "PARALLEL_SPLIT_MAPPED", "All branches execute; continuation waits at the paired join.", null, Need.NONE, null);
+                add(split.element, split.type, Report.REVIEW, "PARALLEL_SPLIT_MAPPED",
+                        "All branches execute; continuation waits at the paired join. Unlike the source engine, a rejected finish "
+                                + "inside one branch ends the whole request and cancels the other branches' open tasks.",
+                        "Check that no branch is meant to continue after another branch was rejected.", Need.ACKNOWLEDGE, null);
                 add(joins.get(0).element, joins.get(0).type, Report.SUPPORTED, "PARALLEL_JOIN_MAPPED", "Waits for every branch of the paired split.", null, Need.NONE, null);
             }
         }
@@ -675,8 +895,7 @@ public final class Analyzer {
         XElement e = gateway.element;
         String defaultId = blankToNull(e.attr("default"));
         List<Analysis.BranchEntry> entries = new ArrayList<>();
-        String variable = null;
-        String valueType = null;
+        Map<String, String> variables = new LinkedHashMap<>();
         Analysis.Flow defaultFlow = null;
         Analysis.Flow derivedDefaultFrom = null;
         for (Analysis.Flow flow : gateway.out) {
@@ -698,28 +917,50 @@ public final class Analyzer {
                         + u.reason());
                 return;
             }
-            Expressions.Comparison c = (Expressions.Comparison) flow.condition;
-            String type = c.literal() instanceof Boolean ? "boolean" : c.literal() instanceof String ? "string" : "number";
-            if (variable != null && !variable.equals(c.variable())) {
-                expressionBlocker(gateway, "The conditions test different variables ('" + variable + "' and '" + c.variable()
-                        + "'). A branch can test one field.");
-                return;
+            String group = flow.condition instanceof Expressions.Logical l ? l.group() : null;
+            List<Expressions.Comparison> terms = flow.condition instanceof Expressions.Logical l ? l.terms()
+                    : List.of((Expressions.Comparison) flow.condition);
+            for (Expressions.Comparison c : terms) {
+                String previous = variables.putIfAbsent(c.variable(), c.valueType());
+                if (previous != null && !previous.equals(c.valueType())) {
+                    expressionBlocker(gateway, "The conditions compare '" + c.variable() + "' with values of different types.");
+                    return;
+                }
+                if (c.op().ordering() && !c.valueType().equals("number")) {
+                    expressionBlocker(gateway, "'" + c.op().symbol() + "' only works with numbers.");
+                    return;
+                }
             }
-            if (valueType != null && !valueType.equals(type)) {
-                expressionBlocker(gateway, "The conditions compare '" + c.variable() + "' with values of different types.");
-                return;
-            }
-            variable = c.variable();
-            valueType = type;
-            entries.add(new Analysis.BranchEntry(flow.id, c.op(), c.literal(), false));
+            entries.add(new Analysis.BranchEntry(flow.id, group, terms, false, conditionText(flow)));
         }
         if (entries.isEmpty()) {
             expressionBlocker(gateway, "None of the flows has a condition.");
             return;
         }
+        // The compiler lets plain conditions test one field only; groups may combine fields.
+        boolean anyGroup = entries.stream().anyMatch(Analysis.BranchEntry::compound);
+        if (!anyGroup && variables.size() > 1) {
+            expressionBlocker(gateway, "The conditions test different variables (" + quoted(new ArrayList<>(variables.keySet()))
+                    + "). A choice without 'and'/'or' groups can test one field.");
+            return;
+        }
+        for (String variable : variables.keySet()) {
+            if (fieldKey(variable) == null) {
+                expressionBlocker(gateway, "The variable name '" + variable + "' cannot be used as a form field name.");
+                return;
+            }
+            String task = analysis.decisionResults.get(variable);
+            if (task != null && !"camunda8".equals(analysis.sourceSystem())
+                    && !"singleEntry".equals(analysis.decisions.get(task).resultMapping())) {
+                expressionBlocker(gateway, "The variable '" + variable + "' is the result of business rule task '" + task
+                        + "', whose result is a list or map (mapDecisionResult " + analysis.decisions.get(task).resultMapping()
+                        + "). Only a singleEntry result of a one-output decision can be compared.");
+                return;
+            }
+        }
         if (defaultFlow == null) {
             // Two complementary conditions without a default flow: the "else" one becomes the default.
-            if (entries.size() == 2) {
+            if (entries.size() == 2 && !anyGroup) {
                 Analysis.BranchEntry a = entries.get(0);
                 Analysis.BranchEntry b = entries.get(1);
                 Analysis.BranchEntry complement = complement(a, b) ? b : complement(b, a) ? a : null;
@@ -736,39 +977,79 @@ public final class Analyzer {
                 return;
             }
         }
-        entries.add(new Analysis.BranchEntry(defaultFlow.id, null, null, true));
-        String key = fieldKey(variable);
-        if (key == null) {
-            expressionBlocker(gateway, "The variable name '" + variable + "' cannot be used as a form field name.");
-            return;
+        entries.add(new Analysis.BranchEntry(defaultFlow.id, null, List.of(), true, null));
+        Analysis.Branch branch = new Analysis.Branch(gateway, variables, entries);
+        if (derivedDefaultFrom != null) {
+            branch.derivedDefaultFlowId = derivedDefaultFrom.id;
         }
-        analysis.branches.put(gateway.id, new Analysis.Branch(gateway, variable, valueType, entries));
-        analysis.assumptions.add("Variable '" + variable + "' (read by gateway '" + labelOf(e) + "') becomes the request form "
-                + "field '" + key + "' of type " + valueType + ", inferred from the compared values. Check that the requester "
-                + "provides it when starting the workflow.");
+        analysis.branches.put(gateway.id, branch);
+        List<String> inputs = new ArrayList<>();
+        for (Map.Entry<String, String> variable : variables.entrySet()) {
+            String key = fieldKey(variable.getKey());
+            if (analysis.decisionResults.containsKey(variable.getKey())) {
+                analysis.assumptions.add("Variable '" + variable.getKey() + "' (read by gateway '" + labelOf(e) + "') is the result "
+                        + "variable of business rule task '" + analysis.decisionResults.get(variable.getKey()) + "'; the choice "
+                        + "reads the output of the converted decision step, not a request field.");
+                continue;
+            }
+            inputs.add(key);
+            analysis.assumptions.add("Variable '" + variable.getKey() + "' (read by gateway '" + labelOf(e) + "') becomes the request "
+                    + "form field '" + key + "' of type " + variable.getValue() + ", inferred from the compared values. Check "
+                    + "that the requester provides it when starting the workflow.");
+        }
         if (derivedDefaultFrom != null) {
             analysis.assumptions.add("Gateway '" + labelOf(e) + "' had no default flow; the complementary condition of flow '"
                     + labelOf(derivedDefaultFrom.element) + "' became the default path.");
         }
-        add(e, "exclusiveGateway", Report.SUPPORTED, "GATEWAY_MAPPED_TO_BRANCH",
-                "Becomes a choice on the request field '" + key + "' with " + (entries.size() - 1) + " condition(s) and a "
-                        + "default path.",
-                null, Need.NONE, null);
+        add(e, "exclusiveGateway", Report.REVIEW, "GATEWAY_MAPPED_TO_BRANCH",
+                "Becomes a choice on " + (inputs.isEmpty() ? "a decision result" : "the request field(s) " + quoted(inputs)) + " with "
+                        + (entries.size() - 1) + " condition(s) and a default path. Camunda takes the first condition that is true "
+                        + "in document order; Orqix requires the conditions to exclude each other and the compiler rejects "
+                        + "overlapping ones.",
+                "Check the inferred field types and that exactly one condition can be true for every value.", Need.ACKNOWLEDGE, null);
     }
 
-    private static boolean complement(Analysis.BranchEntry positive, Analysis.BranchEntry negative) {
-        if (positive.op() == Expressions.Op.GTE && negative.op() == Expressions.Op.LT) {
-            return ((java.math.BigDecimal) positive.literal()).compareTo((java.math.BigDecimal) negative.literal()) == 0;
+    private static boolean complement(Analysis.BranchEntry first, Analysis.BranchEntry second) {
+        if (first.compound() || second.compound()) {
+            return false;
         }
-        return positive.op() == Expressions.Op.EQ && negative.op() == Expressions.Op.EQ
-                && Boolean.TRUE.equals(positive.literal()) && Boolean.FALSE.equals(negative.literal());
+        Expressions.Comparison a = first.scalar();
+        Expressions.Comparison b = second.scalar();
+        if (!a.variable().equals(b.variable())) {
+            return false;
+        }
+        boolean sameLiteral = a.literal().equals(b.literal()) || a.literal() instanceof java.math.BigDecimal x
+                && b.literal() instanceof java.math.BigDecimal y && x.compareTo(y) == 0;
+        if (sameLiteral) {
+            return a.op() == Expressions.Op.GTE && b.op() == Expressions.Op.LT
+                    || a.op() == Expressions.Op.GT && b.op() == Expressions.Op.LTE
+                    || a.op() == Expressions.Op.EQ && b.op() == Expressions.Op.NE;
+        }
+        return a.op() == Expressions.Op.EQ && b.op() == Expressions.Op.EQ
+                && Boolean.TRUE.equals(a.literal()) && Boolean.FALSE.equals(b.literal());
     }
 
     private void expressionBlocker(Analysis.Node gateway, String why) {
         add(gateway.element, "exclusiveGateway", Report.BLOCKER, "EXPRESSION_NOT_SUPPORTED",
-                "This choice cannot be converted. " + why + " Supported: one field compared with >=, < or == (numbers) or == "
-                        + "(text, yes/no), plus a default path.",
+                "This choice cannot be converted. " + why + " Supported: one field compared with == != >= > < <= (ordering on "
+                        + "numbers only), or 2 to 8 such comparisons joined only by 'and' or only by 'or', plus a default path.",
                 "Simplify the conditions in the source model, or rebuild this choice in the studio.", Need.NONE, null);
+    }
+
+    /** The condition text of a flow exactly as written in the source (for the report). */
+    private static String conditionText(Analysis.Flow flow) {
+        XElement condition = flow.element.child(BPMN, "conditionExpression");
+        return condition == null ? "" : condition.text();
+    }
+
+    /** All condition texts of the flows leaving a gateway, for explanations. */
+    private static String conditionTexts(Analysis.Node gateway) {
+        List<String> texts = new ArrayList<>();
+        for (Analysis.Flow flow : gateway.out) {
+            String text = conditionText(flow);
+            texts.add("'" + labelOf(flow.element) + "': " + (text.isBlank() ? "default" : text));
+        }
+        return String.join("; ", texts);
     }
 
     private void userTaskItem(Analysis.UserTask task) {
@@ -808,7 +1089,7 @@ public final class Analyzer {
                             + (task.recognized.inverted() ? ", inverted because the name means rejection" : "") + ").",
                     "Choose the workspace group whose members decide this step.", Need.TASK, node.id);
             item.target(node.canonicalId);
-            gatewayFollowing(task, Report.SUPPORTED, "APPROVAL_OUTCOME_GATEWAY", Need.NONE);
+            gatewayFollowing(task, Report.REVIEW, "APPROVAL_ROUTE_INFERRED", Need.ACKNOWLEDGE);
             analysis.assumptions.add("Approval '" + labelOf(e) + "': the variable '" + task.recognized.variable() + "' being "
                     + (task.recognized.inverted() ? "true means rejected" : "true means approved") + ".");
         } else {
@@ -829,15 +1110,19 @@ public final class Analyzer {
             return;
         }
         String explanation = switch (code) {
-            case "APPROVAL_OUTCOME_GATEWAY" -> "Replaced by the approved and rejected routes of the approval step '"
-                    + labelOf(task.node.element) + "'.";
+            case "APPROVAL_ROUTE_INFERRED" -> "Replaced by the approved and rejected routes of the approval step '"
+                    + labelOf(task.node.element) + "'. The routes were inferred from the gateway conditions on '"
+                    + task.recognized.variable() + "' (" + conditionTexts(task.outcomeGateway) + "): "
+                    + (task.recognized.inverted() ? "the name means rejection, so a true value is read as rejected"
+                    : "a true value is read as approved") + ". Other values of that variable are not modelled.";
             case "APPROVAL_ROUTE_REQUIRED" -> "Follows the approval step '" + labelOf(task.node.element) + "'. If you choose its "
                     + "approved and rejected flows, this gateway is replaced by those routes.";
             default -> "Follows the user task '" + labelOf(task.node.element) + "', which cannot become an approval, so this "
                     + "gateway cannot be converted.";
         };
         Analysis.Item item = add(gateway.element, "exclusiveGateway", severity, code, explanation,
-                Report.ACTION.equals(severity) ? "Decide on the approval step '" + labelOf(task.node.element) + "'." : null,
+                Report.ACTION.equals(severity) ? "Decide on the approval step '" + labelOf(task.node.element) + "'."
+                        : Report.REVIEW.equals(severity) ? "Check that the approved and rejected routes match the source gateway." : null,
                 need, task.node.id);
         if (!Report.BLOCKER.equals(severity)) {
             item.target(task.node.canonicalId);
@@ -859,6 +1144,31 @@ public final class Analyzer {
                 add(e, "sequenceFlow", Report.SUPPORTED, "FLOW_ABSORBED",
                         "The merge gateway '" + from + "' is removed; its incoming flows continue directly to '" + to + "'.",
                         null, Need.NONE, null);
+            } else if (flow.condition instanceof Expressions.Unsupported unsupported
+                    && flow.source.type.equals("exclusiveGateway") && !analysis.outcomeGatewayOf.containsValue(flow.source.id)) {
+                add(e, "sequenceFlow", Report.BLOCKER, "EXPRESSION_NOT_SUPPORTED",
+                        "The condition '" + conditionText(flow) + "' on this flow is not supported: " + unsupported.reason(),
+                        "Simplify the condition in the source model, or rebuild this choice in the studio.", Need.NONE, null);
+            } else if (flow.condition != null && analysis.branches.containsKey(flow.source.id)
+                    && !flow.id.equals(analysis.branches.get(flow.source.id).derivedDefaultFlowId)) {
+                Analysis.BranchEntry entry = analysis.branches.get(flow.source.id).entries.stream()
+                        .filter(b -> b.flowId().equals(flow.id)).findFirst().orElse(null);
+                String shown = flow.condition instanceof Expressions.Logical l ? l.describe()
+                        : ((Expressions.Comparison) flow.condition).describe();
+                add(e, "sequenceFlow", Report.REVIEW, "CONDITION_CONVERTED",
+                        "Source condition '" + conditionText(flow) + "' became the condition " + shown + " on the request or "
+                                + "step field of the choice" + (entry != null && entry.compound() ? " (" + ("all".equals(entry.group())
+                                ? "all of the terms must hold" : "any of the terms may hold") + ")" : "")
+                                + ", so the path to '" + to + "' is taken only when it holds. Numbers compare as decimals "
+                                + "(5000 equals 5000.00); text compares exactly.",
+                        "Check boundary values (below, at and above any limit) and that the requester supplies the field.",
+                        Need.ACKNOWLEDGE, null);
+            } else if (analysis.branches.containsKey(flow.source.id) && analysis.branches.get(flow.source.id).derivedDefaultFlowId != null
+                    && analysis.branches.get(flow.source.id).derivedDefaultFlowId.equals(flow.id)) {
+                add(e, "sequenceFlow", Report.REVIEW, "DEFAULT_PATH_DERIVED",
+                        "This flow had no default marker; it became the default path because its condition complements the other "
+                                + "one.",
+                        "Check that no other value should reach this path.", Need.ACKNOWLEDGE, null);
             } else {
                 add(e, "sequenceFlow", Report.SUPPORTED, "FLOW_MAPPED",
                         "Becomes a transition from '" + from + "' to '" + to + "'.", null, Need.NONE, null);
@@ -885,6 +1195,7 @@ public final class Analyzer {
                 case "startEvent", "endEvent" -> eventDefinition(node.element) == null;
                 case "userTask", "serviceTask", "parallelGateway", "intermediateCatchEvent", "callActivity" -> true;
                 case "exclusiveGateway" -> true;
+                case "businessRuleTask" -> analysis.decisions.containsKey(node.id);
                 default -> false;
             };
             if (!becomesNode) {
@@ -920,10 +1231,15 @@ public final class Analyzer {
                 case "documentation" -> add(child, "documentation", Report.INFO, "DOCUMENTATION_NOT_IMPORTED",
                         "Documentation text is not imported.", "Acknowledge.", Need.ACKNOWLEDGE, null);
                 case "extensionElements" -> scanExtensions(e, child);
-                case "multiInstanceLoopCharacteristics", "standardLoopCharacteristics" -> add(child, child.name(),
-                        Report.BLOCKER, "MULTI_INSTANCE_NOT_SUPPORTED",
-                        "Loops and multi-instance (for-each) execution are not supported in v0.1.",
-                        "Model one pass and start the workflow once per item, or rebuild it with a decision.", Need.NONE, null);
+                case "multiInstanceLoopCharacteristics" -> multiInstance(node, child);
+                case "standardLoopCharacteristics" -> {
+                    add(child, child.name(),
+                            Report.BLOCKER, "MULTI_INSTANCE_NOT_SUPPORTED",
+                            "Standard loops (repeat while a condition holds) are not supported. Bounded repetition in Orqix stops on "
+                                    + "a child outcome, not on a source expression.",
+                            "Model one pass and start the workflow once per item, or rebuild it with a decision.", Need.NONE, null);
+                    loopParts(child);
+                }
                 case "ioSpecification", "dataInputAssociation", "dataOutputAssociation", "property", "potentialOwner",
                         "humanPerformer", "performer", "resourceRole", "rendering" -> add(child, child.name(), Report.INFO,
                         "ARTIFACT_NOT_IMPORTED", "The " + child.name() + " data or role definition is not imported.",
@@ -1123,7 +1439,7 @@ public final class Analyzer {
     }
 
     /** Camunda variable name to canonical field key ({@code ^[a-z][A-Za-z0-9]{0,63}$}), or null when impossible. */
-    static String fieldKey(String variable) {
+    public static String fieldKey(String variable) {
         StringBuilder out = new StringBuilder();
         boolean upper = false;
         for (char c : variable.toCharArray()) {

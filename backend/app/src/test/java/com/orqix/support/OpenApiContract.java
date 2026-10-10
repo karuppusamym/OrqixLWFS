@@ -12,6 +12,8 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
+import org.snakeyaml.engine.v2.api.Load;
+import org.snakeyaml.engine.v2.api.LoadSettings;
 import org.springframework.test.web.servlet.MvcResult;
 
 import com.networknt.schema.Error;
@@ -23,7 +25,6 @@ import com.networknt.schema.SpecificationVersion;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
-import tools.jackson.dataformat.yaml.YAMLMapper;
 
 /**
  * T-API-01: validates every integration-test response against {@code contracts/openapi.yaml} (OpenAPI 3.1, JSON
@@ -53,7 +54,9 @@ public final class OpenApiContract {
     private OpenApiContract() {
         try {
             Path contracts = Path.of(System.getProperty("orqix.repoRoot", "../.."), "contracts");
-            document = new YAMLMapper().readTree(Files.readString(contracts.resolve("openapi.yaml")));
+            // Jackson's YAML tree reader leaves aliases (*id001, emitted by the contract generator) as plain strings.
+            document = JSON.valueToTree(new Load(LoadSettings.builder().build())
+                    .loadFromString(Files.readString(contracts.resolve("openapi.yaml"))));
             Map<String, String> docs = new HashMap<>();
             docs.put(BASE + "openapi.json", JSON.writeValueAsString(document));
             docs.put(BASE + "workflow-v0.schema.json",

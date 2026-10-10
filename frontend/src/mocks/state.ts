@@ -51,6 +51,8 @@ export const USERS: MockUser[] = [
   { id: userId(10), username: 'fin.finance', displayName: 'Fin Finance', email: 'fin@example.com', platformAdmin: false },
   { id: userId(11), username: 'fred.facilities', displayName: 'Fred Facilities', email: 'fred@example.com', platformAdmin: false },
   { id: userId(12), username: 'otto.outsider', displayName: 'Otto Outsider', email: 'otto@example.com', platformAdmin: false },
+  // Mock-only: a second publisher, so mapper, reviewer and publisher can be three different people (docs/17).
+  { id: userId(13), username: 'pia.publisher', displayName: 'Pia Publisher', email: 'pia@example.com', platformAdmin: false },
 ]
 
 export const WORKSPACES: MockWorkspace[] = [
@@ -76,6 +78,7 @@ const MEMBERSHIPS: Record<string, Record<string, string[]>> = {
   'wade.admin': { [WS_PURCHASING]: ['WORKSPACE_ADMIN', 'INTEGRATION_ADMIN'], [WS_SANDBOX]: ['WORKSPACE_ADMIN', 'INTEGRATION_ADMIN'] },
   'dana.designer': { [WS_PURCHASING]: ['WORKFLOW_DESIGNER', 'REQUESTER'], [WS_SANDBOX]: ['WORKFLOW_DESIGNER', 'REQUESTER', 'APPROVER'] },
   'paul.publisher': { [WS_PURCHASING]: ['PUBLISHER'], [WS_SANDBOX]: ['PUBLISHER'] },
+  'pia.publisher': { [WS_PURCHASING]: ['PUBLISHER'], [WS_SANDBOX]: ['PUBLISHER'] },
   'olga.operator': { [WS_PURCHASING]: ['OPERATOR'], [WS_SANDBOX]: ['OPERATOR'] },
   'vic.viewer': { [WS_PURCHASING]: ['VIEWER'] },
   'rhea.requester': { [WS_PURCHASING]: ['REQUESTER'], [WS_SANDBOX]: ['REQUESTER'] },
@@ -189,6 +192,8 @@ export interface MockWorkflow {
   version: number
   createdAt: string
   updatedAt: string
+  /** Set when the draft was created by converting an imported source (maker-checker governance). */
+  migration?: { migrationId: string; mapperId: string | null }
 }
 
 export interface MockEvent {
@@ -275,9 +280,60 @@ export interface MockBinding {
   updatedById: string
 }
 
+export interface MockMigration {
+  id: string
+  wsId: string
+  fileName: string
+  source: string
+  sourceHash: string
+  report: components['schemas']['CompatibilityReport']
+  status: 'analyzed' | 'converted'
+  convertedWorkflowId: string | null
+  convertedById: string | null
+  mappingsHash: string | null
+  mappings: unknown
+  createdAt: string
+}
+
+export interface MockMigrationProject {
+  id: string
+  wsId: string
+  name: string
+  files: Array<{ fileName: string; migrationId: string | null; processId: string | null; dependencies: string[] }>
+  conversionOrder: string[]
+  issues: Array<{ fileName: string; code: string; detail: string }>
+  createdAt: string
+}
+
+export interface MockMigrationPolicy {
+  required: boolean
+  version: number
+  reason: string
+  updatedAt: string
+}
+
+export interface MockMigrationReview {
+  wsId: string
+  workflowId: string
+  draftRevision: number
+  version: number
+  definitionHash: string
+  sourceHash: string
+  mappingsHash: string
+  mapperId: string
+  reviewerId: string
+  reason: string
+  reviewedAt: string
+}
+
 export type ProcurementFault = 'none' | 'failOnce' | 'unknown' | 'down' | 'rejected'
 
 export interface MockDb {
+  migrations: Map<string, MockMigration>
+  migrationProjects: Map<string, MockMigrationProject>
+  /** Workspace id -> independent-review policy (absent = never set). */
+  migrationPolicies: Map<string, MockMigrationPolicy>
+  migrationReviews: MockMigrationReview[]
   workflows: Map<string, MockWorkflow>
   runs: Map<string, MockRun>
   notifications: MockNotification[]
@@ -334,6 +390,10 @@ export function newId(): string {
 
 export function emptyDb(): MockDb {
   return {
+    migrations: new Map(),
+    migrationProjects: new Map(),
+    migrationPolicies: new Map(),
+    migrationReviews: [],
     workflows: new Map(),
     runs: new Map(),
     notifications: [],
@@ -380,6 +440,11 @@ export function blankDefinition(workflowKey: string, name: string): Definition {
 // Persistence (browser mock mode keeps state across reloads and persona switches) -----------------------------------
 
 interface DbSnapshot {
+  /** Absent in snapshots written before migrations were mocked. */
+  migrations?: Array<[string, MockMigration]>
+  migrationProjects?: Array<[string, MockMigrationProject]>
+  migrationPolicies?: Array<[string, MockMigrationPolicy]>
+  migrationReviews?: MockMigrationReview[]
   workflows: Array<[string, MockWorkflow]>
   runs: Array<[string, MockRun]>
   notifications: MockNotification[]
@@ -392,6 +457,10 @@ interface DbSnapshot {
 
 export function snapshotDb(): string {
   const snap: DbSnapshot = {
+    migrations: [...db.migrations],
+    migrationProjects: [...db.migrationProjects],
+    migrationPolicies: [...db.migrationPolicies],
+    migrationReviews: db.migrationReviews,
     workflows: [...db.workflows],
     runs: [...db.runs],
     notifications: db.notifications,
@@ -408,6 +477,10 @@ export function restoreDb(json: string): boolean {
   try {
     const snap = JSON.parse(json) as DbSnapshot
     const next = emptyDb()
+    next.migrations = new Map(snap.migrations ?? [])
+    next.migrationProjects = new Map(snap.migrationProjects ?? [])
+    next.migrationPolicies = new Map(snap.migrationPolicies ?? [])
+    next.migrationReviews = snap.migrationReviews ?? []
     next.workflows = new Map(snap.workflows)
     next.runs = new Map(snap.runs)
     next.notifications = snap.notifications

@@ -521,3 +521,24 @@ Acceptance for the whole conversion program: for each source process, every gold
 ## Current integration follow-up
 
 Repository capabilities in this research are a snapshot, not a completion tracker. The active build includes guided conversational execution, Microsoft Graph document reads, immutable comments, bounded child rework, sequential/parallel scalar collections, ordered collected child output arrays, eligible-user delegation and durable one-shot in-app assignee reminders. JSON/CSV report exports and per-process finding groups/filters are built. A six-case target acceptance runner passes on synthetic imported workflows with local stubbed effects and exports deterministic provenance/result ZIPs. PDF/OOXML snapshots and text extraction pass local integration and executable-jar/container parser checks; customer Graph tenant acceptance remains external. The current checks and limitations are recorded in [doc 19](19-product-build-tracker.md). The research's vendor claims have not been independently revalidated in this integration pass. Banking templates, genuine-source equivalence, multi-file migration projects, mapping maker-checker, business-calendar deadlines and the remaining proposed waves retain their own acceptance criteria and are not claimed complete.
+
+### Wave status at 10 October 2026
+
+| Item | Status |
+|---|---|
+| 1.1 `review` severity | Built (non-blocking, counted, persisted; UI filter and acknowledgement) |
+| 1.2 Grouped findings and export | Per-file export built earlier; grouped service tasks built (`SERVICE_TASK_GROUP`); cross-file grouping by reason code still open |
+| 1.3 Migration project | Built (up to 10 BPMN files, dependency order, convert-next); DMN files inside a project are still reported unsupported |
+| 1.4 Group service tasks | Built |
+| 1.5 Maker-checker | Built for migrations (policy, independent review bound to exact draft, source and mappings hashes; mapper, reviewer and publisher differ). Not yet applied to connection definitions, rule packs or ordinary workflows |
+| 2.2, 2.3 Equivalence runner, evidence pack | Built earlier on synthetic fixtures; no real source yet |
+| 2.4 DMN import | Built for the safe subset (UNIQUE and FIRST, one tested input, literal tests); generated boundary tests |
+| 2.5 Form import | Not built |
+| 2.6 Assisted mapping proposals | Not built |
+| 3.1 Multi-instance | Built for call activities mapped to bounded for-each; user-task multi-instance is not supported by the compiler |
+| 3.3 Boundary timer and error events | Not built |
+| 3.4 Operators | Built: `eq ne gte gt lt lte`, flat all/any groups of 2 to 8 terms |
+| 3.5 Connector element templates | Not built |
+| 4.x Banking product layer | Templates built and executed; decision record with input and candidate rows, effective-dated rule packs, queue priority and ageing, four-eyes across stages, multi-currency and business calendars are recorded as gaps in the [capability matrix](banking-capability-matrix.md) |
+
+See [doc 19](19-product-build-tracker.md) for what is verified on the merged tree and what is not.

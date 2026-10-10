@@ -43,7 +43,9 @@ class FixtureDispositionTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"camunda7-purchase.bpmn", "camunda8-purchase.bpmn", "unsupported-features.bpmn"})
+    @ValueSource(strings = {"camunda7-purchase.bpmn", "camunda8-purchase.bpmn", "unsupported-features.bpmn", "parallel-timer-child.bpmn",
+            "expression-operators.bpmn", "expression-operators-feel.bpmn", "service-task-groups.bpmn", "multi-instance-call.bpmn",
+            "multi-instance-unsupported.bpmn", "business-rule-task.bpmn"})
     void everyElementOfEveryFixtureHasADisposition(String name) throws Exception {
         String xml = fixture(name);
         var analysis = Analyzer.analyze(xml, Limits.DEFAULT);
@@ -73,6 +75,39 @@ class FixtureDispositionTest {
         var issues = analysis.items().stream().map(Analysis.Item::issue).toList();
         assertThat(issues).extracting(Report.Issue::reasonCode).contains("LISTENER_DROPPED", "EXPRESSION_NOT_SUPPORTED");
         assertThat(issues.stream().filter(i -> i.severity().equals(Report.BLOCKER)).count()).isGreaterThanOrEqualTo(expected.size() - 2);
+        assertThat(Converter.report(analysis, issues).publishable()).isFalse();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"camunda7-purchase.bpmn", "camunda8-purchase.bpmn", "expression-operators.bpmn", "expression-operators-feel.bpmn",
+            "multi-instance-call.bpmn", "parallel-timer-child.bpmn"})
+    void reviewItemsAreInTheCountsAndNeverBlock(String name) throws Exception {
+        var analysis = Analyzer.analyze(fixture(name), Limits.DEFAULT);
+        var issues = analysis.items().stream().map(Analysis.Item::issue).toList();
+        var report = Converter.report(analysis, issues);
+        long review = issues.stream().filter(i -> Report.REVIEW.equals(i.severity())).count();
+        assertThat(review).as("review items of %s", name).isGreaterThan(0);
+        assertThat(report.elementCounts().review()).isEqualTo((int) review);
+        assertThat(report.elementCounts().total()).isEqualTo(issues.size());
+        assertThat(issues.stream().filter(i -> Report.REVIEW.equals(i.severity()))).noneMatch(Report.Issue::blocksPublishing);
+        // Removing every review item must not change whether the report is ready.
+        var withoutReview = issues.stream().filter(i -> !Report.REVIEW.equals(i.severity())).toList();
+        assertThat(Converter.report(analysis, withoutReview).publishable()).isEqualTo(report.publishable());
+    }
+
+    @Test
+    void businessRuleTaskWithALiteralDecisionIdWaitsForAMappedDmnDecision() throws Exception {
+        var analysis = Analyzer.analyze(fixture("business-rule-task.bpmn"), Limits.DEFAULT);
+        assertThat(analysis.decisions()).containsOnlyKeys("routeRule");
+        assertThat(analysis.decisions().get("routeRule").decisionId()).isEqualTo("reviewRoute");
+        var issues = analysis.items().stream().map(Analysis.Item::issue).toList();
+        assertThat(issues).anySatisfy(i -> {
+            assertThat(i.sourceElementId()).isEqualTo("routeRule");
+            assertThat(i.reasonCode()).isEqualTo("DMN_IMPORT_NOT_SUPPORTED");
+            assertThat(i.severity()).isEqualTo(Report.BLOCKER);
+            assertThat(i.explanation()).contains("reviewRoute", "decisionMappings");
+        });
+        assertThat(Converter.report(analysis, issues).requiredMappings().decisionTasks()).containsExactly("routeRule");
         assertThat(Converter.report(analysis, issues).publishable()).isFalse();
     }
 

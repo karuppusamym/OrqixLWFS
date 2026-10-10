@@ -59,6 +59,9 @@ jobs:
       - name: Schemas, examples, compiler fixtures and OpenAPI structure
         run: python tools/contract-check/contract_check.py
 
+      - name: Migration equivalence comparator and evidence pack (offline, standard library only)
+        run: python -m unittest discover -s tools/migration-equivalence -p "test_*.py"
+
       - uses: actions/setup-node@v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}

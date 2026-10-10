@@ -8,33 +8,50 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Reads the small, explicit subset of Camunda condition expressions that canonical v0.1 can express (S11 section 2):
+ * Reads the small, explicit subset of Camunda condition expressions that canonical v0.1 can express (S11 section 2).
+ * The subset is exactly what {@code contracts/workflow-v0.schema.json} and the compiler accept for transition conditions:
  * <ul>
- *   <li>JUEL {@code ${amount >= 5000}}, {@code ${status == 'new'}}, {@code ${approved}}, {@code ${!approved}},</li>
- *   <li>FEEL {@code = amount >= 5000}, {@code = status = "new"}, {@code = approved}, {@code = not(approved)}.</li>
+ *   <li>one comparison {@code variable op literal} with {@code eq ne gte gt lt lte}; ordering operators work on numbers
+ *       only (the compiler rejects them on text and yes/no fields with {@code WF_OPERATOR_TYPE}),</li>
+ *   <li>a bare boolean variable ({@code ${approved}}, {@code ${!approved}}, {@code = not(approved)}),</li>
+ *   <li>a flat group of 2 to 8 such comparisons joined only by {@code and} or only by {@code or}
+ *       ({@code all} / {@code any} in the canonical schema).</li>
  * </ul>
- * Everything else (logic operators, functions, property access, {@code >}, {@code <=}, {@code !=}) is reported as
- * unsupported with the reason, never approximated.
+ * JUEL: {@code ${amount >= 5000 && status != 'new'}}, {@code ${a gt 1 and b le 3}}. FEEL: {@code = amount > 5000 and
+ * status = "new"}. Everything else (mixed {@code and}/{@code or}, parentheses around groups, {@code not} over a
+ * comparison, functions, property access, arithmetic, null) is reported as unsupported with the reason, never
+ * approximated or rewritten. The source text is never evaluated.
  */
 public final class Expressions {
 
     /** Comparison operators of canonical conditions. */
     public enum Op {
-        EQ("eq"), GTE("gte"), LT("lt");
+        EQ("eq", "=="), NE("ne", "!="), GTE("gte", ">="), GT("gt", ">"), LT("lt", "<"), LTE("lte", "<=");
 
         private final String canonical;
+        private final String symbol;
 
-        Op(String canonical) {
+        Op(String canonical, String symbol) {
             this.canonical = canonical;
+            this.symbol = symbol;
         }
 
         public String canonical() {
             return canonical;
         }
+
+        /** Readable operator used in report text. */
+        public String symbol() {
+            return symbol;
+        }
+
+        public boolean ordering() {
+            return this != EQ && this != NE;
+        }
     }
 
     /** Result of reading one expression. */
-    public sealed interface Parsed permits Comparison, Unsupported {
+    public sealed interface Parsed permits Comparison, Logical, Unsupported {
     }
 
     /** {@code variable op literal}; the literal is a {@link BigDecimal}, {@link String} or {@link Boolean}. */
@@ -43,10 +60,36 @@ public final class Expressions {
         public boolean isBoolean() {
             return literal instanceof Boolean;
         }
+
+        public String valueType() {
+            return literal instanceof Boolean ? "boolean" : literal instanceof String ? "string" : "number";
+        }
+
+        /** Text such as {@code amount >= 5000} or {@code status != 'new'} for explanations. */
+        public String describe() {
+            Object shown = literal instanceof String text ? "'" + text + "'" : literal instanceof BigDecimal n ? n.toPlainString() : literal;
+            return variable + " " + op.symbol() + " " + shown;
+        }
+    }
+
+    /** Two to eight comparisons joined by one connective: {@code all} (and) or {@code any} (or). */
+    public record Logical(String group, List<Comparison> terms) implements Parsed {
+
+        public Logical {
+            terms = List.copyOf(terms);
+        }
+
+        public String describe() {
+            String joiner = "all".equals(group) ? " and " : " or ";
+            return terms.stream().map(Comparison::describe).collect(java.util.stream.Collectors.joining(joiner));
+        }
     }
 
     public record Unsupported(String reason) implements Parsed {
     }
+
+    /** Most terms of one group (canonical schema {@code maxItems}). */
+    public static final int MAX_TERMS = 8;
 
     private static final Pattern TOKEN = Pattern.compile("\\s*(?:(?<num>-?\\d+(?:\\.\\d+)?)"
             + "|(?<str>'[^']*'|\"[^\"]*\")"
@@ -56,6 +99,13 @@ public final class Expressions {
     private static final Pattern SAFE_STRING = Pattern.compile("^[A-Za-z0-9 _.,:/-]{0,100}$");
 
     private Expressions() {
+    }
+
+    /** One lexical token: kind n(umber), s(tring), i(dentifier) or o(perator/punctuation). */
+    private record Token(char kind, String text) {
+        boolean is(char k, String t) {
+            return kind == k && text.equals(t);
+        }
     }
 
     /**
@@ -86,8 +136,7 @@ public final class Expressions {
         } else {
             return new Unsupported("It is not a ${...} or = expression.");
         }
-        List<String> tokens = new ArrayList<>();
-        List<Character> kinds = new ArrayList<>();
+        List<Token> tokens = new ArrayList<>();
         Matcher matcher = TOKEN.matcher(body);
         int position = 0;
         while (position < body.length() && !body.substring(position).isBlank()) {
@@ -96,56 +145,159 @@ public final class Expressions {
                 break;
             }
             if (matcher.group("num") != null) {
-                tokens.add(matcher.group("num"));
-                kinds.add('n');
+                tokens.add(new Token('n', matcher.group("num")));
             } else if (matcher.group("str") != null) {
                 String raw = matcher.group("str");
-                tokens.add(raw.substring(1, raw.length() - 1));
-                kinds.add('s');
+                tokens.add(new Token('s', raw.substring(1, raw.length() - 1)));
             } else if (matcher.group("id") != null) {
-                tokens.add(matcher.group("id"));
-                kinds.add('i');
+                tokens.add(new Token('i', matcher.group("id")));
             } else {
-                tokens.add(matcher.group("op"));
-                kinds.add('o');
+                tokens.add(new Token('o', matcher.group("op")));
             }
             position = matcher.end();
         }
         if (tokens.isEmpty()) {
             return new Unsupported("It is not a simple comparison.");
         }
-        return interpret(tokens, kinds, feel);
+        return interpret(tokens, feel);
     }
 
-    private static Parsed interpret(List<String> t, List<Character> k, boolean feel) {
+    // ------------------------------------------------------------------------------------------------ grammar
+
+    /** Splits the tokens at top-level and/or and reads every operand as one atomic term. */
+    private static Parsed interpret(List<Token> tokens, boolean feel) {
+        // Parentheses are only accepted around one atomic term or one not(...) argument; groups are flat.
+        List<List<Token>> operands = new ArrayList<>();
+        String connective = null;
+        List<Token> current = new ArrayList<>();
+        int depth = 0;
+        for (Token t : tokens) {
+            if (t.is('o', "(")) {
+                depth++;
+            } else if (t.is('o', ")")) {
+                depth--;
+                if (depth < 0) {
+                    return new Unsupported("The parentheses do not match.");
+                }
+            }
+            String joined = depth == 0 ? connectiveOf(t, feel) : null;
+            if (joined != null) {
+                if (connective != null && !connective.equals(joined)) {
+                    return new Unsupported("It mixes 'and' with 'or'. A canonical condition group uses one connective only.");
+                }
+                connective = joined;
+                if (current.isEmpty()) {
+                    return new Unsupported("It is not a simple comparison.");
+                }
+                operands.add(current);
+                current = new ArrayList<>();
+            } else {
+                current.add(t);
+            }
+        }
+        if (depth != 0) {
+            return new Unsupported("The parentheses do not match.");
+        }
+        if (current.isEmpty()) {
+            return new Unsupported("It is not a simple comparison.");
+        }
+        operands.add(current);
+        if (operands.size() == 1) {
+            return atom(operands.get(0), feel);
+        }
+        if (operands.size() > MAX_TERMS) {
+            return new Unsupported("It combines " + operands.size() + " conditions; at most " + MAX_TERMS + " are supported.");
+        }
+        List<Comparison> terms = new ArrayList<>();
+        for (List<Token> operand : operands) {
+            Parsed term = atom(operand, feel);
+            if (term instanceof Unsupported u) {
+                return u;
+            }
+            if (!(term instanceof Comparison c)) {
+                return new Unsupported("Groups inside a group are not supported.");
+            }
+            terms.add(c);
+        }
+        // All terms on one variable must agree on the value type (the compiler types every field once).
+        for (Comparison a : terms) {
+            for (Comparison b : terms) {
+                if (a.variable().equals(b.variable()) && !a.valueType().equals(b.valueType())) {
+                    return new Unsupported("The variable '" + a.variable() + "' is compared with values of different types.");
+                }
+            }
+        }
+        return new Logical("and".equals(connective) ? "all" : "any", terms);
+    }
+
+    /** {@code and} / {@code or} for a connective token, or null. {@code &&} and {@code ||} are JUEL only. */
+    private static String connectiveOf(Token t, boolean feel) {
+        if (t.kind() == 'i' && ("and".equals(t.text()) || "or".equals(t.text()))) {
+            return t.text();
+        }
+        if (!feel && t.kind() == 'o' && ("&&".equals(t.text()) || "||".equals(t.text()))) {
+            return "&&".equals(t.text()) ? "and" : "or";
+        }
+        return null;
+    }
+
+    /** One atomic operand: a bare (negated) boolean variable or one variable-versus-literal comparison. */
+    private static Parsed atom(List<Token> original, boolean feel) {
+        List<Token> t = original;
+        // A single pair of parentheses around the whole operand.
+        while (t.size() >= 3 && t.get(0).is('o', "(") && t.get(t.size() - 1).is('o', ")") && matching(t)) {
+            t = t.subList(1, t.size() - 1);
+        }
         int n = t.size();
         // approved, !approved, not approved, not(approved)
-        if (n == 1 && k.get(0) == 'i') {
-            return bareVariable(t.get(0), true);
+        if (n == 1 && t.get(0).kind() == 'i') {
+            return bareVariable(t.get(0).text(), true);
         }
-        if (n == 2 && ("!".equals(t.get(0)) || "not".equals(t.get(0))) && k.get(1) == 'i') {
-            return bareVariable(t.get(1), false);
+        if (n == 2 && (t.get(0).is('o', "!") && !feel || t.get(0).is('i', "not")) && t.get(1).kind() == 'i') {
+            return bareVariable(t.get(1).text(), false);
         }
-        if (n == 4 && "not".equals(t.get(0)) && "(".equals(t.get(1)) && k.get(2) == 'i' && ")".equals(t.get(3))) {
-            return bareVariable(t.get(2), false);
+        if (n == 4 && t.get(0).is('i', "not") && t.get(1).is('o', "(") && t.get(2).kind() == 'i' && t.get(3).is('o', ")")) {
+            return bareVariable(t.get(2).text(), false);
         }
-        if (n == 3 && k.get(0) == 'i' && (k.get(1) == 'o' || k.get(1) == 'i') && isLiteral(t.get(2), k.get(2))) {
-            return comparison(t.get(0), t.get(1), t.get(2), k.get(2), feel);
+        if (n == 3 && t.get(0).kind() == 'i' && (t.get(1).kind() == 'o' || t.get(1).kind() == 'i') && isLiteral(t.get(2))) {
+            return comparison(t.get(0).text(), t.get(1).text(), t.get(2), feel);
         }
-        if (n == 3 && isLiteral(t.get(0), k.get(0)) && k.get(2) == 'i') {
+        if (n == 3 && isLiteral(t.get(0)) && t.get(2).kind() == 'i') {
             return new Unsupported("The variable must be on the left of the comparison.");
         }
-        for (int i = 0; i < n; i++) {
-            String token = t.get(i);
-            if (k.get(i) == 'o' && ("&&".equals(token) || "||".equals(token))
-                    || k.get(i) == 'i' && ("and".equals(token) || "or".equals(token))) {
-                return new Unsupported("It combines several conditions with '" + token + "'.");
+        for (Token token : t) {
+            if (connectiveOf(token, feel) != null) {
+                return new Unsupported("It nests a group of conditions inside parentheses. Only one flat group of 'and' or 'or' "
+                        + "conditions is supported.");
             }
-            if (k.get(i) == 'o' && "(".equals(token) || k.get(i) == 'i' && token.contains(".")) {
-                return new Unsupported("It uses a function call or property access.");
+            if (token.is('i', "not") || token.is('o', "!") && !feel) {
+                return new Unsupported("It negates a comparison or a group with 'not'. Only a yes/no variable can be negated; "
+                        + "use the opposite operator instead.");
+            }
+            if (token.is('o', "(") || token.kind() == 'i' && token.text().contains(".")) {
+                return new Unsupported("It uses a function call, property access or grouping parentheses.");
+            }
+            if (token.kind() == 'o' && "+-*/%?:".contains(token.text()) || token.is('i', "div") || token.is('i', "mod")) {
+                return new Unsupported("It uses arithmetic or a conditional operator.");
             }
         }
         return new Unsupported("It is not a simple comparison of one variable with one value.");
+    }
+
+    /** True when the first and the last parenthesis of the token list belong together. */
+    private static boolean matching(List<Token> t) {
+        int depth = 0;
+        for (int i = 0; i < t.size(); i++) {
+            if (t.get(i).is('o', "(")) {
+                depth++;
+            } else if (t.get(i).is('o', ")")) {
+                depth--;
+                if (depth == 0 && i < t.size() - 1) {
+                    return false;
+                }
+            }
+        }
+        return depth == 0;
     }
 
     private static Parsed bareVariable(String variable, boolean expected) {
@@ -158,42 +310,40 @@ public final class Expressions {
         return new Comparison(variable, Op.EQ, expected, true);
     }
 
-    private static boolean isLiteral(String token, char kind) {
-        return kind == 'n' || kind == 's' || kind == 'i' && ("true".equals(token) || "false".equals(token));
+    private static boolean isLiteral(Token token) {
+        return token.kind() == 'n' || token.kind() == 's' || token.kind() == 'i' && ("true".equals(token.text()) || "false".equals(token.text()));
     }
 
-    private static Parsed comparison(String variable, String operator, String literal, char literalKind, boolean feel) {
+    private static Parsed comparison(String variable, String operator, Token literal, boolean feel) {
         if (variable.contains(".")) {
             return new Unsupported("It uses property access ('" + variable + "').");
         }
         Op op = switch (operator) {
             case ">=", "ge" -> Op.GTE;
+            case ">", "gt" -> Op.GT;
             case "<", "lt" -> Op.LT;
+            case "<=", "le" -> Op.LTE;
             case "==", "eq" -> Op.EQ;
+            case "!=", "ne" -> Op.NE;
             case "=" -> feel ? Op.EQ : null;
             default -> null;
         };
         if (op == null) {
-            return new Unsupported(switch (operator) {
-                case ">", "gt" -> "The operator '>' has no exact equivalent; use '>=' with the intended limit.";
-                case "<=", "le" -> "The operator '<=' has no exact equivalent; use '<' with the intended limit.";
-                case "!=", "ne" -> "The operator '!=' is not supported; compare for equality instead.";
-                default -> "The operator '" + operator + "' is not supported.";
-            });
+            return new Unsupported("The operator '" + operator + "' is not supported.");
         }
         Object value;
-        if (literalKind == 'n') {
-            value = new BigDecimal(literal);
-        } else if (literalKind == 's') {
-            if (!SAFE_STRING.matcher(literal).matches()) {
-                return new Unsupported("The text value '" + literal + "' has characters that canonical workflows do not "
+        if (literal.kind() == 'n') {
+            value = new BigDecimal(literal.text());
+        } else if (literal.kind() == 's') {
+            if (!SAFE_STRING.matcher(literal.text()).matches()) {
+                return new Unsupported("The text value '" + literal.text() + "' has characters that canonical workflows do not "
                         + "allow (letters, digits, spaces and _ . , : / - only, at most 100 characters).");
             }
-            value = literal;
+            value = literal.text();
         } else {
-            value = Boolean.valueOf(literal);
+            value = Boolean.valueOf(literal.text());
         }
-        if (op != Op.EQ && !(value instanceof BigDecimal)) {
+        if (op.ordering() && !(value instanceof BigDecimal)) {
             return new Unsupported("'" + operator + "' only works with numbers.");
         }
         return new Comparison(variable, op, value, false);

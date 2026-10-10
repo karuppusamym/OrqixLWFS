@@ -1,9 +1,10 @@
-import { Plug, ShieldCheck, Sparkles, Users } from 'lucide-react'
+import { ClipboardCheck, Plug, ShieldCheck, Sparkles, Users } from 'lucide-react'
 import { useWorkspace } from '@/app/workspace'
 import { PageHeader } from '@/components/common/PageHeader'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { AccessPanel } from './AccessPanel'
 import { ConnectionsPanel } from './ConnectionsPanel'
+import { MigrationPolicyPanel } from './MigrationPolicyPanel'
 import { EmptyState } from '@/components/common/EmptyState'
 import { AiSettingsPanel, useShowAiSettings } from '@/features/ai/AiSettingsPanel'
 
@@ -39,6 +40,11 @@ export function SettingsPage() {
               <Users className="size-4" aria-hidden="true" /> Members and groups
             </TabsTrigger>
           ) : null}
+          {showAccess ? (
+            <TabsTrigger value="migration">
+              <ClipboardCheck className="size-4" aria-hidden="true" /> Migration review
+            </TabsTrigger>
+          ) : null}
           {showConnections ? (
             <TabsTrigger value="connections">
               <Plug className="size-4" aria-hidden="true" /> Connections
@@ -53,6 +59,11 @@ export function SettingsPage() {
         {showAccess ? (
           <TabsContent value="access">
             <AccessPanel />
+          </TabsContent>
+        ) : null}
+        {showAccess ? (
+          <TabsContent value="migration">
+            <MigrationPolicyPanel />
           </TabsContent>
         ) : null}
         {showConnections ? (

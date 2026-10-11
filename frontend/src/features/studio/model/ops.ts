@@ -132,6 +132,11 @@ export function renameNodeId(def: Definition, oldId: string, newId: string): OpR
     if (n.type === 'parallelSplit' && n.config.joinRef === oldId) n.config.joinRef = newId
   }
   const positions = next.uiLayout?.positions
+  const notes = next.metadata.stepNotes
+  if (notes && oldId in notes) {
+    notes[newId] = notes[oldId] as string
+    delete notes[oldId]
+  }
   if (positions && oldId in positions) {
     positions[newId] = positions[oldId] as Position
     delete positions[oldId]
@@ -185,6 +190,10 @@ export function removeNode(def: Definition, id: string): Definition {
   next.nodes = next.nodes.filter((n) => n.id !== id)
   next.transitions = next.transitions.filter((t) => t.from !== id && t.to !== id)
   if (next.uiLayout) delete next.uiLayout.positions[id]
+  if (next.metadata.stepNotes) {
+    delete next.metadata.stepNotes[id]
+    if (Object.keys(next.metadata.stepNotes).length === 0) delete next.metadata.stepNotes
+  }
   next.decisions = next.decisions.filter((d) => !plan.decisions.includes(d.key))
   const prefix = `/steps/${id}/`
   for (const [k, m] of Object.entries(next.outputMapping)) if (m.fieldRef.startsWith(prefix)) delete next.outputMapping[k]

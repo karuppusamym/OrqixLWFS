@@ -139,6 +139,29 @@ class MicrosoftGraphLinksTest {
     }
 
     @Test
+    void exactHundredVersionBoundaryIsCompleteButEleventhPageFails() {
+        var entries = json.object().putArray("value");
+        for (int i = 0; i < 100; i++) { entries.addObject().put("id", i + ".0"); }
+        server.stubFor(get(urlPathEqualTo("/v1.0/drives/drive/items/item/versions"))
+                .willReturn(okJson(json.write(json.object().set("value", entries)))));
+        assertThat(versions().path("versionCount").asInt()).isEqualTo(100);
+        server.resetAll();
+        server.stubFor(get(urlPathEqualTo("/v1.0/drives/drive/items/item/versions"))
+                .withQueryParam("$top", equalTo("100"))
+                .willReturn(okJson("{\"value\":[],\"@odata.nextLink\":\"" + server.baseUrl()
+                        + "/v1.0/drives/drive/items/item/versions?$skiptoken=1\"}")));
+        for (int i = 1; i <= 10; i++) {
+            server.stubFor(get(urlPathEqualTo("/v1.0/drives/drive/items/item/versions"))
+                    .withQueryParam("$skiptoken", equalTo(Integer.toString(i)))
+                    .willReturn(okJson("{\"value\":[],\"@odata.nextLink\":\"" + server.baseUrl()
+                            + "/v1.0/drives/drive/items/item/versions?$skiptoken=" + (i + 1) + "\"}")));
+        }
+        versionFailure("DOCUMENT_VERSION_LIST_LIMIT_EXCEEDED");
+        // The initial page plus nine continuations exhausts the bound; page eleven is never fetched.
+        server.verify(10, getRequestedFor(urlPathEqualTo("/v1.0/drives/drive/items/item/versions")));
+    }
+
+    @Test
     void foreignAuthorityWrongResourceAndDuplicateVersionIdsAreRejected() {
         for (String link : List.of("https://evil.example/versions", server.baseUrl() + "/v1.0/drives/drive/items/other/versions")) {
             server.stubFor(get(urlPathEqualTo("/v1.0/drives/drive/items/item/versions"))

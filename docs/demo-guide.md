@@ -93,4 +93,8 @@ Proves: AI drafts a workflow that still passes the same validation and human pub
 
 ## Closing: honest status
 
+The current product closeout adds cross-file migration findings exports, audited task priority and age sorting, historical document-version selection in connection administration, published-version comparison and saved step notes. To demonstrate priority, claim a task, choose **Change priority**, enter a bounded number and reason, then confirm; the queue can sort/filter the result. To demonstrate review, edit **Step notes**, check and publish, then open **Compare versions** on the workflow overview. Load more releases to compare older versions.
+
+See [product closeout](21-product-closeout.md) for remaining engineering features and customer acceptance separate from excluded infrastructure. The examples execute simple, medium and complex bounded workflows; they do not establish native Pega equivalence or customer Microsoft access.
+
 Open [feature status](feature-status.md): what is verified, what is implemented but not applied to a real cluster, and what needs customer input (real procurement endpoint, PingFederate, OpenShift, CI host, a native Pega export). The production gates in [the delivery plan](06-delivery-plan.md#production-release-gates) have not been passed, and the demo does not claim they have.

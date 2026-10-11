@@ -23,6 +23,7 @@ function hash(text: string): string {
 export function makeRelease(workflowId: string, releaseNumber: number, draftRevision: number, definition: MockRelease['definition'], publishedById: string, note: string | null = null): MockRelease {
   const text = JSON.stringify(definition)
   const { uiLayout: _layout, ...semantic } = definition
+  const { stepNotes: _notes, ...metadata } = semantic.metadata
   return {
     id: newId(),
     workflowId,
@@ -33,7 +34,7 @@ export function makeRelease(workflowId: string, releaseNumber: number, draftRevi
     compilerVersion: COMPILER_VERSION,
     releaseNote: note,
     sourceHash: hash(text),
-    semanticHash: hash(JSON.stringify(semantic)),
+    semanticHash: hash(JSON.stringify({ ...semantic, metadata })),
     warnings: [],
     definition: structuredClone(definition),
   }

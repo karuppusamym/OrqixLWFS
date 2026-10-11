@@ -70,7 +70,7 @@ Status: evidence from building and running three banking example workflows ([ban
 | Unique items in a list | Missing | `gap_theSameTransactionListedTwice...` | Validate before submission | E06, E03 |
 | Child cancellation propagation | Supported | `claimCancelledByAnOperatorCancelsEveryOpenDispute...` | — | E04 (done) |
 | Child release pinning | Supported | `kycPeriodicReviewIsPinnedToTheReleasePublishedWithTheParent` | — | E04 (done) |
-| Queue priority, ageing, SLA sort | Missing | Tasks carry a display-only `dueAfterHours` | Order by creation | E06 (Wave 4.4) |
+| Queue priority, ageing, SLA sort | Partial | Current closeout adds durable audited 0 to 100 priority, oldest/newest sorting and creation age; TaskPriorityTest and frontend queue tests | Automatic aging/escalation, business-calendar SLA ordering and cross-stage deadlines remain open | E06 (Wave 4.4), [S19](build/S19-task-priority.md) |
 | Durable recovery after an engine restart | Supported | `kycParallelChecksSurviveAnExecutorRestart`, `creditCaseSurvivesAnExecutorRestart...`, restart inside the claim test | Executor restart only; process kill and database failover are covered by the resilience tools, not by these tests | E18 |
 
 ## Defect found and fixed while building the examples

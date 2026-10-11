@@ -22,6 +22,17 @@ async function openSteps(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe('studio (Steps tab, inspector, autosave, check, conflicts)', () => {
+  it('commits and autosaves step notes before checking the exact revision', async () => {
+    signInAs('dana.designer')
+    const user = userEvent.setup()
+    renderApp(EDIT)
+    await openSteps(user)
+    await user.click(stepButton('manager'))
+    await user.type(screen.getByLabelText(/Step notes/), 'Document reviewer rationale')
+    await user.click(screen.getByRole('button', { name: 'Check workflow' }))
+    await waitFor(() => expect(db.workflows.get(PURCHASE_WORKFLOW_ID)!.drafts.at(-1)!.definition.metadata.stepNotes?.manager).toBe('Document reviewer rationale'))
+    expect(await screen.findByTestId('check-summary')).toHaveTextContent(/No problems found/)
+  })
   it('saves bounded parallel collection settings and ordered outcome collection', async () => {
     signInAs('dana.designer')
     const draft = db.workflows.get(PURCHASE_WORKFLOW_ID)!.drafts.at(-1)!.definition

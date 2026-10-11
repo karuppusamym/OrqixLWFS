@@ -77,6 +77,7 @@ public class AuditWriter {
             Map.entry("task.released", Set.of("taskId", "nodeId")),
             Map.entry("task.reassigned", Set.of("taskId", "toSubjectId")),
             Map.entry("task.delegated", Set.of("taskId", "toSubjectId")),
+            Map.entry("task.priority-changed", Set.of("taskId", "from", "to")),
             Map.entry("task.decided", Set.of("taskId", "nodeId", "action", "policyFlags")),
             Map.entry("run.cancelled", Set.of()),
             Map.entry("run.retry-requested", Set.of("effectId")),

@@ -1,0 +1,50 @@
+import { expect, test } from '../support/fixtures'
+import { MOCK } from '../support/env'
+import { openTask, submitPurchase, workflowIdByKey, workspaceId } from '../support/app'
+import { expectNoSeriousViolations } from '../support/axe'
+
+test.skip(!MOCK, 'The current closeout browser flows use mock identity; real runtime semantics are covered by Testcontainers')
+
+test('assigned task priority is confirmed, retained and available to queue filtering', async ({ sessions }) => {
+  await sessions.mockCall('reset', { published: true, sampleRuns: false })
+  const requester = await sessions.as('rhea.requester')
+  const ws = await workspaceId(requester)
+  const workflowId = await workflowIdByKey(requester, ws)
+  await submitPurchase(requester, ws, workflowId, { title: 'Priority review laptop', purpose: 'Priority regression', costCenter: 'OPS', amount: '1000' })
+  const manager = await sessions.as('mani.manager')
+  await openTask(manager, ws, 'Priority review laptop')
+  await manager.getByRole('button', { name: 'Claim task' }).click()
+  await manager.getByRole('button', { name: 'Change priority (0)' }).click()
+  await manager.getByLabel('Task priority (0 to 100)').fill('80')
+  await manager.getByLabel('Reason for priority change').fill('Customer waiting for equipment')
+  await manager.getByRole('button', { name: 'Confirm priority change' }).click()
+  await expect(manager.getByRole('button', { name: 'Change priority (80)' })).toBeVisible()
+  await manager.goto(`/w/${ws}/tasks?view=assigned&minPriority=50`)
+  await expect(manager.getByRole('row').filter({ hasText: 'Priority review laptop' })).toContainText('80')
+  await expect(manager.getByLabel('Priority filter')).toHaveValue('50')
+  await expectNoSeriousViolations(manager, 'Priority queue')
+})
+
+test('saved step annotations appear in comparison of immutable published versions', async ({ sessions }) => {
+  await sessions.mockCall('reset', { published: true, sampleRuns: false })
+  const designer = await sessions.as('dana.designer')
+  const ws = await workspaceId(designer)
+  const workflowId = await workflowIdByKey(designer, ws)
+  await designer.goto(`/w/${ws}/workflows/${workflowId}/edit`)
+  await designer.getByRole('tab', { name: 'Steps' }).click()
+  await designer.getByTestId('step-row-manager').locator('button[aria-pressed]').click()
+  await designer.getByLabel('Step notes').fill('Review rationale <b>plain text</b>')
+  await designer.getByRole('button', { name: 'Check workflow' }).click()
+  await expect(designer.getByTestId('check-summary')).toContainText('No problems found')
+  const publisher = await sessions.as('paul.publisher')
+  await publisher.goto(`/w/${ws}/workflows/${workflowId}/publish`)
+  await expect(publisher.getByTestId('check-clean')).toBeVisible()
+  await publisher.getByRole('button', { name: 'Publish version 2' }).click()
+  await expect(publisher.getByTestId('publish-success')).toContainText('Version 2 published')
+  await publisher.goto(`/w/${ws}/workflows/${workflowId}`)
+  await publisher.getByRole('button', { name: 'Compare versions' }).click()
+  const comparison = publisher.getByRole('region', { name: 'Compare published versions' })
+  await expect(comparison).toContainText('Review rationale <b>plain text</b>')
+  await expect(comparison.locator('b')).toHaveCount(0)
+  await expectNoSeriousViolations(publisher, 'Published version comparison')
+})

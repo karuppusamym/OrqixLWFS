@@ -1146,6 +1146,14 @@ paths:
             assigned = open tasks claimed by the caller; claimable = open unclaimed tasks whose candidate group
             contains the caller, excluding the caller's own requests unless self-approval is allowed;
             completed = tasks the caller decided.
+        - name: sort
+          in: query
+          description: Open queue order; priority sorts descending then oldest first. Completed tasks retain decision order.
+          schema: { type: string, enum: [priority, oldest, newest], default: priority }
+        - name: minPriority
+          in: query
+          description: Optional open-task priority threshold; unsupported for completed tasks.
+          schema: { type: integer, minimum: 0, maximum: 100 }
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
       responses:
@@ -1268,6 +1276,34 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/TaskDecision' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/tasks/{taskId}/priority:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/TaskId'
+    put:
+      tags: [Tasks]
+      operationId: setTaskPriority
+      summary: Current assignee or operator changes open task priority with a reason
+      x-orqix-permission: currentAssignee + task.act | run.operate
+      x-orqix-audit: task.priority-changed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TaskPriorityRequest' }
+      responses:
+        '200':
+          description: Priority changed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskDetail' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -2944,7 +2980,7 @@ components:
 
     TaskSummary:
       type: object
-      required: [id, runId, workflowName, nodeId, label, requester, candidateGroup, assignee, status, createdAt, version]
+      required: [id, runId, workflowName, nodeId, label, requester, candidateGroup, assignee, status, createdAt, version, priority]
       properties:
         id: { type: string }
         runId: { $ref: '#/components/schemas/Uuid' }
@@ -2966,6 +3002,7 @@ components:
         dueAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
         createdAt: { $ref: '#/components/schemas/Timestamp' }
         version: { type: integer }
+        priority: { type: integer, minimum: 0, maximum: 100, description: Higher values are shown first in the open queue; default 0 }
         decision: { oneOf: [{ $ref: '#/components/schemas/TaskDecision' }, { type: 'null' }] }
     TaskDetail:
       allOf:
@@ -2988,13 +3025,22 @@ components:
                 rejectReasonRequired: { type: boolean }
             allowedActions:
               type: object
-              required: [claim, release, decide, reassign]
+              required: [claim, release, decide, reassign, priority]
               properties:
                 claim: { $ref: '#/components/schemas/ActionAvailability' }
                 release: { $ref: '#/components/schemas/ActionAvailability' }
                 decide: { $ref: '#/components/schemas/ActionAvailability' }
                 reassign: { $ref: '#/components/schemas/ActionAvailability' }
+                priority: { $ref: '#/components/schemas/ActionAvailability' }
             completedBy: { oneOf: [{ $ref: '#/components/schemas/SubjectRef' }, { type: 'null' }] }
+    TaskPriorityRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, priority, reason]
+      properties:
+        expectedVersion: { type: integer, minimum: 1 }
+        priority: { type: integer, minimum: 0, maximum: 100 }
+        reason: { type: string, minLength: 1, maxLength: 500 }
     VersionedCommand:
       type: object
       additionalProperties: false

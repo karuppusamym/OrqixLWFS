@@ -253,6 +253,7 @@ function taskDetail(user: MockUser, perms: Permission[], run: MockRun, task: Moc
       claim: claimAllowed ? { allowed: true } : { allowed: false, reasonCode: !open ? 'TASK_NOT_OPEN' : task.assigneeId ? 'TASK_ALREADY_CLAIMED' : own ? 'SELF_APPROVAL_DENIED' : 'NOT_ELIGIBLE' },
       release: open && isAssignee ? { allowed: true } : { allowed: false, reasonCode: 'TASK_NOT_CLAIMED_BY_CALLER' },
       decide: open && isAssignee && perms.includes('task.act') ? { allowed: true } : { allowed: false, reasonCode: !open ? 'TASK_NOT_OPEN' : 'TASK_NOT_CLAIMED_BY_CALLER' },
+      priority: open && (perms.includes("run.operate") || isAssignee && eligibleGroup && !own) ? { allowed: true } : { allowed: false, reasonCode: !open ? "TASK_NOT_OPEN" : "FORBIDDEN" },
       reassign: open && perms.includes('run.operate') ? { allowed: true } : { allowed: false, reasonCode: 'FORBIDDEN' },
     },
   } as unknown as TaskDetail
@@ -722,10 +723,44 @@ export function createHandlers(): HttpHandler[] {
       const claimable = all.filter(({ run, task }) => task.status === 'open' && !task.assigneeId && inGroup(g.user, task.candidateGroup) && (run.initiatorId !== g.user.id || selfApprovalAllowed(run, currentRelease(run))))
       const assigned = all.filter(({ task }) => task.status === 'open' && task.assigneeId === g.user.id)
       const completed = all.filter(({ task }) => task.status === 'completed' && task.completedById === g.user.id)
-      const chosen = view === 'assigned' ? assigned : view === 'claimable' ? claimable : completed
-      chosen.sort((a, b) => (view === 'completed' ? (b.task.decision?.decidedAt ?? '').localeCompare(a.task.decision?.decidedAt ?? '') : a.task.createdAt.localeCompare(b.task.createdAt)))
-      const page = paginate(chosen, url)
+      const sort = url.searchParams.get('sort') ?? 'priority'
+      const minPriority = Number(url.searchParams.get('minPriority') ?? 0)
+      if (!['priority', 'oldest', 'newest'].includes(sort) || !Number.isInteger(minPriority) || minPriority < 0 || minPriority > 100 || view === 'completed' && (url.searchParams.has('sort') || url.searchParams.has('minPriority'))) return problem(400, 'MALFORMED_REQUEST', 'Invalid task list filters')
+      const chosen = (view === 'assigned' ? assigned : view === 'claimable' ? claimable : completed).filter(x => view === 'completed' || (x.task.priority ?? 0) >= minPriority)
+      const compare = (a: typeof chosen[number], b: typeof chosen[number]) => view === 'completed' ? (b.task.decision?.decidedAt ?? '').localeCompare(a.task.decision?.decidedAt ?? '') || b.task.id.localeCompare(a.task.id) : (sort === 'priority' ? (b.task.priority ?? 0) - (a.task.priority ?? 0) : 0) || (sort === 'newest' ? -1 : 1) * (a.task.createdAt.localeCompare(b.task.createdAt) || a.task.id.localeCompare(b.task.id))
+      chosen.sort(compare)
+      const binding = `${params.ws}|${g.user.id}|${view}|${sort}|${minPriority}`
+      let remaining = chosen
+      const cursor = url.searchParams.get('cursor')
+      if (cursor) {
+        try {
+          const decoded = JSON.parse(atob(cursor)) as { binding: string; task: MockTask }
+          if (decoded.binding !== binding || !decoded.task?.id || !Number.isInteger(decoded.task.priority)) throw new Error()
+          remaining = chosen.filter(x => compare(x, { task: decoded.task, run: x.run }) > 0)
+        } catch { return problem(400, 'INVALID_CURSOR', 'Invalid task cursor') }
+      }
+      const limit = Math.min(100, Math.max(1, Number(url.searchParams.get('limit') ?? 25)))
+      const items = remaining.slice(0, limit)
+      const last = items.at(-1)
+      const page = { items, nextCursor: remaining.length > limit && last ? btoa(JSON.stringify({ binding, task: { id: last.task.id, createdAt: last.task.createdAt, priority: last.task.priority ?? 0, decision: last.task.decision ? { decidedAt:last.task.decision.decidedAt } : null } })) : null }
       return HttpResponse.json({ items: page.items.map(({ run, task }) => toTaskSummary(run, task)), nextCursor: page.nextCursor, counts: { assigned: assigned.length, claimable: claimable.length } })
+    }),
+    http.put(`${B}/workspaces/:ws/tasks/:id/priority`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws)
+      if (!g.ok) return g.res
+      const found = findTask(str(params.ws), str(params.id))
+      if (!found || !(g.perms.includes('run.read') || isOpenTaskVisible(g.user, found.task, found.run))) return notFound()
+      const {run, task} = found
+      if (!g.perms.includes('run.operate') && !(task.assigneeId === g.user.id && g.perms.includes('task.act') && inGroup(g.user, task.candidateGroup) && (run.initiatorId !== g.user.id || selfApprovalAllowed(run, currentRelease(run))))) return forbidden()
+      const input = await body<{ priority: number; expectedVersion: number; reason: string }>(request)
+      if (!Number.isInteger(input.priority) || input.priority < 0 || input.priority > 100 || !Number.isInteger(input.expectedVersion) || input.expectedVersion < 1 || !input.reason?.trim() || input.reason.length > 500) return problem(422, 'VALIDATION_FAILED', 'Priority, version and reason are required')
+      if (task.status !== 'open') return problem(409, 'TASK_NOT_OPEN', 'Task is no longer open')
+      if (task.version !== input.expectedVersion) return problem(409, 'TASK_VERSION_CONFLICT', 'Task changed', { currentVersion: task.version })
+      const previous = task.priority ?? 0
+      task.priority = input.priority; task.version++
+      addEvent(run, 'TASK_PRIORITY_CHANGED', { nodeId: task.nodeId, actorId: g.user.id, data: { taskId: task.id, from: previous, to: input.priority, reason: input.reason } })
+      return HttpResponse.json(taskDetail(g.user, g.perms, run, task))
     }),
     http.get(`${B}/workspaces/:ws/tasks/:id`, async ({ params }) => {
       await slow()

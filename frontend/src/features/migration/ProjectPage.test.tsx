@@ -1,13 +1,16 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { HttpResponse, http } from 'msw'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { server } from '@/test/server'
 import { renderApp, signInAs, WS } from '@/test/utils'
 import { db } from '@/mocks/state'
 import { planProject } from '@/mocks/migration'
 import { bpmn } from '@/mocks/migration.fixtures'
 import { projectFileProblem } from './ProjectImportForm'
+import { downloadBlob, downloadJson } from '@/lib/download'
+
+vi.mock('@/lib/download', () => ({ downloadBlob: vi.fn(), downloadJson: vi.fn() }))
 
 function bpmnFile(name: string, xml: string): File {
   const file = new File([xml], name, { type: 'application/xml' })
@@ -29,6 +32,44 @@ function publish(key: string) {
 }
 
 describe('multi-file migration project', () => {
+  it('reviews all files by reason, kind and file with filters and complete exports', async () => {
+    signInAs('vic.viewer')
+    const user = userEvent.setup()
+    const project = planProject(WS, 'Review all', [{ fileName: 'one.bpmn', content: bpmn('one') }, { fileName: 'two.bpmn', content: bpmn('two') }])
+    for (const file of project.files) db.migrations.get(file.migrationId!)!.report.issues.push({ sourceElementId: 'start', sourceKind: 'startEvent', severity: 'info', reasonCode: 'REVIEW_START', resolutionStatus: 'resolved', explanation: 'Review the start.' })
+    renderApp(`/w/${WS}/migrations/projects/${project.id}`)
+    const panel = await screen.findByRole('region', { name: 'Cross-file findings' })
+    await waitFor(() => expect(within(panel).getByRole('button', { name: 'Download project findings JSON' })).toBeEnabled())
+    expect(within(panel).getByText(/from 2 of 2 file reports/)).toBeInTheDocument()
+    await user.selectOptions(within(panel).getByLabelText('Group project findings by'), 'fileName')
+    expect(within(panel).getByText(/^one.bpmn \(/)).toBeInTheDocument()
+    expect(within(panel).getByText(/^two.bpmn \(/)).toBeInTheDocument()
+    await user.selectOptions(within(panel).getByLabelText('Group project findings by'), 'sourceKind')
+    expect(within(panel).getByText(/^startEvent \(/)).toBeInTheDocument()
+    await user.selectOptions(within(panel).getByLabelText('Project finding severity'), 'blocker')
+    expect(within(panel).getByText('No findings match the selected filters.')).toBeInTheDocument()
+    expect(within(panel).getByRole('button', { name: 'Download project findings CSV' })).toBeEnabled()
+    await user.click(within(panel).getByRole('button', { name: 'Download project findings JSON' }))
+    expect(downloadJson).toHaveBeenLastCalledWith(expect.objectContaining({ findings: expect.arrayContaining([expect.objectContaining({ reasonCode: 'REVIEW_START', fileName: 'one.bpmn' }), expect.objectContaining({ reasonCode: 'REVIEW_START', fileName: 'two.bpmn' })]) }), 'project-findings.json')
+    await user.click(within(panel).getByRole('button', { name: 'Download project findings CSV' }))
+    expect(downloadBlob).toHaveBeenLastCalledWith(expect.any(Blob), 'project-findings.csv')
+  })
+
+  it('blocks complete exports after a file-report failure and recovers with retry', async () => {
+    signInAs('vic.viewer')
+    const user = userEvent.setup()
+    const project = planProject(WS, 'Partial review', [{ fileName: 'one.bpmn', content: bpmn('one') }])
+    let fail = true
+    server.use(http.get('*/api/v1/workspaces/:ws/migrations/:id', () => fail ? HttpResponse.json({ status: 503, code: 'INTERNAL_ERROR', title: 'Unavailable' }, { status: 503 }) : undefined))
+    renderApp(`/w/${WS}/migrations/projects/${project.id}`)
+    const panel = await screen.findByRole('region', { name: 'Cross-file findings' })
+    expect(await within(panel).findByText('Some file reports could not be loaded')).toBeInTheDocument()
+    expect(within(panel).getByRole('button', { name: 'Download project findings JSON' })).toBeDisabled()
+    fail = false
+    await user.click(within(panel).getByRole('button', { name: 'Retry file reports' }))
+    await waitFor(() => expect(within(panel).getByRole('button', { name: 'Download project findings JSON' })).toBeEnabled())
+  })
+
   it('analyzes several files, orders children first and converts them one file at a time with the mapping form', async () => {
     signInAs('dana.designer')
     const user = userEvent.setup()

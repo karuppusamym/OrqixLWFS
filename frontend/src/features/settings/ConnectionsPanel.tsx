@@ -23,6 +23,7 @@ import { describeProblem, fieldErrorMap } from '@/lib/problemMessages'
 import { EFFECT_CLASS_LABEL } from '@/features/runs/operatorText'
 import { AgentTest } from './AgentTest'
 import { AGENT_USES_AI, AiAgentBadge } from './AgentSpecView'
+import { DocumentVersionPicker, type DocumentOperation } from './DocumentVersionPicker'
 
 export function ConnectionsPanel() {
   const { workspace } = useWorkspace()
@@ -254,7 +255,7 @@ function BindingForm({ connectionKey, binding, graph }: { connectionKey: string;
   )
 }
 
-function TestConnection({ connection, detail }: { connection: ConnectionSummary; detail: ConnectionDetail }) {
+export function TestConnection({ connection, detail }: { connection: ConnectionSummary; detail: ConnectionDetail }) {
   const { workspace } = useWorkspace()
   const testable = connection.operations.filter((o) => o.testable)
   const [operation, setOperation] = useState(testable[0]?.name ?? '')
@@ -264,7 +265,9 @@ function TestConnection({ connection, detail }: { connection: ConnectionSummary;
   const graph = connection.kind === 'microsoftGraph'
   const [documentRef, setDocumentRef] = useState<Record<string, string>>({ driveId: '', itemId: '', versionId: '', snapshotId: '' })
   const definition = detail.definitions.find((item) => item.version === connection.latestVersion)?.definition
-  const operationSchema = (definition?.operations as Record<string, { requestSchema?: { required?: string[]; properties?: Record<string, unknown> } }> | undefined)?.[operation]?.requestSchema
+  const definitions = definition?.operations as Record<string, DocumentOperation> | undefined
+  const operationSchema = definitions?.[operation]?.requestSchema
+  const versionOperation = testable.find((entry) => definitions?.[entry.name]?.path === '/versions')
   const documentFields = Object.keys(operationSchema?.properties ?? { driveId: {}, itemId: {}, versionId: {} })
   const requiredFields = operationSchema?.required ?? documentFields
 
@@ -292,7 +295,7 @@ function TestConnection({ connection, detail }: { connection: ConnectionSummary;
           <p className="text-sm text-muted-foreground">Runs a read-only operation through the real address and the network policy. Nothing is changed in the other system.</p>
           <div className="space-y-1.5">
             <Label htmlFor={`test-op-${connection.key}`}>Operation to test</Label>
-            <Select id={`test-op-${connection.key}`} value={operation} onChange={(e) => setOperation(e.target.value)}>
+            <Select id={`test-op-${connection.key}`} disabled={pending} value={operation} onChange={(e) => { setOperation(e.target.value); setResult(null); setError(null) }}>
               {testable.map((o) => (
                 <option key={o.name} value={o.name}>
                   {o.label}
@@ -305,9 +308,21 @@ function TestConnection({ connection, detail }: { connection: ConnectionSummary;
               <p className="text-sm text-muted-foreground">Historical reads need a document version. Capture latest creates an immutable snapshot; use the returned snapshot ID for later extraction. PDF and Office extraction accepts files up to 5 MiB and returns at most 64 KiB of text. Your platform team controls document access.</p>
               {documentFields.map((field) => (
                 <FormField key={field} label={({ driveId: 'Drive ID', itemId: 'Document item ID', versionId: 'Document version ID', snapshotId: 'Captured snapshot ID' } as Record<string, string>)[field] ?? field} required={requiredFields.includes(field)} id={`test-${field}-${connection.key}`}>
-                  {(ids) => <Input id={ids.input} value={documentRef[field] ?? ''} onChange={(event) => setDocumentRef({ ...documentRef, [field]: event.target.value })} autoComplete="off" spellCheck={false} />}
+                  {(ids) => <Input id={ids.input} disabled={pending} value={documentRef[field] ?? ''} onChange={(event) => {
+                    setDocumentRef({ ...documentRef, [field]: event.target.value, ...(['driveId', 'itemId'].includes(field) ? { versionId: '', snapshotId: '' } : {}) })
+                    setResult(null)
+                  }} autoComplete="off" spellCheck={false} />}
                 </FormField>
               ))}
+              {documentFields.includes('versionId') && versionOperation ? <DocumentVersionPicker
+                key={`${workspace.id}:${connection.key}:${connection.latestVersion}:${operation}:${documentRef.driveId}:${documentRef.itemId}`}
+                workspaceId={workspace.id} connectionKey={connection.key} connectionVersion={connection.latestVersion}
+                operation={versionOperation.name} driveId={documentRef.driveId?.trim() ?? ''} itemId={documentRef.itemId?.trim() ?? ''}
+                approvedDrives={definitions?.[versionOperation.name]?.requestSchema?.properties?.driveId?.enum ?? []}
+                enabled={connection.binding.configured && connection.binding.enabled && !pending}
+                selectedVersion={documentRef.versionId ?? ''}
+                onSelect={(versionId) => { setDocumentRef({ ...documentRef, versionId }); setResult(null) }}
+              /> : null}
             </div>
           ) : null}
           {!connection.binding.configured || !connection.binding.enabled ? <p className="text-sm text-muted-foreground">Save an enabled connection address before testing.</p> : null}

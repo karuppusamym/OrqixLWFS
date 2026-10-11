@@ -152,7 +152,7 @@ public class RuntimeViews {
                 subjects.ref(task.initiator(), names),
                 new RuntimeDtos.GroupRef(task.candidateGroupKey(), groupName(task.workspaceId(), task.candidateGroupKey())),
                 task.assignee() == null ? null : subjects.ref(task.assignee(), names), task.status(), task.dueAt(),
-                task.createdAt(), task.version(), decision == null ? null : decision(decision, task.label(), names));
+                task.createdAt(), task.version(), task.priority(), decision == null ? null : decision(decision, task.label(), names));
     }
 
     public RuntimeDtos.TaskDecision decision(TaskQueries.DecisionRow decision, String label, Map<UUID, String> names) {

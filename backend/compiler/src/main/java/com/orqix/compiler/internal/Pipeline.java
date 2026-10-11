@@ -110,6 +110,13 @@ public final class Pipeline {
         }
         // Stages 4-7.
         WorkflowDefinition definition = ModelReader.read(root);
+        JsonNode notes = root.path("metadata").path("stepNotes");
+        for (String id : notes.propertyNames()) {
+            if (definition.nodes().stream().noneMatch(node -> node.id().equals(id))) {
+                issues.blocker("WF_STEP_NOTE_UNKNOWN_NODE", JsonPointers.of("metadata", "stepNotes", id), null,
+                        null, "The notes refer to a step that does not exist: " + id + ".");
+            }
+        }
         RuleContext analysis = Rules.run(definition, workspace, schemas, issues);
         return new Outcome(new ValidationReport(compilerVersion, issues.sorted(), semanticHash), definition,
                 analysis, sourceHash);
@@ -124,11 +131,14 @@ public final class Pipeline {
                 sourceHash);
     }
 
-    /** @return SHA-256 of the JCS form without {@code uiLayout} */
+    /** @return SHA-256 of the JCS form without layout and plain-text design annotations */
     public static String semanticHash(JsonNode root) {
-        if (root.isObject() && root.has("uiLayout")) {
+        if (root.isObject() && (root.has("uiLayout") || root.path("metadata").has("stepNotes"))) {
             ObjectNode copy = ((ObjectNode) root).deepCopy();
             copy.remove("uiLayout");
+            if (copy.path("metadata") instanceof ObjectNode metadata) {
+                metadata.remove("stepNotes");
+            }
             return Jcs.sha256Hex(copy);
         }
         return Jcs.sha256Hex(root);

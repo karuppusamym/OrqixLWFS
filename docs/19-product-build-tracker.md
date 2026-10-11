@@ -1,6 +1,6 @@
 # Product build tracker
 
-Updated 9 October 2026. This is the active tracker for the next build. Existing verified scope is recorded in [feature status](feature-status.md); the broad backlog describes the full product, not a completion claim.
+Updated 10 October 2026. This is the active tracker for the current build. The authoritative remaining-item register is [product closeout](21-product-closeout.md). Existing verified scope is recorded in [feature status](feature-status.md); the broad backlog describes the full product, not a completion claim.
 
 Statuses: **In progress** means implementation is underway; **Implemented** means code exists but final checks remain; **Verified** means the listed checks pass; **Needs external input** identifies acceptance that cannot be established with local fixtures.
 
@@ -23,7 +23,7 @@ Statuses: **In progress** means implementation is underway; **Implemented** mean
 | DOC02 | Real Microsoft tenant acceptance | Needs external input | Tenant/app permissions, approved sites/files and credential provisioning |
 | CHAT01 | Conversational request/task execution | Verified API and UI slice | Multi-turn field collection, explicit reviewed submission/decision, existing authorization and idempotency, resume and isolation tests |
 | CASE01 | Request collaboration | Verified: comments, delegation and reminders | 3 backend collaboration tests, 5 delegation UI tests, real-browser handoff and decision; attachments, stages and business calendars remain planned |
-| OPS01 | Standard image build and browser validation | Verified: standard image, migrations, healthy stack and browser checks | Standard build or accurately recorded registry limitation; healthy local stack, real browser checks |
+| OPS01 | Standard image build and browser validation | Historical local evidence; current deployment excluded | Historical stack/browser checks do not certify this new priority migration or UI batch |
 | OPS02 | Production gates | Needs external input | Enterprise identity/integrations, cluster, CI execution, backup/restore and capacity acceptance |
 
 ## Execution matrix
@@ -47,7 +47,7 @@ Reviewed [doc 20](20-competitive-analysis.md) and the other model's agent config
 | Findings JSON/CSV export | Verified; final frontend: 444 tests pass | JSON preserves the whole job; CSV preserves every finding and source hash, with spreadsheet formula protection |
 | Guided conversation | 7 API tests and 4 UI tests pass, including collection answers | 200-turn bound and serialized 50-session admission; no AI intent interpreter claim |
 | Other-model agent and pattern features | Verified in combined suites | AI-unavailable warnings, timeline summaries, mock patterns, studio settings and exact workflow outcomes |
-| Multi-file migration projects, review severity and mapping maker-checker | Planned | Separate durable contracts, role separation and real project fixtures |
+| Multi-file migration projects, review severity and mapping maker-checker | Verified in the committed baseline; retained in current regression | Durable contracts, exact-draft independent review, role separation and bounded project fixtures |
 | Pega/native equivalence runner and evidence packs | Verified local harness; real-source acceptance needs input | Six live golden cases and deterministic evidence pack; source fixture explicitly synthetic |
 | Banking templates and regulatory rule packs | Needs domain decisions | B1–B6 in competitor analysis; no regulatory compliance claim |
 
@@ -71,7 +71,7 @@ Final focused conversation suite: 7/7 pass, including invalid JSON, item constra
 
 Parallel collection execution, document extraction/snapshots, task delegation and durable reminders are integrated. Their focused backend, frontend, browser and standard-image checks pass. The six-case migration acceptance harness passes against the rebuilt local stack, with simulated source observations explicitly identified. The current checks are recorded below. Native Pega evidence, real Microsoft tenant access and production acceptance still require external inputs.
 
-## Current completed build evidence
+## Historical remaining-items build evidence (9 October)
 
 - Backend: 267 compiler tests and 241 application cases (239 passed, 2 opt-in live tests skipped), zero unresolved failures/errors in the final unique Surefire reports. The initial isolated run exposed test-directory filtering in architecture checks and the new delegation request fixture in the security matrix; both were fixed and their complete focused suites passed. Coverage and executable-jar packaging pass in the final `verify -DskipTests` step.
 - Workflow runtime: all 14 pattern tests pass, including simple/medium/complex definitions, reverse child completion, ordered collected arrays, restart, cancellation and distinct child effects. All 3 collaboration tests pass.
@@ -83,7 +83,7 @@ Parallel collection execution, document extraction/snapshots, task delegation an
 
 Logs are retained under `evidence/remaining-*`; the combined backend run and its architecture/security corrections are retained separately. `evidence/migration-live.zip` contains the latest six-case acceptance evidence. Its identifiers/checksum change on a new live execution; archive determinism applies to identical input evidence.
 
-The implemented build batch is complete. Remaining roadmap work includes real-source Pega resolution/conversion and live-case migration, multi-file migration projects and mapping maker-checker, banking templates/domain decisions, document picker/OAuth automation/OCR, object or mutable collection rework, recurring escalation/business calendars, and enterprise production acceptance. These are not represented as completed capabilities. See the decision register and competitor analysis for their inputs and acceptance criteria.
+That historical batch completed its implemented slice. Projects, migration maker-checker, banking examples and a historical-version selection tool have since been added. Current product/customer/infra boundaries are recorded in [product closeout](21-product-closeout.md); the historical checks above do not certify later code.
 
 ## Competitor-analysis build pass (10 October 2026)
 
@@ -99,7 +99,7 @@ Three independent streams were built from [doc 20](20-competitive-analysis.md) i
 
 Red-head repairs: `DecisionEvaluatorTest` expected `ne` to be rejected although the compiler supports `ne`, `gt` and `lte`; `ConversationApiTest` expected field labels that the fixture does not have and a provider-call count that contradicted its own earlier assertion; `SecurityMatrixTest` sent empty bodies to the four new migration operations and omitted their tables from its change snapshot; four new operations lacked `x-orqix-audit`; the document-link fixture let an unconstrained string flow into an allow-listed drive field, which the compiler rightly rejected.
 
-### Merged-tree evidence (10 October 2026)
+### Historical merged-tree evidence (10 October, morning)
 
 | Check | Result |
 |---|---|
@@ -109,4 +109,34 @@ Red-head repairs: `DecisionEvaluatorTest` expected `ne` to be rejected although 
 | Mock-mode browser suite, Edge ([log](../evidence/merged-e2e-mock-1010.log)) | 32 passed, 4 skipped (real-stack only), 1 failed: the AI-draft spec failed once while the backend suite was using the machine and passed on an immediate rerun (2/2). Treat it as timing-sensitive, not proven stable |
 | Standard image build ([log](../evidence/merged-image-build-1010.log)) | `docker build` of the multi-stage Dockerfile succeeds and is tagged `orqix/orqix:merged-1010` |
 
-**Not verified:** the local Compose stack was **not** recreated with this image (the action was declined), so the running stack, the real-stack browser checks, the live migration acceptance run and the performance and resilience scripts were not run against this code. Production, native Pega and real-tenant acceptance remain open as before. Banking remains a proposed domain extension until B1–B6 are answered. The dev realm needs a third publisher in `orqix-purchasing-publishers` before the three-person migration review can be shown on the real stack.
+**At that morning checkpoint, not verified:** the local Compose stack was **not** recreated with this image (the action was declined), so the running stack, the real-stack browser checks, the live migration acceptance run and the performance and resilience scripts were not run against this code. Production, native Pega and real-tenant acceptance remain open as before. Banking remains a proposed domain extension until B1–B6 are answered. The dev realm needs a third publisher in `orqix-purchasing-publishers` before the three-person migration review can be shown on the real stack.
+
+## Current product closeout pass (10 October, evening)
+
+Reviewed the other model's committed `6fa9fe6` baseline and preserved its date waits, titles, natural-language Assistant, projects/review, DMN import and banking workflows. The status totals in feature-status.md preceding this batch remain prior evidence. This implemented build batch is complete. Its checks and limits are recorded below; future roadmap and customer acceptance remain open.
+
+| ID | Item | Status | Scope |
+|---|---|---|---|
+| MIG07 | Cross-file findings review and full JSON/CSV export | Complete; frontend checks pass | Complete bounded project reports, provenance, formula-safe CSV and partial-load export protection; S18 |
+| TASK01 | Priority and aging | Verified locally; complete | Durable audited priority, eligible assignee/operator changes, version conflicts, signed filter/sort/subject-bound keyset pagination, age display; V20 and S19 |
+| DOC04 | Historical-version selection | Complete; scripted Graph and UI checks pass | Approved drive/item input and explicit pin in connection administration; requester tenant browsing remains roadmap |
+| DESIGN01 | General published-version comparison | Complete; frontend/browser checks pass | Any two loaded releases, load-more for older versions, safe text display and visible fetch failure |
+| DESIGN02 | Step notes | Complete; compiler/frontend/browser checks pass | Autosaved plain text, immutable definition/export, rename/delete cleanup and hash distinction |
+
+[Product closeout](21-product-closeout.md) separates customer/source acceptance, excluded infrastructure and future engineering work. **All non-infrastructure roadmap work is not closed.** Existing R0 checklist items that require no customer environment are implemented; the product roadmap retains explicit future features.
+
+### Closeout verification
+
+| Check | Final result and evidence |
+|---|---|
+| Compiler | 281 cases, zero failures/errors; clean isolated full run; compiler coverage gate passes |
+| Application | 457 unique cases: 455 pass, 2 opt-in live-provider cases skipped, zero unresolved failures/errors. The full run exposed the new priority audit registration/action-name and validation expectations; the corrected priority, security matrix and both secret-isolation suites then pass (8/8). [Full run](../evidence/closeout-backend-final-1010.log), [correction/security run](../evidence/closeout-priority-security-final-1010.log), [combined reports](../evidence/closeout-summary-1010.json) |
+| Packaging | Isolated `verify -DskipTests` passes after the tested corrections, including the compiler coverage gate and executable jar. [Log](../evidence/closeout-package-1010.log). This packaging invocation does not claim another full test run |
+| Frontend | All 554 tests pass in the final full run; typecheck, lint, production build, API type drift and E2E typecheck pass. [Tests](../evidence/closeout-frontend-final-1010.log), [build](../evidence/closeout-frontend-build-1010.log) |
+| Contracts and migration harness | 69 contract checks pass, including audit names matching the database syntax; 4 offline equivalence/archive tests pass. [Contract log](../evidence/closeout-contracts-1010.log) |
+| Browser | Mock Edge suite: 39 pass, 4 real-stack-only checks skipped. Priority and notes/version comparison pass with axe scans. Both new review flows pass again on the final rebuilt mock bundle. [Full suite](../evidence/closeout-browser-1010.log), [final focused check](../evidence/closeout-review-browser-final-1010.log) |
+| Execution examples | Full backend run includes all 14 `WorkflowPatternsTest` cases and the banking examples on real PostgreSQL/Flowable: simple approval, medium bounded rework, complex parallel batch, ordered outputs, cancellation and restart. No external customer equivalence is inferred |
+
+Audit reasons are retained in permission-scoped run history; global audit contains only task ID and prior/new priorities. The targeted security rerun uses explicit normal INFO logging and `debug=false`: the first focused security run captured bootstrap DEBUG output containing a test-only temporary secrets path. The successful rerun verifies normal INFO logging with debug disabled. No real credential or customer acceptance is established by these fixtures.
+
+No deployment/image/production capacity or fresh real-stack browser acceptance was performed for V20 in this pass. Infrastructure remains excluded. Native Pega/source approval, customer Microsoft/integration acceptance and the future product features in doc 21 are still open.

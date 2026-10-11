@@ -7,6 +7,8 @@ import java.util.UUID;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
@@ -35,6 +37,9 @@ public final class RuntimeDtos {
             @NotNull @Pattern(regexp = "approve|reject") String action, @Size(max = 1000) String reason,
             @Size(max = 2000) String comment) {
     }
+
+    public record PriorityRequest(@NotNull @Min(1) Integer expectedVersion,
+            @NotNull @Min(0) @Max(100) Integer priority, @NotBlank @Size(max = 500) String reason) { }
 
     public record ReassignRequest(@NotNull @Min(1) Integer expectedVersion, UUID assigneeSubjectId,
             @NotNull @Size(min = 1, max = 500) String reason) {
@@ -134,7 +139,7 @@ public final class RuntimeDtos {
 
     public record TaskSummary(String id, UUID runId, String runReference, String workflowName, String businessKey, String nodeId,
             String label, String requestTitle, SubjectRef requester, GroupRef candidateGroup, SubjectRef assignee,
-            String status, Instant dueAt, Instant createdAt, int version, TaskDecision decision) {
+            String status, Instant dueAt, Instant createdAt, int version, int priority, TaskDecision decision) {
     }
 
     public record TaskRequest(JsonNode input, JsonNode inputSchema,
@@ -145,12 +150,12 @@ public final class RuntimeDtos {
     }
 
     public record AllowedTaskActions(ActionAvailability claim, ActionAvailability release, ActionAvailability decide,
-            ActionAvailability reassign) {
+            ActionAvailability reassign, ActionAvailability priority) {
     }
 
     public record TaskDetail(String id, UUID runId, String runReference, String workflowName, String businessKey, String nodeId,
             String label, String requestTitle, SubjectRef requester, GroupRef candidateGroup, SubjectRef assignee,
-            String status, Instant dueAt, Instant createdAt, int version, TaskDecision decision, TaskRequest request,
+            String status, Instant dueAt, Instant createdAt, int version, int priority, TaskDecision decision, TaskRequest request,
             List<TaskDecision> history, TaskForm form, AllowedTaskActions allowedActions, SubjectRef completedBy) {
     }
 

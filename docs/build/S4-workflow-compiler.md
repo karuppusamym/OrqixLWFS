@@ -109,6 +109,7 @@ Severity **B** = blocker (cannot publish), **W** = warning (publish requires `ac
 | `WF_OUTPUT_MAPPING_MISSING` | B | A field in `outputSchema.required` lacks a `required: true` mapping |
 | `WF_OUTPUT_NOT_GUARANTEED` | B | §4 rule 2 |
 | `WF_LAYOUT_UNKNOWN_NODE` | B | `uiLayout.positions` names a missing node (editor must prune on delete) |
+| `WF_STEP_NOTE_UNKNOWN_NODE` | B | `metadata.stepNotes` names a missing step; editor moves notes on rename and prunes them on delete |
 | `WF_LABEL_STYLE` | W | Label shorter than 3 characters or a placeholder such as "Step 1", "Task", "Node" |
 
 ### 5.3 Workspace bindings and policy
@@ -275,7 +276,7 @@ Orqix data is stored as JSON **text** and parsed only by Orqix code configured w
 *Note (S12 section 10):* waits until a date add the `timeDate` construct and the `orqixWait` expression to the BPMN. They are produced only for definitions that earlier compilers rejected, so no existing artifact changed and `compilerVersion` stays `0.2.0` for now; a release process that wants every new construct to carry a new version bumps it to `0.3.0` together with all golden files.
 
 - **Source map:** `nodes` (canonical id → BPMN ids), `transitions` (canonical id → flow ids), `bpmnToCanonical` (reverse). Generated helpers map back to their owning node, so runtime events on `manager__route` display as "Review request".
-- **Hashes:** `sourceHash` = SHA-256 of the RFC 8785 (JCS) form of the full definition; `semanticHash` = same without `uiLayout`; `bpmnHash`, `dmnHashes` = SHA-256 of the exact bytes deployed.
+- **Hashes:** `sourceHash` = SHA-256 of the RFC 8785 (JCS) form of the full definition; `semanticHash` = same without `uiLayout` and `metadata.stepNotes`; `bpmnHash`, `dmnHashes` = SHA-256 of the exact bytes deployed. Plain-text design notes are limited to 2,000 characters per step and retained in the immutable release definition and export. They do not affect execution, but changing them changes the source hash and invalidates migration approval tied to the exact draft.
 - **Determinism:** same definition + context + compiler version → byte-identical artifacts. StAX writer with fixed attribute order, UTF-8, LF, 2-space indent; element order follows canonical array order with each node's helpers immediately after it; no timestamps, random IDs or environment values.
 - **Golden files:** `backend/src/test/resources/golden/purchase-approval/{process.bpmn20.xml, decisions/amount-policy.dmn, source-map.json}`. Any intentional output change updates the golden files **and** bumps `compilerVersion` (semver: minor for new constructs, patch for formatting-only).
 

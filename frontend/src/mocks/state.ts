@@ -206,6 +206,7 @@ export interface MockEvent {
 }
 
 export interface MockTask {
+  priority?: number
   id: string
   runId: string
   nodeId: string

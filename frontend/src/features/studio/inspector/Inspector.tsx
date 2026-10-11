@@ -14,7 +14,7 @@ import { HttpInspector } from './HttpInspector'
 import { ChildInspector, ParallelInspector, WaitInspector } from './PatternInspectors'
 import { ApprovalInspector, EndInspector, NotificationInspector, WorkflowInspector } from './SimpleInspectors'
 import { StartInspector } from './StartInspector'
-import { CommitInput } from './controls'
+import { CommitInput, CommitTextarea } from './controls'
 
 /** Right-hand inspector (320 px): basic fields first, Advanced collapsed. */
 export function Inspector({ onDeleteNode }: { onDeleteNode: (nodeId: string) => void }) {
@@ -108,6 +108,17 @@ function NodeInspector({ nodeId, onDeleteNode }: { nodeId: string; onDeleteNode:
       {node.type === 'startWorkflow' ? <ChildInspector node={node} /> : null}
       {node.type === 'notification' ? <NotificationInspector node={node} /> : null}
       {node.type === 'end' ? <EndInspector node={node} /> : null}
+
+      <FormField label="Step notes" optionalText id={`node-notes-${node.id}`} description="Explain the purpose or review decisions for this step. Notes are retained with each published version.">
+        {(ids) => <CommitTextarea id={ids.input} aria-describedby={ids.describedBy} value={def.metadata.stepNotes?.[node.id] ?? ''} maxLength={2000} disabled={readOnly} onCommit={(value) => store.getState().apply((current) => {
+          const next = structuredClone(current)
+          next.metadata.stepNotes ??= {}
+          if (value.trim()) next.metadata.stepNotes[node.id] = value
+          else delete next.metadata.stepNotes[node.id]
+          if (Object.keys(next.metadata.stepNotes).length === 0) delete next.metadata.stepNotes
+          return next
+        })} />}
+      </FormField>
 
       {node.type !== 'start' && !readOnly ? (
         <div className="border-t border-border pt-4">

@@ -21,6 +21,13 @@
           "type": "string",
           "maxLength": 2000
         },
+        "stepNotes": {
+          "type": "object",
+          "description": "Plain-text design annotations keyed by step ID. Retained in published definitions; excluded from execution semantics.",
+          "maxProperties": 100,
+          "propertyNames": { "$ref": "#/$defs/id" },
+          "additionalProperties": { "type": "string", "maxLength": 2000 }
+        },
         "tags": {
           "type": "array",
           "maxItems": 20,

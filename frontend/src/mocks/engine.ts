@@ -719,6 +719,7 @@ export function toTaskSummary(run: MockRun, task: MockTask): TaskSummary {
     dueAt: task.dueAt,
     createdAt: task.createdAt,
     version: task.version,
+    priority: task.priority ?? 0,
     decision: task.decision,
   }
 }

@@ -11,10 +11,11 @@ The package accounts for all 25 sections of the supplied master prompt, all 18 r
 | Need | Read |
 |---|---|
 | See what is built and verified | [Feature status](docs/feature-status.md) |
+| See the current build and remaining non-infrastructure work | [Build tracker](docs/19-product-build-tracker.md), [product closeout](docs/21-product-closeout.md) |
 | Use or operate Orqix | [User guide](docs/user-guide.md), [Admin guide](docs/admin-guide.md) |
 | Start building R0 | [Build specification index](docs/build/README.md) → [S8 tickets and schedule](docs/build/S8-r0-tickets.md) → [S1 engineering baseline](docs/build/S1-engineering-baseline.md) |
 | Implement backend behavior | [S2 data model](docs/build/S2-data-model.md), [S3 API rules](docs/build/S3-api.md), [S4 compiler](docs/build/S4-workflow-compiler.md), [S5 runtime](docs/build/S5-runtime.md), [S6 security](docs/build/S6-security.md) |
-| Implement the UI | [S7 frontend](docs/build/S7-frontend.md), [02 UX specification](docs/02-ux-design.md), [visual design board](design/business-workspace.svg) |
+| Implement the UI | [S7 frontend](docs/build/S7-frontend.md), [02 UX specification](docs/02-ux-design.md) |
 | Test and release R0 | [S9 test plan](docs/build/S9-test-plan.md), [06 delivery plan and gates](docs/06-delivery-plan.md) |
 | Use the contracts | [OpenAPI](contracts/openapi.yaml), [workflow schema](contracts/workflow-v0.schema.json), [connection schema](contracts/connection-definition-v0.schema.json), [reference DDL](backend/app/src/main/resources/db/migration/V1__orqix_core.sql), [examples and fixtures](examples/) |
 | Understand the whole plan and release sequence | [09 Master implementation plan](docs/09-master-plan.md) |

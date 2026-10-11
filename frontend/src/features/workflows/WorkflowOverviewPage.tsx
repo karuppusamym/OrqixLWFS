@@ -21,6 +21,7 @@ import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table'
 import { formatDateTime } from '@/lib/dates'
 import { downloadBlob } from '@/lib/download'
 import { describeProblem } from '@/lib/problemMessages'
+import { VersionComparison } from './VersionComparison'
 
 /** Workflow overview: draft status, releases, make active (rollback), export (docs/build/S7-frontend.md section 4). */
 export function WorkflowOverviewPage() {
@@ -37,6 +38,7 @@ export function WorkflowOverviewPage() {
   const [notice, setNotice] = useState<string | null>(null)
   const [exporting, setExporting] = useState<string | null>(null)
   const [exportError, setExportError] = useState<ProblemError | null>(null)
+  const [comparing, setComparing] = useState(false)
 
   if (workflow.isPending) return <LoadingBlock rows={4} label="Loading the workflow" />
   if (workflow.isError) return <QueryError error={workflow.error} onRetry={() => void workflow.refetch()} what="this workflow" backTo={{ to: `/w/${ws}/workflows`, label: 'Back to Workflows' }} />
@@ -151,6 +153,8 @@ export function WorkflowOverviewPage() {
           <History className="size-5" aria-hidden="true" /> Versions
         </h2>
         {exportError ? <ProblemAlert error={exportError} className="mb-3" context={{ action: 'export this version' }} /> : null}
+        {items.length >= 2 ? <Button variant="secondary" className="mb-3" aria-expanded={comparing} onClick={() => setComparing((value) => !value)}>{comparing ? 'Close comparison' : 'Compare versions'}</Button> : null}
+        {comparing && items.length >= 2 ? <VersionComparison workspaceId={ws} workflowId={workflowId} releases={items} /> : null}
         {releases.isPending ? (
           <LoadingBlock rows={2} label="Loading versions" />
         ) : releases.isError ? (

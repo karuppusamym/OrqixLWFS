@@ -9,10 +9,12 @@ import { LoadingBlock } from '@/components/common/LoadingBlock'
 import { PageHeader } from '@/components/common/PageHeader'
 import { QueryError } from '@/components/common/QueryError'
 import { Button } from '@/components/ui/button'
+import { Select } from '@/components/ui/input'
+import { taskAge } from './taskAge'
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/cn'
-import { dueInfo, formatDay } from '@/lib/dates'
+import { dueInfo, formatDay, formatDateTime } from '@/lib/dates'
 import { requestReference, taskTitle } from '@/lib/runText'
 import { useIsDesktop } from '@/lib/useMediaQuery'
 import { TaskPanel } from './TaskPanel'
@@ -50,14 +52,16 @@ export function TasksPage() {
   const view = params.has('view') ? parseView(params.get('view'))
     : taskId ? (inferred ?? 'assigned')
       : counters.data && counters.data.assigned === 0 && counters.data.claimable > 0 ? 'claimable' : 'assigned'
-  const list = useTasks(ws, view)
+  const sort = params.get('sort') === 'oldest' ? 'oldest' : params.get('sort') === 'newest' ? 'newest' : 'priority'
+  const minPriority = params.get('minPriority') === '50' ? 50 : 0
+  const list = useTasks(ws, view, true, sort, minPriority)
   const tasks: TaskSummary[] = list.data?.pages.flatMap((p) => p.items) ?? []
 
   const showList = desktop || !taskId
   const showPanel = !!taskId
 
   const countFor = (v: TaskView): number | null => (v === 'completed' ? null : (counters.data?.[v] ?? null))
-  const openTask = (id: string) => navigate(`/w/${ws}/tasks/${id}?view=${view}`)
+  const openTask = (id: string) => { const next = new URLSearchParams(params); next.set('view',view); navigate(`/w/${ws}/tasks/${id}?${next}`) }
 
   return (
     <>
@@ -82,6 +86,14 @@ export function TasksPage() {
                   </TabsTrigger>
                 ))}
               </TabsList>
+            {view !== 'completed' ? <div className="my-4 flex flex-wrap gap-4">
+              <label htmlFor="task-sort">Sort tasks <Select id="task-sort" aria-label="Sort tasks" value={sort} onChange={e => { const next = new URLSearchParams(params); next.set('sort',e.target.value); next.set('view',view); setParams(next) }}>
+                <option value="priority">Priority, then oldest</option><option value="oldest">Oldest first</option><option value="newest">Newest first</option>
+              </Select></label>
+              <label htmlFor="task-priority-filter">Priority filter <Select id="task-priority-filter" aria-label="Priority filter" value={minPriority} onChange={e => { const next = new URLSearchParams(params); next.set('minPriority',e.target.value); next.set('view',view); setParams(next) }}>
+                <option value={0}>All priorities</option><option value={50}>Priority 50 and above</option>
+              </Select></label>
+            </div> : null}
             <TabsContent value={view} aria-label={VIEWS.find((v) => v.id === view)?.label}>
               {list.isPending ? (
                 <LoadingBlock rows={4} label="Loading tasks" />
@@ -119,6 +131,8 @@ export function TasksPage() {
 
 /** The task list: a table on desktop, cards below 1024 px so the Due and Action columns never scroll off screen. */
 function TaskList({ tasks, ws, view, taskId, desktop, onOpen }: { tasks: TaskSummary[]; ws: string; view: TaskView; taskId: string | undefined; desktop: boolean; onOpen: (id: string) => void }) {
+  const [params] = useSearchParams()
+  const query = new URLSearchParams(params); query.set('view',view)
   const label = VIEWS.find((v) => v.id === view)?.label
   const dueText = (t: TaskSummary) => {
     const due = dueInfo(t.dueAt)
@@ -137,10 +151,11 @@ function TaskList({ tasks, ws, view, taskId, desktop, onOpen }: { tasks: TaskSum
       <ul aria-label={label} className="space-y-3">
         {tasks.map((t) => (
           <li key={t.id} className="rounded-card border border-border bg-surface p-4 shadow-card">
-            <Link to={`/w/${ws}/tasks/${t.id}?view=${view}`} className="text-base font-semibold wrap-anywhere">
+            <Link to={`/w/${ws}/tasks/${t.id}?${query}`} className="text-base font-semibold wrap-anywhere">
               {taskTitle(t)}
             </Link>
             <p className="text-sm text-muted-foreground tabular-nums">{requestReference(t)}</p>
+            <p className="mt-2 text-sm">Priority {t.priority ?? 0} ? {t.status === 'open' ? taskAge(t.createdAt) + ' ? ' : ''}Created {formatDateTime(t.createdAt)}</p>
             <p className="mt-2 text-sm">
               {t.label} <span className="text-muted-foreground">&middot; requested by {t.requester.displayName}</span>
             </p>
@@ -162,7 +177,7 @@ function TaskList({ tasks, ws, view, taskId, desktop, onOpen }: { tasks: TaskSum
         <THead>
           <TR>
             <TH>Request</TH>
-            <TH>Step</TH>
+            <TH>Step</TH><TH>Priority / age</TH>
             <TH>Requested by</TH>
             <TH>{view === 'completed' ? 'Decision' : 'Due'}</TH>
             <TH>Action</TH>
@@ -174,12 +189,12 @@ function TaskList({ tasks, ws, view, taskId, desktop, onOpen }: { tasks: TaskSum
             return (
               <TR key={t.id} className={cn(selected && 'bg-neutral-soft')} aria-current={selected ? 'true' : undefined}>
                 <TD>
-                  <Link to={`/w/${ws}/tasks/${t.id}?view=${view}`} className="font-semibold wrap-anywhere">
+                  <Link to={`/w/${ws}/tasks/${t.id}?${query}`} className="font-semibold wrap-anywhere">
                     {taskTitle(t)}
                   </Link>
                   <span className="block text-xs text-muted-foreground tabular-nums">{requestReference(t)}</span>
                 </TD>
-                <TD>{t.label}</TD>
+                <TD>{t.label}</TD><TD><span>Priority {t.priority ?? 0}</span><span className="block text-xs text-muted-foreground">{t.status === 'open' ? taskAge(t.createdAt) + ' ? ' : ''}Created {formatDateTime(t.createdAt)}</span></TD>
                 <TD>{t.requester.displayName}</TD>
                 <TD className="whitespace-nowrap">{dueText(t)}</TD>
                 <TD>

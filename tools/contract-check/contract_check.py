@@ -532,6 +532,11 @@ def check_openapi(report: Report, root: Path) -> None:
         f"all {mutating - len(exempt_present)} auditable POST/PUT/DELETE operations have x-orqix-audit ({len(exempt_present)} exempt)",
         "missing x-orqix-audit: " + ", ".join(no_audit),
     )
+    invalid_audit = [
+        str(op["x-orqix-audit"]) for _, _, op, _ in operations
+        if "x-orqix-audit" in op and not re.fullmatch(r"[a-z]+(?:\.[a-z-]+)+", str(op["x-orqix-audit"]))
+    ]
+    report.check(not invalid_audit, "audit action names match the database contract", ", ".join(invalid_audit))
 
 
 def main(argv: list[str] | None = None) -> int:

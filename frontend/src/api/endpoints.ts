@@ -173,7 +173,7 @@ export const markNotificationRead = (ws: string, notificationId: string) =>
   )
 
 // Tasks
-export const listTasks = (ws: string, view: TaskView, query: { cursor?: string; limit?: number } = {}) =>
+export const listTasks = (ws: string, view: TaskView, query: { cursor?: string; limit?: number; sort?: "priority" | "oldest" | "newest"; minPriority?: number } = {}) =>
   call(api.GET('/workspaces/{workspaceId}/tasks', { params: { path: { workspaceId: ws }, query: { view, ...query } } }))
 
 export const getTask = (ws: string, taskId: string) =>

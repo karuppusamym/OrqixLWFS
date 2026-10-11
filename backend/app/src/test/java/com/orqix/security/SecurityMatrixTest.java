@@ -236,6 +236,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
                     Map.of("note", "Foreign attempt to reconcile"));
             case "claimTask", "releaseTask" -> Map.of("expectedVersion", 1);
             case "decideTask" -> Map.of("expectedVersion", 1, "action", "approve");
+            case "setTaskPriority" -> Map.of("expectedVersion", 1, "priority", 50, "reason", "Foreign attempt");
             case "reassignTask" -> Map.of("expectedVersion", 1, "reason", "Foreign attempt");
             case "delegateTask" -> Map.of("expectedVersion", 1, "assigneeSubjectId", UUID.randomUUID().toString(),
                     "reason", "Foreign attempt");

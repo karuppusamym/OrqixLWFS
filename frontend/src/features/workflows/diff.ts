@@ -1,7 +1,7 @@
 import { sameJson } from '@/features/studio/model/ops'
 import { KINDS } from '@/features/studio/model/kinds'
 import { OPERATOR_LABEL } from '@/features/studio/model/summary'
-import type { DecisionRow, Definition, Transition, WorkflowNode } from '@/features/studio/model/types'
+import { isAtomicCondition, type Condition, type DecisionRow, type Definition, type Transition, type WorkflowNode } from '@/features/studio/model/types'
 import { humanize } from '@/lib/text'
 
 /**
@@ -29,7 +29,14 @@ function describeRow(row: DecisionRow): string {
   const outputs = Object.entries(row.then)
     .map(([k, v]) => `${k} = ${String(v)}`)
     .join(', ')
-  return `${OPERATOR_LABEL[row.when.operator]} ${String(row.when.value)} → ${outputs}`
+  return `${row.when.fieldRef} ${OPERATOR_LABEL[row.when.operator]} ${String(row.when.value)} → ${outputs}`
+}
+
+function describeCondition(condition: Condition | undefined): string {
+  if (!condition) return '(none)'
+  if (isAtomicCondition(condition)) return `${condition.fieldRef} ${OPERATOR_LABEL[condition.operator]} ${show(condition.value)}`
+  const join = condition.all ? ' AND ' : ' OR '
+  return `(${(condition.all ?? condition.any ?? []).map(describeCondition).join(join)})`
 }
 
 function stepName(def: Definition, id: string): string {
@@ -68,6 +75,9 @@ export function diffDefinitions(before: Definition | null, after: Definition): C
     if (old.label !== n.label) details.push(`Name: ${old.label} → ${n.label}`)
     if (old.type !== n.type) details.push(`Type: ${old.type} → ${n.type}`)
     details.push(...diffConfig(old, n))
+    const oldNote = before.metadata.stepNotes?.[n.id] ?? ''
+    const newNote = after.metadata.stepNotes?.[n.id] ?? ''
+    if (oldNote !== newNote) details.push(`Step notes: ${show(oldNote)} → ${show(newNote)}`)
     if (details.length > 0) changes.push({ kind: 'changed', area: 'step', title: `Step changed: ${n.label}`, details })
   }
   for (const o of before.nodes) {
@@ -84,7 +94,7 @@ export function diffDefinitions(before: Definition | null, after: Definition): C
     const details: string[] = []
     if (old.from !== t.from || old.to !== t.to) details.push(`Leads to ${stepName(before, old.to)} → ${stepName(after, t.to)}`)
     if (old.on !== t.on) details.push(`Kind: ${old.on} → ${t.on}`)
-    if (!sameJson(old.condition, t.condition)) details.push(`Condition: ${old.condition ? `${old.condition.fieldRef} ${old.condition.operator} ${String(old.condition.value)}` : '(none)'} → ${t.condition ? `${t.condition.fieldRef} ${t.condition.operator} ${String(t.condition.value)}` : '(none)'}`)
+    if (!sameJson(old.condition, t.condition)) details.push(`Condition: ${describeCondition(old.condition)} → ${describeCondition(t.condition)}`)
     if ((old.label ?? '') !== (t.label ?? '')) details.push(`Label: ${show(old.label)} → ${show(t.label)}`)
     if (details.length > 0) changes.push({ kind: 'changed', area: 'route', title: `Route changed: ${routeName(after, t)}`, details })
   }
@@ -101,6 +111,7 @@ export function diffDefinitions(before: Definition | null, after: Definition): C
     }
     const details: string[] = []
     if (old.version !== d.version) details.push(`Version: ${old.version} → ${d.version}`)
+    if (old.hitPolicy !== d.hitPolicy) details.push(`Hit policy: ${old.hitPolicy} → ${d.hitPolicy}`)
     const rows = Math.max(old.rows.length, d.rows.length)
     for (let i = 0; i < rows; i++) {
       const a = old.rows[i]
@@ -146,8 +157,14 @@ export function diffDefinitions(before: Definition | null, after: Definition): C
 
   // Settings
   const settings: Array<[string, unknown, unknown]> = [
+    ['Workflow key', before.workflowKey, after.workflowKey],
+    ['Triggers', before.triggers, after.triggers],
     ['Name', before.name, after.name],
     ['Description', before.metadata.description, after.metadata.description],
+    ['Tags', before.metadata.tags, after.metadata.tags],
+    ['Currency display', before.inputUi?.currency, after.inputUi?.currency],
+    ['Dependencies', before.dependencies, after.dependencies],
+    ['Output schema', before.outputSchema, after.outputSchema],
     ['Open requests at once', before.execution.maxConcurrentRuns, after.execution.maxConcurrentRuns],
     ['Attempts per call to another system', before.execution.maxAttempts, after.execution.maxAttempts],
     ['Seconds between attempts', before.execution.retryDelaySeconds, after.execution.retryDelaySeconds],

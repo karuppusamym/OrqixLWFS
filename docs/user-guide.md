@@ -41,6 +41,8 @@ You also get an in-app notification (bell icon) when your request is fulfilled, 
 
 ## Approving
 
+Open queues sort by priority, then oldest creation time. Use **Sort tasks** or **Priority filter** to change the view. **Open for** shows elapsed age; it does not mean an SLA has been breached. After claiming a task, choose **Change priority**, enter a number from 0 to 100 and a reason, and explicitly confirm. Eligible current assignees and operators can change priority; candidates must claim first. The reason is retained in request history. A concurrent change requires reviewing the refreshed task before trying again.
+
 **My tasks** has three tabs: *Assigned to me*, *Available to claim* (tasks for a group you belong to), and *Completed*.
 
 1. Select a task to open it beside the list. You see the request details, the decision history, and why the task is offered to you.
@@ -50,6 +52,8 @@ You also get an in-app notification (bell icon) when your request is fulfilled, 
 You never see your own requests in your approval list, and you cannot approve them. If a colleague decides the same task first, Orqix shows "This task was completed by …" and nothing is recorded twice.
 
 ## Designing a workflow (designers)
+
+Select a step to add **Step notes** explaining its purpose or review decisions. Notes save with the draft and each published version. They are plain-text annotations; they do not change what the step executes.
 
 To import an existing process, choose **Workflows → Import workflow**. Camunda BPMN imports require explicit assignment and connector mappings. Pega archives produce an inventory and a template for reviewed manual mappings. Resolve blockers, review assumptions and convert to a draft; publication remains a separate step. See [migration workbench](17-migration-workbench.md) for supported formats and limits.
 
@@ -68,15 +72,19 @@ Testing a whole workflow means publishing and running it in a test workspace. An
 
 The studio palette also includes **Run in parallel**, **Wait for all**, **Wait** and **Start another workflow**. Connect every parallel branch to its matching **Wait for all** step. A rejection ends the request and cancels other open branches. **Wait** has two forms: **For a duration** (`PT30M`, `P1D`) and **Until a date**, which waits until the date the requester entered in a **Date** question (for example "Start date") at a time of day you choose, 09:00 by default. Times are always UTC; the inspector shows "Waits until 14 Oct 2026, 09:00 UTC." for a date you try. If the date has already passed the request continues at once; a date more than a year (366 days) ahead is refused on the form. The date question must be required.
 
-An approval's **Time limit** cancels the task and follows its **Timed out** route; connect that route to another approval to escalate. **Due after** only displays a due date. **Start another workflow** uses a published workflow in the same workspace, maps its request and result values, and waits for completion. Publishing pins the child version. Cancelling a parent cancels its active child requests. Loops and bounded rework remain future features.
+An approval's **Time limit** cancels the task and follows its **Timed out** route; connect that route to another approval to escalate. **Due after** displays a due date. **Start another workflow** uses a published workflow in the same workspace, maps its request and result values, and waits for completion. Publishing pins the child version. Cancelling a parent cancels its active child requests. Bounded repeated children support rework with immutable prior decisions. Bounded scalar collections can run child workflows sequentially or in parallel and retain ordered collected outputs. Mutable correction forms and object/nested collections remain future features; see [iteration](build/S14-bounded-iteration.md).
 
 ## Connecting another system
+
+Workflows can reference approved SharePoint/OneDrive files through the registered Microsoft document operations. Use stable drive/item identifiers and an explicit historical version or retained snapshot. An integration administrator can load and select historical versions in the connection test panel. The workflow reads the configured pin and fails if unavailable; it does not silently substitute current content. See [Microsoft documents](microsoft-documents.md) for supported text/PDF/Office formats and limits.
 
 Workspace administrators can open **Settings → Connections**, configure the address and sign-in method, enable the connection and save it. Use **Test connection** with a read-only operation to check the saved binding. A new system first needs an approved operation contract registered by the platform team.
 
 In the designer, select a **Call a system** step, choose a connection and operation, map **What to send**, and select **Result fields to keep**. The designer uses the workflow's pinned connection version. If that version is unavailable, restore it before editing mappings. Renaming a kept result updates its downstream references; one Undo restores both the name and references.
 
 ## Publishing and versions (publishers)
+
+On a workflow overview with at least two published releases, choose **Compare versions** and select the two versions to review. **Load more** adds older versions to the choices. The comparison includes step notes, rules, routes, forms and settings; canvas positions are omitted. Fetch failures are shown explicitly.
 
 From the studio select **Publish**. The review page shows what changed compared with the version in use, the groups and connections it depends on, and any warnings to acknowledge. Select **Publish version N**.
 

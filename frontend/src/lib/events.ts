@@ -174,6 +174,8 @@ export function describeEvent(event: RunEvent, ctx: EventContext): string {
       const to = str(event.data.to)
       return `${actorName(event, ctx)} reassigned ${label}${to ? ` to ${to}` : ' to the group'}`
     }
+    case 'TASK_PRIORITY_CHANGED':
+      return `${actorName(event, ctx)} changed ${label} priority from ${event.data.from} to ${event.data.to}${str(event.data.reason) ? `: ${str(event.data.reason)}` : ''}`
     case 'TASK_DECIDED': {
       const action = event.data.action === 'reject' ? 'rejected' : 'approved'
       return `${actorName(event, ctx)} ${action} ${label}`

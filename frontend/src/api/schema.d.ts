@@ -766,6 +766,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/tasks/{taskId}/priority": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                /** @description Engine task identifier; always resolved through the workspace's task projection first. */
+                taskId: components["parameters"]["TaskId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Current assignee or operator changes open task priority with a reason */
+        put: operations["setTaskPriority"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/tasks/{taskId}/reassign": {
         parameters: {
             query?: never;
@@ -1801,6 +1822,8 @@ export interface components {
             dueAt?: components["schemas"]["Timestamp"] | null;
             createdAt: components["schemas"]["Timestamp"];
             version: number;
+            /** @description Higher values are shown first in the open queue; default 0 */
+            priority: number;
             decision?: components["schemas"]["TaskDecision"] | null;
         };
         TaskDetail: components["schemas"]["TaskSummary"] & {
@@ -1819,8 +1842,14 @@ export interface components {
                 release: components["schemas"]["ActionAvailability"];
                 decide: components["schemas"]["ActionAvailability"];
                 reassign: components["schemas"]["ActionAvailability"];
+                priority: components["schemas"]["ActionAvailability"];
             };
             completedBy?: components["schemas"]["SubjectRef"] | null;
+        };
+        TaskPriorityRequest: {
+            expectedVersion: number;
+            priority: number;
+            reason: string;
         };
         VersionedCommand: {
             expectedVersion: number;
@@ -2483,6 +2512,10 @@ export interface components {
             name: components["schemas"]["label"];
             metadata: {
                 description: string;
+                /** @description Plain-text design annotations keyed by step ID. Retained in published definitions; excluded from execution semantics. */
+                stepNotes?: {
+                    [key: string]: string;
+                };
                 tags?: string[];
             };
             inputSchema: components["schemas"]["formSchema"];
@@ -4412,6 +4445,10 @@ export interface operations {
                  *     completed = tasks the caller decided.
                  */
                 view: "assigned" | "claimable" | "completed";
+                /** @description Open queue order; priority sorts descending then oldest first. Completed tasks retain decision order. */
+                sort?: "priority" | "oldest" | "newest";
+                /** @description Optional open-task priority threshold; unsupported for completed tasks. */
+                minPriority?: number;
                 cursor?: components["parameters"]["Cursor"];
                 limit?: components["parameters"]["Limit"];
             };
@@ -4571,6 +4608,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaskDecision"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    setTaskPriority: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                /** @description Engine task identifier; always resolved through the workspace's task projection first. */
+                taskId: components["parameters"]["TaskId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaskPriorityRequest"];
+            };
+        };
+        responses: {
+            /** @description Priority changed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskDetail"];
                 };
             };
             400: components["responses"]["BadRequest"];

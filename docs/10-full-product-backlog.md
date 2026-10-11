@@ -1,5 +1,5 @@
 # Full product backlog and acceptance contracts
-Revision 0.4, 9 October 2026. The epics below describe the full product scope. Core and selected later slices are implemented; authoritative completion evidence is in [feature status](feature-status.md). Current parallel work and remaining acceptance requirements are tracked in [the product build tracker](19-product-build-tracker.md).
+Revision 0.5, 10 October 2026. The epics below describe the full product scope. Core and selected later slices are implemented; authoritative completion evidence is in [feature status](feature-status.md). Current build evidence is tracked in [the product build tracker](19-product-build-tracker.md); remaining engineering, customer/source acceptance and excluded infrastructure are separated in [product closeout](21-product-closeout.md). These epics remain the future product scope; implemented slices do not close whole epics.
 R0/R1/R2/R3 are defined in the [master plan](09-master-plan.md). Effort for R1–R3 must be estimated after the R0 integration spike and relevant discovery; no unsupported completion date is implied.
 
 ## E01 — Workspace and asset organization
@@ -15,7 +15,7 @@ Owner: frontend lead. Dependencies: compiler/capability manifest.
 
 Include searchable palette, drag/drop, undo/redo, copy/paste, duplication, multi-selection, keyboard shortcuts, inline properties, contextual help, schema-aware mappings, input/output preview, auto-connect suggestions and ELK layout. A suggestion requires a user's action and never modifies semantics silently. Node-level tests use authorized test bindings and sample input; workflow tests produce real labelled test runs.
 
-Later add version comparison, live execution highlighting, BPMN editing, Monaco JSON/YAML editing, accessible light/dark themes. Keep one authoritative source per mode; switching modes requires compatibility validation and creates a revision. Unknown fields/constructs produce issues, not silent loss.
+Published-version comparison and plain-text step notes are implemented in the current closeout. Later add live execution highlighting, BPMN editing, Monaco JSON/YAML editing, accessible light/dark themes. Keep one authoritative source per mode; switching modes requires compatibility validation and creates a revision. Unknown fields/constructs produce issues, not silent loss.
 Acceptance: graph edits survive reload; undo restores configuration and edges; keyboard step list supports equivalent edits; all six modes produce validated drafts; round-trip tests cover the documented subset; incompatible mode changes are blocked.
 
 ## E03 — Portable definitions and compiler

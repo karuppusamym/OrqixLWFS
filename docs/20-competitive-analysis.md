@@ -177,7 +177,7 @@ Verified by reading the repository on 9 October 2026 ([feature status](feature-s
 | G9 | No maker-checker on mapping approval or publish; no segregation between mapper and approver | `workflow.edit` converts, separate publish permission only | Banking control, §5 |
 | G10 | Bounded child rework, sequential/parallel scalar collections and ordered collected child output arrays are implemented; arbitrary graph cycles, mutable correction forms and nested/object collections remain open | [S14](build/S14-bounded-iteration.md), [tracker](19-product-build-tracker.md) | Banking referrals need domain-specific correction and acceptance |
 | G11 | No incident-style variable correction with audit; no "waiting on nothing" detection | Operator retry exists; variable edit does not | Camunda incident workflow |
-| G12 | Request comments, template workflows and publish-review changes exist; element comments, general version comparison and swimlanes remain open | Studio auto-layout, template catalog, publish review, run comments | Web Modeler, Lucidchart |
+| G12 | Request comments, templates and publish-review changes exist; current closeout adds step annotations and general published-version comparison; threaded element discussions and swimlanes remain open | Studio auto-layout, template catalog, publish review, run comments | Web Modeler, Lucidchart |
 
 ---
 
@@ -203,7 +203,7 @@ Each item is a proposal. Milestones are in [§8](#8-recommendations-mapped-to-th
 3. **Rule packs with effective dates.** Pega's card-network updates ship as periodic releases. Orqix equivalent: a decision table or policy set with `effectiveFrom`/`effectiveTo`, an approved change record and test fixtures, so a regulatory change is a reviewed, dated, testable release rather than an edit. A run records which pack version applied.
 4. **Jurisdiction matrices.** Pega drives due diligence by country, booking entity and product. Model as a decision table whose output is a required-checks list; the workflow instantiates the required tasks (parallel regions already supported).
 5. **Parent/child cases with aggregation.** Claim → Dispute, Customer review → Document requests. Parent status derived from children, with a stated rule, and child SLAs shown on the parent.
-6. **Queues, delegation and reminders.** Pega shows prioritized queues with SLA. Orqix has group tasks, eligible-user delegation and durable one-shot in-app assignee reminders; queue priority, ageing, repeated breach escalation and business calendars remain open (E04 and E06 already describe durable deadlines). Business-calendar handling must be explicit and tested.
+6. **Queues, delegation and reminders.** Pega shows prioritized queues with SLA. Orqix has group tasks, eligible-user delegation and durable one-shot in-app assignee reminders; durable queue priority and age display are added in the current closeout; repeated breach escalation and business calendars remain open (E04 and E06 already describe durable deadlines). Business-calendar handling must be explicit and tested.
 7. **Agents with validation gates.** For KYC (collect → check → follow up) and payment exceptions: each agent step has a schema-validated output; failure or low confidence routes to a human task; every tool call, token cost and decision recorded on the run; write tools stay out of scope until separately approved ([S13](build/S13-agents-mcp.md)).
 8. **Money correctness as a first-class rule.** Decimal arithmetic only, currency and scale declared per field, explicit rounding mode, no floating point, boundary tests (the existing 4,999.99 / 5,000 / 5,000.01 pattern generalizes).
 9. **Effect safety for payments and letters.** Idempotency keys, unknown-outcome reconciliation (already implemented) and an "external effects" count asserted in tests. A converted workflow must not be able to duplicate an irreversible action.
@@ -429,7 +429,7 @@ Conversion produces a canonical definition that compiles to the same executable 
 | Audit | Sensitive actions audited; export is secret-free |
 | Versioning | New release does not alter running instances; rollback re-points new starts only |
 
-Implemented platform slices include bounded child rework, sequential/parallel scalar iteration, ordered collected child output arrays, delegation and durable one-shot assignee reminders ([S14](build/S14-bounded-iteration.md)). Still needed for many banking processes: mutable correction forms, nested/object collection policies and native BPMN multi-instance/loop import (G5), message correlation for waiting on customer documents (E13), and queue priority/aging (§5.2 item 6). These are called out in [§8](#8-recommendations-mapped-to-the-backlog).
+Implemented platform slices include bounded child rework, sequential/parallel scalar iteration, ordered collected child output arrays, delegation and durable one-shot assignee reminders ([S14](build/S14-bounded-iteration.md)). Still needed for many banking processes: mutable correction forms, nested/object collection policies and native BPMN multi-instance/loop import (G5), message correlation for waiting on customer documents (E13), and automatic aging/escalation (§5.2 item 6). Current closeout adds durable priority, age display and oldest/newest ordering. These are called out in [§8](#8-recommendations-mapped-to-the-backlog).
 
 ---
 
@@ -442,7 +442,7 @@ Relative size: **S** a few days, **M** one to three weeks, **L** more than three
 | # | Item | Epic | Size | Gate |
 |---|---|---|---|---|
 | 1.1 | Add `review` severity; update OpenAPI, frontend and report tests together | E16 | S | Contract check passes |
-| 1.2 | Per-process grouped findings and CSV/JSON export delivered; cross-file project grouping remains open | E16 | S | Focused UI/export checks pass; exports preserve full report counts |
+| 1.2 | Per-process and cross-file project grouping with complete CSV/JSON findings export delivered | E16 | S | Focused UI/export checks pass; exports preserve full report counts |
 | 1.3 | Migration project (many files, dependency order, child-before-parent) | E16 | M | Multi-file fixture converts in order |
 | 1.4 | Group service tasks by job type/topic; one mapping per group | E16 | S | Fixture with 5 identical tasks needs one mapping |
 | 1.5 | Maker-checker on mapping approval and publish (banking workspace setting) | E14, E16 | M | Same person cannot hold two of mapper/approver/publisher |
@@ -527,7 +527,7 @@ Repository capabilities in this research are a snapshot, not a completion tracke
 | Item | Status |
 |---|---|
 | 1.1 `review` severity | Built (non-blocking, counted, persisted; UI filter and acknowledgement) |
-| 1.2 Grouped findings and export | Per-file export built earlier; grouped service tasks built (`SERVICE_TASK_GROUP`); cross-file grouping by reason code still open |
+| 1.2 Grouped findings and export | Per-file and cross-file findings export built, with reason/source-kind/file grouping, complete report hashes and partial-load protection; grouped service mappings built (`SERVICE_TASK_GROUP`) |
 | 1.3 Migration project | Built (up to 10 BPMN files, dependency order, convert-next); DMN files inside a project are still reported unsupported |
 | 1.4 Group service tasks | Built |
 | 1.5 Maker-checker | Built for migrations (policy, independent review bound to exact draft, source and mappings hashes; mapper, reviewer and publisher differ). Not yet applied to connection definitions, rule packs or ordinary workflows |
@@ -539,6 +539,8 @@ Repository capabilities in this research are a snapshot, not a completion tracke
 | 3.3 Boundary timer and error events | Not built |
 | 3.4 Operators | Built: `eq ne gte gt lt lte`, flat all/any groups of 2 to 8 terms |
 | 3.5 Connector element templates | Not built |
-| 4.x Banking product layer | Templates built and executed; decision record with input and candidate rows, effective-dated rule packs, queue priority and ageing, four-eyes across stages, multi-currency and business calendars are recorded as gaps in the [capability matrix](banking-capability-matrix.md) |
+| 4.x Banking product layer | Templates built and executed; durable task priority, age display and oldest/newest sorting added in current closeout. Decision record with input and candidate rows, effective-dated rule packs, automatic aging/escalation, four-eyes across stages, multi-currency and business calendars remain gaps in the [capability matrix](banking-capability-matrix.md) |
 
 See [doc 19](19-product-build-tracker.md) for what is verified on the merged tree and what is not.
+
+Current engineering, customer acceptance and excluded infrastructure are tracked separately in [product closeout](21-product-closeout.md). A completed wave slice does not close all later roadmap items.

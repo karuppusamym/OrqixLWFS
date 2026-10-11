@@ -143,8 +143,15 @@ public class RuntimeController {
 
     @GetMapping("/tasks")
     public RuntimeDtos.TaskPage listTasks(@PathVariable UUID workspaceId, @RequestParam(required = false) String view,
-            @RequestParam(required = false) String cursor, @RequestParam(required = false) Integer limit) {
-        return tasks.listTasks(callers.current(), workspaceId, view, cursor, limit);
+            @RequestParam(required = false) String cursor, @RequestParam(required = false) Integer limit,
+            @RequestParam(required = false) String sort, @RequestParam(required = false) Integer minPriority) {
+        return tasks.listTasks(callers.current(), workspaceId, view, cursor, limit, sort, minPriority);
+    }
+
+    @org.springframework.web.bind.annotation.PutMapping("/tasks/{taskId}/priority")
+    public RuntimeDtos.TaskDetail setTaskPriority(@PathVariable UUID workspaceId, @PathVariable String taskId,
+            @Valid @RequestBody RuntimeDtos.PriorityRequest request) {
+        return tasks.priority(callers.current(), workspaceId, taskId(taskId), request);
     }
 
     @GetMapping("/tasks/{taskId}")

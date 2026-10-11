@@ -29,7 +29,7 @@ public class TaskQueries {
 
     private static final String T_COLUMNS = """
             t.engine_task_id, t.workspace_id, t.run_id, t.node_id, t.label, t.candidate_group_key, t.initiator_subject_id,
-            t.self_approval_allowed, t.assignee_subject_id, t.status, t.version, t.due_at, t.created_at, t.claimed_at,
+            t.self_approval_allowed, t.assignee_subject_id, t.status, t.version, t.priority, t.due_at, t.created_at, t.claimed_at,
             t.ended_at
             """;
 
@@ -42,37 +42,37 @@ public class TaskQueries {
     }
 
     @Transactional(readOnly = true)
-    public List<TaskStore.TaskRow> assigned(UUID workspaceId, UUID subject, CursorCodec.Position after, int limit) {
-        return jdbc.sql("SELECT " + T_COLUMNS + """
-                 FROM task_context t
-                 WHERE t.workspace_id = :ws AND t.status = 'open' AND t.assignee_subject_id = :subject
-                   AND (CAST(:afterAt AS timestamptz) IS NULL
-                        OR (t.created_at, t.engine_task_id) < (CAST(:afterAt AS timestamptz), CAST(:afterId AS text)))
-                 ORDER BY t.created_at DESC, t.engine_task_id DESC LIMIT :limit
-                """)
-                .param("ws", workspaceId).param("subject", subject)
-                .param("afterAt", after == null ? null : Sql.ts(after.at())).param("afterId", after == null ? null : after.id())
-                .param("limit", limit).query(TaskStore::map).list();
-    }
-
-    @Transactional(readOnly = true)
-    public List<TaskStore.TaskRow> claimable(UUID workspaceId, UUID subject, Collection<String> groups,
-            CursorCodec.Position after, int limit) {
-        if (groups.isEmpty()) {
-            return List.of();
+    public List<TaskStore.TaskRow> open(UUID workspaceId, UUID subject, Collection<String> groups,
+            boolean assigned, CursorCodec.Position after, int limit, String sort, int minPriority) {
+        if (!assigned && groups.isEmpty()) return List.of();
+        String id = after == null ? null : after.id();
+        Integer priority = null;
+        if (after != null && "priority".equals(sort)) {
+            int colon = id.indexOf(':');
+            try {
+                priority = Integer.valueOf(id.substring(0, colon));
+                if (priority < 0 || priority > 100) throw new IllegalArgumentException();
+                id = id.substring(colon + 1);
+            } catch (RuntimeException e) { throw new com.orqix.shared.problem.ApiException(com.orqix.shared.problem.ProblemCode.INVALID_CURSOR); }
         }
-        return jdbc.sql("SELECT " + T_COLUMNS + """
-                 FROM task_context t
-                 WHERE t.workspace_id = :ws AND t.status = 'open' AND t.assignee_subject_id IS NULL
-                   AND t.candidate_group_key IN (:groups)
-                   AND (t.self_approval_allowed OR t.initiator_subject_id <> :subject)
-                   AND (CAST(:afterAt AS timestamptz) IS NULL
-                        OR (t.created_at, t.engine_task_id) < (CAST(:afterAt AS timestamptz), CAST(:afterId AS text)))
-                 ORDER BY t.created_at DESC, t.engine_task_id DESC LIMIT :limit
-                """)
-                .param("ws", workspaceId).param("subject", subject).param("groups", List.copyOf(groups))
-                .param("afterAt", after == null ? null : Sql.ts(after.at())).param("afterId", after == null ? null : after.id())
-                .param("limit", limit).query(TaskStore::map).list();
+        String comparison = switch (sort) {
+            case "priority" -> "(t.priority < :afterPriority OR (t.priority = :afterPriority AND (t.created_at,t.engine_task_id) > (CAST(:afterAt AS timestamptz),CAST(:afterId AS text))))";
+            case "oldest" -> "(t.created_at,t.engine_task_id) > (CAST(:afterAt AS timestamptz),CAST(:afterId AS text))";
+            default -> "(t.created_at,t.engine_task_id) < (CAST(:afterAt AS timestamptz),CAST(:afterId AS text))";
+        };
+        String order = switch (sort) {
+            case "priority" -> "t.priority DESC,t.created_at ASC,t.engine_task_id ASC";
+            case "oldest" -> "t.created_at ASC,t.engine_task_id ASC";
+            default -> "t.created_at DESC,t.engine_task_id DESC";
+        };
+        String ownership = assigned ? "t.assignee_subject_id=:subject" : "t.assignee_subject_id IS NULL AND t.candidate_group_key IN (:groups) AND (t.self_approval_allowed OR t.initiator_subject_id<>:subject)";
+        var query = jdbc.sql("SELECT " + T_COLUMNS + " FROM task_context t WHERE t.workspace_id=:ws AND t.status='open' AND " + ownership
+                + " AND t.priority>=:minPriority AND (CAST(:afterAt AS timestamptz) IS NULL OR " + comparison + ") ORDER BY " + order + " LIMIT :limit")
+                .param("ws",workspaceId).param("subject",subject).param("minPriority",minPriority)
+                .param("afterAt",after == null ? null : Sql.ts(after.at())).param("afterId",id).param("limit",limit);
+        if (!assigned) query.param("groups",List.copyOf(groups));
+        if ("priority".equals(sort)) query.param("afterPriority",priority);
+        return query.query(TaskStore::map).list();
     }
 
     /** Tasks the subject decided, newest decision first (cursor on decided_at). */

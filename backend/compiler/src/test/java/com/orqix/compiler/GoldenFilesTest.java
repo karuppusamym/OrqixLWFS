@@ -121,6 +121,28 @@ class GoldenFilesTest {
         assertThat(StrictJson.parse(TestSupport.purchaseJson()).get("uiLayout")).isNotNull();
     }
 
+    @Test
+    void stepNotesAreRetainedInSourceButDoNotChangeExecution() throws CompilationException {
+        WorkflowCompiler compiler = Compilers.workflowCompiler();
+        CompiledWorkflow original = compiler.compile(TestSupport.purchaseJson(), TestSupport.defaultContext());
+        ObjectNode annotated = TestSupport.purchase();
+        ((ObjectNode) annotated.get("metadata")).putObject("stepNotes").put("finance", "Reviewer rationale <plain text>");
+        CompiledWorkflow result = compiler.compile(TestSupport.text(annotated), TestSupport.defaultContext());
+        assertThat(result.semanticHash()).isEqualTo(original.semanticHash());
+        assertThat(result.sourceHash()).isNotEqualTo(original.sourceHash());
+        assertThat(result.bpmnXml()).isEqualTo(original.bpmnXml());
+        assertThat(result.dmnResources()).isEqualTo(original.dmnResources());
+        annotated.remove("uiLayout");
+        assertThat(compiler.compile(TestSupport.text(annotated), TestSupport.defaultContext()).semanticHash())
+                .isEqualTo(original.semanticHash());
+        ((ObjectNode) annotated.path("metadata").path("stepNotes")).put("missing", "Orphan note");
+        assertThat(compiler.validate(TestSupport.text(annotated), TestSupport.defaultContext()).issues())
+                .anyMatch(issue -> issue.code().equals("WF_STEP_NOTE_UNKNOWN_NODE"));
+        ((ObjectNode) annotated.path("metadata").path("stepNotes")).put("finance", "x".repeat(2001));
+        assertThat(compiler.validate(TestSupport.text(annotated), TestSupport.defaultContext()).issues())
+                .anyMatch(issue -> issue.code().equals("WF_SCHEMA_INVALID"));
+    }
+
     private static byte[] read(Path file) throws IOException {
         return Files.readAllBytes(file);
     }

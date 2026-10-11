@@ -127,10 +127,10 @@ export function useStartForm(ws: string, workflowId: string) {
 
 // Tasks ------------------------------------------------------------------------------------------
 
-export function useTasks(ws: string, view: TaskView, enabled = true) {
+export function useTasks(ws: string, view: TaskView, enabled = true, sort: "priority" | "oldest" | "newest" = "priority", minPriority = 0) {
   return useInfiniteQuery({
-    queryKey: keys.tasks(ws, view),
-    queryFn: ({ pageParam }) => endpoints.listTasks(ws, view, { cursor: pageParam ?? undefined, limit: 25 }),
+    queryKey: [...keys.tasks(ws, view), sort, minPriority],
+    queryFn: ({ pageParam }) => endpoints.listTasks(ws, view, { cursor: pageParam ?? undefined, limit: 25, ...(view === "completed" ? {} : { sort, minPriority }) }),
     initialPageParam: null as string | null,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
     enabled,

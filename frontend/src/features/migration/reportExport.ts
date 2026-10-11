@@ -2,7 +2,7 @@ import type { components } from '@/api/schema'
 type Report = components['schemas']['CompatibilityReport']
 
 // Source labels may be untrusted. Quoting handles CSV syntax; an apostrophe prevents spreadsheet formulas.
-function cell(value: unknown): string {
+export function cell(value: unknown): string {
   let text = value == null ? '' : String(value)
   if (/^[\s]*[=+@-]/.test(text) || /^[\t\r\n]/.test(text)) text = `'${text}`
   return `"${text.replace(/"/g, '""')}"`

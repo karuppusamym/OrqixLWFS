@@ -13,15 +13,12 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table'
 import { JobReview } from './JobReview'
+import { ProjectFindingsPanel } from './ProjectFindingsPanel'
 
 type Project = components['schemas']['MigrationProject']
 type Conversion = components['schemas']['MigrationProjectConversion']
 
-/**
- * The server derives a status and the created workflow for each file. The published contract does not list these two
- * properties yet, so they are read through this extension and treated as optional.
- */
-export type ProjectFile = Project['files'][number] & { status?: 'analyzed' | 'converted' | 'failed' | 'blocked'; convertedWorkflowId?: string | null }
+export type ProjectFile = Project['files'][number]
 
 const STATUS_TONE = { analyzed: 'neutral', converting: 'info', converted: 'success', blocked: 'danger', failed: 'danger' } as const
 const FILE_STATUS = { analyzed: 'Not converted yet', converted: 'Converted', failed: 'Failed', blocked: 'Blocked' } as const
@@ -30,7 +27,7 @@ export const projectKey = (ws: string, id: string) => ['ws', ws, 'migration-proj
 
 /** The file convert-next converts now: the first one in the conversion order that is not converted yet. */
 export function nextFile(project: Project): ProjectFile | null {
-  const files = project.files as ProjectFile[]
+  const files = project.files
   for (const id of project.conversionOrder) {
     const file = files.find((f) => f.migrationId === id)
     if (file && file.status !== 'converted') return file
@@ -51,7 +48,7 @@ export function ProjectPage() {
   if (query.isPending) return <LoadingBlock rows={4} label="Loading the project" />
   if (query.isError) return <QueryError error={query.error} onRetry={() => void query.refetch()} what="this migration project" backTo={{ to: `/w/${ws}/migrations`, label: 'Back to Import workflow' }} />
   const project = query.data
-  const files = project.files as ProjectFile[]
+  const files = project.files
   const byMigration = new Map(files.map((f) => [f.migrationId, f]))
   const converted = files.filter((f) => f.status === 'converted').length
   const next = nextFile(project)
@@ -73,6 +70,7 @@ export function ProjectPage() {
       <ul aria-label="Project findings" className="mt-2 list-disc space-y-1 pl-5">{project.issues.map((issue, index) => <li key={index}><span className="font-semibold">{issue.fileName}</span>: {issue.detail} <span className="font-mono text-xs">{issue.code}</span></li>)}</ul>
     </Alert> : null}
 
+    <ProjectFindingsPanel ws={ws} project={project} />
     <section aria-label="Analysis" className="mb-6 space-y-3">
       <h2>Files and dependencies</h2>
       <Table aria-label="Project files">

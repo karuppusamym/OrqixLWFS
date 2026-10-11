@@ -88,7 +88,7 @@ export interface Definition {
   schemaVersion: '0.1'
   workflowKey: string
   name: string
-  metadata: { description: string; tags?: string[] }
+  metadata: { description: string; tags?: string[]; stepNotes?: Record<string, string> }
   inputSchema: FormSchemaDoc
   inputUi?: InputUiDoc
   outputSchema: FormSchemaDoc

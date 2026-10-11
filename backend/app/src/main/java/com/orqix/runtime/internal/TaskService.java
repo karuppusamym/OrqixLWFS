@@ -80,18 +80,30 @@ public class TaskService {
 
     @Transactional(readOnly = true)
     public RuntimeDtos.TaskPage listTasks(Caller caller, UUID workspaceId, String view, String cursor, Integer limit) {
+        return listTasks(caller, workspaceId, view, cursor, limit, null, null);
+    }
+
+    @Transactional(readOnly = true)
+    public RuntimeDtos.TaskPage listTasks(Caller caller, UUID workspaceId, String view, String cursor, Integer limit,
+            String requestedSort, Integer requestedMinPriority) {
         WorkspaceAccess access = policy.requireVisible(caller, workspaceId);
+        String sort = requestedSort == null ? "priority" : requestedSort;
+        int minPriority = requestedMinPriority == null ? 0 : requestedMinPriority;
+        if (!List.of("priority", "oldest", "newest").contains(sort) || minPriority < 0 || minPriority > 100)
+            throw ApiException.malformed("sort must be priority, oldest or newest; minPriority must be 0..100.");
+        if ("completed".equals(view) && (requestedSort != null || requestedMinPriority != null))
+            throw ApiException.malformed("Completed tasks use decision date ordering and do not support priority filters.");
         if (view == null || !List.of("assigned", "claimable", "completed").contains(view)) {
             throw ApiException.malformed("view must be assigned, claimable or completed.");
         }
         policy.require(access, Permission.TASK_ACT, "listTasks", false);
         int size = Limits.of(limit);
-        String filterKey = "listTasks|" + workspaceId + "|" + view;
+        String filterKey = "listTasks|" + workspaceId + "|" + caller.subjectId() + "|" + view + "|v2|" + sort + "|" + minPriority;
         CursorCodec.Position after = cursors.decode(cursor, filterKey);
         UUID me = caller.subjectId();
         List<TaskStore.TaskRow> rows = switch (view) {
-            case "assigned" -> taskQueries.assigned(workspaceId, me, after, size + 1);
-            case "claimable" -> taskQueries.claimable(workspaceId, me, access.groupKeys(), after, size + 1);
+            case "assigned" -> taskQueries.open(workspaceId, me, access.groupKeys(), true, after, size + 1, sort, minPriority);
+            case "claimable" -> taskQueries.open(workspaceId, me, access.groupKeys(), false, after, size + 1, sort, minPriority);
             default -> taskQueries.completed(workspaceId, me, after, size + 1);
         };
         boolean more = rows.size() > size;
@@ -109,7 +121,7 @@ public class TaskService {
         if (more) {
             TaskStore.TaskRow last = items.get(items.size() - 1);
             Instant at = "completed".equals(view) ? decisions.get(last.taskId()).decidedAt() : last.createdAt();
-            next = cursors.encode(new CursorCodec.Position(at, last.taskId()), filterKey);
+            next = cursors.encode(new CursorCodec.Position(at, !"completed".equals(view) && "priority".equals(sort) ? last.priority() + ":" + last.taskId() : last.taskId()), filterKey);
         }
         RuntimeDtos.TaskCounts counts = new RuntimeDtos.TaskCounts(taskQueries.countAssigned(workspaceId, me),
                 taskQueries.countClaimable(workspaceId, me, access.groupKeys()));
@@ -338,6 +350,25 @@ public class TaskService {
         return detail(visible(caller, workspaceId, taskId));
     }
 
+    @Transactional
+    public RuntimeDtos.TaskDetail priority(Caller caller, UUID workspaceId, String taskId, RuntimeDtos.PriorityRequest request) {
+        VisibleTask visible = visibleLocked(caller, workspaceId, taskId);
+        TaskStore.TaskRow task = visible.task();
+        if (!visible.access().has(Permission.RUN_OPERATE)) {
+            requireEligible(visible.access(), task, "setTaskPriority");
+            if (!caller.subjectId().equals(task.assignee())) throw ApiException.forbidden();
+        }
+        if (!task.isOpen()) throw new ApiException(ProblemCode.TASK_NOT_OPEN);
+        requireVersion(task, request.expectedVersion());
+        if (!tasks.setPriority(workspaceId, taskId, request.expectedVersion(), request.priority()))
+            throw new ApiException(ProblemCode.TASK_VERSION_CONFLICT).with("currentVersion", task.version());
+        Map<String, Object> data = Map.of("taskId", taskId, "from", task.priority(), "to", request.priority(), "reason", request.reason());
+        events.append(workspaceId, task.runId(), "TASK_PRIORITY_CHANGED", task.nodeId(), caller.subjectId(), data);
+        audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.USER, caller.subjectId(), "task.priority-changed",
+                "task", taskId, AuditWriter.Outcome.SUCCESS, data));
+        return detail(visible(caller, workspaceId, taskId));
+    }
+
     // ---------------------------------------------------------------- helpers
 
     record VisibleTask(WorkspaceAccess access, TaskStore.TaskRow task, RunStore.RunRow run) {
@@ -431,7 +462,7 @@ public class TaskService {
         return new RuntimeDtos.TaskDetail(summary.id(), summary.runId(), summary.runReference(), summary.workflowName(),
                 summary.businessKey(),
                 summary.nodeId(), summary.label(), summary.requestTitle(), summary.requester(), summary.candidateGroup(),
-                summary.assignee(), summary.status(), summary.dueAt(), summary.createdAt(), summary.version(),
+                summary.assignee(), summary.status(), summary.dueAt(), summary.createdAt(), summary.version(), summary.priority(),
                 summary.decision(),
                 new RuntimeDtos.TaskRequest(input, release.inputSchema(),
                         release.inputUi().isMissingNode() ? null : release.inputUi()),
@@ -448,7 +479,7 @@ public class TaskService {
         UUID me = access.subjectId();
         RuntimeDtos.ActionAvailability notOpen = new RuntimeDtos.ActionAvailability(false, "TASK_NOT_OPEN");
         if (!task.isOpen()) {
-            return new RuntimeDtos.AllowedTaskActions(notOpen, notOpen, notOpen, notOpen);
+            return new RuntimeDtos.AllowedTaskActions(notOpen, notOpen, notOpen, notOpen, notOpen);
         }
         String eligibility = !access.has(Permission.TASK_ACT) ? "FORBIDDEN"
                 : !access.groupKeys().contains(task.candidateGroupKey()) ? "NOT_ELIGIBLE"
@@ -465,7 +496,7 @@ public class TaskService {
                 : new RuntimeDtos.ActionAvailability(true, null);
         RuntimeDtos.ActionAvailability reassign = access.has(Permission.RUN_OPERATE)
                 ? new RuntimeDtos.ActionAvailability(true, null) : new RuntimeDtos.ActionAvailability(false, "FORBIDDEN");
-        return new RuntimeDtos.AllowedTaskActions(claim, release, decide, reassign);
+        return new RuntimeDtos.AllowedTaskActions(claim, release, decide, reassign, access.has(Permission.RUN_OPERATE) || assignee && eligibility == null ? new RuntimeDtos.ActionAvailability(true, null) : new RuntimeDtos.ActionAvailability(false, "FORBIDDEN"));
     }
 
     private Map<UUID, String> names(TaskQueries.DecisionRow decision) {

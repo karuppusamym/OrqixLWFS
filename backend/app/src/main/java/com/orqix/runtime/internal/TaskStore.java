@@ -20,7 +20,7 @@ public class TaskStore {
 
     public record TaskRow(String taskId, UUID workspaceId, UUID runId, String nodeId, String label,
             String candidateGroupKey, UUID initiator, boolean selfApprovalAllowed, UUID assignee, String status,
-            int version, Instant dueAt, Instant createdAt, Instant claimedAt, Instant endedAt) {
+            int version, int priority, Instant dueAt, Instant createdAt, Instant claimedAt, Instant endedAt) {
 
         public boolean isOpen() {
             return "open".equals(status);
@@ -29,7 +29,7 @@ public class TaskStore {
 
     static final String COLUMNS = """
             engine_task_id, workspace_id, run_id, node_id, label, candidate_group_key, initiator_subject_id,
-            self_approval_allowed, assignee_subject_id, status, version, due_at, created_at, claimed_at, ended_at
+            self_approval_allowed, assignee_subject_id, status, version, priority, due_at, created_at, claimed_at, ended_at
             """;
 
     private final JdbcClient jdbc;
@@ -121,6 +121,12 @@ public class TaskStore {
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
+    public boolean setPriority(UUID workspaceId, String taskId, int expectedVersion, int priority) {
+        return jdbc.sql("UPDATE task_context SET priority=:priority, version=version+1 WHERE workspace_id=:ws AND engine_task_id=:task AND version=:version AND status='open'")
+                .param("priority", priority).param("ws", workspaceId).param("task", taskId).param("version", expectedVersion).update() == 1;
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
     public boolean bumpVersion(UUID workspaceId, String taskId, int expectedVersion) {
         return jdbc.sql("""
                 UPDATE task_context SET version = version + 1
@@ -163,7 +169,7 @@ public class TaskStore {
         return new TaskRow(rs.getString("engine_task_id"), Sql.uuid(rs, "workspace_id"), Sql.uuid(rs, "run_id"),
                 rs.getString("node_id"), rs.getString("label"), rs.getString("candidate_group_key"),
                 Sql.uuid(rs, "initiator_subject_id"), rs.getBoolean("self_approval_allowed"),
-                Sql.uuid(rs, "assignee_subject_id"), rs.getString("status"), rs.getInt("version"),
+                Sql.uuid(rs, "assignee_subject_id"), rs.getString("status"), rs.getInt("version"), rs.getInt("priority"),
                 Sql.instant(rs, "due_at"), Sql.instant(rs, "created_at"), Sql.instant(rs, "claimed_at"),
                 Sql.instant(rs, "ended_at"));
     }

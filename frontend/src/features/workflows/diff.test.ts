@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import purchase from '../../../../examples/purchase-approval.json'
-import { addNode, connect, moveNodes, removeNode, updateNodeLabel, upsertDecision } from '@/features/studio/model/ops'
+import { addNode, connect, moveNodes, removeNode, renameNodeId, updateNodeLabel, upsertDecision } from '@/features/studio/model/ops'
 import { normalizeDefinition, type Definition } from '@/features/studio/model/types'
 import { diffDefinitions } from './diff'
 
@@ -15,6 +15,40 @@ describe('publish review diff', () => {
 
   it('ignores canvas layout changes', () => {
     expect(diffDefinitions(base(), moveNodes(base(), { manager: { x: 999, y: 999 } }))).toEqual([])
+  })
+
+  it('shows plain-text notes and retains them through rename but prunes deleted steps', () => {
+    const before = base()
+    const after = base()
+    after.metadata.stepNotes = { manager: 'Review evidence <script>literal text</script>' }
+    expect(diffDefinitions(before, after)[0]?.details).toContain('Step notes: (empty) → Review evidence <script>literal text</script>')
+    const renamed = renameNodeId(after, 'manager', 'managerReview')
+    expect(renamed.ok).toBe(true)
+    if (renamed.ok) expect(renamed.def.metadata.stepNotes).toEqual({ managerReview: after.metadata.stepNotes.manager })
+    expect(removeNode(after, 'manager').metadata.stepNotes).toBeUndefined()
+    expect(after.metadata.stepNotes.manager).toBeDefined()
+  })
+
+  it('describes grouped conditions without undefined placeholders', () => {
+    const before = base()
+    const after = base()
+    after.transitions[0]!.condition = { all: [{ fieldRef: '/input/amount', operator: 'gt', value: 100 }, { fieldRef: '/input/amount', operator: 'lte', value: 1000 }] }
+    const detail = diffDefinitions(before, after).flatMap((change) => change.details).find((line) => line.startsWith('Condition:'))
+    expect(detail).toContain(' AND ')
+    expect(detail).toContain('1000')
+    expect(detail).not.toContain('undefined')
+  })
+
+  it('makes changed decision input fields and currency hints visible', () => {
+    const before = base()
+    const after = base()
+    after.decisions[0]!.rows[0]!.when.fieldRef = '/input/otherAmount'
+    before.inputUi = { ...before.inputUi, currency: 'USD' }
+    after.inputUi = { ...after.inputUi }
+    delete after.inputUi.currency
+    const changes = diffDefinitions(before, after)
+    expect(changes.find((change) => change.area === 'rule')?.details[0]).toContain('/input/otherAmount')
+    expect(changes.find((change) => change.title === 'Currency display changed')?.details[0]).toContain('USD')
   })
 
   it('shows a changed finance threshold as a rule table row change', () => {

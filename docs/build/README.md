@@ -93,4 +93,6 @@ Current extensions: [S14 bounded iteration](S14-bounded-iteration.md), [S15 guid
 
 Additional build slices: [task collaboration](S17-task-collaboration.md) and [migration equivalence acceptance](migration-equivalence-acceptance.md). The active tracker records current integration evidence rather than treating future roadmap items as completed.
 
+Current closeout slices: [cross-file project findings](S18-project-findings.md), [task priority and aging](S19-task-priority.md), historical Microsoft version selection, published-version comparison and step notes. [Remaining work](../21-product-closeout.md) separates engineering features, customer/source acceptance and excluded infrastructure.
+
 When an IDE Java compiler is active, run coordinated verification with `./mvnw.cmd clean verify "-Dorqix.buildDirectory=target/verification" "-Dsurefire.useManifestOnlyJar=false"` from `backend/` (PowerShell). This leaves the IDE's default `target/classes` untouched; each module writes below its own ignored `target/verification`. The default build and Docker artifact path stay unchanged.

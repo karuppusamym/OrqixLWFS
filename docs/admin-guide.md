@@ -60,6 +60,8 @@ Administrator roles manage access only: they do not see request data, approve or
 
 ## 6. Connections to other systems
 
+For approved Microsoft document connections, the test panel can load a bounded complete history for an approved drive/item and lets the administrator choose the historical version explicitly before extraction. Changing the document resets the selection; unavailable pins fail visibly. Tenant consent, resource grants, host allowlists and credential rotation remain customer setup. This tool does not browse a requester's tenant or automatically refresh OAuth credentials; see [Microsoft document operations](microsoft-documents.md).
+
 1. **Register the contract** (`connection.manage`): `POST /workspaces/{id}/connections/{key}/versions` with a definition that follows [the connection schema](../contracts/connection-definition-v0.schema.json) — operations, request/response schemas, success statuses and the effect class:
    - `readOnly` — safe to retry;
    - `idempotentWithKey` — the remote system de-duplicates on the idempotency header Orqix sends (the effect key), so retries are safe;

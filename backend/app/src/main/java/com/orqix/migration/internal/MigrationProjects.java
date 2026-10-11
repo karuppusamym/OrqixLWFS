@@ -16,7 +16,8 @@ import tools.jackson.databind.JsonNode;
 
 @Service
 public class MigrationProjects {
-    public record File(String fileName,UUID migrationId,String processId,List<String> dependencies,String status,UUID convertedWorkflowId) {}
+    public record File(String fileName,UUID migrationId,String processId,List<String> dependencies,String status,UUID convertedWorkflowId,
+                       String sourceFormat,List<String> decisionIds,Map<String,String> decisionDependencies) {}
     public record Project(UUID id,String name,String status,List<File> files,List<UUID> conversionOrder,List<ProjectAnalyzer.Issue> issues,Instant createdAt) {}
     public record Converted(Project project,MigrationService.Converted converted) {}
     private final JdbcClient jdbc; private final Json json; private final PolicyService policy; private final MigrationService migrations; private final AuditWriter audit;
@@ -28,13 +29,13 @@ public class MigrationProjects {
         authorize(caller,ws,true);
         if(name==null || name.isBlank() || name.length()>200) throw ApiException.malformed("Project name must contain 1 to 200 characters.");
         ProjectAnalyzer.Plan plan;
-        try { plan=ProjectAnalyzer.analyze(sources); }
+        try { plan=ProjectAnalyzer.analyze(sources,json); }
         catch(SourceException e) { throw new ApiException(e.tooLarge()?ProblemCode.PAYLOAD_TOO_LARGE:ProblemCode.SOURCE_INVALID,e.getMessage()); }
         List<File> files=new ArrayList<>(); Map<String,UUID> ids=new HashMap<>();
         for(int i=0;i<plan.files().size();i++) {
             var file=plan.files().get(i); var source=sources.get(i); UUID job=null;
-            if(file.analysis()!=null) { job=migrations.upload(caller,ws,file.fileName(),source.content(),"bpmn").id(); ids.putIfAbsent(file.processId(),job); }
-            files.add(new File(file.fileName(),job,file.processId(),file.dependencies(),"analyzed",null));
+            if(file.sourceFormat()!=null) { job=migrations.upload(caller,ws,file.fileName(),source.content(),file.sourceFormat()).id(); ids.putIfAbsent(file.planKey(),job); }
+            files.add(new File(file.fileName(),job,file.processId(),file.dependencies(),"analyzed",null,file.sourceFormat(),file.decisionIds(),file.decisionDependencies()));
         }
         UUID id=Ids.newId(); Instant created=Instant.now();
         Project project=new Project(id,name,"analyzed",files,plan.conversionOrder().stream().map(ids::get).toList(),plan.issues(),created);
@@ -51,7 +52,7 @@ public class MigrationProjects {
         for(File file:project.files()) {
             MigrationService.Job job=file.migrationId()==null?null:migrations.get(caller,ws,file.migrationId());
             if(job!=null && "converted".equals(job.status())) converted++;
-            files.add(new File(file.fileName(),file.migrationId(),file.processId(),file.dependencies(),job==null?"blocked":job.status(),job==null?null:job.convertedWorkflowId()));
+            files.add(new File(file.fileName(),file.migrationId(),file.processId(),file.dependencies(),job==null?"blocked":job.status(),job==null?null:job.convertedWorkflowId(),file.sourceFormat(),file.decisionIds()==null?List.of():file.decisionIds(),file.decisionDependencies()==null?Map.of():file.decisionDependencies()));
         }
         String status=!project.issues().isEmpty()?"blocked":converted==project.files().size()?"converted":converted>0?"converting":"analyzed";
         return new Project(project.id(),project.name(),status,files,project.conversionOrder(),project.issues(),project.createdAt());

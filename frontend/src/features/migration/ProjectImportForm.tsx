@@ -22,7 +22,7 @@ export function projectFileProblem(files: File[]): string | null {
   return null
 }
 
-/** Multi-file import: several BPMN files of one application are analyzed together, children before the parents that call them. */
+/** Multi-file BPMN/DMN import; the server safely identifies XML namespaces and orders dependencies. */
 export function ProjectImportForm() {
   const { workspace } = useWorkspace()
   const navigate = useNavigate()
@@ -34,7 +34,7 @@ export function ProjectImportForm() {
   const submit = async () => {
     setPending(true); setError(null)
     try {
-      const contents = await Promise.all(files.map(async (file) => ({ fileName: file.name, content: await file.text() })))
+      const contents = await Promise.all(files.map(async (file) => ({ fileName: file.name, content: await file.text(), ...(file.name.toLowerCase().endsWith('.dmn') ? { sourceFormat: 'dmn' as const } : {}) })))
       const project = await endpoints.uploadMigrationProject(workspace.id, { name: name.trim(), files: contents })
       navigate(`/w/${workspace.id}/migrations/projects/${project.id}`)
     } catch (cause) {
@@ -43,11 +43,11 @@ export function ProjectImportForm() {
   }
   return <form aria-label="Import a project" className="my-6 space-y-4 rounded-card border border-border bg-surface p-5" onSubmit={(event) => { event.preventDefault(); void submit() }}>
     <h2>Import a multi-file project</h2>
-    <p className="text-sm text-muted-foreground">Choose the BPMN files of one application, up to {PROJECT_MAX_FILES} files. Calls between the files are matched by process ID, so parent workflows are converted after the child workflows they call.</p>
+    <p className="text-sm text-muted-foreground">Choose the BPMN and DMN files of one application, up to {PROJECT_MAX_FILES} files. Children and decision files are converted before their callers. This project slice accepts one convertible decision per DMN file; use a standalone import to review multi-decision files. XML files are identified by their namespace.</p>
     <Label htmlFor="project-name">Project name</Label>
     <Input id="project-name" required maxLength={200} value={name} onChange={(e) => setName(e.target.value)} />
-    <Label htmlFor="project-files">BPMN files (up to {PROJECT_MAX_FILES}, 1 MiB each)</Label>
-    <Input id="project-files" type="file" multiple accept=".bpmn,.xml" aria-describedby={problem ? 'project-files-problem' : files.length ? 'project-files-list' : undefined} aria-invalid={problem ? true : undefined}
+    <Label htmlFor="project-files">BPMN files and DMN files (up to {PROJECT_MAX_FILES}, 1 MiB each)</Label>
+    <Input id="project-files" type="file" multiple accept=".bpmn,.dmn,.xml" aria-describedby={problem ? 'project-files-problem' : files.length ? 'project-files-list' : undefined} aria-invalid={problem ? true : undefined}
       onChange={(e) => setFiles(Array.from(e.target.files ?? []))} />
     {files.length ? <ul id="project-files-list" aria-label="Selected files" className="list-disc pl-5 text-sm text-muted-foreground">{files.map((file) => <li key={file.name}>{file.name} ({Math.max(1, Math.round(file.size / 1024))} KiB)</li>)}</ul> : null}
     {problem ? <Alert tone="danger" id="project-files-problem">{problem}</Alert> : null}

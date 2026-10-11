@@ -528,7 +528,7 @@ Repository capabilities in this research are a snapshot, not a completion tracke
 |---|---|
 | 1.1 `review` severity | Built (non-blocking, counted, persisted; UI filter and acknowledgement) |
 | 1.2 Grouped findings and export | Per-file and cross-file findings export built, with reason/source-kind/file grouping, complete report hashes and partial-load protection; grouped service mappings built (`SERVICE_TASK_GROUP`) |
-| 1.3 Migration project | Built (up to 10 BPMN files, dependency order, convert-next); DMN files inside a project are still reported unsupported |
+| 1.3 Migration project | Built (up to 10 mixed BPMN/DMN files, dependency order, convert-next). One convertible decision per DMN file; missing/duplicate decisions and unsupported sources block conversion; reviewed task mappings remain explicit. S20 |
 | 1.4 Group service tasks | Built |
 | 1.5 Maker-checker | Built for migrations (policy, independent review bound to exact draft, source and mappings hashes; mapper, reviewer and publisher differ). Not yet applied to connection definitions, rule packs or ordinary workflows |
 | 2.2, 2.3 Equivalence runner, evidence pack | Built earlier on synthetic fixtures; no real source yet |
@@ -539,7 +539,8 @@ Repository capabilities in this research are a snapshot, not a completion tracke
 | 3.3 Boundary timer and error events | Not built |
 | 3.4 Operators | Built: `eq ne gte gt lt lte`, flat all/any groups of 2 to 8 terms |
 | 3.5 Connector element templates | Not built |
-| 4.x Banking product layer | Templates built and executed; durable task priority, age display and oldest/newest sorting added in current closeout. Decision record with input and candidate rows, effective-dated rule packs, automatic aging/escalation, four-eyes across stages, multi-currency and business calendars remain gaps in the [capability matrix](banking-capability-matrix.md) |
+| 4.1 Decision record | Built for canonical single-input tables: pinned rule version/result, input values, every candidate's match/selection, default selection and permission-filtered history. S21; no values in global audit |
+| 4.x Banking product layer | Templates built and executed; durable task priority, age display and oldest/newest sorting added. Effective-dated rule packs, automatic aging/escalation, four-eyes across stages, multi-currency and business calendars remain gaps in the [capability matrix](banking-capability-matrix.md) |
 
 See [doc 19](19-product-build-tracker.md) for what is verified on the merged tree and what is not.
 

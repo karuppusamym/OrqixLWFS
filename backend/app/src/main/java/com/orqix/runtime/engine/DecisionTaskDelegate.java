@@ -17,6 +17,7 @@ import org.flowable.engine.impl.util.ProcessDefinitionUtil;
 import org.springframework.stereotype.Component;
 
 import com.orqix.catalog.ReleaseQueries;
+import com.orqix.compiler.ConditionMatcher;
 import com.orqix.runtime.internal.RunEvents;
 import com.orqix.runtime.internal.RunStore;
 import com.orqix.shared.json.Json;
@@ -73,6 +74,7 @@ public class DecisionTaskDelegate implements JavaDelegate {
         data.put("version", Integer.valueOf(version));
         data.put("matched", result.matched());
         data.put("outputs", result.outputs());
+        data.put("evidence", evidence(table, fieldRef, value, result.matched()));
         events.append(workspaceId, runId, "DECISION_EVALUATED", element.getId(), null, data);
     }
 
@@ -114,6 +116,33 @@ public class DecisionTaskDelegate implements JavaDelegate {
         ObjectNode outputs = json.object();
         results.get(0).forEach((k, v) -> outputs.set(k, json.fromScalar(normalize(v))));
         return new Result(matched, outputs);
+    }
+
+    /** All bounded canonical candidates are checked with the compiler's typed scalar matcher.
+     * Selection is confirmed against the actual pinned DMN result, never substituted for it. */
+    ObjectNode evidence(JsonNode table, String fieldRef, Object value, String selected) {
+        JsonNode rows = table.path("rows");
+        if (!rows.isArray() || rows.size() < 1 || rows.size() > 50)
+            throw new IllegalStateException("Decision evidence requires 1..50 canonical rows");
+        ObjectNode evidence = json.object();
+        evidence.putArray("inputs").add(json.objectOf(Map.of("fieldRef", fieldRef, "value", value)));
+        var candidates = evidence.putArray("rows");
+        String expected = "default";
+        for (int i = 0; i < rows.size(); i++) {
+            JsonNode condition = rows.get(i).path("when");
+            if (!fieldRef.equals(condition.path("fieldRef").asString()))
+                throw new IllegalStateException("Decision evidence field differs from canonical input");
+            boolean matched = ConditionMatcher.matches(condition.path("operator").asString(), value, Json.scalar(condition.path("value")));
+            String id = "r" + (i + 1);
+            if (matched && "default".equals(expected)) expected = id;
+            ObjectNode row = json.object();
+            row.put("rowId", id).put("matched", matched).put("selected", id.equals(selected));
+            row.set("condition", condition.deepCopy());
+            candidates.add(row);
+        }
+        if (!expected.equals(selected)) throw new IllegalStateException("Pinned decision result differs from canonical evidence");
+        evidence.put("defaultSelected", "default".equals(selected));
+        return evidence;
     }
 
     private static Object normalize(Object value) {

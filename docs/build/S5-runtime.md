@@ -73,7 +73,7 @@ Decide transaction:
 2. Resolve the input field value from `orqix_input` / `orqix_step_*` (missing → `IllegalStateException`: compiler guarantees availability, so absence is a defect and fails the transaction).
 3. Execute the DMN decision **pinned to the process definition's deployment** (S4 §7).
 4. Exactly one rule matches (FIRST + catch-all). Store typed outputs in `orqix_step_<nodeId>`.
-5. Event `DECISION_EVALUATED` with `{decisionKey, version, matched: "r1"|"default", outputs}` (decision outputs are policy results, not request data).
+5. Event `DECISION_EVALUATED` with `{decisionKey, version, matched: "r1"|"default", outputs, evidence}`. Evidence records the pinned decision's input values and candidate-row evaluations; the selected row still comes from the actual DMN engine result. Outputs and evidence require request-data visibility. Metadata-only readers receive decision identifiers and an `evidenceRedacted` marker. See [S21](S21-decision-evidence.md).
 
 `orqixRoute.condition(execution, transitionId)` reads the flow's `orqix:condition`, resolves the field the same way and compares with `BigDecimal.compareTo` / `String.equals` / `Boolean.equals`.
 
@@ -155,7 +155,7 @@ Allowed for `running`, `waiting`, `needsAttention`. `deleteProcessInstance(pid, 
 
 ## 8. Run event catalog
 
-Events are written in the same transaction as the change they describe, with the per-run sequence from S3 §7. `data` never contains request field values, credentials or remote bodies.
+Events are written in the same transaction as the change they describe, with the per-run sequence from S3 §7. Decision evidence includes request field values in permission-scoped run history; the API removes decision outputs, matched-row details and evidence for callers without request-data visibility. Other event payloads remain bounded business metadata. Credentials and remote bodies are excluded; global audit never receives decision inputs or outputs.
 
 | Type | Written by | `data` |
 |---|---|---|
@@ -164,7 +164,7 @@ Events are written in the same transaction as the change they describe, with the
 | `TASK_CLAIMED`, `TASK_RELEASED` | Task command (actor) | `assignee` display name |
 | `TASK_REASSIGNED` | Operator (actor) | `from`, `to` display names, `reason` |
 | `TASK_DECIDED` | Decide command (actor) | `action`, `hasReason`, `hasComment`, `policyFlags` |
-| `DECISION_EVALUATED` | Decision delegate | `decisionKey`, `version`, `matched`, `outputs` |
+| `DECISION_EVALUATED` | Decision delegate | `decisionKey`, `version`, `matched`, `outputs`, `evidence`; sensitive fields redacted for metadata-only readers |
 | `EFFECT_SUCCEEDED` | HTTP delegate | `connectionKey`, `operation`, `attempt`, `httpStatus`, `remoteReference` |
 | `EFFECT_FAILED` | Failed-job command | `attempt`, `classification`, `httpStatus`, `errorCode`, `nextRetryAt` |
 | `EFFECT_UNKNOWN` | Failed-job command | `attempt`, `errorCode` |

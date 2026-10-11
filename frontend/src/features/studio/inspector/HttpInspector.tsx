@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { useConnection, useConnections } from '@/api/queries'
+import { useWorkspace } from '@/app/workspace'
 import { FormField } from '@/components/common/FormField'
 import { QueryError } from '@/components/common/QueryError'
 import { Alert } from '@/components/ui/alert'
@@ -17,6 +18,9 @@ import { connectionDefinition } from '../connectionSchema'
 import { cfg, type WorkflowNode } from '../model/types'
 import { Advanced, CommitInput, CommitNumber, InspectorSection } from './controls'
 import { StepIdField } from './SimpleInspectors'
+import { DocumentReferenceAuthoring } from './DocumentReferenceAuthoring'
+import { applyDocumentReference } from '../model/documentReference'
+import type { DocumentOperation } from '@/features/settings/DocumentVersionPicker'
 
 interface ScalarSchema {
   type: 'string' | 'number' | 'integer' | 'boolean'
@@ -25,6 +29,7 @@ interface ScalarSchema {
 }
 
 interface OperationDoc {
+  path?: string
   label: string
   description?: string
   requestSchema?: { required?: string[]; properties: Record<string, ScalarSchema> }
@@ -44,6 +49,7 @@ function compatible(source: FieldInfo['type'], target: ScalarSchema['type']): bo
 
 /** Call a system: connection, operation, input mapping and result fields (docs/build/S7-frontend.md section 5). */
 export function HttpInspector({ node }: { node: WorkflowNode }) {
+  const { can } = useWorkspace()
   const { store, wsId, readOnly, connections: lookup } = useStudioContext()
   const def = useStudio((s) => s.definition)
   const connectionKey = cfg<string>(node, 'connectionRef') ?? ''
@@ -157,6 +163,25 @@ export function HttpInspector({ node }: { node: WorkflowNode }) {
         </FormField>
         {operation?.description ? <p className="text-xs text-muted-foreground">{operation.description}</p> : null}
         {operation?.agent ? <AgentSpecView operation={operation} /> : null}
+        {summary && record?.definition.kind === 'microsoftGraph' && operation && ['/text', '/extract', '/extractSnapshot'].includes(operation.path ?? '') ? <DocumentReferenceAuthoring
+          key={`${node.id}:${connectionKey}:${record.version}:${operationName}`}
+          workspaceId={wsId} connectionKey={connectionKey} connectionVersion={record.version} path={operation.path!}
+          operations={operationDocs as Record<string, DocumentOperation>}
+          testableOperations={summary.operations.filter((entry) => entry.testable).map((entry) => entry.name)}
+          approvedDrives={operation.requestSchema?.properties.driveId?.enum ?? []}
+          configuredReference={Object.fromEntries(['driveId', 'itemId', 'versionId', 'snapshotId'].flatMap((field) => {
+            const ref = inputMapping[field]
+            const question = ref?.startsWith('/input/') ? def.inputSchema.properties[ref.slice(7)] : undefined
+            return question?.type === 'string' && question.enum?.length === 1 ? [[field, question.enum[0]]] : []
+          }))}
+          canManage={can('connection.manage')} enabled={summary.binding.configured && summary.binding.enabled} readOnly={readOnly}
+          onApply={(reference) => {
+            const result = applyDocumentReference(store.getState().definition, node.id, reference, Object.keys(operation.responseSchema.properties ?? {}))
+            if (!result.ok) return result.reason
+            store.getState().apply(() => result.definition)
+            return undefined
+          }}
+        /> : null}
 
         {operation?.requestSchema ? (
           <fieldset className="space-y-3" data-field="config.inputMapping">

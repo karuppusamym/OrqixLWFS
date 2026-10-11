@@ -23,6 +23,7 @@ import { humanize } from '@/lib/text'
 import { isTerminal } from '@/lib/status'
 import { CancelDialog, ReassignDialog, ReconcileDialog, RetryDialog } from './OperatorDialogs'
 import { RunCommentsPanel } from './RunCommentsPanel'
+import { DecisionEvidence } from './DecisionEvidence'
 import { candidateEffects, EFFECT_CLASS_LABEL, EFFECT_STATE_LABEL, reasonText } from './operatorText'
 
 const TONE_DOT: Record<EventTone, string> = {
@@ -312,6 +313,7 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
                     <li key={e.seq} className="relative">
                       <span className={cn('absolute top-1.5 -left-[1.6rem] size-2.5 rounded-full border-2 border-surface', TONE_DOT[eventTone(e)])} aria-hidden="true" />
                       <p className="text-sm">{describeEvent(e, ctx)}</p>
+                      <DecisionEvidence event={e} />
                       <p className="text-xs text-muted-foreground">
                         <time dateTime={e.occurredAt}>{formatDateTime(e.occurredAt)}</time>
                       </p>

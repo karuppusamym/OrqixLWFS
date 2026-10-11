@@ -4,7 +4,8 @@ import { humanize } from './text'
 
 /**
  * Business-language timeline text (docs/build/S7-frontend.md section 4 table).
- * Event `data` never contains request values (S5 section 8), so wording is built from labels and names only.
+ * Automated decision values/evidence are scoped by the server to request-data permissions (S21).
+ * Evidence details use their own bounded renderer; ordinary wording uses labels, names and safe event fields.
  */
 export interface EventContext {
   /** Display name of the run initiator. */

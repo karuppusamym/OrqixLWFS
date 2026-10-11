@@ -95,4 +95,6 @@ Additional build slices: [task collaboration](S17-task-collaboration.md) and [mi
 
 Current closeout slices: [cross-file project findings](S18-project-findings.md), [task priority and aging](S19-task-priority.md), historical Microsoft version selection, published-version comparison and step notes. [Remaining work](../21-product-closeout.md) separates engineering features, customer/source acceptance and excluded infrastructure.
 
+Gap follow-up slices: [mixed BPMN/DMN projects](S20-project-dmn.md), [permission-scoped decision evidence](S21-decision-evidence.md), and [approved document reference authoring](S22-document-authoring.md). Coordinated verification is recorded in [the tracker](../19-product-build-tracker.md).
+
 When an IDE Java compiler is active, run coordinated verification with `./mvnw.cmd clean verify "-Dorqix.buildDirectory=target/verification" "-Dsurefire.useManifestOnlyJar=false"` from `backend/` (PowerShell). This leaves the IDE's default `target/classes` untouched; each module writes below its own ignored `target/verification`. The default build and Docker artifact path stay unchanged.

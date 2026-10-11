@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button'
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table'
 import { JobReview } from './JobReview'
 import { ProjectFindingsPanel } from './ProjectFindingsPanel'
+import { projectDecisionMappings } from './projectDecisionMappings'
 
 type Project = components['schemas']['MigrationProject']
 type Conversion = components['schemas']['MigrationProjectConversion']
@@ -41,7 +42,7 @@ export function ProjectPage() {
   const ws = workspace.id
   const client = useQueryClient()
   const announce = useAnnounce()
-  const [last, setLast] = useState<{ fileName: string; workflowId: string; workflowKey: string } | null>(null)
+  const [last, setLast] = useState<{ fileName: string; workflowId: string; workflowKey: string; dmn: boolean } | null>(null)
   const query = useQuery({ queryKey: projectKey(ws, projectId), queryFn: () => endpoints.getMigrationProject(ws, projectId), enabled: can('workflow.read') })
   const back = <Button asChild><Link to={`/w/${ws}/migrations`}>Import another file</Link></Button>
   if (!can('workflow.read')) return <Alert tone="warning">You need workflow access to view migrations.</Alert>
@@ -55,7 +56,7 @@ export function ProjectPage() {
   const position = next ? project.conversionOrder.indexOf(next.migrationId!) + 1 : 0
   const onConverted = (result: Conversion) => {
     client.setQueryData(projectKey(ws, projectId), result.project)
-    setLast({ fileName: next?.fileName ?? 'the file', workflowId: result.converted.workflow.id, workflowKey: result.converted.workflow.key })
+    setLast({ fileName: next?.fileName ?? 'the file', workflowId: result.converted.workflow.id, workflowKey: result.converted.workflow.key, dmn: next?.sourceFormat === 'dmn' })
     announce(`Converted ${next?.fileName ?? 'the file'} to a draft. ${converted + 1} of ${files.length} files converted.`)
   }
   return <>
@@ -77,15 +78,15 @@ export function ProjectPage() {
         <THead><TR><TH>File</TH><TH>Process</TH><TH>Calls</TH><TH>Status</TH></TR></THead>
         <TBody>{files.map((file) => <TR key={file.fileName}>
           <TD className="break-all font-semibold">{file.migrationId ? <Link to={`/w/${ws}/migrations/${file.migrationId}`}>{file.fileName}</Link> : file.fileName}</TD>
-          <TD className="break-all font-mono text-xs">{file.processId ?? 'Not analyzed'}</TD>
-          <TD className="break-all font-mono text-xs">{file.dependencies.length ? file.dependencies.join(', ') : 'None'}</TD>
+          <TD className="break-all font-mono text-xs">{file.sourceFormat === 'dmn' ? `DMN: ${(file.decisionIds ?? []).join(', ') || 'No decisions'}` : file.processId ?? 'Not analyzed'}</TD>
+          <TD className="break-all font-mono text-xs">{[...file.dependencies, ...Object.entries(file.decisionDependencies ?? {}).map(([task, decision]) => `${task}: decision ${decision}`)].join(', ') || 'None'}</TD>
           <TD><Badge tone={file.status === 'converted' ? 'success' : file.status === 'blocked' || file.status === 'failed' ? 'danger' : 'neutral'}>{FILE_STATUS[file.status ?? 'analyzed']}</Badge>
             {file.convertedWorkflowId ? <> <Link className="text-sm" to={`/w/${ws}/workflows/${file.convertedWorkflowId}/edit?migration=${file.migrationId}`}>Open draft</Link></> : null}</TD>
         </TR>)}</TBody>
       </Table>
       {project.conversionOrder.length ? <div>
         <h3>Conversion order</h3>
-        <p className="text-sm text-muted-foreground">Called processes first, so each parent can point at a converted and published child.</p>
+        <p className="text-sm text-muted-foreground">Decision files and called processes first. Child workflows need a published release; DMN tables are embedded from the reviewed source mapping and need no published decision workflow.</p>
         <ol aria-label="Conversion order" className="mt-2 list-decimal space-y-1 pl-6">{project.conversionOrder.map((id) => {
           const file = byMigration.get(id)
           return <li key={id} className="break-all">{file?.fileName ?? id}{file?.status === 'converted' ? ' (converted)' : file === next ? ' (next)' : ''}</li>
@@ -94,16 +95,16 @@ export function ProjectPage() {
     </section>
 
     {last ? <Alert tone="success" className="mb-6" title={`Converted ${last.fileName}`}>
-      <p>The draft <span className="font-mono">{last.workflowKey}</span> was created. Review it and publish it before you convert a file that calls it, so the parent uses the child&apos;s published version.</p>
+      <p>The draft <span className="font-mono">{last.workflowKey}</span> was created. {last.dmn ? 'DMN callers embed the converted source table through their reviewed decision mapping; this decision workflow does not need to be published for those callers.' : 'Review it and publish it before you convert a file that calls it, so the parent uses the child’s published version.'}</p>
       <p className="mt-2 flex flex-wrap gap-3"><Link to={`/w/${ws}/workflows/${last.workflowId}/edit`}>Open the draft</Link><Link to={`/w/${ws}/workflows/${last.workflowId}/publish`}>Review and publish</Link></p>
     </Alert> : null}
 
-    {project.status === 'blocked' ? null : next ? <NextFile key={next.migrationId} projectId={projectId} file={next} position={position} total={project.conversionOrder.length} editable={can('workflow.edit')} onConverted={onConverted} />
+    {project.status === 'blocked' ? null : next ? <NextFile key={next.migrationId} projectId={projectId} file={next} files={files} position={position} total={project.conversionOrder.length} editable={can('workflow.edit')} onConverted={onConverted} />
       : project.status === 'converted' ? <Alert tone="success" title="Every file is converted">Review each draft and publish children before the parents that call them.</Alert> : null}
   </>
 }
 
-function NextFile({ projectId, file, position, total, editable, onConverted }: { projectId: string; file: ProjectFile; position: number; total: number; editable: boolean; onConverted: (result: Conversion) => void }) {
+function NextFile({ projectId, file, files, position, total, editable, onConverted }: { projectId: string; file: ProjectFile; files: ProjectFile[]; position: number; total: number; editable: boolean; onConverted: (result: Conversion) => void }) {
   const { workspace } = useWorkspace()
   const job = useQuery({ queryKey: ['ws', workspace.id, 'migration', file.migrationId], queryFn: () => endpoints.getMigration(workspace.id, file.migrationId!) })
   return <section aria-label="Next file to convert" className="space-y-3">
@@ -111,6 +112,7 @@ function NextFile({ projectId, file, position, total, editable, onConverted }: {
     <p className="text-sm text-muted-foreground">Step {position} of {total}. {editable ? 'Resolve this file’s mappings with the same form as a single import, then convert it. The next file follows.' : 'You can read the report; converting needs permission to edit workflows.'}</p>
     {job.isPending ? <LoadingBlock label="Loading the compatibility report" /> : null}
     {job.isError ? <QueryError error={job.error} onRetry={() => void job.refetch()} what="the migration report" /> : null}
-    {job.data ? <JobReview key={job.data.id} job={job.data} editable={editable} project={{ projectId, onConverted }} /> : null}
+    {Object.keys(file.decisionDependencies ?? {}).length ? <p className="text-sm text-muted-foreground">Decision mapping suggestions below use matching project decision IDs. Review the JSON and input field reference before converting; edits are preserved while this file stays open.</p> : null}
+    {job.data ? <JobReview key={job.data.id} job={job.data} editable={editable} project={{ projectId, onConverted, suggestedDecisionMappings: projectDecisionMappings(file, files) }} /> : null}
   </section>
 }

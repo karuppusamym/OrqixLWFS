@@ -3,9 +3,9 @@ import type { ProblemCode } from '@/api/types'
 import { blankDefinition, clock, db, newId, permissionsOf, userById, type MockMigration, type MockMigrationProject, type MockUser, type MockWorkflow } from './state'
 
 /**
- * Mock-mode migration workbench: a small BPMN analyzer, multi-file project planning and the maker-checker rules of
+ * Mock-mode migration workbench: small BPMN/DMN inventories, multi-file project planning and the maker-checker rules of
  * docs/17-migration-workbench.md. It follows the backend's behavior (backend/.../migration, catalog/internal/
- * MigrationGovernance) but understands only a deliberately small BPMN subset; it never claims real compatibility.
+ * MigrationGovernance) but converts simplified mock drafts; it never claims source equivalence or real compatibility.
  */
 
 type Report = components['schemas']['CompatibilityReport']
@@ -24,14 +24,25 @@ export function digest(text: string): string {
       a = Math.imul(a ^ text.charCodeAt(i), 16777619) >>> 0
       b = (Math.imul(b, 31) + a + round) >>> 0
     }
-    out += (a ^ b).toString(16).padStart(8, '0')
+    out += ((a ^ b) >>> 0).toString(16).padStart(8, '0')
   }
   return out
 }
 
 // Analysis ------------------------------------------------------------------------------------------------------------------
 
-const UNSUPPORTED = new Set(['scriptTask', 'businessRuleTask', 'subProcess', 'boundaryEvent', 'eventBasedGateway', 'inclusiveGateway', 'manualTask', 'sendTask', 'receiveTask'])
+const UNSUPPORTED = new Set(['scriptTask', 'subProcess', 'boundaryEvent', 'eventBasedGateway', 'inclusiveGateway', 'manualTask', 'sendTask', 'receiveTask'])
+const BPMN_NS = 'http://www.omg.org/spec/BPMN/20100524/MODEL'
+const DMN_NAMESPACES = new Set(['http://www.omg.org/spec/DMN/20151101/dmn.xsd', 'https://www.omg.org/spec/DMN/20180521/MODEL/', 'https://www.omg.org/spec/DMN/20191111/MODEL/', 'https://www.omg.org/spec/DMN/20211108/MODEL/'])
+
+function parseSource(xml: string): Document {
+  if (!xml.trim() || new TextEncoder().encode(xml).length > 1_048_576) throw new MockSourceError('Source must be between 1 byte and 1 MiB.')
+  if (/<!DOCTYPE|<!ENTITY/i.test(xml)) throw new MockSourceError('DOCTYPE and ENTITY declarations are not allowed in migration sources.')
+  const doc = new DOMParser().parseFromString(xml, 'application/xml')
+  if (doc.getElementsByTagName('parsererror').length > 0) throw new MockSourceError('The source is not well-formed XML.')
+  if (doc.getElementsByTagName('*').length > 2000) throw new MockSourceError('Source exceeds the element limit.')
+  return doc
+}
 
 export interface Analysis {
   report: Report
@@ -39,6 +50,9 @@ export interface Analysis {
   dependencies: string[]
   /** Call activities whose child process is missing or computed at runtime. */
   dynamicCalls: number
+  sourceFormat: 'bpmn' | 'dmn'
+  decisionIds: string[]
+  decisionDependencies: Record<string, string>
 }
 
 function issue(kind: string, id: string, severity: Issue['severity'], reasonCode: string, explanation: string, suggestedAction?: string): Issue {
@@ -46,11 +60,9 @@ function issue(kind: string, id: string, severity: Issue['severity'], reasonCode
 }
 
 export function analyzeBpmn(xml: string, sourceHash: string): Analysis {
-  if (!xml.trim() || xml.length > 1_048_576) throw new MockSourceError('Source must be between 1 byte and 1 MiB.')
-  if (/<!DOCTYPE/i.test(xml)) throw new MockSourceError('DOCTYPE declarations are not allowed in migration sources.')
-  const doc = new DOMParser().parseFromString(xml, 'application/xml')
-  if (doc.getElementsByTagName('parsererror').length > 0) throw new MockSourceError('The source is not well-formed XML.')
-  const process = doc.getElementsByTagNameNS('*', 'process')[0]
+  const doc = parseSource(xml)
+  if (doc.documentElement.namespaceURI !== BPMN_NS || doc.documentElement.localName !== 'definitions') throw new MockSourceError('Expected BPMN definitions in the standard namespace.')
+  const process = doc.getElementsByTagNameNS(BPMN_NS, 'process')[0]
   const processId = process?.getAttribute('id')
   if (!process || !processId) throw new MockSourceError('The source has no BPMN process with an id.')
   const issues: Issue[] = []
@@ -58,6 +70,7 @@ export function analyzeBpmn(xml: string, sourceHash: string): Analysis {
   const services: string[] = []
   const children: string[] = []
   const dependencies = new Set<string>()
+  const decisionDependencies: Record<string, string> = {}
   let dynamicCalls = 0
   let supported = 0
   for (const element of Array.from(process.getElementsByTagName('*'))) {
@@ -69,6 +82,11 @@ export function analyzeBpmn(xml: string, sourceHash: string): Analysis {
       if (called && !/[$#]\{|^=/.test(called)) dependencies.add(called)
       else dynamicCalls++
       issues.push(issue(kind, id, 'action', 'CHILD_WORKFLOW_MAPPING_REQUIRED', `Called process '${called ?? ''}' requires a reviewed workspace workflow and explicit input/result mappings.`, 'Import and publish the child first; map its key and fields.'))
+    } else if (kind === 'businessRuleTask') {
+      const decision = Array.from(element.attributes).find(a => a.localName === 'decisionRef')?.value
+        ?? Array.from(element.getElementsByTagName('*')).find(e => e.localName === 'calledDecision')?.getAttribute('decisionId')
+      if (decision && !/[$#]\{|^=/.test(decision)) decisionDependencies[id] = decision
+      issues.push(issue(kind, id, 'action', 'DECISION_MAPPING_REQUIRED', 'Map this business-rule task to a reviewed DMN decision.'))
     } else if (kind === 'userTask') {
       const candidate = Array.from(element.attributes).find((a) => a.localName === 'candidateGroups')?.value
       for (const g of (candidate ?? '').split(',').map((v) => v.trim()).filter(Boolean)) groups.add(g)
@@ -92,15 +110,41 @@ export function analyzeBpmn(xml: string, sourceHash: string): Analysis {
     elementCounts: { total: supported + action + blocker, supported, action, blocker, info: 0 },
     issues,
     assumptions: ['Mock analyzer: only start/end events, group approvals and called processes are understood. Review every mapping before publishing.'],
-    requiredMappings: { groups: [...groups], approvalTasks: [], serviceTasks: services, childWorkflows: children },
+    requiredMappings: { groups: [...groups], approvalTasks: [], serviceTasks: services, childWorkflows: children, decisionTasks: Object.keys(decisionDependencies) },
     publishable: false,
   }
-  return { report, processId, dependencies: [...dependencies], dynamicCalls }
+  return { report, processId, dependencies: [...dependencies], dynamicCalls, sourceFormat: 'bpmn', decisionIds: [], decisionDependencies }
 }
 
-export function createMigration(wsId: string, fileName: string, source: string): { migration: MockMigration; analysis: Analysis } {
+/** Mock inventory only. The real adapter evaluates and verifies supported unary tests; mock conversion does not. */
+export function analyzeDmn(xml: string, sourceHash: string): Analysis {
+  const doc = parseSource(xml)
+  const root = doc.documentElement
+  if (root.localName !== 'definitions' || !DMN_NAMESPACES.has(root.namespaceURI ?? '')) throw new MockSourceError('Expected DMN definitions in a supported namespace.')
+  const decisions = Array.from(root.getElementsByTagNameNS(root.namespaceURI, 'decision'))
+  const decisionIds = decisions.map(d => d.getAttribute('id') ?? '').filter(Boolean)
+  const issues = decisions.flatMap(d => {
+    const id = d.getAttribute('id') ?? 'decision'
+    const tables = d.getElementsByTagNameNS(root.namespaceURI, 'decisionTable')
+    const table = tables[0]
+    const convertible = !!d.getAttribute('id') && tables.length === 1 && ['UNIQUE', 'FIRST'].includes(table?.getAttribute('hitPolicy') ?? 'UNIQUE')
+      && table?.getElementsByTagNameNS(root.namespaceURI, 'input').length === 1
+      && (table?.getElementsByTagNameNS(root.namespaceURI, 'rule').length ?? 0) <= 50
+    return convertible ? [] : [issue('decision', id, 'blocker', 'DMN_NOT_SUPPORTED', 'Mock inventory supports single-input UNIQUE/FIRST tables only; use the real adapter for conversion checks.')]
+  })
+  const processId = root.getAttribute('id') ?? decisionIds[0] ?? 'dmn'
+  const report: Report = { sourceSystem: 'dmn', adapterVersion: MOCK_ADAPTER, sourceHash, processId,
+    processName: root.getAttribute('name') ?? processId, issues,
+    elementCounts: { total: decisions.length, supported: decisions.length - issues.length, action: 0, blocker: issues.length, info: 0 },
+    assumptions: ['Mock DMN inventory and simplified draft only; source-to-target equivalence is tested by the real backend.'],
+    requiredMappings: {}, publishable: false }
+  return { report, processId, dependencies: [], dynamicCalls: 0, sourceFormat: 'dmn', decisionIds, decisionDependencies: {} }
+}
+
+export function createMigration(wsId: string, fileName: string, source: string, sourceFormat?: string): { migration: MockMigration; analysis: Analysis } {
   const sourceHash = digest(source)
-  const analysis = analyzeBpmn(source, sourceHash)
+  const detected = sourceFormat ?? (DMN_NAMESPACES.has(parseSource(source).documentElement.namespaceURI ?? '') ? 'dmn' : 'bpmn')
+  const analysis = detected === 'dmn' ? analyzeDmn(source, sourceHash) : analyzeBpmn(source, sourceHash)
   const migration: MockMigration = { id: newId(), wsId, fileName, source, sourceHash, report: analysis.report, status: 'analyzed', convertedWorkflowId: null, convertedById: null, mappingsHash: null, mappings: null, createdAt: clock.iso() }
   db.migrations.set(migration.id, migration)
   return { migration, analysis }
@@ -115,12 +159,15 @@ export function migrationView(m: MockMigration) {
 export interface ProjectSource { fileName: string; content: string; sourceFormat?: string }
 type ProjectIssue = MockMigrationProject['issues'][number]
 
-/** Mirrors ProjectAnalyzer: unique names, literal child references, no duplicate processes, no cycles, children first. */
+/** Bounded namespace-aware project inventory. Mock conversions create simplified drafts, not equivalent workflows. */
 export function planProject(wsId: string, name: string, sources: ProjectSource[]): MockMigrationProject {
   const names = new Set<string>()
   const issues: ProjectIssue[] = []
-  const entries: Array<{ fileName: string; migrationId: string | null; processId: string | null; dependencies: string[] }> = []
+  const entries: MockMigrationProject['files'] = []
   const processes = new Map<string, number>()
+  const decisions = new Map<string, number>()
+  if (sources.length < 1 || sources.length > 10) throw new MockSourceError('Project needs 1 to 10 files.')
+  if (sources.reduce((bytes, s) => bytes + new TextEncoder().encode(s.content).length, 0) > 4_194_304) throw new MockSourceError('Project source exceeds 4 MiB total.')
   for (const source of sources) {
     if (!source.fileName.trim() || source.fileName.length > 200 || names.has(source.fileName)) throw new MockSourceError('Project filenames must be unique, nonblank and at most 200 characters.')
     names.add(source.fileName)
@@ -128,36 +175,48 @@ export function planProject(wsId: string, name: string, sources: ProjectSource[]
   const created: string[] = []
   try {
     for (const source of sources) {
-      if (source.sourceFormat && source.sourceFormat !== 'bpmn') {
-        issues.push({ fileName: source.fileName, code: 'PROJECT_FORMAT_NOT_SUPPORTED', detail: 'This project preserves the source but converts BPMN only; DMN/forms need separate reviewed reconstruction.' })
-        entries.push({ fileName: source.fileName, migrationId: null, processId: null, dependencies: [] })
+      if (source.sourceFormat && !['bpmn', 'dmn'].includes(source.sourceFormat)) {
+        issues.push({ fileName: source.fileName, code: 'PROJECT_FORMAT_NOT_SUPPORTED', detail: 'Projects support BPMN and bounded DMN tables only. Forms need separate reviewed reconstruction.' })
+        entries.push({ fileName: source.fileName, migrationId: null, processId: null, dependencies: [], sourceFormat: null, decisionIds: [], decisionDependencies: {} })
         continue
       }
-      const { migration, analysis } = createMigration(wsId, source.fileName, source.content)
+      const { migration, analysis } = createMigration(wsId, source.fileName, source.content, source.sourceFormat)
       created.push(migration.id)
       if (analysis.dynamicCalls > 0) issues.push({ fileName: source.fileName, code: 'PROJECT_DYNAMIC_CHILD_REFERENCE', detail: 'A child process reference is missing or dynamic; provide a literal dependency before project conversion.' })
-      if (processes.has(analysis.processId)) issues.push({ fileName: source.fileName, code: 'PROJECT_DUPLICATE_PROCESS', detail: `Process ID '${analysis.processId}' appears in more than one file.` })
-      else processes.set(analysis.processId, entries.length)
-      entries.push({ fileName: source.fileName, migrationId: migration.id, processId: analysis.processId, dependencies: analysis.dependencies })
+      if (analysis.sourceFormat === 'dmn') {
+        if (analysis.decisionIds.length !== 1) issues.push({ fileName: source.fileName, code: 'PROJECT_DMN_SELECTION_REQUIRED', detail: `This project slice requires exactly one decision per DMN file; found ${analysis.decisionIds.length}.` })
+        for (const id of analysis.decisionIds) {
+          if (decisions.has(id)) issues.push({ fileName: source.fileName, code: 'PROJECT_DUPLICATE_DECISION', detail: `Decision ID '${id}' appears in more than one DMN file.` })
+          else decisions.set(id, entries.length)
+        }
+        if (analysis.report.issues.some(i => i.severity === 'blocker')) issues.push({ fileName: source.fileName, code: 'PROJECT_DMN_NOT_CONVERTIBLE', detail: 'This DMN file is outside the bounded adapter. Review its report.' })
+      } else {
+        if (processes.has(analysis.processId)) issues.push({ fileName: source.fileName, code: 'PROJECT_DUPLICATE_PROCESS', detail: `Process ID '${analysis.processId}' appears in more than one file.` })
+        else processes.set(analysis.processId, entries.length)
+      }
+      entries.push({ fileName: source.fileName, migrationId: migration.id, processId: analysis.processId, dependencies: analysis.dependencies,
+        sourceFormat: analysis.sourceFormat, decisionIds: analysis.decisionIds, decisionDependencies: analysis.decisionDependencies })
     }
   } catch (cause) {
     for (const id of created) db.migrations.delete(id)
     throw cause
   }
   for (const entry of entries) for (const dependency of entry.dependencies) if (!processes.has(dependency)) issues.push({ fileName: entry.fileName, code: 'PROJECT_MISSING_DEPENDENCY', detail: `Called process '${dependency}' is not included in this project.` })
+  for (const entry of entries) for (const decision of new Set(Object.values(entry.decisionDependencies ?? {}))) if (!decisions.has(decision)) issues.push({ fileName: entry.fileName, code: 'PROJECT_MISSING_DECISION', detail: `Called decision '${decision}' is not included in this project.` })
   const order: string[] = []
-  const state = new Map<string, number>()
-  const visit = (process: string) => {
-    const current = state.get(process) ?? 0
+  const state = new Map<number, number>()
+  const visit = (index: number) => {
+    const current = state.get(index) ?? 0
     if (current === 2) return
-    const entry = entries[processes.get(process)!]!
-    if (current === 1) { issues.push({ fileName: entry.fileName, code: 'PROJECT_DEPENDENCY_CYCLE', detail: `Cross-file child process dependencies contain a cycle at '${process}'.` }); return }
-    state.set(process, 1)
-    for (const dependency of entry.dependencies) if (processes.has(dependency)) visit(dependency)
-    state.set(process, 2)
+    const entry = entries[index]!
+    if (current === 1) { issues.push({ fileName: entry.fileName, code: 'PROJECT_DEPENDENCY_CYCLE', detail: `Cross-file child process dependencies contain a cycle at '${entry.processId}'.` }); return }
+    state.set(index, 1)
+    for (const dependency of entry.dependencies) if (processes.has(dependency)) visit(processes.get(dependency)!)
+    for (const dependency of new Set(Object.values(entry.decisionDependencies ?? {}))) if (decisions.has(dependency)) visit(decisions.get(dependency)!)
+    state.set(index, 2)
     order.push(entry.migrationId!)
   }
-  for (const process of processes.keys()) visit(process)
+  entries.forEach((entry, index) => { if (entry.migrationId) visit(index) })
   const project: MockMigrationProject = { id: newId(), wsId, name, files: entries, conversionOrder: issues.length === 0 ? order : [], issues, createdAt: clock.iso() }
   db.migrationProjects.set(project.id, project)
   return project
@@ -187,6 +246,7 @@ export interface ConvertRequest {
   groupMappings?: Record<string, string>
   childWorkflowMappings?: Record<string, { workflowRef?: string }>
   serviceTaskMappings?: Record<string, unknown>
+  decisionMappings?: Record<string, { migrationId?: string; decisionId?: string }>
   [key: string]: unknown
 }
 
@@ -218,6 +278,11 @@ export function convertMigration(migration: MockMigration, user: MockUser, reque
       const ref = request.childWorkflowMappings?.[i.sourceElementId]?.workflowRef
       if (!ref || !published.has(ref)) open.push({ ...i, explanation: ref ? `Child workflow '${ref}' has no published release.` : i.explanation })
     } else if (i.reasonCode === 'SERVICE_MAPPING_REQUIRED' && !request.serviceTaskMappings?.[i.sourceElementId]) open.push(i)
+    else if (i.reasonCode === 'DECISION_MAPPING_REQUIRED') {
+      const mapping = request.decisionMappings?.[i.sourceElementId]
+      const target = mapping?.migrationId ? db.migrations.get(mapping.migrationId) : undefined
+      if (!target || target.wsId !== migration.wsId || target.report.sourceSystem !== 'dmn' || target.report.issues.some(i => i.severity === 'blocker')) open.push(i)
+    }
   }
   if (open.length > 0) return { ok: false, status: 422, code: 'MIGRATION_BLOCKED', title: 'Migration blocked', detail: 'Resolve mappings and acknowledge documented losses before converting.', extra: { openItems: open } }
   if ([...db.workflows.values()].some((w) => w.wsId === migration.wsId && w.key === key)) return { ok: false, status: 409, code: 'DUPLICATE_KEY', title: 'A workflow with this key already exists' }

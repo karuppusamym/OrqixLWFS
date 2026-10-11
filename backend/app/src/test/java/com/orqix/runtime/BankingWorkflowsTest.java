@@ -708,7 +708,7 @@ class BankingWorkflowsTest extends RuntimeTestBase {
     }
 
     @Test
-    void gap_decisionEventDoesNotRecordTheInputValue() throws Exception {
+    void creditDecisionEvidenceRecordsInputAndAllCandidatesWithinDataPermissionScope() throws Exception {
         UUID run = startRun("rhea.requester", credit(), creditInput("5000.00"));
         until(() -> {
             try {
@@ -720,10 +720,23 @@ class BankingWorkflowsTest extends RuntimeTestBase {
         JsonNode data = decisionEvent(run);
         List<String> names = new ArrayList<>();
         data.properties().forEach(e -> names.add(e.getKey()));
-        // key, version, matched row and outputs are recorded; the amount that was tested, the rows not chosen and the
-        // actor are not, and there is no decision-record API
-        assertThat(names).containsExactlyInAnyOrder("decisionKey", "version", "matched", "outputs");
-        assertThat(data.toString()).doesNotContain("5000");
+        assertThat(names).containsExactlyInAnyOrder("decisionKey", "version", "matched", "outputs", "evidence");
+        JsonNode evidence=data.path("evidence");
+        assertThat(evidence.path("inputs").get(0).path("fieldRef").asString()).isEqualTo("/input/amount");
+        assertThat(evidence.path("inputs").get(0).path("value").decimalValue()).isEqualByComparingTo("5000");
+        assertThat(evidence.path("rows").size()).isEqualTo(2);
+        for(JsonNode row:evidence.path("rows")) {
+            assertThat(row.path("matched").asBoolean()).isFalse();
+            assertThat(row.path("selected").asBoolean()).isFalse();
+        }
+        assertThat(evidence.path("defaultSelected").asBoolean()).isTrue();
+        for(JsonNode event:api("vic.viewer").get("/workspaces/{ws}/runs/{id}/events",PURCHASING,run).body().path("items")) {
+            if("DECISION_EVALUATED".equals(event.path("type").asString())) {
+                assertThat(event.path("data").path("evidenceRedacted").asBoolean()).isTrue();
+                assertThat(event.path("data").has("evidence")).isFalse();
+                assertThat(event.path("data").has("outputs")).isFalse();
+            }
+        }
         cancel(run);
     }
 

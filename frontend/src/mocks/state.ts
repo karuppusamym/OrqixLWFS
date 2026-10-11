@@ -300,7 +300,7 @@ export interface MockMigrationProject {
   id: string
   wsId: string
   name: string
-  files: Array<{ fileName: string; migrationId: string | null; processId: string | null; dependencies: string[] }>
+  files: Array<{ fileName: string; migrationId: string | null; processId: string | null; dependencies: string[]; sourceFormat?: 'bpmn' | 'dmn' | null; decisionIds?: string[]; decisionDependencies?: Record<string, string> }>
   conversionOrder: string[]
   issues: Array<{ fileName: string; code: string; detail: string }>
   createdAt: string

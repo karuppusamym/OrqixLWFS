@@ -33,6 +33,7 @@ import com.orqix.shared.problem.ApiException;
 import com.orqix.shared.problem.ProblemCode;
 
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ObjectNode;
 
 /** Start a run (S5 section 3), run lists, run detail and the run timeline (S3 section 7). */
 @Service
@@ -277,10 +278,23 @@ public class RunService {
         for (RunEvents.EventRow row : items) {
             result.add(new RuntimeDtos.RunEvent(row.seq(), row.type(), row.nodeId(), release.nodeLabel(row.nodeId()),
                     row.actorSubjectId() == null ? null : views.ref(row.actorSubjectId(), names), row.occurredAt(),
-                    row.data()));
+                    eventData(row, visible.dataVisible())));
         }
         long nextAfter = items.isEmpty() ? from : items.get(items.size() - 1).seq();
         return new RuntimeDtos.EventPage(result, nextAfter, hasMore, visible.run().lifecycle());
+    }
+
+    /** Decision values belong to the same permission scope as request/output data. */
+    private JsonNode eventData(RunEvents.EventRow row, boolean dataVisible) {
+        if (dataVisible || !"DECISION_EVALUATED".equals(row.type())) return row.data();
+        ObjectNode metadata = json.object();
+        JsonNode data = row.data();
+        if (data != null && data.isObject()) {
+            if (data.has("decisionKey")) metadata.set("decisionKey", data.path("decisionKey"));
+            if (data.has("version")) metadata.set("version", data.path("version"));
+        }
+        metadata.put("evidenceRedacted", true);
+        return metadata;
     }
 
     /** RunDetail filtered by the caller's permissions (S3 section 3 rule 4). */

@@ -2180,6 +2180,7 @@ components:
                 maxLength: 1048576
               sourceFormat:
                 type: string
+                description: 'Optional format hint. BPMN and single-decision DMN files are supported; form files produce a project blocker. XML roots determine the format when omitted.'
                 enum:
                 - bpmn
                 - dmn
@@ -2225,6 +2226,19 @@ components:
                 - $ref: '#/components/schemas/Uuid'
                 - type: 'null'
               processId: *id003
+              sourceFormat:
+                description: 'Detected XML source kind; null for an unsupported or unreadable source. Omitted on older stored projects.'
+                type: [string, 'null']
+                enum: [bpmn, dmn, null]
+              decisionIds:
+                description: 'DMN decision identifiers declared by this file. Omitted on older stored projects.'
+                type: array
+                items: *id004
+              decisionDependencies:
+                description: 'BPMN business-rule task IDs mapped to referenced DMN decision IDs. Omitted on older stored projects.'
+                type: object
+                additionalProperties:
+                  type: string
               dependencies:
                 type: array
                 items: *id004
@@ -2918,7 +2932,7 @@ components:
           description: Business label of the node from the run's pinned release (helpers map to their owning node), so timelines never show raw IDs.
         actor: { oneOf: [{ $ref: '#/components/schemas/SubjectRef' }, { type: 'null' }] }
         occurredAt: { $ref: '#/components/schemas/Timestamp' }
-        data: { type: object, additionalProperties: true, description: 'Event-specific fields (S5 section 8 catalog)' }
+        data: { type: object, additionalProperties: true, description: 'Event-specific fields (S5 section 8 catalog). DECISION_EVALUATED includes outputs and evidence (input field/value pairs, evaluated candidate rows, and defaultSelected) only for callers allowed to read request data. Metadata-only readers receive the decision/table identifiers without outputs or evidence.' }
     EventPage:
       type: object
       required: [items, nextAfter, hasMore, lifecycle]

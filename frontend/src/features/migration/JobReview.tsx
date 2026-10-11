@@ -25,6 +25,7 @@ type ProjectConversion = components['schemas']['MigrationProjectConversion']
 export interface ProjectContext {
   projectId: string
   onConverted: (result: ProjectConversion) => void
+  suggestedDecisionMappings?: Request['decisionMappings']
 }
 
 /** Compatibility report and mapping form of one source file; converting creates a draft, never a release. */
@@ -42,7 +43,7 @@ export function JobReview({ job, editable, project }: { job: Job; editable: bool
   const [children, setChildren] = useState('{}')
   const [services, setServices] = useState('{}')
   const [serviceGroups, setServiceGroups] = useState('{}')
-  const [decisions, setDecisions] = useState('{}')
+  const [decisions, setDecisions] = useState(() => JSON.stringify(project?.suggestedDecisionMappings ?? {}, null, 2))
   const [decisionId, setDecisionId] = useState('')
   const [ackReview, setAckReview] = useState(false)
   const [input, setInput] = useState('')

@@ -6,6 +6,8 @@ import { WS_PURCHASING as WS, clock, db, userByName } from './state'
 
 const user = userByName
 const source = (fileName: string, content: string): ProjectSource => ({ fileName, content })
+const dmn = (id = 'risk') => `<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="rules"><decision id="${id}"><decisionTable hitPolicy="FIRST"><input id="i"><inputExpression typeRef="number"><text>amount</text></inputExpression></input><output id="o" name="route" typeRef="string"/><rule id="r"><inputEntry><text>&gt; 10</text></inputEntry><outputEntry><text>"review"</text></outputEntry></rule></decisionTable></decision></definitions>`
+const withDecision = (decision = 'risk') => bpmn('root').replace('<endEvent', `<businessRuleTask id="rule" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" camunda:decisionRef="${decision}"/><endEvent`)
 
 function convert(fileName: string, xml: string, key: string, mapper = 'dana.designer', extra: Record<string, unknown> = {}) {
   const { migration } = createMigration(WS, fileName, xml)
@@ -51,10 +53,30 @@ describe('mock projects', () => {
     expect(codes([source('a.bpmn', bpmn('a', 'b')), source('b.bpmn', bpmn('b', 'a'))])).toContain('PROJECT_DEPENDENCY_CYCLE')
     expect(codes([source('a.bpmn', bpmn('a', 'a'))])).toContain('PROJECT_DEPENDENCY_CYCLE')
     expect(codes([source('a.bpmn', bpmn('a', '${child}'))])).toContain('PROJECT_DYNAMIC_CHILD_REFERENCE')
-    expect(codes([{ fileName: 'rules.dmn', content: '<definitions/>', sourceFormat: 'dmn' }])).toEqual(['PROJECT_FORMAT_NOT_SUPPORTED'])
+    expect(codes([{ fileName: 'rules.form', content: '{}', sourceFormat: 'form' }])).toEqual(['PROJECT_FORMAT_NOT_SUPPORTED'])
     const blocked = planProject(WS, 'P', [source('a.bpmn', bpmn('a', 'gone'))])
     expect(blocked.conversionOrder).toEqual([])
     expect(projectView(blocked).status).toBe('blocked')
+  })
+  it('detects XML formats and orders referenced DMN before BPMN, preserving reviewed mapping checks', () => {
+    const project = planProject(WS, 'Rules', [source('process.xml', withDecision()), source('rules.xml', dmn())])
+    expect(project.issues).toEqual([])
+    expect(project.conversionOrder.map(id => db.migrations.get(id)!.fileName)).toEqual(['rules.xml', 'process.xml'])
+    expect(project.files[0]).toMatchObject({ sourceFormat: 'bpmn', decisionDependencies: { rule: 'risk' } })
+    expect(project.files[1]).toMatchObject({ sourceFormat: 'dmn', decisionIds: ['risk'] })
+    expect(db.migrations.get(project.files[1]!.migrationId!)!.sourceHash).toMatch(/^[0-9a-f]{64}$/)
+    const parent = db.migrations.get(project.files[0]!.migrationId!)!
+    expect(convertMigration(parent, user('dana.designer'), { workflowKey: 'rules-parent', name: 'Rules' })).toMatchObject({ ok: false, code: 'MIGRATION_BLOCKED' })
+    expect(convertMigration(parent, user('dana.designer'), { workflowKey: 'rules-parent', name: 'Rules', decisionMappings: { rule: { migrationId: project.files[1]!.migrationId! } } })).toMatchObject({ ok: true })
+  })
+  it('blocks missing and duplicate decisions and multiple decisions in one file without a conversion order', () => {
+    const missing = planProject(WS, 'Missing', [source('parent.bpmn', withDecision())])
+    expect(missing.issues.map(i => i.code)).toContain('PROJECT_MISSING_DECISION')
+    expect(missing.conversionOrder).toEqual([])
+    const duplicate = planProject(WS, 'Duplicates', [source('a.dmn', dmn()), source('b.dmn', dmn())])
+    expect(duplicate.issues.map(i => i.code)).toContain('PROJECT_DUPLICATE_DECISION')
+    const multiple = dmn().replace('</definitions>', '<decision id="other"/></definitions>')
+    expect(planProject(WS, 'Multiple', [source('a.dmn', multiple)]).issues.map(i => i.code)).toContain('PROJECT_DMN_SELECTION_REQUIRED')
   })
   it('stores nothing when one file is rejected', () => {
     const before = db.migrations.size

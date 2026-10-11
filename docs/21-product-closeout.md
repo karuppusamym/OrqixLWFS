@@ -2,7 +2,7 @@
 
 Updated 10 October 2026. This is the current remaining-item register. The R0 implementation checklist, current build batch, future product roadmap and customer acceptance are separate scopes. Closing the batch does not mean every R1–R3 epic is implemented. [Build evidence](19-product-build-tracker.md) records the checks for the combined tree.
 
-## Current build batch - complete
+## Previous build batch - complete
 
 | Item | Result | Acceptance |
 |---|---|---|
@@ -14,6 +14,14 @@ Updated 10 October 2026. This is the current remaining-item register. The R0 imp
 | Existing projects/review, DMN/operators, banking examples, date waits and Assistant | Retained | Existing committed implementation and regressions are included in coordinated checks. Banking examples remain illustrative. |
 
 Verification: 281 compiler cases; 457 unique application cases (455 pass, 2 optional live-provider skips), with priority/security corrections verified in a focused rerun; 554 frontend tests; 69 contract checks; 39 mock browser passes and 4 real-stack-only skips. Packaging, typecheck, lint, build and API drift pass. Detailed logs and the limits of combined evidence are in [doc 19](19-product-build-tracker.md#closeout-verification).
+
+## Gap completion follow-up
+
+| ID | Item | Current scope |
+|---|---|---|
+| MIG08 | DMN files within migration projects | Implemented; coordinated verification in progress. Namespace detection, one convertible decision per DMN file, missing/duplicate/unsupported diagnostics, dependency order, editable mapping suggestions and legacy records. [S20](build/S20-project-dmn.md) |
+| RULE01 | Automated decision evidence | Implemented; coordinated verification in progress. Actual pinned DMN output plus input and every bounded candidate row, expandable history and request-data permission filtering. Metadata readers receive no matched row, outputs or evidence. [S21](build/S21-decision-evidence.md) |
+| DOC05 | Approved document reference authoring | Implemented; coordinated verification in progress. Studio creates exact required request choices and field mappings for a known historical version or retained snapshot. Administrator-only lookups/capture preserve existing authorization. [S22](build/S22-document-authoring.md) |
 
 ## Customer and source acceptance still open
 
@@ -32,9 +40,9 @@ These are engineering features, not infrastructure. They remain in the [full bac
 
 | Area | Remaining functionality |
 |---|---|
-| Migration breadth | Form import, optional reviewed AI mapping proposals, connector element-template recognition, DMN files within multi-file projects, native user-task multi-instance and broader BPMN loss-aware import |
+| Migration breadth | Form import, optional reviewed AI mapping proposals, connector element-template recognition, multi-decision selection inside projects, native user-task multi-instance and broader BPMN loss-aware import |
 | Execution and cases | Boundary timer/error events, message correlation, mutable correction forms, nested/object collections, adaptive case stages, business calendars and recurring escalation |
-| Banking and rules | Full automated decision evidence with candidate rows/input, effective-dated rule packs, cross-stage separation of duties and multi-currency rules |
+| Banking and rules | Effective-dated rule packs, multi-input rule tables, stored publish-gating decision tests, cross-stage separation of duties and multi-currency rules |
 | Operations and authoring | Audited incident variable correction, waiting-on-nothing detection, swimlanes, threaded element discussion, further authoring modes, in-flight migration and canary releases |
 | Documents and integrations | OCR, requester file browsing/attachments, OAuth lifecycle automation, Teams/mail and approved write-capable agent tools |
 | Platform organization and delivery | Remaining R1–R3 folder/shared-asset organization, advanced triggers/search/analytics, Git promotion and environment lifecycle contracts described by the backlog |

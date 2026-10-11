@@ -282,7 +282,11 @@ export function advance(run: MockRun, nodeId: string): void {
         run.steps[node.id] = result.output
         addEvent(run, 'DECISION_EVALUATED', {
           nodeId: node.id,
-          data: { label: node.label, decisionKey: table.key, version: table.version, matched: result.usedDefault ? 'default' : `r${(result.matchedRow ?? 0) + 1}`, outputs: result.output },
+          data: { label: node.label, decisionKey: table.key, version: table.version, matched: result.usedDefault ? 'default' : `r${(result.matchedRow ?? 0) + 1}`, outputs: result.output, evidence: {
+            inputs: Object.entries(values).map(([fieldRef,value]) => ({fieldRef,value})),
+            rows: table.rows.map((row,index) => ({rowId:`r${index+1}`,condition:row.when,matched:evaluateCondition(row.when,values[row.when.fieldRef]),selected:index===result.matchedRow})),
+            defaultSelected:result.usedDefault,
+          } },
         })
         current = next('next')
         break
@@ -639,9 +643,13 @@ export function requestTitleOf(run: MockRun): string | null {
 }
 
 /** The rule for request data (docs/build/S3-api.md section 3 rule 4): the initiator, a task participant, or run.read-data. */
+export function isRunParticipant(run: MockRun, user: MockUser): boolean {
+  const permissions = permissionsOf(user,run.wsId)
+  return run.tasks.some((t) => t.assigneeId === user.id || t.completedById === user.id || t.status === 'open' && permissions.includes('task.act') && inGroup(user,t.candidateGroup) && (run.initiatorId !== user.id || selfApprovalAllowed(run,currentRelease(run))))
+}
+
 export function canSeeRunData(run: MockRun, user: MockUser): boolean {
-  const participant = run.tasks.some((t) => t.assigneeId === user.id || t.completedById === user.id || inGroup(user, t.candidateGroup))
-  return run.initiatorId === user.id || participant || permissionsOf(user, run.wsId).includes('run.read-data')
+  return run.initiatorId === user.id || isRunParticipant(run,user) || permissionsOf(user,run.wsId).includes('run.read-data')
 }
 
 export function toRun(run: MockRun, user: MockUser): Run {

@@ -57,6 +57,10 @@ Select a step to add **Step notes** explaining its purpose or review decisions. 
 
 To import an existing process, choose **Workflows → Import workflow**. Camunda BPMN imports require explicit assignment and connector mappings. Pega archives produce an inventory and a template for reviewed manual mappings. Resolve blockers, review assumptions and convert to a draft; publication remains a separate step. See [migration workbench](17-migration-workbench.md) for supported formats and limits.
 
+**Import a multi-file project** accepts BPMN and DMN together, up to ten files. Each DMN file must contain one convertible decision. XML namespaces identify the format, including `.xml` files. The project lists missing or duplicate process/decision references and orders dependencies before callers. Review the suggested **Decision mappings (JSON)** before converting. A DMN table is copied from its source migration into the caller; publishing its standalone workflow is optional. Called child workflows must still be published before their callers.
+
+On a request's timeline, expand **Decision evidence** to see the input, evaluated candidate rules, selected rule and default status from its pinned workflow version. The requester, eligible participants and readers with request-data permission can see values. Metadata-only viewers receive a restricted-evidence message.
+
 1. **Workflows → New workflow**, then pick a template such as *Purchase approval*, or start from scratch.
 2. The **studio** opens with the **Canvas** tab: steps connected by arrows. Add steps from the palette — *Ask for approval*, *Make a decision*, *Choose a path*, *Call a system*, *Notify someone*, *Finish*. Select a step to edit it in the panel on the right; the basic settings come first, and *Advanced* holds the rest.
 3. The **Steps** tab offers the same editing as a list that works fully with the keyboard.
@@ -77,6 +81,8 @@ An approval's **Time limit** cancels the task and follows its **Timed out** rout
 ## Connecting another system
 
 Workflows can reference approved SharePoint/OneDrive files through the registered Microsoft document operations. Use stable drive/item identifiers and an explicit historical version or retained snapshot. An integration administrator can load and select historical versions in the connection test panel. The workflow reads the configured pin and fails if unavailable; it does not silently substitute current content. See [Microsoft documents](microsoft-documents.md) for supported text/PDF/Office formats and limits.
+
+In a document **Call a system** step, choose **Configure document reference** to enter an approved drive, known item and exact historical version or retained snapshot. **Apply approved reference to request form** creates required single-choice questions and maps them into the step. Existing conflicting mappings must be cleared explicitly. Connection administrators can load historical versions or explicitly capture a current snapshot in this helper. This configures a fixed approved reference for the published workflow; requesters choose those exact values in the normal form. See [document authoring](build/S22-document-authoring.md).
 
 Workspace administrators can open **Settings → Connections**, configure the address and sign-in method, enable the connection and save it. Use **Test connection** with a read-only operation to check the saved binding. A new system first needs an approved operation contract registered by the platform team.
 

@@ -1278,7 +1278,10 @@ export interface components {
             files: {
                 fileName: string;
                 content: string;
-                /** @enum {string} */
+                /**
+                 * @description Optional format hint. BPMN and single-decision DMN files are supported; form files produce a project blocker. XML roots determine the format when omitted.
+                 * @enum {string}
+                 */
                 sourceFormat?: "bpmn" | "dmn" | "form";
             }[];
         };
@@ -1291,6 +1294,17 @@ export interface components {
                 fileName: string;
                 migrationId: components["schemas"]["Uuid"] | null;
                 processId: string | null;
+                /**
+                 * @description Detected XML source kind; null for an unsupported or unreadable source. Omitted on older stored projects.
+                 * @enum {string|null}
+                 */
+                sourceFormat?: "bpmn" | "dmn" | null;
+                /** @description DMN decision identifiers declared by this file. Omitted on older stored projects. */
+                decisionIds?: string[];
+                /** @description BPMN business-rule task IDs mapped to referenced DMN decision IDs. Omitted on older stored projects. */
+                decisionDependencies?: {
+                    [key: string]: string;
+                };
                 dependencies: string[];
                 /** @enum {string} */
                 status: "analyzed" | "converted" | "failed" | "blocked";
@@ -1748,7 +1762,7 @@ export interface components {
             nodeLabel?: string | null;
             actor?: components["schemas"]["SubjectRef"] | null;
             occurredAt: components["schemas"]["Timestamp"];
-            /** @description Event-specific fields (S5 section 8 catalog) */
+            /** @description Event-specific fields (S5 section 8 catalog). DECISION_EVALUATED includes outputs and evidence (input field/value pairs, evaluated candidate rows, and defaultSelected) only for callers allowed to read request data. Metadata-only readers receive the decision/table identifiers without outputs or evidence. */
             data: {
                 [key: string]: unknown;
             };

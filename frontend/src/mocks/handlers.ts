@@ -1,7 +1,7 @@
 import { delay, http, HttpResponse, type HttpHandler, type JsonBodyType } from 'msw'
 import type { Permission, ProblemCode, TaskDetail, ValidationIssue } from '@/api/types'
 import { nodeById } from '@/features/studio/model/graph'
-import { addEvent, canSeeRunData, evaluateTable, requestTitleOf, claim, createRun, decide, cancelRun, currentRelease, reconcileRun, retryRun, release as releaseTask, selfApprovalAllowed, toRun, toRunDetail, toTaskSummary } from './engine'
+import { addEvent, canSeeRunData, isRunParticipant, evaluateTable, requestTitleOf, claim, createRun, decide, cancelRun, currentRelease, reconcileRun, retryRun, release as releaseTask, selfApprovalAllowed, toRun, toRunDetail, toTaskSummary } from './engine'
 import { makeRelease } from './seed'
 import { migrationPublishDenial } from './migration'
 import { normalizeDefinition, type Definition, type Literal } from '@/features/studio/model/types'
@@ -269,7 +269,7 @@ function findTask(wsId: string, taskId: string): { run: MockRun; task: MockTask 
 }
 
 function canReadRun(user: MockUser, perms: Permission[], run: MockRun): boolean {
-  return perms.includes('run.read') || run.initiatorId === user.id || run.tasks.some((t) => isOpenTaskVisible(user, t, run))
+  return perms.includes('run.read') || run.initiatorId === user.id || isRunParticipant(run,user)
 }
 
 function problemFromValidation(issues: ValidationIssue[]) {
@@ -614,7 +614,7 @@ export function createHandlers(): HttpHandler[] {
         nodeLabel: e.nodeId ? (nodeById(currentRelease(run).definition, e.nodeId)?.label ?? null) : null,
         actor: e.actorId ? subjectRef(userById(e.actorId)) : null,
         occurredAt: e.occurredAt,
-        data: e.data,
+        data: e.type === 'DECISION_EVALUATED' && !canSeeRunData(run,g.user) ? {decisionKey:e.data.decisionKey,version:e.data.version,evidenceRedacted:true} : e.data,
       }))
       return HttpResponse.json({ items, nextAfter: items.at(-1)?.seq ?? after, hasMore: fresh.length > limit, lifecycle: run.lifecycle })
     }),

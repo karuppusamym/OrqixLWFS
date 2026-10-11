@@ -67,6 +67,40 @@ class MigrationProjectApiTest extends RuntimeTestBase {
         return jdbc.sql("SELECT count(*) FROM audit_event WHERE action=:action AND resource_id=:id").param("action", action).param("id", resource).query(Integer.class).single();
     }
 
+    @Test void dmnProjectConvertsDecisionBeforeCallerAndExecutesEmbeddedTableWithoutPublishingDmnWorkflow() throws Exception {
+        String s=UUID.randomUUID().toString().substring(0,8);
+        String dmn=java.nio.file.Files.readString(java.nio.file.Path.of("../../examples/migration/dmn-first-hit.dmn"));
+        String bpmn=java.nio.file.Files.readString(java.nio.file.Path.of("../../examples/migration/business-rule-task.bpmn"));
+        var project=uploaded("dana.designer",PURCHASING,List.of(file("caller.xml",bpmn),file("rules.xml",dmn)));
+        String decision=migrationOf(project,"rules.xml"),caller=migrationOf(project,"caller.xml");
+        assertThat(project.path("conversionOrder").get(0).asString()).isEqualTo(decision);
+        assertThat(project.path("files").get(1).path("sourceFormat").asString()).isEqualTo("dmn");
+        assertThat(project.path("files").get(0).path("decisionDependencies").path("routeRule").asString()).isEqualTo("reviewRoute");
+        assertThat(convertNext("dana.designer",PURCHASING,project,caller,mappings("prj-caller-"+s)).status()).isEqualTo(409);
+        var first=convertNext("dana.designer",PURCHASING,project,decision,mappings("prj-decision-"+s));
+        assertThat(first.status()).as(first.toString()).isEqualTo(201);
+        assertThat(first.body().path("converted").path("workflow").path("activeRelease").isNull()).isTrue();
+        var request=mappings("prj-caller-"+s);
+        request.putObject("decisionMappings").putObject("routeRule").put("migrationId",decision).put("decisionId","reviewRoute");
+        var second=convertNext("dana.designer",PURCHASING,project,caller,request);
+        assertThat(second.status()).as(second.toString()).isEqualTo(201); assertThat(second.body().path("project").path("status").asString()).isEqualTo("converted");
+        UUID workflow=UUID.fromString(second.body().path("converted").path("workflow").path("id").asString()); publish(workflow);
+        for(var c:Map.of("4999.99","Manager","5000","Finance","10000","Director").entrySet()) {
+            var started=api("rhea.requester").post(Map.of("workflowId",workflow,"input",Map.of("exposure",new java.math.BigDecimal(c.getKey()))),UUID.randomUUID().toString(),"/workspaces/{ws}/runs",PURCHASING);
+            assertThat(started.status()).as(started.toString()).isEqualTo(201);
+            UUID run=UUID.fromString(started.body().path("id").asString()); awaitLifecycle(PURCHASING,run,"completed","needsAttention");
+            assertThat(run(PURCHASING,run).path("outcome").asString()).isEqualTo(c.getValue());
+        }
+    }
+    @Test void legacyStoredProjectFilesDeserializeWithEmptyDecisionMetadata() throws Exception {
+        String s=UUID.randomUUID().toString().substring(0,8);
+        var original=uploaded("dana.designer",PURCHASING,List.of(file("legacy.bpmn",bpmn("legacy-"+s))));
+        var legacy=original.deepCopy(); for(var file:legacy.path("files")) { var value=(ObjectNode)file; value.remove("sourceFormat");value.remove("decisionIds");value.remove("decisionDependencies"); }
+        jdbc.sql("UPDATE migration_project SET report=CAST(:report AS jsonb) WHERE id=:id").param("report",json.write(legacy)).param("id",UUID.fromString(original.path("id").asString())).update();
+        var restored=project(PURCHASING,original.path("id").asString());
+        assertThat(restored.path("files").get(0).path("decisionIds").isEmpty()).isTrue(); assertThat(restored.path("files").get(0).path("decisionDependencies").isEmpty()).isTrue();
+        assertThat(convertNext("dana.designer",PURCHASING,restored,migrationOf(restored,"legacy.bpmn"),mappings("prj-legacy-"+s)).status()).isEqualTo(201);
+    }
     @Test void plansChildrenBeforeParentsAndConvertsInThatOrderWithPerFileStatus() throws Exception {
         String suffix = UUID.randomUUID().toString().substring(0, 8);
         String leafKey = "prj-leaf-" + suffix, midKey = "prj-mid-" + suffix, rootKey = "prj-root-" + suffix;
@@ -153,7 +187,7 @@ class MigrationProjectApiTest extends RuntimeTestBase {
         assertThat(codes(selfCall)).contains("PROJECT_DEPENDENCY_CYCLE");
         var dynamic = uploaded("dana.designer", PURCHASING, List.of(file("dynamic.bpmn", bpmn("dynamic-" + s, "${child}"))));
         assertThat(codes(dynamic)).contains("PROJECT_DYNAMIC_CHILD_REFERENCE");
-        var unsupported = uploaded("dana.designer", PURCHASING, List.of(file("ok.bpmn", bpmn("ok-" + s)), Map.of("fileName", "rules.dmn", "content", "<definitions/>", "sourceFormat", "dmn")));
+        var unsupported = uploaded("dana.designer", PURCHASING, List.of(file("ok.bpmn", bpmn("ok-" + s)), Map.of("fileName", "form.json", "content", "{}", "sourceFormat", "form")));
         assertThat(codes(unsupported)).containsExactly("PROJECT_FORMAT_NOT_SUPPORTED");
         assertThat(unsupported.path("files").get(1).path("migrationId").isNull()).isTrue(); assertThat(unsupported.path("files").get(1).path("status").asString()).isEqualTo("blocked");
         for (var blocked : List.of(missing, ambiguous, cycle, selfCall, dynamic, unsupported)) {

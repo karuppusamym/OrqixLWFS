@@ -36,6 +36,8 @@ No real tenant acceptance is claimed. Tenant consent and least-privilege verific
 
 ## Approved links and historical version selection
 
+Studio now provides an [approved reference authoring helper](build/S22-document-authoring.md) for historical text/extraction and retained snapshot extraction. It creates required exact-choice request fields and input mappings, preserving safe provenance outputs. Known approved IDs can be configured without Graph calls; loading versions and capturing current bytes retain the existing `connection.manage` authorization. Requesters use the published form's exact choices. Tenant browsing and requester-level Microsoft authorization remain open.
+
 Register [connection version 3](../examples/connections/microsoft-documents-v3.json) to add link resolution and version listing. The [link-review workflow](../examples/document-link-review.json) accepts an approved SharePoint URL, resolves it through Graph, captures current content as an immutable snapshot, extracts it, and requests approval. Administrators must replace the example tenant URL pattern and drive enum with their approved resources.
 
 `/resolveLink` requires `shareUrl` to match the operation's administrator-approved pattern or enum and uses only recognized HTTPS SharePoint/OneDrive host forms. It encodes the link for Graph's shares API; it never fetches the submitted URL directly. A nonempty `driveId` enum in the request schema restricts the resolved drive before download. The result contains safe identifiers and provenance, not signed download credentials. The adapter does not request sharing-link redemption. [Microsoft shares API](https://learn.microsoft.com/en-us/graph/api/shares-get?view=graph-rest-1.0).

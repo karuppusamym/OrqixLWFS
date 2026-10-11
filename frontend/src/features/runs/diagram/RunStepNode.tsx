@@ -60,7 +60,7 @@ function RunStepNodeComponent(props: NodeProps<RunFlowNode>) {
       </div>
       {showChip ? (
         <span
-          className={cn('absolute -top-4 left-4 z-10 inline-flex items-center gap-1.5 rounded-full border-2 px-3 py-0.5 text-[15px] leading-6 font-bold shadow-card', CHIP[data.status])}
+          className={cn('absolute -top-5 left-4 z-10 inline-flex items-center gap-1.5 rounded-full border-2 px-3 py-0.5 text-[15px] leading-6 font-bold shadow-card', CHIP[data.status])}
           data-testid="run-step-chip"
         >
           <Icon className="size-4" aria-hidden="true" />

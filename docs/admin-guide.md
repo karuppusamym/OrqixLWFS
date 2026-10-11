@@ -109,9 +109,25 @@ A profile whose model is excluded or over the caps is disabled at startup with a
 | `AI_PROVIDER_UNAVAILABLE` | The provider timed out or returned 429 or 5xx. Inspect the failed job; users can submit again with a new Idempotency-Key |
 | `AI_BUDGET_EXCEEDED` | Wait for the next month (UTC) or raise `orqix.ai.budget.monthly-usd` |
 
+## 7b. Request files and virus scanning
+
+People can attach files to requests (PDF, PNG, JPEG, text, CSV, Word, Excel, PowerPoint). Limits, all under
+`orqix.attachments.*`: `max-file-bytes` (10 MiB, the maximum), `max-files-per-run` (25), `max-bytes-per-run` (50 MiB),
+`staged-ttl` (24 h for files chosen on a form that is never submitted), `max-staged-per-subject` (10) and
+`uploads-per-minute` (30). Uploads above 256 KiB are spooled to the temporary directory (`spring.servlet.multipart.location`),
+which must be writable.
+
+**The default does not scan files.** They are stored with the status "Not scanned". Before accepting files from outside your
+organization, run ClamAV (clamd) and set `orqix.attachments.clamav.enabled=true`, `...clamav.host` and `...clamav.port`
+(default 3310); allow the egress to it. Files the scanner flags or cannot check are blocked from download. Alternatively provide
+your own `AttachmentScanner` bean marked `@Primary`. Existing files are not rescanned. Uploaded content is kept in
+PostgreSQL: include it in the database sizing and backup plan. Removing a file deletes its bytes and keeps its metadata.
+
 ## 8. Operating
 
 **Health and metrics.** Readiness fails while the database is unreachable; liveness does not (no restart storms during a database outage). Metrics on 8081 include `orqix_runs_started_total`, `orqix_tasks_decided_total`, `orqix_effect_attempts_total`, `orqix_runs_needs_attention`, `orqix_oldest_executable_job_age_seconds` and `orqix_authz_denied_total`, plus JVM, HTTP and connection-pool metrics.
+
+**Insights.** The *Insights* page (workflow analytics) and its three endpoints (`/workspaces/{id}/insights/summary|throughput|steps`) are available to everyone with `run.read` in the workspace: the Operator and Viewer roles, and anyone granted `run.read`. Requesters, approvers and designers without that permission do not see the navigation item and receive 403. Insights contain counts, durations, workflow and step names and request references, never request titles or data; opening a request from the page still needs access to that request. Figures are computed from the database on every call (nothing is cached) with a statement timeout of 10 seconds and a range of at most 365 days; a very large workspace may need a shorter period or one workflow, and the response is then `503 DEPENDENCY_UNAVAILABLE`. Production query capacity still requires acceptance on representative workspace data.
 
 **Suggested alerts** (set thresholds from pilot traffic): runs needing attention above zero for 15 minutes; oldest executable job older than 5 minutes; connection pool saturation; rising authorization denials; missing backups.
 

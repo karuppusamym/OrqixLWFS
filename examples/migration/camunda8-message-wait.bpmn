@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Hand-authored compatibility fixture, not a customer export. A message catch event with a plain correlation variable becomes a
+     "wait for a message" step; the message payload is not imported. -->
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" xmlns:modeler="http://camunda.org/schema/modeler/1.0" targetNamespace="urn:orqix:migration-fixture" modeler:executionPlatform="Camunda Cloud" modeler:executionPlatformVersion="8.6.0">
+  <bpmn:message id="paymentMessage" name="payment-received"><bpmn:extensionElements><zeebe:subscription correlationKey="=orderId" /></bpmn:extensionElements></bpmn:message>
+  <bpmn:process id="c8-message-wait" name="Camunda 8 message wait" isExecutable="true">
+    <bpmn:startEvent id="start" />
+    <bpmn:intermediateCatchEvent id="awaitPayment" name="Payment received"><bpmn:messageEventDefinition messageRef="paymentMessage" /></bpmn:intermediateCatchEvent>
+    <bpmn:endEvent id="paid" name="Paid" />
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="awaitPayment" />
+    <bpmn:sequenceFlow id="f2" sourceRef="awaitPayment" targetRef="paid" />
+  </bpmn:process>
+</bpmn:definitions>

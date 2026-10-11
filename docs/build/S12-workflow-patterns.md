@@ -69,7 +69,7 @@ Real stack: `python tools/api-e2e/e2e_patterns.py` (scenarios 15 to 17).
 
 ## 9. Limitations and follow-ups
 
-- No wait for a message; no reminders (only the time limit route). "Until a date" waits use UTC (no workspace time zone) and a date question cannot be compared in conditions or decision tables.
+- Waiting for a message is described in [S16](S16-message-events.md); no reminders (only the time limit route). "Until a date" waits use UTC (no workspace time zone) and a date question cannot be compared in conditions or decision tables.
 - A cancelled child cannot be restarted by an operator; the parent continues with `cancelled`.
 - The initiator's right to start the child is checked when the parent starts, not again when the child starts.
 - Lock order is child before parent, except when a parent that ends (a rejection) cancels its children; a deadlock needs a child to finish in the same instant and the database reports it as a retryable conflict.

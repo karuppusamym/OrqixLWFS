@@ -115,6 +115,8 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
         const c = counts[n.id]
         const total = (c?.blockers ?? 0) + (c?.warnings ?? 0)
         const data: StepNodeData = { kind: n.type, label: n.label, subtitle: nodeSubtitle(def, n, groupNames), blockers: c?.blockers ?? 0, warnings: c?.warnings ?? 0 }
+        const stage = def.stages?.find((s) => s.nodes.includes(n.id))
+        if (stage) data.stage = stage.label
         if (n.type === 'approval' || n.type === 'waitForMessage') data.timeout = !!n.config.timeoutAfter
         if (n.type === 'end') {
           data.outcomeKind = n.config.outcomeKind === 'rejected' ? 'rejected' : 'success'

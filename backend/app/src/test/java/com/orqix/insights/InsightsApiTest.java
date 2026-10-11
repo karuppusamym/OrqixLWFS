@@ -14,7 +14,7 @@ import com.orqix.support.RuntimeTestBase;
 import tools.jackson.databind.JsonNode;
 
 /**
- * Insights (docs/build/S7-frontend.md section 9): access (run.read only), parameter validation, aggregates over real
+ * Insights (docs/build/S7-frontend.md section 4): access (run.read only), parameter validation, aggregates over real
  * runs through the public API, no request data in any response, and the bottleneck, timeout and overdue figures.
  * Every response is validated against contracts/openapi.yaml by the test client.
  */

@@ -196,6 +196,27 @@ class Camunda8MigrationApiTest extends RuntimeTestBase {
                 .param("ws", PURCHASING).param("parent", runId).query(Integer.class).single()).isEqualTo(1);
     }
 
+    @Test
+    void importedMessageCatchWaitsForAuthorizedWorkspaceDeliveryAndReplaysExactly() throws Exception {
+        var job = upload(example("camunda8-message-wait.bpmn"), "bpmn");
+        var converted = convert(job, base("c8-message"));
+        assertThat(converted.status()).as(converted.toString()).isEqualTo(201);
+        UUID workflow = publish(converted.body());
+        String key = "ORDER-" + UUID.randomUUID();
+        UUID runId = startRun(workflow, Map.of("orderId", key));
+        assertThat(lifecycle(PURCHASING, runId)).isEqualTo("waiting");
+        String idem = UUID.randomUUID().toString();
+        var payload = Map.of("name", "payment-received", "correlationKey", key);
+        assertThat(api("rhea.requester").post(payload, idem, "/workspaces/{ws}/messages", PURCHASING).status()).isEqualTo(403);
+        var accepted = api("olga.operator").post(payload, idem, "/workspaces/{ws}/messages", PURCHASING);
+        assertThat(accepted.status()).as(accepted.toString()).isEqualTo(202);
+        assertThat(accepted.body().path("matched").asInt()).isEqualTo(1);
+        awaitLifecycle(PURCHASING, runId, "completed", "needsAttention");
+        assertThat(lifecycle(PURCHASING, runId)).isEqualTo("completed");
+        var replay = api("olga.operator").post(payload, idem, "/workspaces/{ws}/messages", PURCHASING);
+        assertThat(replay.body()).isEqualTo(accepted.body());
+    }
+
     /** The duration timer runs on the job executor; poll until the approval after the wait is open. */
     private void awaitTask(UUID runId, String node) throws Exception {
         long deadline = System.currentTimeMillis() + 150_000;

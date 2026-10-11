@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { configure, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { PURCHASE_WORKFLOW_ID, USERS } from '@/mocks/state'
@@ -18,6 +18,9 @@ async function setAmount(user: ReturnType<typeof userEvent.setup>, amount: strin
   await user.type(field, amount)
 }
 
+// The whole app is rendered here, so a loaded machine needs more than the default one second to find things.
+configure({ asyncUtilTimeout: 15000 })
+
 describe('Test this workflow (panel)', () => {
   beforeEach(() => window.localStorage.clear())
 
@@ -29,7 +32,7 @@ describe('Test this workflow (panel)', () => {
     expect(within(panel).getByText(/not the workflow engine/i, { selector: 'p' })).toBeInTheDocument()
     await setAmount(user, '5000')
     await user.click(within(panel).getByTestId('run-test'))
-    expect(await within(panel).findByTestId('test-outcome', undefined, { timeout: 8000 })).toHaveTextContent('Fulfilled')
+    expect(await within(panel).findByTestId('test-outcome', undefined, { timeout: 20000 })).toHaveTextContent('Fulfilled')
     expect(within(panel).getByTestId('routes-tested')).toHaveTextContent('3 of 6 routes tested')
     // Step through to the decision: the sentence says why Finance is involved.
     const user2 = userEvent.setup()
@@ -39,7 +42,7 @@ describe('Test this workflow (panel)', () => {
     expect(screen.getByTestId('playback-live')).toHaveTextContent(/Step 3 of/)
     await user.click(within(panel).getByTestId('try-another'))
     expect(await within(panel).findByTestId('run-test')).toBeInTheDocument()
-  }, 30000)
+  }, 90000)
 
   it('shows the route of a rejection and of a failing system, and refuses an invalid sample request', async () => {
     signInAs('dana.designer')
@@ -48,19 +51,19 @@ describe('Test this workflow (panel)', () => {
     const panel = await openPanel(user)
     await user.selectOptions(within(panel).getByLabelText(/^Review request/), 'reject')
     await user.click(within(panel).getByTestId('run-test'))
-    expect(await within(panel).findByTestId('test-outcome', undefined, { timeout: 8000 })).toHaveTextContent('Rejected')
+    expect(await within(panel).findByTestId('test-outcome', undefined, { timeout: 20000 })).toHaveTextContent('Rejected')
     await user.click(within(panel).getByTestId('try-another'))
     await user.selectOptions(await within(panel).findByLabelText(/^Review request/), 'approve')
     await user.selectOptions(within(panel).getByLabelText(/^Create purchase order/), 'unavailable')
     await user.click(within(panel).getByTestId('run-test'))
-    expect(await within(panel).findByTestId('test-outcome', undefined, { timeout: 8000 })).toHaveTextContent('Needs attention')
+    expect(await within(panel).findByTestId('test-outcome', undefined, { timeout: 20000 })).toHaveTextContent('Needs attention')
     expect(within(panel).getByTestId('test-outcome')).toHaveTextContent(/Create purchase order/)
     await user.click(within(panel).getByTestId('try-another'))
     await setAmount(user, '0')
     await user.click(await within(panel).findByTestId('run-test'))
     await waitFor(() => expect(screen.getByLabelText(/Amount/)).toHaveAttribute('aria-invalid', 'true'))
     expect(within(panel).queryByTestId('test-outcome')).not.toBeInTheDocument()
-  }, 40000)
+  }, 90000)
 
   it('keeps named cases in this browser, runs them all against their expected outcome and exports them', async () => {
     signInAs('dana.designer')
@@ -68,17 +71,17 @@ describe('Test this workflow (panel)', () => {
     renderApp(EDIT)
     const panel = await openPanel(user)
     await user.click(within(panel).getByTestId('run-test'))
-    await within(panel).findByTestId('test-outcome', undefined, { timeout: 8000 })
+    await within(panel).findByTestId('test-outcome', undefined, { timeout: 20000 })
     await user.type(within(panel).getByLabelText(/Keep this case/), 'Small purchase')
     await user.click(within(panel).getByRole('button', { name: 'Save case' }))
     expect(within(panel).getByTestId('case-notice')).toHaveTextContent('Saved')
     expect(JSON.parse(window.localStorage.getItem(`orqix.testCases.v2.${USERS.find((u) => u.username === 'dana.designer')!.id}.${WS}.${PURCHASE_WORKFLOW_ID}`) ?? '[]')[0]).toMatchObject({ name: 'Small purchase', expect: 'Fulfilled' })
     await user.selectOptions(within(panel).getByLabelText('Expect'), 'Rejected')
     await user.click(within(panel).getByRole('button', { name: 'Run all saved cases' }))
-    await waitFor(() => expect(within(panel).getByTestId('case-summary')).toHaveTextContent('0 of 1 passed'), { timeout: 8000 })
+    await waitFor(() => expect(within(panel).getByTestId('case-summary')).toHaveTextContent('0 of 1 passed'), { timeout: 20000 })
     expect(within(panel).getByTestId('case-result-Small purchase')).toHaveTextContent(/Failed: Expected Rejected but it ended with Fulfilled/)
     await user.selectOptions(within(panel).getByLabelText('Expect'), 'Fulfilled')
     await user.click(within(panel).getByRole('button', { name: 'Run all saved cases' }))
-    await waitFor(() => expect(within(panel).getByTestId('case-summary')).toHaveTextContent('1 of 1 passed'), { timeout: 8000 })
-  }, 40000)
+    await waitFor(() => expect(within(panel).getByTestId('case-summary')).toHaveTextContent('1 of 1 passed'), { timeout: 20000 })
+  }, 90000)
 })

@@ -8,7 +8,7 @@ import { expectNoSeriousViolations } from '../support/axe'
 
 /**
  * T-UI-14: the "Where is my request" diagram on the run detail page and the Insights dashboard (docs/build/S7-frontend.md
- * sections 4 and 9). Mock data only: the demo seed has requests in every state and a synthetic three-month history, which the
+ * section 4). Mock data only: the demo seed has requests in every state and a synthetic three-month history, which the
  * real stack does not have. Set EVIDENCE_DIR to also save screenshots (evidence/design/<timestamp>/).
  */
 test.skip(!MOCK, 'Uses the demo seed and its synthetic history')
@@ -111,6 +111,7 @@ test('diagram: at 375 px the diagram scrolls inside its box and the page does no
   await noSidewaysScroll(page)
   const box = await page.getByTestId('run-diagram-canvas').boundingBox()
   expect(box && box.width).toBeLessThanOrEqual(375)
+  await page.getByTestId('run-diagram-canvas').scrollIntoViewIfNeeded()
   await shot(page, 'diagram-operator-mobile')
   await expectNoSeriousViolations(page, 'Run diagram (375 px)')
 })

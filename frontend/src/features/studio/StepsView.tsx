@@ -95,6 +95,7 @@ export function StepsView({
                       <Icon className="size-3.5" aria-hidden="true" /> {info.caption}
                     </span>
                     <span>&middot; {nodeSubtitle(def, node, groupNames)}</span>
+                    {def.stages?.find((s) => s.nodes.includes(node.id)) ? <span data-testid="step-stage">&middot; Stage: {def.stages.find((s) => s.nodes.includes(node.id))?.label}</span> : null}
                   </p>
                 </div>
                 {total > 0 ? (

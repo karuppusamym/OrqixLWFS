@@ -103,6 +103,12 @@ Severity **B** = blocker (cannot publish), **W** = warning (publish requires `ac
 | `WF_WAIT_CHOICE` | B | A wait has exactly one of `duration` and `untilField` |
 | `WF_WAIT_FIELD_TYPE` | B | `untilField` must name a date field |
 | `WF_WAIT_FIELD_OPTIONAL` | B | A request-form date used by a wait must be required |
+| `WF_MESSAGE_CORRELATION_UNKNOWN` | B | The field that identifies the request of a "Wait for a message" step does not exist (S16) |
+| `WF_MESSAGE_CORRELATION_TYPE` | B | That field is not text or a whole number |
+| `WF_MESSAGE_CORRELATION_OPTIONAL` | B | An optional request field cannot identify a request |
+| `WF_MESSAGE_PAYLOAD_DUPLICATE` | B | A message value is declared twice |
+| `WF_MESSAGE_TIMEOUT_ROUTE` | B | A message wait with a time limit needs exactly one `timedOut` path |
+| `WF_MESSAGE_DUPLICATE_WAIT` | B | Two waits for the same message and field in different parallel paths |
 | `WF_UI_UNKNOWN_FIELD` | W | `inputUi` names a field that does not exist |
 | `WF_UI_WIDGET_MISMATCH` | W | Widget incompatible with type (`money` needs number with `multipleOf: 0.01`; `select`/`radio` need `enum`; `checkbox` needs boolean) |
 | `WF_OUTPUT_MAPPING_UNKNOWN` | B | `outputMapping` key not in `outputSchema`, or incompatible type |
@@ -158,6 +164,7 @@ Namespaces: `bpmn` = `http://www.omg.org/spec/BPMN/20100524/MODEL`, `flowable` =
 |---|---|
 | `${orqixRoute.approved(execution, '<id>')}` / `${orqixRoute.rejected(execution, '<id>')}` | Approval outcome routing |
 | `${orqixRoute.condition(execution, '<transitionId>')}` | Branch condition (structured condition read from the flow's `orqix:condition`) |
+| *(none)* | Message waits (S16) add `message`, `eventBasedGateway` and message/timer catch events with literal names; no expression is involved, the allowlist is unchanged |
 | `${orqixWait.until(execution, '<id>')}` | Due moment of a "wait until a date" step (`timeDate` of its timer; S12 section 10) |
 | `${orqixDecisionTask}`, `${orqixHttpTask}`, `${orqixNotificationTask}`, `${orqixChildTask}` | Delegate expressions |
 

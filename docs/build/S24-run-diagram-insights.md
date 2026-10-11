@@ -1,4 +1,4 @@
-# S24 ? Run diagram and Insights
+# S24 - Run diagram and Insights
 
 Updated 11 October 2026. Implementation is complete; coordinated verification is recorded in the product build tracker.
 

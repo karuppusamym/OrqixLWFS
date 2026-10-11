@@ -19,17 +19,17 @@ Verification: 281 compiler cases; 457 unique application cases (455 pass, 2 opti
 
 | ID | Item | Current scope |
 |---|---|---|
-| MIG09 | DMN files within migration projects | Implemented; coordinated verification in progress. Namespace detection, one convertible decision per DMN file, missing/duplicate/unsupported diagnostics, dependency order, editable mapping suggestions and legacy records. [S20](build/S20-project-dmn.md) |
-| RULE01 | Automated decision evidence | Implemented; coordinated verification in progress. Actual pinned DMN output plus input and every bounded candidate row, expandable history and request-data permission filtering. Metadata readers receive no matched row, outputs or evidence. [S21](build/S21-decision-evidence.md) |
-| DOC05 | Approved document reference authoring | Implemented; coordinated verification in progress. Studio creates exact required request choices and field mappings for a known historical version or retained snapshot. Administrator-only lookups/capture preserve existing authorization. [S22](build/S22-document-authoring.md) |
+| MIG09 | DMN files within migration projects | Complete; verified locally. Namespace detection, one convertible decision per DMN file, missing/duplicate/unsupported diagnostics, dependency order, editable mapping suggestions and legacy records. [S20](build/S20-project-dmn.md) |
+| RULE01 | Automated decision evidence | Complete; verified locally. Actual pinned DMN output plus input and every bounded candidate row, expandable history and request-data permission filtering. Metadata readers receive no matched row, outputs or evidence. [S21](build/S21-decision-evidence.md) |
+| DOC05 | Approved document reference authoring | Complete; verified locally. Studio creates exact required request choices and field mappings for a known historical version or retained snapshot. Administrator-only lookups/capture preserve existing authorization. [S22](build/S22-document-authoring.md) |
 
 ## Resumed five-stream batch
 
-Implementation is being completed and verified together. The final coordinated evidence will be recorded in [doc 19](19-product-build-tracker.md).
+The five authorized slices are complete and verified locally. Full runs, reviewed-delta checks and their limits are recorded in [doc 19](19-product-build-tracker.md).
 
 | Item | Implemented scope | Limits |
 |---|---|---|
-| Camunda 8 import | HTTP connector hints with approved operation mappings, bounded FEEL, task settings/timers/child calls and Camunda Forms; S11 | Task forms are notes. Unsupported source semantics have explicit reasons; no generic native connector or source message-event import |
+| Camunda 8 import | HTTP connector hints with approved operation mappings, bounded FEEL, task settings/timers/child calls and Camunda Forms; S11 | Task forms are notes. Unsupported source semantics have explicit reasons; no generic native connector; only plain-variable message catch import is supported |
 | Message events | Workspace-authorized inbound API, message wait, bounded buffer/fan-out, timeout routes, idempotent acceptance; S23 | No signal/error/compensation events or unbounded broadcast |
 | Run diagram and Insights | Pinned-release derived path, current steps, throughput, cycle times, bottlenecks, overdue approvals/waits and CSV; S24 | Diagram history cap is explicit; no process mining or arbitrary BI query designer |
 | Test workflow | Pure dry-run trace/reasons, route coverage, saved browser cases, nested child simulation with global limits; S26 | Simulated outcomes do not prove external effects or engine timing; cases do not gate publication |

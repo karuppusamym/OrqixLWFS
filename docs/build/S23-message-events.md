@@ -11,3 +11,5 @@ An immutable acceptance response is retained in V21 and replayed exactly, includ
 Evidence: compiler MessageEventsTest and the order-payment-wait BPMN golden; runtime MessageEventsTest covers authorization, payloads, timing, durable recovery, concurrent delivery, concurrent quota enforcement and exact replay after consumption/expiry. Frontend message inspector, model and mock tests cover authoring and routing. Java verification is coordinated by the root build; do not infer passing tests from this document alone.
 
 Limits: message send is workspace permission scoped, not per-request recipient authorization; callers must use appropriately specific keys. No arbitrary expression evaluation, nested payload objects or unbounded correlation fan-out is supported.
+
+Camunda source import supports the bounded message-catch slice described in S11: a canonical declared message name and one plain-variable correlation subscription, with explicit review of payload omission and buffering differences. Ambiguous declarations/subscriptions remain blockers.

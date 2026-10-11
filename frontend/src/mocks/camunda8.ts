@@ -207,7 +207,13 @@ export function analyzeCamunda8(doc: Document, sourceHash: string): Report & { d
     } else if (kind === 'intermediateCatchEvent') {
       const def = Array.from(el.children).find(c => c.localName.endsWith('EventDefinition'))?.localName
       const dur = (/duration\("([^"]+)"\)/.exec(text(el.getElementsByTagNameNS(BPMN, 'timeDuration')[0])) ?? [])[1] ?? text(el.getElementsByTagNameNS(BPMN, 'timeDuration')[0])
-      if (def === 'timerEventDefinition' && isDuration(dur)) issues.push(issue(id, name, kind, 'review', 'DURATION_TIMER_MAPPED', `The constant duration ${dur} becomes a durable wait of the same length.`, 'Check that a fixed elapsed duration is what the source process meant.'))
+      const messageRef = el.getElementsByTagNameNS(BPMN, 'messageEventDefinition')[0]?.getAttribute('messageRef')
+      const message = Array.from(doc.getElementsByTagNameNS(BPMN, 'message')).find(m => m.getAttribute('id') === messageRef)
+      const messageName = message?.getAttribute('name') ?? ''
+      const correlation = message ? zeebe(message, 'subscription')[0]?.getAttribute('correlationKey') ?? '' : ''
+      if (def === 'messageEventDefinition' && /^[a-z][a-zA-Z0-9]*(-[a-z0-9][a-zA-Z0-9]*)*$/.test(messageName) && /^=\s*[A-Za-z_]\w*$/.test(correlation))
+        issues.push(issue(id, name, kind, 'review', 'MESSAGE_CATCH_MAPPED', `The step waits until the message '${messageName}' arrives with the same value as the request field '${correlation.replace(/^=\s*/, '')}'. Message variables are not imported.`, 'Check the message name, the correlation field and who sends the message.'))
+      else if (def === 'timerEventDefinition' && isDuration(dur)) issues.push(issue(id, name, kind, 'review', 'DURATION_TIMER_MAPPED', `The constant duration ${dur} becomes a durable wait of the same length.`, 'Check that a fixed elapsed duration is what the source process meant.'))
       else issues.push(issue(id, name, kind, 'blocker', def === 'messageEventDefinition' ? 'MESSAGE_EVENT_NOT_SUPPORTED' : def === 'signalEventDefinition' ? 'SIGNAL_EVENT_NOT_SUPPORTED' : 'EVENT_NOT_SUPPORTED_IN_V0', 'This event cannot be converted. Workflows have no message or signal events yet.', 'Model the wait as a human step or a wait with a duration.'))
     } else if (kind === 'callActivity') {
       const called = z('calledElement')

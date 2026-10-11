@@ -89,7 +89,7 @@ From the [decision register](../13-decision-register.md): **D01** (team size and
 - A change to a build decision (BD-xx) or a fixed decision (doc 09) needs an ADR and an update here.
 - Fixtures are shared: never copy them into test folders; load them from `examples/`.
 
-Current extensions: [S14 bounded iteration](S14-bounded-iteration.md), [S15 guided conversation](S15-conversational-execution.md), [Microsoft documents](../microsoft-documents.md), and [active product tracker](../19-product-build-tracker.md).
+Current extensions: [S14 bounded iteration](S14-bounded-iteration.md), [S15 guided conversation](S15-conversational-execution.md), [S16 message events](S16-message-events.md), [Microsoft documents](../microsoft-documents.md), and [active product tracker](../19-product-build-tracker.md).
 
 Additional build slices: [task collaboration](S17-task-collaboration.md) and [migration equivalence acceptance](migration-equivalence-acceptance.md). The active tracker records current integration evidence rather than treating future roadmap items as completed.
 

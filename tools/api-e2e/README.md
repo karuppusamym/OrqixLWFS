@@ -73,3 +73,13 @@ Needs the dev seed groups `it-desk` and `facilities-team` (restart the dev stack
 | 15 | Demo 4: parent -> child -> result -> continue | Both approvals open at once for different groups; the join waits for the second; the timer step shows its due time; the purchase starts as its own run (own ORQ reference, `parentRun` link, release pinned in the parent's manifest); no order before the child is approved; one order after; the parent finishes `Ready` with the mapped `equipmentOrderId`; timeline has `CHILD_STARTED` before `CHILD_ENDED`, gap-free |
 | 16 | Pinning and cancellation | Republishing `purchase-approval` while a parent waits does not change the release the parent starts; cancelling the parent cancels the child and its task; no order |
 | 17 | Rejection ends everything | One rejected branch completes the request as Rejected and cancels the other branch's task |
+
+## Request files and case stages, scenario 50 (`e2e_cases.py`)
+
+```
+python tools/api-e2e/e2e_cases.py     # ~20 seconds; creates its own workflow from the case-with-stages template
+```
+
+Two files chosen on the request form (upload, then reference), start, list and download (attachment, nosniff, sandbox),
+refused types and the 10 MiB cap enforced by the container, a file added later and removed, outsiders get 404, the
+required file question, and stage 1 of 3 moving to stage 2 with the timeline events once each. Design: docs/build/S25.

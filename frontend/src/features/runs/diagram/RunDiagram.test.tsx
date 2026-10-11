@@ -83,6 +83,18 @@ describe('run path (mock of getRunPath) and the step model', () => {
 })
 
 describe('run detail diagram view', () => {
+  it('renders the timeout handle for message waits so timeout routes can be drawn', async () => {
+    signInAs('rhea.requester', { demo: true })
+    const run = runByRef('ORQ-1001')
+    const path = pathOf(run)
+    path.diagram.nodes = path.diagram.nodes.map(n => n.id === 'manager' ? { ...n, kind: 'waitForMessage', hasTimeout: true } : n)
+    server.use(http.get('*/workspaces/:ws/runs/:id/path', () => HttpResponse.json(path)))
+    renderApp(`/w/${WS}/runs/${run.id}`)
+    await screen.findByTestId('timeline')
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Diagram' }))
+    const node = await screen.findByTestId('run-step-manager')
+    expect(node.querySelector('[data-handleid="timedOut"]')).not.toBeNull()
+  })
   it('shows current steps and a warning instead of an incomplete historical diagram', async () => {
     signInAs('rhea.requester', { demo: true })
     const run = runByRef('ORQ-1001')

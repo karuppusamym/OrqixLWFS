@@ -16,7 +16,7 @@ Session: idle timeout 30 min, absolute 10 h (filter compares session creation ti
 
 **Group revocation bound.** IdP group changes take effect at the next login or session expiry (≤ 10 h). Removing a subject-level binding in Orqix takes effect within the 60 s policy-cache bound. Measure the real IdP behavior with PingFederate (D05) before production; do not describe it as instantaneous.
 
-**Machine clients.** OAuth2 resource server (JWT): issuer, audience `orqix-api`, expiry and signature validated. The token's (issuer, `sub`) maps to a `subject` row (display name = client ID). A path filter limits bearer requests to `startRun`, `getRun` and `listRunEvents`; everything else returns 403 regardless of grants. Bearer requests are CSRF-exempt.
+**Machine clients.** OAuth2 resource server (JWT): issuer, audience `orqix-api`, expiry and signature validated. The token's (issuer, `sub`) maps to a `subject` row (display name = client ID). A path filter limits bearer requests to `startRun`, `getRun`, `listRunEvents` and `sendMessage` (which also needs the explicit workspace-wide grant `message.send`, S16 section 4); everything else returns 403 regardless of grants. Bearer requests are CSRF-exempt.
 
 **Bootstrap.** At startup, IdP group values in `orqix.identity.bootstrap-platform-admin-groups` receive a platform `PLATFORM_ADMIN` binding (`source = bootstrap`). Production must set this to a dedicated, small admin group.
 
@@ -116,6 +116,20 @@ Written in the command transaction. `metadata` is a whitelist per action — nev
 | `connection.version.created` | `key`, `version`, `definitionHash` |
 | `connection.binding.updated` | `key`, `host`, `authType`, `secretRef`, `enabled`, `revision` |
 | `connection.tested` | `key`, `operation`, `outcome` |
+
+## 7a. Attachments (S25)
+
+Files on requests are untrusted input, stored in PostgreSQL and served only as downloads.
+
+| Control | Rule |
+|---|---|
+| Type | Allowlist: PDF, PNG, JPEG, UTF-8 text, CSV, docx, xlsx, pptx. The extension, the declared content type and the bytes (signature; OOXML central directory without extraction; no macros, no path tricks; text without control characters, HTML, SVG, XML or shebang) must agree. Executables, archives, HTML and SVG, legacy Office files and mail files (msg, eml) are refused with `422` on `/file` |
+| Names | Sanitized display label (no directory part, control or bidirectional characters, at most 120 characters); never used as a path. The audit log holds sizes and types, never names |
+| Size and count | 10 MiB per file (platform maximum), 25 files and 50 MiB per request, 10 files waiting on forms per person, 30 uploads per minute per person (counted in the database, so it holds across pods). The upload path has its own request-size allowance in `RequestLimitsFilter`; the container stops reading a file at 10 MiB |
+| Download | `Content-Type: application/octet-stream`, `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: sandbox`, `Cache-Control: no-store`. No inline rendering |
+| Access | The visibility of request data (initiator, task participants, `run.read-data`); outsiders get 404; adding needs participation or `run.operate` while the request runs; removal by the initiator while it runs, and by operators |
+| Scanning | Pluggable `AttachmentScanner`. The default does not scan and records `notScanned`; with `orqix.attachments.clamav.enabled=true` files are scanned over clamd INSTREAM. `infected` and `error` files are never served or accepted on a form. **A production deployment that accepts files from outside must enable a real scanner** |
+| Audit | `attachment.added` (`runId`, `attachmentId`, `sizeBytes`, `contentType`, `scanStatus`, `staged`) and `attachment.removed` (`runId`, `attachmentId`) |
 
 ## 8. Logging and redaction
 

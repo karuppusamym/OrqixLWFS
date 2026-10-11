@@ -192,6 +192,8 @@ public final class Converter {
         }
         Map<String, String> dateFields = new LinkedHashMap<>();
         a.waitDates.forEach((node, variable) -> dateFields.putIfAbsent(Analyzer.fieldKey(variable), variable));
+        Set<String> messageKeys = new LinkedHashSet<>();
+        a.messageCatches.values().forEach(m -> messageKeys.add(Analyzer.fieldKey(m.correlationVariable())));
         Set<String> gatewayFields = new LinkedHashSet<>(inferred.keySet());
         for (var entry : formFields.entrySet()) {
             String previous = inferred.remove(entry.getKey());
@@ -221,6 +223,11 @@ public final class Converter {
             }
             var field = properties.putObject(key); field.put("type", "string"); field.put("title", variable); field.put("format", "date");
         });
+        for (String key : messageKeys) {
+            if (!formFields.containsKey(key) && !properties.has(key) && !inferred.containsKey(key)) {
+                var field = properties.putObject(key); field.put("type", "string"); field.put("title", key); field.put("minLength", 1); field.put("maxLength", 100);
+            }
+        }
         ObjectNode ui = json.object();
         ArrayNode order = ui.putArray("order");
         ObjectNode widgets = ui.putObject("widgets");
@@ -230,7 +237,7 @@ public final class Converter {
             widgets.put(field.fieldKey(), field.widget());
         });
         collections.forEach(properties::set);
-        Set<String> required = new LinkedHashSet<>(inferred.keySet()); required.addAll(collections.keySet()); required.addAll(dateFields.keySet());
+        Set<String> required = new LinkedHashSet<>(inferred.keySet()); required.addAll(collections.keySet()); required.addAll(dateFields.keySet()); required.addAll(messageKeys);
         for (FormImport.Field field : formFields.values()) {
             if (field.required() || gatewayFields.contains(field.fieldKey())) required.add(field.fieldKey());
             if (!field.required() && gatewayFields.contains(field.fieldKey()))
@@ -258,10 +265,15 @@ public final class Converter {
                 case "startEvent" -> "start"; case "endEvent" -> "end"; case "userTask" -> "approval";
                 case "serviceTask" -> "http"; case "exclusiveGateway" -> "branch"; case "businessRuleTask" -> "decision";
                 case "parallelGateway" -> a.parallelJoins.containsKey(node.id) ? "parallelSplit" : "parallelJoin";
-                case "intermediateCatchEvent" -> "wait"; case "callActivity" -> "startWorkflow";
+                case "intermediateCatchEvent" -> a.messageCatches.containsKey(node.id) ? "waitForMessage" : "wait"; case "callActivity" -> "startWorkflow";
                 default -> throw new IllegalStateException("Unresolved source element");
             };
             if (type.equals("parallelSplit")) config.put("joinRef", a.nodes.get(a.parallelJoins.get(node.id)).canonicalId);
+            else if (type.equals("waitForMessage")) {
+                var catching = a.messageCatches.get(node.id);
+                config.put("message", catching.message());
+                config.put("correlationField", "/input/" + Analyzer.fieldKey(catching.correlationVariable()));
+            }
             else if (type.equals("wait")) {
                 if (a.waitDates.containsKey(node.id)) config.put("untilField", "/input/" + Analyzer.fieldKey(a.waitDates.get(node.id)));
                 else config.put("duration", a.waits.get(node.id));

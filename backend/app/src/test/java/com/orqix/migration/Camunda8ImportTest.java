@@ -93,7 +93,7 @@ class Camunda8ImportTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"camunda8-purchase.bpmn", "camunda8-connector-http.bpmn", "camunda8-user-task-form.bpmn",
-            "camunda8-feel-gateways.bpmn", "camunda8-timer-callactivity.bpmn", "camunda8-unsupported.bpmn"})
+            "camunda8-feel-gateways.bpmn", "camunda8-timer-callactivity.bpmn", "camunda8-message-wait.bpmn", "camunda8-unsupported.bpmn"})
     void everyElementOfEveryCamunda8FixtureHasADisposition(String name) throws Exception {
         String xml = read(name);
         assertThat(reasons(Analyzer.analyze(xml, Limits.DEFAULT)).keySet()).as("elements without a disposition in %s", name)
@@ -413,6 +413,47 @@ class Camunda8ImportTest {
             assertThat(i.explanation()).contains("'kid'");
         });
         assertThat(analysis.hints().calls().get("c").propagateAllChildVariables()).isTrue();
+    }
+
+    @Test
+    void aMessageCatchEventWithAPlainCorrelationVariableBecomesAWaitForMessageStep() throws Exception {
+        var analysis = analyze("camunda8-message-wait.bpmn");
+        assertThat(issues(analysis)).anySatisfy(i -> {
+            assertThat(i.sourceElementId()).isEqualTo("awaitPayment");
+            assertThat(i.reasonCode()).isEqualTo("MESSAGE_CATCH_MAPPED");
+            assertThat(i.severity()).isEqualTo(Report.REVIEW);
+        });
+        var converted = Converter.convert(analysis, request("{\"workflowKey\":\"message-wait\",\"name\":\"Message wait\",\"acknowledgeInfo\":true,\"acknowledgeReview\":true}"), JSON, Map.of());
+        assertThat(converted.definition()).isNotNull();
+        JsonNode wait = converted.definition().path("nodes").valueStream().filter(n -> n.path("type").asString().equals("waitForMessage")).findFirst().orElseThrow();
+        assertThat(wait.path("config").path("message").asString()).isEqualTo("payment-received");
+        assertThat(wait.path("config").path("correlationField").asString()).isEqualTo("/input/orderId");
+        assertThat(converted.definition().path("inputSchema").path("required").toString()).contains("orderId");
+        assertThat(blockers(converted.definition(), groups())).isEmpty();
+        // A computed correlation key or a name that is not a canonical message name stays blocked with the reason.
+        var computed = analyze("camunda8-unsupported.bpmn");
+        assertThat(issues(computed)).anySatisfy(i -> {
+            assertThat(i.sourceElementId()).isEqualTo("messageCatch");
+            assertThat(i.reasonCode()).isEqualTo("MESSAGE_EVENT_NOT_SUPPORTED");
+            assertThat(i.explanation()).contains("expression");
+        });
+        String badName = read("camunda8-message-wait.bpmn").replace("payment-received", "Payment Received");
+        assertThat(issues(Analyzer.analyze(badName, Limits.DEFAULT))).anySatisfy(i -> assertThat(i.explanation()).contains("kebab-case"));
+    }
+
+    @Test
+    void ambiguousMessageDeclarationsAndSubscriptionsRemainExplicitBlockers() throws Exception {
+        String source = read("camunda8-message-wait.bpmn");
+        String declaration = source.substring(source.indexOf("<bpmn:message "), source.indexOf("</bpmn:message>") + "</bpmn:message>".length());
+        for (String ambiguous : List.of(source.replace(declaration, declaration + declaration),
+                source.replace("<zeebe:subscription correlationKey=\"=orderId\" />", "<zeebe:subscription correlationKey=\"=orderId\" /><zeebe:subscription correlationKey=\"=otherId\" />"))) {
+            assertThat(issues(Analyzer.analyze(ambiguous, Limits.DEFAULT))).anySatisfy(i -> {
+                assertThat(i.sourceElementId()).isEqualTo("awaitPayment");
+                assertThat(i.reasonCode()).isEqualTo("MESSAGE_EVENT_NOT_SUPPORTED");
+                assertThat(i.severity()).isEqualTo(Report.BLOCKER);
+                assertThat(i.explanation()).contains("cannot be resolved safely");
+            });
+        }
     }
 
     @Test

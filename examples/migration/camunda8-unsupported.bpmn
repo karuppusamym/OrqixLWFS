@@ -2,7 +2,7 @@
 <!-- Hand-authored compatibility fixture, not a customer export. One of each Camunda 8 construct the importer blocks. The chain is
      only a valid BPMN graph so that every element is reachable; it is not a meaningful process. -->
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" xmlns:modeler="http://camunda.org/schema/modeler/1.0" targetNamespace="urn:orqix:migration-fixture" modeler:executionPlatform="Camunda Cloud" modeler:executionPlatformVersion="8.5.0">
-  <bpmn:message id="orderMessage" name="orderReceived"><bpmn:extensionElements><zeebe:subscription correlationKey="=orderId" /></bpmn:extensionElements></bpmn:message>
+  <bpmn:message id="orderMessage" name="orderReceived"><bpmn:extensionElements><zeebe:subscription correlationKey="=&#34;a-&#34; + orderId" /></bpmn:extensionElements></bpmn:message>
   <bpmn:signal id="alertSignal" name="alert" />
   <bpmn:process id="c8-unsupported" name="Camunda 8 unsupported constructs" isExecutable="true">
     <bpmn:extensionElements>

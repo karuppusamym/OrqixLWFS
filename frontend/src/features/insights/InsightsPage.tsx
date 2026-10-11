@@ -23,7 +23,7 @@ import { ThroughputChart } from './ThroughputChart'
 const RANGES = [7, 30, 90] as const
 
 /**
- * Insights (docs/build/S7-frontend.md section 9): workflow analytics for people with run.read. Aggregates only; requests
+ * Insights (docs/build/S7-frontend.md section 4): workflow analytics for people with run.read. Aggregates only; requests
  * appear by reference, never by title or data. Every chart has a table with the same numbers.
  */
 export function InsightsPage() {

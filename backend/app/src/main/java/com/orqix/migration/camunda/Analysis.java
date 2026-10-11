@@ -227,6 +227,10 @@ public final class Analysis {
     public record DecisionRef(String decisionId, String resultVariable, String resultMapping) {
     }
 
+    /** A message catch event that becomes a waitForMessage step. */
+    public record MessageCatch(String message, String correlationVariable) {
+    }
+
     final String sourceSystem;
     final String sourceVersion;
     final String sourceHash;
@@ -247,6 +251,8 @@ public final class Analysis {
     final Map<String, String> waits = new LinkedHashMap<>();
     /** Timer catch event id to the plain variable that holds the date it waits for. */
     final Map<String, String> waitDates = new LinkedHashMap<>();
+    /** Message catch event id to the message name and the plain variable that correlates it. */
+    final Map<String, MessageCatch> messageCatches = new LinkedHashMap<>();
     /** Boundary timer node id to the id of the user task whose time limit it becomes. */
     final Map<String, String> timeoutBoundaries = new LinkedHashMap<>();
     final Map<String, Report.ServiceHint> serviceHints = new LinkedHashMap<>();

@@ -243,8 +243,8 @@ public final class Analyzer {
                         Need.ACKNOWLEDGE, null);
             } else if (BPMN.equals(child.ns()) && DECLARATIONS.contains(child.name())) {
                 add(child, child.name(), Report.INFO, "DECLARATION_NOT_IMPORTED",
-                        "The " + child.name() + " declaration '" + labelOf(child) + "' is only used by elements that are "
-                                + "not supported in v0.1 and is not imported.",
+                        "The " + child.name() + " declaration '" + labelOf(child) + "' is not imported on its own; the events that "
+                                + "use it are reported separately.",
                         "Acknowledge.", Need.ACKNOWLEDGE, null);
             } else if (BPMN.equals(child.ns()) || C7.equals(child.ns()) || ZB.equals(child.ns())) {
                 unknown(child);
@@ -464,6 +464,10 @@ public final class Analyzer {
         XElement e = node.element;
         XElement def = eventDefinition(e);
         long definitions = e.children().stream().filter(c -> c.name().endsWith("EventDefinition")).count();
+        if (def != null && def.is(BPMN, "messageEventDefinition") && definitions == 1) {
+            messageCatch(node, def);
+            return;
+        }
         if (def == null || !def.is(BPMN, "timerEventDefinition") || definitions != 1 || def.children().size() != 1
                 || node.in.size() != 1 || node.out.size() != 1) {
             blockedEvent(node);
@@ -508,6 +512,58 @@ public final class Analyzer {
         } else {
             blockedEvent(node);
         }
+    }
+
+    private static final Pattern MESSAGE_NAME = Pattern.compile("^[a-z][a-zA-Z0-9]*(-[a-z0-9][a-zA-Z0-9]*)*$");
+
+    /**
+     * A message catch event becomes a "wait for a message" step (S23) when its message has a canonical name and a correlation
+     * key that is a plain variable (that variable becomes the request field the message is matched on). Message payload
+     * variables are not imported.
+     */
+    private void messageCatch(Analysis.Node node, XElement def) {
+        XElement e = node.element;
+        XElement message = null;
+        int declarations = 0;
+        for (XElement candidate : root.children(BPMN, "message")) {
+            if (candidate.attr("id") != null && candidate.attr("id").equals(def.attr("messageRef"))) {
+                message = candidate;
+                declarations++;
+            }
+        }
+        String name = message == null ? null : blankToNull(message.attr("name"));
+        XElement ext = message == null ? null : message.child(BPMN, "extensionElements");
+        XElement subscription = ext == null ? null : ext.child(ZB, "subscription");
+        String key = subscription == null ? null : blankToNull(subscription.attr("correlationKey"));
+        String variable = key == null ? null : Zeebe.variable(key);
+        String reason = null;
+        if (declarations > 1) {
+            reason = "Its message reference has duplicate declarations and cannot be resolved safely.";
+        } else if (ext != null && ext.children(ZB, "subscription").size() > 1) {
+            reason = "The message has multiple correlation subscriptions and cannot be resolved safely.";
+        } else if (message == null || name == null) {
+            reason = "It has no message declaration with a name.";
+        } else if (name.length() < 2 || name.length() > 64 || !MESSAGE_NAME.matcher(name).matches()) {
+            reason = "The message name '" + name + "' must be lowercase letters and digits in kebab-case or camelCase (for example payment-received).";
+        } else if (key == null) {
+            reason = "The message has no correlation key, so it cannot be matched to this request.";
+        } else if (variable == null || fieldKey(variable) == null) {
+            reason = "Its correlation key '" + Zeebe.mask(key) + "' is an expression. Only a plain variable (written =orderId) can be matched to a request field.";
+        } else if (node.in.size() != 1 || node.out.size() != 1) {
+            reason = "It needs exactly one incoming and one outgoing flow.";
+        }
+        if (reason != null) {
+            blockedEvent(node, "MESSAGE_EVENT_NOT_SUPPORTED", reason, "Use a plain message name and a correlation key that is a request variable, or model the wait as a human step.");
+            return;
+        }
+        analysis.messageCatches.put(node.id, new Analysis.MessageCatch(name, variable));
+        analysis.assumptions.add("Variable '" + variable + "' (the correlation key of message '" + name + "') becomes the request field '" + fieldKey(variable)
+                + "'; the message must carry the same value.");
+        add(e, node.type, Report.REVIEW, "MESSAGE_CATCH_MAPPED",
+                "The step waits until the message '" + name + "' arrives with the same value as the request field '" + fieldKey(variable)
+                        + "'. Variables the message carries in Camunda 8 are not imported (the step has no payload); a message that arrives early is kept for a "
+                        + "limited time, which the source engine's buffering may not match.",
+                "Check the message name, the correlation field and who sends the message.", Need.ACKNOWLEDGE, null);
     }
 
     /**

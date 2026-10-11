@@ -18,6 +18,8 @@ export interface StepNodeData extends Record<string, unknown> {
   /** Finish steps only: the outcome name shown on the card, for example "Fulfilled". */
   outcome?: string
   timeout?: boolean
+  /** Case stage of the step (docs/build/S25): shown as a chip on the card; stages add no behavior. */
+  stage?: string
 }
 
 export type StepFlowNode = Node<StepNodeData, 'step'>
@@ -45,6 +47,11 @@ function StepNodeComponent({ data, selected }: NodeProps<StepFlowNode>) {
       data-kind={data.kind}
       data-testid={`node-card-${data.kind}`}
     >
+      {data.stage ? (
+        <span className="absolute -bottom-3.5 left-4 z-10 max-w-[16rem] truncate rounded-full border border-info-border bg-info-soft px-2.5 text-sm leading-6 font-semibold text-info-foreground" data-testid="stage-chip" title={`Stage: ${data.stage}`}>
+          Stage: {data.stage}
+        </span>
+      ) : null}
       {data.kind !== 'start' ? <Handle type="target" position={Position.Left} id="in" aria-hidden="true" /> : null}
       <span className={cn('w-2 shrink-0 rounded-l-[10px]', isEnd ? (rejectedEnd ? 'bg-status-rejected-fg' : 'bg-status-success-fg') : KIND_ACCENT[data.kind])} aria-hidden="true" />
       <div className={cn('flex min-w-0 flex-1 flex-col gap-1 px-3 py-2.5', data.kind === 'approval' && 'pr-[8.25rem]')}>

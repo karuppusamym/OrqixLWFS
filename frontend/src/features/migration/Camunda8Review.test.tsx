@@ -54,7 +54,7 @@ describe('Camunda 8 import review', () => {
     await screen.findByText('Source: Camunda 8, version 8.5.0')
     for (const code of ['MESSAGE_EVENT_NOT_SUPPORTED', 'CONNECTOR_NOT_SUPPORTED', 'EXPRESSION_NOT_SUPPORTED', 'FORM_COMPONENT_NOT_SUPPORTED'])
       expect(screen.getAllByText(new RegExp(code)).length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Message events are not supported yet').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('This message event cannot be imported').length).toBeGreaterThan(0)
   })
 
   it('labels reason codes and sources', () => {

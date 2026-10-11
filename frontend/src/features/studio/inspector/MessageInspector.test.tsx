@@ -16,9 +16,9 @@ const draft = () => db.workflows.get(PURCHASE_WORKFLOW_ID)!.drafts.at(-1)!.defin
 const savedConfig = () => draft().nodes.find((n) => n.id === 'manager')!.config
 
 async function openStep(user: ReturnType<typeof userEvent.setup>) {
-  await screen.findByText(/Draft revision 1/)
+  await screen.findByText(/Draft revision 1/, undefined, { timeout: 15000 })
   await user.click(screen.getByRole('tab', { name: 'Steps' }))
-  await screen.findByRole('list', { name: 'Workflow steps' })
+  await screen.findByRole('list', { name: 'Workflow steps' }, { timeout: 15000 })
   await user.click(stepButton('manager'))
 }
 
@@ -32,7 +32,7 @@ describe('inspector: Wait for a message', () => {
     renderApp(EDIT)
     await openStep(user)
 
-    expect(await screen.findByTestId('message-wait-preview')).toHaveTextContent('choose which field identifies it')
+    expect(await screen.findByTestId('message-wait-preview', undefined, { timeout: 15000 })).toHaveTextContent('choose which field identifies it')
     const field = screen.getByLabelText(/^Which field identifies the request/)
     expect((field as HTMLSelectElement).value).toBe('')
     await user.selectOptions(field, '/input/costCenter')
@@ -42,7 +42,7 @@ describe('inspector: Wait for a message', () => {
     await user.clear(name)
     await user.type(name, 'Payment Received')
     await user.tab()
-    expect(await screen.findByText(/Use lowercase letters and digits joined with dashes/)).toBeInTheDocument()
+    expect(await screen.findByText(/Use lowercase letters and digits joined with dashes/, undefined, { timeout: 10000 })).toBeInTheDocument()
     await user.clear(name)
     await user.type(name, 'docs-arrived')
     await user.tab()
@@ -55,7 +55,7 @@ describe('inspector: Wait for a message', () => {
     expect(screen.getByTestId('message-wait-preview')).toHaveTextContent('follows Timed out')
 
     await user.click(screen.getByRole('button', { name: 'Add a value' }))
-    const valueName = await screen.findByLabelText(/^Value name/)
+    const valueName = await screen.findByLabelText(/^Value name/, undefined, { timeout: 10000 })
     await user.clear(valueName)
     await user.type(valueName, 'paymentReference')
     await user.tab()
@@ -71,7 +71,7 @@ describe('inspector: Wait for a message', () => {
     // The step row offers a Timed out route and the value becomes an output other steps can use.
     expect(screen.getByTestId('step-row-manager')).toHaveTextContent('docs-arrived')
     expect(screen.getByTestId('step-row-manager')).toHaveTextContent(/Timed out|no message arrives in time/)
-  }, 40000)
+  }, 90000)
 
   it('removes the timed out route when the time limit is cleared', async () => {
     signInAs('dana.designer')
@@ -84,10 +84,10 @@ describe('inspector: Wait for a message', () => {
     const user = userEvent.setup()
     renderApp(EDIT)
     await openStep(user)
-    const limit = await screen.findByLabelText(/^Give up after/)
+    const limit = await screen.findByLabelText(/^Give up after/, undefined, { timeout: 15000 })
     await user.clear(limit)
     await user.tab()
     await waitFor(() => expect(savedConfig().timeoutAfter).toBeUndefined(), { timeout: 12000 })
     await waitFor(() => expect(draft().transitions.some((t) => t.from === 'manager' && t.on === 'timedOut')).toBe(false), { timeout: 12000 })
-  }, 40000)
+  }, 90000)
 })

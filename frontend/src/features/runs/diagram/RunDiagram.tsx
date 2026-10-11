@@ -169,7 +169,7 @@ function DiagramInner({ ws, run, operator, path }: Props & { path: RunPath }) {
       const view = views.get(n.id) as StepView
       const kind = knownKind(n.kind)
       const card: StepNodeData = { kind, label: n.label, subtitle: subtitleOf(n, run), blockers: 0, warnings: 0 }
-      if (kind === 'approval') card.timeout = n.hasTimeout === true
+      if (kind === 'approval' || kind === 'waitForMessage') card.timeout = n.hasTimeout === true
       if (kind === 'end') {
         card.outcomeKind = n.outcomeKind === 'rejected' ? 'rejected' : 'success'
         if (n.outcome) card.outcome = n.outcome

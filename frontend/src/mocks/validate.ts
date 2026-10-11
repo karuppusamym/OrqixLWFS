@@ -98,6 +98,10 @@ export function validateDefinition(def: Definition, ctx: ValidationContext): Iss
       if (out.some((t) => t.on !== 'condition' && t.on !== 'default')) issues.push(issue('WF_OUTGOING_INVALID', 'blocker', `"${n.label}" has a route that does not belong on a path choice.`, nodePath(n), n.id))
       const targets = new Set(out.map((t) => t.to))
       if (out.length > 1 && targets.size === 1) issues.push(issue('WF_BRANCH_SINGLE_TARGET', 'warning', `All routes of "${n.label}" lead to the same step, so the choice has no effect.`, nodePath(n), n.id))
+    } else if (n.type === 'waitForMessage') {
+      const limited = typeof n.config.timeoutAfter === 'string'
+      if (count('next') !== 1 || out.length !== (limited ? 2 : 1) || (limited && count('timedOut') !== 1))
+        issues.push(issue(limited && count('next') === 1 && count('timedOut') !== 1 ? 'WF_MESSAGE_TIMEOUT_ROUTE' : 'WF_OUTGOING_INVALID', 'blocker', limited ? `"${n.label}" needs a route for when the message arrives and one for when it does not arrive in time.` : `"${n.label}" needs exactly one route to the next step.`, nodePath(n), n.id))
     } else if (n.type === 'parallelSplit') {
       if (out.length < 2 || out.some((t) => t.on !== 'next')) issues.push(issue('WF_PARALLEL_BRANCHES', 'blocker', `"${n.label}" needs at least two paths to run in parallel.`, nodePath(n), n.id))
     } else if (n.type !== 'end') {
@@ -153,6 +157,24 @@ export function validateDefinition(def: Definition, ctx: ValidationContext): Iss
         if (minutes === null) issues.push(issue('WF_DURATION_INVALID', 'blocker', `"${n.label}" has a time that is not valid. Use days, hours and minutes, for example PT30M or P2D.`, nodePath(n, '/config/duration'), n.id))
         else if (minutes < 1) issues.push(issue('WF_DURATION_TOO_SHORT', 'blocker', `"${n.label}" waits no time at all. The shortest time is 1 minute.`, nodePath(n, '/config/duration'), n.id))
         else if (minutes > 90 * 1440) issues.push(issue('WF_DURATION_TOO_LONG', 'blocker', `"${n.label}" waits longer than 90 days.`, nodePath(n, '/config/duration'), n.id))
+        break
+      }
+      case 'waitForMessage': {
+        const name = String(c.message ?? '')
+        if (!/^[a-z][a-zA-Z0-9]*(-[a-z0-9][a-zA-Z0-9]*)*$/.test(name) || name.length < 2 || name.length > 64)
+          issues.push(issue('WF_SCHEMA_INVALID', 'blocker', `"${n.label}" needs a message name such as payment-received (lowercase letters and digits joined with dashes).`, nodePath(n, '/config/message'), n.id))
+        checkMessageField(def, n, String(c.correlationField ?? ''), issues)
+        if (typeof c.timeoutAfter === 'string') {
+          const minutes = durationMinutes(c.timeoutAfter)
+          if (minutes === null) issues.push(issue('WF_DURATION_INVALID', 'blocker', `"${n.label}" has a time that is not valid. Use days, hours and minutes, for example PT30M or P2D.`, nodePath(n, '/config/timeoutAfter'), n.id))
+          else if (minutes < 1) issues.push(issue('WF_DURATION_TOO_SHORT', 'blocker', `"${n.label}" waits no time at all. The shortest time is 1 minute.`, nodePath(n, '/config/timeoutAfter'), n.id))
+          else if (minutes > 90 * 1440) issues.push(issue('WF_DURATION_TOO_LONG', 'blocker', `"${n.label}" waits longer than 90 days.`, nodePath(n, '/config/timeoutAfter'), n.id))
+        }
+        const seen = new Set<string>()
+        ;(Array.isArray(c.payload) ? (c.payload as Array<{ name?: string }>) : []).forEach((f, i) => {
+          if (f.name && seen.has(f.name)) issues.push(issue('WF_MESSAGE_PAYLOAD_DUPLICATE', 'blocker', `"${n.label}" declares the message value "${f.name}" more than once.`, nodePath(n, `/config/payload/${i}/name`), n.id))
+          if (f.name) seen.add(f.name)
+        })
         break
       }
       case 'startWorkflow': {
@@ -304,6 +326,26 @@ function checkWaitDate(def: Definition, n: WorkflowNode, ref: string, issues: Is
   const input = /^\/input\/(.+)$/.exec(ref)?.[1]
   if (input) {
     if (!(def.inputSchema.required ?? []).includes(input)) issues.push(issue('WF_WAIT_FIELD_OPTIONAL', 'blocker', `"${n.label}" waits until the date in "${known.label}", but that field is optional on the request form, so there may be no date to wait for. Make the field required.`, path, n.id))
+  } else if (!availableFields(def, n.id).some((f) => f.ref === ref)) {
+    issues.push(issue('WF_FIELDREF_NOT_GUARANTEED', 'blocker', `"${known.group} → ${known.label}" is not always available before "${n.label}".`, path, n.id))
+  }
+}
+
+/** The field that identifies the request of a "Wait for a message" step (S16): text or a whole number that always has a value. */
+function checkMessageField(def: Definition, n: WorkflowNode, ref: string, issues: Issue[]): void {
+  const path = `/nodes/${def.nodes.findIndex((x) => x.id === n.id)}/config/correlationField`
+  const known = allFields(def).find((f) => f.ref === ref)
+  if (!known) {
+    issues.push(issue('WF_MESSAGE_CORRELATION_UNKNOWN', 'blocker', ref ? `"${n.label}" identifies the request by ${ref}, but that field does not exist.` : `"${n.label}" needs a field that identifies the request.`, path, n.id))
+    return
+  }
+  if (known.type !== 'string' && known.type !== 'integer') {
+    issues.push(issue('WF_MESSAGE_CORRELATION_TYPE', 'blocker', `"${n.label}" identifies the request by ${ref}, but that is not text or a whole number. Choose a field such as an order number.`, path, n.id))
+    return
+  }
+  const input = /^\/input\/(.+)$/.exec(ref)?.[1]
+  if (input) {
+    if (!(def.inputSchema.required ?? []).includes(input)) issues.push(issue('WF_MESSAGE_CORRELATION_OPTIONAL', 'blocker', `"${n.label}" identifies the request by "${known.label}", but that field is optional on the request form. Make the field required.`, path, n.id))
   } else if (!availableFields(def, n.id).some((f) => f.ref === ref)) {
     issues.push(issue('WF_FIELDREF_NOT_GUARANTEED', 'blocker', `"${known.group} → ${known.label}" is not always available before "${n.label}".`, path, n.id))
   }

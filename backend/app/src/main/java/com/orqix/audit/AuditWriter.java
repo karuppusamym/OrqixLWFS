@@ -57,6 +57,8 @@ public class AuditWriter {
 
     private static final Map<String, Set<String>> METADATA_WHITELIST = Map.ofEntries(
             Map.entry("comment.created", Set.of("runId")),
+            Map.entry("attachment.added", Set.of("runId", "attachmentId", "sizeBytes", "contentType", "scanStatus", "staged")),
+            Map.entry("attachment.removed", Set.of("runId", "attachmentId")),
             Map.entry("auth.login", Set.of("method")),
             Map.entry("auth.logout", Set.of("method")),
             Map.entry("auth.denied", Set.of("permission", "operationId")),
@@ -80,6 +82,7 @@ public class AuditWriter {
             Map.entry("task.priority-changed", Set.of("taskId", "from", "to")),
             Map.entry("task.decided", Set.of("taskId", "nodeId", "action", "policyFlags")),
             Map.entry("run.cancelled", Set.of()),
+            Map.entry("message.received", Set.of("name", "matched", "buffered")),
             Map.entry("run.retry-requested", Set.of("effectId")),
             Map.entry("effect.reconciled", Set.of("effectId", "resolution", "remoteReference")),
             Map.entry("connection.version.created", Set.of("key", "version", "definitionHash")),
@@ -96,6 +99,7 @@ public class AuditWriter {
             Map.entry("migration.policy.changed", Set.of("required", "version")),
             Map.entry("migration.review.approved", Set.of("revision", "definitionHash", "reviewVersion")),
             Map.entry("conversation.message", Set.of("stage", "version")),
+            Map.entry("workflow.simulated", Set.of("revision", "releaseNumber", "steps", "warnings", "status")),
             Map.entry("agent.call", Set.of("key", "operation", "profile", "model", "outcome", "toolCalls", "inputTokens",
                     "outputTokens", "costUsd", "durationMs", "effectId")));
 

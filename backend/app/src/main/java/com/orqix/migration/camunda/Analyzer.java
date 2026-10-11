@@ -19,13 +19,13 @@ import java.util.regex.Pattern;
 import com.orqix.migration.camunda.Analysis.Need;
 
 /**
- * Adapter {@code camunda-bpmn-0.4}: reads a Camunda 7 / Camunda 8 / plain BPMN 2.0 file and gives every source element
+ * Adapter {@code camunda-bpmn-0.5}: reads a Camunda 7 / Camunda 8 / plain BPMN 2.0 file and gives every source element
  * and every nested construct a disposition (S11 section 2, doc 05). Nothing is silently omitted: unknown elements are
  * blockers, dropped settings are info items that need acknowledgement. Pure Java; no Spring, no database.
  */
 public final class Analyzer {
 
-    public static final String ADAPTER_VERSION = "camunda-bpmn-0.4";
+    public static final String ADAPTER_VERSION = "camunda-bpmn-0.5";
 
     private static final String BPMN = Namespaces.BPMN;
     private static final String C7 = Namespaces.CAMUNDA7;
@@ -52,6 +52,13 @@ public final class Analyzer {
     private final List<Analysis.Item> items = new ArrayList<>();
     private int sequence;
     private Analysis analysis;
+    /** Camunda 8 embedded forms ({@code zeebe:userTaskForm}): id to the JSON text, the element it came from, and parse results. */
+    private final Map<String, String> embeddedSources = new LinkedHashMap<>();
+    private final Map<String, XElement> embeddedElements = new LinkedHashMap<>();
+    private final Map<String, FormImport.Model> embeddedModels = new LinkedHashMap<>();
+    private final Set<String> embeddedUsed = new HashSet<>();
+    /** User task id to the due time in hours read from {@code zeebe:taskSchedule}. */
+    private final Map<String, Integer> dueHours = new LinkedHashMap<>();
 
     private Analyzer(XElement root, String sourceHash) {
         this.root = root;
@@ -91,6 +98,7 @@ public final class Analyzer {
         String[] detected = detect();
         analysis = new Analysis(detected[0], detected[1], sourceHash, process.attr("id"), blankToNull(process.attr("name")));
         analysis.assumptions.add("Source detected as " + describe(detected[0]) + ".");
+        limits(detected[0], detected[1]);
         if (detected[2] != null) {
             analysis.assumptions.add(detected[2]);
         }
@@ -115,6 +123,7 @@ public final class Analyzer {
         }
         processLevel(process);
         graphAnalysis();
+        unusedEmbeddedForms();
         serviceGroupItems();
         items.sort(Comparator.<Analysis.Item>comparingInt(i -> i.ordinal).thenComparingInt(i -> i.sequence));
         analysis.items.addAll(items);
@@ -147,9 +156,11 @@ public final class Analyzer {
         String system;
         String note = null;
         if (c7 == 0 && c8 == 0) {
-            if (platform != null && platform.toLowerCase(Locale.ROOT).contains("cloud")) {
+            if (platform != null && platform.toLowerCase(Locale.ROOT).contains("cloud")
+                    || platform == null && version != null && version.startsWith("8.")) {
                 system = "camunda8";
-            } else if (platform != null && platform.toLowerCase(Locale.ROOT).contains("platform")) {
+            } else if (platform != null && platform.toLowerCase(Locale.ROOT).contains("platform")
+                    || platform == null && version != null && version.startsWith("7.")) {
                 system = "camunda7";
             } else {
                 system = "bpmn";
@@ -163,7 +174,31 @@ public final class Analyzer {
             note = "The file contains both Camunda 7 (camunda:) and Camunda 8 (zeebe:) extensions; it is treated as "
                     + describe(system) + " and the other extensions are reported individually.";
         }
+        if (version != null && system.equals("camunda8") && version.startsWith("7.")
+                || version != null && system.equals("camunda7") && version.startsWith("8.")) {
+            String mismatch = "The modeler records platform version " + version + " but the extensions are " + describe(system)
+                    + "; the extensions decide how the file is read.";
+            note = note == null ? mismatch : note + " " + mismatch;
+        }
         return new String[] {system, version, note};
+    }
+
+    /** What the adapter does and does not cover for the detected platform; shown as the first assumptions of the report. */
+    private void limits(String system, String version) {
+        if ("camunda8".equals(system)) {
+            analysis.assumptions.add("Source version: Camunda 8" + (version == null ? " (the modeler did not record a version)" : " "
+                    + version + " (modeler executionPlatformVersion)") + ". Adapter " + ADAPTER_VERSION + " reads the Camunda 8 "
+                    + "constructs listed in the report only: job workers and the REST (http-json) connector become connection calls "
+                    + "after you choose an operation; FEEL conditions of the supported comparison subset convert; user tasks with "
+                    + "candidate groups become approvals (due time, boundary timer as time limit); duration timers, date timers on a "
+                    + "date field, parallel pairs, call activities, multi-instance call activities and called decisions convert after "
+                    + "review. Message and signal events, other connectors, sub-processes, FEEL functions and scripts stay blockers. "
+                    + "This is not a claim of general Camunda 8 compatibility.");
+        } else if ("camunda7".equals(system)) {
+            analysis.assumptions.add("Source version: Camunda 7" + (version == null ? " (the modeler did not record a version)" : " "
+                    + version + " (modeler executionPlatformVersion)") + ". Adapter " + ADAPTER_VERSION + " reads the constructs listed "
+                    + "in the report only; this is not a claim of general Camunda 7 compatibility.");
+        }
     }
 
     private static String describe(String system) {
@@ -328,7 +363,9 @@ public final class Analyzer {
                 scanNodeChildren(node);
                 // item is created after the graph analysis (needs the flows)
                 Assignment assignment = assignment(e);
-                analysis.userTasks.put(node.id, new Analysis.UserTask(node, assignment.kind(), assignment.values()));
+                Analysis.UserTask created = new Analysis.UserTask(node, assignment.kind(), assignment.values());
+                created.dueAfterHours = dueHours.get(node.id);
+                analysis.userTasks.put(node.id, created);
             }
             case "serviceTask" -> {
                 scanNodeChildren(node);
@@ -341,26 +378,20 @@ public final class Analyzer {
             case "parallelGateway" -> scanNodeChildren(node);
             case "intermediateCatchEvent" -> {
                 scanNodeChildren(node);
-                XElement timer = e.child(BPMN, "timerEventDefinition");
-                XElement duration = timer == null ? null : timer.child(BPMN, "timeDuration");
-                String value = duration == null ? "" : duration.text().trim();
-                boolean valid = timer != null && e.children().stream().filter(c -> c.name().endsWith("EventDefinition")).count() == 1 && timer.children().size() == 1 && value.matches("P(?:[0-9]+D)?(?:T(?:[0-9]+H)?(?:[0-9]+M)?)?");
-                try { valid = valid && java.time.Duration.parse(value).compareTo(java.time.Duration.ofMinutes(1)) >= 0 && java.time.Duration.parse(value).compareTo(java.time.Duration.ofDays(90)) <= 0; }
-                catch (RuntimeException ignored) { valid = false; }
-                if (valid && node.in.size() == 1 && node.out.size() == 1) {
-                    analysis.waits.put(node.id, value);
-                    add(e, type, Report.REVIEW, "DURATION_TIMER_MAPPED",
-                            "The constant duration " + value + " becomes a durable wait of the same length. The wait starts when "
-                                    + "the previous step finishes; business calendars, time zones and timer reset behaviour of the "
-                                    + "source engine are not carried over.",
-                            "Check that a fixed elapsed duration is what the source process meant.", Need.ACKNOWLEDGE, null);
-                } else blockedEvent(node);
+                timerCatch(node);
             }
+            case "boundaryEvent" -> scanNodeChildren(node); // disposition after the user tasks are known (boundaryTimers)
             case "callActivity" -> {
                 scanNodeChildren(node);
                 analysis.children.add(node.id);
                 boolean multi = analysis.multiInstance.containsKey(node.id);
-                Analysis.Item call = add(e, type, Report.ACTION, "CHILD_WORKFLOW_MAPPING_REQUIRED", "Called process '" + e.attr("calledElement") + "' requires a reviewed workspace workflow and explicit input/result mappings."
+                XElement callExt = e.child(BPMN, "extensionElements");
+                XElement zeebeCalled = callExt == null ? null : callExt.child(ZB, "calledElement");
+                String calledId = zeebeCalled != null ? zeebeCalled.attr("processId") : e.attr("calledElement");
+                if (zeebeCalled != null) {
+                    callHint(node, zeebeCalled, callExt, calledId);
+                }
+                Analysis.Item call = add(e, type, Report.ACTION, "CHILD_WORKFLOW_MAPPING_REQUIRED", "Called process '" + calledId + "' requires a reviewed workspace workflow and explicit input/result mappings."
                         + (multi ? " It runs once per item of the collection '" + analysis.multiInstance.get(node.id).collectionVariable()
                         + "'; the mapping must also give the for-each settings (itemInput, maxItems, itemType) because the source collection has no bound." : ""),
                         "Import and publish the child first; map its key and fields. Its release is pinned when the parent is published.", Need.CHILD, node.id);
@@ -372,7 +403,10 @@ public final class Analyzer {
             }
             case "exclusiveGateway" -> scanNodeChildren(node); // disposition after the graph analysis
             default -> {
-                if (TASK_BLOCKED.contains(type)) {
+                if (TASK_BLOCKED.contains(type) && connectorJobType(e) != null) {
+                    scanNodeChildren(node);
+                    unsupportedConnector(node, connectorJobType(e));
+                } else if (TASK_BLOCKED.contains(type)) {
                     scanNodeChildren(node);
                     add(e, type, Report.BLOCKER, "TASK_TYPE_NOT_SUPPORTED",
                             "A " + type + " has no equivalent in workflow v0.1, which supports approvals, decisions, branches, "
@@ -402,11 +436,132 @@ public final class Analyzer {
 
     private void blockedEvent(Analysis.Node node) {
         XElement def = eventDefinition(node.element);
-        String what = def == null ? "an intermediate or boundary event" : def.name().replace("EventDefinition", "") + " event";
-        add(node.element, node.type, Report.BLOCKER, "EVENT_NOT_SUPPORTED_IN_V0",
-                "This " + node.type + " is " + what + ". Timers, message, signal, error and boundary events are not supported "
-                        + "in v0.1.",
-                "Model the wait or exception as a human step or a call to a connection operation.", Need.NONE, null);
+        String kind = def == null ? "" : def.name().replace("EventDefinition", "");
+        String what = def == null ? "an intermediate or boundary event" : kind + " event";
+        switch (kind) {
+            case "message" -> add(node.element, node.type, Report.BLOCKER, "MESSAGE_EVENT_NOT_SUPPORTED",
+                    "This " + node.type + " waits for or sends a message. Workflows have no message events yet, so a message "
+                            + "cannot start, wake up or be sent from a converted workflow.",
+                    "Model the wait as a human step or a wait with a duration, call a registered connection operation to send "
+                            + "the message, or start the follow-up work as its own workflow.", Need.NONE, null);
+            case "signal" -> add(node.element, node.type, Report.BLOCKER, "SIGNAL_EVENT_NOT_SUPPORTED",
+                    "This " + node.type + " waits for or sends a signal. Workflows have no signal events, so it cannot be converted.",
+                    "Start the other work as its own workflow, or model the wait as a human step.", Need.NONE, null);
+            default -> add(node.element, node.type, Report.BLOCKER, "EVENT_NOT_SUPPORTED_IN_V0",
+                    "This " + node.type + " is " + what + ". Timers other than a constant duration or a date held in a request "
+                            + "field, message, signal, error and non-interrupting events are not supported in v0.1.",
+                    "Model the wait or exception as a human step or a call to a connection operation.", Need.NONE, null);
+        }
+    }
+
+    private void blockedEvent(Analysis.Node node, String code, String why, String suggestion) {
+        add(node.element, node.type, Report.BLOCKER, code, "This " + node.type + " cannot be converted. " + why, suggestion,
+                Need.NONE, null);
+    }
+
+    /** A timer catch event: a constant duration, or a date held in a variable (a new required date field). */
+    private void timerCatch(Analysis.Node node) {
+        XElement e = node.element;
+        XElement def = eventDefinition(e);
+        long definitions = e.children().stream().filter(c -> c.name().endsWith("EventDefinition")).count();
+        if (def == null || !def.is(BPMN, "timerEventDefinition") || definitions != 1 || def.children().size() != 1
+                || node.in.size() != 1 || node.out.size() != 1) {
+            blockedEvent(node);
+            return;
+        }
+        XElement duration = def.child(BPMN, "timeDuration");
+        XElement date = def.child(BPMN, "timeDate");
+        if (def.child(BPMN, "timeCycle") != null) {
+            blockedEvent(node, "TIMER_CYCLE_NOT_SUPPORTED", "It repeats on a schedule (" + def.child(BPMN, "timeCycle").text()
+                    + "). A workflow wait ends once.", "Start the workflow on a schedule outside Orqix, or model one wait.");
+        } else if (duration != null) {
+            String iso = Zeebe.duration(duration.text());
+            if (iso != null && Zeebe.inBounds(iso)) {
+                analysis.waits.put(node.id, iso);
+                add(e, node.type, Report.REVIEW, "DURATION_TIMER_MAPPED",
+                        "The constant duration " + iso + " becomes a durable wait of the same length. The wait starts when "
+                                + "the previous step finishes; business calendars, time zones and timer reset behaviour of the "
+                                + "source engine are not carried over.",
+                        "Check that a fixed elapsed duration is what the source process meant.", Need.ACKNOWLEDGE, null);
+            } else {
+                blockedEvent(node, "TIMER_DURATION_NOT_SUPPORTED", "Its duration '" + duration.text() + "' is not a constant between "
+                        + "one minute and 90 days written as days, hours and minutes (for example PT2H or P1D).",
+                        "Use a constant duration such as PT2H, or model the wait as a human step.");
+            }
+        } else if (date != null) {
+            String text = date.text().strip();
+            String variable = text.startsWith("=") ? Zeebe.variable(text) : null;
+            if (variable != null && fieldKey(variable) != null) {
+                analysis.waitDates.put(node.id, variable);
+                analysis.assumptions.add("Variable '" + variable + "' (the date timer '" + labelOf(e) + "' waits for) becomes the required "
+                        + "request date field '" + fieldKey(variable) + "' (YYYY-MM-DD).");
+                add(e, node.type, Report.REVIEW, "DATE_TIMER_MAPPED",
+                        "The wait ends on the calendar date the requester enters in the new request date field '" + fieldKey(variable)
+                                + "' at 09:00 UTC. The time of day, time zone and a date that is already past behave differently from "
+                                + "the source engine.",
+                        "Check the time of day (09:00 UTC) and that requesters know to enter the date.", Need.ACKNOWLEDGE, null);
+            } else {
+                blockedEvent(node, "TIMER_DATE_NOT_SUPPORTED", "It waits until '" + text + "'. Only a date held in a variable "
+                        + "(written =variableName) can be waited for, because the date comes from the request form.",
+                        "Keep the date in a variable that the requester provides, or use a duration.");
+            }
+        } else {
+            blockedEvent(node);
+        }
+    }
+
+    /**
+     * An interrupting timer boundary event on a user task that can become an approval is that approval's time limit
+     * ({@code timeoutAfter} and the {@code timedOut} route). Every other boundary event stays a blocker with its reason.
+     */
+    private void boundaryTimers() {
+        for (Analysis.Node node : analysis.nodes.values()) {
+            if (!"boundaryEvent".equals(node.type)) {
+                continue;
+            }
+            XElement e = node.element;
+            XElement def = eventDefinition(e);
+            if (def == null || !def.is(BPMN, "timerEventDefinition")) {
+                blockedEvent(node);
+                continue;
+            }
+            Analysis.UserTask task = analysis.userTasks.get(e.attr("attachedToRef"));
+            XElement duration = def.child(BPMN, "timeDuration");
+            String iso = duration == null ? null : Zeebe.duration(duration.text());
+            String reason;
+            if (task == null) {
+                reason = "Only a timer on a user task can become the time limit of an approval.";
+            } else if ("false".equalsIgnoreCase(e.attr("cancelActivity"))) {
+                reason = "It is non-interrupting (the task stays open when the timer fires), which an approval time limit cannot do.";
+            } else if ("expression".equals(task.assignmentKind) || task.outcomesImpossible) {
+                reason = "Its user task cannot become an approval, so there is no approval to limit.";
+            } else if (!node.in.isEmpty() || node.out.size() != 1) {
+                reason = "It needs exactly one outgoing flow, which becomes the timed-out route.";
+            } else if (def.child(BPMN, "timeCycle") != null || def.child(BPMN, "timeDate") != null || duration == null) {
+                reason = "Only a constant duration can be a time limit, not a date or a repeating timer.";
+            } else if (iso == null || !Zeebe.inBounds(iso)) {
+                reason = "Its duration '" + duration.text() + "' is not a constant between one minute and 90 days.";
+            } else if (task.timeoutAfter != null) {
+                reason = "The task already has another time limit.";
+            } else {
+                reason = null;
+            }
+            if (reason != null) {
+                blockedEvent(node, "EVENT_NOT_SUPPORTED_IN_V0", reason,
+                        "Model the escalation as a separate approval, or leave the task without a time limit.");
+                continue;
+            }
+            task.timeoutAfter = iso;
+            task.timeoutFlow = node.out.get(0);
+            analysis.timeoutBoundaries.put(node.id, task.id());
+            add(e, node.type, Report.REVIEW, "BOUNDARY_TIMER_MAPPED",
+                    "The interrupting timer " + iso + " becomes the time limit of the approval '" + labelOf(task.node.element)
+                            + "': when nobody decides in time the approval ends and the request continues on the flow '"
+                            + labelOf(node.out.get(0).element) + "' (the timed-out route). The time runs from when the approval opens; "
+                            + "business calendars and time zones of the source engine are not carried over.",
+                    "Check the time limit and where the timed-out route leads (for example an escalation approval or a rejection).",
+                    Need.ACKNOWLEDGE, null);
+        }
     }
 
     private void descendantsInsideBlocked(XElement scope, XElement owner) {
@@ -581,6 +736,21 @@ public final class Analyzer {
         XElement ext = e.child(BPMN, "extensionElements");
         XElement taskDefinition = ext == null ? null : ext.child(ZB, "taskDefinition");
         XElement connector = ext == null ? null : ext.child(C7, "connector");
+        // Camunda 8: a job type is a job worker, the REST connector (mappable) or another connector (not supported).
+        boolean zeebeJob = taskDefinition != null && javaClass == null && delegate == null && expression == null && type == null;
+        String jobType = zeebeJob ? blankToNull(taskDefinition.attr("type")) : null;
+        if (zeebeJob && jobType != null && jobType.startsWith(Zeebe.HTTP_JSON)) {
+            httpJsonConnector(node, ext, taskDefinition, jobType);
+            return;
+        }
+        if (zeebeJob && isConnector(jobType)) {
+            unsupportedConnector(node, jobType);
+            return;
+        }
+        Report.ServiceHint workerHint = zeebeJob ? workerHint(node, ext, jobType) : null;
+        if (workerHint != null) {
+            analysis.serviceHints.put(node.id, workerHint);
+        }
         String code;
         String detail;
         if (javaClass != null) {
@@ -614,7 +784,9 @@ public final class Analyzer {
         }
         analysis.services.put(node.id, new Analysis.Service(node, code, detail));
         Analysis.Item item = add(e, "serviceTask", Report.BLOCKER, code,
-                "This service task runs " + detail + ". Source code is never imported or executed by Orqix.",
+                "This service task runs " + detail + ". Source code is never imported or executed by Orqix."
+                        + (workerHint != null && workerHint.suggestedOperation() != null ? " Suggested operation name: '"
+                        + workerHint.suggestedOperation() + "' (from the job type)." : ""),
                 "Register a connection operation that does the same work, then map this step to it (request fields and "
                         + "result) and test the behavior.",
                 Need.SERVICE, node.id);
@@ -651,6 +823,326 @@ public final class Analyzer {
                 ? key.contains("${") || key.contains("#{") || key.substring(key.indexOf(':') + 1).startsWith("=")
                 : false;
         return computed ? null : key;
+    }
+
+    // ------------------------------------------------------------------------------------------------ Camunda 8 connectors
+
+    private static boolean isConnector(String jobType) {
+        return jobType != null && (jobType.startsWith("io.camunda:") || jobType.startsWith("io.camunda.connector"));
+    }
+
+    /** The job type of a Camunda 8 connector on this element, or null. */
+    private static String connectorJobType(XElement element) {
+        XElement ext = element.child(BPMN, "extensionElements");
+        XElement definition = ext == null ? null : ext.child(ZB, "taskDefinition");
+        String type = definition == null ? null : blankToNull(definition.attr("type"));
+        return isConnector(type) ? type : null;
+    }
+
+    /** Suggested operation name: the element name, else the job type, as a camelCase operation key. */
+    private static String suggestedOperation(Analysis.Node node, String jobType) {
+        String fromName = Zeebe.operationName(node.name);
+        return fromName != null ? fromName : Zeebe.operationName(jobType);
+    }
+
+    /** A plain job worker: facts for the mapping helper. Variables are suggestions, never evaluated. */
+    private Report.ServiceHint workerHint(Analysis.Node node, XElement ext, String jobType) {
+        XElement io = ext.child(ZB, "ioMapping");
+        Map<String, String> inputFields = new LinkedHashMap<>();
+        Zeebe.mappings(io, "input").forEach((target, source) -> {
+            String variable = Zeebe.variable(source);
+            if (variable != null && fieldKey(variable) != null && fieldKey(target) != null) {
+                inputFields.put(fieldKey(target), fieldKey(variable));
+            }
+        });
+        Map<String, String> resultFields = new LinkedHashMap<>();
+        Zeebe.mappings(io, "output").forEach((target, source) -> {
+            String path = Zeebe.path(source);
+            if (path != null && fieldKey(target) != null) {
+                resultFields.put(fieldKey(target), "/" + path.replace('.', '/'));
+            }
+        });
+        return new Report.ServiceHint("jobWorker", jobType, suggestedOperation(node, jobType), null, null, null, false, null, List.of(),
+                List.of(), null, inputFields, resultFields, List.of(), null);
+    }
+
+    /**
+     * The Camunda 8 REST connector ({@code io.camunda:http-json}): becomes a "Call a system" step against a connection
+     * operation the designer selects. Method, path, body field names and result pointers are derived as suggestions; the URL,
+     * headers and credentials stay with the connection and are never copied into the workflow.
+     */
+    private void httpJsonConnector(Analysis.Node node, XElement ext, XElement taskDefinition, String jobType) {
+        XElement e = node.element;
+        XElement io = ext.child(ZB, "ioMapping");
+        Map<String, String> inputs = Zeebe.mappings(io, "input");
+        Map<String, String> headers = Zeebe.headers(ext.child(ZB, "taskHeaders"));
+        List<String> unmapped = new ArrayList<>();
+        String method = Zeebe.literal(inputs.get("method"));
+        if (method == null && inputs.containsKey("method")) {
+            unmapped.add("method: " + Zeebe.mask(inputs.get("method")));
+        }
+        method = method == null ? null : method.strip().toUpperCase(Locale.ROOT);
+        String rawUrl = inputs.get("url");
+        String url = Zeebe.literal(rawUrl);
+        boolean computed = rawUrl != null && url == null;
+        String host = null;
+        String path = null;
+        List<String> query = List.of();
+        if (url != null && !url.isBlank()) {
+            String[] parts = Zeebe.hostAndPath(url);
+            host = parts[0];
+            path = parts[1];
+            query = Zeebe.queryNames(url);
+        } else if (computed) {
+            unmapped.add("url: " + Zeebe.mask(rawUrl));
+        }
+        String authType = Zeebe.literal(inputs.get("authentication.type"));
+        List<String> headerNames = new ArrayList<>();
+        List<String[]> headerEntries = Zeebe.context(inputs.get("headers"));
+        if (headerEntries != null) {
+            headerEntries.forEach(entry -> headerNames.add(entry[0]));
+        } else if (inputs.containsKey("headers")) {
+            unmapped.add("headers: computed");
+        }
+        Map<String, String> inputFields = new LinkedHashMap<>();
+        for (String source : List.of("queryParameters", "body")) {
+            if (!inputs.containsKey(source)) {
+                continue;
+            }
+            List<String[]> entries = Zeebe.context(inputs.get(source));
+            if (entries == null) {
+                unmapped.add(source + ": " + Zeebe.mask(inputs.get(source)));
+                continue;
+            }
+            for (String[] entry : entries) {
+                String variable = Zeebe.variable(entry[1]);
+                if (variable != null && fieldKey(variable) != null && fieldKey(entry[0]) != null) {
+                    inputFields.put(fieldKey(entry[0]), fieldKey(variable));
+                } else {
+                    unmapped.add(source + "." + entry[0] + ": " + Zeebe.mask(entry[1]));
+                }
+            }
+        }
+        Map<String, String> resultFields = new LinkedHashMap<>();
+        String resultVariable = Zeebe.literal(headers.get("resultVariable"));
+        if (headers.containsKey("resultExpression")) {
+            List<String[]> entries = Zeebe.context(headers.get("resultExpression"));
+            if (entries == null) {
+                unmapped.add("resultExpression: " + Zeebe.mask(headers.get("resultExpression")));
+            } else {
+                for (String[] entry : entries) {
+                    String pointer = Zeebe.responsePointer(entry[1]);
+                    if (pointer != null && fieldKey(entry[0]) != null) {
+                        resultFields.put(fieldKey(entry[0]), pointer);
+                    } else {
+                        unmapped.add("resultExpression." + entry[0] + ": " + Zeebe.mask(entry[1]));
+                    }
+                }
+            }
+        }
+        List<String> ignored = new ArrayList<>();
+        inputs.keySet().stream().filter(k -> !Set.of("method", "url", "headers", "body", "queryParameters", "authentication.type")
+                .contains(k) && !k.startsWith("authentication.")).forEach(ignored::add);
+        headers.keySet().stream().filter(k -> !Set.of("resultVariable", "resultExpression").contains(k)).forEach(ignored::add);
+        taskDefinition.attributes().keySet().stream().filter(k -> !"type".equals(k)).forEach(ignored::add);
+        Report.ServiceHint hint = new Report.ServiceHint("httpJson", jobType, suggestedOperation(node, jobType), method, host, path, computed,
+                authType, headerNames, query, resultVariable, inputFields, resultFields, unmapped, null);
+        analysis.serviceHints.put(node.id, hint);
+        analysis.services.put(node.id, new Analysis.Service(node, "CONNECTOR_MAPPING_REQUIRED", "REST connector (http-json)"));
+        String origin = (method == null ? "request" : method) + " " + (host != null ? host : "") + (path != null ? path
+                : computed ? "(address computed by an expression)" : "(no address)");
+        Analysis.Item item = add(e, "serviceTask", Report.BLOCKER, "CONNECTOR_MAPPING_REQUIRED",
+                "This is the Camunda 8 REST connector. Original call (read-only provenance): " + origin + ". It becomes a call to a "
+                        + "connection operation you choose; the address, credentials and headers belong to the connection, never to "
+                        + "the workflow." + (authType == null ? "" : " Source authentication: " + authType + " (not copied).")
+                        + (inputFields.isEmpty() ? "" : " Request fields read from variables: " + String.join(", ", inputFields.values()) + ".")
+                        + (resultFields.isEmpty() ? "" : " Result values read: " + String.join(", ", resultFields.keySet()) + ".")
+                        + (unmapped.isEmpty() ? "" : " Not derived (shown, never evaluated): " + String.join("; ", unmapped) + ".")
+                        + (ignored.isEmpty() ? "" : " Other connector settings are not imported: " + String.join(", ", ignored) + "."),
+                "Choose the registered connection operation" + (method == null ? "" : " (" + method + (path == null ? "" : " " + path) + ")")
+                        + " that makes this call, check the request and result mapping, and test it.",
+                Need.SERVICE, node.id);
+        item.reviewAfterResolution = reviewOf(item.issue, "CONNECTOR_MAPPED",
+                "The REST connector call (" + origin + ") is replaced by a call to the registered connection operation you chose. The "
+                        + "address, credentials, headers, timeout (default 10 seconds), retries and error handling now follow the "
+                        + "connection definition, not the connector settings of the source.",
+                "Compare the method and path, the request body and the result of the operation with the original call"
+                        + ", and test both a success and a failure.");
+    }
+
+    /** Any other Camunda 8 connector (Slack, e-mail, GraphQL, ...): not convertible, with a suggested replacement. */
+    private void unsupportedConnector(Analysis.Node node, String jobType) {
+        String lower = jobType.toLowerCase(Locale.ROOT);
+        String replacement;
+        if (lower.contains("slack") || lower.contains("mail") || lower.contains("sendgrid") || lower.contains("twilio")
+                || lower.contains("teams") || lower.contains("whatsapp") || lower.contains("sns")) {
+            replacement = "Use a notification step (an in-app message to the requester), or register a connection to the messaging "
+                    + "service and rebuild the step as a call to it.";
+        } else {
+            replacement = "Register a connection to that system and rebuild the step as a call to one of its operations.";
+        }
+        analysis.serviceHints.put(node.id, new Report.ServiceHint("unsupportedConnector", jobType, null, null, null, null, false, null,
+                List.of(), List.of(), null, Map.of(), Map.of(), List.of(), replacement));
+        add(node.element, node.type, Report.BLOCKER, "CONNECTOR_NOT_SUPPORTED",
+                "This step uses the Camunda 8 connector '" + jobType + "'. Only the REST (http-json) connector can be converted; "
+                        + "this one is not supported and its configuration is never imported.",
+                replacement, Need.NONE, null);
+    }
+
+    /** Call activity facts: called process, variable propagation and mapping suggestions from its input/output mapping. */
+    private void callHint(Analysis.Node node, XElement called, XElement ext, String processId) {
+        XElement io = ext.child(ZB, "ioMapping");
+        Map<String, String> inputs = new LinkedHashMap<>();
+        Zeebe.mappings(io, "input").forEach((target, source) -> {
+            String variable = Zeebe.variable(source);
+            if (variable != null && fieldKey(variable) != null && fieldKey(target) != null) {
+                inputs.put(fieldKey(target), "/input/" + fieldKey(variable));
+            }
+        });
+        Map<String, String> results = new LinkedHashMap<>();
+        Zeebe.mappings(io, "output").forEach((target, source) -> {
+            String variable = Zeebe.variable(source);
+            if (variable != null && fieldKey(variable) != null && fieldKey(target) != null) {
+                results.put(fieldKey(target), fieldKey(variable));
+            }
+        });
+        boolean child = !"false".equalsIgnoreCase(called.attr("propagateAllChildVariables"));
+        boolean parent = !"false".equalsIgnoreCase(called.attr("propagateAllParentVariables"));
+        analysis.callHints.put(node.id, new Report.CallHint(processId, blankToNull(called.attr("bindingType")) == null ? "latest"
+                : called.attr("bindingType").strip(), child, parent, inputs, results));
+        if (child || parent) {
+            add(called, "callActivity", Report.INFO, "PROPAGATE_ALL_NOT_SUPPORTED",
+                    "Camunda 8 hands " + (parent ? "every variable of this process to the called process" : "no variable down")
+                            + (child ? " and takes every variable of the called process back" : "") + " unless propagation is switched "
+                            + "off. Orqix passes only the fields you list in the child workflow mapping and reads back only the "
+                            + "results you list." + (inputs.isEmpty() && results.isEmpty() ? "" : " Suggested from the source input/output "
+                            + "mapping: inputs " + (inputs.isEmpty() ? "none" : String.join(", ", inputs.keySet())) + "; results "
+                            + (results.isEmpty() ? "none" : String.join(", ", results.keySet())) + "."),
+                    "Acknowledge, and list every field the called process needs and every result this process reads afterwards.",
+                    Need.ACKNOWLEDGE, null);
+        }
+    }
+
+    // ------------------------------------------------------------------------------------------------ Camunda 8 forms and schedule
+
+    /** {@code zeebe:taskSchedule}: a due time written as a duration becomes the display-only due time of the approval. */
+    private void schedule(XElement owner, XElement schedule) {
+        String due = blankToNull(schedule.attr("dueDate"));
+        String followUp = blankToNull(schedule.attr("followUpDate"));
+        if (due != null) {
+            Integer hours = "userTask".equals(owner.name()) ? Zeebe.dueHours(due) : null;
+            if (hours != null) {
+                dueHours.put(idOf(owner), hours);
+                add(schedule, "taskSchedule", Report.REVIEW, "DUE_DATE_MAPPED",
+                        "The due time (" + Zeebe.mask(due) + ") becomes a due time of " + hours + " hour(s) on the approval. It is "
+                                + "displayed on the task only: no reminder is sent and nothing happens when it passes (use a boundary "
+                                + "timer for a real time limit).",
+                        "Check the due time.", Need.ACKNOWLEDGE, null);
+            } else {
+                add(schedule, "taskSchedule", Report.INFO, "DUE_DATE_NOT_IMPORTED",
+                        "The due date '" + Zeebe.mask(due) + "' is not a duration of whole hours (1 to 720) counted from when the task "
+                                + "opens, so it is not imported. An absolute or computed date has no equivalent on an approval.",
+                        "Acknowledge; use a duration such as =now() + duration(\"PT48H\") in the source to import it.", Need.ACKNOWLEDGE, null);
+            }
+        }
+        if (followUp != null) {
+            add(schedule, "taskSchedule", Report.INFO, "FOLLOW_UP_NOT_IMPORTED",
+                    "The follow-up date '" + Zeebe.mask(followUp) + "' is not imported; approvals have no follow-up date or reminder.",
+                    "Acknowledge.", Need.ACKNOWLEDGE, null);
+        }
+        if (due == null && followUp == null) {
+            add(schedule, "taskSchedule", Report.INFO, "SETTING_NOT_IMPORTED", "The empty task schedule is not imported.",
+                    "Acknowledge.", Need.ACKNOWLEDGE, null);
+        }
+    }
+
+    /** A {@code zeebe:userTaskForm} at process level: remembered by id and read when an element links to it. */
+    private void embeddedFormSource(XElement owner, XElement form) {
+        String id = blankToNull(form.attr("id"));
+        if (id == null || !owner.is(BPMN, "process")) {
+            unknown(form);
+            return;
+        }
+        embeddedSources.put(id, form.text());
+        embeddedElements.put(id, form);
+    }
+
+    private void unusedEmbeddedForms() {
+        embeddedElements.forEach((id, element) -> {
+            if (!embeddedUsed.contains(id)) {
+                add(element, "userTaskForm", Report.INFO, "FORM_NOT_IMPORTED",
+                        "The embedded form '" + id + "' is not linked to any start event or user task, so it is not imported.",
+                        "Acknowledge.", Need.ACKNOWLEDGE, null);
+            }
+        });
+    }
+
+    /** {@code zeebe:formDefinition} of a start event or user task: an embedded form is read, a linked form file is requested. */
+    private void formLink(XElement owner, XElement definition) {
+        String ownerId = idOf(owner);
+        String target = owner.is(BPMN, "startEvent") ? "start" : "userTask";
+        String formKey = blankToNull(definition.attr("formKey"));
+        String formId = blankToNull(definition.attr("formId"));
+        String binding = blankToNull(definition.attr("bindingType"));
+        String ownerName = blankToNull(owner.attr("name"));
+        if (formKey != null && formKey.startsWith("camunda-forms:bpmn:")) {
+            String embedded = formKey.substring("camunda-forms:bpmn:".length());
+            String text = embeddedSources.get(embedded);
+            if (text == null) {
+                add(definition, "formDefinition", Report.BLOCKER, "FORM_NOT_FOUND",
+                        "The form '" + embedded + "' is referenced here but the file has no zeebe:userTaskForm with that id.",
+                        "Fix the reference in the source file.", Need.NONE, null);
+                return;
+            }
+            embeddedUsed.add(embedded);
+            FormImport.Model model = embeddedModels.get(embedded);
+            boolean first = model == null;
+            if (first) {
+                try {
+                    model = FormImport.parse(text, null, "userTaskForm[" + embedded + "]");
+                } catch (SourceException e) {
+                    add(definition, "formDefinition", Report.BLOCKER, "FORM_INVALID",
+                            "The embedded form '" + embedded + "' cannot be read: " + e.getMessage(), "Export the form again.", Need.NONE,
+                            null);
+                    return;
+                }
+                embeddedModels.put(embedded, model);
+            }
+            analysis.embeddedForms.put(ownerId, model);
+            analysis.formHints.put(ownerId, new Report.FormHint(target, embedded, formKey, binding, "embedded"));
+            if (first) {
+                for (Report.Issue issue : model.issuesFor(target, ownerName)) {
+                    Need need = Report.BLOCKER.equals(issue.severity()) || Report.ACTION.equals(issue.severity()) ? Need.NONE
+                            : Report.SUPPORTED.equals(issue.severity()) ? Need.NONE : Need.ACKNOWLEDGE;
+                    items.add(new Analysis.Item(issue, need, null, definition.ordinal(), sequence++));
+                }
+            } else {
+                add(definition, "formDefinition", Report.INFO, "FORM_SHARED",
+                        "This " + target + " uses the same form '" + embedded + "' as another step; its fields are imported once.",
+                        "Acknowledge.", Need.ACKNOWLEDGE, null);
+            }
+            return;
+        }
+        if (formId != null) {
+            analysis.formHints.put(ownerId, new Report.FormHint(target, formId, null, binding, "upload"));
+            analysis.linkedForms.put(ownerId, formId);
+            Analysis.Item item = add(definition, "formDefinition", Report.INFO, "FORM_NOT_IMPORTED",
+                    "The " + (target.equals("start") ? "start form" : "task form") + " '" + formId + "' is a separate Camunda form file"
+                            + (binding == null ? "" : " (binding " + binding + ")") + ". Upload the .form file in the form step of this page "
+                            + "to import it" + (target.equals("start") ? " as the request form" : " as a note on the approval step")
+                            + "; without it the form is not imported.",
+                    "Upload the form file with the id '" + formId + "', or acknowledge that the form is left out.", Need.FORM, ownerId);
+            item.reviewAfterResolution = reviewOf(item.issue, "FORM_MAPPED", "The uploaded form '" + formId + "' is imported"
+                    + (target.equals("start") ? " as the request form of the workflow." : " as a note on the approval step."),
+                    "Check the imported fields in the form preview and in the studio.");
+            return;
+        }
+        analysis.formHints.put(ownerId, new Report.FormHint(target, null, formKey != null ? formKey : blankToNull(definition.attr("externalReference")),
+                binding, "unsupported"));
+        add(definition, "formDefinition", Report.INFO, "FORM_NOT_IMPORTED",
+                "The form reference '" + (formKey != null ? formKey : definition.attr("externalReference")) + "' is a custom form that "
+                        + "Orqix cannot read, so the form is not imported.",
+                "Acknowledge, and review the request form in the studio.", Need.ACKNOWLEDGE, null);
     }
 
     /** One item per implementation shared by two or more service tasks: one mapping resolves all of them. */
@@ -713,9 +1205,13 @@ public final class Analyzer {
         if (blankToNull(resultVariable) != null) {
             analysis.decisionResults.putIfAbsent(resultVariable.strip(), node.id);
         }
-        Analysis.Item item = add(e, node.type, Report.BLOCKER, "DMN_IMPORT_NOT_SUPPORTED",
+        boolean zeebeDecision = called != null;
+        Analysis.Item item = add(e, node.type, zeebeDecision ? Report.ACTION : Report.BLOCKER,
+                zeebeDecision ? "DECISION_MAPPING_REQUIRED" : "DMN_IMPORT_NOT_SUPPORTED",
                 "This business rule task calls the DMN decision '" + ref + "'. It becomes a decision step once you upload that "
-                        + "DMN file as a separate migration and map the task to it under decisionMappings.",
+                        + "DMN file as a separate migration and map the task to it under decisionMappings."
+                        + (zeebeDecision ? " A Camunda 8 deployment normally ships the .dmn file next to the process; upload that file "
+                        + "(source format dmn) or import both together in a project." : ""),
                 "Upload the DMN file (source format dmn), then map this task: {\"migrationId\": <DMN migration id>, "
                         + "\"decisionId\": \"" + ref + "\"}.",
                 Need.DECISION, node.id);
@@ -747,6 +1243,7 @@ public final class Analyzer {
         for (Analysis.UserTask task : analysis.userTasks.values()) {
             analyseUserTask(task);
         }
+        boundaryTimers();
         for (Analysis.Node node : analysis.nodes.values()) {
             if ("exclusiveGateway".equals(node.type)) {
                 analyseGateway(node);
@@ -1031,7 +1528,8 @@ public final class Analyzer {
 
     private void expressionBlocker(Analysis.Node gateway, String why) {
         add(gateway.element, "exclusiveGateway", Report.BLOCKER, "EXPRESSION_NOT_SUPPORTED",
-                "This choice cannot be converted. " + why + " Supported: one field compared with == != >= > < <= (ordering on "
+                "This choice cannot be converted. " + why + " Expression(s) in the source: " + conditionTexts(gateway)
+                        + ". Supported: one field compared with == != >= > < <= (ordering on "
                         + "numbers only), or 2 to 8 such comparisons joined only by 'and' or only by 'or', plus a default path.",
                 "Simplify the conditions in the source model, or rebuild this choice in the studio.", Need.NONE, null);
     }
@@ -1297,19 +1795,47 @@ public final class Analyzer {
                         }
                     }
                     case "taskDefinition" -> {
-                        if (!"serviceTask".equals(owner.name()) && !"businessRuleTask".equals(owner.name())
+                        if ("userTask".equals(owner.name())) {
+                            add(c, "taskDefinition", Report.INFO, "JOB_WORKER_USER_TASK",
+                                    "This user task is handled by a job worker (job type '" + Zeebe.mask(c.attr("type") == null ? "" : c.attr("type"))
+                                            + "'), the older Camunda 8 way. Orqix tasks are native, so the job type is not imported.",
+                                    "Acknowledge.", Need.ACKNOWLEDGE, null);
+                        } else if (!"serviceTask".equals(owner.name()) && !"businessRuleTask".equals(owner.name())
                                 && !"scriptTask".equals(owner.name()) && !"sendTask".equals(owner.name())) {
                             unknown(c);
                         }
                     }
-                    case "calledElement" -> setting(c);
-                    case "userTask", "calledDecision", "script", "subscription", "loopCharacteristics" -> {
+                    case "taskSchedule" -> {
+                        if ("userTask".equals(owner.name())) {
+                            schedule(owner, c);
+                        } else {
+                            unknown(c);
+                        }
+                    }
+                    case "userTaskForm" -> embeddedFormSource(owner, c);
+                    case "userTask", "calledDecision", "calledElement", "script", "subscription", "loopCharacteristics" -> {
                         // marker or detail of an element that is reported on its own
                     }
                     case "taskListeners", "executionListeners" -> listener(c);
-                    case "ioMapping" -> ioMapping(c);
-                    case "formDefinition" -> form(c);
-                    case "taskHeaders", "properties", "versionTag", "preConditions" -> setting(c);
+                    case "ioMapping" -> {
+                        if (connectorJobType(owner) == null || !"serviceTask".equals(owner.name())) {
+                            zeebeIoMapping(owner, c);
+                        }
+                    }
+                    case "formDefinition" -> {
+                        if ("startEvent".equals(owner.name()) || "userTask".equals(owner.name())) {
+                            formLink(owner, c);
+                        } else {
+                            form(c);
+                        }
+                    }
+                    case "taskHeaders" -> {
+                        if (connectorJobType(owner) == null || !"serviceTask".equals(owner.name())) {
+                            setting(c);
+                        }
+                    }
+                    case "properties" -> zeebeProperties(owner, c);
+                    case "versionTag", "preConditions", "priorityDefinition", "linkedResources", "conditionalFilter" -> setting(c);
                     default -> unknown(c);
                 }
             } else if (Namespaces.MODELER.equals(c.ns())) {
@@ -1334,6 +1860,37 @@ public final class Analyzer {
                 "Input and output mappings are not translated. Request fields of service calls are mapped in the mapping "
                         + "step instead.",
                 "Acknowledge.", Need.ACKNOWLEDGE, null);
+    }
+
+    /** Camunda 8 input/output mapping: not translated, but the variables it sets are listed (values are never echoed). */
+    private void zeebeIoMapping(XElement owner, XElement c) {
+        List<String> in = new ArrayList<>();
+        List<String> out = new ArrayList<>();
+        Zeebe.mappings(c, "input").forEach((target, source) -> in.add(Zeebe.variable(source) != null && !target.equals(Zeebe.variable(source))
+                ? target + " (from " + Zeebe.variable(source) + ")" : target));
+        Zeebe.mappings(c, "output").forEach((target, source) -> out.add(target));
+        add(c, c.name(), Report.INFO, "IO_MAPPING_NOT_IMPORTED",
+                "Input and output mappings are not translated. Variables set before the step: " + (in.isEmpty() ? "none" : String.join(", ", in))
+                        + ". Variables set from its result: " + (out.isEmpty() ? "none" : String.join(", ", out)) + "."
+                        + ("serviceTask".equals(owner.name()) || "callActivity".equals(owner.name())
+                        ? " The names are offered as suggestions in the mapping step where an operation or child workflow is mapped." : ""),
+                "Acknowledge.", Need.ACKNOWLEDGE, null);
+    }
+
+    /** {@code zeebe:properties}: engine settings, except inbound connector configuration which is a blocker. */
+    private void zeebeProperties(XElement owner, XElement c) {
+        for (XElement property : c.children(ZB, "property")) {
+            String name = property.attr("name");
+            if (name != null && name.startsWith("inbound.")) {
+                add(owner, owner.name(), Report.BLOCKER, "CONNECTOR_NOT_SUPPORTED",
+                        "This " + owner.name() + " is an inbound Camunda 8 connector (" + name + "), for example a webhook that starts or "
+                                + "wakes the process. Inbound connectors are not supported and their configuration is not imported.",
+                        "Start the workflow through its API trigger or from the requester's form, or rebuild the hand-off as a call.",
+                        Need.NONE, null);
+                return;
+            }
+        }
+        setting(c);
     }
 
     private void form(XElement c) {

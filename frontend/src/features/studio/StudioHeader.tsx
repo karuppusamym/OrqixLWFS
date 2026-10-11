@@ -1,4 +1,4 @@
-import { Eye, ListChecks, Redo2, Rocket, Undo2 } from 'lucide-react'
+import { Eye, FlaskConical, ListChecks, Redo2, Rocket, Undo2 } from 'lucide-react'
 import { Link } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { formatRelative } from '@/lib/dates'
@@ -35,6 +35,8 @@ export function StudioHeader({
   checking,
   canPublish,
   onPublish,
+  onTest,
+  testOpen = false,
 }: {
   workspaceName: string
   workflowsHref: string
@@ -44,6 +46,9 @@ export function StudioHeader({
   checking: boolean
   canPublish: boolean
   onPublish: () => void
+  /** Opens the test panel ("Test this workflow"); the button is hidden when not given. */
+  onTest?: () => void
+  testOpen?: boolean
 }) {
   const { readOnly } = useStudioContext()
   const name = useStudio((s) => s.definition.name)
@@ -105,6 +110,11 @@ export function StudioHeader({
         <Button variant="secondary" onClick={onPreview}>
           <Eye aria-hidden="true" /> Preview form
         </Button>
+        {onTest ? (
+          <Button variant="secondary" onClick={onTest} aria-pressed={testOpen}>
+            <FlaskConical aria-hidden="true" /> Test workflow
+          </Button>
+        ) : null}
         <Button variant="secondary" onClick={onCheck} loading={checking}>
           <ListChecks aria-hidden="true" /> Check workflow
         </Button>

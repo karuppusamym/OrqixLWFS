@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Hand-authored compatibility fixture, not a customer export. Camunda 8 purchase approval whose procurement call is the
+     REST (http-json) connector: manager approval, a 5,000 boundary, optional finance approval, connector call. -->
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" xmlns:modeler="http://camunda.org/schema/modeler/1.0" targetNamespace="urn:orqix:migration-fixture" modeler:executionPlatform="Camunda Cloud" modeler:executionPlatformVersion="8.5.0">
+  <bpmn:process id="c8-connector-purchase" name="Camunda 8 purchase with REST connector" isExecutable="true">
+    <bpmn:startEvent id="start" />
+    <bpmn:userTask id="manager" name="Manager review"><bpmn:extensionElements><zeebe:userTask /><zeebe:assignmentDefinition candidateGroups="source-managers" /></bpmn:extensionElements></bpmn:userTask>
+    <bpmn:exclusiveGateway id="managerOutcome" />
+    <bpmn:exclusiveGateway id="amountRoute" default="smallPurchase" />
+    <bpmn:userTask id="finance" name="Finance review"><bpmn:extensionElements><zeebe:userTask /><zeebe:assignmentDefinition candidateGroups="source-finance" /></bpmn:extensionElements></bpmn:userTask>
+    <bpmn:exclusiveGateway id="financeOutcome" />
+    <bpmn:serviceTask id="procure" name="Create purchase order">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="io.camunda:http-json:1" retries="3" />
+        <zeebe:ioMapping>
+          <zeebe:input source="noAuth" target="authentication.type" />
+          <zeebe:input source="POST" target="method" />
+          <zeebe:input source="https://procurement.example.com/orders" target="url" />
+          <zeebe:input source="={&#34;Content-Type&#34;: &#34;application/json&#34;}" target="headers" />
+          <zeebe:input source="={title: title, amount: amount, costCenter: costCenter}" target="body" />
+          <zeebe:input source="20" target="connectTimeoutInSeconds" />
+        </zeebe:ioMapping>
+        <zeebe:taskHeaders>
+          <zeebe:header key="resultVariable" value="procurement" />
+          <zeebe:header key="resultExpression" value="={procurementId: response.body.id}" />
+          <zeebe:header key="retryBackoff" value="PT0S" />
+        </zeebe:taskHeaders>
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+    <bpmn:endEvent id="fulfilled" name="Fulfilled" />
+    <bpmn:endEvent id="rejected" name="Rejected" />
+    <bpmn:sequenceFlow id="begin" sourceRef="start" targetRef="manager" />
+    <bpmn:sequenceFlow id="managerDecided" sourceRef="manager" targetRef="managerOutcome" />
+    <bpmn:sequenceFlow id="managerApproved" sourceRef="managerOutcome" targetRef="amountRoute"><bpmn:conditionExpression>= approved</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="managerRejected" sourceRef="managerOutcome" targetRef="rejected"><bpmn:conditionExpression>= not(approved)</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="largePurchase" sourceRef="amountRoute" targetRef="finance"><bpmn:conditionExpression>= amount &gt;= 5000</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="smallPurchase" sourceRef="amountRoute" targetRef="procure" />
+    <bpmn:sequenceFlow id="financeDecided" sourceRef="finance" targetRef="financeOutcome" />
+    <bpmn:sequenceFlow id="financeApproved" sourceRef="financeOutcome" targetRef="procure"><bpmn:conditionExpression>= financeApproved</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="financeRejected" sourceRef="financeOutcome" targetRef="rejected"><bpmn:conditionExpression>= not(financeApproved)</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="orderCreated" sourceRef="procure" targetRef="fulfilled" />
+  </bpmn:process>
+</bpmn:definitions>

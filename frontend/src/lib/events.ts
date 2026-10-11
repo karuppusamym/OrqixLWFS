@@ -82,6 +82,7 @@ export function eventTone(event: Pick<RunEvent, 'type' | 'data'>): EventTone {
       return 'cancelled'
     case 'EFFECT_FAILED':
     case 'EFFECT_UNKNOWN':
+    case 'STAGE_OVERDUE':
     case 'RUN_NEEDS_ATTENTION':
     case 'CHILD_NEEDS_ATTENTION':
       return 'danger'
@@ -149,12 +150,20 @@ export function describeEvent(event: RunEvent, ctx: EventContext): string {
     case 'TASK_TIMED_OUT':
       return `The time limit for ${label} passed; the approval was cancelled`
     case 'WAIT_STARTED': {
+      const message = str(event.data.message)
+      if (message) return `${label}: waiting for the message ${message}`
       // A wait until a date has no duration; it reports the moment it ends (UTC).
       const until = str(event.data.until)
       return str(event.data.duration) || !until ? `${label}: waiting for the timer` : `${label}: waiting until ${formatUtcDateTime(until)}`
     }
-    case 'WAIT_ENDED':
+    case 'WAIT_ENDED': {
+      const message = str(event.data.message)
+      if (message && event.data.outcome === 'timedOut') return `${label}: the message ${message} did not arrive in time`
+      if (message) return `${label}: the message ${message} arrived${event.data.buffered === true ? ' (it was received before the wait started)' : ''}`
       return `${label}: the wait finished`
+    }
+    case 'MESSAGE_DISCARDED':
+      return `${label}: a message ${str(event.data.message)} that arrived earlier did not fit and was ignored`
     case 'CHILD_STARTED': {
       const name = str(event.data.workflowName)
       const reference = str(event.data.childReference)
@@ -206,6 +215,23 @@ export function describeEvent(event: RunEvent, ctx: EventContext): string {
       return `${actorName(event, ctx)} confirmed the outcome of ${label}`
     case 'NOTIFICATION_CREATED':
       return 'The requester was notified'
+    case 'ATTACHMENT_ADDED': {
+      const name = str(event.data.name)
+      return name ? `${actorName(event, ctx)} added the file ${name}` : `${actorName(event, ctx)} added a file`
+    }
+    case 'ATTACHMENT_REMOVED': {
+      const name = str(event.data.name)
+      return name ? `${actorName(event, ctx)} removed the file ${name}` : `${actorName(event, ctx)} removed a file`
+    }
+    case 'STAGE_ENTERED': {
+      const index = num(event.data.index)
+      const total = num(event.data.total)
+      return `Stage ${index !== undefined && total !== undefined ? `${index} of ${total}` : 'started'}: ${str(event.data.label) ?? 'next stage'}`
+    }
+    case 'STAGE_COMPLETED':
+      return `Stage completed: ${str(event.data.label) ?? 'stage'}${event.data.late === true ? ' (after its time limit)' : ''}`
+    case 'STAGE_OVERDUE':
+      return `Overdue: the stage ${str(event.data.label) ?? ''} passed its time limit`.replace('stage  passed', 'stage passed')
     case 'RUN_COMPLETED':
       return `Finished: ${str(event.data.outcome) ?? 'Completed'}`
     case 'RUN_CANCELLED': {

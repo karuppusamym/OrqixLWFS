@@ -100,6 +100,8 @@ const TABLE = {
   AI_PROVIDER_UNAVAILABLE: { behavior: 'retry', message: 'The AI service is not responding right now. Nothing was created. Try again in a moment.', retryable: true },
   AI_BUDGET_EXCEEDED: { behavior: 'message', message: "This workspace has used this month's AI budget. Templates and manual design still work." },
   SOURCE_INVALID: { behavior: 'message', message: 'The source cannot be read. Check the selected format, file limits and migration report.' },
+  ATTACHMENT_BLOCKED: { behavior: 'message', message: 'This file was blocked by the virus scan and cannot be downloaded. Ask the person who added it to upload a clean copy.' },
+  ATTACHMENT_LIMIT_REACHED: { behavior: 'message', message: 'This request has reached its limit of files. Remove a file you no longer need, then add this one.' },
   MIGRATION_BLOCKED: { behavior: 'message', message: 'Some imported steps still need a decision. Resolve the open items in the report, then convert again.' },
 } satisfies Record<ProblemCode, Entry>
 

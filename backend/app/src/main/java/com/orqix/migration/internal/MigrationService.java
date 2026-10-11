@@ -55,6 +55,9 @@ public class MigrationService {
                 JsonNode pkg=parsePackage(content);
                 Stored original=archiveForPackage(ws,pkg);
                 report=PegaSource.mapping(pkg, original.view.report(),false);
+            } else if (format.equals("camundaForm")) {
+                var form=FormImport.parse(content,json,null);
+                report=FormImport.report(form,Json.sha256Hex(bytes),form.platformVersion(),form.formId());
             } else if (format.equals("dmn")) {
                 report=DmnAnalyzer.analyze(content,Limits.DEFAULT,json).report();
             } else if (format.equals("bpmn")) {
@@ -86,6 +89,9 @@ public class MigrationService {
         }
         try {
             ObjectNode definition; Report.CompatibilityReport report; Object sourceMap;
+            if (job.format.equals("camundaForm")) throw new ApiException(ProblemCode.MIGRATION_BLOCKED,
+                    "A Camunda form has no target of its own. Import the BPMN file it belongs to and attach this form under formMappings.")
+                    .with("openItems",job.view.report().issues().stream().filter(i -> Report.OPEN.equals(i.resolutionStatus())).toList());
             if (job.format.equals("pegaArchive")) throw new ApiException(ProblemCode.MIGRATION_BLOCKED,
                     "Native Pega archives are inventory-only. Upload a checksum-linked manual mapping package to create a draft.")
                     .with("openItems",job.view.report().issues());
@@ -106,7 +112,8 @@ public class MigrationService {
                 var map=DmnConverter.sourceMap(dmn,decisionId); sourceMap=map; report=DmnConverter.withTargets(analysed,map);
             } else {
                 var analysis=Analyzer.analyze(new String(job.source,StandardCharsets.UTF_8),Limits.DEFAULT);
-                var result=Converter.convert(analysis,request,json,serviceInputTypes(ws,Converter.expandServiceGroups(analysis,request,json)),decisionTables(ws,analysis,request));
+                var result=Converter.convert(analysis,request,json,serviceInputTypes(ws,Converter.expandServiceGroups(analysis,request,json)),decisionTables(ws,analysis,request),
+                        formModels(ws,analysis,request));
                 definition=result.definition(); report=result.report(); sourceMap=result.sourceMap();
             }
             if (!report.publishable()) throw new ApiException(ProblemCode.MIGRATION_BLOCKED,"Resolve mappings and acknowledge documented losses before converting.")
@@ -155,6 +162,22 @@ public class MigrationService {
             tables.put(task,table);
         }
         return tables;
+    }
+    /** Parsed Camunda forms for the start events and user tasks the designer mapped under formMappings (uploaded form files of this workspace). */
+    private Map<String,FormImport.Model> formModels(UUID ws,Analysis analysis,JsonNode request) {
+        Map<String,FormImport.Model> forms=new LinkedHashMap<>();
+        for (var entry:request.path("formMappings").properties()) {
+            String element=entry.getKey();
+            String expected=analysis.linkedForms().get(element);
+            if (expected == null) continue; // reported as an unknown mapping by the converter
+            Stored source=stored(ws,UUID.fromString(entry.getValue().path("migrationId").asString()),false);
+            if (!"camundaForm".equals(source.format)) throw SourceException.invalid("formMappings/"+element+"/migrationId must reference an uploaded Camunda form of this workspace.");
+            var form=FormImport.parse(new String(source.source,StandardCharsets.UTF_8),json,source.view.fileName());
+            if (!expected.equals(form.formId())) throw SourceException.invalid("The step '"+element+"' uses the form '"+expected+"', but the uploaded file '"
+                    +source.view.fileName()+"' is the form '"+form.formId()+"'.");
+            forms.put(element,form);
+        }
+        return forms;
     }
     private Stored archiveForPackage(UUID ws,JsonNode pkg) {
         UUID archiveId;

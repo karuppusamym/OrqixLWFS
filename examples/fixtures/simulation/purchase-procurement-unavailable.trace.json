@@ -1,0 +1,186 @@
+{
+  "outcome" : {
+    "status" : "needsAttention",
+    "businessOutcome" : null,
+    "outcomeKind" : null,
+    "endStepId" : null,
+    "attention" : {
+      "stepId" : "procure",
+      "stepLabel" : "Create purchase order",
+      "reason" : "RETRIES_EXHAUSTED",
+      "message" : "In this test the system does not answer. Orqix would try 3 times, 30 seconds apart, and then the request needs attention until someone retries."
+    },
+    "summary" : "The request would stop and need attention at \"Create purchase order\"."
+  },
+  "outputs" : { },
+  "trace" : [ {
+    "seq" : 1,
+    "stepId" : "start",
+    "stepLabel" : "Request submitted",
+    "kind" : "start",
+    "kindLabel" : "Request form",
+    "summary" : "The request is submitted with the answers you entered.",
+    "details" : { },
+    "transitionId" : "t1",
+    "nextStepId" : "manager"
+  }, {
+    "seq" : 2,
+    "stepId" : "manager",
+    "stepLabel" : "Review request",
+    "kind" : "approval",
+    "kindLabel" : "Ask for approval",
+    "summary" : "\"Review request\" goes to Managers. In this test they approve.",
+    "details" : {
+      "group" : "managers",
+      "groupName" : "Managers",
+      "dueAfterHours" : 24,
+      "decision" : "approved"
+    },
+    "wrote" : {
+      "decision" : "approved",
+      "decidedBy" : "Test approver"
+    },
+    "transitionId" : "t2",
+    "nextStepId" : "amountPolicy"
+  }, {
+    "seq" : 3,
+    "stepId" : "amountPolicy",
+    "stepLabel" : "Check purchase amount",
+    "kind" : "decision",
+    "kindLabel" : "Make a decision",
+    "summary" : "\"Check purchase amount\": no rule applies, so the \"otherwise\" result is used: route = standard.",
+    "details" : {
+      "decisionKey" : "amount-policy",
+      "version" : 1,
+      "inputs" : [ {
+        "fieldRef" : "/input/amount",
+        "label" : "Amount",
+        "value" : 1800,
+        "shown" : "USD 1,800"
+      } ],
+      "rows" : [ {
+        "row" : 1,
+        "condition" : "Amount is at least USD 5,000",
+        "matched" : false,
+        "selected" : false,
+        "outputs" : {
+          "route" : "financeReview"
+        }
+      } ],
+      "usedDefault" : true,
+      "matchedRow" : null,
+      "outputs" : {
+        "route" : "standard"
+      }
+    },
+    "wrote" : {
+      "route" : "standard"
+    },
+    "transitionId" : "t4",
+    "nextStepId" : "route"
+  }, {
+    "seq" : 4,
+    "stepId" : "route",
+    "stepLabel" : "Finance review needed?",
+    "kind" : "branch",
+    "kindLabel" : "Choose a path",
+    "summary" : "\"Finance review needed?\": takes the route \"Under USD 5,000\" because none of the other routes applies.",
+    "details" : {
+      "routes" : [ {
+        "transitionId" : "t5",
+        "label" : "USD 5,000 or more",
+        "condition" : "Check purchase amount / route is financeReview",
+        "matched" : false
+      } ],
+      "chosen" : "t6"
+    },
+    "transitionId" : "t6",
+    "nextStepId" : "procure"
+  }, {
+    "seq" : 5,
+    "stepId" : "procure",
+    "stepLabel" : "Create purchase order",
+    "kind" : "http",
+    "kindLabel" : "Call a system",
+    "summary" : "\"Create purchase order\" calls Procurement service (Create purchase order). In this test the system does not answer. Orqix would try 3 times, 30 seconds apart, and then the request needs attention until someone retries.",
+    "details" : {
+      "connection" : "procurement",
+      "connectionName" : "Procurement service",
+      "operation" : "createOrder",
+      "operationLabel" : "Create purchase order",
+      "agent" : false,
+      "effectClass" : "idempotentWithKey",
+      "request" : {
+        "amount" : 1800,
+        "costCenter" : "IT",
+        "title" : "Laptop"
+      },
+      "failure" : "unavailable",
+      "attention" : {
+        "reason" : "RETRIES_EXHAUSTED",
+        "message" : "In this test the system does not answer. Orqix would try 3 times, 30 seconds apart, and then the request needs attention until someone retries."
+      }
+    },
+    "transitionId" : null,
+    "nextStepId" : null
+  } ],
+  "warnings" : [ ],
+  "coverage" : {
+    "steps" : {
+      "visited" : 5,
+      "total" : 10,
+      "notVisited" : [ {
+        "id" : "finance",
+        "label" : "Finance review"
+      }, {
+        "id" : "notify",
+        "label" : "Tell requester it is ordered"
+      }, {
+        "id" : "fulfilled",
+        "label" : "Fulfilled"
+      }, {
+        "id" : "notifyRejected",
+        "label" : "Tell requester it was rejected"
+      }, {
+        "id" : "rejected",
+        "label" : "Rejected"
+      } ]
+    },
+    "routes" : {
+      "notTaken" : [ {
+        "transitionId" : "t3",
+        "from" : "manager",
+        "to" : "notifyRejected",
+        "description" : "Review request, when rejected, goes to Tell requester it was rejected"
+      }, {
+        "transitionId" : "t5",
+        "from" : "route",
+        "to" : "finance",
+        "description" : "Finance review needed?, when USD 5,000 or more, goes to Finance review"
+      }, {
+        "transitionId" : "t7",
+        "from" : "finance",
+        "to" : "procure",
+        "description" : "Finance review, when approved, goes to Create purchase order"
+      }, {
+        "transitionId" : "t8",
+        "from" : "finance",
+        "to" : "notifyRejected",
+        "description" : "Finance review, when rejected, goes to Tell requester it was rejected"
+      } ],
+      "taken" : 2,
+      "total" : 6
+    },
+    "rules" : {
+      "notMatched" : [ {
+        "decision" : "amount-policy",
+        "row" : "Rule 1",
+        "condition" : "Amount is at least USD 5,000"
+      } ],
+      "matched" : 1,
+      "total" : 2
+    },
+    "summary" : "Tested 5 of 10 steps, 2 of 6 routes and 1 of 2 decision rules."
+  },
+  "limits" : "This is a dry run of the workflow as designed, not the workflow engine. It does not call real systems, check that connections work, that people are in the groups, or how long anything takes."
+}

@@ -24,3 +24,16 @@ See [migration strategy](../../docs/05-migration.md) and [migration workbench](.
 | `dmn-unsupported.dmn` | One decision per blocked construct; expected reason codes are asserted in `DmnImportTest` |
 
 The expected dispositions are asserted in `FixtureDispositionTest`, `ConverterExpansionTest` and `DmnImportTest`; `MigrationApiTest` converts, publishes and runs them against PostgreSQL and Flowable.
+
+## Camunda 8 fixtures (all synthetic, hand-authored; none is a customer export)
+
+| File | Purpose |
+|---|---|
+| `camunda8-purchase.bpmn` | Job worker (`source-procurement-worker`), approvals, 5,000 boundary; modeler platform version 8.3.0 |
+| `camunda8-connector-http.bpmn` | The same purchase with the REST connector (`io.camunda:http-json:1`): POST with a body, headers and a result expression; version 8.5.0 |
+| `camunda8-user-task-form.bpmn` + `camunda8-user-task-form.form` | A start event linked to the form file `expense-request` (form id must match), a manager task with an embedded form, a due time and a follow-up date |
+| `camunda8-feel-gateways.bpmn` | Five gateways in the FEEL subset: `>=`, `or` group, bare boolean with `not()`, `not()` over a comparison, `and` range |
+| `camunda8-timer-callactivity.bpmn` | Duration timer, an approval with a boundary timer escalating to a second approval, and a call activity with explicit variable mapping |
+| `camunda8-unsupported.bpmn` | One of each blocker: message, signal, cycle and fixed-date timers, Slack and e-mail connectors, an inbound webhook, a script task, FEEL function call, null check and `in`, an inclusive gateway, a computed assignee, a non-interrupting boundary event, multi-instance user task, a form with a table, dynamic list, file picker, computed field, conditional field, dynamic options and checklist, and a sub-process |
+
+Expected dispositions are asserted in `Camunda8ImportTest`; `Camunda8MigrationApiTest` converts, publishes and runs the supported ones (approval with the 5,000 boundary and the procurement call, FEEL paths, form, timer and child). Upload the `.form` file as source type "Camunda form" or from the forms step of the BPMN import.

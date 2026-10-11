@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Hand-authored compatibility fixture, not a customer export. -->
-<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" targetNamespace="urn:orqix:migration-fixture">
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" xmlns:modeler="http://camunda.org/schema/modeler/1.0" targetNamespace="urn:orqix:migration-fixture" modeler:executionPlatform="Camunda Cloud" modeler:executionPlatformVersion="8.3.0">
   <bpmn:process id="purchase-import" name="Imported purchase approval" isExecutable="true">
     <bpmn:startEvent id="start" />
     <bpmn:userTask id="manager" name="Manager review" ><bpmn:extensionElements><zeebe:assignmentDefinition candidateGroups="source-managers" /></bpmn:extensionElements></bpmn:userTask>

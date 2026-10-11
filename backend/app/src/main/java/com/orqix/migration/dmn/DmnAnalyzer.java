@@ -47,6 +47,7 @@ public final class DmnAnalyzer {
     private final Json json;
     private final DmnAnalysis analysis;
     private final List<Ordered> items = new ArrayList<>();
+    private final Set<String> seenDecisionIds = new LinkedHashSet<>();
     private int sequence;
 
     private DmnAnalyzer(XElement root, String ns, Json json, DmnAnalysis analysis) {
@@ -143,6 +144,15 @@ public final class DmnAnalyzer {
 
     private void decision(XElement decision) {
         String id = idOf(decision);
+        if (!seenDecisionIds.add(id)) {
+            // Identity is ambiguous: neither the earlier nor the later table may be selected by this id.
+            analysis.tables().remove(id);
+            analysis.testCases().removeIf(test -> id.equals(test.decision()));
+            add(id, decision, "decision", Report.BLOCKER, "DMN_DUPLICATE_DECISION_ID",
+                    "Decision ID '" + id + "' appears more than once in this file. No table with this ID can be converted.",
+                    "Give every decision a unique ID and update its callers before importing the file again.");
+            return;
+        }
         analysis.decisions().put(id, labelOf(decision));
         settings(id, decision, "decision");
         XElement table = null;

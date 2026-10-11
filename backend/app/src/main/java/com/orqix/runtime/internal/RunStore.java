@@ -153,11 +153,14 @@ public class RunStore {
     private final JdbcClient jdbc;
     private final Json json;
     private final Clock clock;
+    private final org.springframework.beans.factory.ObjectProvider<RunStages> stages;
 
-    public RunStore(JdbcClient jdbc, Json json, Clock clock) {
+    public RunStore(JdbcClient jdbc, Json json, Clock clock,
+            org.springframework.beans.factory.ObjectProvider<RunStages> stages) {
         this.jdbc = jdbc;
         this.json = json;
         this.clock = clock;
+        this.stages = stages;
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
@@ -285,6 +288,8 @@ public class RunStore {
                 .param("ended", Sql.ts(m.endedAt)).param("now", Sql.ts(clock.instant()))
                 .param("ws", workspaceId).param("id", runId)
                 .update();
+        // Case stages are derived from the final steps of the transaction (docs/build/S17 section 4).
+        stages.getObject().touch(workspaceId, runId, row.releaseId());
         return find(workspaceId, runId).orElseThrow();
     }
 

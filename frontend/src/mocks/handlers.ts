@@ -1,14 +1,17 @@
 import { delay, http, HttpResponse, type HttpHandler, type JsonBodyType } from 'msw'
 import type { Permission, ProblemCode, TaskDetail, ValidationIssue } from '@/api/types'
 import { nodeById } from '@/features/studio/model/graph'
+import { sendMessage, validMessageName } from './messages'
 import { addEvent, canSeeRunData, isRunParticipant, evaluateTable, requestTitleOf, claim, createRun, decide, cancelRun, currentRelease, reconcileRun, retryRun, release as releaseTask, selfApprovalAllowed, toRun, toRunDetail, toTaskSummary } from './engine'
 import { makeRelease } from './seed'
+import { attachStartFiles, planStartFiles } from './caseFiles'
 import { migrationPublishDenial } from './migration'
 import { normalizeDefinition, type Definition, type Literal } from '@/features/studio/model/types'
 import { buildFields, parseFormSchema } from '@/lib/form/schema'
 import { validateJsonInput } from '@/lib/form/validate'
 import { waitHorizonErrors } from './dateWait'
 import { validateDefinition, type ValidationContext } from './validate'
+import { ScenarioError, simulateDefinition, type SimConnection, type SimContext, type SimulationScenario } from './simulator'
 import {
   GROUPS,
   TEMPLATES,
@@ -27,6 +30,8 @@ import {
   permissionsOf,
   purchaseTemplate,
   onboardingTemplate,
+  orderPaymentTemplate,
+  caseTemplate,
   rolesOf,
   userById,
   userByName,
@@ -333,7 +338,7 @@ export function createHandlers(): HttpHandler[] {
       if (workflowsOf(str(params.ws)).some((w) => w.key === input.key)) {
         return problem(409, 'DUPLICATE_KEY', 'A workflow with this key already exists', { fieldErrors: [{ pointer: '/key', code: 'duplicate', message: 'A workflow with this key already exists.' }] })
       }
-      const definition: Definition = input.templateId === 'purchase-approval' ? purchaseTemplate() : input.templateId === 'new-hire-onboarding' ? onboardingTemplate() : blankDefinition(input.key, input.name)
+      const definition: Definition = input.templateId === 'purchase-approval' ? purchaseTemplate() : input.templateId === 'new-hire-onboarding' ? onboardingTemplate() : input.templateId === 'order-payment-wait' ? orderPaymentTemplate() : input.templateId === 'case-with-stages' ? caseTemplate() : blankDefinition(input.key, input.name)
       definition.workflowKey = input.key
       definition.name = input.name
       if (input.description) definition.metadata.description = input.description
@@ -423,6 +428,64 @@ export function createHandlers(): HttpHandler[] {
       if (!draft || !table) return notFound()
       const result = evaluateTable(table, input.values ?? {})
       return HttpResponse.json(result)
+    }),
+
+    // "Test this workflow": a dry run with the mock-side port of the simulator (mocks/simulator.ts).
+    http.post(`${B}/workspaces/:ws/workflows/:id/simulate`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws, 'workflow.read')
+      if (!g.ok) return g.res
+      const wf = findWorkflow(str(params.ws), str(params.id))
+      if (!wf) return notFound()
+      const input = await body<{ revision?: number; useActiveRelease?: boolean; input?: Record<string, unknown>; scenario?: SimulationScenario }>(request)
+      if (!input.input || typeof input.input !== 'object' || Array.isArray(input.input)) {
+        return problem(422, 'VALIDATION_FAILED', 'Some values are not valid', { fieldErrors: [{ pointer: '/input', code: 'type', message: 'Give the answers to the request form as an object.' }] })
+      }
+      let def: Definition
+      let source: { revision: number | null; releaseNumber: number | null }
+      if (input.useActiveRelease === true) {
+        const active = wf.releases.find((r) => r.id === wf.activeReleaseId)
+        if (!active) return problem(422, 'NO_ACTIVE_RELEASE', 'This workflow has not been published yet')
+        def = active.definition
+        source = { revision: null, releaseNumber: active.releaseNumber }
+      } else {
+        const draft = input.revision === undefined ? wf.drafts[wf.drafts.length - 1] : wf.drafts.find((d) => d.revision === input.revision)
+        if (!draft) return notFound()
+        def = draft.definition
+        source = { revision: draft.revision, releaseNumber: null }
+      }
+      const connections: Record<string, SimConnection> = {
+        procurement: connectionDefinition as unknown as SimConnection,
+        'vendor-risk-assistant': agentConnectionDefinition as unknown as SimConnection,
+      }
+      const ctx: SimContext = {
+        groups: Object.fromEntries(GROUPS.map((grp) => [grp.key, grp.name])),
+        connection: (key) => (wf.wsId === WORKSPACES[2]?.id ? undefined : connections[key]),
+        childDefinition: (key) => {
+          const child = [...db.workflows.values()].find((w) => w.wsId === wf.wsId && w.key === key)
+          return child?.releases.find((r) => r.id === child.activeReleaseId)?.definition
+        },
+        today: clock.now().toISOString().slice(0, 10),
+        issues: validateDefinition(def, validationContext(wf.wsId)),
+        validateInput: (d, values) => {
+          const schema = parseFormSchema(d.inputSchema)
+          const fields = buildFields(schema, {})
+          return validateJsonInput(schema, values).map((i) => ({
+            pointer: `/input${i.pointer}`,
+            code: i.keyword,
+            message: `${fields.find((f) => `/${f.key}` === i.pointer)?.label ?? i.pointer.slice(1)} is not valid (${i.keyword}).`,
+          }))
+        },
+      }
+      try {
+        const result = simulateDefinition(def, input.input, input.scenario ?? {}, ctx)
+        if (result.status === 'invalidInput') return problem(422, 'VALIDATION_FAILED', 'Some values are not valid', { fieldErrors: result.errors })
+        if (result.status === 'cannotRun') return problem(422, 'WORKFLOW_INVALID', 'The workflow has blocking problems', { issues: result.issues })
+        return HttpResponse.json({ source, ...result.body } as JsonBodyType)
+      } catch (cause) {
+        if (cause instanceof ScenarioError) return problem(422, 'VALIDATION_FAILED', 'The test settings are not valid', { fieldErrors: [{ pointer: '/scenario', code: 'type', message: cause.message }] })
+        throw cause
+      }
     }),
 
     // Releases -------------------------------------------------------------------------------------------------------
@@ -561,7 +624,10 @@ export function createHandlers(): HttpHandler[] {
         }
         const active = [...db.runs.values()].filter((r) => r.workflowId === wf.id && (r.lifecycle === 'running' || r.lifecycle === 'waiting' || r.lifecycle === 'needsAttention')).length
         if (active >= rel.definition.execution.maxConcurrentRuns) return problem(429, 'QUOTA_EXCEEDED', 'Too many open requests', {}, { 'Retry-After': '60' })
+        const files = planStartFiles(g.user, str(params.ws), schema, input.input ?? {})
+        if (files instanceof Response) return files
         const run = createRun({ wsId: str(params.ws), workflow: wf, release: rel, initiator: g.user, input: input.input, businessKey: input.businessKey ?? null })
+        attachStartFiles(run, files)
         return { status: 201, body: toRun(run, g.user), headers: { Location: `/api/v1/workspaces/${run.wsId}/runs/${run.id}` } }
       })
     }),
@@ -617,6 +683,20 @@ export function createHandlers(): HttpHandler[] {
         data: e.type === 'DECISION_EVALUATED' && !canSeeRunData(run,g.user) ? {decisionKey:e.data.decisionKey,version:e.data.version,evidenceRedacted:true} : e.data,
       }))
       return HttpResponse.json({ items, nextAfter: items.at(-1)?.seq ?? after, hasMore: fresh.length > limit, lifecycle: run.lifecycle })
+    }),
+    http.post(`${B}/workspaces/:ws/messages`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws, 'message.send')
+      if (!g.ok) return g.res
+      const input = await body<{ name: string; correlationKey: string; payload?: Record<string, unknown> | null }>(request)
+      return idempotent(request, g.user, 'sendMessage', input, () => {
+        if (!validMessageName(String(input.name ?? '')) || !String(input.correlationKey ?? '').length || String(input.correlationKey).length > 200) {
+          return problem(400, 'MALFORMED_REQUEST', 'The request is malformed', { detail: 'The request does not match the operation schema.' })
+        }
+        const result = sendMessage(str(params.ws), input.name, input.correlationKey, input.payload, g.user.id, newId)
+        if ('errors' in result) return problem(422, 'VALIDATION_FAILED', 'Some values are not valid', { detail: 'The payload does not match the values the waiting step declares.', fieldErrors: result.errors })
+        return { status: result.status, body: result.body }
+      })
     }),
     http.post(`${B}/workspaces/:ws/runs/:id/cancel`, async ({ params, request }) => {
       await slow()

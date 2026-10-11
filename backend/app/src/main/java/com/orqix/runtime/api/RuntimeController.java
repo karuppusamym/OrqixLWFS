@@ -80,8 +80,8 @@ public class RuntimeController {
     public RuntimeDtos.RunPage listRuns(@PathVariable UUID workspaceId, @RequestParam(required = false) UUID workflowId,
             @RequestParam(required = false) String lifecycle, @RequestParam(required = false) String outcomeKind,
             @RequestParam(required = false) String businessKey, @RequestParam(required = false) String createdFrom,
-            @RequestParam(required = false) String createdTo, @RequestParam(required = false) String cursor,
-            @RequestParam(required = false) Integer limit) {
+            @RequestParam(required = false) String createdTo, @RequestParam(required = false) Boolean overdue,
+            @RequestParam(required = false) String cursor, @RequestParam(required = false) Integer limit) {
         if (lifecycle != null && !LIFECYCLES.contains(lifecycle)) {
             throw ApiException.malformed("Unknown lifecycle.");
         }
@@ -92,7 +92,7 @@ public class RuntimeController {
             throw ApiException.malformed("businessKey is too long.");
         }
         RunQueries.Filter filter = new RunQueries.Filter(workflowId, lifecycle, outcomeKind, businessKey,
-                instant(createdFrom), instant(createdTo), null);
+                instant(createdFrom), instant(createdTo), null, Boolean.TRUE.equals(overdue));
         return runs.listRuns(callers.current(), workspaceId, filter, cursor, limit);
     }
 

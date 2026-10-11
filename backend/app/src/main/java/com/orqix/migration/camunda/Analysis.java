@@ -16,7 +16,7 @@ public final class Analysis {
 
     /** What a designer has to provide before an item counts as resolved. */
     public enum Need {
-        NONE, TASK, OUTCOME_GATEWAY, SERVICE, SERVICE_GROUP, CHILD, DECISION, ACKNOWLEDGE
+        NONE, TASK, OUTCOME_GATEWAY, SERVICE, SERVICE_GROUP, CHILD, DECISION, FORM, ACKNOWLEDGE
     }
 
     /** One inventory entry. */
@@ -136,6 +136,12 @@ public final class Analysis {
         final List<Flow> candidateFlows = new ArrayList<>();
         /** True when two outcomes can never be found (the task stays blocked). */
         boolean outcomesImpossible;
+        /** Display-only due time in whole hours (Camunda 8 {@code zeebe:taskSchedule dueDate}); null when none. */
+        Integer dueAfterHours;
+        /** ISO duration of an interrupting boundary timer on this task (becomes the approval time limit); null when none. */
+        String timeoutAfter;
+        /** The flow that leaves the boundary timer (becomes the {@code timedOut} route). */
+        Flow timeoutFlow;
 
         UserTask(Node node, String assignmentKind, List<String> mappingKeys) {
             this.node = node;
@@ -239,6 +245,18 @@ public final class Analysis {
     /** Result variable name to the business rule task that sets it. */
     final Map<String, String> decisionResults = new LinkedHashMap<>();
     final Map<String, String> waits = new LinkedHashMap<>();
+    /** Timer catch event id to the plain variable that holds the date it waits for. */
+    final Map<String, String> waitDates = new LinkedHashMap<>();
+    /** Boundary timer node id to the id of the user task whose time limit it becomes. */
+    final Map<String, String> timeoutBoundaries = new LinkedHashMap<>();
+    final Map<String, Report.ServiceHint> serviceHints = new LinkedHashMap<>();
+    final Map<String, Report.CallHint> callHints = new LinkedHashMap<>();
+    /** Element id (start event or user task) to its form link. */
+    final Map<String, Report.FormHint> formHints = new LinkedHashMap<>();
+    /** Element id to a form parsed from the BPMN itself (zeebe:userTaskForm). */
+    final Map<String, FormImport.Model> embeddedForms = new LinkedHashMap<>();
+    /** Element id to the form id of a linked form that needs a {@code formMappings} entry. */
+    final Map<String, String> linkedForms = new LinkedHashMap<>();
     final Map<String, String> parallelJoins = new LinkedHashMap<>();
     final Set<String> children = new LinkedHashSet<>();
     /** Exclusive gateways with at most one outgoing flow: removed, their incoming flows go straight to the target. */
@@ -308,6 +326,24 @@ public final class Analysis {
 
     public Map<String, Node> nodes() {
         return nodes;
+    }
+
+    public Map<String, String> linkedForms() {
+        return linkedForms;
+    }
+
+    public Map<String, FormImport.Model> embeddedForms() {
+        return embeddedForms;
+    }
+
+    public Map<String, Report.FormHint> formHints() {
+        return formHints;
+    }
+
+    public Report.MappingHints hints() {
+        Map<String, Report.FormPreview> previews = new LinkedHashMap<>();
+        embeddedForms.forEach((element, model) -> previews.put(element, model.preview()));
+        return new Report.MappingHints(serviceHints, formHints, callHints, previews);
     }
 
     public Map<String, Flow> flows() {

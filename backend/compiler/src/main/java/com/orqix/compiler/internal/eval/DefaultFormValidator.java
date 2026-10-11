@@ -27,6 +27,8 @@ import tools.jackson.databind.JsonNode;
 public final class DefaultFormValidator implements FormValidator {
 
     private static final BigDecimal CENT = new BigDecimal("0.01");
+    private static final Pattern UPLOAD_ID = Pattern.compile(
+            "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$");
     private static final Pattern DATE = Pattern.compile("^[0-9]{4}-[0-9]{2}-[0-9]{2}$");
 
     @Override
@@ -99,6 +101,14 @@ public final class DefaultFormValidator implements FormValidator {
             if (value.size() > schema.path("maxItems").asInt(25))
                 errors.add(new FieldError(pointer, "maxItems", "Enter at most " + schema.path("maxItems").asInt(25) + " items."));
             for (int i = 0; i < value.size(); i++) field(pointer + "/" + i, schema.path("items"), value.get(i), errors);
+        }
+        if (value.isString() && "attachment".equals(schema.path("format").stringValue(""))) {
+            // The value is the ID of an uploaded file; the runtime checks that the file exists, is the caller's and
+            // fits the field's file types and size (S17).
+            if (!UPLOAD_ID.matcher(value.stringValue()).matches()) {
+                errors.add(new FieldError(pointer, "format", "Choose a file."));
+            }
+            return;
         }
         if (value.isString() && "date".equals(schema.path("format").stringValue(""))) {
             date(pointer, schema, value.stringValue(), errors);

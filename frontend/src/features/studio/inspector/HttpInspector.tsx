@@ -29,6 +29,7 @@ interface ScalarSchema {
 }
 
 interface OperationDoc {
+  testable?: boolean
   path?: string
   label: string
   description?: string
@@ -167,7 +168,7 @@ export function HttpInspector({ node }: { node: WorkflowNode }) {
           key={`${node.id}:${connectionKey}:${record.version}:${operationName}`}
           workspaceId={wsId} connectionKey={connectionKey} connectionVersion={record.version} path={operation.path!}
           operations={operationDocs as Record<string, DocumentOperation>}
-          testableOperations={summary.operations.filter((entry) => entry.testable).map((entry) => entry.name)}
+          testableOperations={Object.entries(operationDocs ?? {}).filter(([, entry]) => entry.testable).map(([name]) => name)}
           approvedDrives={operation.requestSchema?.properties.driveId?.enum ?? []}
           configuredReference={Object.fromEntries(['driveId', 'itemId', 'versionId', 'snapshotId'].flatMap((field) => {
             const ref = inputMapping[field]

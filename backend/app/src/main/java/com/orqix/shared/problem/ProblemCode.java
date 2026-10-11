@@ -48,6 +48,8 @@ public enum ProblemCode {
     AI_BUDGET_EXCEEDED(429, "The AI budget for this period is used up"),
     SOURCE_INVALID(422, "The uploaded source file cannot be read"),
     MIGRATION_BLOCKED(422, "Imported elements still need a decision"),
+    ATTACHMENT_BLOCKED(409, "The file is blocked and cannot be downloaded"),
+    ATTACHMENT_LIMIT_REACHED(409, "The request has reached its file limit"),
     /**
      * Unexpected defect. Not in the contract enum (openapi.yaml has no code for 500); reported as a contract gap.
      * The transaction was rolled back, so nothing was committed.

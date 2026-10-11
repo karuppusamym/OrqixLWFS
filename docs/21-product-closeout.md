@@ -1,6 +1,6 @@
 # Product closeout and remaining work
 
-Updated 10 October 2026. This is the current remaining-item register. The R0 implementation checklist, current build batch, future product roadmap and customer acceptance are separate scopes. Closing the batch does not mean every R1–R3 epic is implemented. [Build evidence](19-product-build-tracker.md) records the checks for the combined tree.
+Updated 11 October 2026. This is the current remaining-item register. The R0 implementation checklist, current build batch, future product roadmap and customer acceptance are separate scopes. Closing the batch does not mean every R1–R3 epic is implemented. [Build evidence](19-product-build-tracker.md) records the checks for the combined tree.
 
 ## Previous build batch - complete
 
@@ -19,9 +19,21 @@ Verification: 281 compiler cases; 457 unique application cases (455 pass, 2 opti
 
 | ID | Item | Current scope |
 |---|---|---|
-| MIG08 | DMN files within migration projects | Implemented; coordinated verification in progress. Namespace detection, one convertible decision per DMN file, missing/duplicate/unsupported diagnostics, dependency order, editable mapping suggestions and legacy records. [S20](build/S20-project-dmn.md) |
+| MIG09 | DMN files within migration projects | Implemented; coordinated verification in progress. Namespace detection, one convertible decision per DMN file, missing/duplicate/unsupported diagnostics, dependency order, editable mapping suggestions and legacy records. [S20](build/S20-project-dmn.md) |
 | RULE01 | Automated decision evidence | Implemented; coordinated verification in progress. Actual pinned DMN output plus input and every bounded candidate row, expandable history and request-data permission filtering. Metadata readers receive no matched row, outputs or evidence. [S21](build/S21-decision-evidence.md) |
 | DOC05 | Approved document reference authoring | Implemented; coordinated verification in progress. Studio creates exact required request choices and field mappings for a known historical version or retained snapshot. Administrator-only lookups/capture preserve existing authorization. [S22](build/S22-document-authoring.md) |
+
+## Resumed five-stream batch
+
+Implementation is being completed and verified together. The final coordinated evidence will be recorded in [doc 19](19-product-build-tracker.md).
+
+| Item | Implemented scope | Limits |
+|---|---|---|
+| Camunda 8 import | HTTP connector hints with approved operation mappings, bounded FEEL, task settings/timers/child calls and Camunda Forms; S11 | Task forms are notes. Unsupported source semantics have explicit reasons; no generic native connector or source message-event import |
+| Message events | Workspace-authorized inbound API, message wait, bounded buffer/fan-out, timeout routes, idempotent acceptance; S23 | No signal/error/compensation events or unbounded broadcast |
+| Run diagram and Insights | Pinned-release derived path, current steps, throughput, cycle times, bottlenecks, overdue approvals/waits and CSV; S24 | Diagram history cap is explicit; no process mining or arbitrary BI query designer |
+| Test workflow | Pure dry-run trace/reasons, route coverage, saved browser cases, nested child simulation with global limits; S26 | Simulated outcomes do not prove external effects or engine timing; cases do not gate publication |
+| Attachments and stages | Request-form uploads, request file lifecycle/quotas, optional scanner hook, declared case stages/deadlines/notice history and Studio authoring; S25 | Scanner-disabled files show Not scanned; no document generation, adaptive CMMN or stage-driven rerouting |
 
 ## Customer and source acceptance still open
 
@@ -40,11 +52,11 @@ These are engineering features, not infrastructure. They remain in the [full bac
 
 | Area | Remaining functionality |
 |---|---|
-| Migration breadth | Form import, optional reviewed AI mapping proposals, connector element-template recognition, multi-decision selection inside projects, native user-task multi-instance and broader BPMN loss-aware import |
-| Execution and cases | Boundary timer/error events, message correlation, mutable correction forms, nested/object collections, adaptive case stages, business calendars and recurring escalation |
+| Migration breadth | Broader/dynamic form import, optional reviewed AI mapping proposals, additional native connectors, multi-decision selection inside projects, native user-task multi-instance and broader BPMN loss-aware import |
+| Execution and cases | Generic boundary/error/compensation/signal events, subprocesses/CMMN, mutable correction forms, nested/object collections, adaptive case stages, business calendars and recurring escalation |
 | Banking and rules | Effective-dated rule packs, multi-input rule tables, stored publish-gating decision tests, cross-stage separation of duties and multi-currency rules |
-| Operations and authoring | Audited incident variable correction, waiting-on-nothing detection, swimlanes, threaded element discussion, further authoring modes, in-flight migration and canary releases |
-| Documents and integrations | OCR, requester file browsing/attachments, OAuth lifecycle automation, Teams/mail and approved write-capable agent tools |
+| Operations and authoring | Audited incident variable correction, waiting-on-nothing detection, swimlanes, threaded element discussion, Pega-style UI designer, skills-based work queues, external-worker SDK, in-flight migration and canary releases |
+| Documents and integrations | OCR, Microsoft tenant file browsing, document generation, OAuth lifecycle automation, Teams/mail and approved write-capable agent tools |
 | Platform organization and delivery | Remaining R1–R3 folder/shared-asset organization, advanced triggers/search/analytics, Git promotion and environment lifecycle contracts described by the backlog |
 
 ## Infrastructure excluded from this build

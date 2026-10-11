@@ -533,15 +533,19 @@ Repository capabilities in this research are a snapshot, not a completion tracke
 | 1.5 Maker-checker | Built for migrations (policy, independent review bound to exact draft, source and mappings hashes; mapper, reviewer and publisher differ). Not yet applied to connection definitions, rule packs or ordinary workflows |
 | 2.2, 2.3 Equivalence runner, evidence pack | Built earlier on synthetic fixtures; no real source yet |
 | 2.4 DMN import | Built for the safe subset (UNIQUE and FIRST, one tested input, literal tests); generated boundary tests |
-| 2.5 Form import | Not built |
+| 2.5 Form import | Camunda Forms bounded request-form subset built; task forms become notes, dynamic components block; S11 |
 | 2.6 Assisted mapping proposals | Not built |
 | 3.1 Multi-instance | Built for call activities mapped to bounded for-each; user-task multi-instance is not supported by the compiler |
-| 3.3 Boundary timer and error events | Not built |
+| 3.3 Boundary timer and error events | Camunda approval boundary duration timer imports as an approval time limit. Generic boundary/error/compensation events remain unsupported; S11 |
 | 3.4 Operators | Built: `eq ne gte gt lt lte`, flat all/any groups of 2 to 8 terms |
-| 3.5 Connector element templates | Not built |
+| 3.5 Connector element templates | Camunda 8 HTTP connector hints recognized and require explicit approved operation mapping; arbitrary native connectors remain unsupported; S11 |
 | 4.1 Decision record | Built for canonical single-input tables: pinned rule version/result, input values, every candidate's match/selection, default selection and permission-filtered history. S21; no values in global audit |
 | 4.x Banking product layer | Templates built and executed; durable task priority, age display and oldest/newest sorting added. Effective-dated rule packs, automatic aging/escalation, four-eyes across stages, multi-currency and business calendars remain gaps in the [capability matrix](banking-capability-matrix.md) |
 
 See [doc 19](19-product-build-tracker.md) for what is verified on the merged tree and what is not.
 
 Current engineering, customer acceptance and excluded infrastructure are tracked separately in [product closeout](21-product-closeout.md). A completed wave slice does not close all later roadmap items.
+
+### Resume implementation, 11 October 2026
+
+The five authorized slices are being integrated: Camunda 8 import, workspace message waits, run diagram/Insights, workflow simulation, attachments and declared case stages. Current acceptance and evidence are in [doc 19](19-product-build-tracker.md); future features remain in [doc 21](21-product-closeout.md). Message execution support does not imply source message-event conversion. Declared stages do not implement adaptive Pega case management. This implementation update does not revalidate the earlier vendor research.

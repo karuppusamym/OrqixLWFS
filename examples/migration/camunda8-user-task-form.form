@@ -1,0 +1,20 @@
+{
+  "_comment": "Hand-authored compatibility fixture, not a customer export.",
+  "schemaVersion": 16,
+  "type": "default",
+  "id": "expense-request",
+  "executionPlatform": "Camunda Cloud",
+  "executionPlatformVersion": "8.5.0",
+  "components": [
+    { "type": "text", "id": "intro", "text": "# Expense request\nPlease fill in every field." },
+    { "type": "textfield", "id": "f1", "key": "employeeName", "label": "Employee name", "validate": { "required": true, "maxLength": 80 } },
+    { "type": "number", "id": "f2", "key": "amount", "label": "Amount", "decimalDigits": 2, "validate": { "required": true, "min": 1, "max": 100000 } },
+    { "type": "select", "id": "f3", "key": "category", "label": "Category", "validate": { "required": true },
+      "values": [ { "label": "Travel", "value": "travel" }, { "label": "Meals", "value": "meals" }, { "label": "Equipment", "value": "equipment" } ] },
+    { "type": "radio", "id": "f4", "key": "paidBy", "label": "Paid by", "values": [ { "label": "Card", "value": "card" }, { "label": "Cash", "value": "cash" } ] },
+    { "type": "textarea", "id": "f5", "key": "reason", "label": "Reason", "defaultValue": "Business trip" },
+    { "type": "checkbox", "id": "f6", "key": "receiptAttached", "label": "Receipt attached" },
+    { "type": "datetime", "id": "f7", "key": "expenseDate", "label": "Expense date", "subtype": "date" },
+    { "type": "button", "id": "submit", "label": "Submit", "action": "submit" }
+  ]
+}

@@ -74,11 +74,12 @@ export const KINDS: Record<NodeKind, KindInfo> = {
   parallelSplit: { kind: 'parallelSplit', paletteLabel: 'Run in parallel', caption: 'Run in parallel', description: 'Start several branches together.', defaultLabel: 'Start parallel work', routes: ['next'] },
   parallelJoin: { kind: 'parallelJoin', paletteLabel: 'Wait for all', caption: 'Wait for all', description: 'Continue once every parallel branch finishes.', defaultLabel: 'All work finished', routes: ['next'] },
   wait: { kind: 'wait', paletteLabel: 'Wait', caption: 'Wait', description: 'Pause for a length of time, or until a date.', defaultLabel: 'Wait before continuing', routes: ['next'] },
+  waitForMessage: { kind: 'waitForMessage', paletteLabel: 'Wait for a message', caption: 'Wait for a message', description: 'Pause until an outside system or another process sends a message about this request, such as payment received.', defaultLabel: 'Wait for a message', routes: ['next'] },
   startWorkflow: { kind: 'startWorkflow', paletteLabel: 'Start another workflow', caption: 'Child workflow', description: 'Start a published workflow and wait for its result.', defaultLabel: 'Start another workflow', routes: ['next'] },
 }
 
 /** Palette order. The start step always exists and cannot be added or deleted. */
-export const PALETTE_KINDS: NodeKind[] = ['approval', 'decision', 'branch', 'http', 'notification', 'parallelSplit', 'parallelJoin', 'wait', 'startWorkflow', 'end']
+export const PALETTE_KINDS: NodeKind[] = ['approval', 'decision', 'branch', 'http', 'notification', 'parallelSplit', 'parallelJoin', 'wait', 'waitForMessage', 'startWorkflow', 'end']
 
 export const ROUTE_LABEL: Record<RouteKind, string> = {
   next: 'Next',
@@ -100,6 +101,8 @@ export function defaultConfig(kind: NodeKind): Record<string, unknown> {
       return { joinRef: '' }
     case 'wait':
       return { duration: 'PT1H' }
+    case 'waitForMessage':
+      return { message: 'message-received', correlationField: '', payload: [] }
     case 'startWorkflow':
       return { workflowRef: '', inputMapping: {}, resultMapping: {} }
     case 'approval':

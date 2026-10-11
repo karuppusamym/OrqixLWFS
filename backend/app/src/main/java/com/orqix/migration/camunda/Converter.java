@@ -24,7 +24,8 @@ public final class Converter {
                     a.userTasks().keySet().stream().toList(), a.services().keySet().stream().toList(), a.children.stream().toList(), a.serviceGroups,
                     a.decisions.keySet().stream().toList()),
                 issues.stream().noneMatch(Report.Issue::blocksPublishing)
-                    && issues.stream().noneMatch(i -> Report.INFO.equals(i.severity()) && Report.OPEN.equals(i.resolutionStatus())));
+                    && issues.stream().noneMatch(i -> Report.INFO.equals(i.severity()) && Report.OPEN.equals(i.resolutionStatus())),
+                List.of(), a.hints());
     }
 
     public static Result convert(Analysis a, JsonNode request, Json json, Map<String, JsonNode> serviceInputTypes) {
@@ -37,7 +38,17 @@ public final class Converter {
      */
     public static Result convert(Analysis a, JsonNode request, Json json, Map<String, JsonNode> serviceInputTypes,
             Map<String, DmnTable> decisionTables) {
+        return convert(a, request, json, serviceInputTypes, decisionTables, Map.of());
+    }
+
+    /**
+     * @param uploadedForms start event or user task id to the parsed Camunda form the designer mapped under
+     *                      {@code formMappings} (already matched to the form id the element references)
+     */
+    public static Result convert(Analysis a, JsonNode request, Json json, Map<String, JsonNode> serviceInputTypes,
+            Map<String, DmnTable> decisionTables, Map<String, FormImport.Model> uploadedForms) {
         JsonNode effectiveRequest = expandServiceGroups(a,request,json);
+        rejectUnknownMappings(effectiveRequest.path("formMappings"), a.linkedForms.keySet(), "formMappings");
         Set<String> assignments = new HashSet<>(report(a, List.of()).requiredMappings().groups());
         rejectUnknownMappings(effectiveRequest.path("groupMappings"), assignments, "groupMappings");
         rejectUnknownMappings(effectiveRequest.path("approvalRoutes"), a.userTasks.keySet(), "approvalRoutes");
@@ -98,11 +109,14 @@ public final class Converter {
                         .allMatch(task -> effectiveRequest.path("serviceTaskMappings").path(task).isObject());
                 case CHILD -> childMapped(a, item.subject, effectiveRequest.path("childWorkflowMappings").path(item.subject), effectiveRequest);
                 case DECISION -> effectiveRequest.path("decisionMappings").path(item.subject).isObject() && decisionTables.containsKey(item.subject);
+                case FORM -> uploadedForms.containsKey(item.subject) || acknowledgeInfo;
                 case ACKNOWLEDGE -> Report.REVIEW.equals(item.issue.severity()) ? acknowledgeReview : acknowledgeInfo;
                 default -> false;
             };
             Report.Issue shown = item.issue;
-            if (resolved && item.reviewAfterResolution != null) {
+            if (item.need == Analysis.Need.FORM && resolved && !uploadedForms.containsKey(item.subject)) {
+                shown = item.issue.withResolution(Report.ACKNOWLEDGED); // the designer chose to leave the form out
+            } else if (resolved && item.reviewAfterResolution != null) {
                 // A designer mapping converts the construct; its behaviour can still differ, so it becomes a review item.
                 shown = item.reviewAfterResolution.withResolution(acknowledgeReview ? Report.ACKNOWLEDGED : Report.OPEN);
             } else if (resolved) {
@@ -110,12 +124,26 @@ public final class Converter {
             }
             issues.add(shown);
         }
+        for (var form : uploadedForms.entrySet()) {
+            String target = a.linkedForms.containsKey(form.getKey()) && a.nodes.containsKey(form.getKey())
+                    && "startEvent".equals(a.nodes.get(form.getKey()).type) ? "start" : "userTask";
+            for (Report.Issue issue : form.getValue().issuesFor(target, a.nodes.containsKey(form.getKey()) ? a.nodes.get(form.getKey()).name : null)) {
+                issues.add(switch (issue.severity()) {
+                    case Report.SUPPORTED -> issue;
+                    case Report.REVIEW -> issue.withResolution(acknowledgeReview ? Report.ACKNOWLEDGED : Report.OPEN);
+                    case Report.INFO -> issue.withResolution(acknowledgeInfo ? Report.ACKNOWLEDGED : Report.OPEN);
+                    default -> issue;
+                });
+            }
+        }
         var compatibility = report(a, issues);
         if (!compatibility.publishable()) return new Result(null, compatibility, Map.of());
         ObjectNode def = json.object();
         def.put("schemaVersion", "0.1"); def.put("workflowKey", effectiveRequest.path("workflowKey").asString());
         def.put("name", effectiveRequest.path("name").asString());
-        def.set("metadata", json.toTree(Map.of("description", "Imported BPMN draft; review source report and test before publishing.")));
+        ObjectNode metadata = json.object();
+        metadata.put("description", "Imported BPMN draft; review source report and test before publishing.");
+        def.set("metadata", metadata);
         ObjectNode input = json.object(); input.put("type", "object"); input.put("additionalProperties", false);
         ObjectNode properties = input.putObject("properties");
         Map<String, String> inferred = new LinkedHashMap<>();
@@ -152,6 +180,33 @@ public final class Converter {
             if (collections.putIfAbsent(mi.fieldKey(), field) != null || inferred.containsKey(mi.fieldKey()))
                 throw SourceException.invalid("The collection field '" + mi.fieldKey() + "' is also used as another request field. Supply a reviewed request schema.");
         });
+        // Forms on start events supply typed request fields; a comparison or service call on the same variable must agree with them.
+        Map<String, FormImport.Field> formFields = new LinkedHashMap<>();
+        for (String startId : a.startIds) {
+            FormImport.Model form = a.embeddedForms.containsKey(startId) ? a.embeddedForms.get(startId) : uploadedForms.get(startId);
+            if (form == null) continue;
+            for (FormImport.Field field : form.fields()) {
+                if (formFields.putIfAbsent(field.fieldKey(), field) != null)
+                    throw SourceException.invalid("Two start forms both define the request field '" + field.fieldKey() + "'.");
+            }
+        }
+        Map<String, String> dateFields = new LinkedHashMap<>();
+        a.waitDates.forEach((node, variable) -> dateFields.putIfAbsent(Analyzer.fieldKey(variable), variable));
+        Set<String> gatewayFields = new LinkedHashSet<>(inferred.keySet());
+        for (var entry : formFields.entrySet()) {
+            String previous = inferred.remove(entry.getKey());
+            if (previous != null && !previous.equals(entry.getValue().type())
+                    && !(Set.of(previous, entry.getValue().type()).contains("number") && Set.of(previous, entry.getValue().type()).contains("integer")))
+                throw SourceException.invalid("The form field '" + entry.getKey() + "' is " + entry.getValue().type() + ", but a choice or service call of the process uses it as "
+                        + previous + ". Fix the form or the condition.");
+            JsonNode service = serviceInputTypes.get(entry.getKey());
+            if (service != null && !service.path("type").asString("").equals(entry.getValue().type())
+                    && !(Set.of(service.path("type").asString(""), entry.getValue().type()).contains("number") && Set.of(service.path("type").asString(""), entry.getValue().type()).contains("integer")))
+                throw SourceException.invalid("The form field '" + entry.getKey() + "' is " + entry.getValue().type() + ", but the mapped operation expects "
+                        + service.path("type").asString("") + ".");
+            if (dateFields.containsKey(entry.getKey()) && !"date".equals(entry.getValue().schema().get("format")))
+                throw SourceException.invalid("The form field '" + entry.getKey() + "' is the date a timer waits for, but it is not a date field.");
+        }
         inferred.forEach((key, type) -> { var field = properties.putObject(key); field.put("type", type); field.put("title", key); });
         structured.forEach(properties::set);
         serviceInputTypes.forEach((key, schema) -> {
@@ -159,10 +214,31 @@ public final class Converter {
             if (!field.has("title")) field.put("title", key);
             properties.set(key, field);
         });
+        dateFields.forEach((key, variable) -> {
+            if (formFields.containsKey(key) || properties.has(key)) {
+                if (!formFields.containsKey(key)) throw SourceException.invalid("The date variable '" + variable + "' is also used as another request field. Supply a reviewed request schema.");
+                return;
+            }
+            var field = properties.putObject(key); field.put("type", "string"); field.put("title", variable); field.put("format", "date");
+        });
+        ObjectNode ui = json.object();
+        ArrayNode order = ui.putArray("order");
+        ObjectNode widgets = ui.putObject("widgets");
+        formFields.values().forEach(field -> {
+            properties.set(field.fieldKey(), json.toTree(field.schema()));
+            order.add(field.fieldKey());
+            widgets.put(field.fieldKey(), field.widget());
+        });
         collections.forEach(properties::set);
-        Set<String> required = new LinkedHashSet<>(inferred.keySet()); required.addAll(collections.keySet());
+        Set<String> required = new LinkedHashSet<>(inferred.keySet()); required.addAll(collections.keySet()); required.addAll(dateFields.keySet());
+        for (FormImport.Field field : formFields.values()) {
+            if (field.required() || gatewayFields.contains(field.fieldKey())) required.add(field.fieldKey());
+            if (!field.required() && gatewayFields.contains(field.fieldKey()))
+                a.assumptions.add("The form field '" + field.fieldKey() + "' is optional in the source form, but a choice reads it; it is required in the request form.");
+        }
         input.set("required", json.toTree(required));
         def.set("inputSchema", effectiveRequest.path("inputSchema").isObject() ? effectiveRequest.path("inputSchema").deepCopy() : input);
+        if (!formFields.isEmpty() && !effectiveRequest.path("inputSchema").isObject()) def.set("inputUi", ui);
         def.set("outputSchema", json.toTree(Map.of("type", "object", "additionalProperties", false, "properties", Map.of())));
         def.set("outputMapping", json.object());
         ArrayNode tables = def.putArray("decisions");
@@ -176,7 +252,7 @@ public final class Converter {
         Map<String, String> tableKeys = new LinkedHashMap<>();
         Set<String> usedTableKeys = new HashSet<>();
         for (var node : a.nodes.values()) {
-            if (outcomeGateways.contains(node.id) || a.mergeGateways.contains(node.id)) continue;
+            if (outcomeGateways.contains(node.id) || a.mergeGateways.contains(node.id) || a.timeoutBoundaries.containsKey(node.id)) continue;
             ObjectNode config = json.object();
             String type = switch (node.type) {
                 case "startEvent" -> "start"; case "endEvent" -> "end"; case "userTask" -> "approval";
@@ -186,7 +262,10 @@ public final class Converter {
                 default -> throw new IllegalStateException("Unresolved source element");
             };
             if (type.equals("parallelSplit")) config.put("joinRef", a.nodes.get(a.parallelJoins.get(node.id)).canonicalId);
-            else if (type.equals("wait")) config.put("duration", a.waits.get(node.id));
+            else if (type.equals("wait")) {
+                if (a.waitDates.containsKey(node.id)) config.put("untilField", "/input/" + Analyzer.fieldKey(a.waitDates.get(node.id)));
+                else config.put("duration", a.waits.get(node.id));
+            }
             else if (type.equals("startWorkflow")) config = childConfig(a, node, effectiveRequest, json);
             else if (type.equals("decision")) {
                 DecisionUse use = decisionUses.get(node.id);
@@ -205,7 +284,17 @@ public final class Converter {
                 String outcome = node.name == null || node.name.isBlank() ? "Completed" : node.name;
                 config.put("businessOutcome", outcome);
                 config.put("outcomeKind", outcome.toLowerCase(Locale.ROOT).matches(".*(reject|denied|decline|refus).*") ? "rejected" : "success");
-            } else if (type.equals("approval")) { config.put("candidateGroupRef", groups.get(node.id)); config.put("rejectReasonRequired", true); }
+            } else if (type.equals("approval")) {
+                config.put("candidateGroupRef", groups.get(node.id)); config.put("rejectReasonRequired", true);
+                Analysis.UserTask task = a.userTasks.get(node.id);
+                if (task.dueAfterHours != null) config.put("dueAfterHours", task.dueAfterHours.intValue());
+                if (task.timeoutAfter != null) config.put("timeoutAfter", task.timeoutAfter);
+                FormImport.Model taskForm = a.embeddedForms.containsKey(node.id) ? a.embeddedForms.get(node.id) : uploadedForms.get(node.id);
+                if (taskForm != null) {
+                    ObjectNode notes = metadata.has("stepNotes") ? (ObjectNode) metadata.get("stepNotes") : metadata.putObject("stepNotes");
+                    notes.put(node.canonicalId, taskForm.note(node.id));
+                }
+            }
             else if (type.equals("http")) {
                 config = (ObjectNode) effectiveRequest.path("serviceTaskMappings").path(node.id).deepCopy();
                 int version = config.path("definitionVersion").asInt(1); config.remove("definitionVersion");
@@ -223,6 +312,9 @@ public final class Converter {
             if (a.mergeGateways.contains(flow.source.id)) continue;
             Analysis.Node from = flow.source;
             String on = "next";
+            if (a.timeoutBoundaries.containsKey(flow.source.id)) {
+                from = a.userTasks.get(a.timeoutBoundaries.get(flow.source.id)).node; on = "timedOut";
+            } else
             for (var task : a.userTasks.values()) {
                 var route = routes.get(task.id());
                 if (task.outcomeGateway != null && flow.source.id.equals(task.id())) { from = null; break; }
@@ -249,6 +341,7 @@ public final class Converter {
             transition.put("on", on); if (flow.name != null && !flow.name.isBlank()) transition.put("label", flow.name);
             sourceMap.put(flow.id, id);
         }
+        a.timeoutBoundaries.forEach((boundary, task) -> sourceMap.put(boundary, a.nodes.get(task).canonicalId));
         outcomeGateways.forEach(g -> a.userTasks.values().stream().filter(t -> t.outcomeGateway != null && t.outcomeGateway.id.equals(g))
                 .findFirst().ifPresent(t -> {
                     sourceMap.put(g, t.node.canonicalId);

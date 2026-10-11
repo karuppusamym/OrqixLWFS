@@ -49,6 +49,14 @@ public final class TestDatabase {
         return container().getJdbcUrl();
     }
 
+    /** Owner connection only for constructing legacy fixtures; application permissions remain unchanged. */
+    public static org.springframework.jdbc.core.simple.JdbcClient legacyFixtureJdbc() {
+        ensureMigrated();
+        var source = new org.springframework.jdbc.datasource.DriverManagerDataSource(
+                jdbcUrl(), MIGRATOR_USER, MIGRATOR_PASSWORD);
+        return org.springframework.jdbc.core.simple.JdbcClient.create(source);
+    }
+
     /** Runs the migrate profile once (Flyway incl. dev seed + Flowable schema + grants). */
     public static synchronized void ensureMigrated() {
         if (migrated) {

@@ -68,6 +68,8 @@ export function nodeSubtitle(def: Definition, node: WorkflowNode, groupNames: Re
       return 'Continue when all branches finish'
     case 'wait':
       return waitSummary(def, c)
+    case 'waitForMessage':
+      return messageSummary(def, c)
     case 'startWorkflow':
       return (c.workflowRef as string) || 'No workflow chosen'
     case 'end':
@@ -90,6 +92,23 @@ export function dateWaitPreview(label: string | undefined, time: string, date?: 
   const at = `${time || DEFAULT_WAIT_TIME} UTC`
   if (date && isCalendarDate(date)) return `Waits until ${formatCalendarDate(date)}, ${at}.`
   return `Waits until the date in "${label ?? 'the chosen question'}", at ${at}.`
+}
+
+/** "payment-received · Order number" on the card of a "Wait for a message" step. */
+function messageSummary(def: Definition, c: Record<string, unknown>): string {
+  const name = (c.message as string) || 'No message name'
+  const field = c.correlationField as string | undefined
+  return field ? `${name} · ${fieldInfo(def, field)?.label ?? field}` : `${name} · no field chosen`
+}
+
+/** "Waits until a message named payment-received arrives for this request's Order number." (S16) */
+export function messageWaitPreview(def: Definition, c: Record<string, unknown>, lookup?: ConnectionLookup): string {
+  const name = (c.message as string) || '(no name yet)'
+  const field = c.correlationField as string | undefined
+  const label = field ? fieldInfo(def, field, lookup)?.label ?? field : undefined
+  const subject = label ? `this request's ${label}` : 'the request (choose which field identifies it)'
+  const limit = typeof c.timeoutAfter === 'string' && c.timeoutAfter ? ` If nothing arrives in time, the request follows Timed out.` : ''
+  return `Waits until a message named ${name} arrives for ${subject}.${limit}`
 }
 
 function waitSummary(def: Definition, c: Record<string, unknown>): string {

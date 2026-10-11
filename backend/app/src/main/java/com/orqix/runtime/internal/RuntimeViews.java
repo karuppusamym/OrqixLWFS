@@ -30,10 +30,12 @@ public class RuntimeViews {
     private final GroupDirectory groups;
     private final TaskQueries taskQueries;
     private final RunStore runs;
+    private final RunStages stages;
 
     public RuntimeViews(SubjectService subjects, ReleaseQueries releases, GroupDirectory groups, TaskQueries taskQueries,
-            RunStore runs) {
+            RunStore runs, RunStages stages) {
         this.runs = runs;
+        this.stages = stages;
         this.subjects = subjects;
         this.releases = releases;
         this.groups = groups;
@@ -80,7 +82,7 @@ public class RuntimeViews {
                 titleVisible ? requestTitle(run.input(), release) : null,
                 subjects.ref(run.initiator(), names), run.lifecycle(), run.outcome(), run.outcomeKind(),
                 steps(run, names), attention(run.attention()), run.createdAt(), run.updatedAt(), run.endedAt(), isTest,
-                run.version(), parentRef(run));
+                run.version(), parentRef(run), stages.current(run, release));
     }
 
     /** Link from a child run to the run that started it; null for ordinary runs. */
@@ -119,7 +121,8 @@ public class RuntimeViews {
             String assignee = step.path("assigneeId").asString(null);
             steps.add(new RuntimeDtos.CurrentStep(step.path("nodeId").asString(), step.path("label").asString(),
                     step.path("kind").asString(), instant(step.path("since")), step.path("candidateGroup").asString(null),
-                    assignee == null ? null : subjects.ref(UUID.fromString(assignee), names), instant(step.path("dueAt"))));
+                    assignee == null ? null : subjects.ref(UUID.fromString(assignee), names), instant(step.path("dueAt")),
+                    step.path("message").asString(null)));
         }
         return steps;
     }
@@ -152,7 +155,8 @@ public class RuntimeViews {
                 subjects.ref(task.initiator(), names),
                 new RuntimeDtos.GroupRef(task.candidateGroupKey(), groupName(task.workspaceId(), task.candidateGroupKey())),
                 task.assignee() == null ? null : subjects.ref(task.assignee(), names), task.status(), task.dueAt(),
-                task.createdAt(), task.version(), task.priority(), decision == null ? null : decision(decision, task.label(), names));
+                task.createdAt(), task.version(), task.priority(), decision == null ? null : decision(decision, task.label(), names),
+                stages.ofStep(run, release, task.nodeId()));
     }
 
     public RuntimeDtos.TaskDecision decision(TaskQueries.DecisionRow decision, String label, Map<UUID, String> names) {

@@ -1,0 +1,68 @@
+/*
+ * "Where is my request" diagram: a read-only use of the studio canvas. Every color is a theme token from src/index.css.
+ * The current step has a solid outline AND a pulse (the pulse stops for people who prefer reduced motion); the
+ * outline, the text chip and the icon carry the meaning, so nothing relies on color or motion alone.
+ */
+.orqix-flow-run .react-flow__handle {
+  visibility: hidden;
+}
+
+.orqix-flow-run .react-flow__node {
+  cursor: pointer;
+}
+
+.run-step {
+  position: relative;
+  border-radius: var(--radius);
+}
+
+.run-step[data-status='waiting'],
+.run-step[data-status='running'] {
+  --run-ring: var(--status-waiting-fg);
+  outline: 4px solid var(--run-ring);
+  outline-offset: 3px;
+  animation: orqix-run-pulse 1.8s ease-in-out infinite;
+}
+
+.run-step[data-status='running'] {
+  --run-ring: var(--status-running-fg);
+}
+
+.run-step[data-status='attention'] {
+  --run-ring: var(--status-attention-fg);
+  outline: 4px double var(--run-ring);
+  outline-offset: 3px;
+}
+
+.run-step[data-dim='true'] > .run-step-card {
+  opacity: 0.5;
+}
+
+.run-step[data-dim='true'] .run-step-card {
+  filter: grayscale(0.6);
+}
+
+@keyframes orqix-run-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+  50% {
+    box-shadow: 0 0 0 10px var(--canvas-mask);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .run-step[data-status='waiting'],
+  .run-step[data-status='running'] {
+    animation: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .run-step[data-status='waiting'],
+  .run-step[data-status='running'],
+  .run-step[data-status='attention'] {
+    outline-color: Highlight;
+  }
+}

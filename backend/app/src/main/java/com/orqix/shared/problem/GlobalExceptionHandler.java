@@ -51,6 +51,12 @@ public class GlobalExceptionHandler {
         return build(e.code(), e.code().status(), e.detail(), e.extensions(), e.headers());
     }
 
+    /** Multipart upload larger than the cap configured in application.yaml (the attachment endpoints). */
+    @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
+    ResponseEntity<Problem> uploadTooLarge(org.springframework.web.multipart.MaxUploadSizeExceededException e) {
+        return build(ProblemCode.PAYLOAD_TOO_LARGE, 413, "The file is too large.", Map.of(), Map.of());
+    }
+
     @ExceptionHandler(HttpMessageNotReadableException.class)
     ResponseEntity<Problem> unreadable(HttpMessageNotReadableException e) {
         String detail = "The request body is not valid JSON for this operation.";

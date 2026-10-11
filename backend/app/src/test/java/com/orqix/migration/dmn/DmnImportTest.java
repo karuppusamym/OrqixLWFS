@@ -478,4 +478,18 @@ class DmnImportTest {
         assertThat(workflow.path("outputMapping").propertyNames()).containsExactly("level", "approvers");
         assertThat(workflow.path("nodes").get(1).path("type").asString()).isEqualTo("decision");
     }
+
+    @Test
+    void duplicateDecisionIdsInvalidateEveryTableUnderThatIdEvenWhenLaterTablesDiffer() throws Exception {
+        String xml = fixture("dmn-approval-level.dmn");
+        String decision = xml.substring(xml.indexOf("  <decision "), xml.indexOf("  </decision>") + "  </decision>".length());
+        String duplicate = decision.replace("Approval level", "Different decision").replace("\"finance\"", "\"different\"");
+        // Third occurrence must also remain invalid: it cannot restore the removed first table.
+        var analysis = DmnAnalyzer.analyze(xml.replace("</definitions>", duplicate + decision + "</definitions>"), Limits.DEFAULT, JSON);
+        assertThat(analysis.table("approvalLevel")).isNull();
+        assertThat(analysis.blockersOf("approvalLevel")).extracting(Report.Issue::reasonCode).containsOnly("DMN_DUPLICATE_DECISION_ID");
+        assertThat(analysis.report(Set.of("approvalLevel"), true, true).publishable()).isFalse();
+        assertThat(analysis.report().testCases()).isEmpty();
+        assertThat(analysis.decisionNames().get("approvalLevel")).isEqualTo("Approval level");
+    }
 }

@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:flowable="http://flowable.org/bpmn" xmlns:orqix="https://orqix.example/bpmn/v0" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC" xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI" targetNamespace="https://orqix.example/workflows">
+  <message id="message__payment-received" name="payment-received"/>
+  <process id="order-payment-wait" name="Hold an order until the payment arrives" isExecutable="true">
+    <extensionElements>
+      <orqix:release schemaVersion="0.1" compilerVersion="0.2.0" semanticHash="7a48faa49074d1a0a111b22718b1d25633e9f0ed32728f43a82e22947526e227"/>
+    </extensionElements>
+    <startEvent id="start" name="Order placed"/>
+    <eventBasedGateway id="waitPayment" name="Wait for the payment"/>
+    <intermediateCatchEvent id="waitPayment__message" name="Wait for the payment: message">
+      <extensionElements>
+        <orqix:message node="waitPayment" name="payment-received" correlationField="/input/orderNumber">
+          <orqix:field name="paymentReference" type="string" required="true"/>
+          <orqix:field name="amountPaid" type="number" required="false"/>
+        </orqix:message>
+      </extensionElements>
+      <messageEventDefinition messageRef="message__payment-received"/>
+    </intermediateCatchEvent>
+    <intermediateCatchEvent id="waitPayment__timeout" name="Wait for the payment: no message in time">
+      <extensionElements>
+        <orqix:messageTimeout node="waitPayment" after="P2D"/>
+      </extensionElements>
+      <timerEventDefinition>
+        <timeDuration>P2D</timeDuration>
+      </timerEventDefinition>
+    </intermediateCatchEvent>
+    <sequenceFlow id="waitPayment__toMessage" sourceRef="waitPayment" targetRef="waitPayment__message"/>
+    <sequenceFlow id="waitPayment__toTimeout" sourceRef="waitPayment" targetRef="waitPayment__timeout"/>
+    <serviceTask id="notifyPaid" name="Tell requester the payment arrived" flowable:delegateExpression="${orqixNotificationTask}">
+      <extensionElements>
+        <orqix:notification channel="inApp" recipient="initiator" message="The payment for your order arrived. It is now being fulfilled."/>
+      </extensionElements>
+    </serviceTask>
+    <endEvent id="fulfilled" name="Order paid">
+      <extensionElements>
+        <orqix:outcome label="Order paid" kind="success"/>
+      </extensionElements>
+    </endEvent>
+    <serviceTask id="notifyCancelled" name="Tell requester the order was cancelled" flowable:delegateExpression="${orqixNotificationTask}">
+      <extensionElements>
+        <orqix:notification channel="inApp" recipient="initiator" message="No payment arrived within two days, so your order was cancelled."/>
+      </extensionElements>
+    </serviceTask>
+    <endEvent id="cancelled" name="Cancelled, no payment">
+      <extensionElements>
+        <orqix:outcome label="Cancelled no payment" kind="rejected"/>
+      </extensionElements>
+    </endEvent>
+    <sequenceFlow id="t1" sourceRef="start" targetRef="waitPayment"/>
+    <sequenceFlow id="t2" name="Payment arrived" sourceRef="waitPayment__message" targetRef="notifyPaid"/>
+    <sequenceFlow id="t3" name="No payment in 2 days" sourceRef="waitPayment__timeout" targetRef="notifyCancelled"/>
+    <sequenceFlow id="t4" sourceRef="notifyPaid" targetRef="fulfilled"/>
+    <sequenceFlow id="t5" sourceRef="notifyCancelled" targetRef="cancelled"/>
+  </process>
+  <bpmndi:BPMNDiagram id="order-payment-wait__diagram">
+    <bpmndi:BPMNPlane id="order-payment-wait__plane" bpmnElement="order-payment-wait">
+      <bpmndi:BPMNShape id="start__di" bpmnElement="start">
+        <omgdc:Bounds x="172" y="218" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="waitPayment__di" bpmnElement="waitPayment">
+        <omgdc:Bounds x="410" y="216" width="40" height="40"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="waitPayment__message__di" bpmnElement="waitPayment__message">
+        <omgdc:Bounds x="502" y="178" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="waitPayment__timeout__di" bpmnElement="waitPayment__timeout">
+        <omgdc:Bounds x="502" y="258" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="waitPayment__toMessage__di" bpmnElement="waitPayment__toMessage">
+        <omgdi:waypoint x="430" y="236"/>
+        <omgdi:waypoint x="520" y="196"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="waitPayment__toTimeout__di" bpmnElement="waitPayment__toTimeout">
+        <omgdi:waypoint x="430" y="236"/>
+        <omgdi:waypoint x="520" y="276"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="notifyPaid__di" bpmnElement="notifyPaid">
+        <omgdc:Bounds x="660" y="196" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="fulfilled__di" bpmnElement="fulfilled">
+        <omgdc:Bounds x="952" y="218" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="notifyCancelled__di" bpmnElement="notifyCancelled">
+        <omgdc:Bounds x="660" y="416" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="cancelled__di" bpmnElement="cancelled">
+        <omgdc:Bounds x="952" y="438" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="t1__di" bpmnElement="t1">
+        <omgdi:waypoint x="190" y="236"/>
+        <omgdi:waypoint x="430" y="236"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="t2__di" bpmnElement="t2">
+        <omgdi:waypoint x="520" y="196"/>
+        <omgdi:waypoint x="710" y="236"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="t3__di" bpmnElement="t3">
+        <omgdi:waypoint x="520" y="276"/>
+        <omgdi:waypoint x="710" y="456"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="t4__di" bpmnElement="t4">
+        <omgdi:waypoint x="710" y="236"/>
+        <omgdi:waypoint x="970" y="236"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="t5__di" bpmnElement="t5">
+        <omgdi:waypoint x="710" y="456"/>
+        <omgdi:waypoint x="970" y="456"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>

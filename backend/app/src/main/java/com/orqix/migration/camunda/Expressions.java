@@ -61,6 +61,22 @@ public final class Expressions {
             return literal instanceof Boolean;
         }
 
+        /** The comparison that holds exactly when this one does not (for non-null values): {@code not(a >= 5)} is {@code a < 5}. */
+        public Comparison negated() {
+            Op inverse = switch (op) {
+                case EQ -> Op.NE;
+                case NE -> Op.EQ;
+                case GTE -> Op.LT;
+                case GT -> Op.LTE;
+                case LT -> Op.GTE;
+                case LTE -> Op.GT;
+            };
+            if (literal instanceof Boolean flag && (op == Op.EQ || op == Op.NE)) {
+                return new Comparison(variable, Op.EQ, op == Op.EQ ? !flag : flag, false);
+            }
+            return new Comparison(variable, inverse, literal, false);
+        }
+
         public String valueType() {
             return literal instanceof Boolean ? "boolean" : literal instanceof String ? "string" : "number";
         }
@@ -95,6 +111,9 @@ public final class Expressions {
             + "|(?<str>'[^']*'|\"[^\"]*\")"
             + "|(?<id>[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*)"
             + "|(?<op>>=|<=|==|!=|&&|\\|\\||[^\\s]))");
+
+    private static final java.util.Set<String> FEEL_KEYWORDS = java.util.Set.of("in", "between", "if", "then", "else", "for", "some",
+            "every", "satisfies", "instance", "of", "function", "return");
 
     private static final Pattern SAFE_STRING = Pattern.compile("^[A-Za-z0-9 _.,:/-]{0,100}$");
 
@@ -249,6 +268,20 @@ public final class Expressions {
             t = t.subList(1, t.size() - 1);
         }
         int n = t.size();
+        // not(<one comparison>) and !(<one comparison>): the operator is inverted (not over a group stays unsupported)
+        if (n >= 4 && (t.get(0).is('i', "not") || t.get(0).is('o', "!") && !feel) && t.get(1).is('o', "(") && t.get(n - 1).is('o', ")")
+                && matching(t.subList(1, n))) {
+            List<Token> inner = t.subList(2, n - 1);
+            if (inner.stream().noneMatch(token -> connectiveOf(token, feel) != null)) {
+                Parsed parsedInner = atom(inner, feel);
+                if (parsedInner instanceof Comparison c && !c.booleanShortcut()) {
+                    return c.negated();
+                }
+                if (parsedInner instanceof Unsupported) {
+                    return parsedInner;
+                }
+            }
+        }
         // approved, !approved, not approved, not(approved)
         if (n == 1 && t.get(0).kind() == 'i') {
             return bareVariable(t.get(0).text(), true);
@@ -264,6 +297,22 @@ public final class Expressions {
         }
         if (n == 3 && isLiteral(t.get(0)) && t.get(2).kind() == 'i') {
             return new Unsupported("The variable must be on the left of the comparison.");
+        }
+        if (n == 3 && t.get(0).kind() == 'i' && t.get(2).is('i', "null") && (t.get(1).kind() == 'o' || t.get(1).kind() == 'i')) {
+            return new Unsupported("It tests whether '" + t.get(0).text() + "' is null. Workflow conditions compare a field with a text, "
+                    + "number or yes/no value, and a field a condition reads is always provided, so a null check has no equivalent.");
+        }
+        for (int i = 0; i < n; i++) {
+            Token token = t.get(i);
+            if (token.kind() == 'i' && i + 1 < n && t.get(i + 1).is('o', "(") && !"not".equals(token.text())) {
+                return new Unsupported("It calls the function '" + token.text() + "', which is not supported (function call).");
+            }
+            if (token.kind() == 'i' && FEEL_KEYWORDS.contains(token.text())) {
+                return new Unsupported("It uses the FEEL construct '" + token.text() + "', which is not supported.");
+            }
+            if (token.is('o', "[") || token.is('o', "{")) {
+                return new Unsupported("It uses a list, range or context literal, which is not supported.");
+            }
         }
         for (Token token : t) {
             if (connectiveOf(token, feel) != null) {

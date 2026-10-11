@@ -16,6 +16,7 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+import com.orqix.shared.config.AttachmentSettings;
 import com.orqix.shared.config.OrqixProperties;
 import com.orqix.shared.problem.ProblemCode;
 import com.orqix.shared.problem.ProblemWriter;
@@ -29,6 +30,11 @@ import com.orqix.shared.problem.ProblemWriter;
 public class RequestLimitsFilter extends OncePerRequestFilter {
 
     private static final Pattern DRAFT_PATH = Pattern.compile("^/api/v1/workspaces/[^/]+/workflows/[^/]+/draft$");
+    /** Multipart file uploads (docs/build/S17): the form-request upload and the upload to a request. */
+    private static final Pattern ATTACHMENT_UPLOAD_PATH = Pattern
+            .compile("^/api/v1/workspaces/[^/]+/(attachment-uploads|runs/[^/]+/attachments)$");
+    /** Room for the multipart envelope (boundaries, part headers, the description) around a maximal file. */
+    private static final int MULTIPART_ENVELOPE = 64 * 1024;
     private static final Pattern MIGRATION_UPLOAD_PATH = Pattern.compile("^/api/v1/workspaces/[^/]+/migrations$");
     private static final Pattern MIGRATION_CONVERT_PATH = Pattern.compile("^/api/v1/workspaces/[^/]+/migrations/[^/]+/convert$");
     /** Room for the {"definition": ...} wrapper around a maximal draft. */
@@ -36,8 +42,11 @@ public class RequestLimitsFilter extends OncePerRequestFilter {
 
     private final OrqixProperties properties;
     private final ProblemWriter problems;
+    private final AttachmentSettings attachments;
 
-    public RequestLimitsFilter(OrqixProperties properties, ProblemWriter problems) {
+    public RequestLimitsFilter(OrqixProperties properties, ProblemWriter problems,
+            AttachmentSettings attachments) {
+        this.attachments = attachments;
         this.properties = properties;
         this.problems = problems;
     }
@@ -50,7 +59,9 @@ public class RequestLimitsFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
-        long limit = MIGRATION_UPLOAD_PATH.matcher(request.getRequestURI()).matches() ? 2_097_152
+        boolean upload = "POST".equals(request.getMethod()) && ATTACHMENT_UPLOAD_PATH.matcher(request.getRequestURI()).matches();
+        long limit = upload ? attachments.maxFileBytes() + MULTIPART_ENVELOPE
+                : MIGRATION_UPLOAD_PATH.matcher(request.getRequestURI()).matches() ? 2_097_152
                 : DRAFT_PATH.matcher(request.getRequestURI()).matches() || MIGRATION_CONVERT_PATH.matcher(request.getRequestURI()).matches()
                 ? properties.limits().draftMaxBytes() + DRAFT_ENVELOPE
                 : properties.limits().requestMaxBytes();

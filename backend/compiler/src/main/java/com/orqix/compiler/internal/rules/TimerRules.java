@@ -27,6 +27,8 @@ final class TimerRules {
                 wait(rc, w);
             } else if (n instanceof Node.Approval a && a.timeoutAfter() != null) {
                 duration(rc, n, "timeoutAfter", a.timeoutAfter(), "allows");
+            } else if (n instanceof Node.WaitForMessage m && m.timeoutAfter() != null) {
+                duration(rc, n, "timeoutAfter", m.timeoutAfter(), "waits");
             }
         }
     }

@@ -1,0 +1,255 @@
+{
+  "outcome" : {
+    "status" : "finished",
+    "businessOutcome" : "Ready",
+    "outcomeKind" : "success",
+    "endStepId" : "ready",
+    "attention" : null,
+    "summary" : "The request would finish with the outcome \"Ready\" (successful)."
+  },
+  "outputs" : {
+    "equipmentOrderId" : "sample-procurementId"
+  },
+  "trace" : [ {
+    "seq" : 1,
+    "stepId" : "start",
+    "stepLabel" : "New colleague submitted",
+    "kind" : "start",
+    "kindLabel" : "Request form",
+    "summary" : "The request is submitted with the answers you entered.",
+    "details" : { },
+    "transitionId" : "t1",
+    "nextStepId" : "setup"
+  }, {
+    "seq" : 2,
+    "stepId" : "setup",
+    "stepLabel" : "Prepare in parallel",
+    "kind" : "parallelSplit",
+    "kindLabel" : "Run in parallel",
+    "summary" : "\"Prepare in parallel\": starts 2 branches at the same time.",
+    "details" : {
+      "joinRef" : "setupDone",
+      "branches" : 2
+    },
+    "transitionId" : null,
+    "nextStepId" : null
+  }, {
+    "seq" : 3,
+    "stepId" : "it",
+    "stepLabel" : "IT accounts and access",
+    "kind" : "approval",
+    "kindLabel" : "Ask for approval",
+    "branch" : "1",
+    "summary" : "\"IT accounts and access\" goes to IT service desk. In this test they approve.",
+    "details" : {
+      "group" : "it-desk",
+      "groupName" : "IT service desk",
+      "dueAfterHours" : 24,
+      "decision" : "approved"
+    },
+    "wrote" : {
+      "decision" : "approved",
+      "decidedBy" : "Test approver"
+    },
+    "transitionId" : "t4",
+    "nextStepId" : "itReady"
+  }, {
+    "seq" : 4,
+    "stepId" : "itReady",
+    "stepLabel" : "Tell requester IT access is approved",
+    "kind" : "notification",
+    "kindLabel" : "Notify someone",
+    "branch" : "1",
+    "summary" : "\"Tell requester IT access is approved\": the requester would get this in-app message: \"IT accounts and access were approved.\"",
+    "details" : {
+      "channel" : "inApp",
+      "recipient" : "initiator",
+      "message" : "IT accounts and access were approved."
+    },
+    "transitionId" : "t9",
+    "nextStepId" : "setupDone"
+  }, {
+    "seq" : 5,
+    "stepId" : "facilities",
+    "stepLabel" : "Desk and building pass",
+    "kind" : "approval",
+    "kindLabel" : "Ask for approval",
+    "branch" : "2",
+    "summary" : "\"Desk and building pass\" goes to Facilities team. In this test they approve.",
+    "details" : {
+      "group" : "facilities-team",
+      "groupName" : "Facilities team",
+      "dueAfterHours" : 48,
+      "decision" : "approved"
+    },
+    "wrote" : {
+      "decision" : "approved",
+      "decidedBy" : "Test approver"
+    },
+    "transitionId" : "t10",
+    "nextStepId" : "setupDone"
+  }, {
+    "seq" : 6,
+    "stepId" : "setupDone",
+    "stepLabel" : "IT and Facilities are done",
+    "kind" : "parallelJoin",
+    "kindLabel" : "Wait for all",
+    "summary" : "\"IT and Facilities are done\": all 2 branches have finished, so the request continues.",
+    "details" : { },
+    "transitionId" : "t12",
+    "nextStepId" : "leadTime"
+  }, {
+    "seq" : 7,
+    "stepId" : "leadTime",
+    "stepLabel" : "Allow lead time before ordering",
+    "kind" : "wait",
+    "kindLabel" : "Wait",
+    "summary" : "\"Allow lead time before ordering\": would wait 1 minute. The test skips the wait.",
+    "details" : {
+      "duration" : "PT1M"
+    },
+    "transitionId" : "t13",
+    "nextStepId" : "orderEquipment"
+  }, {
+    "seq" : 8,
+    "stepId" : "orderEquipment",
+    "stepLabel" : "Order equipment",
+    "kind" : "startWorkflow",
+    "kindLabel" : "Start another workflow",
+    "summary" : "\"Order equipment\": starts \"Purchase approval\". In this test it ends with \"Fulfilled\".",
+    "details" : {
+      "workflow" : "purchase-approval",
+      "workflowName" : "Purchase approval",
+      "simulated" : false,
+      "occurrences" : [ {
+        "occurrence" : 1,
+        "outcome" : "Fulfilled",
+        "outcomeKind" : "success"
+      } ],
+      "iterations" : 1,
+      "limitReached" : false,
+      "allSucceeded" : true
+    },
+    "wrote" : {
+      "outcome" : "Fulfilled",
+      "outcomeKind" : "success",
+      "reference" : "ORQ-TEST-1",
+      "orderId" : "sample-procurementId",
+      "iterations" : 1,
+      "limitReached" : false,
+      "allSucceeded" : true
+    },
+    "transitionId" : "t14",
+    "nextStepId" : "equipmentOutcome"
+  }, {
+    "seq" : 9,
+    "stepId" : "equipmentOutcome",
+    "stepLabel" : "Was the equipment approved?",
+    "kind" : "branch",
+    "kindLabel" : "Choose a path",
+    "summary" : "\"Was the equipment approved?\": takes the route \"Equipment approved\" because Order equipment / outcomeKind (success) is success.",
+    "details" : {
+      "routes" : [ {
+        "transitionId" : "t15",
+        "label" : "Equipment approved",
+        "condition" : "Order equipment / outcomeKind is success",
+        "matched" : true
+      } ],
+      "chosen" : "t15"
+    },
+    "transitionId" : "t15",
+    "nextStepId" : "notifyReady"
+  }, {
+    "seq" : 10,
+    "stepId" : "notifyReady",
+    "stepLabel" : "Tell requester onboarding is ready",
+    "kind" : "notification",
+    "kindLabel" : "Notify someone",
+    "summary" : "\"Tell requester onboarding is ready\": the requester would get this in-app message: \"Onboarding is ready: access, desk and equipment are arranged.\"",
+    "details" : {
+      "channel" : "inApp",
+      "recipient" : "initiator",
+      "message" : "Onboarding is ready: access, desk and equipment are arranged."
+    },
+    "transitionId" : "t17",
+    "nextStepId" : "ready"
+  }, {
+    "seq" : 11,
+    "stepId" : "ready",
+    "stepLabel" : "Ready",
+    "kind" : "end",
+    "kindLabel" : "Finish",
+    "summary" : "The request finishes: \"Ready\" (successful).",
+    "details" : {
+      "businessOutcome" : "Ready",
+      "outcomeKind" : "success"
+    },
+    "transitionId" : null,
+    "nextStepId" : null
+  } ],
+  "warnings" : [ ],
+  "coverage" : {
+    "steps" : {
+      "visited" : 11,
+      "total" : 16,
+      "notVisited" : [ {
+        "id" : "itEscalation",
+        "label" : "IT lead review"
+      }, {
+        "id" : "notifyEquipmentRejected",
+        "label" : "Tell requester equipment was not approved"
+      }, {
+        "id" : "equipmentRejected",
+        "label" : "Equipment not approved"
+      }, {
+        "id" : "notifyRejected",
+        "label" : "Tell requester onboarding was rejected"
+      }, {
+        "id" : "rejected",
+        "label" : "Rejected"
+      } ]
+    },
+    "routes" : {
+      "notTaken" : [ {
+        "transitionId" : "t5",
+        "from" : "it",
+        "to" : "notifyRejected",
+        "description" : "IT accounts and access, when rejected, goes to Tell requester onboarding was rejected"
+      }, {
+        "transitionId" : "t6",
+        "from" : "it",
+        "to" : "itEscalation",
+        "description" : "IT accounts and access, when the time limit fires, goes to IT lead review"
+      }, {
+        "transitionId" : "t7",
+        "from" : "itEscalation",
+        "to" : "itReady",
+        "description" : "IT lead review, when approved, goes to Tell requester IT access is approved"
+      }, {
+        "transitionId" : "t8",
+        "from" : "itEscalation",
+        "to" : "notifyRejected",
+        "description" : "IT lead review, when rejected, goes to Tell requester onboarding was rejected"
+      }, {
+        "transitionId" : "t11",
+        "from" : "facilities",
+        "to" : "notifyRejected",
+        "description" : "Desk and building pass, when rejected, goes to Tell requester onboarding was rejected"
+      }, {
+        "transitionId" : "t16",
+        "from" : "equipmentOutcome",
+        "to" : "notifyEquipmentRejected",
+        "description" : "Was the equipment approved?, otherwise, goes to Tell requester equipment was not approved"
+      } ],
+      "taken" : 3,
+      "total" : 9
+    },
+    "rules" : {
+      "notMatched" : [ ],
+      "matched" : 0,
+      "total" : 0
+    },
+    "summary" : "Tested 11 of 16 steps, 3 of 9 routes and 0 of 0 decision rules."
+  },
+  "limits" : "This is a dry run of the workflow as designed, not the workflow engine. It does not call real systems, check that connections work, that people are in the groups, or how long anything takes."
+}

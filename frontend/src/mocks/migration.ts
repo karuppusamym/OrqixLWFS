@@ -1,5 +1,6 @@
 import type { components } from '@/api/schema'
 import type { ProblemCode } from '@/api/types'
+import { MockFormError, analyzeCamunda8, analyzeFormSource, analyzeFormText, isCamunda8, type FormModel } from './camunda8'
 import { blankDefinition, clock, db, newId, permissionsOf, userById, type MockMigration, type MockMigrationProject, type MockUser, type MockWorkflow } from './state'
 
 /**
@@ -65,6 +66,10 @@ export function analyzeBpmn(xml: string, sourceHash: string): Analysis {
   const process = doc.getElementsByTagNameNS(BPMN_NS, 'process')[0]
   const processId = process?.getAttribute('id')
   if (!process || !processId) throw new MockSourceError('The source has no BPMN process with an id.')
+  if (isCamunda8(doc)) {
+    const { dependencies, dynamicCalls, decisionDependencies, ...report } = analyzeCamunda8(doc, sourceHash)
+    return { report: report as Report, processId, dependencies, dynamicCalls, sourceFormat: 'bpmn', decisionIds: [], decisionDependencies }
+  }
   const issues: Issue[] = []
   const groups = new Set<string>()
   const services: string[] = []
@@ -143,6 +148,13 @@ export function analyzeDmn(xml: string, sourceHash: string): Analysis {
 
 export function createMigration(wsId: string, fileName: string, source: string, sourceFormat?: string): { migration: MockMigration; analysis: Analysis } {
   const sourceHash = digest(source)
+  if (sourceFormat === 'camundaForm') {
+    let report: Report
+    try { report = analyzeFormSource(source, sourceHash) } catch (cause) { if (cause instanceof MockFormError) throw new MockSourceError(cause.message); throw cause }
+    const migration: MockMigration = { id: newId(), wsId, fileName, source, sourceHash, report, status: 'analyzed', convertedWorkflowId: null, convertedById: null, mappingsHash: null, mappings: null, createdAt: clock.iso() }
+    db.migrations.set(migration.id, migration)
+    return { migration, analysis: { report, processId: report.processId ?? 'form', dependencies: [], dynamicCalls: 0, sourceFormat: 'bpmn', decisionIds: [], decisionDependencies: {} } }
+  }
   const detected = sourceFormat ?? (DMN_NAMESPACES.has(parseSource(source).documentElement.namespaceURI ?? '') ? 'dmn' : 'bpmn')
   const analysis = detected === 'dmn' ? analyzeDmn(source, sourceHash) : analyzeBpmn(source, sourceHash)
   const migration: MockMigration = { id: newId(), wsId, fileName, source, sourceHash, report: analysis.report, status: 'analyzed', convertedWorkflowId: null, convertedById: null, mappingsHash: null, mappings: null, createdAt: clock.iso() }
@@ -247,6 +259,7 @@ export interface ConvertRequest {
   childWorkflowMappings?: Record<string, { workflowRef?: string }>
   serviceTaskMappings?: Record<string, unknown>
   decisionMappings?: Record<string, { migrationId?: string; decisionId?: string }>
+  formMappings?: Record<string, { migrationId?: string }>
   [key: string]: unknown
 }
 
@@ -269,7 +282,12 @@ export function convertMigration(migration: MockMigration, user: MockUser, reque
   const required = migration.report.requiredMappings ?? {}
   const published = new Set([...db.workflows.values()].filter((w) => w.wsId === migration.wsId && w.activeReleaseId).map((w) => w.key))
   const open: Issue[] = []
+  const forms: FormModel[] = []
   for (const i of migration.report.issues) {
+    if (['CONNECTOR_MAPPING_REQUIRED', 'WORKER_NOT_PORTABLE'].includes(i.reasonCode)) {
+      if (!request.serviceTaskMappings?.[i.sourceElementId]) open.push(i)
+      continue
+    }
     if (i.severity === 'blocker') { open.push(i); continue }
     if (i.reasonCode === 'GROUP_MAPPING_REQUIRED') {
       const group = (required.groups ?? []).find((g) => i.explanation.includes(`'${g}'`))
@@ -284,9 +302,33 @@ export function convertMigration(migration: MockMigration, user: MockUser, reque
       if (!target || target.wsId !== migration.wsId || target.report.sourceSystem !== 'dmn' || target.report.issues.some(i => i.severity === 'blocker')) open.push(i)
     }
   }
+  for (const [element, mapping] of Object.entries(request.formMappings ?? {})) {
+    const hint = migration.report.mappingHints?.forms?.[element]
+    const target = mapping.migrationId ? db.migrations.get(mapping.migrationId) : undefined
+    if (hint?.state !== 'upload' || !target || target.wsId !== migration.wsId || target.report.sourceSystem !== 'camundaForm')
+      return { ok: false, status: 422, code: 'SOURCE_INVALID', title: 'Source rejected', detail: `formMappings/${element} must name an uploaded Camunda form for a step that links one.` }
+    if (target.report.processId !== hint.formId)
+      return { ok: false, status: 422, code: 'SOURCE_INVALID', title: 'Source rejected', detail: `The step '${element}' uses the form '${hint.formId}', but the uploaded file is the form '${target.report.processId}'.` }
+    const model = analyzeFormText(target.source)
+    forms.push(model)
+    open.push(...model.issues.filter(i => i.severity === 'blocker'))
+  }
   if (open.length > 0) return { ok: false, status: 422, code: 'MIGRATION_BLOCKED', title: 'Migration blocked', detail: 'Resolve mappings and acknowledge documented losses before converting.', extra: { openItems: open } }
   if ([...db.workflows.values()].some((w) => w.wsId === migration.wsId && w.key === key)) return { ok: false, status: 409, code: 'DUPLICATE_KEY', title: 'A workflow with this key already exists' }
   const definition = blankDefinition(key, name)
+  const startForms = Object.entries(migration.report.mappingHints?.forms ?? {}).filter(([, h]) => h.target === 'start')
+  const fields = startForms.flatMap(([element, h]) => h.state === 'upload'
+    ? (forms.find(f => f.formId === h.formId)?.fields ?? [])
+    : (migration.report.mappingHints?.formPreviews?.[element]?.fields ?? []))
+  for (const field of fields) {
+    if (!field.key || !field.type) continue
+    const schema: Record<string, unknown> = { type: field.type, title: field.label ?? field.key }
+    if (field.options?.length) schema.enum = field.options
+    ;(definition.inputSchema.properties as Record<string, unknown>)[field.key] = schema
+    if (field.required) (definition.inputSchema.required as string[]).push(field.key)
+    ;(definition.inputUi!.order as string[]).push(field.key)
+    if (field.widget && field.widget !== 'boolean') (definition.inputUi!.widgets as Record<string, string>)[field.key] = field.widget
+  }
   definition.metadata.description = `Imported from ${migration.fileName}; review the compatibility report before publishing.`
   const workflow: MockWorkflow = {
     id: newId(), wsId: migration.wsId, key, name, description: definition.metadata.description ?? null, ownerId: user.id,

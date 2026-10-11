@@ -2,6 +2,8 @@ import type { Effect, Run, RunDetail, TaskDecision, TaskSummary } from '@/api/ty
 import { isAtomicCondition, type Condition, type Definition, type Literal, type WorkflowNode } from '@/features/studio/model/types'
 import { nodeById, outgoing } from '@/features/studio/model/graph'
 import { dateWaitDue } from './dateWait'
+import { reconcileStages, stageOfNode, stageProgress } from './stages'
+import { resumeMessageTimers, startMessageWait } from './messages'
 import {
   WORKSPACES,
   clock,
@@ -175,6 +177,10 @@ export function resumeTimers(): void {
       const node = nodeById(def, nodeId)
       if (node) engineConfig.schedule(() => fireWait(run, node), Math.min(MOCK_TIMER_CAP_MS, Math.max(0, new Date(w.dueAt).getTime() - clock.now().getTime())))
     }
+    for (const nodeId of Object.keys(run.messageWaits ?? {})) {
+      const node = nodeById(def, nodeId)
+      if (node) resumeMessageTimers(run, node)
+    }
     for (const task of run.tasks.filter((t) => t.status === 'open')) {
       const node = nodeById(def, task.nodeId)
       const limit = typeof node?.config.timeoutAfter === 'string' ? durationMs(node.config.timeoutAfter) : null
@@ -244,10 +250,12 @@ function finish(run: MockRun, release: MockRelease, node: WorkflowNode): void {
     if (v !== undefined) out[key] = v
   }
   run.output = out
+  reconcileStages(run)
   addEvent(run, 'RUN_COMPLETED', { nodeId: node.id, data: { outcome: run.outcome, outcomeKind: run.outcomeKind } })
   // A rejection ends the whole request: branches, waits and child requests that are still open end with it.
   for (const t of run.tasks) if (t.status === 'open') { t.status = 'cancelled'; t.version += 1 }
   run.waits = {}
+  run.messageWaits = {}
   for (const childId of Object.values(run.childWaits ?? {})) {
     const c = db.runs.get(childId)
     if (c && active(c)) cancelRun(c, userById(run.initiatorId) as MockUser, 'The request that started this one has ended.', true)
@@ -257,7 +265,13 @@ function finish(run: MockRun, release: MockRelease, node: WorkflowNode): void {
 }
 
 /** Walk the graph from `nodeId` until a wait state, a failure that needs attention, or the end. */
+/** Moves the run on from a node, then brings its case stages in line with where it stands (docs/build/S17). */
 export function advance(run: MockRun, nodeId: string): void {
+  advanceFrom(run, nodeId)
+  reconcileStages(run)
+}
+
+function advanceFrom(run: MockRun, nodeId: string): void {
   const release = currentRelease(run)
   const def = release.definition
   let current: string | undefined = nodeId
@@ -323,6 +337,9 @@ export function advance(run: MockRun, nodeId: string): void {
       }
       case 'wait':
         startWait(run, node)
+        return
+      case 'waitForMessage':
+        startMessageWait(run, node)
         return
       case 'startWorkflow':
         startChild(run, node)
@@ -611,6 +628,7 @@ export function cancelRun(run: MockRun, user: MockUser, reason: string, cascade 
   }
   run.childWaits = {}
   run.waits = {}
+  run.messageWaits = {}
   const succeeded = run.effects.filter((e) => e.state === 'succeeded')
   run.lifecycle = 'cancelled'
   run.endedAt = clock.iso()
@@ -619,6 +637,7 @@ export function cancelRun(run: MockRun, user: MockUser, reason: string, cascade 
   run.version += 1
   run.cancelledEffects = succeeded.map((e) => e.id)
   for (const t of run.tasks) if (t.status === 'open') { t.status = 'cancelled'; t.version += 1 }
+  reconcileStages(run)
   addEvent(run, 'RUN_CANCELLED', { actorId: user.id, data: { reason, completedEffects: succeeded.length } })
   if (!cascade) notify(run, run.initiatorId, 'workflowMessage', `Your request was cancelled: ${reason}`)
   if (!cascade) onChildEnded(run)
@@ -672,6 +691,9 @@ export function toRun(run: MockRun, user: MockUser): Run {
   for (const [nodeId, w] of Object.entries(run.waits ?? {})) {
     steps.push({ nodeId, label: nodeById(rel.definition, nodeId)?.label ?? nodeId, kind: 'wait', since: run.updatedAt, candidateGroup: null, assignee: null, dueAt: w.dueAt })
   }
+  for (const [nodeId, w] of Object.entries(run.messageWaits ?? {})) {
+    steps.push({ nodeId, label: nodeById(rel.definition, nodeId)?.label ?? nodeId, kind: 'wait', since: run.updatedAt, candidateGroup: null, assignee: null, dueAt: w.dueAt, messageName: w.message })
+  }
   for (const nodeId of Object.keys(run.childWaits ?? {})) {
     steps.push({ nodeId, label: nodeById(rel.definition, nodeId)?.label ?? nodeId, kind: 'child', since: run.updatedAt, candidateGroup: null, assignee: null, dueAt: null })
   }
@@ -697,6 +719,7 @@ export function toRun(run: MockRun, user: MockUser): Run {
     endedAt: run.endedAt,
     isTest: WORKSPACES.find((w) => w.id === run.wsId)?.isTest ?? false,
     version: run.version,
+    stage: stageProgress(run).current,
     parentRun: ((): Run['parentRun'] => {
       const parent = run.parentRunId ? db.runs.get(run.parentRunId) : undefined
       if (!parent || !run.parentNodeId) return null
@@ -729,6 +752,7 @@ export function toTaskSummary(run: MockRun, task: MockTask): TaskSummary {
     version: task.version,
     priority: task.priority ?? 0,
     decision: task.decision,
+    stage: stageOfNode(run, task.nodeId),
   }
 }
 
@@ -752,6 +776,7 @@ export function toRunDetail(run: MockRun, user: MockUser): RunDetail {
     input: (canSeeData ? run.input : null) as never,
     inputLabels: labels,
     output: (canSeeData ? run.output : null) as never,
+    stages: stageProgress(run).stages,
     tasks: run.tasks.map((t) => toTaskSummary(run, t)),
     children: [...db.runs.values()].filter((c) => c.parentRunId === run.id).map((c) => {
       const wf = db.workflows.get(c.workflowId) as MockWorkflow

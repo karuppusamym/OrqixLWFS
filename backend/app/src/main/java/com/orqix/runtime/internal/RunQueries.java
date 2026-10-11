@@ -16,13 +16,20 @@ import com.orqix.shared.web.Sql;
 public class RunQueries {
 
     public record Filter(UUID workflowId, String lifecycle, String outcomeKind, String businessKey, Instant createdFrom,
-            Instant createdTo, UUID initiator) {
+            Instant createdTo, UUID initiator, boolean overdue) {
+
+        public Filter(UUID workflowId, String lifecycle, String outcomeKind, String businessKey, Instant createdFrom,
+                Instant createdTo, UUID initiator) {
+            this(workflowId, lifecycle, outcomeKind, businessKey, createdFrom, createdTo, initiator, false);
+        }
     }
 
     private final JdbcClient jdbc;
     private final RunStore runs;
+    private final java.time.Clock clock;
 
-    public RunQueries(JdbcClient jdbc, RunStore runs) {
+    public RunQueries(JdbcClient jdbc, RunStore runs, java.time.Clock clock) {
+        this.clock = clock;
         this.jdbc = jdbc;
         this.runs = runs;
     }
@@ -39,6 +46,8 @@ public class RunQueries {
                    AND (CAST(:from AS timestamptz) IS NULL OR created_at >= :from)
                    AND (CAST(:to AS timestamptz) IS NULL OR created_at < :to)
                    AND (CAST(:initiator AS uuid) IS NULL OR initiator_subject_id = :initiator)
+                   AND (:overdue = false OR EXISTS (SELECT 1 FROM run_stage s WHERE s.run_id = workflow_run.id
+                        AND s.completed_at IS NULL AND s.due_at IS NOT NULL AND s.due_at < :now))
                    AND (CAST(:afterAt AS timestamptz) IS NULL
                         OR (created_at, id) < (CAST(:afterAt AS timestamptz), CAST(:afterId AS uuid)))
                  ORDER BY created_at DESC, id DESC
@@ -47,6 +56,7 @@ public class RunQueries {
                 .param("ws", workspaceId).param("wf", f.workflowId()).param("lifecycle", f.lifecycle())
                 .param("kind", f.outcomeKind()).param("bkey", f.businessKey()).param("from", Sql.ts(f.createdFrom()))
                 .param("to", Sql.ts(f.createdTo())).param("initiator", f.initiator())
+                .param("overdue", f.overdue()).param("now", Sql.ts(clock.instant()))
                 .param("afterAt", after == null ? null : Sql.ts(after.at()))
                 .param("afterId", after == null ? null : UUID.fromString(after.id()))
                 .param("limit", limitPlusOne)

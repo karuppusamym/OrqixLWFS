@@ -3,6 +3,7 @@ import type { Run } from '@/api/types'
 import { RelativeTime } from '@/components/common/RelativeTime'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { Button } from '@/components/ui/button'
+import { StageBadge } from './StageProgress'
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table'
 import { formatDateTime } from '@/lib/dates'
 import { requestId, runProgressText, runTitle } from '@/lib/runText'
@@ -43,6 +44,7 @@ export function RunsTable({ runs, wsId, showRequester, caption, canOperate = fal
               {run.workflow.name} <span className="font-normal text-muted-foreground">&middot; Version {run.release.releaseNumber}</span>
             </p>
             <p className="mt-1 text-sm text-muted-foreground">{whereItIsNow(run)}</p>
+            {run.stage ? <p className="mt-1.5"><StageBadge stage={run.stage} /></p> : null}
             {recovery(run)}
             <p className="mt-2 text-xs text-muted-foreground">
               {showRequester ? <>Requested by {run.initiator.displayName} &middot; </> : null}
@@ -85,6 +87,7 @@ export function RunsTable({ runs, wsId, showRequester, caption, canOperate = fal
               </TD>
               <TD className="max-w-96 text-muted-foreground">
                 {whereItIsNow(run)}
+                {run.stage ? <div className="mt-1"><StageBadge stage={run.stage} /></div> : null}
                 {recovery(run) ? <div>{recovery(run)}</div> : null}
               </TD>
               {showRequester ? <TD className="whitespace-nowrap">{run.initiator.displayName}</TD> : null}

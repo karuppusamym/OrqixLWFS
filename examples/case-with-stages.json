@@ -1,0 +1,275 @@
+{
+  "schemaVersion": "0.1",
+  "workflowKey": "case-with-stages",
+  "name": "Loan application case",
+  "metadata": {
+    "description": "A loan application handled as a case with three stages. The applicant attaches an ID and proof of income; each stage has a time limit, and a request that stays too long in a stage is flagged as overdue to the requester and to operators.",
+    "tags": [
+      "case",
+      "stages",
+      "attachments"
+    ]
+  },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "applicant",
+      "loanAmount",
+      "purpose",
+      "idDocument",
+      "incomeProof"
+    ],
+    "properties": {
+      "applicant": {
+        "type": "string",
+        "title": "Applicant",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "loanAmount": {
+        "type": "number",
+        "title": "Loan amount (USD)",
+        "minimum": 1000,
+        "maximum": 500000,
+        "multipleOf": 0.01
+      },
+      "purpose": {
+        "type": "string",
+        "title": "Purpose",
+        "enum": [
+          "Home improvement",
+          "Vehicle",
+          "Education",
+          "Other"
+        ]
+      },
+      "idDocument": {
+        "type": "string",
+        "title": "Photo ID",
+        "description": "A scan or photo of a government ID.",
+        "format": "attachment",
+        "acceptTypes": [
+          "pdf",
+          "png",
+          "jpeg"
+        ],
+        "maxFileBytes": 5242880
+      },
+      "incomeProof": {
+        "type": "string",
+        "title": "Proof of income",
+        "description": "Recent payslips or a tax statement.",
+        "format": "attachment",
+        "acceptTypes": [
+          "pdf",
+          "png",
+          "jpeg",
+          "docx"
+        ]
+      },
+      "notes": {
+        "type": "string",
+        "title": "Notes for the reviewers",
+        "maxLength": 1000
+      }
+    }
+  },
+  "inputUi": {
+    "order": [
+      "applicant",
+      "loanAmount",
+      "purpose",
+      "idDocument",
+      "incomeProof",
+      "notes"
+    ],
+    "widgets": {
+      "loanAmount": "money",
+      "purpose": "select",
+      "notes": "textarea"
+    },
+    "currency": "USD"
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  },
+  "triggers": [
+    "manual"
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "label": "Application submitted",
+      "config": {}
+    },
+    {
+      "id": "documentCheck",
+      "type": "approval",
+      "label": "Check the documents",
+      "config": {
+        "candidateGroupRef": "managers",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 8
+      }
+    },
+    {
+      "id": "creditReview",
+      "type": "approval",
+      "label": "Assess credit risk",
+      "config": {
+        "candidateGroupRef": "finance-approvers",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 48
+      }
+    },
+    {
+      "id": "finalApproval",
+      "type": "approval",
+      "label": "Final approval",
+      "config": {
+        "candidateGroupRef": "managers",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 72
+      }
+    },
+    {
+      "id": "notifyApproved",
+      "type": "notification",
+      "label": "Tell applicant the loan is approved",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "Your loan application was approved."
+      }
+    },
+    {
+      "id": "approved",
+      "type": "end",
+      "label": "Approved",
+      "config": {
+        "businessOutcome": "Approved",
+        "outcomeKind": "success"
+      }
+    },
+    {
+      "id": "notifyRejected",
+      "type": "notification",
+      "label": "Tell applicant it was declined",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "Your loan application was declined. Open the request to see the reason."
+      }
+    },
+    {
+      "id": "rejected",
+      "type": "end",
+      "label": "Declined",
+      "config": {
+        "businessOutcome": "Declined",
+        "outcomeKind": "rejected"
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t1",
+      "from": "start",
+      "to": "documentCheck",
+      "on": "next"
+    },
+    {
+      "id": "t2",
+      "from": "documentCheck",
+      "to": "creditReview",
+      "on": "approved"
+    },
+    {
+      "id": "t3",
+      "from": "documentCheck",
+      "to": "notifyRejected",
+      "on": "rejected"
+    },
+    {
+      "id": "t4",
+      "from": "creditReview",
+      "to": "finalApproval",
+      "on": "approved"
+    },
+    {
+      "id": "t5",
+      "from": "creditReview",
+      "to": "notifyRejected",
+      "on": "rejected"
+    },
+    {
+      "id": "t6",
+      "from": "finalApproval",
+      "to": "notifyApproved",
+      "on": "approved"
+    },
+    {
+      "id": "t7",
+      "from": "finalApproval",
+      "to": "notifyRejected",
+      "on": "rejected"
+    },
+    {
+      "id": "t8",
+      "from": "notifyApproved",
+      "to": "approved",
+      "on": "next"
+    },
+    {
+      "id": "t9",
+      "from": "notifyRejected",
+      "to": "rejected",
+      "on": "next"
+    }
+  ],
+  "decisions": [],
+  "stages": [
+    {
+      "id": "intake",
+      "label": "Intake",
+      "nodes": [
+        "documentCheck"
+      ],
+      "sla": "PT8H"
+    },
+    {
+      "id": "assessment",
+      "label": "Credit assessment",
+      "nodes": [
+        "creditReview"
+      ],
+      "sla": "P2D"
+    },
+    {
+      "id": "decision",
+      "label": "Decision",
+      "nodes": [
+        "finalApproval",
+        "notifyApproved",
+        "notifyRejected"
+      ],
+      "sla": "P5D"
+    }
+  ],
+  "execution": {
+    "maxConcurrentRuns": 200,
+    "maxAttempts": 3,
+    "retryDelaySeconds": 30
+  },
+  "security": {
+    "selfApproval": "deny"
+  },
+  "dependencies": {
+    "connections": []
+  },
+  "outputMapping": {}
+}

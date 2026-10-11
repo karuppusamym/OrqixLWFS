@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Hand-authored compatibility fixture, not a customer export. Duration timer, user task with an interrupting boundary timer
+     (becomes the approval time limit, escalating to a second approval) and a call activity with explicit variable mapping. -->
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" xmlns:modeler="http://camunda.org/schema/modeler/1.0" targetNamespace="urn:orqix:migration-fixture" modeler:executionPlatform="Camunda Cloud" modeler:executionPlatformVersion="8.5.0">
+  <bpmn:process id="c8-timer-call" name="Camunda 8 timer and call activity" isExecutable="true">
+    <bpmn:startEvent id="start" />
+    <bpmn:intermediateCatchEvent id="leadTime" name="Lead time">
+      <bpmn:timerEventDefinition><bpmn:timeDuration>=duration("PT1M")</bpmn:timeDuration></bpmn:timerEventDefinition>
+    </bpmn:intermediateCatchEvent>
+    <bpmn:userTask id="review" name="Team review">
+      <bpmn:extensionElements><zeebe:userTask /><zeebe:assignmentDefinition candidateGroups="source-managers" /></bpmn:extensionElements>
+    </bpmn:userTask>
+    <bpmn:boundaryEvent id="reviewLate" name="Review took too long" attachedToRef="review">
+      <bpmn:timerEventDefinition><bpmn:timeDuration>PT2H</bpmn:timeDuration></bpmn:timerEventDefinition>
+    </bpmn:boundaryEvent>
+    <bpmn:exclusiveGateway id="reviewOutcome" />
+    <bpmn:userTask id="escalation" name="Escalated review">
+      <bpmn:extensionElements><zeebe:userTask /><zeebe:assignmentDefinition candidateGroups="source-finance" /></bpmn:extensionElements>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="escalationOutcome" />
+    <bpmn:callActivity id="child" name="Create the record">
+      <bpmn:extensionElements>
+        <zeebe:calledElement processId="reviewed-child" propagateAllChildVariables="false" propagateAllParentVariables="false" />
+        <zeebe:ioMapping>
+          <zeebe:input source="=title" target="title" />
+          <zeebe:output source="=reference" target="recordReference" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+    </bpmn:callActivity>
+    <bpmn:endEvent id="fulfilled" name="Fulfilled" />
+    <bpmn:endEvent id="rejected" name="Rejected" />
+    <bpmn:sequenceFlow id="a" sourceRef="start" targetRef="leadTime" />
+    <bpmn:sequenceFlow id="b" sourceRef="leadTime" targetRef="review" />
+    <bpmn:sequenceFlow id="c" sourceRef="review" targetRef="reviewOutcome" />
+    <bpmn:sequenceFlow id="d" sourceRef="reviewOutcome" targetRef="child"><bpmn:conditionExpression>= approved</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="e" sourceRef="reviewOutcome" targetRef="rejected"><bpmn:conditionExpression>= not(approved)</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="lateFlow" sourceRef="reviewLate" targetRef="escalation" />
+    <bpmn:sequenceFlow id="g" sourceRef="escalation" targetRef="escalationOutcome" />
+    <bpmn:sequenceFlow id="h" sourceRef="escalationOutcome" targetRef="child"><bpmn:conditionExpression>= escalationApproved</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="i" sourceRef="escalationOutcome" targetRef="rejected"><bpmn:conditionExpression>= not(escalationApproved)</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="j" sourceRef="child" targetRef="fulfilled" />
+  </bpmn:process>
+</bpmn:definitions>

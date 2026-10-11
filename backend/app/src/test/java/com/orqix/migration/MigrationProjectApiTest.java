@@ -96,7 +96,7 @@ class MigrationProjectApiTest extends RuntimeTestBase {
         String s=UUID.randomUUID().toString().substring(0,8);
         var original=uploaded("dana.designer",PURCHASING,List.of(file("legacy.bpmn",bpmn("legacy-"+s))));
         var legacy=original.deepCopy(); for(var file:legacy.path("files")) { var value=(ObjectNode)file; value.remove("sourceFormat");value.remove("decisionIds");value.remove("decisionDependencies"); }
-        jdbc.sql("UPDATE migration_project SET report=CAST(:report AS jsonb) WHERE id=:id").param("report",json.write(legacy)).param("id",UUID.fromString(original.path("id").asString())).update();
+        com.orqix.support.TestDatabase.legacyFixtureJdbc().sql("UPDATE orqix.migration_project SET report=CAST(:report AS jsonb) WHERE id=:id").param("report",json.write(legacy)).param("id",UUID.fromString(original.path("id").asString())).update();
         var restored=project(PURCHASING,original.path("id").asString());
         assertThat(restored.path("files").get(0).path("decisionIds").isEmpty()).isTrue(); assertThat(restored.path("files").get(0).path("decisionDependencies").isEmpty()).isTrue();
         assertThat(convertNext("dana.designer",PURCHASING,restored,migrationOf(restored,"legacy.bpmn"),mappings("prj-legacy-"+s)).status()).isEqualTo(201);

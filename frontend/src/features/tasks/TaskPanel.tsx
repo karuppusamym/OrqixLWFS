@@ -22,6 +22,8 @@ import { formatDateTime } from '@/lib/dates'
 import { describeProblem } from '@/lib/problemMessages'
 import { dueInfo } from '@/lib/dates'
 import { requestReference } from '@/lib/runText'
+import { RunFiles } from '@/features/runs/RunFiles'
+import { TaskStage } from '@/features/runs/StageProgress'
 import { TaskDelegation } from './TaskDelegation'
 import { TaskPriority } from './TaskPriority'
 
@@ -225,6 +227,7 @@ export function TaskPanel({ taskId, onClaimed }: { taskId: string; onClaimed?: (
             {task.label} &middot; requested by {task.requester.displayName}
             {due ? <span className={due.overdue ? ' font-semibold text-danger' : ''}> &middot; {due.label}</span> : null}
           </p>
+          <TaskStage stage={task.stage} />
           <p className="mt-1 text-sm">
             <Link to={`/w/${ws}/runs/${task.runId}`}>Open the full request</Link>
           </p>
@@ -251,6 +254,8 @@ export function TaskPanel({ taskId, onClaimed }: { taskId: string; onClaimed?: (
             ))}
           </dl>
         </section>
+
+        <RunFiles ws={ws} runId={task.runId} readOnly />
 
         <div className="flex items-start gap-2 rounded-control bg-surface-muted px-4 py-3 text-sm" data-testid="why-here">
           <UserCheck className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />

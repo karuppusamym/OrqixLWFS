@@ -21,9 +21,12 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.orqix.catalog.internal.ReleaseService;
+import com.orqix.catalog.internal.SimulationService;
 import com.orqix.catalog.internal.WorkflowService;
 import com.orqix.identity.CallerResolver;
 import com.orqix.shared.idempotency.IdempotencyService;
+
+import tools.jackson.databind.JsonNode;
 
 /** Workflows, drafts, templates, releases, export and start form (contracts/openapi.yaml). */
 @RestController
@@ -33,8 +36,11 @@ public class CatalogController {
     private final CallerResolver callers;
     private final WorkflowService workflows;
     private final ReleaseService releases;
+    private final SimulationService simulations;
 
-    public CatalogController(CallerResolver callers, WorkflowService workflows, ReleaseService releases) {
+    public CatalogController(CallerResolver callers, WorkflowService workflows, ReleaseService releases,
+            SimulationService simulations) {
+        this.simulations = simulations;
         this.callers = callers;
         this.workflows = workflows;
         this.releases = releases;
@@ -91,6 +97,12 @@ public class CatalogController {
             @PathVariable UUID workflowId, @PathVariable String decisionKey,
             @Valid @RequestBody CatalogDtos.DecisionEvaluateRequest request) {
         return workflows.evaluateDecision(callers.current(), workspaceId, workflowId, decisionKey, request);
+    }
+
+    @PostMapping("/workflows/{workflowId}/simulate")
+    public JsonNode simulateWorkflow(@PathVariable UUID workspaceId, @PathVariable UUID workflowId,
+            @Valid @RequestBody CatalogDtos.SimulateRequest request) {
+        return simulations.simulate(callers.current(), workspaceId, workflowId, request);
     }
 
     @PostMapping("/workflows/{workflowId}/publish")

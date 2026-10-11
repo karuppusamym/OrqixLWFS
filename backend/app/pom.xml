@@ -178,6 +178,8 @@
                     <include>purchase-approval.json</include>
                     <include>new-hire-onboarding.json</include>
                     <include>vendor-onboarding-check.json</include>
+                    <include>order-payment-wait.json</include>
+                    <include>case-with-stages.json</include>
                 </includes>
             </resource>
             <!-- Connection definition used by the dev seed (profile dev only). -->

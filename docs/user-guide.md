@@ -55,7 +55,7 @@ You never see your own requests in your approval list, and you cannot approve th
 
 Select a step to add **Step notes** explaining its purpose or review decisions. Notes save with the draft and each published version. They are plain-text annotations; they do not change what the step executes.
 
-To import an existing process, choose **Workflows → Import workflow**. Camunda BPMN imports require explicit assignment and connector mappings. Pega archives produce an inventory and a template for reviewed manual mappings. Resolve blockers, review assumptions and convert to a draft; publication remains a separate step. See [migration workbench](17-migration-workbench.md) for supported formats and limits.
+To import an existing process, choose **Workflows → Import workflow**. Camunda BPMN imports require explicit assignment and connector mappings. A Camunda 8 file is shown with its source version; its REST connector calls are mapped to a registered operation (the original method and path are shown for comparison, never copied), FEEL conditions of the supported subset convert, a due time or boundary timer on a task becomes the approval's due time or time limit, and Camunda forms (the `.form` file, uploaded in the forms step) become the request form or a note on the approval. Message events, other connectors and complex conditions stay blocked with a plain-language reason. Pega archives produce an inventory and a template for reviewed manual mappings. Resolve blockers, review assumptions and convert to a draft; publication remains a separate step. See [migration workbench](17-migration-workbench.md) for supported formats and limits.
 
 **Import a multi-file project** accepts BPMN and DMN together, up to ten files. Each DMN file must contain one convertible decision. XML namespaces identify the format, including `.xml` files. The project lists missing or duplicate process/decision references and orders dependencies before callers. Review the suggested **Decision mappings (JSON)** before converting. A DMN table is copied from its source migration into the caller; publishing its standalone workflow is optional. Called child workflows must still be published before their callers.
 
@@ -68,7 +68,9 @@ On a request's timeline, expand **Decision evidence** to see the input, evaluate
 5. **Check workflow** lists anything that must be fixed before publishing, grouped by step; **Go to step** takes you there. Warnings explain consequences but do not block.
 6. On a *Make a decision* step, **Test this rule** shows which outcome a sample value produces.
 
-Testing a whole workflow means publishing and running it in a test workspace. An in-studio test button comes *later*.
+7. **Test workflow** tries the whole workflow before you publish it. Answer the sample form, choose what should happen at each step that has a choice (for example "Finance rejects" or "The procurement system does not answer"), and press **Run test**. You get an outcome and a step-by-step playback: each step says in plain words what happened and why ("Routed to Finance because Amount (USD 5,000) is at least USD 5,000"), and the canvas shows the path. Use **Previous step** and **Next step** (or the arrow keys), or read the list of all steps. The panel also says how many routes this run tested ("3 of 6 routes tested") and which ones you have not tried yet; **Try another case** lets you change the answers and run again. Keep up to ten named cases per workflow in your browser, set what each should end with, and use **Run all saved cases** to see which still pass; **Export** and **Import** share them with a colleague. No request is started and no external call or notification is sent. Test cases are saved in your browser; the server records only audit counts for a test.
+
+**Why a test is not a proof.** The test follows your workflow exactly as designed, with the choices you make. It does not call the other systems, so it cannot tell you that a connection works; it does not know who is in a group; and it skips all waiting, so it shows nothing about timing. A request can still need attention in real life for reasons the test cannot see. Treat a passing test as "the design does what I meant", and check connections and groups with **Check workflow** and the connection tests.
 
 ## Background drafts and workflow patterns
 
@@ -158,3 +160,15 @@ A child-workflow step can repeat up to its configured bound, stopping on the sel
 Open a task assigned to you and select **Delegate to a colleague**. Choose an eligible named colleague, enter a reason and select **Confirm delegation**. The colleague becomes responsible for the decision, and the reason is saved in request history. If ownership changed while the page was open, reload before trying again. Administrators can still use operator reassignment for other cases.
 
 Assigned open tasks receive one in-app reminder after the configured delay (24 hours by default). Eligibility and current assignment are checked again before delivery. These reminders do not send email or broadcast to an unassigned group.
+
+## Following requests with the diagram and Insights
+
+On a request, switch between **Timeline** and **Diagram**. The diagram uses the version that started the request. Current steps, decisions and routes are shown in words and in the step list below it. If a request has more history than the diagram supports, use the timeline; current steps remain visible. Operators and workspace readers can open **Insights** for throughput, cycle times, bottlenecks, overdue items and incidents, with period/workflow filters and a CSV export. Individual request links retain their normal access checks.
+
+## Request files and case stages
+
+A **File** question lets you choose a file before starting the request. Its allowed types and size are shown below the question; wait for upload and scan status before reviewing. Files marked **Not scanned** have not had a malware check. On the request's **Files** panel, authorized participants can add, download or remove files within the displayed limits. Removed files retain history, and readers without request-data access cannot read files.
+
+Designers can select the request-form step in Studio and open **Case stages** to name stages, assign steps and set optional time limits. The request and task pages show progress and deadlines. An overdue stage records an in-app notice; it does not automatically reroute or cancel the request. Put any escalation route explicitly into the workflow.
+
+File questions currently use the normal request form. The Assistant does not offer a file upload control; start workflows requiring files from their form. Approved SharePoint/OneDrive reference choices remain usable as ordinary guided text/choice questions.

@@ -52,6 +52,12 @@ final class Conditions {
             return null;
         }
         FieldType type = r.type();
+        if (type.kind() == FieldKind.ATTACHMENT) {
+            rc.issues().blocker("WF_OPERATOR_TYPE", base + "/operator", nodeId, transitionId, c.fieldRef()
+                    + " is a file. Files can be attached to a request, but not used to choose a path or in a"
+                    + " decision table.");
+            return null;
+        }
         if (type.kind() == FieldKind.DATE) {
             rc.issues().blocker("WF_OPERATOR_TYPE", base + "/operator", nodeId, transitionId, c.fieldRef()
                     + " is a date. Dates can be used to wait until a day, but not (yet) to choose a path or in a"
@@ -84,7 +90,7 @@ final class Conditions {
             case BOOLEAN -> literal instanceof Literal.Bool;
             case NUMBER -> literal instanceof Literal.Num;
             case INTEGER -> literal instanceof Literal.Num n && n.integral();
-            case ARRAY, DATE -> false;
+            case ARRAY, DATE, ATTACHMENT -> false;
         };
     }
 
@@ -108,6 +114,13 @@ final class Conditions {
                     + " does not always happen before " + q(usedAt) + ", so its result cannot be used there.");
             return;
         }
+        if (producer instanceof Node.WaitForMessage m && m.timeoutAfter() != null
+                && MessageRules.reachableWithoutMessage(rc, m, usedAt)) {
+            rc.issues().blocker("WF_FIELDREF_NOT_GUARANTEED", path, usedAt.id(), transitionId, "The " + r.key()
+                    + " of " + q(producer) + " exists only when the message arrives in time, and " + q(usedAt)
+                    + " can also be reached when it does not. Use it only on the path after the message.");
+            return;
+        }
         if (r.type().mayBeAbsent()) {
             rc.issues().blocker("WF_FIELDREF_NOT_GUARANTEED", path, usedAt.id(), transitionId, "The " + r.key()
                     + " of " + q(producer) + " " + absentWhy(producer) + ", so it cannot be used at " + q(usedAt)
@@ -122,6 +135,9 @@ final class Conditions {
         }
         if (producer instanceof Node.Approval a && a.timeoutAfter() != null) {
             return "is only recorded when someone decides in time (and, for a reason or comment, enters one)";
+        }
+        if (producer instanceof Node.WaitForMessage) {
+            return "is not required, so a message may arrive without it";
         }
         return "is only recorded when the approver enters one";
     }

@@ -133,6 +133,27 @@ public sealed interface Node {
 
     record ForEach(String itemsRef, String itemInput, int maxItems, boolean parallel) { }
 
+    /**
+     * Wait for a named message from outside (S16). {@code correlationField} is a field reference whose value identifies
+     * the request; {@code timeoutAfter} (ISO-8601 duration, may be null) adds a {@code timedOut} route; {@code payload}
+     * declares the values the message may carry (outputs of this step), in authored order.
+     */
+    record WaitForMessage(int index, String id, String label, String message, String correlationField,
+                          String timeoutAfter, java.util.List<PayloadField> payload) implements Node {
+        @Override
+        public NodeKind kind() {
+            return NodeKind.WAIT_FOR_MESSAGE;
+        }
+
+        /** @return the declared payload field with this name, or null */
+        public PayloadField field(String name) {
+            return payload.stream().filter(f -> f.name().equals(name)).findFirst().orElse(null);
+        }
+    }
+
+    /** A value a message may carry: {@code type} is a scalar kind (string, number, integer, boolean or date). */
+    record PayloadField(String name, Enums.FieldKind type, String title, boolean required) { }
+
     /** Finish. */
     record End(int index, String id, String label, String businessOutcome, String outcomeKind) implements Node {
         @Override

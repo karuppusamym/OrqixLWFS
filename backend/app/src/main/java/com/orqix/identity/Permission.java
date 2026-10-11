@@ -18,7 +18,8 @@ public enum Permission {
     CONNECTION_READ("connection.read"),
     CONNECTION_MANAGE("connection.manage"),
     WORKSPACE_MANAGE_ACCESS("workspace.manage-access"),
-    AUDIT_READ("audit.read");
+    AUDIT_READ("audit.read"),
+    MESSAGE_SEND("message.send");
 
     private final String value;
 
@@ -57,7 +58,7 @@ public enum Permission {
             Role.WORKSPACE_ADMIN, EnumSet.of(WORKSPACE_MANAGE_ACCESS, CONNECTION_READ),
             Role.WORKFLOW_DESIGNER, EnumSet.of(WORKFLOW_READ, WORKFLOW_EDIT, WORKFLOW_EXPORT, CONNECTION_READ),
             Role.PUBLISHER, EnumSet.of(WORKFLOW_READ, WORKFLOW_PUBLISH, WORKFLOW_EXPORT, CONNECTION_READ),
-            Role.OPERATOR, EnumSet.of(WORKFLOW_READ, RUN_READ, RUN_READ_DATA, RUN_OPERATE, CONNECTION_READ),
+            Role.OPERATOR, EnumSet.of(WORKFLOW_READ, RUN_READ, RUN_READ_DATA, RUN_OPERATE, CONNECTION_READ, MESSAGE_SEND),
             Role.VIEWER, EnumSet.of(WORKFLOW_READ, RUN_READ),
             Role.APPROVER, EnumSet.of(TASK_ACT));
 }

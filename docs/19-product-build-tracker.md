@@ -1,6 +1,6 @@
 # Product build tracker
 
-Updated 10 October 2026. This is the active tracker for the current build. The authoritative remaining-item register is [product closeout](21-product-closeout.md). Existing verified scope is recorded in [feature status](feature-status.md); the broad backlog describes the full product, not a completion claim.
+Updated 11 October 2026. This is the active tracker for the current build. The authoritative remaining-item register is [product closeout](21-product-closeout.md). Existing verified scope is recorded in [feature status](feature-status.md); the broad backlog describes the full product, not a completion claim.
 
 Statuses: **In progress** means implementation is underway; **Implemented** means code exists but final checks remain; **Verified** means the listed checks pass; **Needs external input** identifies acceptance that cannot be established with local fixtures.
 
@@ -16,13 +16,14 @@ Statuses: **In progress** means implementation is underway; **Implemented** mean
 | MIG06 | Multi-file migration projects and independent mapping review (mapper, reviewer, publisher differ) | Verified on the merged tree (mock browser; real stack not run) | 12 backend tests; 38 new frontend tests; mock-mode browser run on the merged tree below |
 | BANK01 | Banking templates (KYC onboarding, credit approval, card dispute) executed on the real engine | Verified on the merged tree | 42 execution tests; see [templates](banking-templates.md) and [capability matrix](banking-capability-matrix.md) |
 | WF04 | Date questions and "wait until a date" | Verified | Compiler (12 rule/golden tests), 7 Testcontainers tests incl. restart, 26 API checks on the real stack with a real timer, Playwright mock spec; UTC rule, 366-day horizon, past date completes at once |
+| WF05 | "Test this workflow": dry run with trace, coverage and saved cases | Verified | Compiler: 52 simulator tests incl. 23 golden traces shared with the browser port; API tests (access, validation, contract, no side effects, audit counts only, rate limit); Vitest for the mock port (golden), model, saved cases, playback and panel; Playwright mock spec t-ui-15-test-workflow. Not the engine: see S4 section 13.4 |
 | UX01 | Request titles in lists, "Changes not published" label, plain-language Assistant | Verified | Title tests (4 backend, 9 frontend), 12 Assistant API tests, Assistant browser spec on mock; real-stack Assistant spec passes |
 | MIG03 | Native Pega semantic conversion and equivalence | Needs external input | Genuine exports, source versions and expected business scenarios; no universal automatic-conversion claim |
 | DOC01 | SharePoint/OneDrive approved document operations | Verified | Stable identifiers, explicit version, bounded content, binding credentials and redirect isolation; scripted Graph tests |
 | DOC03 | PDF/OOXML extraction and retained snapshots | Verified locally | 7 parser tests, 14 Graph adapter tests, 4 snapshot workflow tests, 1 historical-version workflow test; PDF/Office parser runs in hardened standard image |
 | DOC02 | Real Microsoft tenant acceptance | Needs external input | Tenant/app permissions, approved sites/files and credential provisioning |
 | CHAT01 | Conversational request/task execution | Verified API and UI slice | Multi-turn field collection, explicit reviewed submission/decision, existing authorization and idempotency, resume and isolation tests |
-| CASE01 | Request collaboration | Verified: comments, delegation and reminders | 3 backend collaboration tests, 5 delegation UI tests, real-browser handoff and decision; attachments, stages and business calendars remain planned |
+| CASE01 | Request collaboration | Verified: comments, delegation and reminders | 3 backend collaboration tests, 5 delegation UI tests, real-browser handoff and decision; attachments and declared stages are implemented in the 11 October batch below; business calendars remain planned |
 | OPS01 | Standard image build and browser validation | Historical local evidence; current deployment excluded | Historical stack/browser checks do not certify this new priority migration or UI batch |
 | OPS02 | Production gates | Needs external input | Enterprise identity/integrations, cluster, CI execution, backup/restore and capacity acceptance |
 
@@ -118,6 +119,7 @@ Reviewed the other model's committed `6fa9fe6` baseline and preserved its date w
 | ID | Item | Status | Scope |
 |---|---|---|---|
 | MIG07 | Cross-file findings review and full JSON/CSV export | Complete; frontend checks pass | Complete bounded project reports, provenance, formula-safe CSV and partial-load export protection; S18 |
+| MIG08 | Camunda 8 importer: connectors, FEEL subset, due time and boundary timer as approval limits, date timers, call activity propagation, Camunda Forms (adapter `camunda-bpmn-0.5`, V24) | Verified on a clean mirror (HEAD plus these files); mock browser spec passes; real stack not run | 22 unit and 4 PostgreSQL/Flowable tests (`Camunda8ImportTest`, `Camunda8MigrationApiTest`); S11 revision 0.5; hand-authored fixtures only, no customer export; message events blocked |
 | TASK01 | Priority and aging | Verified locally; complete | Durable audited priority, eligible assignee/operator changes, version conflicts, signed filter/sort/subject-bound keyset pagination, age display; V20 and S19 |
 | DOC04 | Historical-version selection | Complete; scripted Graph and UI checks pass | Approved drive/item input and explicit pin in connection administration; requester tenant browsing remains roadmap |
 | DESIGN01 | General published-version comparison | Complete; frontend/browser checks pass | Any two loaded releases, load-more for older versions, safe text display and visible fetch failure |
@@ -140,3 +142,9 @@ Reviewed the other model's committed `6fa9fe6` baseline and preserved its date w
 Audit reasons are retained in permission-scoped run history; global audit contains only task ID and prior/new priorities. The targeted security rerun uses explicit normal INFO logging and `debug=false`: the first focused security run captured bootstrap DEBUG output containing a test-only temporary secrets path. The successful rerun verifies normal INFO logging with debug disabled. No real credential or customer acceptance is established by these fixtures.
 
 No deployment/image/production capacity or fresh real-stack browser acceptance was performed for V20 in this pass. Infrastructure remains excluded. Native Pega/source approval, customer Microsoft/integration acceptance and the future product features in doc 21 are still open.
+
+## Resumed five-stream integration ? 11 October 2026
+
+The other model's partial implementation was reviewed before changes. Existing Camunda 8 import, message events, run diagram/Insights, simulation, attachments and stage work was preserved. Integration fixes cover duplicate DMN IDs, immutable message acceptance and concurrent buffer admission, global simulation limits, upload lifecycle/quotas/scanner framing, stage authoring, pinned document testability, message timeout reporting and long-history diagram disclosure. No existing Compose volumes were reset.
+
+Status: coordinated verification in progress. The first focused backend run passes 127 cases; diagram/Insights UI tests pass 12 cases; contract checks pass 72 and the offline equivalence/archive suite passes four. These are preliminary checks, not the final full-suite result. Final logs and totals follow after source freeze.

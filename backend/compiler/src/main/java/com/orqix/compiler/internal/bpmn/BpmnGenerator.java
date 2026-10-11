@@ -36,6 +36,13 @@ public final class BpmnGenerator {
     /** Suffix of the interrupting timer boundary event generated for an approval with a time limit. */
     public static final String APPROVAL_TIMEOUT = "__timeout";
 
+    /** Suffix of the message catch event generated for a "Wait for a message" step that has a time limit. */
+    public static final String MESSAGE_CATCH = "__message";
+    /** Suffix of the timer catch event generated for the time limit of a "Wait for a message" step. */
+    public static final String MESSAGE_TIMEOUT = "__timeout";
+    /** Prefix of the BPMN message definition ID generated for a message name. */
+    public static final String MESSAGE_DEFINITION = "message__";
+
     /** Generated process plus its source map. */
     public record Result(String xml, SourceMap sourceMap) {
     }
@@ -70,6 +77,10 @@ public final class BpmnGenerator {
                 .namespace("omgdc", DC_NS)
                 .namespace("omgdi", DI_NS)
                 .attr("targetNamespace", TARGET_NAMESPACE);
+        // Message definitions come first, one per message name (sorted), so ids and order are deterministic.
+        new java.util.TreeSet<>(definition.nodes().stream().filter(n -> n instanceof Node.WaitForMessage)
+                .map(n -> ((Node.WaitForMessage) n).message()).toList()).forEach(name ->
+                x.leaf("", "message", BPMN_NS).attr("id", MESSAGE_DEFINITION + name).attr("name", name));
         x.open("", "process", BPMN_NS)
                 .attr("id", definition.workflowKey())
                 .attr("name", definition.name())
@@ -229,6 +240,55 @@ public final class BpmnGenerator {
                 x.close();
                 x.close();
             }
+            case Node.WaitForMessage m -> {
+                boolean limit = m.timeoutAfter() != null;
+                String catchId = limit ? m.id() + MESSAGE_CATCH : m.id();
+                if (limit) {
+                    // An event-based gateway lets the message or the time limit win, whichever comes first.
+                    x.leaf("", "eventBasedGateway", BPMN_NS).attr("id", m.id()).attr("name", m.label());
+                }
+                x.open("", "intermediateCatchEvent", BPMN_NS)
+                        .attr("id", catchId)
+                        .attr("name", limit ? m.label() + ": message" : m.label());
+                x.open("", "extensionElements", BPMN_NS);
+                x.open("orqix", "message", ORQIX_NS)
+                        .attr("node", m.id())
+                        .attr("name", m.message())
+                        .attr("correlationField", m.correlationField());
+                for (Node.PayloadField f : m.payload()) {
+                    x.leaf("orqix", "field", ORQIX_NS)
+                            .attr("name", f.name())
+                            .attr("type", f.type().json())
+                            .attr("required", Boolean.toString(f.required()));
+                }
+                x.close();
+                x.close();
+                x.leaf("", "messageEventDefinition", BPMN_NS).attr("messageRef", MESSAGE_DEFINITION + m.message());
+                x.close();
+                if (limit) {
+                    map.node(m.id(), catchId);
+                    String timeout = m.id() + MESSAGE_TIMEOUT;
+                    x.open("", "intermediateCatchEvent", BPMN_NS)
+                            .attr("id", timeout)
+                            .attr("name", m.label() + ": no message in time");
+                    x.open("", "extensionElements", BPMN_NS);
+                    x.leaf("orqix", "messageTimeout", ORQIX_NS).attr("node", m.id()).attr("after", m.timeoutAfter());
+                    x.close();
+                    x.open("", "timerEventDefinition", BPMN_NS);
+                    x.inline("", "timeDuration", BPMN_NS, null, m.timeoutAfter(), false);
+                    x.close();
+                    x.close();
+                    map.node(m.id(), timeout);
+                    String toMessage = m.id() + "__toMessage";
+                    String toTimeout = m.id() + "__toTimeout";
+                    x.leaf("", "sequenceFlow", BPMN_NS).attr("id", toMessage).attr("sourceRef", m.id())
+                            .attr("targetRef", catchId);
+                    map.node(m.id(), toMessage);
+                    x.leaf("", "sequenceFlow", BPMN_NS).attr("id", toTimeout).attr("sourceRef", m.id())
+                            .attr("targetRef", timeout);
+                    map.node(m.id(), toTimeout);
+                }
+            }
             case Node.StartWorkflow c -> {
                 WorkflowInfo child = children.get(c.id());
                 x.open("", "serviceTask", BPMN_NS)
@@ -314,6 +374,9 @@ public final class BpmnGenerator {
         if (from instanceof Node.Approval) {
             return from.id() + (t.on() == Route.TIMED_OUT ? APPROVAL_TIMEOUT : APPROVAL_ROUTE);
         }
+        if (from instanceof Node.WaitForMessage m && m.timeoutAfter() != null) {
+            return from.id() + (t.on() == Route.TIMED_OUT ? MESSAGE_TIMEOUT : MESSAGE_CATCH);
+        }
         return from.id();
     }
 
@@ -354,6 +417,10 @@ public final class BpmnGenerator {
                         centre.put(n.id() + APPROVAL_TIMEOUT, new BigDecimal[] {cx, cy.add(BOUNDARY_OFFSET)});
                     }
                 }
+                if (n instanceof Node.WaitForMessage m && m.timeoutAfter() != null) {
+                    centre.put(n.id() + MESSAGE_CATCH, new BigDecimal[] {cx.add(HELPER_OFFSET), cy.subtract(BOUNDARY_OFFSET)});
+                    centre.put(n.id() + MESSAGE_TIMEOUT, new BigDecimal[] {cx.add(HELPER_OFFSET), cy.add(BOUNDARY_OFFSET)});
+                }
             }
             String key = d.workflowKey();
             x.open("bpmndi", "BPMNDiagram", BPMNDI_NS).attr("id", key + "__diagram");
@@ -361,10 +428,18 @@ public final class BpmnGenerator {
             for (Node n : d.nodes()) {
                 int[] size = switch (n.kind()) {
                     case START, END, WAIT -> new int[] {36, 36};
+                    case WAIT_FOR_MESSAGE -> ((Node.WaitForMessage) n).timeoutAfter() != null
+                            ? new int[] {40, 40} : new int[] {36, 36};
                     case BRANCH, PARALLEL_SPLIT, PARALLEL_JOIN -> new int[] {40, 40};
                     default -> new int[] {100, 80};
                 };
                 shape(x, n.id(), centre.get(n.id()), size[0], size[1]);
+                if (n instanceof Node.WaitForMessage m && m.timeoutAfter() != null) {
+                    shape(x, n.id() + MESSAGE_CATCH, centre.get(n.id() + MESSAGE_CATCH), 36, 36);
+                    shape(x, n.id() + MESSAGE_TIMEOUT, centre.get(n.id() + MESSAGE_TIMEOUT), 36, 36);
+                    edge(x, n.id() + "__toMessage", centre.get(n.id()), centre.get(n.id() + MESSAGE_CATCH));
+                    edge(x, n.id() + "__toTimeout", centre.get(n.id()), centre.get(n.id() + MESSAGE_TIMEOUT));
+                }
                 if (n instanceof Node.Approval a) {
                     shape(x, n.id() + APPROVAL_ROUTE, centre.get(n.id() + APPROVAL_ROUTE), 40, 40);
                     edge(x, n.id() + APPROVAL_OUT, centre.get(n.id()), centre.get(n.id() + APPROVAL_ROUTE));

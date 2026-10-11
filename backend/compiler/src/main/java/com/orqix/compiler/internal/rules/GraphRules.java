@@ -102,13 +102,18 @@ final class GraphRules {
                 case APPROVAL -> timeout ? Set.of(Route.APPROVED, Route.REJECTED, Route.TIMED_OUT)
                         : Set.of(Route.APPROVED, Route.REJECTED);
                 case BRANCH -> Set.of(Route.CONDITION, Route.DEFAULT);
+                case WAIT_FOR_MESSAGE -> ((Node.WaitForMessage) n).timeoutAfter() != null
+                        ? Set.of(Route.NEXT, Route.TIMED_OUT) : Set.of(Route.NEXT);
                 default -> Set.of(Route.NEXT);
             };
             Map<Route, Integer> counts = new HashMap<>();
             for (Transition t : rc.leaving(n)) {
                 if (!allowed.contains(t.on())) {
-                    String hint = t.on() == Route.TIMED_OUT ? " Set a time limit on this step to add a path for when"
-                            + " nobody decides in time, or remove this path." : "";
+                    String hint = t.on() == Route.TIMED_OUT ? (n.kind() == NodeKind.WAIT_FOR_MESSAGE
+                            ? " Set a time limit on this step to add a path for when the message does not arrive in"
+                            + " time, or remove this path."
+                            : " Set a time limit on this step to add a path for when"
+                            + " nobody decides in time, or remove this path.") : "";
                     rc.issues().blocker("WF_OUTGOING_INVALID", t.path() + "/on", n.id(), t.id(), n.label() + " ("
                             + n.kind().businessLabel() + ") can only continue on " + routes(allowed) + ", not on "
                             + q(t.on().json()) + "." + hint);
@@ -133,6 +138,27 @@ final class GraphRules {
                 }
                 case PARALLEL_SPLIT -> {
                     // The number of branches is checked with the other parallel rules (ParallelRules).
+                }
+                case WAIT_FOR_MESSAGE -> {
+                    int next = counts.getOrDefault(Route.NEXT, 0);
+                    if (next == 0) {
+                        rc.issues().blocker("WF_OUTGOING_INVALID", n.path(), n.id(), null, n.label()
+                                + " needs a next step for when the message arrives.");
+                    } else if (next > 1) {
+                        rc.issues().blocker("WF_OUTGOING_INVALID", n.path(), n.id(), null, n.label()
+                                + " can continue to only one next step.");
+                    }
+                    if (((Node.WaitForMessage) n).timeoutAfter() != null) {
+                        int timedOut = counts.getOrDefault(Route.TIMED_OUT, 0);
+                        if (timedOut == 0) {
+                            rc.issues().blocker("WF_MESSAGE_TIMEOUT_ROUTE", n.path(), n.id(), null, n.label()
+                                    + " has a time limit, so it needs a path for when the message does not arrive"
+                                    + " in time.");
+                        } else if (timedOut > 1) {
+                            rc.issues().blocker("WF_MESSAGE_TIMEOUT_ROUTE", n.path(), n.id(), null, n.label()
+                                    + " can have only one path for when the message does not arrive in time.");
+                        }
+                    }
                 }
                 case BRANCH -> {
                     int defaults = counts.getOrDefault(Route.DEFAULT, 0);

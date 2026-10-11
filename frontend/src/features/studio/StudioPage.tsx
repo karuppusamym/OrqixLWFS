@@ -29,6 +29,8 @@ import { normalizeDefinition } from './model/types'
 import { useConnectionLookup } from './useConnectionLookup'
 import { useStudioShortcuts } from './useStudioShortcuts'
 import { ImportNotice } from '@/features/migration/ImportNotice'
+import { PlaybackProvider } from './test/PlaybackContext'
+import { TestPanel } from './test/TestPanel'
 import { AiReviewPanel } from '@/features/ai/AiReviewPanel'
 
 /** Studio route: loads the draft once, then hands it to the editor (docs/build/S7-frontend.md section 5). */
@@ -109,7 +111,9 @@ function Studio({ workflowId, initial }: { workflowId: string; initial: DraftDat
 
   return (
     <StudioProvider value={ctx}>
-      <StudioShell groupNames={groupNames} canEdit={canEdit} desktop={desktop} onNavigate={(to) => navigate(to)} announce={announce} />
+      <PlaybackProvider>
+        <StudioShell groupNames={groupNames} canEdit={canEdit} desktop={desktop} onNavigate={(to) => navigate(to)} announce={announce} />
+      </PlaybackProvider>
     </StudioProvider>
   )
 }
@@ -123,6 +127,7 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
   const [checking, setChecking] = useState(false)
   const [checkError, setCheckError] = useState<unknown>(null)
   const [previewOpen, setPreviewOpen] = useState(false)
+  const [testOpen, setTestOpen] = useState(false)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [addAfter, setAddAfter] = useState<string | null>(null)
   const [branchRequest, setBranchRequest] = useState<{ from: string; to: string | null } | null>(null)
@@ -224,6 +229,8 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
         checking={checking}
         canPublish={can('workflow.publish')}
         onPublish={() => void publish()}
+        onTest={() => setTestOpen((open) => !open)}
+        testOpen={testOpen}
       />
       <ImportNotice workflowId={workflowId} />
       <AiReviewPanel workflowId={workflowId} />
@@ -264,7 +271,14 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
               }} onAddPath={(from) => setBranchRequest({ from, to: null })} />
             </TabsContent>
           </div>
-          {desktop ? (
+          {desktop && testOpen ? (
+            <aside className="w-[26rem] shrink-0 border-l border-border bg-surface" aria-label="Test this workflow">
+              <TestPanel groupNames={groupNames} onClose={() => setTestOpen(false)} onCheck={() => void runCheck()} onGoToStep={(id) => {
+                store.getState().select({ type: 'node', id })
+                store.getState().requestFocus(id, 'label')
+              }} />
+            </aside>
+          ) : desktop ? (
             <aside className="w-80 shrink-0 overflow-y-auto border-l border-border bg-surface" aria-label="Inspector">
               <Inspector onDeleteNode={(id) => {
                 store.getState().select({ type: 'node', id })

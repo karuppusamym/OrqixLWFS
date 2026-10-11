@@ -74,7 +74,7 @@ public final class DmnGenerator {
             case STRING -> "string";
             case NUMBER, INTEGER -> "number";
             case BOOLEAN -> "boolean";
-            case ARRAY, DATE -> throw new IllegalArgumentException("Collection and date conditions are not supported");
+            case ARRAY, DATE, ATTACHMENT -> throw new IllegalArgumentException("Collection, date and file conditions are not supported");
         };
     }
 

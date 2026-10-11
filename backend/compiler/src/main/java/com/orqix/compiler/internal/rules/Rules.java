@@ -20,9 +20,11 @@ public final class Rules {
         GraphRules.check(rc);
         ParallelRules.check(rc);
         TimerRules.check(rc);
+        MessageRules.check(rc);
         TypeRules.check(rc);
         BindingRules.check(rc);
         ChildRules.check(rc);
+        StageRules.check(rc);
         return rc;
     }
 }

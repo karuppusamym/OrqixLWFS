@@ -111,9 +111,21 @@ public final class FieldTypes {
             case Node.Decision d -> decisionOutput(d, key);
             case Node.Http h -> httpOutput(h, key);
             case Node.StartWorkflow w -> startWorkflowOutput(w, key);
+            case Node.WaitForMessage m -> messageOutput(m, key);
             default -> new Unknown("\"" + producer.label() + "\" (" + producer.kind().businessLabel()
                     + ") does not produce any data that can be used here.");
         };
+    }
+
+    /** Outputs of "Wait for a message": the declared payload fields (S16); a field that is not required may be missing. */
+    private Resolution messageOutput(Node.WaitForMessage m, String key) {
+        Node.PayloadField field = m.field(key);
+        if (field == null) {
+            String carried = m.payload().isEmpty() ? "no values"
+                    : String.join(", ", m.payload().stream().map(Node.PayloadField::name).toList());
+            return new Unknown("\"" + m.label() + "\" does not carry \"" + key + "\". It carries: " + carried + ".");
+        }
+        return new Resolved(new FieldType(field.type(), null, !field.required(), null, null), m, key);
     }
 
     private Resolution approvalOutput(Node.Approval a, String key) {
@@ -278,7 +290,7 @@ public final class FieldTypes {
             case NUMBER -> source.kind().numeric();
             case INTEGER -> source.kind() == FieldKind.INTEGER;
             case BOOLEAN -> source.kind() == FieldKind.BOOLEAN;
-            case ARRAY -> false;
+            case ARRAY, ATTACHMENT -> false;
         };
         if (!kindOk) {
             return "expects " + targetKind.description() + ", but the source is " + source.kind().description();

@@ -1,8 +1,13 @@
 import purchaseExample from '../../../examples/purchase-approval.json'
+import caseExample from '../../../examples/case-with-stages.json'
 import onboardingExample from '../../../examples/new-hire-onboarding.json'
+import orderPaymentExample from '../../../examples/order-payment-wait.json'
 import procurementConnection from '../../../examples/connections/procurement.connection.json'
 import vendorAgentConnection from '../../../examples/connections/vendor-risk-assistant.connection.json'
 import type { components } from '@/api/schema'
+import type { MockStageRow } from './stages'
+import type { MockAttachment } from './caseFiles'
+import type { MockMessage } from './messages'
 import type { Effect, Permission, TaskDecision } from '@/api/types'
 import { normalizeDefinition, type Definition } from '@/features/studio/model/types'
 import { uuid } from '@/lib/text'
@@ -66,7 +71,7 @@ const ROLE_PERMISSIONS: Record<string, Permission[]> = {
   WORKSPACE_ADMIN: ['workspace.manage-access', 'connection.read'],
   WORKFLOW_DESIGNER: ['workflow.read', 'workflow.edit', 'workflow.export', 'connection.read'],
   PUBLISHER: ['workflow.read', 'workflow.publish', 'workflow.export', 'connection.read'],
-  OPERATOR: ['workflow.read', 'run.read', 'run.read-data', 'run.operate', 'connection.read'],
+  OPERATOR: ['workflow.read', 'run.read', 'run.read-data', 'run.operate', 'connection.read', 'message.send'],
   VIEWER: ['workflow.read', 'run.read'],
   APPROVER: ['task.act'],
   REQUESTER: ['workflow.start'],
@@ -258,6 +263,12 @@ export interface MockRun {
   joins?: Record<string, number>
   /** Child runs this run waits for: node id -> child run id. */
   childWaits?: Record<string, string>
+  /** Messages this run waits for: node id -> message name, correlation key and the (shortened) time limit (S16). */
+  messageWaits?: Record<string, { message: string; key: string; dueAt: string | null }>
+  /** Case stages entered by this run (docs/build/S17). */
+  stages?: Record<string, MockStageRow>
+  /** Files of this run, including removed ones (metadata stays). */
+  attachments?: MockAttachment[]
 }
 
 export interface MockNotification {
@@ -345,6 +356,8 @@ export interface MockDb {
   taskCounter: number
   /** Artificial latency in ms for every API call. */
   latencyMs: number
+  /** Messages received before a wait started (S16); persisted across reloads. */
+  messageBuffer?: MockMessage[]
 }
 
 export const PURCHASE_WORKFLOW_ID = 'bbbbbbbb-0000-4000-8000-000000000001'
@@ -379,7 +392,35 @@ export const TEMPLATES = [
     requiredConnections: [],
     requiredWorkflows: ['purchase-approval'],
   },
+  {
+    id: 'order-payment-wait',
+    name: 'Hold an order until the payment arrives',
+    description: 'An order waits for the message payment-received that carries its order number. If nothing arrives within two days the order is cancelled and the requester is told.',
+    typicalOwner: 'Order operations',
+    requiredInputs: ['Order number', 'Customer'],
+    requiredGroups: [],
+    requiredConnections: [],
+    requiredWorkflows: [],
+  },
+  {
+    id: 'case-with-stages',
+    name: 'Loan application case',
+    description: 'A case with three stages (intake, credit assessment, decision), time limits per stage and two files the applicant attaches.',
+    typicalOwner: 'Lending operations',
+    requiredInputs: ['Applicant', 'Loan amount (USD)', 'Purpose', 'Photo ID', 'Proof of income', 'Notes for the reviewers'],
+    requiredGroups: ['managers', 'finance-approvers'],
+    requiredConnections: [],
+    requiredWorkflows: [],
+  },
 ]
+
+export function caseTemplate(): Definition {
+  return normalizeDefinition(caseExample)
+}
+
+export function orderPaymentTemplate(): Definition {
+  return normalizeDefinition(orderPaymentExample)
+}
 
 export function onboardingTemplate(): Definition {
   return normalizeDefinition(onboardingExample)
@@ -441,6 +482,7 @@ export function blankDefinition(workflowKey: string, name: string): Definition {
 // Persistence (browser mock mode keeps state across reloads and persona switches) -----------------------------------
 
 interface DbSnapshot {
+  messageBuffer?: MockMessage[]
   /** Absent in snapshots written before migrations were mocked. */
   migrations?: Array<[string, MockMigration]>
   migrationProjects?: Array<[string, MockMigrationProject]>
@@ -458,6 +500,7 @@ interface DbSnapshot {
 
 export function snapshotDb(): string {
   const snap: DbSnapshot = {
+    messageBuffer: db.messageBuffer ?? [],
     migrations: [...db.migrations],
     migrationProjects: [...db.migrationProjects],
     migrationPolicies: [...db.migrationPolicies],
@@ -478,6 +521,7 @@ export function restoreDb(json: string): boolean {
   try {
     const snap = JSON.parse(json) as DbSnapshot
     const next = emptyDb()
+    next.messageBuffer = snap.messageBuffer ?? []
     next.migrations = new Map(snap.migrations ?? [])
     next.migrationProjects = new Map(snap.migrationProjects ?? [])
     next.migrationPolicies = new Map(snap.migrationPolicies ?? [])

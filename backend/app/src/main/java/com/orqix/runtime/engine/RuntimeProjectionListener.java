@@ -24,6 +24,7 @@ import org.flowable.common.engine.impl.interceptor.CommandContext;
 import org.flowable.engine.delegate.event.FlowableActivityEvent;
 import org.flowable.engine.impl.persistence.entity.ExecutionEntity;
 import org.flowable.engine.impl.util.CommandContextUtil;
+import org.flowable.eventsubscription.service.impl.persistence.entity.EventSubscriptionEntity;
 import org.flowable.job.service.impl.persistence.entity.AbstractRuntimeJobEntity;
 import org.flowable.job.service.impl.persistence.entity.JobEntity;
 import org.flowable.job.service.impl.persistence.entity.TimerJobEntity;
@@ -32,6 +33,7 @@ import org.springframework.stereotype.Component;
 
 import com.orqix.catalog.ReleaseQueries;
 import com.orqix.runtime.internal.ChildRuns;
+import com.orqix.runtime.internal.MessageWaits;
 import com.orqix.runtime.internal.RunEvents;
 import com.orqix.runtime.internal.RunStore;
 import com.orqix.runtime.internal.RuntimeMetrics;
@@ -51,6 +53,8 @@ public class RuntimeProjectionListener implements FlowableEventListener {
     private static final String END_ATTRIBUTE = "orqix.reachedEnd.";
     /** Command attribute: deadline of the time limit of an approval, keyed by process instance and approval step. */
     private static final String TIMEOUT_ATTRIBUTE = "orqix.timeout.";
+    /** Command attribute: deadline of the time limit of a message wait, keyed by process instance and step (S16). */
+    private static final String MESSAGE_TIMEOUT_ATTRIBUTE = "orqix.messageTimeout.";
 
     private final Json json;
     private final RunStore runs;
@@ -59,11 +63,15 @@ public class RuntimeProjectionListener implements FlowableEventListener {
     private final ReleaseQueries releases;
     private final RuntimeMetrics metrics;
     private final ChildRuns children;
+    private final MessageWaits messageWaits;
     private final Clock clock;
+    private final com.orqix.runtime.internal.RunStages stages;
 
     public RuntimeProjectionListener(Json json, RunStore runs, TaskStore tasks, RunEvents events,
             ReleaseQueries releases, RuntimeMetrics metrics, @org.springframework.context.annotation.Lazy ChildRuns children,
-            Clock clock) {
+            @org.springframework.context.annotation.Lazy MessageWaits messageWaits, Clock clock,
+            @org.springframework.context.annotation.Lazy com.orqix.runtime.internal.RunStages stages) {
+        this.stages = stages;
         this.json = json;
         this.runs = runs;
         this.tasks = tasks;
@@ -71,6 +79,7 @@ public class RuntimeProjectionListener implements FlowableEventListener {
         this.releases = releases;
         this.metrics = metrics;
         this.children = children;
+        this.messageWaits = messageWaits;
         this.clock = clock;
     }
 
@@ -102,6 +111,8 @@ public class RuntimeProjectionListener implements FlowableEventListener {
                         onJobCreated(job);
                     } else if (entityEvent.getEntity() instanceof TimerJobEntity timer) {
                         onTimerCreated(timer);
+                    } else if (entityEvent.getEntity() instanceof EventSubscriptionEntity subscription) {
+                        onSubscriptionCreated(subscription);
                     }
                 }
             }
@@ -208,6 +219,40 @@ public class RuntimeProjectionListener implements FlowableEventListener {
         });
     }
 
+    // ---------------------------------------------------------------- messages (S16)
+
+    /** A token reached a message catch event: the engine now waits for the message. */
+    private void onSubscriptionCreated(EventSubscriptionEntity subscription) {
+        if (!"message".equals(subscription.getEventType()) || subscription.getProcessDefinitionId() == null
+                || subscription.getActivityId() == null || subscription.getExecutionId() == null) {
+            return;
+        }
+        FlowElement element = OrqixModel.flowElement(subscription.getProcessDefinitionId(), subscription.getActivityId());
+        ExtensionElement message = OrqixModel.extension(element, "message").orElse(null);
+        if (message == null) {
+            return;
+        }
+        ExecutionEntity execution = CommandContextUtil.getExecutionEntityManager().findById(subscription.getExecutionId());
+        if (execution == null || execution.getVariable(ProcessData.RUN_ID) == null) {
+            return;
+        }
+        String nodeId = OrqixModel.attribute(message, "node");
+        String field = OrqixModel.attribute(message, "correlationField");
+        JsonNode value = ProcessData.resolve(execution, json, field);
+        String correlationKey = value.isString() ? value.stringValue()
+                : value.isNumber() && value.decimalValue().stripTrailingZeros().scale() <= 0
+                    ? value.decimalValue().stripTrailingZeros().toPlainString() : null;
+        if (correlationKey == null || correlationKey.isEmpty() || correlationKey.length() > 200) {
+            throw new IllegalStateException("WF_MESSAGE_CORRELATION_INVALID: " + field + " does not hold a usable key");
+        }
+        FlowElement node = OrqixModel.flowElement(subscription.getProcessDefinitionId(), nodeId);
+        Object deadline = Context.getCommandContext().getAttribute(MESSAGE_TIMEOUT_ATTRIBUTE
+                + subscription.getProcessInstanceId() + "." + nodeId);
+        messageWaits.started(ProcessData.workspaceId(execution), ProcessData.runId(execution), nodeId,
+                node.getName() == null ? nodeId : node.getName(), OrqixModel.attribute(message, "name"),
+                correlationKey, subscription.getExecutionId(), deadline instanceof Instant at ? at : null);
+    }
+
     // ---------------------------------------------------------------- timers (S12 section 3)
 
     /** A timer job was created: the wait of a "Wait" step, or the time limit of an approval. */
@@ -221,6 +266,18 @@ public class RuntimeProjectionListener implements FlowableEventListener {
             // The task is created next; it picks the deadline up (or, if it already exists, is updated here).
             Context.getCommandContext().addAttribute(TIMEOUT_ATTRIBUTE + timer.getProcessInstanceId() + "."
                     + boundary.getAttachedToRefId(), due);
+            return;
+        }
+        ExtensionElement messageTimeout = OrqixModel.extension(element, "messageTimeout").orElse(null);
+        if (messageTimeout != null && due != null) {
+            // The time limit of a message wait: remembered for the wait (created before or after this timer).
+            String nodeId = OrqixModel.attribute(messageTimeout, "node");
+            Context.getCommandContext().addAttribute(MESSAGE_TIMEOUT_ATTRIBUTE + timer.getProcessInstanceId() + "."
+                    + nodeId, due);
+            ExecutionEntity waiting = CommandContextUtil.getExecutionEntityManager().findById(timer.getExecutionId());
+            if (waiting != null && waiting.getVariable(ProcessData.RUN_ID) != null) {
+                messageWaits.deadline(ProcessData.workspaceId(waiting), ProcessData.runId(waiting), nodeId, due);
+            }
             return;
         }
         if (OrqixModel.extension(element, "wait").isEmpty()) {
@@ -296,6 +353,14 @@ public class RuntimeProjectionListener implements FlowableEventListener {
             data.put("label", approvalLabel);
             data.put("after", OrqixModel.attribute(OrqixModel.requireExtension(element, "timeout"), "after"));
             events.append(workspaceId, runId, "TASK_TIMED_OUT", approvalId, null, data);
+        } else if (OrqixModel.extension(element, "messageTimeout").isPresent()) {
+            ExtensionElement timeout = OrqixModel.requireExtension(element, "messageTimeout");
+            String nodeId = OrqixModel.attribute(timeout, "node");
+            FlowElement node = OrqixModel.flowElement(job.getProcessDefinitionId(), nodeId);
+            String messageName = OrqixModel.attribute(OrqixModel.requireExtension(OrqixModel.flowElement(
+                    job.getProcessDefinitionId(), nodeId + "__message"), "message"), "name");
+            messageWaits.timedOut(workspaceId, runId, nodeId, node.getName() == null ? nodeId : node.getName(),
+                    messageName, OrqixModel.attribute(timeout, "after"));
         } else if (OrqixModel.extension(element, "wait").isPresent()) {
             runs.mutate(workspaceId, runId, m -> {
                 m.removeStep(element.getId());
@@ -352,6 +417,8 @@ public class RuntimeProjectionListener implements FlowableEventListener {
             m.endedAt = now;
             m.steps.removeAll();
         });
+        // Stages close before the run's completion event, so a timeline reads stage done, then request done (S17).
+        stages.reconcile(end.workspaceId(), end.runId());
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("outcome", end.label());
         data.put("outcomeKind", end.kind());
@@ -359,6 +426,7 @@ public class RuntimeProjectionListener implements FlowableEventListener {
         metrics.runCompleted(end.kind());
         // Child runs still running when their parent ends (a rejection in another branch) end with it; a child that
         // ends tells its parent through an asynchronous trigger job (S12 section 4).
+        messageWaits.ended(end.workspaceId(), end.runId());
         children.cancelActiveChildren(before, "The request that started this one has ended.");
         children.onRunEnded(runs.find(end.workspaceId(), end.runId()).orElseThrow());
     }
@@ -371,6 +439,8 @@ public class RuntimeProjectionListener implements FlowableEventListener {
                 processInstanceId = task.getProcessInstanceId();
             } else if (entity instanceof AbstractRuntimeJobEntity job) {
                 processInstanceId = job.getProcessInstanceId();
+            } else if (entity instanceof EventSubscriptionEntity subscription) {
+                processInstanceId = subscription.getProcessInstanceId();
             } else if (entity instanceof ExecutionEntity execution) {
                 // PROCESS_COMPLETED: variables are already deleted; the reached Orqix end was recorded at its start.
                 return Context.getCommandContext().getAttribute(END_ATTRIBUTE + execution.getProcessInstanceId()) != null;

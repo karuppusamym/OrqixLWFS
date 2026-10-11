@@ -96,19 +96,107 @@ public final class Report {
             java.util.Map<String, Object> actual, Integer matchedRow, String status) {
     }
 
+    /**
+     * What the designer needs to resolve a Camunda 8 service task. Facts only: the connector kind, a suggested operation
+     * name, the original method and URL path as read-only provenance, header and query parameter names (never values),
+     * and the request and result field names that can be derived. Secrets and full URLs are never copied.
+     *
+     * @param kind           {@code jobWorker}, {@code httpJson} or {@code unsupportedConnector}
+     * @param method         HTTP method of an http-json connector, or null
+     * @param urlHost        host of a literal URL (no credentials), or null when absent or computed
+     * @param urlPath        path of a literal URL (no query), or null when absent or computed
+     * @param urlComputed    true when the URL is an expression instead of a literal
+     * @param authentication authentication type name only ({@code noAuth}, {@code bearer}, ...), or null
+     * @param inputFields    request body name to the request field key read from a plain variable
+     * @param resultFields   result name to a JSON Pointer into the response body derived from {@code resultExpression}
+     * @param unmapped       source expressions that could not be derived (shown as text, never evaluated)
+     * @param replacement    suggested replacement for an unsupported connector, or null
+     */
+    public record ServiceHint(String kind, String jobType, String suggestedOperation, String method, String urlHost,
+            String urlPath, boolean urlComputed, String authentication, List<String> headerNames, List<String> queryNames,
+            String resultVariable, java.util.Map<String, String> inputFields, java.util.Map<String, String> resultFields,
+            List<String> unmapped, String replacement) {
+        public ServiceHint {
+            headerNames = headerNames == null ? List.of() : headerNames;
+            queryNames = queryNames == null ? List.of() : queryNames;
+            inputFields = inputFields == null ? java.util.Map.of() : inputFields;
+            resultFields = resultFields == null ? java.util.Map.of() : resultFields;
+            unmapped = unmapped == null ? List.of() : unmapped;
+        }
+    }
+
+    /**
+     * A form linked to a start event or user task. {@code state}: {@code embedded} (parsed from the BPMN),
+     * {@code upload} (a {@code .form} file with this id is still needed) or {@code unsupported} (a custom form key).
+     */
+    public record FormHint(String target, String formId, String formKey, String binding, String state) {
+    }
+
+    /** Call activity facts: the called process, variable propagation and the mapping suggestions read from its ioMapping. */
+    public record CallHint(String processId, String binding, boolean propagateAllChildVariables,
+            boolean propagateAllParentVariables, java.util.Map<String, String> inputMapping,
+            java.util.Map<String, String> resultMapping) {
+        public CallHint {
+            inputMapping = inputMapping == null ? java.util.Map.of() : inputMapping;
+            resultMapping = resultMapping == null ? java.util.Map.of() : resultMapping;
+        }
+    }
+
+    /** One component of an imported form, for preview. {@code widget} is the request form widget it becomes, or null. */
+    public record FormField(String id, String key, String label, String component, String type, String widget, boolean required,
+            List<String> options, String description, String disposition, String reasonCode) {
+        public FormField {
+            options = options == null ? List.of() : options;
+        }
+    }
+
+    /** Preview of a Camunda form: the fields that become request fields and the components that do not. */
+    public record FormPreview(String formId, List<FormField> fields, List<FormField> skipped) {
+        public FormPreview {
+            fields = fields == null ? List.of() : fields;
+            skipped = skipped == null ? List.of() : skipped;
+        }
+    }
+
+    /**
+     * Structured hints that complement the issues (additive, openapi {@code MappingHints}). Keys are source element ids;
+     * {@code formPreviews} holds the preview of every form parsed from this source (embedded forms by element id, or the
+     * form file's own preview under its form id).
+     */
+    public record MappingHints(java.util.Map<String, ServiceHint> services, java.util.Map<String, FormHint> forms,
+            java.util.Map<String, CallHint> calls, java.util.Map<String, FormPreview> formPreviews) {
+        public static final MappingHints NONE = new MappingHints(null, null, null, null);
+
+        public MappingHints {
+            services = services == null ? java.util.Map.of() : services;
+            forms = forms == null ? java.util.Map.of() : forms;
+            calls = calls == null ? java.util.Map.of() : calls;
+            formPreviews = formPreviews == null ? java.util.Map.of() : formPreviews;
+        }
+    }
+
     public record CompatibilityReport(String sourceSystem, String sourceVersion, String adapterVersion, String sourceHash,
             String processId, String processName, ElementCounts elementCounts, List<Issue> issues,
-            List<String> assumptions, RequiredMappings requiredMappings, boolean publishable, List<TestCase> testCases) {
+            List<String> assumptions, RequiredMappings requiredMappings, boolean publishable, List<TestCase> testCases,
+            MappingHints mappingHints) {
 
         public CompatibilityReport {
             testCases = testCases == null ? List.of() : testCases;
+            mappingHints = mappingHints == null ? MappingHints.NONE : mappingHints;
+        }
+
+        public CompatibilityReport(String sourceSystem, String sourceVersion, String adapterVersion, String sourceHash,
+                String processId, String processName, ElementCounts elementCounts, List<Issue> issues,
+                List<String> assumptions, RequiredMappings requiredMappings, boolean publishable, List<TestCase> testCases) {
+            this(sourceSystem, sourceVersion, adapterVersion, sourceHash, processId, processName, elementCounts, issues,
+                    assumptions, requiredMappings, publishable, testCases, MappingHints.NONE);
         }
 
         public CompatibilityReport(String sourceSystem, String sourceVersion, String adapterVersion, String sourceHash,
                 String processId, String processName, ElementCounts elementCounts, List<Issue> issues,
                 List<String> assumptions, RequiredMappings requiredMappings, boolean publishable) {
             this(sourceSystem, sourceVersion, adapterVersion, sourceHash, processId, processName, elementCounts, issues,
-                    assumptions, requiredMappings, publishable, List.of());
+                    assumptions, requiredMappings, publishable, List.of(), MappingHints.NONE);
         }
     }
 }

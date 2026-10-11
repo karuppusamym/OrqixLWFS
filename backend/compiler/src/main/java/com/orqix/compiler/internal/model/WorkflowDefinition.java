@@ -30,7 +30,18 @@ public record WorkflowDefinition(
         String selfApproval,
         List<Dependency> dependencies,
         Map<String, OutputEntry> outputMapping,
-        Layout uiLayout) {
+        Layout uiLayout,
+        List<Stage> stages) {
+
+    /**
+     * A named group of steps used to show progress and monitor a time limit (S17). It adds no behavior to the
+     * generated process. {@code sla} may be null.
+     */
+    public record Stage(int index, String id, String label, List<String> nodes, String sla) {
+        public String path() {
+            return "/stages/" + index;
+        }
+    }
 
     /** @param label may be null; @param condition non-null only for {@code on: condition} */
     public record Transition(int index, String id, String from, String to, Route on, String label,

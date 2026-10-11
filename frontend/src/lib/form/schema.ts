@@ -6,7 +6,7 @@
 import { isCalendarDate } from '../dates'
 
 export type FieldType = 'string' | 'number' | 'integer' | 'boolean' | 'array'
-export type Widget = 'text' | 'date' | 'textarea' | 'number' | 'money' | 'select' | 'radio' | 'checkbox' | 'collection'
+export type Widget = 'text' | 'date' | 'file' | 'textarea' | 'number' | 'money' | 'select' | 'radio' | 'checkbox' | 'collection'
 
 export interface FormFieldSchema {
   type: FieldType
@@ -14,7 +14,10 @@ export interface FormFieldSchema {
   description?: string
   enum?: string[]
   /** `date`: a calendar date written YYYY-MM-DD, without time or time zone (type is string). */
-  format?: 'date'
+  format?: 'date' | 'attachment'
+  /** Only with format attachment: accepted file types (keys of docs/build/S17 section 2) and the largest file in bytes. */
+  acceptTypes?: string[]
+  maxFileBytes?: number
   /** Earliest and latest allowed date (YYYY-MM-DD, inclusive), only with format date. */
   formatMinimum?: string
   formatMaximum?: string
@@ -67,6 +70,12 @@ export function parseFormSchema(raw: unknown): FormSchema {
       field.format = 'date'
       if (isCalendarDate(value.formatMinimum)) field.formatMinimum = value.formatMinimum
       if (isCalendarDate(value.formatMaximum)) field.formatMaximum = value.formatMaximum
+    }
+    if (field.type === 'string' && value.format === 'attachment') {
+      field.format = 'attachment'
+      if (Array.isArray(value.acceptTypes)) field.acceptTypes = value.acceptTypes.filter((v): v is string => typeof v === 'string')
+      const maxFileBytes = num(value.maxFileBytes)
+      if (maxFileBytes !== undefined) field.maxFileBytes = maxFileBytes
     }
     if (Array.isArray(value.enum)) field.enum = value.enum.filter((v): v is string => typeof v === 'string')
     const minLength = num(value.minLength)
@@ -127,6 +136,7 @@ export function widgetFor(schema: FormFieldSchema, hint: Widget | undefined): Wi
       return 'checkbox'
     case 'string':
       if (schema.format === 'date') return 'date'
+      if (schema.format === 'attachment') return 'file'
       if (schema.enum && schema.enum.length > 0) return hint === 'radio' ? 'radio' : 'select'
       return hint === 'textarea' ? 'textarea' : 'text'
     case 'integer':

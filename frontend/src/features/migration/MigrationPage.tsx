@@ -17,7 +17,7 @@ export function MigrationPage() {
   const { workspace, can } = useWorkspace()
   const { migrationId } = useParams()
   const navigate = useNavigate()
-  const [format, setFormat] = useState<'bpmn' | 'dmn' | 'pegaArchive' | 'pegaMapping'>('bpmn')
+  const [format, setFormat] = useState<'bpmn' | 'dmn' | 'camundaForm' | 'pegaArchive' | 'pegaMapping'>('bpmn')
   const [file, setFile] = useState<File | null>(null)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -43,18 +43,19 @@ export function MigrationPage() {
   }
   return <>
     <PageHeader title="Import workflow" description="Analyze source behavior, resolve mappings, then create a draft for review." actions={<Button asChild><Link to={`/w/${workspace.id}/workflows`}>Back to workflows</Link></Button>} />
-    <Alert tone="info" live="off">Camunda 7/8 BPMN and DMN decision tables can be converted within the supported subset. Pega XML archives include rule identity, dependency evidence and reviewed mapping suggestions; a reviewed, checksum-linked manual mapping package creates the target draft. Live instances, history and credentials stay in the source system.</Alert>
+    <Alert tone="info" live="off">Camunda 7/8 BPMN (including Camunda 8 forms and the REST connector) and DMN decision tables can be converted within the supported subset. Pega XML archives include rule identity, dependency evidence and reviewed mapping suggestions; a reviewed, checksum-linked manual mapping package creates the target draft. Live instances, history and credentials stay in the source system.</Alert>
     {can('workflow.edit') ? <form className="my-6 space-y-4 rounded-card border border-border bg-surface p-5" onSubmit={(event) => { event.preventDefault(); void upload() }}>
       <h2>Analyze a source file</h2>
       <Label htmlFor="migration-format">Source format</Label>
       <Select id="migration-format" value={format} onChange={(e) => { setFormat(e.target.value as typeof format); setFile(null); setError(null) }}>
         <option value="bpmn">Camunda 7 / Camunda 8 / BPMN</option>
         <option value="dmn">Camunda DMN decision table (.dmn)</option>
+        <option value="camundaForm">Camunda form (.form), to attach to a BPMN file</option>
         <option value="pegaArchive">Pega application archive (.zip)</option>
         <option value="pegaMapping">Reviewed Pega mapping package (.json)</option>
       </Select>
       <Label htmlFor="migration-file">Source file (maximum 1 MiB)</Label>
-      <Input key={format} id="migration-file" type="file" accept={format === 'bpmn' ? '.bpmn,.xml' : format === 'dmn' ? '.dmn,.xml' : format === 'pegaArchive' ? '.zip,.rap' : '.json'} onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+      <Input key={format} id="migration-file" type="file" accept={format === 'bpmn' ? '.bpmn,.xml' : format === 'dmn' ? '.dmn,.xml' : format === 'camundaForm' ? '.form,.json' : format === 'pegaArchive' ? '.zip,.rap' : '.json'} onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
       <Button type="submit" variant="primary" loading={pending} disabled={!file}>Analyze source</Button>
       {error ? <Alert tone="danger">{error}</Alert> : null}
     </form> : null}

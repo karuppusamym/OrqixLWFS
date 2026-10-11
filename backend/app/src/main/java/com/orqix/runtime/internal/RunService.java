@@ -60,11 +60,16 @@ public class RunService {
     private final CursorCodec cursors;
     private final OrqixProperties properties;
     private final Json json;
+    private final RunAttachments attachments;
+    private final RunStages stages;
 
     public RunService(PolicyService policy, ReleaseQueries releases, FormValidator formValidator, RunStore runs,
             RunEvents events, RunQueries runQueries, TaskStore tasks, TaskQueries taskQueries, RunAccess runAccess,
             RuntimeViews views, EngineCommands engine, EffectJournal journal, IdempotencyService idempotency,
-            AuditWriter audit, RuntimeMetrics metrics, CursorCodec cursors, OrqixProperties properties, Json json) {
+            AuditWriter audit, RuntimeMetrics metrics, CursorCodec cursors, OrqixProperties properties, Json json,
+            RunAttachments attachments, RunStages stages) {
+        this.attachments = attachments;
+        this.stages = stages;
         this.policy = policy;
         this.releases = releases;
         this.formValidator = formValidator;
@@ -141,6 +146,8 @@ public class RunService {
                     errors.stream().map(e -> new ApiException.FieldError("/input" + e.pointer(), e.code(), e.message()))
                             .toList());
         }
+        // Files chosen on the form (fields of format attachment): must be the caller's own and fit the field (S17).
+        RunAttachments.StartPlan files = attachments.planStart(caller, workspaceId, release.inputSchema(), request.input());
         if (runs.countActive(workspaceId, workflow.id()) >= release.maxConcurrentRuns()) {
             throw new ApiException(ProblemCode.QUOTA_EXCEEDED, "Too many requests of this workflow are in progress.")
                     .withHeader("Retry-After", "60");
@@ -153,6 +160,7 @@ public class RunService {
         started.put("releaseNumber", release.releaseNumber());
         started.put("businessKey", request.businessKey());
         events.append(workspaceId, runId, "RUN_STARTED", null, caller.subjectId(), started);
+        attachments.attachAtStart(files, workspaceId, runId, caller.subjectId());
 
         Map<String, Object> variables = new HashMap<>();
         variables.put(ProcessData.RUN_ID, runId.toString());
@@ -286,6 +294,13 @@ public class RunService {
 
     /** Decision values belong to the same permission scope as request/output data. */
     private JsonNode eventData(RunEvents.EventRow row, boolean dataVisible) {
+        if (!dataVisible && ("ATTACHMENT_ADDED".equals(row.type()) || "ATTACHMENT_REMOVED".equals(row.type()))) {
+            // File names and descriptions belong to the request data; a reader without it sees only that a file changed.
+            ObjectNode redacted = json.object();
+            redacted.set("attachmentId", row.data().path("attachmentId"));
+            redacted.put("detailsRedacted", true);
+            return redacted;
+        }
         if (dataVisible || !"DECISION_EVALUATED".equals(row.type())) return row.data();
         ObjectNode metadata = json.object();
         JsonNode data = row.data();
@@ -317,13 +332,16 @@ public class RunService {
         List<RuntimeDtos.Effect> reversedViews = notReversed.isEmpty() ? null : notReversed.stream()
                 .map(e -> views.effect(e, label(release, e.nodeId()))).toList();
         RuntimeDtos.RunSummary summary = views.run(run, names, access.workspace().isTest(), data);
+        RuntimeDtos.StageProgress stageProgress = stages.progress(run, release);
         return new RuntimeDtos.RunDetail(summary.id(), summary.reference(), summary.workflow(), summary.release(), summary.businessKey(),
                 summary.requestTitle(),
                 summary.initiator(), summary.lifecycle(), summary.outcome(), summary.outcomeKind(), summary.currentSteps(),
                 summary.attention(), summary.createdAt(), summary.updatedAt(), summary.endedAt(), summary.isTest(),
                 summary.version(), data ? run.input() : null, RuntimeViews.inputLabels(release),
                 data ? run.output() : null, taskViews, effectViews, reversedViews,
-                allowedActions(run, operate, effects), summary.parentRun(), views.children(run));
+                allowedActions(run, operate, effects), summary.parentRun(), views.children(run),
+                stageProgress == null ? null : stageProgress.current(),
+                stageProgress == null ? List.of() : stageProgress.stages());
     }
 
     static RuntimeDtos.AllowedRunActions allowedActions(RunStore.RunRow run, boolean operate,

@@ -62,7 +62,7 @@ export function createMigrationHandlers(): HttpHandler[] {
       if (!g.ok) return g.res
       const input = await json<{ fileName?: string; content?: string; sourceFormat?: string }>(request)
       if (!input.fileName || !input.content) return problem(400, 'MALFORMED_REQUEST', 'Bad request', { detail: 'fileName and content are required.' })
-      if (input.sourceFormat && !['bpmn', 'dmn'].includes(input.sourceFormat)) return problem(422, 'SOURCE_INVALID', 'Source not supported', { detail: 'Mock mode inventories BPMN/DMN only; Pega archives need the real backend.' })
+      if (input.sourceFormat && !['bpmn', 'dmn', 'camundaForm'].includes(input.sourceFormat)) return problem(422, 'SOURCE_INVALID', 'Source not supported', { detail: 'Mock mode inventories BPMN, DMN and Camunda forms only; Pega archives need the real backend.' })
       try {
         const { migration } = createMigration(g.ws, input.fileName, input.content, input.sourceFormat)
         return HttpResponse.json(migrationView(migration), { status: 201 })

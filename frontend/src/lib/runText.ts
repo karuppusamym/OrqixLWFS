@@ -37,6 +37,7 @@ export function ownReference(run: Pick<Run, 'businessKey' | 'reference'>): strin
 /** "Waiting for Managers: Review request" or "Mani Manager is reviewing: Review request". */
 export function stepOwnerText(step: CurrentStep, lifecycle?: Run['lifecycle']): string {
   if (step.kind === 'http') return lifecycle === 'needsAttention' ? `${step.label} is delayed` : `${step.label} is in progress`
+  if (step.kind === 'wait' && step.messageName) return `Waiting for message ${step.messageName}${step.dueAt ? ` (gives up ${formatUtcDateTime(step.dueAt)})` : ''}: ${step.label}`
   if (step.kind === 'wait') return step.dueAt ? `Waiting until ${formatUtcDateTime(step.dueAt)}: ${step.label}` : `Waiting until the timer finishes: ${step.label}`
   if (step.kind === 'child') return `Waiting for the child request: ${step.label}`
   if (step.assignee) return `${step.assignee.displayName} is working on: ${step.label}`

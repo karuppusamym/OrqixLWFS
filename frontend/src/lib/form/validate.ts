@@ -99,6 +99,11 @@ export function validateJsonInput(schema: FormSchema, data: unknown): JsonIssue[
     // ajv evaluates enum for any value; the keywords below only apply to strings and numbers respectively.
     if (field.enum && !field.enum.includes(value as string)) issues.push({ pointer, keyword: 'enum' })
     if (!typeOk) continue
+    if (typeof value === 'string' && field.format === 'attachment') {
+      // The value is the ID of an uploaded file; the server checks that it exists and fits (docs/build/S17).
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value)) issues.push({ pointer, keyword: 'format' })
+      continue
+    }
     if (typeof value === 'string' && field.format === 'date') {
       if (!isCalendarDate(value)) issues.push({ pointer, keyword: 'format' })
       else {

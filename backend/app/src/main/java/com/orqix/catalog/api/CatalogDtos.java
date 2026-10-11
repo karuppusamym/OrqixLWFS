@@ -75,6 +75,11 @@ public final class CatalogDtos {
     public record DecisionEvaluateResult(Integer matchedRow, boolean usedDefault, Map<String, Object> output) {
     }
 
+    /** Dry run of a draft revision (default: the current draft) or of the active release. */
+    public record SimulateRequest(@Min(1) Integer revision, Boolean useActiveRelease, @NotNull JsonNode input,
+            JsonNode scenario) {
+    }
+
     public record PublishRequest(@NotNull @Min(1) Integer draftRevision, Boolean acknowledgeWarnings, Boolean activate,
             @Size(max = 1000) String releaseNote) {
     }

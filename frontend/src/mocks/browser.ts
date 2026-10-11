@@ -4,6 +4,9 @@ import { claim, decide, engineConfig, resumeTimers } from './engine'
 import { createAiHandlers } from '@/features/ai/mocks'
 import { createMigrationHandlers } from '@/features/migration/mocks'
 import { createHandlers, setCurrentUser } from './handlers'
+import { createInsightsHandlers } from './insights'
+import { createCaseFileHandlers } from './caseFiles'
+import { detectOverdueStages, expireStage } from './stages'
 import { createConversationHandlers, resetConversations } from './conversation'
 import { seedDb } from './seed'
 import { db, restoreDb, snapshotDb, type ProcurementFault, userByName } from './state'
@@ -23,6 +26,8 @@ export interface MockControl {
   decideTaskAs(username: string, taskId: string, action: 'approve' | 'reject', reason?: string): void
   claimTaskAs(username: string, taskId: string): void
   latency(ms: number): void
+  /** Makes a stage of a run late now and records it (case stages, docs/build/S17). */
+  expireStage(runId: string, stageId: string): void
   state(): { runs: number; workflows: number; fault: ProcurementFault }
 }
 
@@ -50,9 +55,12 @@ export async function startMock(): Promise<void> {
     }, ms)
   }
   resumeTimers()
+  window.setInterval(() => {
+    if (detectOverdueStages() > 0) persist()
+  }, 15_000)
 
   // In-page fetch interception (no service worker): works in every browser context, including embedded previews.
-  const handlers = [...createAiHandlers(), ...createMigrationHandlers(), ...createConversationHandlers(), ...createHandlers()]
+  const handlers = [...createAiHandlers(), ...createMigrationHandlers(), ...createConversationHandlers(), ...createInsightsHandlers(), ...createCaseFileHandlers(), ...createHandlers()]
   const interceptor = new FetchInterceptor()
   interceptor.on('request', async ({ request, controller }) => {
     const response = await getResponse(handlers, request)
@@ -106,6 +114,10 @@ export async function startMock(): Promise<void> {
     },
     latency(ms) {
       db.latencyMs = ms
+    },
+    expireStage(runId, stageId) {
+      expireStage(runId, stageId)
+      persist()
     },
     state() {
       return { runs: db.runs.size, workflows: db.workflows.size, fault: db.procurementFault }

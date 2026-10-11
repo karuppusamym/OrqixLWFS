@@ -8,11 +8,13 @@ import { Select } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useStudio, useStudioContext } from '../StudioContext'
 import { usagesOfRef } from '../model/fieldRefs'
+import { ALL_FILE_TYPES, FILE_TYPES } from '@/api/attachments'
 import { addField, applyFields, fieldsFromDefinition, FIELD_KIND_LABELS, renameFieldKey, type FieldKind, type FormFieldModel } from '../model/ops'
 import type { WorkflowNode } from '../model/types'
 import { Advanced, CommitInput, CommitNumber, CommitTextarea, InspectorSection } from './controls'
+import { StagesInspector } from './StagesInspector'
 
-const KIND_ORDER: FieldKind[] = ['text', 'longText', 'number', 'money', 'integer', 'date', 'yesNo', 'choice', 'collection']
+const KIND_ORDER: FieldKind[] = ['text', 'longText', 'number', 'money', 'integer', 'date', 'yesNo', 'choice', 'collection', 'file']
 
 /** Request form editor: an ordered list of questions (docs/build/S7-frontend.md section 5, inspector table). */
 export function StartInspector({ node }: { node: WorkflowNode }) {
@@ -75,6 +77,7 @@ export function StartInspector({ node }: { node: WorkflowNode }) {
           </Button>
         ) : null}
       </InspectorSection>
+      <StagesInspector />
       <Advanced>
         <FormField label="Step name" id={`start-label-${node.id}`}>
           {(ids) => <CommitInput id={ids.input} value={node.label} disabled={readOnly} onCommit={(v) => store.getState().updateNodeLabel(node.id, v)} />}
@@ -177,6 +180,28 @@ function FieldCard({
           <FormField label="Maximum items" id={`${p}-maxitems`}>{ids => <CommitNumber id={ids.input} integer value={f.maxItems ?? 25} disabled={readOnly} onCommit={v => onChange({ maxItems: v ?? 25 })} />}</FormField>
         </div><p className="text-xs text-muted-foreground">Collections contain 1 to 25 scalar values. Nested objects and collections are unsupported.</p>
       </> : null}
+      {f.kind === 'file' ? (
+        <fieldset className="space-y-2" data-testid={`file-options-${f.key}`}>
+          <legend className="text-sm font-semibold">Accepted file types</legend>
+          <p className="text-xs text-muted-foreground">Tick none to accept every allowed type. Files up to 10 MB; PDF, images, text, CSV and Office documents only.</p>
+          <div className="grid grid-cols-2 gap-2">
+            {ALL_FILE_TYPES.map((t) => (
+              <div key={t} className="flex items-center gap-2">
+                <Checkbox
+                  id={`${p}-type-${t}`}
+                  checked={(f.fileTypes ?? []).includes(t)}
+                  disabled={readOnly}
+                  onCheckedChange={(v) => onChange({ fileTypes: ALL_FILE_TYPES.filter((x) => (x === t ? v === true : (f.fileTypes ?? []).includes(x))) })}
+                />
+                <Label htmlFor={`${p}-type-${t}`} className="font-medium">{FILE_TYPES[t]?.label}</Label>
+              </div>
+            ))}
+          </div>
+          <FormField label="Largest file (MB)" optionalText id={`${p}-maxmb`}>
+            {(ids) => <CommitNumber id={ids.input} value={f.maxFileMb} disabled={readOnly} onCommit={(v) => onChange({ maxFileMb: v === undefined ? undefined : Math.min(10, Math.max(0.1, v)) })} />}
+          </FormField>
+        </fieldset>
+      ) : null}
       {f.kind === 'choice' ? (
         <FormField label="Choices" id={`${p}-choices`} description="One choice per line.">
           {(ids) => (

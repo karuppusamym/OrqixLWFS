@@ -33,11 +33,13 @@ public class TemplateCatalog {
     /** Insertion order is the order of the template list. */
     private static final Map<String, String> RESOURCES = new LinkedHashMap<>();
     private static final Map<String, String> OWNERS = Map.of("purchase-approval", "Purchasing operations",
-            "new-hire-onboarding", "People operations");
+            "new-hire-onboarding", "People operations", "order-payment-wait", "Order operations", "case-with-stages", "Lending operations");
 
     static {
         RESOURCES.put("purchase-approval", "templates/purchase-approval.json");
         RESOURCES.put("new-hire-onboarding", "templates/new-hire-onboarding.json");
+        RESOURCES.put("order-payment-wait", "templates/order-payment-wait.json");
+        RESOURCES.put("case-with-stages", "templates/case-with-stages.json");
     }
 
     private final Json json;

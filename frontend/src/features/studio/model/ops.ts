@@ -131,6 +131,7 @@ export function renameNodeId(def: Definition, oldId: string, newId: string): OpR
   for (const n of next.nodes) {
     if (n.type === 'parallelSplit' && n.config.joinRef === oldId) n.config.joinRef = newId
   }
+  if (next.stages) next.stages = next.stages.map((stage) => ({ ...stage, nodes: stage.nodes.map((id) => id === oldId ? newId : id) }))
   const positions = next.uiLayout?.positions
   const notes = next.metadata.stepNotes
   if (notes && oldId in notes) {
@@ -188,6 +189,7 @@ export function removeNode(def: Definition, id: string): Definition {
   if (!plan) return def
   const next = clone(def)
   next.nodes = next.nodes.filter((n) => n.id !== id)
+  if (next.stages) next.stages = next.stages.map((stage) => ({ ...stage, nodes: stage.nodes.filter((nodeId) => nodeId !== id) }))
   next.transitions = next.transitions.filter((t) => t.from !== id && t.to !== id)
   if (next.uiLayout) delete next.uiLayout.positions[id]
   if (next.metadata.stepNotes) {
@@ -211,6 +213,7 @@ export function removeNode(def: Definition, id: string): Definition {
 /** Which route kind a React Flow source handle stands for. */
 export function routeForHandle(node: WorkflowNode, handle: string | null | undefined): RouteKind {
   if (node.type === 'approval') return handle === 'timedOut' ? 'timedOut' : handle === 'rejected' ? 'rejected' : 'approved'
+  if (node.type === 'waitForMessage') return handle === 'timedOut' ? 'timedOut' : 'next'
   if (node.type === 'branch') return 'condition'
   return 'next'
 }
@@ -238,6 +241,10 @@ export function canConnect(def: Definition, req: Pick<ConnectRequest, 'from' | '
     case 'approval':
       if (req.on !== 'approved' && req.on !== 'rejected' && !(req.on === 'timedOut' && from.config.timeoutAfter)) return { ok: false, reason: 'Choose Approved, Rejected, or a configured time limit route.' }
       if (others.some((t) => t.on === req.on)) return { ok: false, reason: `This step already has a ${req.on === 'approved' ? 'Approved' : 'Rejected'} route.` }
+      break
+    case 'waitForMessage':
+      if (req.on !== 'next' && !(req.on === 'timedOut' && from.config.timeoutAfter)) return { ok: false, reason: 'Choose Next, or a configured time limit route.' }
+      if (others.some((t) => t.on === req.on)) return { ok: false, reason: `This step already has a ${req.on === 'next' ? 'Next' : 'Timed out'} route.` }
       break
     case 'parallelSplit':
       if (req.on !== 'next') return { ok: false, reason: 'Parallel branches use Next routes.' }
@@ -389,7 +396,7 @@ export function literalOf(text: string, type: 'string' | 'number' | 'integer' | 
 
 // Request form fields -----------------------------------------------------------------------------------------
 
-export type FieldKind = 'text' | 'longText' | 'number' | 'money' | 'integer' | 'date' | 'yesNo' | 'choice' | 'collection'
+export type FieldKind = 'text' | 'longText' | 'number' | 'money' | 'integer' | 'date' | 'yesNo' | 'choice' | 'collection' | 'file'
 
 export const FIELD_KIND_LABELS: Record<FieldKind, string> = {
   text: 'Text',
@@ -401,6 +408,7 @@ export const FIELD_KIND_LABELS: Record<FieldKind, string> = {
   yesNo: 'Yes/No',
   choice: 'Choice',
   collection: 'Collection',
+  file: 'File upload',
 }
 
 export interface FormFieldModel {
@@ -420,6 +428,9 @@ export interface FormFieldModel {
   itemSchema?: Definition['inputSchema']['properties'][string] | undefined
   minItems?: number | undefined
   maxItems?: number | undefined
+  /** File upload: accepted file types (empty = all allowed types) and the largest file in MB (empty = the platform limit). */
+  fileTypes?: string[] | undefined
+  maxFileMb?: number | undefined
 }
 
 export function fieldsFromDefinition(def: Definition): FormFieldModel[] {
@@ -433,6 +444,7 @@ export function fieldsFromDefinition(def: Definition): FormFieldModel[] {
     if (f.type === 'array') kind = 'collection'
     else if (f.type === 'boolean') kind = 'yesNo'
     else if (f.type === 'string' && f.format === 'date') kind = 'date'
+    else if (f.type === 'string' && f.format === 'attachment') kind = 'file'
     else if (f.enum && f.enum.length > 0) kind = 'choice'
     else if (f.type === 'integer') kind = 'integer'
     else if (f.type === 'number') kind = widget === 'money' || f.multipleOf === 0.01 ? 'money' : 'number'
@@ -450,6 +462,7 @@ export function fieldsFromDefinition(def: Definition): FormFieldModel[] {
       maxLength: f.maxLength,
       minDate: f.formatMinimum, maxDate: f.formatMaximum,
       itemSchema: f.items, minItems: f.minItems, maxItems: f.maxItems,
+      fileTypes: f.acceptTypes, maxFileMb: f.maxFileBytes === undefined ? undefined : Math.round((f.maxFileBytes / 1048576) * 10) / 10,
     }
   })
 }
@@ -501,6 +514,11 @@ export function applyFields(def: Definition, fields: FormFieldModel[]): Definiti
         schema.format = 'date'
         if (f.minDate) schema.formatMinimum = f.minDate
         if (f.maxDate) schema.formatMaximum = f.maxDate
+        break
+      case 'file':
+        schema.format = 'attachment'
+        if (f.fileTypes && f.fileTypes.length > 0) schema.acceptTypes = [...f.fileTypes]
+        if (f.maxFileMb !== undefined) schema.maxFileBytes = Math.max(1, Math.min(10485760, Math.round(f.maxFileMb * 1048576)))
         break
       case 'yesNo':
         schema.type = 'boolean'

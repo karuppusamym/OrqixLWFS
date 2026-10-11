@@ -330,6 +330,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/simulate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test this workflow - a dry run of a draft revision or the active release with a sample request and a scenario (no side effects)
+         * @description Walks the canonical definition with the same form validation, decision evaluation and condition semantics as production (S4 section 13). It is not the engine: nothing is started, called or stored, connections are not contacted and no time passes. 422 VALIDATION_FAILED for a sample request that does not fit the request form (field errors under /input), 422 WORKFLOW_INVALID with issues when the workflow has blocking problems, 422 NO_ACTIVE_RELEASE for useActiveRelease on an unpublished workflow, 429 after 30 runs a minute.
+         */
+        post: operations["simulateWorkflow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/workflows/{workflowId}/publish": {
         parameters: {
             query?: never;
@@ -453,6 +476,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tell waiting requests that something happened (a named message with a correlation key)
+         * @description Delivers the message to every active request waiting at a "Wait for a message" step with the same message
+         *     name and correlation key (at most 25). When none waits, the message is kept for a bounded time (24 hours by
+         *     default) and given to the first wait that starts with that name and key; after that it is dropped. Never
+         *     buffered beyond the limits (429). The payload is a flat object of scalar values (at most 16 KiB) and must match
+         *     the values the waiting step declares (422). Machine clients with a bearer token may call it.
+         */
+        post: operations["sendMessage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/runs": {
         parameters: {
             query?: never;
@@ -519,6 +568,129 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/attachment-uploads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload a file for a request form that is not started yet
+         * @description Multipart upload of one `file` part (docs/build/S17). The file is checked (allowed type, content signature,
+         *     size) and kept for `expiresAt`; the request form then refers to it by `id` in a field of `format: attachment`
+         *     and starting the request attaches it. Files that are never attached are deleted after the expiry.
+         */
+        post: operations["uploadAttachment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/attachment-uploads/{uploadId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                uploadId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove a file chosen on a request form (own files that are not attached to a request) */
+        delete: operations["discardAttachmentUpload"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/runs/{runId}/attachments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Files of a request, including removed ones (metadata only), with the limits and what the caller may do
+         * @description Visible like the request data (initiator, task participants, run.read-data holders).
+         */
+        get: operations["listRunAttachments"];
+        put?: never;
+        /**
+         * Add a file to a request in progress
+         * @description Multipart upload: one `file` part and an optional `description` (at most 200 characters). Allowed types: PDF,
+         *     PNG, JPEG, text, CSV, docx, xlsx, pptx (checked by name, declared type and content). At most 10 MiB per file,
+         *     25 files and 50 MiB per request (configurable).
+         */
+        post: operations["addRunAttachment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/runs/{runId}/attachments/{attachmentId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+                attachmentId: components["parameters"]["AttachmentId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a file (soft delete - the metadata stays on the request, the bytes are deleted)
+         * @description The initiator while the request is in progress, and holders of run.operate at any time. Removing a removed file succeeds.
+         */
+        delete: operations["removeRunAttachment"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/runs/{runId}/attachments/{attachmentId}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+                attachmentId: components["parameters"]["AttachmentId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Download a file
+         * @description Always `Content-Type: application/octet-stream` with `Content-Disposition: attachment`,
+         *     `X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox`; a browser never renders the file.
+         *     Files blocked by the virus scan answer 409 ATTACHMENT_BLOCKED.
+         */
+        get: operations["downloadRunAttachment"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/runs/{runId}/events": {
         parameters: {
             query?: never;
@@ -531,6 +703,98 @@ export interface paths {
         };
         /** Ordered, commit-safe run timeline for polling */
         get: operations["listRunEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/runs/{runId}/path": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Where the request is - the workflow diagram with the path taken and the current steps
+         * @description Everything the "Where is my request" diagram needs in one cheap read: the pinned release's graph (step labels,
+         *     kinds, routes, saved layout positions; never conditions, field names or request data), the steps the request
+         *     has passed (derived from the run events and the release graph; silent steps such as choices and parallel
+         *     splits are inferred), which routes were taken, and the steps it is at now with their status. Same access rule
+         *     as the run events.
+         */
+        get: operations["getRunPath"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/insights/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Workflow analytics - counts, cycle times, oldest open requests, attention list and SLA view
+         * @description Aggregates over the runs started in the date range (cards, cycle time per workflow) plus the current state of
+         *     the workspace (oldest open, needing attention, overdue). Never contains request titles or input data; requests
+         *     are identified by their reference only. The query has a time limit; 503 DEPENDENCY_UNAVAILABLE when exceeded.
+         */
+        get: operations["getInsightsSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/insights/throughput": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Requests started and completed per day (UTC), zero-filled */
+        get: operations["getInsightsThroughput"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/insights/steps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Bottlenecks - time waiting at each approval and wait step
+         * @description Steps started in the range, slowest average first. Capped at 200 rows (`truncated`).
+         */
+        get: operations["getInsightsSteps"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1359,7 +1623,7 @@ export interface components {
                     name: string;
                     label: string;
                     value: unknown;
-                    /** @description Readable form of the value when it differs from the stored one */
+                    /** @description Readable form of the value when it differs from the stored one, for example a calendar date */
                     display?: string;
                 }[];
             };
@@ -1383,7 +1647,7 @@ export interface components {
         /** @enum {string} */
         OutcomeKind: "success" | "rejected";
         /** @enum {string} */
-        Permission: "workflow.read" | "workflow.edit" | "workflow.publish" | "workflow.export" | "workflow.start" | "run.read" | "run.read-data" | "run.operate" | "task.act" | "connection.read" | "connection.manage" | "workspace.manage-access" | "audit.read";
+        Permission: "workflow.read" | "workflow.edit" | "workflow.publish" | "workflow.export" | "workflow.start" | "run.read" | "run.read-data" | "run.operate" | "task.act" | "connection.read" | "connection.manage" | "workspace.manage-access" | "audit.read" | "message.send";
         /** @enum {string} */
         WorkspaceRole: "WORKSPACE_ADMIN" | "WORKFLOW_DESIGNER" | "PUBLISHER" | "OPERATOR" | "VIEWER" | "APPROVER";
         /** @description RFC 9457 problem details with Orqix extension members. */
@@ -1398,7 +1662,7 @@ export interface components {
             detail?: string;
             instance?: string;
             /** @enum {string} */
-            code: "MALFORMED_REQUEST" | "IDEMPOTENCY_KEY_REQUIRED" | "INVALID_CURSOR" | "UNAUTHENTICATED" | "FORBIDDEN" | "CSRF_INVALID" | "SELF_APPROVAL_DENIED" | "NOT_ELIGIBLE" | "NOT_FOUND" | "IDEMPOTENCY_KEY_REUSED" | "DUPLICATE_KEY" | "WORKFLOW_VERSION_CONFLICT" | "RELEASE_NOT_ACTIVE" | "TASK_VERSION_CONFLICT" | "TASK_ALREADY_CLAIMED" | "TASK_NOT_CLAIMED_BY_CALLER" | "TASK_NOT_OPEN" | "RUN_NOT_ACTIVE" | "RUN_BUSY" | "RUN_NOT_RECOVERABLE" | "EFFECT_NOT_RECONCILED" | "EFFECT_STATE_CONFLICT" | "GROUP_REVISION_CONFLICT" | "STALE_REVISION" | "PAYLOAD_TOO_LARGE" | "VALIDATION_FAILED" | "WORKFLOW_INVALID" | "WARNINGS_NOT_ACKNOWLEDGED" | "NO_ACTIVE_RELEASE" | "REASON_REQUIRED" | "CONNECTION_NOT_BOUND" | "EGRESS_NOT_ALLOWED" | "OPERATION_NOT_TESTABLE" | "PRECONDITION_REQUIRED" | "QUOTA_EXCEEDED" | "RATE_LIMITED" | "DEPENDENCY_UNAVAILABLE" | "AI_NOT_CONFIGURED" | "AI_MODEL_NOT_ALLOWED" | "AI_OUTPUT_INVALID" | "AI_PROVIDER_UNAVAILABLE" | "AI_BUDGET_EXCEEDED" | "SOURCE_INVALID" | "MIGRATION_BLOCKED";
+            code: "MALFORMED_REQUEST" | "IDEMPOTENCY_KEY_REQUIRED" | "INVALID_CURSOR" | "UNAUTHENTICATED" | "FORBIDDEN" | "CSRF_INVALID" | "SELF_APPROVAL_DENIED" | "NOT_ELIGIBLE" | "NOT_FOUND" | "IDEMPOTENCY_KEY_REUSED" | "DUPLICATE_KEY" | "WORKFLOW_VERSION_CONFLICT" | "RELEASE_NOT_ACTIVE" | "TASK_VERSION_CONFLICT" | "TASK_ALREADY_CLAIMED" | "TASK_NOT_CLAIMED_BY_CALLER" | "TASK_NOT_OPEN" | "RUN_NOT_ACTIVE" | "RUN_BUSY" | "RUN_NOT_RECOVERABLE" | "EFFECT_NOT_RECONCILED" | "EFFECT_STATE_CONFLICT" | "GROUP_REVISION_CONFLICT" | "STALE_REVISION" | "PAYLOAD_TOO_LARGE" | "VALIDATION_FAILED" | "WORKFLOW_INVALID" | "WARNINGS_NOT_ACKNOWLEDGED" | "NO_ACTIVE_RELEASE" | "REASON_REQUIRED" | "CONNECTION_NOT_BOUND" | "EGRESS_NOT_ALLOWED" | "OPERATION_NOT_TESTABLE" | "PRECONDITION_REQUIRED" | "QUOTA_EXCEEDED" | "RATE_LIMITED" | "DEPENDENCY_UNAVAILABLE" | "AI_NOT_CONFIGURED" | "AI_MODEL_NOT_ALLOWED" | "AI_OUTPUT_INVALID" | "AI_PROVIDER_UNAVAILABLE" | "AI_BUDGET_EXCEEDED" | "SOURCE_INVALID" | "MIGRATION_BLOCKED" | "ATTACHMENT_BLOCKED" | "ATTACHMENT_LIMIT_REACHED";
             correlationId: string;
             fieldErrors?: components["schemas"]["FieldError"][];
             issues?: components["schemas"]["ValidationIssue"][];
@@ -1560,6 +1824,140 @@ export interface components {
                 [key: string]: string | number | boolean;
             };
         };
+        SimulateRequest: {
+            /** @description Draft revision to test; the current draft when omitted */
+            revision?: number;
+            /** @description Test the active release instead of a draft */
+            useActiveRelease?: boolean;
+            /** @description The sample request, answers to the request form */
+            input: {
+                [key: string]: unknown;
+            };
+            scenario?: components["schemas"]["SimulationScenario"];
+        };
+        /** @description What happens at the steps a person or another system would decide. Everything defaults to the happy path. */
+        SimulationScenario: {
+            /** @description By step ID. Default is approve. */
+            approvals?: {
+                [key: string]: {
+                    /** @enum {string} */
+                    outcome?: "approve" | "reject" | "timeout";
+                    reason?: string;
+                };
+            };
+            /** @description By step ID of a Call a system step. Default is success with a sample answer built from the response schema of the operation. */
+            calls?: {
+                [key: string]: {
+                    /** @enum {string} */
+                    failure?: "rejected" | "unavailable" | "unknownOutcome";
+                    /** @description The answer (response body) of the system */
+                    result?: {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description By step ID of a Start another workflow step. */
+            children?: {
+                [key: string]: {
+                    /** @description Business outcome of each occurrence in order; later occurrences use the default */
+                    outcomes?: string[];
+                    /** @description Result fields of the child workflow, by child field */
+                    results?: {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description By step ID of a Wait for a message step. arrives (default) or timeout. */
+            messages?: {
+                [key: string]: "arrives" | "timeout";
+            };
+            /** @description Run the active release of each child workflow too (at most 3 levels) */
+            simulateChildren?: boolean;
+            /** @description Scenario for the child workflow of a step, by step ID (used with simulateChildren) */
+            childScenarios?: {
+                [key: string]: {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        SimulationResult: {
+            source: {
+                revision: number | null;
+                releaseNumber: number | null;
+            };
+            outcome: {
+                /** @enum {string} */
+                status: "finished" | "needsAttention";
+                businessOutcome?: string | null;
+                outcomeKind?: string | null;
+                endStepId?: string | null;
+                summary: string;
+                attention?: {
+                    stepId?: string;
+                    stepLabel?: string;
+                    /** @description EFFECT_REJECTED, RETRIES_EXHAUSTED, EFFECT_UNKNOWN, RESPONSE_INVALID, CHILD_NEEDS_ATTENTION, INTERNAL_ERROR, ... */
+                    reason?: string;
+                    message?: string;
+                } | null;
+            };
+            outputs: {
+                [key: string]: unknown;
+            };
+            trace: components["schemas"]["SimulationStep"][];
+            warnings: {
+                code: string;
+                stepId?: string | null;
+                message: string;
+            }[];
+            coverage: {
+                steps: {
+                    visited?: number;
+                    total?: number;
+                    notVisited?: {
+                        [key: string]: unknown;
+                    }[];
+                };
+                routes: {
+                    taken?: number;
+                    total?: number;
+                    notTaken?: {
+                        [key: string]: unknown;
+                    }[];
+                };
+                rules: {
+                    matched?: number;
+                    total?: number;
+                    notMatched?: {
+                        [key: string]: unknown;
+                    }[];
+                };
+                summary: string;
+            };
+            /** @description What a dry run cannot prove */
+            limits: string;
+        };
+        SimulationStep: {
+            seq: number;
+            stepId: string;
+            stepLabel: string;
+            kind: string;
+            kindLabel: string;
+            /** @description Parallel branch such as 2 or 2.1; absent outside parallel work */
+            branch?: string;
+            /** @description What happened and why, in plain language */
+            summary: string;
+            /** @description Kind-specific facts: evaluated rows, route conditions, assigned group, request and result of a call, message text */
+            details: {
+                [key: string]: unknown;
+            };
+            /** @description Values this step stored at /steps/<id>/... */
+            wrote?: {
+                [key: string]: unknown;
+            };
+            /** @description The route followed out of this step; null when the run ended or stopped here */
+            transitionId?: string | null;
+            nextStepId?: string | null;
+        };
         PublishRequest: {
             draftRevision: number;
             /** @default false */
@@ -1631,11 +2029,38 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        SendMessageRequest: {
+            /** @example payment-received */
+            name: string;
+            /** @description The value that identifies the request, for example its order number. Matched exactly (case-sensitive). */
+            correlationKey: string;
+            /** @description Flat object of scalar values (text up to 1,000 characters, numbers, true or false); at most 10 values and 16 KiB. */
+            payload?: {
+                [key: string]: string | number | boolean | null;
+            } | null;
+        };
+        DeliveredRun: {
+            runId: components["schemas"]["Uuid"];
+            /** @example ORQ-1043 */
+            runReference: string;
+            nodeId: string;
+        };
+        MessageAccepted: {
+            id: components["schemas"]["Uuid"];
+            /** @enum {string} */
+            status: "delivered" | "buffered";
+            matched: number;
+            delivered: components["schemas"]["DeliveredRun"][];
+            /** @description End of the buffer window while status is buffered. */
+            bufferedUntil: components["schemas"]["Timestamp"] | null;
+        };
         CurrentStep: {
             nodeId: string;
             label: string;
             /** @enum {string} */
             kind: "approval" | "http" | "wait" | "child";
+            /** @description Set while the step (kind wait) waits for this message (docs/build/S16). */
+            messageName?: string | null;
             since: components["schemas"]["Timestamp"];
             candidateGroup?: string | null;
             assignee?: components["schemas"]["SubjectRef"] | null;
@@ -1678,6 +2103,8 @@ export interface components {
             endedAt: components["schemas"]["Timestamp"] | null;
             isTest: boolean;
             version: number;
+            /** @description The current stage (docs/build/S17); null when the workflow has no stages or none was entered yet. */
+            stage?: components["schemas"]["StageView"] | null;
             /** @description The run that started this one through a "Start another workflow" step (S12); null for ordinary runs. */
             parentRun?: null | components["schemas"]["ParentRun"];
         };
@@ -1723,6 +2150,8 @@ export interface components {
             output?: Record<string, never> | null;
             /** @description Runs started by steps of this run, oldest first. A child that needs attention is visible here. */
             children?: components["schemas"]["ChildRun"][];
+            /** @description The stages of the workflow with this request's progress; empty when the workflow has no stages. */
+            stages?: components["schemas"]["StageView"][];
             tasks: components["schemas"]["TaskSummary"][];
             /** @description Present only for run.operate holders. */
             effects?: components["schemas"]["Effect"][];
@@ -1737,6 +2166,69 @@ export interface components {
         ActionAvailability: {
             allowed: boolean;
             reasonCode?: string | null;
+        };
+        /** @description A case stage of a request (docs/build/S17): a presentation layer over its steps. `index` counts from 1. `state` is notStarted, active or completed; `overdue` is true for an active stage past `dueAt`. */
+        StageView: {
+            id: string;
+            label: string;
+            index: number;
+            total: number;
+            /** @enum {string} */
+            state: "notStarted" | "active" | "completed";
+            enteredAt?: components["schemas"]["Timestamp"] | null;
+            dueAt?: components["schemas"]["Timestamp"] | null;
+            completedAt?: components["schemas"]["Timestamp"] | null;
+            overdue: boolean;
+            /** @description ISO-8601 time limit of the stage (PT1M to P90D) */
+            sla?: string | null;
+        };
+        StagedUpload: {
+            id: components["schemas"]["Uuid"];
+            /** @description Sanitized display name; never a path */
+            name: string;
+            /** @description Canonical content type of the detected file type */
+            contentType: string;
+            sizeBytes: number;
+            sha256: string;
+            scanStatus: components["schemas"]["ScanStatus"];
+            expiresAt: components["schemas"]["Timestamp"];
+        };
+        /**
+         * @description notScanned means no scanner is configured; infected and error files are never served.
+         * @enum {string}
+         */
+        ScanStatus: "notScanned" | "clean" | "infected" | "error";
+        Attachment: {
+            id: components["schemas"]["Uuid"];
+            runId: components["schemas"]["Uuid"];
+            /** @description The request form field the file was chosen for; null for files added later */
+            fieldKey?: string | null;
+            name: string;
+            description?: string | null;
+            contentType: string;
+            sizeBytes: number;
+            sha256: string;
+            scanStatus: components["schemas"]["ScanStatus"];
+            uploadedBy: components["schemas"]["SubjectRef"];
+            uploadedAt: components["schemas"]["Timestamp"];
+            removedAt?: components["schemas"]["Timestamp"] | null;
+            removedBy?: components["schemas"]["SubjectRef"] | null;
+            canRemove: boolean;
+            /** @description False for removed files and files blocked by the scan */
+            downloadable: boolean;
+        };
+        AttachmentLimits: {
+            maxFileBytes: number;
+            maxFiles: number;
+            maxTotalBytes: number;
+            usedFiles: number;
+            usedBytes: number;
+            allowedTypes: ("pdf" | "png" | "jpeg" | "txt" | "csv" | "docx" | "xlsx" | "pptx")[];
+        };
+        AttachmentList: {
+            items: components["schemas"]["Attachment"][];
+            limits: components["schemas"]["AttachmentLimits"];
+            canAdd: boolean;
         };
         RunComment: {
             id: components["schemas"]["Uuid"];
@@ -1773,6 +2265,183 @@ export interface components {
             nextAfter: number;
             hasMore: boolean;
             lifecycle: components["schemas"]["Lifecycle"];
+        };
+        PathNode: {
+            id: string;
+            /** @description Canonical step type (start, approval, decision, branch, http, notification, parallelSplit, parallelJoin, wait, startWorkflow, end; others may be added). */
+            kind: string;
+            label: string;
+            /** @description Finish steps only */
+            outcomeKind?: components["schemas"]["OutcomeKind"] | null;
+            /** @description Finish steps only (the business outcome label) */
+            outcome?: string | null;
+            /** @description An approval with a time limit and a route for when it runs out */
+            hasTimeout?: boolean;
+            /** @description Layout saved by the designer; null when the studio never arranged this step. */
+            position?: {
+                x: number;
+                y: number;
+            } | null;
+        };
+        PathTransition: {
+            id: string;
+            from: string;
+            to: string;
+            /** @enum {string} */
+            on: "next" | "approved" | "rejected" | "timedOut" | "condition" | "default";
+            /** @description The designer's route label. Conditions are never included. */
+            label?: string | null;
+        };
+        PathVisit: {
+            nodeId: string;
+            /** @description Which time the request was at this step (repeats in loops). */
+            occurrence: number;
+            enteredAt: components["schemas"]["Timestamp"];
+            leftAt: components["schemas"]["Timestamp"] | null;
+            /** @description Null while the request is still at the step. */
+            outcome: ("approved" | "rejected" | "timedOut" | "completed" | "cancelled") | null;
+        };
+        PathCurrent: {
+            nodeId: string;
+            label: string;
+            /** @enum {string} */
+            kind: "approval" | "http" | "wait" | "child";
+            /** @enum {string} */
+            status: "waiting" | "running" | "needsAttention";
+            since: components["schemas"]["Timestamp"];
+            candidateGroup?: string | null;
+            assignee?: components["schemas"]["SubjectRef"] | null;
+            dueAt?: components["schemas"]["Timestamp"] | null;
+        };
+        RunPath: {
+            runId: components["schemas"]["Uuid"];
+            lifecycle: components["schemas"]["Lifecycle"];
+            diagram: {
+                nodes: components["schemas"]["PathNode"][];
+                transitions: components["schemas"]["PathTransition"][];
+            };
+            visited: components["schemas"]["PathVisit"][];
+            current: components["schemas"]["PathCurrent"][];
+            /** @description Ids of the routes the request has used. */
+            taken: string[];
+            /** @description History exceeded the diagram limit; only current steps are reliable. */
+            historyTruncated?: boolean;
+        };
+        InsightsRange: {
+            /** Format: date */
+            from: string;
+            /** Format: date */
+            to: string;
+            days: number;
+            generatedAt: components["schemas"]["Timestamp"];
+        };
+        InsightsWorkflow: {
+            id: components["schemas"]["Uuid"];
+            key: components["schemas"]["Key"];
+            name: string;
+        };
+        /** @description Requests started in the range, by where they stand now. started = completed + cancelled + open. */
+        InsightsTotals: {
+            started: number;
+            completed: number;
+            fulfilled: number;
+            rejected: number;
+            cancelled: number;
+            /** @description Running, waiting or needing attention (needsAttention is included). */
+            open: number;
+            needsAttention: number;
+        };
+        InsightsCycleTime: {
+            workflow: components["schemas"]["InsightsWorkflow"];
+            completed: number;
+            medianSeconds: number;
+            p90Seconds: number;
+        };
+        /** @description A request identified by its reference only, never by its title or data. */
+        InsightsOpenRun: {
+            runId: components["schemas"]["Uuid"];
+            reference: string;
+            workflow: components["schemas"]["InsightsWorkflow"];
+            lifecycle: components["schemas"]["Lifecycle"];
+            startedAt: components["schemas"]["Timestamp"];
+            ageSeconds: number;
+            /** @description The step it is at (first current step). */
+            stepLabel: string | null;
+        };
+        InsightsAttentionRun: {
+            runId: components["schemas"]["Uuid"];
+            reference: string;
+            workflow: components["schemas"]["InsightsWorkflow"];
+            /** @enum {string} */
+            reason: "RETRIES_EXHAUSTED" | "EFFECT_UNKNOWN" | "EFFECT_REJECTED" | "RESPONSE_INVALID" | "CONNECTION_UNAVAILABLE" | "POLICY_DENIED" | "INTERNAL_ERROR";
+            since: components["schemas"]["Timestamp"];
+            stepLabel: string | null;
+        };
+        InsightsTimeout: {
+            workflow: components["schemas"]["InsightsWorkflow"];
+            nodeId: string;
+            label: string;
+            /** @description Approvals that reached their time limit in the range. */
+            timeouts: number;
+            /** @description Approvals of this step that ended in the range (decided or timed out). */
+            decided: number;
+            share: number;
+        };
+        InsightsOverdue: {
+            runId: components["schemas"]["Uuid"];
+            reference: string;
+            workflow: components["schemas"]["InsightsWorkflow"];
+            /** @enum {string} */
+            kind: "approval" | "wait";
+            stepLabel: string;
+            dueAt: components["schemas"]["Timestamp"];
+            overdueSeconds: number;
+        };
+        InsightsSummary: {
+            range: components["schemas"]["InsightsRange"];
+            totals: components["schemas"]["InsightsTotals"];
+            /** @description Started to completed, per workflow, for requests that completed (not cancelled). */
+            cycleTimes: components["schemas"]["InsightsCycleTime"][];
+            /** @description All open requests of the workspace (or workflow), oldest first. */
+            oldestOpen: components["schemas"]["InsightsOpenRun"][];
+            needsAttention: components["schemas"]["InsightsAttentionRun"][];
+            sla: {
+                timeouts: components["schemas"]["InsightsTimeout"][];
+                overdue: components["schemas"]["InsightsOverdue"][];
+                overdueCount: number;
+            };
+        };
+        InsightsDay: {
+            /** Format: date */
+            date: string;
+            started: number;
+            completed: number;
+            fulfilled: number;
+            rejected: number;
+        };
+        InsightsThroughput: {
+            range: components["schemas"]["InsightsRange"];
+            days: components["schemas"]["InsightsDay"][];
+        };
+        InsightsStep: {
+            workflow: components["schemas"]["InsightsWorkflow"];
+            nodeId: string;
+            label: string;
+            /** @enum {string} */
+            kind: "approval" | "wait";
+            /** @description Times the step finished in the range (waited and left). */
+            count: number;
+            /** @description Requests waiting at the step right now. */
+            openNow: number;
+            averageWaitSeconds: number | null;
+            p90WaitSeconds: number | null;
+            timeouts: number;
+            timeoutShare: number;
+        };
+        InsightsSteps: {
+            range: components["schemas"]["InsightsRange"];
+            items: components["schemas"]["InsightsStep"][];
+            truncated: boolean;
         };
         CancelRunRequest: {
             reason: string;
@@ -1839,6 +2508,8 @@ export interface components {
             /** @description Higher values are shown first in the open queue; default 0 */
             priority: number;
             decision?: components["schemas"]["TaskDecision"] | null;
+            /** @description The stage of the workflow this step belongs to, with the request's timing for it; null when the workflow has no stages or the step is in none. */
+            stage?: components["schemas"]["StageView"] | null;
         };
         TaskDetail: components["schemas"]["TaskSummary"] & {
             request: {
@@ -1990,7 +2661,7 @@ export interface components {
         PermissionGrant: {
             id: components["schemas"]["Uuid"];
             /** @enum {string} */
-            permission: "workflow.start" | "connection.manage";
+            permission: "workflow.start" | "connection.manage" | "message.send";
             workflowId: components["schemas"]["Uuid"] | null;
             principal: components["schemas"]["Principal"];
             createdAt: components["schemas"]["Timestamp"];
@@ -2113,7 +2784,7 @@ export interface components {
         };
         CompatibilityReport: {
             /** @enum {string} */
-            sourceSystem: "camunda7" | "camunda8" | "bpmn" | "dmn" | "pega";
+            sourceSystem: "camunda7" | "camunda8" | "bpmn" | "dmn" | "camundaForm" | "pega";
             sourceVersion?: string | null;
             adapterVersion: string;
             sourceHash: string;
@@ -2142,10 +2813,90 @@ export interface components {
                 /** @description Business rule tasks that call a DMN decision by a literal id and need a decisionMappings entry */
                 decisionTasks?: string[];
             };
+            mappingHints?: components["schemas"]["MappingHints"];
             /** @description Generated behaviour checks (DMN): the source semantics versus the converted table evaluated by the compiler */
             testCases?: components["schemas"]["MigrationTestCase"][];
             /** @description True when no blocker, open action or unacknowledged info item remains. Review items never affect it. */
             publishable: boolean;
+        };
+        /** @description Structured facts for the mapping helper (Camunda 8), keyed by source element id. Header and query parameter values, credentials and full URLs are never included. */
+        MappingHints: {
+            services?: {
+                [key: string]: {
+                    /** @enum {string} */
+                    kind: "jobWorker" | "httpJson" | "unsupportedConnector";
+                    jobType?: string | null;
+                    /** @description Operation name suggested from the step name or job type */
+                    suggestedOperation?: string | null;
+                    /** @description Original HTTP method (provenance, read-only) */
+                    method?: string | null;
+                    urlHost?: string | null;
+                    /** @description Original path without query (provenance, read-only) */
+                    urlPath?: string | null;
+                    urlComputed?: boolean;
+                    /** @description Authentication type name only */
+                    authentication?: string | null;
+                    headerNames?: string[];
+                    queryNames?: string[];
+                    resultVariable?: string | null;
+                    /** @description Request body name to request field key */
+                    inputFields?: {
+                        [key: string]: string;
+                    };
+                    /** @description Result name to JSON Pointer into the response body */
+                    resultFields?: {
+                        [key: string]: string;
+                    };
+                    unmapped?: string[];
+                    replacement?: string | null;
+                };
+            };
+            forms?: {
+                [key: string]: {
+                    /** @enum {string} */
+                    target?: "start" | "userTask";
+                    formId?: string | null;
+                    formKey?: string | null;
+                    binding?: string | null;
+                    /** @enum {string} */
+                    state?: "embedded" | "upload" | "unsupported";
+                };
+            };
+            calls?: {
+                [key: string]: {
+                    processId?: string | null;
+                    binding?: string | null;
+                    propagateAllChildVariables?: boolean;
+                    propagateAllParentVariables?: boolean;
+                    inputMapping?: {
+                        [key: string]: string;
+                    };
+                    resultMapping?: {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Preview per form: embedded forms by element id, an uploaded form file by its form id */
+            formPreviews?: {
+                [key: string]: {
+                    formId?: string | null;
+                    fields?: components["schemas"]["FormPreviewField"][];
+                    skipped?: components["schemas"]["FormPreviewField"][];
+                };
+            };
+        };
+        FormPreviewField: {
+            id?: string | null;
+            key?: string | null;
+            label?: string | null;
+            component?: string | null;
+            type?: string | null;
+            widget?: string | null;
+            required?: boolean;
+            options?: string[];
+            description?: string | null;
+            disposition?: string | null;
+            reasonCode?: string | null;
         };
         MigrationTestCase: {
             decision: string;
@@ -2222,6 +2973,12 @@ export interface components {
                     inputRef?: string;
                 };
             };
+            /** @description Start event or user task id (a linked form named in report.mappingHints.forms with state upload) to an uploaded camundaForm migration whose form id matches. A start form becomes the request form; a user task form becomes a note on the approval step. */
+            formMappings?: {
+                [key: string]: {
+                    migrationId: components["schemas"]["Uuid"];
+                };
+            };
             /** @description DMN migrations only: the decision to convert; optional when the file has exactly one decision */
             decisionId?: string;
             /** @description Reviewed canonical request schema; otherwise inferred from BPMN comparisons and service input mappings */
@@ -2266,6 +3023,12 @@ export interface components {
              */
             acknowledgeReview: boolean;
         };
+        key: string;
+        label: string;
+        /** @description Node/transition identifier. Stable through compilation; becomes the BPMN element ID. Double underscore is reserved for compiler-generated elements. */
+        id: string;
+        /** @description ISO-8601 duration in days, hours and minutes only (for example PT1M, PT48H, P2D, P1DT12H). The compiler enforces PT1M to P90D (WF_DURATION_TOO_SHORT, WF_DURATION_TOO_LONG). */
+        duration: string;
         /** @description /input/<fieldKey> or /steps/<nodeId>/<outputKey>. Exactly one level below input or a step in v0. */
         fieldRef: string;
         /** @description Comparison/output literal. String literals are additionally restricted by compiler rule WF_LITERAL_UNSAFE. */
@@ -2277,7 +3040,6 @@ export interface components {
             value: components["schemas"]["literal"];
         };
         fieldKey: string;
-        label: string;
         /** @description A calendar date YYYY-MM-DD. The compiler also rejects dates that do not exist (WF_FORM_INVALID). */
         calendarDate: string;
         scalarFormField: {
@@ -2286,10 +3048,14 @@ export interface components {
             title: string;
             description?: string;
             /**
-             * @description date: a calendar date written YYYY-MM-DD, without time or time zone. Only on type string.
-             * @constant
+             * @description date: a calendar date written YYYY-MM-DD, without time or time zone. attachment: a file chosen by the requester; the value is the ID of the uploaded file (docs/build/S17). Only on type string; attachment fields exist only on the request form.
+             * @enum {unknown}
              */
-            format?: "date";
+            format?: "date" | "attachment";
+            /** @description Only with format attachment: the file types this field accepts (default: all allowed types). */
+            acceptTypes?: ("pdf" | "png" | "jpeg" | "txt" | "csv" | "docx" | "xlsx" | "pptx")[];
+            /** @description Only with format attachment: the largest file this field accepts, in bytes (at most 10 MiB, the platform limit). */
+            maxFileBytes?: number;
             /** @description Earliest allowed date (YYYY-MM-DD, inclusive). Only with format date. */
             formatMinimum?: components["schemas"]["calendarDate"];
             /** @description Latest allowed date (YYYY-MM-DD, inclusive). Only with format date. */
@@ -2301,7 +3067,7 @@ export interface components {
             maximum?: number;
             /** @enum {unknown} */
             multipleOf?: 0.01 | 1;
-        };
+        } & unknown;
         arrayFormField: {
             /** @constant */
             type: "array";
@@ -2311,17 +3077,19 @@ export interface components {
             maxItems: number;
         };
         formField: unknown;
-        /** @description Node/transition identifier. Stable through compilation; becomes the BPMN element ID. Double underscore is reserved for compiler-generated elements. */
-        id: string;
         nodeBase: {
             id: components["schemas"]["id"];
             type: string;
             label: components["schemas"]["label"];
             config: Record<string, never>;
         };
-        key: string;
-        /** @description ISO-8601 duration in days, hours and minutes only (for example PT1M, PT48H, P2D, P1DT12H). The compiler enforces PT1M to P90D (WF_DURATION_TOO_SHORT, WF_DURATION_TOO_LONG). */
-        duration: string;
+        messagePayloadField: {
+            name: string;
+            /** @enum {unknown} */
+            type: "string" | "number" | "integer" | "boolean" | "date";
+            title?: string;
+            required?: boolean;
+        };
         condition: unknown;
         decisionOutput: {
             [key: string]: components["schemas"]["literal"];
@@ -2478,6 +3246,21 @@ export interface components {
                 };
             };
         } & components["schemas"]["nodeBase"];
+        waitForMessageNode: {
+            id?: unknown;
+            label?: unknown;
+            /** @constant */
+            type?: "waitForMessage";
+            /** @description Wait until an outside system or another process sends the named message for this request (docs/build/S16). correlationField names the request field or guaranteed earlier output whose value identifies the request; the message must carry the same value. Outputs at /steps/<id>/ are the declared payload fields. With timeoutAfter the step also needs one timedOut transition. A message that arrives before the step is reached is kept for a limited time (24 hours by default) and used when the step starts. */
+            config?: {
+                /** @description Message name: lowercase letters and digits in kebab-case or camelCase, for example payment-received. */
+                message: string;
+                correlationField: components["schemas"]["fieldRef"];
+                timeoutAfter?: components["schemas"]["duration"];
+                /** @description Values the message may carry. Each becomes an output of this step; a field that is not required may be missing. */
+                payload?: components["schemas"]["messagePayloadField"][];
+            };
+        } & components["schemas"]["nodeBase"];
         endNode: {
             id?: unknown;
             label?: unknown;
@@ -2515,6 +3298,14 @@ export interface components {
             }[];
             default: components["schemas"]["decisionOutput"];
         };
+        stage: {
+            id: components["schemas"]["key"];
+            label: components["schemas"]["label"];
+            /** @description IDs of the steps in this stage. A step belongs to at most one stage (compiler rules WF_STAGE_*). */
+            nodes: components["schemas"]["id"][];
+            /** @description Optional time limit from the first step of the stage starting. The compiler enforces PT1M to P90D (WF_STAGE_SLA_*). */
+            sla?: components["schemas"]["duration"];
+        };
         /**
          * Orqix canonical workflow v0.1 — R0 executable subset
          * @description Structural contract for the R0 business-editor subset. Passing this schema does not establish graph correctness, type safety, authorization or deployability; the compiler rules in docs/build/S4-workflow-compiler.md are mandatory. Pre-freeze revision 2026-10-07: effect class moved to the connection operation, form keyword subset constrained, generic end outcomes, security block redefined.
@@ -2544,7 +3335,7 @@ export interface components {
             };
             outputSchema: components["schemas"]["formSchema"];
             triggers: ("manual" | "api")[];
-            nodes: (components["schemas"]["startNode"] | components["schemas"]["approvalNode"] | components["schemas"]["decisionNode"] | components["schemas"]["branchNode"] | components["schemas"]["httpNode"] | components["schemas"]["notificationNode"] | components["schemas"]["parallelSplitNode"] | components["schemas"]["parallelJoinNode"] | components["schemas"]["waitNode"] | components["schemas"]["startWorkflowNode"] | components["schemas"]["endNode"])[];
+            nodes: (components["schemas"]["startNode"] | components["schemas"]["approvalNode"] | components["schemas"]["decisionNode"] | components["schemas"]["branchNode"] | components["schemas"]["httpNode"] | components["schemas"]["notificationNode"] | components["schemas"]["parallelSplitNode"] | components["schemas"]["parallelJoinNode"] | components["schemas"]["waitNode"] | components["schemas"]["startWorkflowNode"] | components["schemas"]["waitForMessageNode"] | components["schemas"]["endNode"])[];
             transitions: components["schemas"]["transition"][];
             decisions: components["schemas"]["decisionTable"][];
             /** @description maxAttempts/retryDelaySeconds apply only to external service work (http nodes), never to human decisions. */
@@ -2567,6 +3358,8 @@ export interface components {
                     definitionVersion: number;
                 }[];
             };
+            /** @description Optional case stages (docs/build/S17): a presentation and monitoring layer that groups steps to show progress and to watch an optional time limit (sla). Adds no behavior to the generated process. */
+            stages?: components["schemas"]["stage"][];
             outputMapping: {
                 [key: string]: {
                     fieldRef: components["schemas"]["fieldRef"];
@@ -2589,6 +3382,14 @@ export interface components {
             };
             $defs: {
                 key: string;
+                stage: {
+                    id: components["schemas"]["key"];
+                    label: components["schemas"]["label"];
+                    /** @description IDs of the steps in this stage. A step belongs to at most one stage (compiler rules WF_STAGE_*). */
+                    nodes: components["schemas"]["id"][];
+                    /** @description Optional time limit from the first step of the stage starting. The compiler enforces PT1M to P90D (WF_STAGE_SLA_*). */
+                    sla?: components["schemas"]["duration"];
+                };
                 /** @description Node/transition identifier. Stable through compilation; becomes the BPMN element ID. Double underscore is reserved for compiler-generated elements. */
                 id: string;
                 fieldKey: string;
@@ -2759,6 +3560,28 @@ export interface components {
                         };
                     };
                 } & components["schemas"]["nodeBase"];
+                waitForMessageNode: {
+                    id?: unknown;
+                    label?: unknown;
+                    /** @constant */
+                    type?: "waitForMessage";
+                    /** @description Wait until an outside system or another process sends the named message for this request (docs/build/S16). correlationField names the request field or guaranteed earlier output whose value identifies the request; the message must carry the same value. Outputs at /steps/<id>/ are the declared payload fields. With timeoutAfter the step also needs one timedOut transition. A message that arrives before the step is reached is kept for a limited time (24 hours by default) and used when the step starts. */
+                    config?: {
+                        /** @description Message name: lowercase letters and digits in kebab-case or camelCase, for example payment-received. */
+                        message: string;
+                        correlationField: components["schemas"]["fieldRef"];
+                        timeoutAfter?: components["schemas"]["duration"];
+                        /** @description Values the message may carry. Each becomes an output of this step; a field that is not required may be missing. */
+                        payload?: components["schemas"]["messagePayloadField"][];
+                    };
+                } & components["schemas"]["nodeBase"];
+                messagePayloadField: {
+                    name: string;
+                    /** @enum {unknown} */
+                    type: "string" | "number" | "integer" | "boolean" | "date";
+                    title?: string;
+                    required?: boolean;
+                };
                 endNode: {
                     id?: unknown;
                     label?: unknown;
@@ -2805,10 +3628,14 @@ export interface components {
                     title: string;
                     description?: string;
                     /**
-                     * @description date: a calendar date written YYYY-MM-DD, without time or time zone. Only on type string.
-                     * @constant
+                     * @description date: a calendar date written YYYY-MM-DD, without time or time zone. attachment: a file chosen by the requester; the value is the ID of the uploaded file (docs/build/S17). Only on type string; attachment fields exist only on the request form.
+                     * @enum {unknown}
                      */
-                    format?: "date";
+                    format?: "date" | "attachment";
+                    /** @description Only with format attachment: the file types this field accepts (default: all allowed types). */
+                    acceptTypes?: ("pdf" | "png" | "jpeg" | "txt" | "csv" | "docx" | "xlsx" | "pptx")[];
+                    /** @description Only with format attachment: the largest file this field accepts, in bytes (at most 10 MiB, the platform limit). */
+                    maxFileBytes?: number;
                     /** @description Earliest allowed date (YYYY-MM-DD, inclusive). Only with format date. */
                     formatMinimum?: components["schemas"]["calendarDate"];
                     /** @description Latest allowed date (YYYY-MM-DD, inclusive). Only with format date. */
@@ -2820,7 +3647,7 @@ export interface components {
                     maximum?: number;
                     /** @enum {unknown} */
                     multipleOf?: 0.01 | 1;
-                };
+                } & unknown;
                 /** @description A calendar date YYYY-MM-DD. The compiler also rejects dates that do not exist (WF_FORM_INVALID). */
                 calendarDate: string;
                 arrayFormField: {
@@ -3145,6 +3972,7 @@ export interface components {
         GenerationId: components["schemas"]["Uuid"];
         ReleaseId: components["schemas"]["Uuid"];
         RunId: components["schemas"]["Uuid"];
+        AttachmentId: components["schemas"]["Uuid"];
         EffectId: components["schemas"]["Uuid"];
         NotificationId: components["schemas"]["Uuid"];
         /** @description Engine task identifier; always resolved through the workspace's task projection first. */
@@ -3153,6 +3981,12 @@ export interface components {
         DecisionKey: components["schemas"]["Key"];
         MigrationId: components["schemas"]["Uuid"];
         Cursor: string;
+        /** @description First day of the range (UTC date, inclusive). Default 29 days before `to`. */
+        InsightsFrom: string;
+        /** @description Last day of the range (UTC date, inclusive). Default today. The range may not exceed 365 days. */
+        InsightsTo: string;
+        /** @description Limit the figures to one workflow of the workspace (404 when it is not in the workspace). */
+        InsightsWorkflowId: components["schemas"]["Uuid"];
         Limit: number;
         /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
         IdempotencyKey: string;
@@ -3860,6 +4694,40 @@ export interface operations {
             422: components["responses"]["Unprocessable"];
         };
     };
+    simulateWorkflow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SimulateRequest"];
+            };
+        };
+        responses: {
+            /** @description The trace of the dry run */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimulationResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
     publishDraft: {
         parameters: {
             query?: never;
@@ -4052,6 +4920,43 @@ export interface operations {
             422: components["responses"]["Unprocessable"];
         };
     };
+    sendMessage: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SendMessageRequest"];
+            };
+        };
+        responses: {
+            /** @description Accepted (delivered to waiting requests or buffered); an idempotent replay returns the same status with the header Idempotent-Replayed true */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageAccepted"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
     listRuns: {
         parameters: {
             query?: {
@@ -4062,6 +4967,8 @@ export interface operations {
                 businessKey?: string;
                 createdFrom?: string;
                 createdTo?: string;
+                /** @description true lists only runs with a stage that is past its due time (docs/build/S17). */
+                overdue?: boolean;
                 cursor?: components["parameters"]["Cursor"];
                 limit?: components["parameters"]["Limit"];
             };
@@ -4234,6 +5141,211 @@ export interface operations {
             409: components["responses"]["Conflict"];
         };
     };
+    uploadAttachment: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Idempotent replay */
+            200: {
+                headers: {
+                    "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StagedUpload"];
+                };
+            };
+            /** @description File accepted */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StagedUpload"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    discardAttachmentUpload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                uploadId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listRunAttachments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Files in the order they were added */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttachmentList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    addRunAttachment: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    file: string;
+                    description?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Idempotent replay */
+            200: {
+                headers: {
+                    "Idempotent-Replayed": components["headers"]["IdempotentReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Attachment"];
+                };
+            };
+            /** @description File added */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Attachment"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    removeRunAttachment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+                attachmentId: components["parameters"]["AttachmentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    downloadRunAttachment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+                attachmentId: components["parameters"]["AttachmentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The file */
+            200: {
+                headers: {
+                    "Content-Disposition"?: string;
+                    "X-Content-Type-Options"?: "nosniff";
+                    "Content-Security-Policy"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
     listRunEvents: {
         parameters: {
             query?: {
@@ -4261,6 +5373,133 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    getRunPath: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The path */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunPath"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getInsightsSummary: {
+        parameters: {
+            query?: {
+                /** @description First day of the range (UTC date, inclusive). Default 29 days before `to`. */
+                from?: components["parameters"]["InsightsFrom"];
+                /** @description Last day of the range (UTC date, inclusive). Default today. The range may not exceed 365 days. */
+                to?: components["parameters"]["InsightsTo"];
+                /** @description Limit the figures to one workflow of the workspace (404 when it is not in the workspace). */
+                workflowId?: components["parameters"]["InsightsWorkflowId"];
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Summary */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InsightsSummary"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getInsightsThroughput: {
+        parameters: {
+            query?: {
+                /** @description First day of the range (UTC date, inclusive). Default 29 days before `to`. */
+                from?: components["parameters"]["InsightsFrom"];
+                /** @description Last day of the range (UTC date, inclusive). Default today. The range may not exceed 365 days. */
+                to?: components["parameters"]["InsightsTo"];
+                /** @description Limit the figures to one workflow of the workspace (404 when it is not in the workspace). */
+                workflowId?: components["parameters"]["InsightsWorkflowId"];
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One entry per day in the range */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InsightsThroughput"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getInsightsSteps: {
+        parameters: {
+            query?: {
+                /** @description First day of the range (UTC date, inclusive). Default 29 days before `to`. */
+                from?: components["parameters"]["InsightsFrom"];
+                /** @description Last day of the range (UTC date, inclusive). Default today. The range may not exceed 365 days. */
+                to?: components["parameters"]["InsightsTo"];
+                /** @description Limit the figures to one workflow of the workspace (404 when it is not in the workspace). */
+                workflowId?: components["parameters"]["InsightsWorkflowId"];
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Per-step waiting time */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InsightsSteps"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["Unavailable"];
         };
     };
     cancelRun: {
@@ -5013,8 +6252,8 @@ export interface operations {
             content: {
                 "application/json": {
                     /** @enum {string} */
-                    permission: "workflow.start" | "connection.manage";
-                    /** @description Restrict workflow.start to one workflow; omit for workspace-wide. */
+                    permission: "workflow.start" | "connection.manage" | "message.send";
+                    /** @description Restrict workflow.start to one workflow; omit for workspace-wide (connection.manage and message.send are always workspace-wide). */
                     workflowId?: components["schemas"]["Uuid"] | null;
                     principal: components["schemas"]["PrincipalRef"];
                 };
@@ -5277,11 +6516,11 @@ export interface operations {
                     /** @description BPMN or DMN XML, or mapping JSON text; base64 for Pega archives. Decoded sources are limited to 1 MiB. */
                     content: string;
                     /**
-                     * @description bpmn is Camunda 7/8 BPMN 2.0; dmn is a Camunda DMN 1.1-1.4 file with decision tables.
+                     * @description bpmn is Camunda 7/8 BPMN 2.0; dmn is a Camunda DMN 1.1-1.4 file with decision tables; camundaForm is a Camunda Forms .form JSON file that is attached to a BPMN import through formMappings.
                      * @default bpmn
                      * @enum {string}
                      */
-                    sourceFormat?: "bpmn" | "dmn" | "pegaArchive" | "pegaMapping";
+                    sourceFormat?: "bpmn" | "dmn" | "camundaForm" | "pegaArchive" | "pegaMapping";
                 };
             };
         };

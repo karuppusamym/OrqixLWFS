@@ -131,6 +131,23 @@ public abstract class IntegrationTestBase {
             return send(MockMvcRequestBuilders.delete("/api/v1" + path, vars).with(IntegrationTestBase::xsrf));
         }
 
+        /** Multipart upload of one {@code file} part (docs/build/S17); {@code fields} are extra form fields. */
+        public Response upload(String idempotencyKey, String fileName, String contentType, byte[] content,
+                java.util.Map<String, String> fields, String path, Object... vars) throws Exception {
+            var builder = MockMvcRequestBuilders.multipart("/api/v1" + path, vars)
+                    .file(new org.springframework.mock.web.MockMultipartFile("file", fileName, contentType, content))
+                    .with(IntegrationTestBase::xsrf);
+            fields.forEach(builder::param);
+            if (idempotencyKey != null) {
+                builder.header("Idempotency-Key", idempotencyKey);
+            }
+            builder.with(groups == null ? TestUsers.as(user) : TestUsers.as(user, groups));
+            MvcResult result = mvc.perform(builder).andReturn();
+            Response response = new Response(result);
+            OpenApiContract.validate(result);
+            return response;
+        }
+
         public Response send(MockHttpServletRequestBuilder builder) throws Exception {
             if (user != null) {
                 builder.with(groups == null ? TestUsers.as(user) : TestUsers.as(user, groups));

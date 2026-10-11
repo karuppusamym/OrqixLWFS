@@ -21,8 +21,13 @@ import { buildFields, parseFormSchema, parseFormUi, type FieldDef } from '@/lib/
 import { ownReference, requestId, runTitle, stepOwnerText } from '@/lib/runText'
 import { humanize } from '@/lib/text'
 import { isTerminal } from '@/lib/status'
+import { readStorage, writeStorage } from '@/lib/storage'
+import { RunProgressPanel, type RunView } from './RunProgressPanel'
 import { CancelDialog, ReassignDialog, ReconcileDialog, RetryDialog } from './OperatorDialogs'
 import { RunCommentsPanel } from './RunCommentsPanel'
+import { RunFiles } from './RunFiles'
+import { StageProgress } from './StageProgress'
+import { SendTestMessage } from './SendTestMessage'
 import { DecisionEvidence } from './DecisionEvidence'
 import { candidateEffects, EFFECT_CLASS_LABEL, EFFECT_STATE_LABEL, reasonText } from './operatorText'
 
@@ -61,6 +66,11 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
   const me = useMe()
   const [dialog, setDialog] = useState<DialogName>(null)
   const [reconcileId, setReconcileId] = useState<string | undefined>()
+  const [view, setViewState] = useState<RunView>(() => (readStorage('orqix.runView') === 'diagram' ? 'diagram' : 'timeline'))
+  const setView = (next: RunView) => {
+    setViewState(next)
+    writeStorage('orqix.runView', next)
+  }
   const operator = can('run.operate') || run.effects !== undefined
   const needsAttention = run.lifecycle === 'needsAttention'
 
@@ -174,6 +184,8 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
         </Alert>
       ) : null}
 
+      <SendTestMessage run={run} />
+
       {operator ? (
         <section id="operator-actions" aria-labelledby="operator-heading" className="mb-6 scroll-mt-20 rounded-card border border-border bg-surface p-4">
           <h2 id="operator-heading" className="mb-3 flex items-center gap-2 text-base">
@@ -201,8 +213,10 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
         </section>
       ) : null}
 
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 xl:grid-cols-[minmax(0,1fr)_26rem]">
-        <div className="min-w-0 space-y-6">
+      <StageProgress stage={run.stage} stages={run.stages} />
+
+      <div className={cn('grid grid-cols-[minmax(0,1fr)] gap-6', view === 'timeline' && 'xl:grid-cols-[minmax(0,1fr)_26rem]')}>
+        <div className={cn('min-w-0 space-y-6', view === 'diagram' && 'order-2')}>
           <Card>
             <CardHeader>
               <h2>Request</h2>
@@ -294,35 +308,40 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
             </Card>
           ) : null}
 
+          {input ? <RunFiles ws={ws} runId={run.id} /> : null}
           {input ? <RunCommentsPanel ws={ws} runId={run.id} canPost={run.initiator.id === me.data?.subject.id || can('run.operate') || can('task.act')} /> : null}
 
           {operator ? <TechnicalDetails run={run} effects={effects} onReconcile={(id) => { setReconcileId(id); setDialog('reconcile') }} /> : null}
         </div>
 
-        <aside aria-labelledby="timeline-heading">
-          <Card className="xl:sticky xl:top-20">
-            <CardHeader>
-              <h2 id="timeline-heading">Timeline</h2>
-            </CardHeader>
-            <CardContent>
-              {events.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Nothing has happened yet.</p>
-              ) : (
-                <ol className="relative space-y-4 border-l-2 border-border pl-5" data-testid="timeline">
-                  {timelineEvents(events).map((e) => (
-                    <li key={e.seq} className="relative">
-                      <span className={cn('absolute top-1.5 -left-[1.6rem] size-2.5 rounded-full border-2 border-surface', TONE_DOT[eventTone(e)])} aria-hidden="true" />
-                      <p className="text-sm">{describeEvent(e, ctx)}</p>
-                      <DecisionEvidence event={e} />
-                      <p className="text-xs text-muted-foreground">
-                        <time dateTime={e.occurredAt}>{formatDateTime(e.occurredAt)}</time>
-                      </p>
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </CardContent>
-          </Card>
+        <aside aria-labelledby="timeline-heading" className={cn(view === 'diagram' && 'order-1 min-w-0')}>
+          <RunProgressPanel
+            ws={ws}
+            run={run}
+            operator={operator}
+            view={view}
+            onView={setView}
+            timeline={
+              <>
+                    {events.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">Nothing has happened yet.</p>
+                    ) : (
+                      <ol className="relative space-y-4 border-l-2 border-border pl-5" data-testid="timeline">
+                        {timelineEvents(events).map((e) => (
+                          <li key={e.seq} className="relative">
+                            <span className={cn('absolute top-1.5 -left-[1.6rem] size-2.5 rounded-full border-2 border-surface', TONE_DOT[eventTone(e)])} aria-hidden="true" />
+                            <p className="text-sm">{describeEvent(e, ctx)}</p>
+                            <DecisionEvidence event={e} />
+                            <p className="text-xs text-muted-foreground">
+                              <time dateTime={e.occurredAt}>{formatDateTime(e.occurredAt)}</time>
+                            </p>
+                          </li>
+                        ))}
+                      </ol>
+                    )}
+              </>
+            }
+          />
         </aside>
       </div>
 

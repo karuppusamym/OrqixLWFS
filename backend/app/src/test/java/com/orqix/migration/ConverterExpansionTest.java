@@ -354,7 +354,7 @@ class ConverterExpansionTest {
 
     @Test
     void unsupportedExpressionsStayBlockedWithTheOriginalTextAndAReason() {
-        for (String condition : List.of("${amount > 1 &amp;&amp; amount &lt; 5 || amount == 9}", "${not (amount &gt; 5)}", "${customer.score &gt; 5}",
+        for (String condition : List.of("${amount > 1 &amp;&amp; amount &lt; 5 || amount == 9}", "${not (amount &gt; 5 &amp;&amp; amount &lt; 9)}", "${customer.score &gt; 5}",
                 "${amount * 2 &gt; 5}", "${(amount &gt; 1 and amount &lt; 5) or amount == 9}")) {
             var analysis = Analyzer.analyze(gatewayProcess("<sequenceFlow id=\"f1\" sourceRef=\"gw\" targetRef=\"a\"><conditionExpression>" + condition
                     + "</conditionExpression></sequenceFlow><sequenceFlow id=\"f2\" sourceRef=\"gw\" targetRef=\"b\"/>").replace("<exclusiveGateway id=\"gw\"/>",

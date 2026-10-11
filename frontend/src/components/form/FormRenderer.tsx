@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { buildFields } from '@/lib/form/schema'
 import { Button } from '@/components/ui/button'
+import { FileField } from './FileField'
 import type { FieldDef } from '@/lib/form/schema'
 import type { FieldErrors, RawValue, RawValues } from '@/lib/form/values'
 
@@ -21,6 +22,7 @@ export interface FormRendererProps {
   /** Prefix for generated element ids; keeps ids unique when two forms share a page. */
   idPrefix?: string
   disabled?: boolean
+  onFileBusyChange?: (key: string, busy: boolean) => void
 }
 
 /**
@@ -28,11 +30,11 @@ export interface FormRendererProps {
  * `title` is the label, `description` is help text linked with aria-describedby, required fields are marked in text,
  * and client or server errors render on the same field.
  */
-export function FormRenderer({ fields, values, onChange, errors, idPrefix = 'f', disabled }: FormRendererProps) {
+export function FormRenderer({ fields, values, onChange, errors, idPrefix = 'f', disabled, onFileBusyChange }: FormRendererProps) {
   return (
     <div className="space-y-5">
       {fields.map((f) => (
-        <FieldControl key={f.key} field={f} value={values[f.key]} onChange={(v) => onChange(f.key, v)} error={errors[f.key]} id={fieldDomId(idPrefix, f.key)} disabled={disabled} />
+        <FieldControl key={f.key} field={f} value={values[f.key]} onChange={(v) => onChange(f.key, v)} error={errors[f.key]} id={fieldDomId(idPrefix, f.key)} disabled={disabled} onFileBusyChange={onFileBusyChange} />
       ))}
     </div>
   )
@@ -45,6 +47,7 @@ function FieldControl({
   error,
   id,
   disabled,
+  onFileBusyChange,
 }: {
   field: FieldDef
   value: RawValue | undefined
@@ -52,6 +55,7 @@ function FieldControl({
   error: string | undefined
   id: string
   disabled: boolean | undefined
+  onFileBusyChange?: (key: string, busy: boolean) => void
 }) {
   const text = typeof value === 'string' ? value : ''
 
@@ -132,6 +136,10 @@ function FieldControl({
         {error ? <FieldError id={errId} message={error} /> : null}
       </fieldset>
     )
+  }
+
+  if (f.widget === 'file') {
+    return <FileField field={f} value={text} onChange={onChange} error={error} id={id} disabled={disabled} onBusyChange={(busy) => onFileBusyChange?.(f.key, busy)} />
   }
 
   const helpExtra = f.isMoney ? <span className="sr-only"> Amount in US dollars.</span> : null

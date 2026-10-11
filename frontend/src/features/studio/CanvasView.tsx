@@ -34,6 +34,7 @@ import { canConnect, routeForHandle } from './model/ops'
 import { nodeAriaLabel, nodeSubtitle, routeText } from './model/summary'
 import type { Definition, NodeKind, Position, RouteKind } from './model/types'
 import { KIND_VAR } from './nodeMeta'
+import { usePlayback } from './test/PlaybackContext'
 
 const nodeTypes = { step: StepNode }
 const edgeTypes = { route: RouteEdge }
@@ -79,6 +80,7 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
   const focusRequest = useStudio((s) => s.focusRequest)
   const flow = useReactFlow()
   const nodesInitialized = useNodesInitialized()
+  const { active: playActive, current: playCurrent, visited: playVisited, reached: playReached, edges: playEdges } = usePlayback()
 
   const counts = useMemo(() => countByNode(def, issues), [def, issues])
   const key = useMemo(() => structureKey(def), [def])
@@ -113,7 +115,7 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
         const c = counts[n.id]
         const total = (c?.blockers ?? 0) + (c?.warnings ?? 0)
         const data: StepNodeData = { kind: n.type, label: n.label, subtitle: nodeSubtitle(def, n, groupNames), blockers: c?.blockers ?? 0, warnings: c?.warnings ?? 0 }
-        if (n.type === 'approval') data.timeout = !!n.config.timeoutAfter
+        if (n.type === 'approval' || n.type === 'waitForMessage') data.timeout = !!n.config.timeoutAfter
         if (n.type === 'end') {
           data.outcomeKind = n.config.outcomeKind === 'rejected' ? 'rejected' : 'success'
           if (typeof n.config.businessOutcome === 'string') data.outcome = n.config.businessOutcome
@@ -123,12 +125,13 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
           type: 'step',
           position: def.uiLayout?.positions[n.id] ?? { x: 0, y: 0 },
           selected: selection?.type === 'node' && selection.id === n.id,
+          ...(playActive ? { className: playCurrent === n.id ? 'sim-current' : playVisited.has(n.id) ? 'sim-visited' : playReached.has(n.id) ? 'sim-ahead' : 'sim-unreached' } : {}),
           deletable: n.type !== 'start',
           ariaLabel: nodeAriaLabel(n, total),
           data,
         }
       }),
-    [def, counts, selection, groupNames],
+    [def, counts, selection, groupNames, playActive, playCurrent, playVisited, playReached],
   )
 
   const derivedEdges = useMemo<RouteFlowEdge[]>(
@@ -147,13 +150,14 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
             type: 'route',
             data: { on: t.on, text },
             selected: selection?.type === 'edge' && selection.id === t.id,
+            ...(playActive ? { className: playEdges.has(t.id) ? 'sim-taken' : 'sim-untaken' } : {}),
             ariaLabel: `${text || 'Next'}: ${nodeById(def, t.from)?.label} to ${nodeById(def, t.to)?.label}`,
             interactionWidth: 28,
             markerEnd: { type: MarkerType.ArrowClosed, color, width: 16, height: 16 },
             style: { stroke: color, strokeWidth: 2.5, ...(t.on === 'default' ? { strokeDasharray: '7 5' } : {}) },
           }
         }),
-    [def, selection, connections],
+    [def, selection, connections, playActive, playEdges],
   )
 
   // React Flow owns positions while a drag is in progress; the store receives them at drag end (one undo entry).
@@ -307,6 +311,23 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
     }
     void flow.setCenter(node.position.x + width / 2, node.position.y + height / 2, { zoom: Math.min(Math.max(viewport.zoom, FIT_MIN_ZOOM), 1.1), duration: prefersReducedMotion() ? 0 : 250 })
   }, [focusRequest, flow])
+
+  // While a test run is played back, the step being explained is brought into view when it is not already visible.
+  useEffect(() => {
+    if (!playCurrent || fitPending.current) return
+    const node = flow.getNode(playCurrent)
+    if (!node) return
+    const viewport = flow.getViewport()
+    const box = rootRef.current?.getBoundingClientRect()
+    const width = node.measured?.width ?? node.width ?? 296
+    const height = node.measured?.height ?? node.height ?? 128
+    if (box) {
+      const left = node.position.x * viewport.zoom + viewport.x
+      const top = node.position.y * viewport.zoom + viewport.y
+      if (left >= 0 && top >= 0 && left + width * viewport.zoom <= box.width && top + height * viewport.zoom <= box.height) return
+    }
+    void flow.setCenter(node.position.x + width / 2, node.position.y + height / 2, { zoom: Math.min(Math.max(viewport.zoom, FIT_MIN_ZOOM), 1.1), duration: prefersReducedMotion() ? 0 : 250 })
+  }, [playCurrent, flow])
 
   const onDrop = useCallback(
     (event: React.DragEvent) => {

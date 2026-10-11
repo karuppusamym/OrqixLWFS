@@ -40,6 +40,15 @@ spring:
       enabled: false
   lifecycle:
     timeout-per-shutdown-phase: 45s
+  servlet:
+    multipart:
+      # Attachment uploads (docs/build/S17): the container stops reading a file at 10 MiB (the platform maximum) and a
+      # request at 10 MiB + 64 KiB; RequestLimitsFilter also rejects a larger Content-Length before any byte is read.
+      # Files above 256 KiB are spooled to the temp directory (spring.servlet.multipart.location), not held in memory.
+      enabled: true
+      max-file-size: 10MB
+      max-request-size: 10304KB
+      file-size-threshold: 256KB
 
 server:
   port: 8080
@@ -138,6 +147,21 @@ orqix:
     plain-http-hosts: []
   secrets:
     dir: /var/run/secrets/orqix
+  attachments:
+    # Files on requests (docs/build/S17). max-file-bytes cannot exceed 10 MiB (database, workflow schema, multipart cap).
+    max-file-bytes: 10485760
+    max-files-per-run: 25
+    max-bytes-per-run: 52428800
+    staged-ttl: 24h
+    max-staged-per-subject: 10
+    uploads-per-minute: 30
+    # Virus scanning is OFF unless a scanner is enabled; files are then stored as "notScanned". Production deployments that
+    # accept files from outside must enable ClamAV (clamd, TCP) or provide their own AttachmentScanner bean.
+    clamav:
+      enabled: false
+      host: localhost
+      port: 3310
+      timeout: 10s
   limits:
     draft-max-bytes: 262144
     request-max-bytes: 65536

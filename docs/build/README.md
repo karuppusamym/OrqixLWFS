@@ -98,3 +98,5 @@ Current closeout slices: [cross-file project findings](S18-project-findings.md),
 Gap follow-up slices: [mixed BPMN/DMN projects](S20-project-dmn.md), [permission-scoped decision evidence](S21-decision-evidence.md), and [approved document reference authoring](S22-document-authoring.md). Coordinated verification is recorded in [the tracker](../19-product-build-tracker.md).
 
 When an IDE Java compiler is active, run coordinated verification with `./mvnw.cmd clean verify "-Dorqix.buildDirectory=target/verification" "-Dsurefire.useManifestOnlyJar=false"` from `backend/` (PowerShell). This leaves the IDE's default `target/classes` untouched; each module writes below its own ignored `target/verification`. The default build and Docker artifact path stay unchanged.
+
+Resume workstreams: [message events](S23-message-events.md), [run diagram and Insights](S24-run-diagram-insights.md), [attachments and stages](S25-attachments-stages.md), and [workflow simulation](S26-workflow-simulation.md). Camunda 8 import is documented in [S11](S11-camunda-import.md).

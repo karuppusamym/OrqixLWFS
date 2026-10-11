@@ -31,7 +31,7 @@ import tools.jackson.databind.node.ObjectNode;
  * T-SEC-01 (generated from openapi.yaml): every operation declares {@code x-orqix-permission}; every
  * workspace-scoped operation called with real purchasing resource ids by principals of other workspaces returns 404;
  * platform operations return 403 to non-admins. T-SEC-11: none of those denied calls changes application or engine
- * state (row-count snapshot). T-SEC-10: bearer tokens reach only startRun, getRun and listRunEvents. T-SEC-06: the
+ * state (row-count snapshot). T-SEC-10: bearer tokens reach only startRun, getRun, listRunEvents and sendMessage. T-SEC-06: the
  * deployed BPMN contains only the four allowed expression forms.
  */
 class SecurityMatrixTest extends RuntimeTestBase {
@@ -97,6 +97,14 @@ class SecurityMatrixTest extends RuntimeTestBase {
         assertThat(started.getResponse().getStatus()).as(started.getResponse().getContentAsString()).isEqualTo(201);
         OpenApiContract.validate(started);
         String runId = json.parse(started.getResponse().getContentAsString()).path("id").asString();
+        // sendMessage: allowed for bearer tokens, but only with an explicit message.send grant (S16).
+        Map<String, Object> message = Map.of("name", "payment-received", "correlationKey", "SO-MACHINE-1");
+        assertThat(bearer(machine, HttpMethod.POST, "/api/v1/workspaces/" + PURCHASING + "/messages", message)).isEqualTo(403);
+        Response messageGrant = api("wade.admin").post(Map.of("permission", "message.send",
+                "principal", Map.of("type", "subject", "value", subjectId.toString())), "/workspaces/{ws}/access/grants",
+                PURCHASING);
+        assertThat(messageGrant.status()).as(messageGrant.toString()).isEqualTo(201);
+        assertThat(bearer(machine, HttpMethod.POST, "/api/v1/workspaces/" + PURCHASING + "/messages", message)).isEqualTo(202);
         assertThat(bearer(machine, HttpMethod.GET, "/api/v1/workspaces/" + PURCHASING + "/runs/" + runId, null))
                 .isEqualTo(200);
         assertThat(bearer(machine, HttpMethod.GET, "/api/v1/workspaces/" + PURCHASING + "/runs/" + runId + "/events", null))
@@ -179,6 +187,23 @@ class SecurityMatrixTest extends RuntimeTestBase {
         ids.put("effectId", run(PURCHASING, runId).path("effects").get(0).path("id").asString());
         ids.put("notificationId", api("rhea.requester").get("/workspaces/{ws}/me/notifications", PURCHASING).body()
                 .path("items").get(0).path("id").asString());
+        // A file on the open run and one waiting on a form, so foreign callers are refused by access, not by a bad ID.
+        UUID initiator = jdbc.sql("SELECT initiator_subject_id FROM workflow_run WHERE id = :run")
+                .param("run", openRun).query(UUID.class).single();
+        for (String[] file : new String[][] {{"attachmentId", "run"}, {"uploadId", "staged"}}) {
+            UUID id = UUID.randomUUID();
+            jdbc.sql("""
+                    INSERT INTO run_attachment (id, workspace_id, run_id, uploaded_by, file_name, content_type, size_bytes,
+                                                sha256, scan_status, expires_at)
+                    VALUES (:id, :ws, :run, :by, 'note.txt', 'text/plain', 5, :sha, 'notScanned', :expires)
+                    """).param("id", id).param("ws", PURCHASING).param("run", file[1].equals("run") ? openRun : null)
+                    .param("by", initiator).param("sha", "0".repeat(64))
+                    .param("expires", file[1].equals("run") ? null
+                            : java.time.OffsetDateTime.now().plusHours(1)).update();
+            jdbc.sql("INSERT INTO run_attachment_content (attachment_id, content) VALUES (:id, :c)").param("id", id)
+                    .param("c", "hello".getBytes(StandardCharsets.UTF_8)).update();
+            ids.put(file[0], id.toString());
+        }
         ids.put("connectionKey", "procurement");
         ids.put("decisionKey", "amount-policy");
         ids.put("groupKey", "managers");
@@ -205,7 +230,16 @@ class SecurityMatrixTest extends RuntimeTestBase {
         if (body != null) {
             builder.contentType(MediaType.APPLICATION_JSON).content(json.write(body));
         }
-        var result = mvc.perform(builder).andReturn();
+        org.springframework.test.web.servlet.RequestBuilder request = builder;
+        if (List.of("uploadAttachment", "addRunAttachment").contains(operationId)) {
+            // Multipart operations (docs/build/S17): a well-formed upload, so a 404 cannot be explained by a bad body.
+            request = MockMvcRequestBuilders.multipart(HttpMethod.POST, "/api/v1" + path)
+                    .file(new org.springframework.mock.web.MockMultipartFile("file", "note.txt", "text/plain",
+                            "hello".getBytes(StandardCharsets.UTF_8)))
+                    .with(TestUsers.as(user)).with(com.orqix.support.IntegrationTestBase::xsrf)
+                    .header("Idempotency-Key", UUID.randomUUID().toString());
+        }
+        var result = mvc.perform(request).andReturn();
         OpenApiContract.validate(result);
         return result.getResponse().getStatus();
     }
@@ -228,9 +262,11 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "saveDraft" -> Map.of("definition", Map.of("schemaVersion", "0.1"));
             case "validateDraft" -> Map.of("revision", 1);
             case "evaluateDecision" -> Map.of("revision", 1, "values", Map.of("/input/amount", 1));
+            case "simulateWorkflow" -> Map.of("revision", 1, "input", Map.of("amount", 1));
             case "publishDraft" -> Map.of("draftRevision", 1);
             case "setActiveRelease" -> Map.of("releaseId", ids.get("releaseId"), "expectedVersion", 1);
             case "startRun" -> Map.of("workflowId", ids.get("workflowId"), "input", input(BigDecimal.ONE));
+            case "sendMessage" -> Map.of("name", "payment-received", "correlationKey", "SO-FOREIGN");
             case "cancelRun", "retryRun" -> Map.of("reason", "Foreign attempt", "expectedVersion", 1);
             case "reconcileEffect" -> Map.of("resolution", "confirmedNotApplied", "evidence",
                     Map.of("note", "Foreign attempt to reconcile"));
@@ -261,7 +297,8 @@ class SecurityMatrixTest extends RuntimeTestBase {
         for (String table : List.of("organization", "workspace", "subject", "role_binding", "permission_grant",
                 "workspace_group", "workspace_group_member", "migration_job", "migration_project", "migration_policy", "migration_review", "workflow", "workflow_draft_revision", "workflow_release",
                 "release_artifact", "connection_definition", "connection_binding", "workflow_run", "task_context",
-                "task_decision", "task_reminder", "document_snapshot", "effect_journal", "run_event", "notification", "idempotency_record",
+                "run_attachment", "run_attachment_content", "run_stage",
+                "task_decision", "task_reminder", "inbound_message", "message_subscription", "document_snapshot", "effect_journal", "run_event", "notification", "idempotency_record",
                 "act_re_deployment", "act_ru_execution", "act_ru_task", "act_ru_job", "act_ru_deadletter_job")) {
             counts.put(table, jdbc.sql("SELECT count(*) FROM " + table).query(Long.class).single());
         }

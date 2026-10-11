@@ -68,8 +68,14 @@ public final class RuntimeDtos {
     public record ReleaseRef(UUID id, int releaseNumber) {
     }
 
+    /** {@code messageName} is set while the step waits for a message (kind {@code wait}, docs/build/S16). */
     public record CurrentStep(String nodeId, String label, String kind, Instant since, String candidateGroup,
-            SubjectRef assignee, Instant dueAt) {
+            SubjectRef assignee, Instant dueAt, String messageName) {
+
+        public CurrentStep(String nodeId, String label, String kind, Instant since, String candidateGroup,
+                SubjectRef assignee, Instant dueAt) {
+            this(nodeId, label, kind, since, candidateGroup, assignee, dueAt, null);
+        }
     }
 
     /** The run that started this one ("Start another workflow", S12). */
@@ -102,13 +108,25 @@ public final class RuntimeDtos {
             @JsonInclude(JsonInclude.Include.ALWAYS) JsonNode input, Map<String, String> inputLabels,
             @JsonInclude(JsonInclude.Include.ALWAYS) JsonNode output, List<TaskSummary> tasks, List<Effect> effects,
             List<Effect> completedEffectsNotReversed, AllowedRunActions allowedActions, ParentRef parentRun,
-            List<ChildRun> children) {
+            List<ChildRun> children, StageView stage, List<StageView> stages) {
+    }
+
+    /**
+     * A case stage of a run (docs/build/S17). {@code index} is 1-based; {@code state} is notStarted, active or
+     * completed; {@code overdue} is true for an active stage past its due time.
+     */
+    public record StageView(String id, String label, int index, int total, String state, Instant enteredAt,
+            Instant dueAt, Instant completedAt, boolean overdue, String sla) {
+    }
+
+    public record StageProgress(StageView current, List<StageView> stages) {
     }
 
     public record RunSummary(UUID id, String reference, WorkflowRef workflow, ReleaseRef release, String businessKey,
             String requestTitle, SubjectRef initiator,
             String lifecycle, String outcome, String outcomeKind, List<CurrentStep> currentSteps, Attention attention,
-            Instant createdAt, Instant updatedAt, Instant endedAt, boolean isTest, int version, ParentRef parentRun) {
+            Instant createdAt, Instant updatedAt, Instant endedAt, boolean isTest, int version, ParentRef parentRun,
+            StageView stage) {
     }
 
     public record RunPage(List<RunSummary> items, String nextCursor) {
@@ -139,7 +157,8 @@ public final class RuntimeDtos {
 
     public record TaskSummary(String id, UUID runId, String runReference, String workflowName, String businessKey, String nodeId,
             String label, String requestTitle, SubjectRef requester, GroupRef candidateGroup, SubjectRef assignee,
-            String status, Instant dueAt, Instant createdAt, int version, int priority, TaskDecision decision) {
+            String status, Instant dueAt, Instant createdAt, int version, int priority, TaskDecision decision,
+            StageView stage) {
     }
 
     public record TaskRequest(JsonNode input, JsonNode inputSchema,

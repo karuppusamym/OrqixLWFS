@@ -57,6 +57,15 @@ export const evaluateDecision = (ws: string, workflowId: string, decisionKey: st
     }),
   )
 
+/** "Test this workflow": a dry run of a draft revision with a sample request and a scenario. No side effects. */
+export const simulateWorkflow = (ws: string, workflowId: string, body: S['SimulateRequest']) =>
+  call(
+    api.POST('/workspaces/{workspaceId}/workflows/{workflowId}/simulate', {
+      params: { path: { workspaceId: ws, workflowId } },
+      body,
+    }),
+  )
+
 // Releases
 export const publishDraft = (ws: string, workflowId: string, body: S['PublishRequest'], idempotencyKey: string) =>
   callWithResponse(
@@ -249,7 +258,7 @@ export const getAccessOverview = (ws: string) => call(api.GET('/workspaces/{work
 export const listGroups = (ws: string) => call(api.GET('/workspaces/{workspaceId}/groups', { params: { path: { workspaceId: ws } } }))
 
 // Migration sources are immutable; conversion creates a validated draft, never a release.
-export const uploadMigration = (ws: string, body: { fileName: string; content: string; sourceFormat?: 'bpmn' | 'dmn' | 'pegaArchive' | 'pegaMapping' }) =>
+export const uploadMigration = (ws: string, body: { fileName: string; content: string; sourceFormat?: 'bpmn' | 'dmn' | 'camundaForm' | 'pegaArchive' | 'pegaMapping' }) =>
   call(api.POST('/workspaces/{workspaceId}/migrations', { params: { path: { workspaceId: ws } }, body }))
 export const getMigration = (ws: string, migrationId: string) =>
   call(api.GET('/workspaces/{workspaceId}/migrations/{migrationId}', { params: { path: { workspaceId: ws, migrationId } } }))
@@ -273,3 +282,7 @@ export const getMigrationReview = (ws: string, workflowId: string) =>
   call(api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/migration-review', { params: { path: { workspaceId: ws, workflowId } } }))
 export const approveMigrationReview = (ws: string, workflowId: string, body: S['MigrationReviewRequest']) =>
   call(api.POST('/workspaces/{workspaceId}/workflows/{workflowId}/migration-review', { params: { path: { workspaceId: ws, workflowId } }, body }))
+
+// Inbound messages (docs/build/S16): tell requests that wait for a named message that it arrived.
+export const sendMessage = (ws: string, body: S['SendMessageRequest'], idempotencyKey: string) =>
+  call(api.POST('/workspaces/{workspaceId}/messages', { params: { path: { workspaceId: ws }, header: { 'Idempotency-Key': idempotencyKey } }, body }))

@@ -1,0 +1,384 @@
+{
+  "outcome" : {
+    "status" : "finished",
+    "businessOutcome" : "Equipment rejected",
+    "outcomeKind" : "rejected",
+    "endStepId" : "equipmentRejected",
+    "attention" : null,
+    "summary" : "The request would finish with the outcome \"Equipment rejected\" (rejected)."
+  },
+  "outputs" : { },
+  "trace" : [ {
+    "seq" : 1,
+    "stepId" : "start",
+    "stepLabel" : "New colleague submitted",
+    "kind" : "start",
+    "kindLabel" : "Request form",
+    "summary" : "The request is submitted with the answers you entered.",
+    "details" : { },
+    "transitionId" : "t1",
+    "nextStepId" : "setup"
+  }, {
+    "seq" : 2,
+    "stepId" : "setup",
+    "stepLabel" : "Prepare in parallel",
+    "kind" : "parallelSplit",
+    "kindLabel" : "Run in parallel",
+    "summary" : "\"Prepare in parallel\": starts 2 branches at the same time.",
+    "details" : {
+      "joinRef" : "setupDone",
+      "branches" : 2
+    },
+    "transitionId" : null,
+    "nextStepId" : null
+  }, {
+    "seq" : 3,
+    "stepId" : "it",
+    "stepLabel" : "IT accounts and access",
+    "kind" : "approval",
+    "kindLabel" : "Ask for approval",
+    "branch" : "1",
+    "summary" : "\"IT accounts and access\" goes to IT service desk. In this test they approve.",
+    "details" : {
+      "group" : "it-desk",
+      "groupName" : "IT service desk",
+      "dueAfterHours" : 24,
+      "decision" : "approved"
+    },
+    "wrote" : {
+      "decision" : "approved",
+      "decidedBy" : "Test approver"
+    },
+    "transitionId" : "t4",
+    "nextStepId" : "itReady"
+  }, {
+    "seq" : 4,
+    "stepId" : "itReady",
+    "stepLabel" : "Tell requester IT access is approved",
+    "kind" : "notification",
+    "kindLabel" : "Notify someone",
+    "branch" : "1",
+    "summary" : "\"Tell requester IT access is approved\": the requester would get this in-app message: \"IT accounts and access were approved.\"",
+    "details" : {
+      "channel" : "inApp",
+      "recipient" : "initiator",
+      "message" : "IT accounts and access were approved."
+    },
+    "transitionId" : "t9",
+    "nextStepId" : "setupDone"
+  }, {
+    "seq" : 5,
+    "stepId" : "facilities",
+    "stepLabel" : "Desk and building pass",
+    "kind" : "approval",
+    "kindLabel" : "Ask for approval",
+    "branch" : "2",
+    "summary" : "\"Desk and building pass\" goes to Facilities team. In this test they approve.",
+    "details" : {
+      "group" : "facilities-team",
+      "groupName" : "Facilities team",
+      "dueAfterHours" : 48,
+      "decision" : "approved"
+    },
+    "wrote" : {
+      "decision" : "approved",
+      "decidedBy" : "Test approver"
+    },
+    "transitionId" : "t10",
+    "nextStepId" : "setupDone"
+  }, {
+    "seq" : 6,
+    "stepId" : "setupDone",
+    "stepLabel" : "IT and Facilities are done",
+    "kind" : "parallelJoin",
+    "kindLabel" : "Wait for all",
+    "summary" : "\"IT and Facilities are done\": all 2 branches have finished, so the request continues.",
+    "details" : { },
+    "transitionId" : "t12",
+    "nextStepId" : "leadTime"
+  }, {
+    "seq" : 7,
+    "stepId" : "leadTime",
+    "stepLabel" : "Allow lead time before ordering",
+    "kind" : "wait",
+    "kindLabel" : "Wait",
+    "summary" : "\"Allow lead time before ordering\": would wait 1 minute. The test skips the wait.",
+    "details" : {
+      "duration" : "PT1M"
+    },
+    "transitionId" : "t13",
+    "nextStepId" : "orderEquipment"
+  }, {
+    "seq" : 8,
+    "stepId" : "orderEquipment",
+    "stepLabel" : "Order equipment",
+    "kind" : "startWorkflow",
+    "kindLabel" : "Start another workflow",
+    "summary" : "\"Order equipment\": starts \"Purchase approval\". In this test it runs to its end and finishes with \"Rejected\".",
+    "details" : {
+      "workflow" : "purchase-approval",
+      "workflowName" : "Purchase approval",
+      "simulated" : true,
+      "occurrences" : [ {
+        "occurrence" : 1,
+        "trace" : [ {
+          "seq" : 1,
+          "stepId" : "start",
+          "stepLabel" : "Request submitted",
+          "kind" : "start",
+          "kindLabel" : "Request form",
+          "summary" : "The request is submitted with the answers you entered.",
+          "details" : { },
+          "transitionId" : "t1",
+          "nextStepId" : "manager"
+        }, {
+          "seq" : 2,
+          "stepId" : "manager",
+          "stepLabel" : "Review request",
+          "kind" : "approval",
+          "kindLabel" : "Ask for approval",
+          "summary" : "\"Review request\" goes to Managers. In this test they approve.",
+          "details" : {
+            "group" : "managers",
+            "groupName" : "Managers",
+            "dueAfterHours" : 24,
+            "decision" : "approved"
+          },
+          "wrote" : {
+            "decision" : "approved",
+            "decidedBy" : "Test approver"
+          },
+          "transitionId" : "t2",
+          "nextStepId" : "amountPolicy"
+        }, {
+          "seq" : 3,
+          "stepId" : "amountPolicy",
+          "stepLabel" : "Check purchase amount",
+          "kind" : "decision",
+          "kindLabel" : "Make a decision",
+          "summary" : "\"Check purchase amount\": rule 1 applies because Amount (USD 6,000) is at least USD 5,000, so route = financeReview.",
+          "details" : {
+            "decisionKey" : "amount-policy",
+            "version" : 1,
+            "inputs" : [ {
+              "fieldRef" : "/input/amount",
+              "label" : "Amount",
+              "value" : 6000,
+              "shown" : "USD 6,000"
+            } ],
+            "rows" : [ {
+              "row" : 1,
+              "condition" : "Amount is at least USD 5,000",
+              "matched" : true,
+              "selected" : true,
+              "outputs" : {
+                "route" : "financeReview"
+              }
+            } ],
+            "usedDefault" : false,
+            "matchedRow" : 1,
+            "outputs" : {
+              "route" : "financeReview"
+            }
+          },
+          "wrote" : {
+            "route" : "financeReview"
+          },
+          "transitionId" : "t4",
+          "nextStepId" : "route"
+        }, {
+          "seq" : 4,
+          "stepId" : "route",
+          "stepLabel" : "Finance review needed?",
+          "kind" : "branch",
+          "kindLabel" : "Choose a path",
+          "summary" : "\"Finance review needed?\": takes the route \"USD 5,000 or more\" because Check purchase amount / route (financeReview) is financeReview.",
+          "details" : {
+            "routes" : [ {
+              "transitionId" : "t5",
+              "label" : "USD 5,000 or more",
+              "condition" : "Check purchase amount / route is financeReview",
+              "matched" : true
+            } ],
+            "chosen" : "t5"
+          },
+          "transitionId" : "t5",
+          "nextStepId" : "finance"
+        }, {
+          "seq" : 5,
+          "stepId" : "finance",
+          "stepLabel" : "Finance review",
+          "kind" : "approval",
+          "kindLabel" : "Ask for approval",
+          "summary" : "\"Finance review\" goes to Finance approvers. In this test they reject it with the reason \"Sample rejection reason\".",
+          "details" : {
+            "group" : "finance-approvers",
+            "groupName" : "Finance approvers",
+            "dueAfterHours" : 48,
+            "decision" : "rejected",
+            "reason" : "Sample rejection reason"
+          },
+          "wrote" : {
+            "decision" : "rejected",
+            "reason" : "Sample rejection reason",
+            "decidedBy" : "Test approver"
+          },
+          "transitionId" : "t8",
+          "nextStepId" : "notifyRejected"
+        }, {
+          "seq" : 6,
+          "stepId" : "notifyRejected",
+          "stepLabel" : "Tell requester it was rejected",
+          "kind" : "notification",
+          "kindLabel" : "Notify someone",
+          "summary" : "\"Tell requester it was rejected\": the requester would get this in-app message: \"Your purchase request was rejected. Open the request to see the reason.\"",
+          "details" : {
+            "channel" : "inApp",
+            "recipient" : "initiator",
+            "message" : "Your purchase request was rejected. Open the request to see the reason."
+          },
+          "transitionId" : "t11",
+          "nextStepId" : "rejected"
+        }, {
+          "seq" : 7,
+          "stepId" : "rejected",
+          "stepLabel" : "Rejected",
+          "kind" : "end",
+          "kindLabel" : "Finish",
+          "summary" : "The request finishes: \"Rejected\" (rejected).",
+          "details" : {
+            "businessOutcome" : "Rejected",
+            "outcomeKind" : "rejected"
+          },
+          "transitionId" : null,
+          "nextStepId" : null
+        } ],
+        "outcome" : "Rejected",
+        "outcomeKind" : "rejected"
+      } ],
+      "iterations" : 1,
+      "limitReached" : false,
+      "allSucceeded" : false
+    },
+    "wrote" : {
+      "outcome" : "Rejected",
+      "outcomeKind" : "rejected",
+      "reference" : "ORQ-TEST-1",
+      "iterations" : 1,
+      "limitReached" : false,
+      "allSucceeded" : false
+    },
+    "transitionId" : "t14",
+    "nextStepId" : "equipmentOutcome"
+  }, {
+    "seq" : 9,
+    "stepId" : "equipmentOutcome",
+    "stepLabel" : "Was the equipment approved?",
+    "kind" : "branch",
+    "kindLabel" : "Choose a path",
+    "summary" : "\"Was the equipment approved?\": takes the route \"Otherwise\" because none of the other routes applies.",
+    "details" : {
+      "routes" : [ {
+        "transitionId" : "t15",
+        "label" : "Equipment approved",
+        "condition" : "Order equipment / outcomeKind is success",
+        "matched" : false
+      } ],
+      "chosen" : "t16"
+    },
+    "transitionId" : "t16",
+    "nextStepId" : "notifyEquipmentRejected"
+  }, {
+    "seq" : 10,
+    "stepId" : "notifyEquipmentRejected",
+    "stepLabel" : "Tell requester equipment was not approved",
+    "kind" : "notification",
+    "kindLabel" : "Notify someone",
+    "summary" : "\"Tell requester equipment was not approved\": the requester would get this in-app message: \"The equipment purchase was not approved. Open the request to see the details.\"",
+    "details" : {
+      "channel" : "inApp",
+      "recipient" : "initiator",
+      "message" : "The equipment purchase was not approved. Open the request to see the details."
+    },
+    "transitionId" : "t18",
+    "nextStepId" : "equipmentRejected"
+  }, {
+    "seq" : 11,
+    "stepId" : "equipmentRejected",
+    "stepLabel" : "Equipment not approved",
+    "kind" : "end",
+    "kindLabel" : "Finish",
+    "summary" : "The request finishes: \"Equipment rejected\" (rejected).",
+    "details" : {
+      "businessOutcome" : "Equipment rejected",
+      "outcomeKind" : "rejected"
+    },
+    "transitionId" : null,
+    "nextStepId" : null
+  } ],
+  "warnings" : [ ],
+  "coverage" : {
+    "steps" : {
+      "visited" : 11,
+      "total" : 16,
+      "notVisited" : [ {
+        "id" : "itEscalation",
+        "label" : "IT lead review"
+      }, {
+        "id" : "notifyReady",
+        "label" : "Tell requester onboarding is ready"
+      }, {
+        "id" : "ready",
+        "label" : "Ready"
+      }, {
+        "id" : "notifyRejected",
+        "label" : "Tell requester onboarding was rejected"
+      }, {
+        "id" : "rejected",
+        "label" : "Rejected"
+      } ]
+    },
+    "routes" : {
+      "notTaken" : [ {
+        "transitionId" : "t5",
+        "from" : "it",
+        "to" : "notifyRejected",
+        "description" : "IT accounts and access, when rejected, goes to Tell requester onboarding was rejected"
+      }, {
+        "transitionId" : "t6",
+        "from" : "it",
+        "to" : "itEscalation",
+        "description" : "IT accounts and access, when the time limit fires, goes to IT lead review"
+      }, {
+        "transitionId" : "t7",
+        "from" : "itEscalation",
+        "to" : "itReady",
+        "description" : "IT lead review, when approved, goes to Tell requester IT access is approved"
+      }, {
+        "transitionId" : "t8",
+        "from" : "itEscalation",
+        "to" : "notifyRejected",
+        "description" : "IT lead review, when rejected, goes to Tell requester onboarding was rejected"
+      }, {
+        "transitionId" : "t11",
+        "from" : "facilities",
+        "to" : "notifyRejected",
+        "description" : "Desk and building pass, when rejected, goes to Tell requester onboarding was rejected"
+      }, {
+        "transitionId" : "t15",
+        "from" : "equipmentOutcome",
+        "to" : "notifyReady",
+        "description" : "Was the equipment approved?, when Equipment approved, goes to Tell requester onboarding is ready"
+      } ],
+      "taken" : 3,
+      "total" : 9
+    },
+    "rules" : {
+      "notMatched" : [ ],
+      "matched" : 0,
+      "total" : 0
+    },
+    "summary" : "Tested 11 of 16 steps, 3 of 9 routes and 0 of 0 decision rules."
+  },
+  "limits" : "This is a dry run of the workflow as designed, not the workflow engine. It does not call real systems, check that connections work, that people are in the groups, or how long anything takes."
+}

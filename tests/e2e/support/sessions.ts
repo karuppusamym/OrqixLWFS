@@ -8,6 +8,7 @@ export interface MockControl {
   decideTaskAs(username: string, taskId: string, action: 'approve' | 'reject', reason?: string): void
   claimTaskAs(username: string, taskId: string): void
   latency(ms: number): void
+  expireStage(runId: string, stageId: string): void
 }
 
 declare global {

@@ -65,6 +65,8 @@ export function StepsView({
           const slots: Array<{ on: RouteKind; transition?: Transition }> =
             node.type === 'approval'
               ? [{ on: 'approved', transition: out.find((t) => t.on === 'approved') }, { on: 'rejected', transition: out.find((t) => t.on === 'rejected') }, ...(node.config.timeoutAfter ? [{ on: 'timedOut' as const, transition: out.find((t) => t.on === 'timedOut') }] : [])]
+              : node.type === 'waitForMessage'
+                ? [{ on: 'next' as const, transition: out.find((t) => t.on === 'next') }, ...(node.config.timeoutAfter ? [{ on: 'timedOut' as const, transition: out.find((t) => t.on === 'timedOut') }] : [])]
               : node.type === 'parallelSplit'
                 ? [...out.map((t) => ({ on: 'next' as const, transition: t })), { on: 'next' }]
               : node.type === 'branch'

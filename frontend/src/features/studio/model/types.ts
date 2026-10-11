@@ -2,7 +2,7 @@
  * Canonical workflow v0.1 document as the studio edits it (contracts/workflow-v0.schema.json).
  * Drafts may be incomplete, so every container is normalized on load and every accessor is defensive.
  */
-export type NodeKind = 'start' | 'approval' | 'decision' | 'branch' | 'http' | 'notification' | 'parallelSplit' | 'parallelJoin' | 'wait' | 'startWorkflow' | 'end'
+export type NodeKind = 'start' | 'approval' | 'decision' | 'branch' | 'http' | 'notification' | 'parallelSplit' | 'parallelJoin' | 'wait' | 'waitForMessage' | 'startWorkflow' | 'end'
 export type Operator = 'eq' | 'ne' | 'gte' | 'gt' | 'lt' | 'lte'
 export type RouteKind = 'next' | 'approved' | 'rejected' | 'timedOut' | 'condition' | 'default'
 export type Literal = string | number | boolean
@@ -52,8 +52,11 @@ export interface FieldSchemaDoc {
   title: string
   description?: string
   enum?: string[]
-  /** `date` on a string field: a calendar date YYYY-MM-DD. */
-  format?: 'date'
+  /** `date` on a string field: a calendar date YYYY-MM-DD. `attachment`: a file chosen on the request form (docs/build/S17). */
+  format?: 'date' | 'attachment'
+  /** Only with format attachment: the accepted file types (default: all allowed types) and the largest file in bytes. */
+  acceptTypes?: string[]
+  maxFileBytes?: number
   formatMinimum?: string
   formatMaximum?: string
   minLength?: number
@@ -101,6 +104,16 @@ export interface Definition {
   dependencies: { connections: Array<{ key: string; definitionVersion: number }> }
   outputMapping: Record<string, { fieldRef: string; required: boolean }>
   uiLayout?: { positions: Record<string, Position>; viewport?: { x: number; y: number; zoom: number } }
+  /** Case stages (docs/build/S17): a presentation and monitoring layer over the steps; adds no behavior. */
+  stages?: StageDef[]
+}
+
+export interface StageDef {
+  id: string
+  label: string
+  nodes: string[]
+  /** ISO-8601 time limit (PT1M to P90D). */
+  sla?: string
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

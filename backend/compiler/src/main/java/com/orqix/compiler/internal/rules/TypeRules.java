@@ -249,6 +249,17 @@ final class TypeRules {
                 }
             }
         }
+        if (producer instanceof Node.WaitForMessage m && m.timeoutAfter() != null) {
+            for (Node end : g.ends()) {
+                if (g.isReachable(end) && MessageRules.reachableWithoutMessage(rc, m, end)) {
+                    rc.issues().blocker("WF_OUTPUT_NOT_GUARANTEED", path, producer.id(), null, "The " + r.key()
+                            + " of " + q(producer) + " exists only when the message arrives in time, but " + q(end)
+                            + " can also be reached when it does not, so the result field " + q(entry.key())
+                            + " cannot be required.");
+                    return;
+                }
+            }
+        }
         if (r.type().mayBeAbsent()) {
             rc.issues().blocker("WF_OUTPUT_NOT_GUARANTEED", path, producer.id(), null, "The " + r.key() + " of "
                     + q(producer) + " " + Conditions.absentWhy(producer) + ", so the result field "
@@ -287,6 +298,18 @@ final class TypeRules {
             String base = JsonPointers.of(member, "properties", f.key());
             String title = q(f.title());
             String is = title + " is " + f.type().description() + ", so it cannot ";
+            if (f.type() == FieldKind.ATTACHMENT && !"inputSchema".equals(member)) {
+                invalid(rc, base + "/format", title + " is a file, and files can only be asked for on the request"
+                        + " form, not in the " + formName + ".");
+            }
+            if (f.type() == FieldKind.ARRAY && f.items() != null && f.items().type() == FieldKind.ATTACHMENT) {
+                invalid(rc, base + "/items/format", title + " is a list, and a list cannot hold files. Add one"
+                        + " file field for each file, or attach more files from the request page.");
+            }
+            if (f.type() == FieldKind.ATTACHMENT && (f.formatMinimum() != null || f.formatMaximum() != null)) {
+                invalid(rc, base + (f.formatMinimum() != null ? "/formatMinimum" : "/formatMaximum"), is
+                        + "have earliest or latest dates.");
+            }
             if (f.enumValues() != null && f.type() != FieldKind.STRING) {
                 invalid(rc, base + "/enum", is + "have a list of choices.");
             }

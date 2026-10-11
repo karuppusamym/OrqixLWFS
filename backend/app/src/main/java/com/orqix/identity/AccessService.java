@@ -126,11 +126,12 @@ public class AccessService {
             PrincipalRef principal) {
         requireManager(caller, workspaceId, "createPermissionGrant", true);
         validatePrincipal(principal);
-        if (!"workflow.start".equals(permission) && !"connection.manage".equals(permission)) {
-            throw invalid("/permission", "enum", "Only workflow.start and connection.manage can be granted.");
+        if (!"workflow.start".equals(permission) && !"connection.manage".equals(permission)
+                && !"message.send".equals(permission)) {
+            throw invalid("/permission", "enum", "Only workflow.start, connection.manage and message.send can be granted.");
         }
-        if ("connection.manage".equals(permission) && workflowId != null) {
-            throw invalid("/workflowId", "type", "connection.manage is workspace-wide.");
+        if (("connection.manage".equals(permission) || "message.send".equals(permission)) && workflowId != null) {
+            throw invalid("/workflowId", "type", permission + " is workspace-wide.");
         }
         if (workflowId != null && jdbc.sql("SELECT count(*) FROM workflow WHERE workspace_id = :ws AND id = :id")
                 .param("ws", workspaceId).param("id", workflowId).query(Integer.class).single() == 0) {

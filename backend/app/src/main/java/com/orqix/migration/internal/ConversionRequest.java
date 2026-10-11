@@ -9,7 +9,7 @@ import tools.jackson.databind.JsonNode;
 final class ConversionRequest {
     private static final String KEY = "^[a-z][a-z0-9-]{0,62}[a-z0-9]$";
     static void validate(JsonNode request) {
-        object(request, Set.of("workflowKey", "name", "groupMappings", "approvalRoutes", "serviceTaskMappings", "serviceGroupMappings", "childWorkflowMappings", "decisionMappings", "decisionId", "inputSchema", "acknowledgeInfo", "acknowledgeReview"), "request");
+        object(request, Set.of("workflowKey", "name", "groupMappings", "approvalRoutes", "serviceTaskMappings", "serviceGroupMappings", "childWorkflowMappings", "decisionMappings", "formMappings", "decisionId", "inputSchema", "acknowledgeInfo", "acknowledgeReview"), "request");
         if (Json.depth(request) > 64) fail("request", "must have at most 64 levels");
         key(request.path("workflowKey"), "workflowKey");
         text(request.path("name"), "name", 200);
@@ -40,6 +40,15 @@ final class ConversionRequest {
                 if (value.has("decisionId")) text(value.path("decisionId"), path + "/decisionId", 128);
                 if (value.has("inputRef") && !value.path("inputRef").asString("").matches("^/(input/[a-z][A-Za-z0-9]{0,63}|steps/[A-Za-z][A-Za-z0-9_-]{0,63}/[a-z][A-Za-z0-9]{0,63})$"))
                     fail(path + "/inputRef", "must be a /input/<field> or /steps/<node>/<output> reference");
+            });
+        }
+        if (request.has("formMappings")) {
+            object(request.path("formMappings"), null, "formMappings");
+            request.path("formMappings").properties().forEach(e -> {
+                String path = "formMappings/" + e.getKey(); JsonNode value = e.getValue();
+                object(value, Set.of("migrationId"), path);
+                try { java.util.UUID.fromString(value.path("migrationId").asString("")); }
+                catch (IllegalArgumentException ex) { fail(path + "/migrationId", "must be the id of an uploaded Camunda form migration"); }
             });
         }
         if (request.has("childWorkflowMappings")) {

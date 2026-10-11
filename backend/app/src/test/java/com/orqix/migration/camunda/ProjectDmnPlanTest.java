@@ -43,4 +43,10 @@ class ProjectDmnPlanTest {
         assertThatThrownBy(()->ProjectAnalyzer.analyze(List.of(new ProjectAnalyzer.Source("rules.xml",dmn(),"bpmn")),JSON)).isInstanceOf(SourceException.class);
         assertThatThrownBy(()->ProjectAnalyzer.analyze(List.of(source("unsafe.dmn","<!DOCTYPE x [<!ENTITY e SYSTEM 'file:///etc/passwd'>]><x>&e;</x>")),JSON)).isInstanceOf(SourceException.class);
     }
+    @Test void duplicateIdsWithinOneDmnFileCannotMasqueradeAsOneConvertibleDecision() throws Exception {
+        String xml=dmn(); String decision=xml.substring(xml.indexOf("  <decision "),xml.indexOf("  </decision>")+"  </decision>".length());
+        var plan=ProjectAnalyzer.analyze(List.of(source("parent.bpmn",bpmn("7","approvalLevel")),source("duplicate.dmn",xml.replace("</definitions>",decision+"</definitions>"))),JSON);
+        assertThat(plan.issues()).extracting(ProjectAnalyzer.Issue::code).contains("PROJECT_DMN_NOT_CONVERTIBLE");
+        assertThat(plan.conversionOrder()).isEmpty();
+    }
 }

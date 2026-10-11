@@ -59,6 +59,21 @@ class ExpressionsTest {
     }
 
     @Test
+    void notOverOneComparisonInvertsTheOperator() {
+        assertThat(one("= not(amount >= 5000)")).extracting(Comparison::op).isEqualTo(Op.LT);
+        assertThat(one("= not(amount > 5000)")).extracting(Comparison::op).isEqualTo(Op.LTE);
+        assertThat(one("= not(amount < 5)")).extracting(Comparison::op).isEqualTo(Op.GTE);
+        assertThat(one("= not(amount <= 5)")).extracting(Comparison::op).isEqualTo(Op.GT);
+        assertThat(one("= not(status = \"x\")")).extracting(Comparison::op).isEqualTo(Op.NE);
+        assertThat(one("${not (status != 'x')}")).extracting(Comparison::op).isEqualTo(Op.EQ);
+        assertThat(one("${!(active == true)}")).extracting(Comparison::literal).isEqualTo(false);
+        assertThat(one("= not(approved = false)")).extracting(Comparison::literal).isEqualTo(true);
+        Logical group = (Logical) Expressions.parse("= not(a > 1) and b < 2", null, null);
+        assertThat(group.terms()).extracting(Comparison::op).containsExactly(Op.LTE, Op.LT);
+        assertThat(one("= not(approved)").booleanShortcut()).isTrue();
+    }
+
+    @Test
     void flatGroupsBecomeAllOrAnyWithTheOriginalTermsInOrder() {
         for (String and : List.of("${amount > 1000 && amount <= 10000}", "${amount > 1000 and amount <= 10000}",
                 "= amount > 1000 and amount <= 10000")) {
@@ -93,12 +108,20 @@ class ExpressionsTest {
     @ParameterizedTest
     @CsvSource(delimiter = '|', value = {
             "${a > 1 && b < 2 || c == 3}|mixes 'and' with 'or'",
-            "${not (a > 1)}|negates",
             "${!(a > 1 && b < 2)}|negates",
             "= not(a > 1 and b < 2)|negates",
             "${(a > 1 && b < 2) || c == 3}|nests a group",
             "${customer.age > 18}|property access",
             "${fn(x) > 1}|function call",
+            "= contains(name, \"x\")|contains",
+            "= owner = null|null",
+            "= owner != null|null",
+            "${owner == null}|null",
+            "= status in (\"a\", \"b\")|'in'",
+            "= if a > 1 then true else false|FEEL construct",
+            "= a > 1 and b between 1 and 2|not supported",
+            "= items[1] > 1|list, range or context",
+            "= not(a.b > 1)|property access",
             "${amount * 2 > 100}|arithmetic",
             "${amount > 1 ? 2 : 3}|arithmetic",
             "${5000 <= amount}|variable must be on the left",

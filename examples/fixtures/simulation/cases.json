@@ -1,0 +1,348 @@
+{
+  "note": "Golden traces of the dry run (S4 section 13). The Java simulator (WorkflowSimulatorGoldenTest) and the studio mock port (frontend/src/mocks/simulator.test.ts) must both reproduce every <id>.trace.json exactly. Regenerate with -Dorqix.updateGolden=true after an intentional change, and review the diff.",
+  "purchaseInput": {
+    "title": "Replacement laptop",
+    "purpose": "The old one no longer starts.",
+    "costCenter": "IT",
+    "amount": 1800
+  },
+  "cases": [
+    {
+      "id": "purchase-1800",
+      "definition": "examples/purchase-approval.json",
+      "input": {
+        "title": "Replacement laptop",
+        "purpose": "The old one no longer starts.",
+        "costCenter": "IT",
+        "amount": 1800
+      },
+      "scenario": {}
+    },
+    {
+      "id": "purchase-4999-99",
+      "definition": "examples/purchase-approval.json",
+      "input": {
+        "title": "Monitors",
+        "purpose": "Two monitors.",
+        "costCenter": "OPS",
+        "amount": 4999.99
+      },
+      "scenario": {}
+    },
+    {
+      "id": "purchase-5000",
+      "definition": "examples/purchase-approval.json",
+      "input": {
+        "title": "Server",
+        "purpose": "A small server.",
+        "costCenter": "IT",
+        "amount": 5000
+      },
+      "scenario": {}
+    },
+    {
+      "id": "purchase-5000-01",
+      "definition": "examples/purchase-approval.json",
+      "input": {
+        "title": "Server",
+        "purpose": "A small server.",
+        "costCenter": "IT",
+        "amount": 5000.01
+      },
+      "scenario": {}
+    },
+    {
+      "id": "purchase-manager-rejects",
+      "definition": "examples/purchase-approval.json",
+      "input": {
+        "title": "Chairs",
+        "purpose": "Ten chairs.",
+        "costCenter": "HR",
+        "amount": 900.5
+      },
+      "scenario": {
+        "approvals": {
+          "manager": {
+            "outcome": "reject",
+            "reason": "Not in the budget"
+          }
+        }
+      }
+    },
+    {
+      "id": "purchase-finance-rejects",
+      "definition": "examples/purchase-approval.json",
+      "input": {
+        "title": "Server",
+        "purpose": "A small server.",
+        "costCenter": "IT",
+        "amount": 12000
+      },
+      "scenario": {
+        "approvals": {
+          "finance": {
+            "outcome": "reject"
+          }
+        }
+      }
+    },
+    {
+      "id": "purchase-procurement-rejected",
+      "definition": "examples/purchase-approval.json",
+      "input": {
+        "title": "Laptop",
+        "purpose": "Replacement.",
+        "costCenter": "IT",
+        "amount": 1800
+      },
+      "scenario": {
+        "calls": {
+          "procure": {
+            "failure": "rejected"
+          }
+        }
+      }
+    },
+    {
+      "id": "purchase-procurement-unavailable",
+      "definition": "examples/purchase-approval.json",
+      "input": {
+        "title": "Laptop",
+        "purpose": "Replacement.",
+        "costCenter": "IT",
+        "amount": 1800
+      },
+      "scenario": {
+        "calls": {
+          "procure": {
+            "failure": "unavailable"
+          }
+        }
+      }
+    },
+    {
+      "id": "purchase-procurement-unknown",
+      "definition": "examples/purchase-approval.json",
+      "input": {
+        "title": "Laptop",
+        "purpose": "Replacement.",
+        "costCenter": "IT",
+        "amount": 1800
+      },
+      "scenario": {
+        "calls": {
+          "procure": {
+            "failure": "unknownOutcome"
+          }
+        }
+      }
+    },
+    {
+      "id": "purchase-procurement-own-answer",
+      "definition": "examples/purchase-approval.json",
+      "input": {
+        "title": "Laptop",
+        "purpose": "Replacement.",
+        "costCenter": "IT",
+        "amount": 1800
+      },
+      "scenario": {
+        "calls": {
+          "procure": {
+            "result": {
+              "id": "PO-4711",
+              "status": "CREATED"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "onboarding-default",
+      "definition": "examples/new-hire-onboarding.json",
+      "input": {
+        "employeeName": "Sam Rivera",
+        "role": "Analyst",
+        "department": "IT",
+        "equipment": "Laptop",
+        "equipmentBudget": 1200,
+        "justification": "Standard kit."
+      },
+      "scenario": {}
+    },
+    {
+      "id": "onboarding-it-times-out",
+      "definition": "examples/new-hire-onboarding.json",
+      "input": {
+        "employeeName": "Sam Rivera",
+        "role": "Analyst",
+        "department": "IT",
+        "equipment": "Laptop",
+        "equipmentBudget": 1200,
+        "justification": "Standard kit."
+      },
+      "scenario": {
+        "approvals": {
+          "it": {
+            "outcome": "timeout"
+          },
+          "itEscalation": {
+            "outcome": "approve"
+          }
+        }
+      }
+    },
+    {
+      "id": "onboarding-facilities-rejects",
+      "definition": "examples/new-hire-onboarding.json",
+      "input": {
+        "employeeName": "Sam Rivera",
+        "role": "Analyst",
+        "department": "IT",
+        "equipment": "Laptop",
+        "equipmentBudget": 1200,
+        "justification": "Standard kit."
+      },
+      "scenario": {
+        "approvals": {
+          "facilities": {
+            "outcome": "reject",
+            "reason": "No desk free"
+          }
+        }
+      }
+    },
+    {
+      "id": "onboarding-child-simulated",
+      "definition": "examples/new-hire-onboarding.json",
+      "input": {
+        "employeeName": "Sam Rivera",
+        "role": "Analyst",
+        "department": "IT",
+        "equipment": "Laptop",
+        "equipmentBudget": 6000,
+        "justification": "Powerful kit."
+      },
+      "scenario": {
+        "simulateChildren": true,
+        "childScenarios": {
+          "orderEquipment": {
+            "approvals": {
+              "finance": {
+                "outcome": "reject"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "start-date-wait",
+      "definition": "examples/start-date-onboarding.json",
+      "input": {
+        "employeeName": "Sam Rivera",
+        "startDate": "2026-02-02"
+      },
+      "scenario": {}
+    },
+    {
+      "id": "start-date-in-the-past",
+      "definition": "examples/start-date-onboarding.json",
+      "input": {
+        "employeeName": "Sam Rivera",
+        "startDate": "2025-12-01"
+      },
+      "scenario": {}
+    },
+    {
+      "id": "rework-until-accepted",
+      "definition": "examples/medium-bounded-rework.json",
+      "input": {
+        "title": "Laptop",
+        "purpose": "Replacement.",
+        "costCenter": "IT",
+        "amount": 1800
+      },
+      "scenario": {
+        "children": {
+          "child": {
+            "outcomes": [
+              "Rejected",
+              "Rejected",
+              "Accepted"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "rework-limit-reached",
+      "definition": "examples/medium-bounded-rework.json",
+      "input": {
+        "title": "Laptop",
+        "purpose": "Replacement.",
+        "costCenter": "IT",
+        "amount": 1800
+      },
+      "scenario": {
+        "children": {
+          "child": {
+            "outcomes": [
+              "Rejected",
+              "Rejected",
+              "Rejected"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "batch-items",
+      "definition": "examples/complex-batch-review.json",
+      "input": {
+        "title": "Batch",
+        "purpose": "Three items.",
+        "costCenter": "IT",
+        "amount": 300,
+        "items": [
+          "Chair",
+          "Desk",
+          "Lamp"
+        ]
+      },
+      "scenario": {
+        "children": {
+          "child": {
+            "outcomes": [
+              "Accepted",
+              "Rejected",
+              "Accepted"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "order-payment-arrives",
+      "definition": "examples/order-payment-wait.json",
+      "input": {
+        "orderNumber": "ORD-1001",
+        "customerName": "Sam Rivera"
+      },
+      "scenario": {}
+    },
+    {
+      "id": "order-payment-timeout",
+      "definition": "examples/order-payment-wait.json",
+      "input": {
+        "orderNumber": "ORD-1001",
+        "customerName": "Sam Rivera"
+      },
+      "scenario": {
+        "messages": {
+          "waitPayment": "timeout"
+        }
+      }
+    }
+  ]
+}

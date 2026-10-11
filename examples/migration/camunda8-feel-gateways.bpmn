@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Hand-authored compatibility fixture, not a customer export. Five Camunda 8 gateways using the FEEL subset the importer
+     converts: >=, group with or, bare boolean with not(), not() over a comparison, group with and. -->
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" xmlns:modeler="http://camunda.org/schema/modeler/1.0" targetNamespace="urn:orqix:migration-fixture" modeler:executionPlatform="Camunda Cloud" modeler:executionPlatformVersion="8.6.0">
+  <bpmn:process id="c8-feel" name="Camunda 8 FEEL gateways" isExecutable="true">
+    <bpmn:startEvent id="start" />
+    <bpmn:exclusiveGateway id="gAmount" default="toSmall" />
+    <bpmn:exclusiveGateway id="gStatus" default="toStandard" />
+    <bpmn:exclusiveGateway id="gApproved" />
+    <bpmn:exclusiveGateway id="gNot" default="toHigh" />
+    <bpmn:exclusiveGateway id="gRange" default="toOutside" />
+    <bpmn:endEvent id="endSmall" name="Small purchase" />
+    <bpmn:endEvent id="endStandard" name="Standard review" />
+    <bpmn:endEvent id="endDenied" name="Denied" />
+    <bpmn:endEvent id="endLow" name="Low value" />
+    <bpmn:endEvent id="endMiddle" name="Middle value" />
+    <bpmn:endEvent id="endOutside" name="Outside range" />
+    <bpmn:sequenceFlow id="s0" sourceRef="start" targetRef="gAmount" />
+    <bpmn:sequenceFlow id="toBig" sourceRef="gAmount" targetRef="gStatus"><bpmn:conditionExpression>= amount &gt;= 5000</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="toSmall" sourceRef="gAmount" targetRef="endSmall" />
+    <bpmn:sequenceFlow id="toPriority" sourceRef="gStatus" targetRef="gApproved"><bpmn:conditionExpression>= status = "priority" or status = "vip"</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="toStandard" sourceRef="gStatus" targetRef="endStandard" />
+    <bpmn:sequenceFlow id="toYes" sourceRef="gApproved" targetRef="gNot"><bpmn:conditionExpression>= approved</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="toNo" sourceRef="gApproved" targetRef="endDenied"><bpmn:conditionExpression>= not(approved)</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="toLow" sourceRef="gNot" targetRef="endLow"><bpmn:conditionExpression>= not(score &gt; 100)</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="toHigh" sourceRef="gNot" targetRef="gRange" />
+    <bpmn:sequenceFlow id="toMiddle" sourceRef="gRange" targetRef="endMiddle"><bpmn:conditionExpression>= score &gt; 1000 and score &lt;= 10000</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="toOutside" sourceRef="gRange" targetRef="endOutside" />
+  </bpmn:process>
+</bpmn:definitions>

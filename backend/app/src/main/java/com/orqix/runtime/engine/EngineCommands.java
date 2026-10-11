@@ -110,6 +110,18 @@ public class EngineCommands {
         runtimeService.triggerAsync(executions.getFirst().getId(), variables);
     }
 
+    /**
+     * Delivers a message to the execution waiting at a message catch event and sets the given process variables
+     * (S16). The engine continues to the next wait state inside the caller's transaction; a competing timer or
+     * message wins or loses by optimistic locking and surfaces as {@link EngineConflictException}.
+     */
+    public void deliverMessage(String executionId, String messageName, Map<String, Object> variables) {
+        as(null, () -> {
+            runtimeService.messageEventReceived(messageName, executionId, variables);
+            return null;
+        });
+    }
+
     public Optional<String> deadLetterJob(String processInstanceId) {
         List<Job> jobs = managementService.createDeadLetterJobQuery().processInstanceId(processInstanceId).list();
         return jobs.isEmpty() ? Optional.empty() : Optional.of(jobs.get(0).getId());

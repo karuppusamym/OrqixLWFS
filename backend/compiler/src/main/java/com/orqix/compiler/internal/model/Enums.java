@@ -20,6 +20,7 @@ public final class Enums {
         PARALLEL_JOIN("parallelJoin", "Wait for all"),
         WAIT("wait", "Wait"),
         START_WORKFLOW("startWorkflow", "Start another workflow"),
+        WAIT_FOR_MESSAGE("waitForMessage", "Wait for a message"),
         END("end", "Finish");
 
         private final String json;
@@ -111,7 +112,9 @@ public final class Enums {
     public enum FieldKind {
         STRING("text"), NUMBER("a number"), INTEGER("a whole number"), BOOLEAN("true or false"), ARRAY("a list"),
         /** A calendar date: JSON {@code type: string, format: date}, written YYYY-MM-DD (S12 section 10). */
-        DATE("a date");
+        DATE("a date"),
+        /** A file: JSON {@code type: string, format: attachment}; the value is the ID of an uploaded file (S17). */
+        ATTACHMENT("a file");
 
         private final String description;
 
@@ -134,7 +137,10 @@ public final class Enums {
 
         /** @return DATE for a string with {@code format: date}, otherwise as {@link #fromJson(String)} */
         public static FieldKind fromJson(String type, String format) {
-            return "string".equals(type) && "date".equals(format) ? DATE : fromJson(type);
+            if ("string".equals(type) && "date".equals(format)) {
+                return DATE;
+            }
+            return "string".equals(type) && "attachment".equals(format) ? ATTACHMENT : fromJson(type);
         }
 
         /** @return the kind, or null when the text is not a scalar type */

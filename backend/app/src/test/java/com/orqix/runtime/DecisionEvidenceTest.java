@@ -49,7 +49,7 @@ class DecisionEvidenceTest extends RuntimeTestBase {
         assertThat(event.path("evidence").path("rows").get(0).path("matched").asBoolean()).isFalse();
         assertThat(event.path("evidence").path("rows").get(0).path("selected").asBoolean()).isFalse();
         assertThat(event.path("evidence").path("defaultSelected").asBoolean()).isTrue();
-        jdbc.sql("UPDATE run_event SET data='null'::jsonb WHERE run_id=:run AND type='DECISION_EVALUATED'").param("run",run).update();
+        com.orqix.support.TestDatabase.legacyFixtureJdbc().sql("UPDATE orqix.run_event SET data='null'::jsonb WHERE run_id=:run AND type='DECISION_EVALUATED'").param("run",run).update();
         JsonNode metadata=decisionEvent("vic.viewer",run);
         assertThat(metadata.isObject()).isTrue();
         assertThat(metadata.path("evidenceRedacted").asBoolean()).isTrue();

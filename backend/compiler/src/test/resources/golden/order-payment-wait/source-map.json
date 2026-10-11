@@ -1,0 +1,34 @@
+{
+  "nodes": {
+    "start": ["start"],
+    "waitPayment": ["waitPayment", "waitPayment__message", "waitPayment__timeout", "waitPayment__toMessage", "waitPayment__toTimeout"],
+    "notifyPaid": ["notifyPaid"],
+    "fulfilled": ["fulfilled"],
+    "notifyCancelled": ["notifyCancelled"],
+    "cancelled": ["cancelled"]
+  },
+  "transitions": {
+    "t1": ["t1"],
+    "t2": ["t2"],
+    "t3": ["t3"],
+    "t4": ["t4"],
+    "t5": ["t5"]
+  },
+  "bpmnToCanonical": {
+    "start": "start",
+    "waitPayment": "waitPayment",
+    "waitPayment__message": "waitPayment",
+    "waitPayment__timeout": "waitPayment",
+    "waitPayment__toMessage": "waitPayment",
+    "waitPayment__toTimeout": "waitPayment",
+    "notifyPaid": "notifyPaid",
+    "fulfilled": "fulfilled",
+    "notifyCancelled": "notifyCancelled",
+    "cancelled": "cancelled",
+    "t1": "t1",
+    "t2": "t2",
+    "t3": "t3",
+    "t4": "t4",
+    "t5": "t5"
+  }
+}

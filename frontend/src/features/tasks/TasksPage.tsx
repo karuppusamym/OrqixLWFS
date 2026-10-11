@@ -17,6 +17,7 @@ import { cn } from '@/lib/cn'
 import { dueInfo, formatDay, formatDateTime } from '@/lib/dates'
 import { requestReference, taskTitle } from '@/lib/runText'
 import { useIsDesktop } from '@/lib/useMediaQuery'
+import { TaskStage } from '@/features/runs/StageProgress'
 import { TaskPanel } from './TaskPanel'
 
 const VIEWS: Array<{ id: TaskView; label: string }> = [
@@ -159,6 +160,7 @@ function TaskList({ tasks, ws, view, taskId, desktop, onOpen }: { tasks: TaskSum
             <p className="mt-2 text-sm">
               {t.label} <span className="text-muted-foreground">&middot; requested by {t.requester.displayName}</span>
             </p>
+            <TaskStage stage={t.stage} />
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm">
               {dueText(t)}
               <Button variant="secondary" size="sm" onClick={() => onOpen(t.id)} aria-label={`Open ${taskTitle(t)}`}>
@@ -194,7 +196,7 @@ function TaskList({ tasks, ws, view, taskId, desktop, onOpen }: { tasks: TaskSum
                   </Link>
                   <span className="block text-xs text-muted-foreground tabular-nums">{requestReference(t)}</span>
                 </TD>
-                <TD>{t.label}</TD><TD><span>Priority {t.priority ?? 0}</span><span className="block text-xs text-muted-foreground">{t.status === 'open' ? taskAge(t.createdAt) + ' ? ' : ''}Created {formatDateTime(t.createdAt)}</span></TD>
+                <TD>{t.label}<TaskStage stage={t.stage} /></TD><TD><span>Priority {t.priority ?? 0}</span><span className="block text-xs text-muted-foreground">{t.status === 'open' ? taskAge(t.createdAt) + ' ? ' : ''}Created {formatDateTime(t.createdAt)}</span></TD>
                 <TD>{t.requester.displayName}</TD>
                 <TD className="whitespace-nowrap">{dueText(t)}</TD>
                 <TD>

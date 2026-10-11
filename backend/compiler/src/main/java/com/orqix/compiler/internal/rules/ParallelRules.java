@@ -277,7 +277,7 @@ final class ParallelRules {
         if (t.on() != Route.REJECTED && t.on() != Route.TIMED_OUT) {
             return false;
         }
-        if (from.kind() != NodeKind.APPROVAL) {
+        if (from.kind() != NodeKind.APPROVAL && from.kind() != NodeKind.WAIT_FOR_MESSAGE) {
             return false;
         }
         return tailCache.computeIfAbsent(to.index(), k -> rejectionTail(rc.graph(), to));

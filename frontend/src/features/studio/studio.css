@@ -94,3 +94,26 @@
   overflow: hidden;
   box-shadow: 0 1px 3px rgb(var(--shadow-rgb) / 0.18);
 }
+
+/* Test run playback ("Test this workflow"): the path taken, the step being explained, and what no run has reached.
+   State is always also said in words by the panel; these styles only make it visible on the canvas. */
+.orqix-flow .react-flow__node.sim-current > div {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 30%, transparent);
+}
+.orqix-flow .react-flow__node.sim-visited > div {
+  border-color: var(--primary);
+}
+.orqix-flow .react-flow__node.sim-ahead {
+  opacity: 0.75;
+}
+.orqix-flow .react-flow__node.sim-unreached {
+  opacity: 0.35;
+}
+.orqix-flow .react-flow__edge.sim-taken .react-flow__edge-path {
+  stroke-width: 5px !important;
+  stroke: var(--primary) !important;
+}
+.orqix-flow .react-flow__edge.sim-untaken {
+  opacity: 0.35;
+}

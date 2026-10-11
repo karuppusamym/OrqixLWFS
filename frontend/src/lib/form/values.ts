@@ -127,13 +127,14 @@ function messageFor(f: FieldDef, keyword: IssueKeyword, typedLength: number): st
     case 'required':
       if (f.widget === 'select' || f.widget === 'radio') return 'Choose an option.'
       if (f.widget === 'checkbox') return 'Confirm this to continue.'
+      if (f.widget === 'file') return 'Choose a file.'
       return 'This field is required.'
     case 'type':
       return formatMessage(f, '')
     case 'enum':
       return 'Choose one of the listed options.'
     case 'format':
-      return 'Enter a valid date, for example 14 Oct 2026.'
+      return f.widget === 'file' ? 'Choose a file.' : 'Enter a valid date, for example 14 Oct 2026.'
     case 'formatMinimum':
       return `Choose a date on or after ${formatCalendarDate(s.formatMinimum)}.`
     case 'formatMaximum':

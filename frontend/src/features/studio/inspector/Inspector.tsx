@@ -11,6 +11,7 @@ import { KIND_ICON } from '../nodeMeta'
 import { BranchInspector } from './BranchInspector'
 import { DecisionInspector } from './DecisionInspector'
 import { HttpInspector } from './HttpInspector'
+import { MessageInspector } from './MessageInspector'
 import { ChildInspector, ParallelInspector, WaitInspector } from './PatternInspectors'
 import { ApprovalInspector, EndInspector, NotificationInspector, WorkflowInspector } from './SimpleInspectors'
 import { StartInspector } from './StartInspector'
@@ -105,6 +106,7 @@ function NodeInspector({ nodeId, onDeleteNode }: { nodeId: string; onDeleteNode:
       {node.type === 'http' ? <HttpInspector node={node} /> : null}
       {node.type === 'parallelSplit' || node.type === 'parallelJoin' ? <ParallelInspector node={node} /> : null}
       {node.type === 'wait' ? <WaitInspector node={node} /> : null}
+      {node.type === 'waitForMessage' ? <MessageInspector node={node} /> : null}
       {node.type === 'startWorkflow' ? <ChildInspector node={node} /> : null}
       {node.type === 'notification' ? <NotificationInspector node={node} /> : null}
       {node.type === 'end' ? <EndInspector node={node} /> : null}

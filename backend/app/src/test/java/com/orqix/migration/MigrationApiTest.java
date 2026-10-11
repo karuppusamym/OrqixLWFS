@@ -295,6 +295,20 @@ class MigrationApiTest extends RuntimeTestBase {
         assertThat(api("dana.designer").get("/workspaces/{ws}/migrations/{id}",PURCHASING,job.path("id").asString()).body().path("status").asString()).isEqualTo("analyzed");
     }
 
+    @Test void duplicateDecisionIdsCannotConvertStandaloneOrThroughABpmnDecisionMapping() throws Exception {
+        String xml=example("dmn-first-hit.dmn");
+        int start=xml.indexOf("  <decision "), end=xml.indexOf("  </decision>")+"  </decision>".length();
+        var dmn=upload(xml.replace("</definitions>",xml.substring(start,end)+"</definitions>"),"dmn");
+        assertThat(dmn.path("report").toString()).contains("DMN_DUPLICATE_DECISION_ID");
+        var standalone=convert(dmn,simpleRequest("duplicate-dmn"));
+        assertThat(standalone.status()).as(standalone.toString()).isEqualTo(422);
+        assertThat(standalone.body().toString()).contains("DMN_DUPLICATE_DECISION_ID");
+        var parent=upload(example("business-rule-task.bpmn"),"bpmn");
+        var request=simpleRequest("duplicate-dmn-parent"); request.putObject("decisionMappings").putObject("routeRule").put("migrationId",dmn.path("id").asString());
+        var mapped=convert(parent,request); assertThat(mapped.status()).as(mapped.toString()).isEqualTo(422);
+        assertThat(mapped.body().toString()).contains("DMN_DUPLICATE_DECISION_ID");
+        assertThat(api("dana.designer").get("/workspaces/{ws}/migrations/{id}",PURCHASING,dmn.path("id").asString()).body().path("status").asString()).isEqualTo("analyzed");
+    }
     @Test void businessRuleTaskBecomesADecisionStepFromAnUploadedDmnAndRoutesOnItsResult() throws Exception {
         var dmn=upload(example("dmn-first-hit.dmn"),"dmn");
         var job=upload(example("business-rule-task.bpmn"),"bpmn");

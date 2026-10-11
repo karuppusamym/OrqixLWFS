@@ -34,6 +34,7 @@ export function displayValue(field: FieldDef, raw: RawValue | undefined): string
   if (field.schema.type === 'boolean') return raw === true ? 'Yes' : 'No'
   const text = typeof raw === 'string' ? raw : ''
   if (text === '') return '—'
+  if (field.widget === 'file') return 'A file is attached'
   return field.isMoney ? formatUsd(text) : text
 }
 
@@ -52,6 +53,7 @@ export function StartRequestPage() {
   const [showSummary, setShowSummary] = useState(false)
   const [businessKey, setBusinessKey] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [uploadingFields, setUploadingFields] = useState<Set<string>>(new Set())
   const [submitError, setSubmitError] = useState<ProblemError | null>(null)
   const [staleNotice, setStaleNotice] = useState(false)
   const [result, setResult] = useState<Run | null>(null)
@@ -94,6 +96,7 @@ export function StartRequestPage() {
   }
 
   const review = () => {
+    if (uploadingFields.size) return
     const result = validateForm(schema, ui, values)
     if (!result.valid) {
       setErrors(result.errors)
@@ -251,7 +254,10 @@ export function StartRequestPage() {
         <Card>
           <CardContent className="space-y-5 pt-5">
             {showSummary ? <ErrorSummary ref={summaryRef} fields={fields} errors={errors} idPrefix={ID_PREFIX} /> : null}
-            <FormRenderer fields={fields} values={values} onChange={change} errors={errors} idPrefix={ID_PREFIX} />
+            <FormRenderer key={`${ws}:${workflowId}:${startForm.releaseNumber}`} fields={fields} values={values} onChange={change} errors={errors} idPrefix={ID_PREFIX} onFileBusyChange={(key, busy) => {
+              setUploadingFields((previous) => { const next = new Set(previous); if (busy) next.add(key); else next.delete(key); return next })
+            }} />
+            {uploadingFields.size ? <p role="status">Wait for your files to finish uploading before reviewing the request.</p> : null}
             <details className="rounded-control border border-border px-4 py-2">
               <summary className="cursor-pointer text-sm font-semibold">Add your own reference number (optional)</summary>
               <div className="space-y-1.5 pt-3 pb-2">
@@ -260,7 +266,7 @@ export function StartRequestPage() {
               </div>
             </details>
             <div className="flex flex-wrap gap-3 pt-2">
-              <Button type="submit" variant="primary" size="lg">
+              <Button type="submit" variant="primary" size="lg" disabled={uploadingFields.size > 0}>
                 Review request
               </Button>
               <Button asChild variant="secondary" size="lg">

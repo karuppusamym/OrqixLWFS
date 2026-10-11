@@ -78,7 +78,22 @@ public final class ModelReader {
                 root.get("security").get("selfApproval").stringValue(),
                 List.copyOf(dependencies),
                 Collections.unmodifiableMap(outputMapping),
-                readLayout(root.get("uiLayout")));
+                readLayout(root.get("uiLayout")),
+                readStages(root.get("stages")));
+    }
+
+    private static List<WorkflowDefinition.Stage> readStages(JsonNode stages) {
+        List<WorkflowDefinition.Stage> list = new ArrayList<>();
+        if (stages != null) {
+            for (int i = 0; i < stages.size(); i++) {
+                JsonNode s = stages.get(i);
+                List<String> nodes = new ArrayList<>();
+                s.get("nodes").forEach(n -> nodes.add(n.stringValue()));
+                list.add(new WorkflowDefinition.Stage(i, s.get("id").stringValue(), s.get("label").stringValue(),
+                        List.copyOf(nodes), s.has("sla") ? s.get("sla").stringValue() : null));
+            }
+        }
+        return List.copyOf(list);
     }
 
     private static Node readNode(int index, JsonNode n) {
@@ -112,9 +127,26 @@ public final class ModelReader {
                             c.get("forEach").get("itemInput").stringValue(), c.get("forEach").get("maxItems").intValue(),
                             "parallel".equals(c.get("forEach").path("mode").asString())),
                     c.has("collectionMapping") ? stringMap(c.get("collectionMapping")) : Map.of());
+            case WAIT_FOR_MESSAGE -> new Node.WaitForMessage(index, id, label, c.get("message").stringValue(),
+                    c.get("correlationField").stringValue(),
+                    c.has("timeoutAfter") ? c.get("timeoutAfter").stringValue() : null, payloadFields(c.get("payload")));
             case END -> new Node.End(index, id, label, c.get("businessOutcome").stringValue(),
                     c.get("outcomeKind").stringValue());
         };
+    }
+
+    private static List<Node.PayloadField> payloadFields(JsonNode payload) {
+        List<Node.PayloadField> fields = new ArrayList<>();
+        if (payload != null) {
+            for (JsonNode f : payload) {
+                String type = f.get("type").stringValue();
+                fields.add(new Node.PayloadField(f.get("name").stringValue(),
+                        "date".equals(type) ? FieldKind.DATE : FieldKind.fromJson(type),
+                        f.has("title") ? f.get("title").stringValue() : f.get("name").stringValue(),
+                        f.has("required") && f.get("required").booleanValue()));
+            }
+        }
+        return List.copyOf(fields);
     }
 
     private static Transition readTransition(int index, JsonNode t) {

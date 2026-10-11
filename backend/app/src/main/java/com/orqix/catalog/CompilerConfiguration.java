@@ -7,6 +7,7 @@ import com.orqix.compiler.Compilers;
 import com.orqix.compiler.DecisionEvaluator;
 import com.orqix.compiler.FormValidator;
 import com.orqix.compiler.WorkflowCompiler;
+import com.orqix.compiler.WorkflowSimulator;
 
 /** The pure compiler module's default implementations, registered as beans (S4). */
 @Configuration(proxyBeanMethods = false)
@@ -25,5 +26,10 @@ public class CompilerConfiguration {
     @Bean
     DecisionEvaluator decisionEvaluator() {
         return Compilers.decisionEvaluator();
+    }
+
+    @Bean
+    WorkflowSimulator workflowSimulator() {
+        return Compilers.workflowSimulator();
     }
 }

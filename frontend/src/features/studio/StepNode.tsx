@@ -94,6 +94,11 @@ function StepNodeComponent({ data, selected }: NodeProps<StepFlowNode>) {
           </span>
           {data.timeout ? <Handle type="source" position={Position.Bottom} id="timedOut" aria-label="Timed out route" /> : null}
         </>
+      ) : data.kind === 'waitForMessage' && data.timeout ? (
+        <>
+          <Handle type="source" position={Position.Right} id="next" aria-hidden="true" />
+          <Handle type="source" position={Position.Bottom} id="timedOut" aria-label="Timed out route" />
+        </>
       ) : data.kind === 'branch' ? (
         <Handle type="source" position={Position.Right} id="route" aria-hidden="true" />
       ) : data.kind !== 'end' ? (

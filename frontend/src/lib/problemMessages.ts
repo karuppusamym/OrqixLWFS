@@ -57,6 +57,7 @@ function taskConflictMessage(ctx: ProblemContext, fallback: string): string {
 
 /** Every server problem code has an entry; `satisfies` makes a missing code a compile error. */
 const TABLE = {
+  INTERNAL_ERROR: { behavior: 'retry', message: 'Something went wrong. Try again with the same request.', retryable: true },
   MALFORMED_REQUEST: { behavior: 'message', message: 'Something in the request could not be read. Reload the page and try again.' },
   IDEMPOTENCY_KEY_REQUIRED: { behavior: 'message', message: 'The request could not be sent safely. Reload the page and try again.' },
   INVALID_CURSOR: { behavior: 'message', message: 'The list changed while you were paging. Start again from the first page.' },

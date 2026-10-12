@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { useStudio, useStudioContext } from '../StudioContext'
 import { cfg, type WorkflowNode } from '../model/types'
 import { Advanced, CommitInput, CommitNumber, CommitTextarea, DurationPreview, InspectorSection } from './controls'
+import { WorkManagementFields } from './WorkManagementFields'
 
 /** Rename a step ID in Advanced: IDs are stable references, so the change is validated and applied everywhere. */
 export function StepIdField({ node }: { node: WorkflowNode }) {
@@ -64,7 +65,7 @@ export function ApprovalInspector({ node }: { node: WorkflowNode }) {
             </Select>
           )}
         </FormField>
-        <FormField label="Due after (hours)" optionalText id={`approval-due-${node.id}`} description="Shown as a due date; no reminder is sent.">
+        <FormField label="Due after (hours)" optionalText id={`approval-due-${node.id}`} description="Shown as a due date; counts working hours if a calendar is configured below.">
           {(ids) => (
             <CommitNumber
               id={ids.input}
@@ -101,6 +102,7 @@ export function ApprovalInspector({ node }: { node: WorkflowNode }) {
         </FormField>
         {cfg<string>(node, 'timeoutAfter') ? <DurationPreview text={cfg<string>(node, 'timeoutAfter') ?? ''} verb="allows" /> : null}
       </InspectorSection>
+      <WorkManagementFields node={node} groups={items} />
       <Advanced>
         <StepIdField node={node} />
       </Advanced>

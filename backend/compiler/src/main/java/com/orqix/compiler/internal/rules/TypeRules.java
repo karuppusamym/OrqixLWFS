@@ -21,6 +21,7 @@ import com.orqix.compiler.internal.model.Literal;
 import com.orqix.compiler.internal.model.Node;
 import com.orqix.compiler.internal.model.WorkflowDefinition;
 import com.orqix.compiler.internal.model.WorkflowDefinition.DecisionTable;
+import com.orqix.compiler.internal.model.WorkflowDefinition.Condition;
 import com.orqix.compiler.internal.model.WorkflowDefinition.FormSchema;
 import com.orqix.compiler.internal.model.WorkflowDefinition.OutputEntry;
 import com.orqix.compiler.internal.model.WorkflowDefinition.Transition;
@@ -101,47 +102,34 @@ final class TypeRules {
                 }
             }
         }
-        // Conditions: one field, well typed, available where used, pairwise disjoint.
-        String field = table.rows().get(0).when().fieldRef();
-        boolean mixed = false;
-        List<Disjointness.Typed> typed = new ArrayList<>();
-        boolean allTyped = true;
-        List<Node> users = rc.definition().nodes().stream()
-                .filter(n -> n instanceof Node.Decision dn && dn.decisionRef().equals(table.key())
-                        && !rc.graph().isShadowed(n))
-                .toList();
-        for (DecisionTable.Row row : table.rows()) {
-            String base = table.path() + "/rows/" + row.index() + "/when";
-            if (!row.when().fieldRef().equals(field)) {
-                mixed = true;
-                rc.issues().blocker("WF_DECISION_MIXED_FIELDS", base + "/fieldRef", null, null, "Every rule of "
-                        + name + " must test the same field (" + field + ").");
+        boolean scalar=table.rows().stream().noneMatch(r->r.when().compound());
+        String field=scalar?table.rows().get(0).when().fieldRef():null;
+        Map<DecisionTable.Row,List<Disjointness.Typed>> typed=new LinkedHashMap<>();
+        List<Node> users=rc.definition().nodes().stream().filter(n->n instanceof Node.Decision dn && dn.decisionRef().equals(table.key()) && !rc.graph().isShadowed(n)).toList();
+        for (DecisionTable.Row row:table.rows()) {
+            String base=table.path()+"/rows/"+row.index()+"/when";
+            if(scalar && !row.when().fieldRef().equals(field)) {
+                rc.issues().blocker("WF_DECISION_MIXED_FIELDS",base+"/fieldRef",null,null,"Scalar rows must test the same field; use an All condition for multiple inputs.");
+                continue;
             }
-            Disjointness.Typed t = Conditions.check(rc, row.when(), base, null, null);
-            if (t == null) {
-                allTyped = false;
-            } else {
-                typed.add(t);
+            List<Condition> terms=row.when().compound()?row.when().terms():List.of(row.when());
+            if(terms.stream().map(Condition::fieldRef).distinct().count()!=terms.size()) {
+                rc.issues().blocker("WF_DECISION_DUPLICATE_INPUT",base,null,null,"Each field may appear once in a conjunctive decision row.");
+                continue;
             }
-            for (Node user : users) {
-                Conditions.availability(rc, row.when().fieldRef(), user, base + "/fieldRef", null);
-            }
+            var checked=LogicalConditions.check(rc,row.when(),base,null,null);
+            if(checked!=null) typed.put(row,checked);
+            for(Node user:users) for(Condition term:terms) Conditions.availability(rc,term.fieldRef(),user,base+"/fieldRef",null);
         }
-        if (mixed || !allTyped) {
-            return;
+        if(typed.size()!=table.rows().size()) return;
+        for(int i=0;i<table.rows().size();i++) for(int j=i+1;j<table.rows().size();j++) {
+            var x=table.rows().get(i); var y=table.rows().get(j);
+            if(LogicalConditions.overlap(x.when(),typed.get(x),y.when(),typed.get(y)))
+                rc.issues().blocker("WF_DECISION_OVERLAP",table.path()+"/rows/"+j+"/when",null,null,"Rules "+(i+1)+" and "+(j+1)+" can both apply. Make their conditions exclusive.");
         }
-        for (int i = 0; i < typed.size(); i++) {
-            for (int j = i + 1; j < typed.size(); j++) {
-                if (Disjointness.overlap(typed.get(i), typed.get(j))) {
-                    rc.issues().blocker("WF_DECISION_OVERLAP", table.path() + "/rows/" + j + "/when", null, null,
-                            "Rules " + (i + 1) + " and " + (j + 1) + " of " + name + " can both apply to the same"
-                                    + " value. Make the conditions exclusive.");
-                }
-            }
-        }
-        if (Disjointness.covers(typed, typed.get(0).type())) {
-            rc.issues().warning("WF_DECISION_DEFAULT_UNREACHABLE", table.path() + "/default", null, null,
-                    "The rules of " + name + " cover every possible value, so the default result is never used.");
+        if(scalar) {
+            var atoms=table.rows().stream().map(r->typed.get(r).get(0)).toList();
+            if(Disjointness.covers(atoms,atoms.get(0).type())) rc.issues().warning("WF_DECISION_DEFAULT_UNREACHABLE",table.path()+"/default",null,null,"The rules cover every possible value, so the default is never used.");
         }
     }
 
@@ -249,6 +237,20 @@ final class TypeRules {
                 }
             }
         }
+        if (FailureRules.hasFailedRoute(g, producer)) {
+            boolean failureFact = FailureRules.isFailureOutput(r.key());
+            for (Node end : g.ends()) {
+                if (g.isReachable(end) && FailureRules.reachableWithout(rc, producer,
+                        failureFact ? com.orqix.compiler.internal.model.Enums.Route.FAILED
+                                : com.orqix.compiler.internal.model.Enums.Route.NEXT, end)) {
+                    rc.issues().blocker("WF_OUTPUT_NOT_GUARANTEED", path, producer.id(), null, "The " + r.key()
+                            + " of " + q(producer) + " exists only when the step " + (failureFact ? "has failed"
+                            : "works") + ", but " + q(end) + " can also be reached otherwise, so the result field "
+                            + q(entry.key()) + " cannot be required.");
+                    return;
+                }
+            }
+        }
         if (producer instanceof Node.WaitForMessage m && m.timeoutAfter() != null) {
             for (Node end : g.ends()) {
                 if (g.isReachable(end) && MessageRules.reachableWithoutMessage(rc, m, end)) {
@@ -284,6 +286,19 @@ final class TypeRules {
             if (f.type() == FieldKind.ARRAY) {
                 FormSchema.Field item = f.items();
                 String itemBase = "/" + member + "/properties/" + f.key() + "/items";
+                if (item.type()==FieldKind.OBJECT) {
+                    for(String required:item.rowRequired())if(!item.rowFields().containsKey(required))invalid(rc,itemBase+"/required","A required row column does not exist.");
+                    for(var column:item.rowFields().values()) {
+                        String p=itemBase+"/properties/"+column.key();
+                        if(column.type()==FieldKind.ATTACHMENT || column.incidentEditable())invalid(rc,p,"Rows cannot contain files or incident-editable columns.");
+                        if(column.minLength()!=null && column.maxLength()!=null && column.minLength()>column.maxLength())invalid(rc,p,"The column's minimum text length exceeds its maximum.");
+                        if(column.minimum()!=null && column.maximum()!=null && column.minimum().compareTo(column.maximum())>0)invalid(rc,p,"The column's minimum exceeds its maximum.");
+                        if(column.type()!=FieldKind.STRING && (column.minLength()!=null || column.maxLength()!=null || column.enumValues()!=null))invalid(rc,p,"Text constraints require a text column.");
+                        if(!column.type().numeric() && (column.minimum()!=null || column.maximum()!=null || column.multipleOf()!=null))invalid(rc,p,"Numeric constraints require a numeric column.");
+                        if(column.type()==FieldKind.INTEGER && column.multipleOf()!=null && column.multipleOf().compareTo(BigDecimal.ONE)!=0)invalid(rc,p,"Whole-number columns cannot allow cents.");
+                        if(column.type()==FieldKind.DATE)dateBounds(rc,column,p);
+                    }
+                }
                 if (item.minLength() != null && item.maxLength() != null && item.minLength() > item.maxLength())
                     invalid(rc, itemBase + "/minLength", "The item's minimum text length exceeds its maximum.");
                 if (item.minimum() != null && item.maximum() != null && item.minimum().compareTo(item.maximum()) > 0)
@@ -296,6 +311,10 @@ final class TypeRules {
                     invalid(rc, itemBase + "/multipleOf", "Whole-number items cannot allow cents.");
             }
             String base = JsonPointers.of(member, "properties", f.key());
+            if (f.incidentEditable() && (!"inputSchema".equals(member) || f.type() == FieldKind.ARRAY || f.type() == FieldKind.ATTACHMENT))
+                invalid(rc,base+"/incidentEditable","Only scalar request fields can be corrected during an incident.");
+            if (f.items() != null && f.items().incidentEditable()) invalid(rc,base+"/items/incidentEditable",
+                    "Collection items cannot be corrected during an incident.");
             String title = q(f.title());
             String is = title + " is " + f.type().description() + ", so it cannot ";
             if (f.type() == FieldKind.ATTACHMENT && !"inputSchema".equals(member)) {
@@ -372,6 +391,7 @@ final class TypeRules {
     }
 
     private static void inputUi(RuleContext rc) {
+        FormGuards.validateUi(rc);
         WorkflowDefinition.InputUi ui = rc.definition().inputUi();
         if (ui == null) {
             return;

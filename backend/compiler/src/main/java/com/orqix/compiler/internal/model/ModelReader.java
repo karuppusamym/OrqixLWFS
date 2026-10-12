@@ -106,12 +106,17 @@ public final class ModelReader {
             case APPROVAL -> new Node.Approval(index, id, label, c.get("candidateGroupRef").stringValue(),
                     c.get("rejectReasonRequired").booleanValue(),
                     c.has("dueAfterHours") ? c.get("dueAfterHours").intValue() : null,
-                    c.has("timeoutAfter") ? c.get("timeoutAfter").stringValue() : null);
+                    c.has("timeoutAfter") ? c.get("timeoutAfter").stringValue() : null,
+                    c.has("requiredSkills") ? java.util.stream.StreamSupport.stream(c.get("requiredSkills").spliterator(),false)
+                            .map(JsonNode::stringValue).toList() : List.of(), c.get("calendar"), c.get("escalation"));
             case DECISION -> new Node.Decision(index, id, label, c.get("decisionRef").stringValue());
             case BRANCH -> new Node.Branch(index, id, label);
             case HTTP -> new Node.Http(index, id, label, c.get("connectionRef").stringValue(),
                     c.get("operation").stringValue(), stringMap(c.get("inputMapping")),
-                    stringMap(c.get("resultMapping")), c.get("timeoutSeconds").intValue());
+                    stringMap(c.get("resultMapping")), c.get("timeoutSeconds").intValue(),
+                    c.has("compensates") ? c.get("compensates").stringValue() : null);
+            case GENERATE_DOCUMENT -> new Node.GenerateDocument(index, id, label, c.get("format").stringValue(),
+                    c.get("fileName").stringValue(), c.get("template").stringValue(), stringMap(c.get("inputMapping")));
             case NOTIFICATION -> new Node.Notification(index, id, label, c.get("channel").stringValue(),
                     c.get("recipient").stringValue(), c.get("message").stringValue());
             case PARALLEL_SPLIT -> new Node.ParallelSplit(index, id, label, c.get("joinRef").stringValue());
@@ -247,12 +252,23 @@ public final class ModelReader {
                     intOrNull(f.get("maxLength")), decimalOrNull(f.get("minimum")), decimalOrNull(f.get("maximum")),
                     decimalOrNull(f.get("multipleOf")), f.has("items") ? readField(e.getKey(), f.get("items")) : null,
                     intOrNull(f.get("minItems")), intOrNull(f.get("maxItems")), f.path("formatMinimum").asString(null),
-                    f.path("formatMaximum").asString(null)));
+                    f.path("formatMaximum").asString(null),f.path("incidentEditable").asBoolean(false)));
         }
         return new FormSchema(path, List.copyOf(required), Collections.unmodifiableMap(fields));
     }
 
     private static FormSchema.Field readField(String key, JsonNode f) {
+        if ("object".equals(f.path("type").asString(null))) {
+            Map<String, FormSchema.Field> columns = new TreeMap<>();
+            for (Map.Entry<String, JsonNode> e : f.get("properties").properties()) {
+                columns.put(e.getKey(), readField(e.getKey(), e.getValue()));
+            }
+            List<String> required = new ArrayList<>();
+            f.path("required").forEach(r -> required.add(r.stringValue()));
+            return new FormSchema.Field(key, FieldKind.OBJECT, f.path("title").asString(key), null, null, null, null,
+                    null, null, null, null, null, null, null, false, List.copyOf(required),
+                    Collections.unmodifiableMap(columns));
+        }
         List<String> enums = null;
         if (f.has("enum")) {
             List<String> values = new ArrayList<>();
@@ -263,7 +279,7 @@ public final class ModelReader {
                 f.get("title").stringValue(),
                 enums, intOrNull(f.get("minLength")), intOrNull(f.get("maxLength")), decimalOrNull(f.get("minimum")),
                 decimalOrNull(f.get("maximum")), decimalOrNull(f.get("multipleOf")), null, null, null,
-                f.path("formatMinimum").asString(null), f.path("formatMaximum").asString(null));
+                f.path("formatMinimum").asString(null), f.path("formatMaximum").asString(null),f.path("incidentEditable").asBoolean(false));
     }
 
     private static InputUi readInputUi(JsonNode ui) {
@@ -274,7 +290,28 @@ public final class ModelReader {
         if (ui.has("order")) {
             ui.get("order").forEach(o -> order.add(o.stringValue()));
         }
-        return new InputUi(List.copyOf(order), ui.has("widgets") ? stringMap(ui.get("widgets")) : Map.of());
+        List<InputUi.Section> sections = new ArrayList<>();
+        int index = 0;
+        for (JsonNode s : ui.path("layout").path("sections")) {
+            List<String> fields = new ArrayList<>();
+            s.path("fields").forEach(f -> fields.add(f.stringValue()));
+            sections.add(new InputUi.Section(index++, s.path("id").asString(""), s.path("title").asString(""),
+                    s.path("columns").asInt(1), List.copyOf(fields),
+                    s.has("visibleWhen") ? readCondition(s.get("visibleWhen")) : null));
+        }
+        return new InputUi(List.copyOf(order), ui.has("widgets") ? stringMap(ui.get("widgets")) : Map.of(),
+                conditionMap(ui.get("visibleWhen")), conditionMap(ui.get("requiredWhen")), List.copyOf(sections),
+                "above".equals(ui.path("layout").path("helpText").asString("below")));
+    }
+
+    private static Map<String, Condition> conditionMap(JsonNode o) {
+        Map<String, Condition> map = new TreeMap<>();
+        if (o != null) {
+            for (Map.Entry<String, JsonNode> e : o.properties()) {
+                map.put(e.getKey(), readCondition(e.getValue()));
+            }
+        }
+        return Collections.unmodifiableMap(map);
     }
 
     private static Layout readLayout(JsonNode layout) {

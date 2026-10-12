@@ -283,7 +283,11 @@ public class OperatorService {
         }
         requireVersion(run, request.expectedVersion());
         try {
-            engine.deleteProcessInstance(run.engineProcessInstanceId(), "Cancelled by operator", caller.subjectId());
+            boolean orphan = run.attention() != null
+                    && RunWatchdog.REASON.equals(run.attention().path("reason").asString());
+            if (!orphan || engine.processExists(run.engineProcessInstanceId())) {
+                engine.deleteProcessInstance(run.engineProcessInstanceId(), "Cancelled by operator", caller.subjectId());
+            }
         } catch (EngineCommands.EngineConflictException e) {
             throw new ApiException(ProblemCode.RUN_BUSY, "A step of this run is executing; try again shortly.")
                     .withHeader("Retry-After", "5");

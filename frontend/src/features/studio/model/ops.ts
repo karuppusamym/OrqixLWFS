@@ -412,6 +412,7 @@ export const FIELD_KIND_LABELS: Record<FieldKind, string> = {
 }
 
 export interface FormFieldModel {
+  incidentEditable?: boolean | undefined
   key: string
   label: string
   kind: FieldKind
@@ -455,6 +456,7 @@ export function fieldsFromDefinition(def: Definition): FormFieldModel[] {
       kind,
       required: (def.inputSchema.required ?? []).includes(key),
       help: f.description ?? '',
+      incidentEditable: f.incidentEditable === true,
       choices: f.enum ?? [],
       minimum: f.minimum,
       maximum: f.maximum,
@@ -475,6 +477,7 @@ export function applyFields(def: Definition, fields: FormFieldModel[]): Definiti
   for (const f of fields) {
     const schema: Definition['inputSchema']['properties'][string] = { type: 'string', title: f.label || f.key }
     if (f.help.trim()) schema.description = f.help.trim()
+    if (f.incidentEditable && f.kind !== 'file' && f.kind !== 'collection') schema.incidentEditable = true
     switch (f.kind) {
       case 'collection':
         schema.type = 'array'
@@ -534,7 +537,9 @@ export function applyFields(def: Definition, fields: FormFieldModel[]): Definiti
   }
   const next = clone(def)
   next.inputSchema = { type: 'object', additionalProperties: false, required, properties }
-  next.inputUi = { order: fields.map((f) => f.key), widgets, currency: 'USD' }
+  next.inputUi = { ...next.inputUi, order: fields.map((f) => f.key), widgets, currency: 'USD' }
+  for (const name of ['visibleWhen', 'requiredWhen'] as const) if (next.inputUi[name]) next.inputUi[name] = Object.fromEntries(Object.entries(next.inputUi[name]!).filter(([key]) => key in properties))
+  if (next.inputUi.layout?.sections) next.inputUi.layout.sections = next.inputUi.layout.sections.map(section => ({ ...section, fields: section.fields.filter(key => key in properties) })).filter(section => section.fields.length > 0)
   return sameJson(next.inputSchema, def.inputSchema) && sameJson(next.inputUi, def.inputUi) ? def : next
 }
 
@@ -557,7 +562,13 @@ export function renameFieldKey(def: Definition, oldKey: string, newKey: string):
   if (!/^[a-z][A-Za-z0-9]{0,63}$/.test(newKey)) return { ok: false, reason: 'Start with a lowercase letter; use letters and digits only.' }
   if (newKey in def.inputSchema.properties) return { ok: false, reason: `A field with the key "${newKey}" already exists.` }
   const fields = fieldsFromDefinition(def).map((f) => (f.key === oldKey ? { ...f, key: newKey } : f))
-  const next = clone(applyFields(def, fields))
+  const prepared = clone(def)
+  for (const name of ['visibleWhen', 'requiredWhen'] as const) if (prepared.inputUi?.[name]?.[oldKey]) {
+    prepared.inputUi[name]![newKey] = prepared.inputUi[name]![oldKey]!
+    delete prepared.inputUi[name]![oldKey]
+  }
+  for (const section of prepared.inputUi?.layout?.sections ?? []) section.fields = section.fields.map(key => key === oldKey ? newKey : key)
+  const next = clone(applyFields(prepared, fields))
   rewriteRefs(next, (ref) => (ref === `/input/${oldKey}` ? `/input/${newKey}` : ref))
   return { ok: true, def: next }
 }

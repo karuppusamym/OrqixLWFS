@@ -90,7 +90,7 @@ final class Conditions {
             case BOOLEAN -> literal instanceof Literal.Bool;
             case NUMBER -> literal instanceof Literal.Num;
             case INTEGER -> literal instanceof Literal.Num n && n.integral();
-            case ARRAY, DATE, ATTACHMENT -> false;
+            case ARRAY, DATE, ATTACHMENT, OBJECT -> false;
         };
     }
 
@@ -99,6 +99,7 @@ final class Conditions {
      * and must always be present.
      */
     static void availability(RuleContext rc, String fieldRef, Node usedAt, String path, String transitionId) {
+        if (usedAt!=null) FormGuards.check(rc,fieldRef,usedAt,path,transitionId);
         if (usedAt == null || !(rc.types().resolve(fieldRef) instanceof Resolved r) || r.producer() == null) {
             return;
         }
@@ -121,10 +122,27 @@ final class Conditions {
                     + " can also be reached when it does not. Use it only on the path after the message.");
             return;
         }
+        if (FailureRules.canFail(producer) && FailureRules.hasFailedRoute(g, producer)) {
+            boolean failureFact = FailureRules.isFailureOutput(r.key());
+            if (failureFact && FailureRules.reachableWithout(rc, producer, com.orqix.compiler.internal.model.Enums.Route.FAILED,
+                    usedAt)) {
+                rc.issues().blocker("WF_FIELDREF_NOT_GUARANTEED", path, usedAt.id(), transitionId, "The " + r.key()
+                        + " of " + q(producer) + " exists only when the step has failed, and " + q(usedAt)
+                        + " can also be reached when it has not. Use it only on the path for when the step fails.");
+                return;
+            }
+            if (!failureFact && FailureRules.reachableWithout(rc, producer,
+                    com.orqix.compiler.internal.model.Enums.Route.NEXT, usedAt)) {
+                rc.issues().blocker("WF_FIELDREF_NOT_GUARANTEED", path, usedAt.id(), transitionId, "The " + r.key()
+                        + " of " + q(producer) + " exists only when the step works, and " + q(usedAt) + " can also be"
+                        + " reached when it fails. Use it only on the path after the step works.");
+                return;
+            }
+        }
         if (r.type().mayBeAbsent()) {
             rc.issues().blocker("WF_FIELDREF_NOT_GUARANTEED", path, usedAt.id(), transitionId, "The " + r.key()
-                    + " of " + q(producer) + " " + absentWhy(producer) + ", so it cannot be used at " + q(usedAt)
-                    + ".");
+                    + " of " + q(producer) + " " + absentWhy(producer) + ", so it cannot be used at "
+                    + q(usedAt) + ".");
         }
     }
 

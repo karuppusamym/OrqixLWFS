@@ -132,6 +132,8 @@ describe('timeline text in business language (docs/build/S7-frontend.md section 
       expect(attentionNextStep(reason)).not.toMatch(/^Failed\b/)
     }
     expect(attentionNextStep('EFFECT_UNKNOWN')).toMatch(/Check the other system/)
+    expect(attentionNextStep('RUN_WAITING_ON_NOTHING')).toMatch(/Inspect the request and engine history/)
+    expect(attentionNextStep('RUN_WAITING_ON_NOTHING')).not.toMatch(/retry/i)
   })
 
   it('folds an attention event into the unknown-outcome event before it', () => {

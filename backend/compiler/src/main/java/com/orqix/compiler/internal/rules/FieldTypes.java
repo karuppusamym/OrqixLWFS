@@ -88,13 +88,17 @@ public final class FieldTypes {
     public Resolution resolve(String fieldRef) {
         if (fieldRef.startsWith("/input/")) {
             String key = fieldRef.substring("/input/".length());
+            int slash = key.indexOf('/');
+            if (slash >= 0) {
+                return derived(key.substring(0, slash), key.substring(slash + 1));
+            }
             FormSchema.Field field = definition.inputSchema().properties().get(key);
             if (field == null) {
                 return new Unknown("The request form has no field \"" + key + "\".");
             }
             Set<String> domain = field.type() == FieldKind.STRING && field.enumValues() != null
                     ? Collections.unmodifiableSet(new TreeSet<>(field.enumValues())) : null;
-            return new Resolved(new FieldType(field.type(), domain, false, field.minimum(), field.maximum(),
+            return new Resolved(new FieldType(field.type(), domain, conditional(key), field.minimum(), field.maximum(),
                     field.items() == null ? null : formType(field.items(), false)), null,
                     key);
         }
@@ -115,6 +119,59 @@ public final class FieldTypes {
             default -> new Unknown("\"" + producer.label() + "\" (" + producer.kind().businessLabel()
                     + ") does not produce any data that can be used here.");
         };
+    }
+
+    /**
+     * True when the field is asked for only in some cases: it has a visibility condition, its section has one, or it
+     * is required only under a condition (S35). Such a field may be missing from the request.
+     */
+    public boolean conditional(String key) {
+        var ui = definition.inputUi();
+        if (ui == null) {
+            return false;
+        }
+        if (ui.visibleWhen().containsKey(key) || ui.requiredWhen().containsKey(key)) {
+            return true;
+        }
+        return ui.sections().stream().anyMatch(s -> s.condition() != null && s.fields().contains(key));
+    }
+
+    /**
+     * {@code /input/<list>/count} and {@code /input/<list>/sum/<column>} (S35): always present (0 when the list is
+     * missing), so they never need a guard.
+     */
+    private Resolution derived(String key, String tail) {
+        FormSchema.Field list = definition.inputSchema().properties().get(key);
+        if (list == null) {
+            return new Unknown("The request form has no field \"" + key + "\".");
+        }
+        if (list.type() != FieldKind.ARRAY) {
+            return new Unknown("\"" + list.title() + "\" is not a list, so it has no count or total.");
+        }
+        int max = list.maxItems() == null ? 0 : list.maxItems();
+        if (tail.equals("count")) {
+            return new Resolved(new FieldType(FieldKind.INTEGER, null, false, BigDecimal.ZERO, BigDecimal.valueOf(max)),
+                    null, key);
+        }
+        String column = tail.startsWith("sum/") ? tail.substring("sum/".length()) : null;
+        if (column == null || column.contains("/")) {
+            return new Unknown("\"" + tail + "\" is not a value of \"" + list.title() + "\". Use count or sum/<column>.");
+        }
+        FormSchema.Field col = list.rows() ? list.items().rowFields().get(column) : null;
+        if (col == null) {
+            return new Unknown("The list \"" + list.title() + "\" has no column \"" + column + "\" to add up.");
+        }
+        if (!col.type().numeric()) {
+            return new Unknown("The column \"" + col.title() + "\" of \"" + list.title()
+                    + "\" is not a number, so it cannot be added up.");
+        }
+        BigDecimal rows = BigDecimal.valueOf(max);
+        BigDecimal lo = col.minimum() == null ? null : col.minimum().signum() >= 0 ? BigDecimal.ZERO
+                : col.minimum().multiply(rows);
+        BigDecimal hi = col.maximum() == null ? null : col.maximum().signum() <= 0 ? BigDecimal.ZERO
+                : col.maximum().multiply(rows);
+        return new Resolved(new FieldType(col.type() == FieldKind.INTEGER ? FieldKind.INTEGER : FieldKind.NUMBER, null,
+                false, lo, hi), null, key);
     }
 
     /** Outputs of "Wait for a message": the declared payload fields (S16); a field that is not required may be missing. */
@@ -146,6 +203,9 @@ public final class FieldTypes {
 
     /** Outputs of "Start another workflow": outcome, outcomeKind, reference and the mapped result fields (S12). */
     private Resolution startWorkflowOutput(Node.StartWorkflow w, String key) {
+        if (FailureRules.isFailureOutput(key) && FailureRules.hasFailedRoute(graph, w)) {
+            return failureOutput(w, key);
+        }
         CompileContext.WorkflowInfo child = workspace == null ? null : workspace.workflows().get(w.workflowRef());
         if (child == null || !child.published()) {
             return new Indeterminate();
@@ -217,7 +277,23 @@ public final class FieldTypes {
         return type == null ? new Indeterminate() : new Resolved(type, d, key);
     }
 
+    /**
+     * Failure facts of a step with a {@code failed} path (S32); they exist only on that path. The HTTP status is 0
+     * when the other system gave no HTTP answer (unreachable, an AI agent, another workflow).
+     */
+    private Resolution failureOutput(Node step, String key) {
+        return switch (key) {
+            case "failureKind" -> new Resolved(new FieldType(FieldKind.STRING, FailureRules.FAILURE_KINDS, false, null,
+                    null), step, key);
+            case "failureHttpStatus" -> new Resolved(new FieldType(FieldKind.INTEGER, null, false, null, null), step, key);
+            default -> new Resolved(FieldType.of(FieldKind.STRING), step, key);
+        };
+    }
+
     private Resolution httpOutput(Node.Http h, String key) {
+        if (FailureRules.isFailureOutput(key) && FailureRules.hasFailedRoute(graph, h)) {
+            return failureOutput(h, key);
+        }
         String pointer = h.resultMapping().get(key);
         if (pointer == null) {
             return new Unknown("\"" + h.label() + "\" does not produce \"" + key + "\". It produces: "
@@ -290,7 +366,7 @@ public final class FieldTypes {
             case NUMBER -> source.kind().numeric();
             case INTEGER -> source.kind() == FieldKind.INTEGER;
             case BOOLEAN -> source.kind() == FieldKind.BOOLEAN;
-            case ARRAY, ATTACHMENT -> false;
+            case ARRAY, ATTACHMENT, OBJECT -> false;
         };
         if (!kindOk) {
             return "expects " + targetKind.description() + ", but the source is " + source.kind().description();

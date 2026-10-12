@@ -4,11 +4,13 @@
  */
 
 import { isCalendarDate } from '../dates'
+import type { Condition } from '@/features/studio/model/types'
 
-export type FieldType = 'string' | 'number' | 'integer' | 'boolean' | 'array'
+export type FieldType = 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'object'
 export type Widget = 'text' | 'date' | 'file' | 'textarea' | 'number' | 'money' | 'select' | 'radio' | 'checkbox' | 'collection'
 
 export interface FormFieldSchema {
+  incidentEditable?: true
   type: FieldType
   title: string
   description?: string
@@ -29,6 +31,9 @@ export interface FormFieldSchema {
   items?: FormFieldSchema
   minItems?: number
   maxItems?: number
+  properties?: Record<string, FormFieldSchema>
+  required?: string[]
+  additionalProperties?: false
 }
 
 export interface FormSchema {
@@ -42,6 +47,9 @@ export interface FormUi {
   order?: string[]
   widgets?: Record<string, Widget>
   currency?: 'USD'
+  visibleWhen?: Record<string, Condition>
+  requiredWhen?: Record<string, Condition>
+  layout?: { sections?: Array<{ id: string; title: string; fields: string[]; columns?: 1 | 2; visibleWhen?: Condition }>; helpText?: 'above' | 'below' }
 }
 
 const FIELD_TYPES: readonly string[] = ['string', 'number', 'integer', 'boolean', 'array']
@@ -66,6 +74,7 @@ export function parseFormSchema(raw: unknown): FormSchema {
       title: typeof value.title === 'string' && value.title ? value.title : key,
     }
     if (typeof value.description === 'string') field.description = value.description
+    if (value.incidentEditable === true) field.incidentEditable = true
     if (field.type === 'string' && value.format === 'date') {
       field.format = 'date'
       if (isCalendarDate(value.formatMinimum)) field.formatMinimum = value.formatMinimum
@@ -90,7 +99,10 @@ export function parseFormSchema(raw: unknown): FormSchema {
     if (multipleOf !== undefined) field.multipleOf = multipleOf
     if (field.type === 'array') {
       if (!isRecord(value.items) || value.items.type === 'array') continue
-      const item = parseFormSchema({ properties: { item: value.items } }).properties.item
+      const columns = value.items.type === 'object' && isRecord(value.items.properties) ? parseFormSchema(value.items).properties : undefined
+      const item = columns && Object.keys(columns).length > 0 && Object.keys(columns).length <= 10 && Object.values(columns).every(c => c.type !== 'array' && c.format !== 'attachment')
+        ? { type: 'object' as const, title: typeof value.items.title === 'string' ? value.items.title : 'Row', additionalProperties: false as const, properties: columns, required: Array.isArray(value.items.required) ? value.items.required.filter((k): k is string => typeof k === 'string' && k in columns) : [] }
+        : parseFormSchema({ properties: { item: value.items } }).properties.item
       const min = num(value.minItems), max = num(value.maxItems)
       if (!item || min === undefined || max === undefined || !Number.isInteger(min) || !Number.isInteger(max) || min < 1 || max > 25 || max < min) continue
       field.items = item; field.minItems = min; field.maxItems = max
@@ -114,7 +126,37 @@ export function parseFormUi(raw: unknown): FormUi {
     ui.widgets = widgets
   }
   if (raw.currency === 'USD') ui.currency = 'USD'
+  for (const name of ['visibleWhen', 'requiredWhen'] as const) if (isRecord(raw[name])) {
+    const parsed: Record<string, Condition> = {}
+    for (const [key, value] of Object.entries(raw[name]).slice(0, 30)) {
+      const condition = parseCondition(value)
+      if (condition) parsed[key] = condition
+    }
+    ui[name] = parsed
+  }
+  if (isRecord(raw.layout)) {
+    const sections: NonNullable<FormUi['layout']>['sections'] = []
+    if (Array.isArray(raw.layout.sections)) for (const item of raw.layout.sections.slice(0, 10)) {
+      if (!isRecord(item) || typeof item.id !== 'string' || typeof item.title !== 'string' || !Array.isArray(item.fields)) continue
+      const condition = parseCondition(item.visibleWhen)
+      sections.push({ id: item.id, title: item.title, fields: item.fields.filter((f): f is string => typeof f === 'string'), columns: item.columns === 2 ? 2 : 1, ...(condition ? { visibleWhen: condition } : {}) })
+    }
+    ui.layout = { sections, helpText: raw.layout.helpText === 'above' ? 'above' : 'below' }
+  }
   return ui
+}
+
+function parseCondition(value: unknown): Condition | undefined {
+  if (!isRecord(value)) return
+  const group = 'all' in value ? 'all' : 'any' in value ? 'any' : undefined
+  if (group) {
+    if (!Array.isArray(value[group]) || value[group].length < 2 || value[group].length > 8) return
+    const terms = value[group].map(parseCondition)
+    if (terms.some(t => !t || !('fieldRef' in t) || !t.fieldRef)) return
+    return { [group]: terms } as Condition
+  }
+  if (typeof value.fieldRef !== 'string' || !/^\/input\/[a-z][A-Za-z0-9]{0,63}$/.test(value.fieldRef) || !['eq','ne','gt','gte','lt','lte'].includes(String(value.operator)) || !['string','number','boolean'].includes(typeof value.value)) return
+  return { fieldRef: value.fieldRef, operator: value.operator, value: value.value } as Condition
 }
 
 export interface FieldDef {
@@ -126,12 +168,17 @@ export interface FieldDef {
   widget: Widget
   /** True when the value is a currency amount typed as text (widget money). */
   isMoney: boolean
+  visibleWhen?: Condition[]
+  requiredWhen?: Condition
+  section?: { id: string; title: string; columns: 1 | 2 }
+  helpAbove?: boolean
 }
 
 /** Pick the widget: explicit hint when compatible with the type, otherwise inferred from the schema. */
 export function widgetFor(schema: FormFieldSchema, hint: Widget | undefined): Widget {
   switch (schema.type) {
     case 'array': return 'collection'
+    case 'object': return 'collection'
     case 'boolean':
       return 'checkbox'
     case 'string':
@@ -149,11 +196,12 @@ export function widgetFor(schema: FormFieldSchema, hint: Widget | undefined): Wi
 /** Ordered field definitions for rendering. Fields missing from `ui.order` follow in schema order. */
 export function buildFields(schema: FormSchema, ui: FormUi): FieldDef[] {
   const keys = Object.keys(schema.properties)
-  const ordered = [...(ui.order ?? []).filter((k) => k in schema.properties)]
+  const ordered = [...new Set([...(ui.layout?.sections?.flatMap(s => s.fields) ?? []), ...(ui.order ?? [])].filter((k) => k in schema.properties))]
   for (const key of keys) if (!ordered.includes(key)) ordered.push(key)
   return ordered.map((key) => {
     const fieldSchema = schema.properties[key] as FormFieldSchema
     const widget = widgetFor(fieldSchema, ui.widgets?.[key])
+    const section = ui.layout?.sections?.find(s => s.fields.includes(key))
     return {
       key,
       label: fieldSchema.title,
@@ -162,6 +210,10 @@ export function buildFields(schema: FormSchema, ui: FormUi): FieldDef[] {
       schema: fieldSchema,
       widget,
       isMoney: widget === 'money',
+      visibleWhen: [ui.visibleWhen?.[key], section?.visibleWhen].filter((c): c is Condition => !!c),
+      requiredWhen: ui.requiredWhen?.[key],
+      section: section ? { id: section.id, title: section.title, columns: section.columns ?? 1 } : undefined,
+      helpAbove: ui.layout?.helpText === 'above',
     }
   })
 }

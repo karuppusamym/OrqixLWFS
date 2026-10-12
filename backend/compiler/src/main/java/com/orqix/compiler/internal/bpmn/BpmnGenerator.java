@@ -43,6 +43,13 @@ public final class BpmnGenerator {
     /** Prefix of the BPMN message definition ID generated for a message name. */
     public static final String MESSAGE_DEFINITION = "message__";
 
+    /** Suffix of the error boundary event generated for a step that has a {@code failed} path (S32). */
+    public static final String FAILED_BOUNDARY = "__failed";
+    /** ID of the one BPMN error definition used by every error boundary event (S32). */
+    public static final String FAILED_ERROR = "error__stepFailed";
+    /** Error code a delegate raises when a step fails for good and the workflow has a {@code failed} path. */
+    public static final String FAILED_ERROR_CODE = "ORQIX_STEP_FAILED";
+
     /** Generated process plus its source map. */
     public record Result(String xml, SourceMap sourceMap) {
     }
@@ -81,6 +88,10 @@ public final class BpmnGenerator {
         new java.util.TreeSet<>(definition.nodes().stream().filter(n -> n instanceof Node.WaitForMessage)
                 .map(n -> ((Node.WaitForMessage) n).message()).toList()).forEach(name ->
                 x.leaf("", "message", BPMN_NS).attr("id", MESSAGE_DEFINITION + name).attr("name", name));
+        if (definition.transitions().stream().anyMatch(t -> t.on() == Route.FAILED)) {
+            // One error definition for every failure route; each error boundary event sits on its own step (S32).
+            x.leaf("", "error", BPMN_NS).attr("id", FAILED_ERROR).attr("errorCode", FAILED_ERROR_CODE);
+        }
         x.open("", "process", BPMN_NS)
                 .attr("id", definition.workflowKey())
                 .attr("name", definition.name())
@@ -124,6 +135,9 @@ public final class BpmnGenerator {
                 if (a.timeoutAfter() != null) {
                     x.attr("timeoutAfter", a.timeoutAfter());
                 }
+                if (!a.requiredSkills().isEmpty()) x.attr("requiredSkills", String.join(",", a.requiredSkills()));
+                if (a.calendar() != null) x.attr("calendar", a.calendar().toString());
+                if (a.escalation() != null) x.attr("escalation", a.escalation().toString());
                 x.close();
                 x.close();
                 String out = a.id() + APPROVAL_OUT;
@@ -162,7 +176,8 @@ public final class BpmnGenerator {
                         .attr("ref", table.key())
                         .attr("version", Integer.toString(table.version()))
                         .attr("resource", decisionResource.get(table.key()))
-                        .attr("fieldRef", table.rows().get(0).when().fieldRef());
+                        .attr("fieldRef", table.rows().get(0).when().compound()
+                            ? table.rows().get(0).when().terms().get(0).fieldRef() : table.rows().get(0).when().fieldRef());
                 x.close();
                 x.close();
             }
@@ -191,6 +206,9 @@ public final class BpmnGenerator {
                         .attr("connectionVersion", version)
                         .attr("operation", h.operation())
                         .attr("timeoutSeconds", Integer.toString(h.timeoutSeconds()));
+                if (h.compensates() != null) {
+                    x.attr("compensates", h.compensates());
+                }
                 h.inputMapping().forEach((name, fieldRef) ->
                         x.leaf("orqix", "input", ORQIX_NS).attr("name", name).attr("fieldRef", fieldRef));
                 h.resultMapping().forEach((name, pointer) ->
@@ -198,6 +216,22 @@ public final class BpmnGenerator {
                 x.close();
                 x.close();
                 x.close();
+                failureBoundary(x, map, d, h);
+            }
+            case Node.GenerateDocument g -> {
+                x.open("", "serviceTask", BPMN_NS).attr("id", g.id()).attr("name", g.label())
+                        .attr("flowable", FLOWABLE_NS, "async", "true")
+                        .attr("flowable", FLOWABLE_NS, "exclusive", "true")
+                        .attr("flowable", FLOWABLE_NS, "delegateExpression", "${orqixGenerateDocumentTask}");
+                x.open("", "extensionElements", BPMN_NS);
+                x.inline("flowable", "failedJobRetryTimeCycle", FLOWABLE_NS, null,
+                        RetryCycle.forAttempts(d.execution().maxAttempts(), d.execution().retryDelaySeconds()), false);
+                x.open("orqix", "generateDocument", ORQIX_NS).attr("format", g.format())
+                        .attr("fileName", g.fileName()).attr("templateBase64", java.util.Base64.getEncoder()
+                                .encodeToString(g.template().getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+                g.inputMapping().forEach((name, fieldRef) ->
+                        x.leaf("orqix", "input", ORQIX_NS).attr("name", name).attr("fieldRef", fieldRef));
+                x.close(); x.close(); x.close();
             }
             case Node.Notification no -> {
                 x.open("", "serviceTask", BPMN_NS)
@@ -313,13 +347,14 @@ public final class BpmnGenerator {
                 x.close();
                 x.close();
                 x.close();
+                failureBoundary(x, map, d, c);
             }
             case Node.End e -> {
                 x.open("", "endEvent", BPMN_NS).attr("id", e.id()).attr("name", e.label());
                 x.open("", "extensionElements", BPMN_NS);
                 x.leaf("orqix", "outcome", ORQIX_NS).attr("label", e.businessOutcome()).attr("kind", e.outcomeKind());
                 x.close();
-                if ("rejected".equals(e.outcomeKind())
+                if (("rejected".equals(e.outcomeKind()) || "failed".equals(e.outcomeKind()))
                         && d.nodes().stream().anyMatch(other -> other instanceof Node.ParallelSplit)) {
                     // A rejection ends the whole request, including parallel branches that are still open (S12).
                     x.leaf("", "terminateEventDefinition", BPMN_NS);
@@ -337,7 +372,7 @@ public final class BpmnGenerator {
             case APPROVED -> "${orqixRoute.approved(execution, '" + from.id() + "')}";
             case REJECTED -> "${orqixRoute.rejected(execution, '" + from.id() + "')}";
             case CONDITION -> "${orqixRoute.condition(execution, '" + t.id() + "')}";
-            case NEXT, DEFAULT, TIMED_OUT -> null;
+            case NEXT, DEFAULT, TIMED_OUT, FAILED -> null;
         };
         if (expression == null) {
             x.leaf("", "sequenceFlow", BPMN_NS);
@@ -369,8 +404,31 @@ public final class BpmnGenerator {
         x.close();
     }
 
+    /**
+     * Error boundary event for a step that has a {@code failed} path: the delegate raises {@link #FAILED_ERROR_CODE}
+     * only for failures the designer chose to route (S32). Steps without that path get nothing, so existing workflows
+     * generate exactly the same process as before.
+     */
+    private static void failureBoundary(XmlOut x, SourceMap map, WorkflowDefinition d, Node n) {
+        if (d.transitions().stream().noneMatch(t -> t.on() == Route.FAILED && t.from().equals(n.id()))) {
+            return;
+        }
+        String id = n.id() + FAILED_BOUNDARY;
+        x.open("", "boundaryEvent", BPMN_NS)
+                .attr("id", id)
+                .attr("name", n.label() + ": failed")
+                .attr("attachedToRef", n.id())
+                .attr("cancelActivity", "true");
+        x.leaf("", "errorEventDefinition", BPMN_NS).attr("errorRef", FAILED_ERROR);
+        x.close();
+        map.node(n.id(), id);
+    }
+
     /** BPMN element a canonical transition leaves from (approvals leave through their generated helpers). */
     private static String flowSource(Node from, Transition t) {
+        if (t.on() == Route.FAILED) {
+            return from.id() + FAILED_BOUNDARY;
+        }
         if (from instanceof Node.Approval) {
             return from.id() + (t.on() == Route.TIMED_OUT ? APPROVAL_TIMEOUT : APPROVAL_ROUTE);
         }
@@ -417,6 +475,9 @@ public final class BpmnGenerator {
                         centre.put(n.id() + APPROVAL_TIMEOUT, new BigDecimal[] {cx, cy.add(BOUNDARY_OFFSET)});
                     }
                 }
+                if (d.transitions().stream().anyMatch(t -> t.on() == Route.FAILED && t.from().equals(n.id()))) {
+                    centre.put(n.id() + FAILED_BOUNDARY, new BigDecimal[] {cx, cy.add(BOUNDARY_OFFSET)});
+                }
                 if (n instanceof Node.WaitForMessage m && m.timeoutAfter() != null) {
                     centre.put(n.id() + MESSAGE_CATCH, new BigDecimal[] {cx.add(HELPER_OFFSET), cy.subtract(BOUNDARY_OFFSET)});
                     centre.put(n.id() + MESSAGE_TIMEOUT, new BigDecimal[] {cx.add(HELPER_OFFSET), cy.add(BOUNDARY_OFFSET)});
@@ -434,6 +495,9 @@ public final class BpmnGenerator {
                     default -> new int[] {100, 80};
                 };
                 shape(x, n.id(), centre.get(n.id()), size[0], size[1]);
+                if (centre.containsKey(n.id() + FAILED_BOUNDARY)) {
+                    shape(x, n.id() + FAILED_BOUNDARY, centre.get(n.id() + FAILED_BOUNDARY), 36, 36);
+                }
                 if (n instanceof Node.WaitForMessage m && m.timeoutAfter() != null) {
                     shape(x, n.id() + MESSAGE_CATCH, centre.get(n.id() + MESSAGE_CATCH), 36, 36);
                     shape(x, n.id() + MESSAGE_TIMEOUT, centre.get(n.id() + MESSAGE_TIMEOUT), 36, 36);

@@ -134,7 +134,7 @@ function AtomicConditionEditor({
 
 export function ConditionEditor(props: {
   idBase: string; condition: Condition; fields: FieldInfo[]; onChange: (next: Condition) => void;
-  disabled?: boolean; dataFieldBase: string; fixedField?: boolean
+  disabled?: boolean; dataFieldBase: string; fixedField?: boolean; conjunctionOnly?: boolean
 }) {
   const { condition, onChange, idBase, disabled, fields } = props
   const mode = 'all' in condition ? 'all' : 'any' in condition ? 'any' : 'single'
@@ -147,7 +147,7 @@ export function ConditionEditor(props: {
     <Select id={`${idBase}-mode`} value={mode} disabled={disabled} onChange={event => {
       const next = terms.length >= 2 ? terms : [terms[0] ?? blank, { ...blank }]
       onChange(event.target.value === 'single' ? terms[0] ?? blank : event.target.value === 'all' ? { all: next } : { any: next })
-    }}><option value="single">One comparison</option><option value="all">All comparisons (AND)</option><option value="any">Any comparison (OR)</option></Select>
+    }}><option value="single">One comparison</option><option value="all">All comparisons (AND)</option>{!props.conjunctionOnly ? <option value="any">Any comparison (OR)</option> : null}</Select>
     {terms.map((term, index) => <div key={index} className={mode === 'single' ? '' : 'rounded-card border border-border p-3'}>
       <AtomicConditionEditor {...props} idBase={mode === 'single' ? idBase : `${idBase}-${index}`} dataFieldBase={mode === 'single' ? props.dataFieldBase : `${props.dataFieldBase}.${mode}.${index}`} condition={term} onChange={value => update(terms.map((old, i) => i === index ? value : old))} />
       {mode !== 'single' ? <Button variant="ghost" disabled={disabled || terms.length <= 2} onClick={() => update(terms.filter((_, i) => i !== index))}>Remove comparison {index + 1}</Button> : null}

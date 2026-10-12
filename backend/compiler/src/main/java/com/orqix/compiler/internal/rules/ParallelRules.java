@@ -274,17 +274,21 @@ final class ParallelRules {
      * allowed to leave a parallel branch.
      */
     static boolean escape(RuleContext rc, Transition t, Node from, Node to, Map<Integer, Boolean> tailCache) {
+        if (t.on() == Route.FAILED && FailureRules.canFail(from)) {
+            // A step that failed for good may leave a branch to notify and end the request as rejected or failed (S32).
+            return tailCache.computeIfAbsent(-1 - to.index(), k -> rejectionTail(rc.graph(), to, true));
+        }
         if (t.on() != Route.REJECTED && t.on() != Route.TIMED_OUT) {
             return false;
         }
         if (from.kind() != NodeKind.APPROVAL && from.kind() != NodeKind.WAIT_FOR_MESSAGE) {
             return false;
         }
-        return tailCache.computeIfAbsent(to.index(), k -> rejectionTail(rc.graph(), to));
+        return tailCache.computeIfAbsent(to.index(), k -> rejectionTail(rc.graph(), to, false));
     }
 
     /** Only notifications lead from here, and every Finish step reached is a rejection. */
-    private static boolean rejectionTail(Graph g, Node start) {
+    private static boolean rejectionTail(Graph g, Node start, boolean allowFailed) {
         BitSet seen = new BitSet();
         Deque<Node> work = new ArrayDeque<>();
         seen.set(start.index());
@@ -296,7 +300,7 @@ final class ParallelRules {
                 case Node.Notification notification -> {
                 }
                 case Node.End e -> {
-                    if (!"rejected".equals(e.outcomeKind())) {
+                    if (!"rejected".equals(e.outcomeKind()) && !(allowFailed && "failed".equals(e.outcomeKind()))) {
                         return false;
                     }
                     end = true;

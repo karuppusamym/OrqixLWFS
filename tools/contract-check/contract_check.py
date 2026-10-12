@@ -11,6 +11,9 @@ Checks, in order:
   4. contracts/openapi.yaml structure: every $ref resolves (including external files), operationIds are
      unique, path parameters match the path templates, every operation has x-orqix-permission and every
      POST/PUT/DELETE has x-orqix-audit (except validateDraft, evaluateDecision, markNotificationRead).
+  5. Consistency gates (consistency_gates.py): security-matrix coverage, permission vocabulary, ProblemCode
+     enum <-> contract <-> frontend messages, audit actions in code/contract vs the AuditWriter whitelist,
+     schema.d.ts drift, no CRLF line endings.
 
 Exit status 0 when every check passes, 1 otherwise. Dependencies: pyyaml, jsonschema (requirements.txt).
 """
@@ -28,6 +31,9 @@ from urllib.parse import unquote, urldefrag
 import yaml
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from consistency_gates import check_consistency, fix_line_endings  # noqa: E402
 
 SCHEMA_FAILURE_CODES = {"WF_SCHEMA_INVALID", "WF_SCHEMA_VERSION_UNSUPPORTED"}
 HTTP_METHODS = ("get", "put", "post", "delete", "options", "head", "patch", "trace")
@@ -434,17 +440,17 @@ def resolve_local_ref(document: Any, ref: str) -> Any | None:
         return None
 
 
-def check_openapi(report: Report, root: Path) -> None:
+def check_openapi(report: Report, root: Path) -> dict[str, Any] | None:
     report.section("4. contracts/openapi.yaml")
     path = root / "contracts" / "openapi.yaml"
     if not path.is_file():
         report.fail("contracts/openapi.yaml not found")
-        return
+        return None
     try:
         document = load_document(path)
     except yaml.YAMLError as exc:
         report.fail(f"openapi.yaml: invalid YAML ({exc})")
-        return
+        return None
 
     report.check(
         str(document.get("openapi", "")).startswith("3.1"),
@@ -537,21 +543,28 @@ def check_openapi(report: Report, root: Path) -> None:
         if "x-orqix-audit" in op and not re.fullmatch(r"[a-z]+(?:\.[a-z-]+)+", str(op["x-orqix-audit"]))
     ]
     report.check(not invalid_audit, "audit action names match the database contract", ", ".join(invalid_audit))
+    return document
 
 
 def main(argv: list[str] | None = None) -> int:
     default_root = Path(__file__).resolve().parents[2]
     parser = argparse.ArgumentParser(description="Orqix contract/schema/fixture/OpenAPI consistency check")
     parser.add_argument("--root", type=Path, default=default_root, help="repository root (default: %(default)s)")
+    parser.add_argument("--skip-node", action="store_true", help="skip the schema.d.ts drift check (needs node and frontend/node_modules)")
+    parser.add_argument("--fix-eol", action="store_true", help="rewrite CRLF to LF in the guarded directories, then run the checks")
     args = parser.parse_args(argv)
     root = args.root.resolve()
+    if args.fix_eol:
+        for fixed in fix_line_endings(root):
+            print(f"fixed line endings: {fixed.relative_to(root)}")
 
     print(f"Orqix contract check - repository root {root}")
     report = Report()
     schemas = check_schemas(report, root)
     check_examples(report, root, schemas)
     check_compiler_cases(report, root, schemas)
-    check_openapi(report, root)
+    document = check_openapi(report, root)
+    check_consistency(report, root, document, skip_node=args.skip_node)
 
     print()
     if report.failures:

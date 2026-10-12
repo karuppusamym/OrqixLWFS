@@ -140,12 +140,17 @@ public final class RunPathBuilder {
                         close(visits, node, at, "timedOut");
                     }
                 }
+                case "STEP_FAILED" -> {
+                    if (node != null) {
+                        close(visits, node, at, "failed");
+                    }
+                }
                 case "WAIT_ENDED" -> {
                     if (node != null) {
                         close(visits, node, at, "timedOut".equals(e.data().path("outcome").asString(null)) ? "timedOut" : "completed");
                     }
                 }
-                case "DECISION_EVALUATED", "EFFECT_SUCCEEDED", "NOTIFICATION_CREATED" -> {
+                case "DECISION_EVALUATED", "EFFECT_SUCCEEDED", "NOTIFICATION_CREATED", "DOCUMENT_GENERATED" -> {
                     if (node != null) {
                         instant(visits, node, at, "completed");
                     }
@@ -184,7 +189,7 @@ public final class RunPathBuilder {
             }
             currentIds.add(id);
             boolean attentionHere = "needsAttention".equals(lifecycle) && id.equals(attention);
-            String status = attentionHere ? "needsAttention" : "http".equals(step.kind()) ? "running" : "waiting";
+            String status = attentionHere ? "needsAttention" : ("http".equals(step.kind()) || "generateDocument".equals(step.kind())) ? "running" : "waiting";
             current.add(new Current(id, step.label(), step.kind(), status, step.since(), step.candidateGroup(),
                     step.assignee(), step.dueAt()));
         }
@@ -276,10 +281,10 @@ public final class RunPathBuilder {
         if (from == null) {
             return false;
         }
-        boolean outcomeRoute = "approved".equals(t.on()) || "rejected".equals(t.on()) || "timedOut".equals(t.on());
+        boolean outcomeRoute = "approved".equals(t.on()) || "rejected".equals(t.on()) || "timedOut".equals(t.on()) || "failed".equals(t.on());
         for (MutableVisit f : from) {
             if (f.leftAt == null || (outcomeRoute && !t.on().equals(f.outcome))
-                    || ("next".equals(t.on()) && ("timedOut".equals(f.outcome) || "cancelled".equals(f.outcome)))) {
+                    || ("next".equals(t.on()) && ("timedOut".equals(f.outcome) || "cancelled".equals(f.outcome) || "failed".equals(f.outcome)))) {
                 continue;
             }
             if (currentIds.contains(t.to())) {

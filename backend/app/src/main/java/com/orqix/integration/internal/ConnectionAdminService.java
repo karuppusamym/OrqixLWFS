@@ -339,7 +339,7 @@ public class ConnectionAdminService {
                 Map<String, String> testMapping = new LinkedHashMap<>();
                 if (record.definition().isMicrosoftGraph()) {
                     for (String field : List.of("driveId", "itemId", "versionId", "name", "eTag", "snapshotId",
-                            "snapshotExpiresAt", "contentSha256", "pinMode", "versionsJson", "versionCount", "hasMore")) {
+                            "snapshotExpiresAt", "contentSha256", "pinMode", "versionsJson", "versionCount", "hasMore", "folderId", "filesJson", "fileCount")) {
                         if (operation.responseSchema().path("properties").has(field)) {
                             testMapping.put(field, "/" + field);
                         }

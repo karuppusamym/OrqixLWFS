@@ -41,6 +41,12 @@ public final class GraphStub {
                      "webUrl":"https://tenant.sharepoint.com/sites/Team/policy.txt?sig=must-not-return"}
                     """.formatted(currentVersion, currentText.getBytes(java.nio.charset.StandardCharsets.UTF_8).length));
         }
+        if (path.startsWith("/graph/drives/drive/items/folder/children?")) {
+            return response(200, "application/json", """
+                    {"value":[{"id":"item","name":"policy.txt","size":14,"file":{"mimeType":"text/plain"},
+                    "parentReference":{"id":"folder","driveId":"drive"},"@microsoft.graph.downloadUrl":"secret-not-returned"}]}
+                    """);
+        }
         if (path.startsWith("/graph/drives/drive/items/item/versions?")) {
             return response(200, "application/json", """
                     {"value":[{"id":"2.0","size":20,"lastModifiedDateTime":"2026-02-01T00:00:00Z"},

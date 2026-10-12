@@ -486,7 +486,8 @@
                     "/pinLatest",
                     "/extractSnapshot",
                     "/resolveLink",
-                    "/versions"
+                    "/versions",
+                    "/browseFolder"
                   ]
                 },
                 "effectClass": {
@@ -569,47 +570,136 @@
                     }
                   },
                   "else": {
-                    "properties": {
-                      "requestSchema": {
-                        "properties": {
-                          "required": {
-                            "allOf": [
-                              {
-                                "contains": {
-                                  "const": "driveId"
+                    "if": {
+                      "properties": {
+                        "path": {
+                          "const": "/browseFolder"
+                        }
+                      }
+                    },
+                    "then": {
+                      "properties": {
+                        "requestSchema": {
+                          "required": [
+                            "required",
+                            "properties",
+                            "additionalProperties"
+                          ],
+                          "properties": {
+                            "additionalProperties": {
+                              "const": false
+                            },
+                            "required": {
+                              "allOf": [
+                                {
+                                  "contains": {
+                                    "const": "driveId"
+                                  }
+                                },
+                                {
+                                  "contains": {
+                                    "const": "folderId"
+                                  }
                                 }
-                              },
-                              {
-                                "contains": {
-                                  "const": "itemId"
+                              ]
+                            },
+                            "properties": {
+                              "required": [
+                                "driveId",
+                                "folderId"
+                              ],
+                              "properties": {
+                                "driveId": {
+                                  "required": [
+                                    "type",
+                                    "enum"
+                                  ],
+                                  "properties": {
+                                    "type": {
+                                      "const": "string"
+                                    },
+                                    "enum": {
+                                      "type": "array",
+                                      "minItems": 1,
+                                      "maxItems": 100,
+                                      "items": {
+                                        "type": "string",
+                                        "pattern": "^[A-Za-z0-9!._~-]{1,200}$"
+                                      },
+                                      "uniqueItems": true
+                                    }
+                                  }
+                                },
+                                "folderId": {
+                                  "required": [
+                                    "type",
+                                    "enum"
+                                  ],
+                                  "properties": {
+                                    "type": {
+                                      "const": "string"
+                                    },
+                                    "enum": {
+                                      "type": "array",
+                                      "minItems": 1,
+                                      "maxItems": 100,
+                                      "items": {
+                                        "type": "string",
+                                        "pattern": "^[A-Za-z0-9!._~-]{1,200}$"
+                                      },
+                                      "uniqueItems": true
+                                    }
+                                  }
                                 }
                               }
-                            ]
-                          },
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "else": {
+                      "properties": {
+                        "requestSchema": {
                           "properties": {
-                            "required": [
-                              "driveId",
-                              "itemId"
-                            ],
+                            "required": {
+                              "allOf": [
+                                {
+                                  "contains": {
+                                    "const": "driveId"
+                                  }
+                                },
+                                {
+                                  "contains": {
+                                    "const": "itemId"
+                                  }
+                                }
+                              ]
+                            },
                             "properties": {
-                              "driveId": {
-                                "properties": {
-                                  "type": {
-                                    "const": "string"
+                              "required": [
+                                "driveId",
+                                "itemId"
+                              ],
+                              "properties": {
+                                "driveId": {
+                                  "properties": {
+                                    "type": {
+                                      "const": "string"
+                                    }
                                   }
-                                }
-                              },
-                              "itemId": {
-                                "properties": {
-                                  "type": {
-                                    "const": "string"
+                                },
+                                "itemId": {
+                                  "properties": {
+                                    "type": {
+                                      "const": "string"
+                                    }
                                   }
-                                }
-                              },
-                              "versionId": {
-                                "properties": {
-                                  "type": {
-                                    "const": "string"
+                                },
+                                "versionId": {
+                                  "properties": {
+                                    "type": {
+                                      "const": "string"
+                                    }
                                   }
                                 }
                               }

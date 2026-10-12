@@ -35,7 +35,12 @@ public sealed interface Node {
 
     /** Ask for approval. {@code dueAfterHours} and {@code timeoutAfter} (ISO-8601 duration) may be null. */
     record Approval(int index, String id, String label, String candidateGroupRef, boolean rejectReasonRequired,
-                    Integer dueAfterHours, String timeoutAfter) implements Node {
+                    Integer dueAfterHours, String timeoutAfter, java.util.List<String> requiredSkills,
+                    tools.jackson.databind.JsonNode calendar, tools.jackson.databind.JsonNode escalation) implements Node {
+        public Approval(int index, String id, String label, String candidateGroupRef, boolean rejectReasonRequired,
+                Integer dueAfterHours, String timeoutAfter) {
+            this(index,id,label,candidateGroupRef,rejectReasonRequired,dueAfterHours,timeoutAfter,java.util.List.of(),null,null);
+        }
         @Override
         public NodeKind kind() {
             return NodeKind.APPROVAL;
@@ -58,14 +63,26 @@ public sealed interface Node {
         }
     }
 
-    /** Call a system. Mapping maps are sorted by key (JCS order). */
+    /**
+     * Call a system. Mapping maps are sorted by key (JCS order). {@code compensates} (may be null) names the earlier
+     * step this call is the designer's undo of; documentation and validation only (S32).
+     */
     record Http(int index, String id, String label, String connectionRef, String operation,
-                Map<String, String> inputMapping, Map<String, String> resultMapping, int timeoutSeconds)
-            implements Node {
+                Map<String, String> inputMapping, Map<String, String> resultMapping, int timeoutSeconds,
+                String compensates) implements Node {
+        public Http(int index, String id, String label, String connectionRef, String operation,
+                Map<String, String> inputMapping, Map<String, String> resultMapping, int timeoutSeconds) {
+            this(index, id, label, connectionRef, operation, inputMapping, resultMapping, timeoutSeconds, null);
+        }
         @Override
         public NodeKind kind() {
             return NodeKind.HTTP;
         }
+    }
+
+    record GenerateDocument(int index, String id, String label, String format, String fileName, String template,
+            Map<String, String> inputMapping) implements Node {
+        @Override public NodeKind kind() { return NodeKind.GENERATE_DOCUMENT; }
     }
 
     /** Notify someone. */

@@ -21,9 +21,11 @@ public final class Rules {
         ParallelRules.check(rc);
         TimerRules.check(rc);
         MessageRules.check(rc);
+        DocumentRules.check(rc);
         TypeRules.check(rc);
         BindingRules.check(rc);
         ChildRules.check(rc);
+        FailureRules.check(rc);
         StageRules.check(rc);
         return rc;
     }

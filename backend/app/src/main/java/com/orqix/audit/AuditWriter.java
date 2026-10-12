@@ -100,6 +100,10 @@ public class AuditWriter {
             Map.entry("migration.review.approved", Set.of("revision", "definitionHash", "reviewVersion")),
             Map.entry("conversation.message", Set.of("stage", "version")),
             Map.entry("workflow.simulated", Set.of("revision", "releaseNumber", "steps", "warnings", "status")),
+            Map.entry("workflow.tests.saved", Set.of("suiteVersion", "cases")),
+            Map.entry("workflow.tests.run", Set.of("suiteVersion", "revision", "cases", "passed")),
+            Map.entry("run.input-corrected", Set.of("fields", "version")),
+            Map.entry("document.source.updated", Set.of("revision", "audienceCount", "enabled")),
             Map.entry("agent.call", Set.of("key", "operation", "profile", "model", "outcome", "toolCalls", "inputTokens",
                     "outputTokens", "costUsd", "durationMs", "effectId")));
 

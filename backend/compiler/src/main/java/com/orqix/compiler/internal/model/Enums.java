@@ -15,6 +15,7 @@ public final class Enums {
         DECISION("decision", "Make a decision"),
         BRANCH("branch", "Choose a path"),
         HTTP("http", "Call a system"),
+        GENERATE_DOCUMENT("generateDocument", "Generate a document"),
         NOTIFICATION("notification", "Notify someone"),
         PARALLEL_SPLIT("parallelSplit", "Run in parallel"),
         PARALLEL_JOIN("parallelJoin", "Wait for all"),
@@ -52,7 +53,7 @@ public final class Enums {
 
     /** Transition {@code on} values. */
     public enum Route {
-        NEXT("next"), APPROVED("approved"), REJECTED("rejected"), TIMED_OUT("timedOut"), CONDITION("condition"),
+        NEXT("next"), APPROVED("approved"), REJECTED("rejected"), TIMED_OUT("timedOut"), FAILED("failed"), CONDITION("condition"),
         DEFAULT("default");
 
         private final String json;
@@ -114,7 +115,9 @@ public final class Enums {
         /** A calendar date: JSON {@code type: string, format: date}, written YYYY-MM-DD (S12 section 10). */
         DATE("a date"),
         /** A file: JSON {@code type: string, format: attachment}; the value is the ID of an uploaded file (S17). */
-        ATTACHMENT("a file");
+        ATTACHMENT("a file"),
+        /** One row of a list of rows (S35); only as the item type of an array. */
+        OBJECT("a row");
 
         private final String description;
 

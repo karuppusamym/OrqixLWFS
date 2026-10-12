@@ -2,7 +2,7 @@ import type { ValidationIssue } from '@/api/types'
 import { isCalendarDate } from '@/lib/dates'
 import { allFields, availableFields, parseRef } from '@/features/studio/model/fieldRefs'
 import { hasCycle, incoming, nodeById, outgoing, reachableFrom, startNode } from '@/features/studio/model/graph'
-import { isAtomicCondition, type Condition, type Definition, type Literal, type WorkflowNode } from '@/features/studio/model/types'
+import { conditionTerms, isAtomicCondition, type Condition, type Definition, type Literal, type WorkflowNode } from '@/features/studio/model/types'
 
 /**
  * A faithful-enough subset of the compiler rule catalog (docs/build/S4-workflow-compiler.md section 5)
@@ -49,6 +49,10 @@ function interval(c: Condition): { lo: number; loOpen: boolean; hi: number; hiOp
 }
 
 function overlaps(a: Condition, b: Condition): boolean {
+  if (!isAtomicCondition(a) || !isAtomicCondition(b)) {
+    const termsA = conditionTerms(a), termsB = conditionTerms(b)
+    return !termsA.some(x => termsB.some(y => x.fieldRef === y.fieldRef && !overlaps(x, y)))
+  }
   if (a.fieldRef !== b.fieldRef) return false
   const ia = interval(a)
   const ib = interval(b)
@@ -263,7 +267,7 @@ export function validateDefinition(def: Definition, ctx: ValidationContext): Iss
     const node = def.nodes.find((n) => n.type === 'decision' && n.config.decisionRef === d.key)
     if (!decisionsUsed.has(d.key)) issues.push(issue('WF_DECISION_UNUSED', 'warning', `The rule table "${d.key}" is not used by any step.`, `/decisions/${di}`))
     const fields = new Set(d.rows.map((r) => r.when.fieldRef))
-    if (fields.size > 1) issues.push(issue('WF_DECISION_MIXED_FIELDS', 'blocker', `All rows of "${d.key}" must test the same value.`, `/decisions/${di}`, node?.id))
+    if (fields.size > 1 && d.rows.every(r => isAtomicCondition(r.when))) issues.push(issue('WF_DECISION_MIXED_FIELDS', 'blocker', `All rows of "${d.key}" must test the same value.`, `/decisions/${di}`, node?.id))
     const shape = (o: Record<string, Literal>) => Object.keys(o).sort().join(',') + '|' + Object.keys(o).sort().map((k) => typeof o[k]).join(',')
     const defaultShape = shape(d.default ?? {})
     if (d.rows.some((r) => shape(r.then) !== defaultShape)) issues.push(issue('WF_DECISION_OUTPUT_SHAPE', 'blocker', `Every row and the Otherwise result of "${d.key}" must give the same result fields.`, `/decisions/${di}`, node?.id))

@@ -22,6 +22,7 @@ import { exportCases, importCases, loadCases, MAX_CASES, MAX_IMPORT_BYTES, store
 import { emptySettings, expectationLabel, finishOutcomes, meetsExpectation, NEEDS_ATTENTION, stepControls, toScenario, type TestSettings } from './scenarioModel'
 import { sampleValues } from './sampleValues'
 import { StepSettings } from './StepSettings'
+import { shareTests, runSharedTests } from './sharedTests'
 
 type Stage = 'setup' | 'result'
 
@@ -178,6 +179,24 @@ export function TestPanel({ groupNames, onClose, onGoToStep, onCheck }: { groupN
     announce(`${done.filter((d) => d.pass).length} of ${done.length} saved test cases passed.`)
   }
 
+  const shareAndTest = async () => {
+    setRunningAll(true)
+    setProblem(null)
+    try {
+      const prepared = cases.map(c => {
+        const check = validateForm(schema, ui, carryOverValues(c.values, fields))
+        if (!check.valid || !c.expect) throw new Error('Every shared test needs valid answers and an expected outcome.')
+        if (c.settings.simulateChildren) throw new Error('Shared publication tests require explicit child outcomes. Turn off recursive child simulation.')
+        return { id: c.id, name: c.name, input: check.payload, scenario: toScenario(def, c.settings), expect: c.expect }
+      })
+      if (!await saver.flush()) throw new Error('Save the draft before sharing its tests.')
+      const suite = await shareTests(wsId, workflowId, prepared)
+      const report = await runSharedTests(wsId, workflowId, store.getState().revision, suite.version)
+      setCaseNotice(`Shared suite ${report.suiteVersion}: ${report.results.filter(r => r.passed).length} of ${report.results.length} passed. ${report.passed ? 'This exact draft satisfies the publication test gate.' : 'Publication is blocked until the shared tests pass.'}`)
+    } catch (cause) { setProblem(cause) }
+    finally { setRunningAll(false) }
+  }
+
   const onImport = async (file: File | undefined) => {
     if (!file) return
     if (file.size > MAX_IMPORT_BYTES) { setCaseNotice("The test-case file exceeds 1 MB."); return }
@@ -307,6 +326,7 @@ export function TestPanel({ groupNames, onClose, onGoToStep, onCheck }: { groupN
             Saved test cases ({cases.length} of {MAX_CASES})
           </h3>
           <p className="text-sm text-muted-foreground">Kept in this browser for you only. Export them to share with a colleague.</p>
+          <p className="text-sm text-muted-foreground">Share and test replaces the workflow's shared suite. Samples are visible to designers; publishing then requires all shared tests to pass for the exact draft and dependency versions. Dry runs use simulated systems.</p>
           {caseNotice ? (
             <p role="status" className="mt-1 text-sm" data-testid="case-notice">
               {caseNotice}
@@ -353,6 +373,9 @@ export function TestPanel({ groupNames, onClose, onGoToStep, onCheck }: { groupN
           <div className="mt-2 flex flex-wrap gap-2">
             <Button variant="secondary" onClick={() => void runAll()} loading={runningAll} disabled={cases.length === 0}>
               Run all saved cases
+            </Button>
+            <Button variant="secondary" onClick={() => void shareAndTest()} disabled={cases.length === 0 || runningAll}>
+              Share and test for publication
             </Button>
             <Button variant="secondary" onClick={() => downloadJson(JSON.parse(exportCases(def.workflowKey, cases)), `${def.workflowKey || 'workflow'}-test-cases.json`)} disabled={cases.length === 0}>
               Export

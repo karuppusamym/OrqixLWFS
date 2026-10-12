@@ -48,6 +48,7 @@ function codePointLength(text: string): number {
 
 function typeMatches(type: FormFieldSchema['type'], value: unknown): boolean {
   switch (type) {
+    case 'object': return typeof value === 'object' && value !== null && !Array.isArray(value)
     case 'array': return Array.isArray(value)
     case 'string':
       return typeof value === 'string'
@@ -91,8 +92,9 @@ export function validateJsonInput(schema: FormSchema, data: unknown): JsonIssue[
       if (field.minItems !== undefined && value.length < field.minItems) issues.push({ pointer, keyword: 'minItems' })
       if (field.maxItems !== undefined && value.length > field.maxItems) issues.push({ pointer, keyword: 'maxItems' })
       if (field.items) value.forEach((entry, index) => {
-        const nested = validateJsonInput({ type: 'object', additionalProperties: false, required: ['item'], properties: { item: field.items! } }, { item: entry })
-        nested.forEach(issue => issues.push({ ...issue, pointer: `${pointer}/${index}` }))
+        const row = field.items!.type === 'object'
+        const nested = row ? validateJsonInput({ type: 'object', additionalProperties: false, required: field.items!.required ?? [], properties: field.items!.properties ?? {} }, entry) : validateJsonInput({ type: 'object', additionalProperties: false, required: ['item'], properties: { item: field.items! } }, { item: entry })
+        nested.forEach(issue => issues.push({ ...issue, pointer: `${pointer}/${index}${row ? issue.pointer : ''}` }))
       })
       continue
     }

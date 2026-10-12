@@ -56,7 +56,10 @@ export function TasksPage() {
   const sort = params.get('sort') === 'oldest' ? 'oldest' : params.get('sort') === 'newest' ? 'newest' : 'priority'
   const minPriority = params.get('minPriority') === '50' ? 50 : 0
   const list = useTasks(ws, view, true, sort, minPriority)
-  const tasks: TaskSummary[] = list.data?.pages.flatMap((p) => p.items) ?? []
+  const loadedTasks: TaskSummary[] = list.data?.pages.flatMap((p) => p.items) ?? []
+  const queue = params.get('queue') ?? ''
+  const queueOptions = [...new Map(loadedTasks.map(task => [task.candidateGroup.key, task.candidateGroup])).values()]
+  const tasks = queue ? loadedTasks.filter(task => task.candidateGroup.key === queue) : loadedTasks
 
   const showList = desktop || !taskId
   const showPanel = !!taskId
@@ -88,6 +91,11 @@ export function TasksPage() {
                 ))}
               </TabsList>
             {view !== 'completed' ? <div className="my-4 flex flex-wrap gap-4">
+              <label htmlFor="task-queue-filter">Work queue <Select id="task-queue-filter" aria-label="Work queue" value={queue} onChange={e => { const next = new URLSearchParams(params); if (e.target.value) next.set('queue',e.target.value); else next.delete('queue'); next.set('view',view); setParams(next) }}>
+                <option value="">All queues</option>
+                {queue && !queueOptions.some(group => group.key === queue) ? <option value={queue}>{queue}</option> : null}
+                {queueOptions.map(group => <option key={group.key} value={group.key}>{group.name}</option>)}
+              </Select><span className="block text-xs text-muted-foreground">Filters loaded tasks; Load more includes older work.</span></label>
               <label htmlFor="task-sort">Sort tasks <Select id="task-sort" aria-label="Sort tasks" value={sort} onChange={e => { const next = new URLSearchParams(params); next.set('sort',e.target.value); next.set('view',view); setParams(next) }}>
                 <option value="priority">Priority, then oldest</option><option value="oldest">Oldest first</option><option value="newest">Newest first</option>
               </Select></label>
@@ -103,6 +111,7 @@ export function TasksPage() {
               ) : tasks.length === 0 ? (
                 <EmptyState icon={Inbox} title={view === 'assigned' ? 'No tasks are assigned to you' : view === 'claimable' ? 'Nothing is available to claim' : 'You have not completed any tasks yet'}>
                   {view === 'claimable' ? 'When a request needs a decision from your group, it appears here.' : 'Check the other tabs, or come back later.'}
+                  {queue && list.hasNextPage ? <Button variant="secondary" onClick={() => void list.fetchNextPage()} loading={list.isFetchingNextPage}>Load more</Button> : null}
                 </EmptyState>
               ) : (
                 <>

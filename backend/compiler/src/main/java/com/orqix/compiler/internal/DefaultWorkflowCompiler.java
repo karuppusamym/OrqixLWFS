@@ -83,7 +83,11 @@ public final class DefaultWorkflowCompiler implements WorkflowCompiler {
                 continue;
             }
             String resource = DmnGenerator.resourceName(table.key());
-            String xml = DmnGenerator.generate(table, inputKind(analysis, table));
+            Map<String,FieldKind> kinds=new java.util.LinkedHashMap<>();
+            for(String field:DmnGenerator.inputFields(table)) {
+                if(analysis.types().resolve(field) instanceof FieldTypes.Resolved r) kinds.put(field,r.type().kind());
+            }
+            String xml = DmnGenerator.generate(table, kinds);
             resourceByKey.put(table.key(), resource);
             dmnResources.put(resource, xml);
             dmnHashes.put(resource, Jcs.sha256Hex(xml));
@@ -115,6 +119,7 @@ public final class DefaultWorkflowCompiler implements WorkflowCompiler {
                 usedConnections.add(h.connectionRef());
             } else if (n instanceof Node.Approval a) {
                 groups.add(a.candidateGroupRef());
+                groups.addAll(a.requiredSkills());
             }
         }
         List<CompiledWorkflow.ConnectionRef> connections = new ArrayList<>();

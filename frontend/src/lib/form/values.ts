@@ -3,10 +3,12 @@ import { MONEY_PATTERN, formatUsd } from '../money'
 import type { FieldDef } from './schema'
 import { buildFields, type FormSchema, type FormUi } from './schema'
 import { validateJsonInput, type IssueKeyword } from './validate'
+import { visibleFields } from './visibility'
 
 /** What the user typed. Money and numbers stay strings until submission. */
 export type ScalarRawValue = string | boolean
-export type RawValue = ScalarRawValue | ScalarRawValue[]
+export type RowRawValue = Record<string, ScalarRawValue>
+export type RawValue = ScalarRawValue | Array<ScalarRawValue | RowRawValue>
 export type RawValues = Record<string, RawValue>
 export type FieldErrors = Record<string, string>
 
@@ -26,7 +28,7 @@ export function valuesFromJson(fields: FieldDef[], input: Record<string, unknown
   for (const f of fields) {
     const v = input[f.key]
     if (v === undefined || v === null) continue
-    if (f.schema.type === 'array') values[f.key] = Array.isArray(v) ? v.map(item => typeof item === 'boolean' ? item : String(item)) : []
+    if (f.schema.type === 'array') values[f.key] = Array.isArray(v) ? v.map(item => f.schema.items?.type === 'object' && typeof item === 'object' && item !== null && !Array.isArray(item) ? valuesFromJson(rowFields(f.schema.items), item as Record<string, unknown>) as RowRawValue : typeof item === 'boolean' ? item : String(item)) : []
     else if (f.schema.type === 'boolean') values[f.key] = v === true
     else values[f.key] = typeof v === 'string' ? v : String(v)
   }
@@ -40,7 +42,7 @@ export function carryOverValues(previous: RawValues, fields: FieldDef[]): RawVal
     const prev = previous[f.key]
     if (prev === undefined) continue
     if (f.schema.type === 'array') {
-      if (Array.isArray(prev)) next[f.key] = prev.slice(0, f.schema.maxItems ?? 25)
+      if (Array.isArray(prev)) next[f.key] = prev.slice(0, f.schema.maxItems ?? 25).map(item => f.schema.items?.type === 'object' && typeof item === 'object' ? carryOverValues(item, rowFields(f.schema.items)) as RowRawValue : typeof item === 'object' ? '' : item)
     } else if (f.schema.type === 'boolean') {
       if (typeof prev === 'boolean') next[f.key] = prev
     } else if (typeof prev === 'string') {
@@ -75,7 +77,7 @@ export interface BuildResult {
 export function buildPayload(fields: FieldDef[], raw: RawValues): BuildResult {
   const payload: Record<string, unknown> = {}
   const parseErrors: FieldErrors = {}
-  for (const f of fields) {
+  for (const f of visibleFields(fields, raw)) {
     const value = raw[f.key]
     switch (f.schema.type) {
       case 'array': {
@@ -83,9 +85,19 @@ export function buildPayload(fields: FieldDef[], raw: RawValues): BuildResult {
         if (entries.length === 0 && !f.required) break
         const itemSchema = f.schema.items
         if (!itemSchema) { parseErrors[f.key] = 'This collection has no item schema.'; break }
+        if (itemSchema.type === 'object') {
+          payload[f.key] = entries.map((entry, index) => {
+            if (typeof entry !== 'object' || entry === null) { parseErrors[f.key] = `Row ${index + 1} must contain named values.`; return {} }
+            const result = buildPayload(rowFields(itemSchema), entry)
+            for (const [key, message] of Object.entries(result.parseErrors)) parseErrors[f.key] = `Row ${index + 1}, ${itemSchema.properties?.[key]?.title ?? key}: ${message}`
+            return result.payload
+          })
+          break
+        }
         const itemFields = buildFields({ type: 'object', additionalProperties: false, required: ['item'], properties: { item: itemSchema } }, {})
         const items: unknown[] = []
         entries.forEach((entry, index) => {
+          if (typeof entry === 'object') { parseErrors[f.key] = `Item ${index + 1} must be a scalar value.`; return }
           const result = buildPayload(itemFields, { item: entry })
           if (result.parseErrors.item) parseErrors[f.key] = `Item ${index + 1}: ${result.parseErrors.item}`
           else if (!('item' in result.payload)) parseErrors[f.key] = `Item ${index + 1} is required.`
@@ -162,12 +174,13 @@ export interface ValidationResult {
 
 /** Client-side validation. It only assists: the server answers with its own fieldErrors on submit. */
 export function validateForm(schema: FormSchema, ui: FormUi, raw: RawValues): ValidationResult {
-  const fields = buildFields(schema, ui)
+  const fields = visibleFields(buildFields(schema, ui), raw)
   const { payload, parseErrors } = buildPayload(fields, raw)
   const errors: FieldErrors = { ...parseErrors }
   // Do not validate values that failed to parse: they are already reported, and absent keys would add "required".
   const checked = { ...payload }
-  const issues = validateJsonInput(schema, checked)
+  const effectiveSchema = { ...schema, properties: Object.fromEntries(fields.map(f => [f.key, f.schema])), required: fields.filter(f => f.required).map(f => f.key) }
+  const issues = validateJsonInput(effectiveSchema, checked)
   for (const issue of issues) {
     const key = issue.pointer.split('/').filter(Boolean)[0]
     if (!key || key in errors) continue
@@ -176,8 +189,14 @@ export function validateForm(schema: FormSchema, ui: FormUi, raw: RawValues): Va
     if (issue.keyword === 'required' && key in parseErrors) continue
     const raw0 = raw[key]
     const itemIndex = issue.pointer.split('/')[2]
-    const item = field.schema.type === 'array' && itemIndex !== undefined && field.schema.items ? { ...field, schema: field.schema.items, isMoney: false } : field
-    errors[key] = `${item !== field ? `Item ${Number(itemIndex) + 1}: ` : ''}${messageFor(item, issue.keyword, typeof raw0 === 'string' ? [...raw0].length : 0)}`
+    const column = issue.pointer.split('/')[3]
+    const columnSchema = column && field.schema.items?.type === 'object' ? field.schema.items.properties?.[column] : undefined
+    const item = field.schema.type === 'array' && itemIndex !== undefined && field.schema.items ? { ...field, schema: columnSchema ?? field.schema.items, isMoney: false } : field
+    errors[key] = `${item !== field ? `${field.schema.items?.type === 'object' ? 'Row' : 'Item'} ${Number(itemIndex) + 1}${columnSchema ? `, ${columnSchema.title}` : ''}: ` : ''}${messageFor(item, issue.keyword, typeof raw0 === 'string' ? [...raw0].length : 0)}`
   }
   return { payload, errors, valid: Object.keys(errors).length === 0 }
+}
+
+export function rowFields(schema: import('./schema').FormFieldSchema): FieldDef[] {
+  return buildFields({ type: 'object', additionalProperties: false, required: schema.required ?? [], properties: schema.properties ?? {} }, {})
 }

@@ -6,8 +6,11 @@ import java.util.UUID;
 
 import org.flowable.bpmn.model.ExtensionElement;
 import org.flowable.bpmn.model.FlowElement;
+import org.flowable.bpmn.model.BoundaryEvent;
+import org.flowable.bpmn.model.ErrorEventDefinition;
 import org.flowable.engine.delegate.DelegateExecution;
 import org.flowable.engine.delegate.JavaDelegate;
+import org.flowable.engine.delegate.BpmnError;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
 
@@ -76,6 +79,12 @@ public class HttpTaskDelegate implements JavaDelegate {
             values.put(name, value);
         });
 
+        // A previous job can crash after the independent journal transaction committed, but before the engine
+        // committed its failure route. Reuse that exact known result rather than resending a rejected call.
+        EffectDispatcher.Failed recorded = recordedFailure(workspaceId, runId, element.getId(), connection,
+                connectionVersion, operation, json.canonicalSha256(dispatcher.body(values)));
+        if (recorded != null && routeKnownFailure(execution, element, recorded, workspaceId, runId, connection, operation))
+            throw new BpmnError("ORQIX_STEP_FAILED");
         EffectDispatcher.DispatchResult result = dispatcher.dispatch(new EffectDispatcher.DispatchRequest(workspaceId,
                 runId, element.getId(), OCCURRENCE, connection, connectionVersion, operation, dispatcher.body(values),
                 results, timeoutSeconds, properties.runtime().lockOwner(), ProcessData.initiator(execution)));
@@ -109,7 +118,71 @@ public class HttpTaskDelegate implements JavaDelegate {
         }
         EffectDispatcher.Failed failed = (EffectDispatcher.Failed) result;
         metrics.effectAttempt(failed.effectClass(), failed.classification());
+        if (routeKnownFailure(execution, element, failed, workspaceId, runId, connection, operation)) {
+            // The engine catches this business error at the generated interrupting boundary in the same transaction.
+            // Journal completion is already durable; no failed-job retry or dead-letter transition is requested.
+            throw new BpmnError("ORQIX_STEP_FAILED");
+        }
         throw new JobFailure(failed.retryable(), failed.attentionReason(), failed.errorCode(), failed.classification(),
                 failed.httpStatus(), failed.attempt(), failed.effectId(), failed.businessMessage());
+    }
+
+    private boolean routeKnownFailure(DelegateExecution execution, FlowElement element, EffectDispatcher.Failed failed,
+            UUID workspaceId, UUID runId, String connection, String operation) {
+        if (failed.retryable() || !"permanent".equals(failed.classification()) || failed.effectId() == null) return false;
+        boolean rejected = "EFFECT_REJECTED".equals(failed.attentionReason()) && knownRejection(failed.httpStatus(), failed.errorCode());
+        boolean invalidRead = "RESPONSE_INVALID".equals(failed.attentionReason()) && "readOnly".equals(failed.effectClass());
+        if (!rejected && !invalidRead) return false;
+        var candidate = OrqixModel.model(execution.getProcessDefinitionId()).getFlowElement(element.getId() + "__failed");
+        if (!(candidate instanceof BoundaryEvent boundary) || !element.getId().equals(boundary.getAttachedToRefId())
+                || boundary.getEventDefinitions().stream().noneMatch(definition -> definition instanceof ErrorEventDefinition error
+                        && "error__stepFailed".equals(error.getErrorRef()))) return false;
+        // Never route an uncertain effect or a policy/configuration failure merely because its result was classified.
+        // The stable effect id must identify this exact run/node/occurrence and a completed permanent journal result.
+        boolean recorded = jdbc.sql("""
+                SELECT EXISTS(SELECT 1 FROM effect_journal WHERE id=:id AND workspace_id=:ws AND run_id=:run
+                  AND node_id=:node AND occurrence=:occurrence AND state='permanentFailure')
+                """).param("id", failed.effectId()).param("ws", workspaceId).param("run", runId)
+                .param("node", element.getId()).param("occurrence", OCCURRENCE).query(Boolean.class).single();
+        if (!recorded) return false;
+        String kind = rejected ? "rejected" : "invalidResponse";
+        String message = rejected ? "The external system rejected this request." : "The read-only system returned an invalid response.";
+        execution.setVariable(ProcessData.stepVariable(element.getId()), json.write(json.object()
+                .put("failureKind", kind).put("failureHttpStatus", failed.httpStatus() == null ? 0 : failed.httpStatus())
+                .put("failureMessage", message)));
+        runs.mutate(workspaceId, runId, m -> { m.removeStep(element.getId()); m.settle(); });
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("connectionKey", connection); data.put("operation", operation); data.put("attempt", failed.attempt());
+        data.put("httpStatus", failed.httpStatus()); data.put("classification", failed.classification());
+        data.put("errorCode", failed.errorCode()); data.put("failureKind", kind); data.put("routed", true);
+        events.append(workspaceId, runId, "EFFECT_FAILED", element.getId(), null, data);
+        events.append(workspaceId, runId, "STEP_FAILED", element.getId(), null,
+                Map.of("outcome", "failed", "failureKind", kind, "effectId", failed.effectId().toString()));
+        return true;
+    }
+
+    private static boolean knownRejection(Integer status, String code) {
+        return status != null && status >= 400 && status < 500 && status != 401 && status != 403 && status != 408
+                && status != 429 && ("HTTP_" + status).equals(code);
+    }
+
+    private EffectDispatcher.Failed recordedFailure(UUID workspaceId, UUID runId, String node, String connection,
+            int connectionVersion, String operation, String requestHash) {
+        return jdbc.sql("""
+                SELECT id, attempts, last_http_status, last_error_code, effect_class
+                FROM effect_journal WHERE workspace_id=:ws AND run_id=:run AND node_id=:node AND occurrence=:occurrence
+                  AND connection_key=:connection AND connection_version=:version AND operation=:operation
+                  AND request_hash=:hash AND state='permanentFailure'
+                """).param("ws", workspaceId).param("run", runId).param("node", node).param("occurrence", OCCURRENCE)
+                .param("connection", connection).param("version", connectionVersion).param("operation", operation).param("hash", requestHash)
+                .query((rs, index) -> {
+                    Integer status = rs.getObject("last_http_status", Integer.class); String code = rs.getString("last_error_code");
+                    String effectClass = rs.getString("effect_class");
+                    String reason = knownRejection(status, code) ? "EFFECT_REJECTED"
+                            : "readOnly".equals(effectClass) && code != null && java.util.Set.of("RESPONSE_INVALID", "RESPONSE_TOO_LARGE", "UNEXPECTED_STATUS").contains(code)
+                            ? "RESPONSE_INVALID" : null;
+                    return reason == null ? null : new EffectDispatcher.Failed(rs.getObject("id", UUID.class), rs.getInt("attempts"), false,
+                            reason, code, "permanent", status, effectClass, "Recorded known failure");
+                }).optional().orElse(null);
     }
 }

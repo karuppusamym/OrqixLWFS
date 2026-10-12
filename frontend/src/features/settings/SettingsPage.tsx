@@ -2,6 +2,7 @@ import { ClipboardCheck, Plug, ShieldCheck, Sparkles, Users } from 'lucide-react
 import { useWorkspace } from '@/app/workspace'
 import { PageHeader } from '@/components/common/PageHeader'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { DocumentSourcesPanel } from './DocumentSourcesPanel'
 import { AccessPanel } from './AccessPanel'
 import { ConnectionsPanel } from './ConnectionsPanel'
 import { MigrationPolicyPanel } from './MigrationPolicyPanel'
@@ -55,7 +56,9 @@ export function SettingsPage() {
               <Sparkles className="size-4" aria-hidden="true" /> AI
             </TabsTrigger>
           ) : null}
+          {showAccess ? <TabsTrigger value="documents">Approved documents</TabsTrigger> : null}
         </TabsList>
+        {showAccess ? <TabsContent value="documents"><DocumentSourcesPanel /></TabsContent> : null}
         {showAccess ? (
           <TabsContent value="access">
             <AccessPanel />

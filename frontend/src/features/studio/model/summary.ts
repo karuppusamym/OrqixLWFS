@@ -21,6 +21,8 @@ export function routeText(def: Definition, t: Transition, lookup?: ConnectionLoo
       return 'Rejected'
     case 'timedOut':
       return 'Timed out'
+    case 'failed':
+      return 'Failed'
     case 'default':
       return t.label ? `Otherwise (${t.label})` : 'Otherwise'
     case 'condition':
@@ -60,6 +62,8 @@ export function nodeSubtitle(def: Definition, node: WorkflowNode, groupNames: Re
       return `${def.transitions.filter((t) => t.from === node.id).length} paths`
     case 'http':
       return c.operation ? `${c.connectionRef as string} · ${c.operation as string}` : 'No operation chosen'
+    case 'generateDocument':
+      return `${String(c.format ?? 'pdf').toUpperCase()} document ? ${String(c.fileName ?? 'No file name')}`
     case 'notification':
       return (c.message as string) || 'No message yet'
     case 'parallelSplit':

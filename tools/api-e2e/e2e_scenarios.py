@@ -1,5 +1,6 @@
 """End-to-end purchase scenarios against the Docker stack (app :8080, Keycloak :8180, procurement stub :8095)."""
 import sys
+import os
 import time
 import uuid
 
@@ -7,7 +8,7 @@ import requests
 
 from orqix_client import Client
 
-STUB = "http://localhost:8095"
+STUB = os.environ.get("ORQIX_STUB_URL", "http://localhost:8095").rstrip("/")
 results = []
 
 

@@ -29,6 +29,8 @@ import { RunFiles } from './RunFiles'
 import { StageProgress } from './StageProgress'
 import { SendTestMessage } from './SendTestMessage'
 import { DecisionEvidence } from './DecisionEvidence'
+import { IncidentCorrectionPanel } from './IncidentCorrectionPanel'
+import { IncidentCorrectionEvidence } from './IncidentCorrectionEvidence'
 import { candidateEffects, EFFECT_CLASS_LABEL, EFFECT_STATE_LABEL, reasonText } from './operatorText'
 
 const TONE_DOT: Record<EventTone, string> = {
@@ -185,6 +187,7 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
       ) : null}
 
       <SendTestMessage run={run} />
+      {releaseDefinition ? <IncidentCorrectionPanel run={run} inputSchema={releaseDefinition.inputSchema} /> : null}
 
       {operator ? (
         <section id="operator-actions" aria-labelledby="operator-heading" className="mb-6 scroll-mt-20 rounded-card border border-border bg-surface p-4">
@@ -332,6 +335,7 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
                             <span className={cn('absolute top-1.5 -left-[1.6rem] size-2.5 rounded-full border-2 border-surface', TONE_DOT[eventTone(e)])} aria-hidden="true" />
                             <p className="text-sm">{describeEvent(e, ctx)}</p>
                             <DecisionEvidence event={e} />
+                            <IncidentCorrectionEvidence event={e} />
                             <p className="text-xs text-muted-foreground">
                               <time dateTime={e.occurredAt}>{formatDateTime(e.occurredAt)}</time>
                             </p>

@@ -13,6 +13,7 @@ import { addField, applyFields, fieldsFromDefinition, FIELD_KIND_LABELS, renameF
 import type { WorkflowNode } from '../model/types'
 import { Advanced, CommitInput, CommitNumber, CommitTextarea, InspectorSection } from './controls'
 import { StagesInspector } from './StagesInspector'
+import { RowColumnsEditor } from './RowColumnsEditor'
 
 const KIND_ORDER: FieldKind[] = ['text', 'longText', 'number', 'money', 'integer', 'date', 'yesNo', 'choice', 'collection', 'file']
 
@@ -171,14 +172,15 @@ function FieldCard({
       </FormField>
       {f.kind === 'collection' ? <>
         <FormField label="Item type" id={`${p}-item-type`}>
-          {ids => <Select id={ids.input} value={f.itemSchema?.type ?? 'string'} disabled={readOnly} onChange={e => onChange({ itemSchema: { type: e.target.value as 'string' | 'number' | 'integer' | 'boolean', title: 'Item', ...(e.target.value === 'string' ? { minLength: 1, maxLength: 200 } : {}) } })}>
-            <option value="string">Text</option><option value="number">Number</option><option value="integer">Whole number</option><option value="boolean">Yes/No</option>
+          {ids => <Select id={ids.input} value={f.itemSchema?.type ?? 'string'} disabled={readOnly} onChange={e => onChange({ itemSchema: { type: e.target.value as 'string' | 'number' | 'integer' | 'boolean' | 'object', title: 'Item', ...(e.target.value === 'string' ? { minLength: 1, maxLength: 200 } : e.target.value === 'object' ? { additionalProperties: false, required: ['name'], properties: { name: { type: 'string', title: 'Name', minLength: 1, maxLength: 200 } } } : {}) } })}>
+            <option value="string">Text</option><option value="number">Number</option><option value="integer">Whole number</option><option value="boolean">Yes/No</option><option value="object">Repeating rows</option>
           </Select>}
         </FormField>
         <div className="grid grid-cols-2 gap-3">
           <FormField label="Minimum items" id={`${p}-minitems`}>{ids => <CommitNumber id={ids.input} integer value={f.minItems ?? 1} disabled={readOnly} onCommit={v => onChange({ minItems: v ?? 1 })} />}</FormField>
           <FormField label="Maximum items" id={`${p}-maxitems`}>{ids => <CommitNumber id={ids.input} integer value={f.maxItems ?? 25} disabled={readOnly} onCommit={v => onChange({ maxItems: v ?? 25 })} />}</FormField>
-        </div><p className="text-xs text-muted-foreground">Collections contain 1 to 25 scalar values. Nested objects and collections are unsupported.</p>
+        </div><p className="text-xs text-muted-foreground">Collections contain 1 to 25 scalar values or rows with up to 10 scalar columns.</p>
+        {f.itemSchema?.type === 'object' ? <RowColumnsEditor schema={f.itemSchema} disabled={readOnly} onChange={itemSchema => onChange({ itemSchema })} /> : null}
       </> : null}
       {f.kind === 'file' ? (
         <fieldset className="space-y-2" data-testid={`file-options-${f.key}`}>
@@ -217,6 +219,10 @@ function FieldCard({
         </FormField>
       ) : null}
       <Advanced label="Advanced">
+        {f.kind !== 'file' && f.kind !== 'collection' ? <label className="flex items-center gap-2 text-sm">
+          <Checkbox checked={!!f.incidentEditable} disabled={readOnly} onCheckedChange={checked => onChange({incidentEditable: checked === true})} />
+          Allow operator correction during an incident before data is consumed
+        </label> : null}
         <FormField label="Field key" id={`${p}-key`} error={keyError} description="Used in rules and exports. Changing it updates every place that uses this question.">
           {(ids) => (
             <CommitInput

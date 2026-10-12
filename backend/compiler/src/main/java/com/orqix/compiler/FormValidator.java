@@ -11,6 +11,9 @@ public interface FormValidator {
     /** @return empty when valid; otherwise one error per failed keyword, pointer relative to the input object */
     List<FieldError> validate(String inputSchemaJson, String inputJson);
 
+    /** Validates visibility and conditional requiredness against the same immutable form presentation as execution. */
+    List<FieldError> validate(String inputSchemaJson,String inputJson,String inputUiJson);
+
     /**
      * @param pointer JSON Pointer such as /amount
      * @param code    failed keyword: required, type, enum, minimum, maximum, minLength, maxLength, multipleOf,

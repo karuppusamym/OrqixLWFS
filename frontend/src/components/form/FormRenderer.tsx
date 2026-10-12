@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/button'
 import { FileField } from './FileField'
 import type { FieldDef } from '@/lib/form/schema'
 import type { FieldErrors, RawValue, RawValues } from '@/lib/form/values'
+import { emptyValues, rowFields, type RowRawValue } from '@/lib/form/values'
+import { visibleFields } from '@/lib/form/visibility'
 
 export function fieldDomId(prefix: string, key: string): string {
   return `${prefix}-${key}`
@@ -31,11 +33,17 @@ export interface FormRendererProps {
  * and client or server errors render on the same field.
  */
 export function FormRenderer({ fields, values, onChange, errors, idPrefix = 'f', disabled, onFileBusyChange }: FormRendererProps) {
+  const shown = visibleFields(fields, values)
+  const render = (f: FieldDef) => <FieldControl key={f.key} field={f} value={values[f.key]} onChange={(v) => onChange(f.key, v)} error={errors[f.key]} id={fieldDomId(idPrefix, f.key)} disabled={disabled} onFileBusyChange={onFileBusyChange} />
+  const sectionIds = [...new Set(shown.flatMap(f => f.section ? [f.section.id] : []))]
   return (
     <div className="space-y-5">
-      {fields.map((f) => (
-        <FieldControl key={f.key} field={f} value={values[f.key]} onChange={(v) => onChange(f.key, v)} error={errors[f.key]} id={fieldDomId(idPrefix, f.key)} disabled={disabled} onFileBusyChange={onFileBusyChange} />
-      ))}
+      {sectionIds.map(sectionId => {
+        const members = shown.filter(f => f.section?.id === sectionId)
+        const section = members[0]!.section!
+        return <fieldset key={sectionId} className="space-y-4 rounded-card border border-border p-4"><legend className="px-1 font-semibold">{section.title}</legend><div className={section.columns === 2 ? 'grid gap-5 md:grid-cols-2' : 'space-y-5'}>{members.map(render)}</div></fieldset>
+      })}
+      {shown.filter(f => !f.section).map(render)}
     </div>
   )
 }
@@ -61,12 +69,28 @@ function FieldControl({
 
   if (f.widget === 'collection' && f.schema.items) {
     const entries = Array.isArray(value) ? value : []
+    if (f.schema.items.type === 'object') {
+      const columns = rowFields(f.schema.items)
+      return <fieldset className="space-y-3" disabled={disabled} id={id} aria-describedby={error ? `${id}-error` : undefined}>
+        <legend className="text-sm font-semibold">{f.label}{f.required ? ' (required)' : ''}</legend>
+        <p className="text-sm text-muted-foreground">{f.description} Add {f.schema.minItems} to {f.schema.maxItems} rows.</p>
+        {entries.map((entry, index) => <fieldset key={index} className="rounded-card border border-border p-3 space-y-3"><legend>Row {index + 1}</legend>
+          {columns.map(column => <FieldControl key={column.key} field={{ ...column, label: `${f.label}, row ${index + 1}: ${column.label}` }} value={typeof entry === 'object' ? entry[column.key] : undefined} onChange={next => {
+            if (Array.isArray(next)) return
+            onChange(entries.map((current, i) => i === index ? { ...(typeof current === 'object' ? current : {}), [column.key]: next } : current))
+          }} error={undefined} id={`${id}-${index}-${column.key}`} disabled={disabled} />)}
+          <Button type="button" size="sm" variant="ghost" onClick={() => onChange(entries.filter((_, i) => i !== index))}>Remove {f.label} row {index + 1}</Button>
+        </fieldset>)}
+        <Button type="button" variant="secondary" disabled={disabled || entries.length >= (f.schema.maxItems ?? 25)} onClick={() => onChange([...entries, emptyValues(columns) as RowRawValue])}>Add {f.label} row</Button>
+        {error ? <FieldError id={`${id}-error`} message={error} /> : null}
+      </fieldset>
+    }
     const itemField = buildFields({ type: 'object', additionalProperties: false, required: ['item'], properties: { item: f.schema.items } }, {})[0]!
     return <fieldset className="space-y-3" disabled={disabled} id={id} aria-describedby={error ? `${id}-error` : undefined}>
       <legend className="text-sm font-semibold">{f.label}{f.required ? ' (required)' : ''}</legend>
       <p className="text-sm text-muted-foreground">{f.description} Add {f.schema.minItems} to {f.schema.maxItems} items.</p>
       {entries.map((entry, index) => <div key={index} className="rounded-card border border-border p-3 space-y-2">
-        <FieldControl field={{ ...itemField, label: `${f.label}: item ${index + 1}` }} value={entry} onChange={next => {
+        <FieldControl field={{ ...itemField, label: `${f.label}: item ${index + 1}` }} value={typeof entry === 'object' ? undefined : entry} onChange={next => {
           if (Array.isArray(next)) return
           onChange(entries.map((current, i) => i === index ? next : current))
         }} error={undefined} id={`${id}-${index}`} disabled={disabled} />

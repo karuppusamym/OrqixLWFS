@@ -136,7 +136,7 @@ public class RunService {
             }
         }
         List<FormValidator.FieldError> errors = new java.util.ArrayList<>(formValidator.validate(
-                json.write(release.inputSchema()), json.write(request.input())));
+                json.write(release.inputSchema()), json.write(request.input()),json.write(release.inputUi())));
         if (errors.isEmpty()) {
             // A "wait until a date" step cannot wait further than its horizon (S12 section 10).
             errors.addAll(WaitDates.check(release.definition(), request.input(), WaitDates.today()));
@@ -191,7 +191,7 @@ public class RunService {
     @Transactional(readOnly = true)
     public RuntimeDtos.RunPage listRuns(Caller caller, UUID workspaceId, RunQueries.Filter filter, String cursor,
             Integer limit) {
-        WorkspaceAccess access = policy.requireVisible(caller, workspaceId);
+        WorkspaceAccess access = policy.freshAccess(caller,workspaceId).filter(WorkspaceAccess::visible).orElseThrow(ApiException::notFound);
         policy.require(access, Permission.RUN_READ, "listRuns", false);
         return page(access, filter, cursor, limit, "listRuns");
     }
@@ -294,6 +294,10 @@ public class RunService {
 
     /** Decision values belong to the same permission scope as request/output data. */
     private JsonNode eventData(RunEvents.EventRow row, boolean dataVisible) {
+        if (!dataVisible && "INPUT_CORRECTED".equals(row.type())) {
+            ObjectNode metadata=json.object(); metadata.set("fields",row.data().path("fields")); metadata.set("version",row.data().path("version"));
+            metadata.put("detailsRedacted",true); return metadata;
+        }
         if (!dataVisible && ("ATTACHMENT_ADDED".equals(row.type()) || "ATTACHMENT_REMOVED".equals(row.type()))) {
             // File names and descriptions belong to the request data; a reader without it sees only that a file changed.
             ObjectNode redacted = json.object();
@@ -356,6 +360,8 @@ public class RunService {
         RuntimeDtos.ActionAvailability retry;
         if (!RunStore.NEEDS_ATTENTION.equals(run.lifecycle())) {
             retry = new RuntimeDtos.ActionAvailability(false, run.isActive() ? "RUN_NOT_RECOVERABLE" : "RUN_NOT_ACTIVE");
+        } else if (run.attention() != null && RunWatchdog.REASON.equals(run.attention().path("reason").asString())) {
+            retry = new RuntimeDtos.ActionAvailability(false, "RUN_NOT_RECOVERABLE");
         } else if (unknown) {
             retry = new RuntimeDtos.ActionAvailability(false, "EFFECT_NOT_RECONCILED");
         } else {

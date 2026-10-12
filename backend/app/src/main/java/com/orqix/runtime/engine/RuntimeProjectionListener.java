@@ -152,9 +152,13 @@ public class RuntimeProjectionListener implements FlowableEventListener {
         String group = groups.get(0);
         Instant now = clock.instant();
         Instant dueAt = OrqixModel.extension(element, "approval")
-                .map(approval -> OrqixModel.attribute(approval, "dueAfterHours"))
-                .filter(v -> v != null && !v.isBlank())
-                .map(hours -> now.plus(Duration.ofHours(Long.parseLong(hours))))
+                .filter(approval -> OrqixModel.attribute(approval,"dueAfterHours") != null)
+                .map(approval -> {
+                    int hours = Integer.parseInt(OrqixModel.attribute(approval,"dueAfterHours"));
+                    String calendar = OrqixModel.attribute(approval,"calendar");
+                    return calendar == null ? now.plus(Duration.ofHours(hours))
+                            : com.orqix.compiler.BusinessCalendar.read(json.parse(calendar)).deadline(now,hours);
+                })
                 .orElse(null);
         String label = element.getName() == null ? element.getId() : element.getName();
         // The timer of an approval time limit was created just before the task (same command): S12 section 3.
@@ -194,7 +198,7 @@ public class RuntimeProjectionListener implements FlowableEventListener {
             return;
         }
         FlowElement element = OrqixModel.flowElement(job.getProcessDefinitionId(), job.getElementId());
-        if (OrqixModel.extension(element, "http").isEmpty()) {
+        if (OrqixModel.extension(element, "http").isEmpty() && OrqixModel.extension(element, "generateDocument").isEmpty()) {
             return;
         }
         ExecutionEntity execution = CommandContextUtil.getExecutionEntityManager().findById(job.getExecutionId());
@@ -209,7 +213,7 @@ public class RuntimeProjectionListener implements FlowableEventListener {
             ObjectNode step = json.object();
             step.put("nodeId", element.getId());
             step.put("label", label);
-            step.put("kind", "http");
+            step.put("kind", OrqixModel.extension(element, "generateDocument").isPresent() ? "generateDocument" : "http");
             step.put("since", now.toString());
             step.putNull("candidateGroup");
             step.putNull("assigneeId");

@@ -50,10 +50,12 @@ public class TaskStore {
             Instant dueAt, Instant createdAt) {
         int inserted = jdbc.sql("""
                 INSERT INTO task_context (engine_task_id, workspace_id, run_id, node_id, label, candidate_group_key,
-                                          initiator_subject_id, self_approval_allowed, status, version, due_at, created_at)
+                                          initiator_subject_id, self_approval_allowed, status, version, due_at, created_at, required_skills)
                 SELECT :task, run.workspace_id, run.id, :node, :label, :grp, run.initiator_subject_id,
                        (rel.definition -> 'security' ->> 'selfApproval' = 'allow' AND ws.allow_self_approval_workflows),
-                       'open', 1, :due, :created
+                       'open', 1, :due, :created,
+                       COALESCE((SELECT n->'config'->'requiredSkills' FROM jsonb_array_elements(rel.definition->'nodes') n
+                           WHERE n->>'id'=:node),'[]'::jsonb)
                 FROM workflow_run run
                 JOIN workflow_release rel ON rel.workspace_id = run.workspace_id AND rel.id = run.release_id
                 JOIN workspace ws ON ws.id = run.workspace_id
@@ -66,9 +68,23 @@ public class TaskStore {
         if (inserted != 1) {
             throw new IllegalStateException("Run " + runId + " not found for task " + taskId);
         }
-        jdbc.sql("INSERT INTO task_reminder(workspace_id,task_id,next_attempt_at) VALUES(:ws,:task,:due) ON CONFLICT DO NOTHING")
+        jdbc.sql("""
+                INSERT INTO task_reminder(workspace_id,task_id,next_attempt_at,max_notices,interval_hours)
+                SELECT :ws,:task,CASE WHEN cfg->'escalation' IS NOT NULL THEN CAST(:deadline AS timestamptz) ELSE CAST(:due AS timestamptz) END,
+                       COALESCE((cfg->'escalation'->>'maxNotices')::integer,0),(cfg->'escalation'->>'intervalHours')::integer
+                FROM (SELECT n->'config' cfg FROM workflow_run r JOIN workflow_release rel ON rel.workspace_id=r.workspace_id AND rel.id=r.release_id,
+                       jsonb_array_elements(rel.definition->'nodes') n WHERE r.workspace_id=:ws AND r.id=:run AND n->>'id'=:node) config
+                ON CONFLICT DO NOTHING
+                """)
                 .param("ws",workspaceId).param("task",taskId)
+                .param("deadline",Sql.ts(dueAt)).param("run",runId).param("node",nodeId)
                 .param("due",Sql.ts(createdAt.plus(reminders.after()))).update();
+    }
+
+    @Transactional(readOnly = true)
+    public List<String> requiredSkills(UUID workspaceId, String taskId) {
+        return jdbc.sql("SELECT jsonb_array_elements_text(required_skills) skill FROM task_context WHERE workspace_id=:ws AND engine_task_id=:task")
+                .param("ws",workspaceId).param("task",taskId).query(String.class).list();
     }
 
     @Transactional(readOnly = true)

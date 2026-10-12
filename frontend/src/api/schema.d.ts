@@ -4,6 +4,29 @@
  */
 
 export interface paths {
+    "/workspaces/{workspaceId}/runs/{runId}/correct-input": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Correct explicitly editable input before prior data consumption
+         * @description Requires fresh run.operate and request-data visibility. Only needsAttention runs without effects, active jobs/timers or preceding data consumers can be corrected. Updates projection and process input atomically; does not retry. Values and reason in the timeline require request-data permission; audit stores counts/version only.
+         */
+        post: operations["correctRunInput"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/migration-policy": {
         parameters: {
             query?: never;
@@ -324,6 +347,47 @@ export interface paths {
         put?: never;
         /** Test a decision table in a draft with sample values (no side effects) */
         post: operations["evaluateDecision"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/test-suite": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        /** Read designer-only shared test samples */
+        get: operations["getWorkflowTestSuite"];
+        /** Save an immutable shared test suite revision */
+        put: operations["saveWorkflowTestSuite"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/test-suite/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test the exact draft and current shared suite; retain count-only pass/fail results */
+        post: operations["runWorkflowTestSuite"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1499,10 +1563,117 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/document-sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        get: operations["listDocumentSources"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/document-sources/grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        get: operations["listDocumentSourceGrants"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/document-sources/grants/{sourceId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["putDocumentSourceGrant"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/document-sources/{sourceId}/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        get: operations["listDocumentSourceFiles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/document-sources/{sourceId}/files/{itemId}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                sourceId: string;
+                itemId: string;
+            };
+            cookie?: never;
+        };
+        get: operations["listDocumentSourceFileVersions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        CorrectRunInputRequest: {
+            expectedVersion: number;
+            reason: string;
+            changes: {
+                [key: string]: string | number | boolean;
+            };
+        };
+        RunInputCorrection: {
+            runId: components["schemas"]["Uuid"];
+            version: number;
+            fields: number;
+            replayed: boolean;
+        };
         MigrationPolicy: {
             required: boolean;
             version: number;
@@ -1645,9 +1816,58 @@ export interface components {
         /** @enum {string} */
         Lifecycle: "running" | "waiting" | "needsAttention" | "completed" | "cancelled";
         /** @enum {string} */
-        OutcomeKind: "success" | "rejected";
+        OutcomeKind: "success" | "rejected" | "failed";
+        DocumentSource: {
+            id: components["schemas"]["Uuid"];
+            label: string;
+            connectionKey: string;
+            definitionVersion: number;
+            driveId: string;
+            folderId: string;
+        };
+        DocumentSourcePrincipal: {
+            /** @enum {unknown} */
+            type: "subject" | "idpGroup";
+            value: string;
+        };
+        DocumentSourceGrant: {
+            source: components["schemas"]["DocumentSource"];
+            browseOperation: string;
+            versionsOperation: string;
+            audience: components["schemas"]["DocumentSourcePrincipal"][];
+            enabled: boolean;
+            revision: number;
+        };
+        PutDocumentSourceGrant: {
+            label: string;
+            connectionKey: string;
+            definitionVersion: number;
+            driveId: string;
+            folderId: string;
+            browseOperation: string;
+            versionsOperation: string;
+            audience: components["schemas"]["DocumentSourcePrincipal"][];
+            enabled: boolean;
+            expectedRevision: number;
+        };
+        DocumentSourceFiles: {
+            driveId: string;
+            folderId: string;
+            filesJson: string;
+            fileCount: number;
+            /** @constant */
+            hasMore: false;
+        };
+        DocumentSourceVersions: {
+            driveId: string;
+            itemId: string;
+            versionsJson: string;
+            versionCount: number;
+            /** @constant */
+            hasMore: false;
+        };
         /** @enum {string} */
-        Permission: "workflow.read" | "workflow.edit" | "workflow.publish" | "workflow.export" | "workflow.start" | "run.read" | "run.read-data" | "run.operate" | "task.act" | "connection.read" | "connection.manage" | "workspace.manage-access" | "audit.read" | "message.send";
+        Permission: "workflow.read" | "workflow.edit" | "workflow.publish" | "workflow.export" | "workflow.start" | "run.read" | "run.read-data" | "run.operate" | "task.act" | "connection.read" | "connection.manage" | "workspace.manage-access" | "audit.read" | "message.send" | "document.browse";
         /** @enum {string} */
         WorkspaceRole: "WORKSPACE_ADMIN" | "WORKFLOW_DESIGNER" | "PUBLISHER" | "OPERATOR" | "VIEWER" | "APPROVER";
         /** @description RFC 9457 problem details with Orqix extension members. */
@@ -1662,7 +1882,7 @@ export interface components {
             detail?: string;
             instance?: string;
             /** @enum {string} */
-            code: "MALFORMED_REQUEST" | "IDEMPOTENCY_KEY_REQUIRED" | "INVALID_CURSOR" | "UNAUTHENTICATED" | "FORBIDDEN" | "CSRF_INVALID" | "SELF_APPROVAL_DENIED" | "NOT_ELIGIBLE" | "NOT_FOUND" | "IDEMPOTENCY_KEY_REUSED" | "DUPLICATE_KEY" | "WORKFLOW_VERSION_CONFLICT" | "RELEASE_NOT_ACTIVE" | "TASK_VERSION_CONFLICT" | "TASK_ALREADY_CLAIMED" | "TASK_NOT_CLAIMED_BY_CALLER" | "TASK_NOT_OPEN" | "RUN_NOT_ACTIVE" | "RUN_BUSY" | "RUN_NOT_RECOVERABLE" | "EFFECT_NOT_RECONCILED" | "EFFECT_STATE_CONFLICT" | "GROUP_REVISION_CONFLICT" | "STALE_REVISION" | "PAYLOAD_TOO_LARGE" | "VALIDATION_FAILED" | "WORKFLOW_INVALID" | "WARNINGS_NOT_ACKNOWLEDGED" | "NO_ACTIVE_RELEASE" | "REASON_REQUIRED" | "CONNECTION_NOT_BOUND" | "EGRESS_NOT_ALLOWED" | "OPERATION_NOT_TESTABLE" | "PRECONDITION_REQUIRED" | "QUOTA_EXCEEDED" | "RATE_LIMITED" | "DEPENDENCY_UNAVAILABLE" | "AI_NOT_CONFIGURED" | "AI_MODEL_NOT_ALLOWED" | "AI_OUTPUT_INVALID" | "AI_PROVIDER_UNAVAILABLE" | "AI_BUDGET_EXCEEDED" | "SOURCE_INVALID" | "MIGRATION_BLOCKED" | "ATTACHMENT_BLOCKED" | "ATTACHMENT_LIMIT_REACHED";
+            code: "MALFORMED_REQUEST" | "IDEMPOTENCY_KEY_REQUIRED" | "INVALID_CURSOR" | "UNAUTHENTICATED" | "FORBIDDEN" | "CSRF_INVALID" | "SELF_APPROVAL_DENIED" | "NOT_ELIGIBLE" | "NOT_FOUND" | "IDEMPOTENCY_KEY_REUSED" | "DUPLICATE_KEY" | "WORKFLOW_VERSION_CONFLICT" | "RELEASE_NOT_ACTIVE" | "TASK_VERSION_CONFLICT" | "TASK_ALREADY_CLAIMED" | "TASK_NOT_CLAIMED_BY_CALLER" | "TASK_NOT_OPEN" | "RUN_NOT_ACTIVE" | "RUN_BUSY" | "RUN_NOT_RECOVERABLE" | "EFFECT_NOT_RECONCILED" | "EFFECT_STATE_CONFLICT" | "GROUP_REVISION_CONFLICT" | "STALE_REVISION" | "PAYLOAD_TOO_LARGE" | "VALIDATION_FAILED" | "WORKFLOW_INVALID" | "WARNINGS_NOT_ACKNOWLEDGED" | "NO_ACTIVE_RELEASE" | "REASON_REQUIRED" | "CONNECTION_NOT_BOUND" | "EGRESS_NOT_ALLOWED" | "OPERATION_NOT_TESTABLE" | "PRECONDITION_REQUIRED" | "QUOTA_EXCEEDED" | "RATE_LIMITED" | "DEPENDENCY_UNAVAILABLE" | "AI_NOT_CONFIGURED" | "AI_MODEL_NOT_ALLOWED" | "AI_OUTPUT_INVALID" | "AI_PROVIDER_UNAVAILABLE" | "AI_BUDGET_EXCEEDED" | "SOURCE_INVALID" | "MIGRATION_BLOCKED" | "ATTACHMENT_BLOCKED" | "ATTACHMENT_LIMIT_REACHED" | "INTERNAL_ERROR";
             correlationId: string;
             fieldErrors?: components["schemas"]["FieldError"][];
             issues?: components["schemas"]["ValidationIssue"][];
@@ -1823,6 +2043,39 @@ export interface components {
             output: {
                 [key: string]: string | number | boolean;
             };
+        };
+        WorkflowTestCase: {
+            id: string;
+            name: string;
+            input: {
+                [key: string]: unknown;
+            };
+            scenario?: components["schemas"]["SimulationScenario"];
+            /** @description Expected business outcome, or __needsAttention__ */
+            expect: string;
+        };
+        WorkflowTestSuite: {
+            version: number;
+            cases: components["schemas"]["WorkflowTestCase"][];
+        };
+        SaveWorkflowTestSuite: {
+            expectedVersion: number;
+            cases: components["schemas"]["WorkflowTestCase"][];
+        };
+        RunWorkflowTestSuite: {
+            revision: number;
+            suiteVersion: number;
+        };
+        WorkflowTestReport: {
+            suiteVersion: number;
+            revision: number;
+            passed: boolean;
+            results: {
+                id: string;
+                passed: boolean;
+                /** @enum {string} */
+                status: "finished" | "needsAttention" | "invalid";
+            }[];
         };
         SimulateRequest: {
             /** @description Draft revision to test; the current draft when omitted */
@@ -2058,7 +2311,7 @@ export interface components {
             nodeId: string;
             label: string;
             /** @enum {string} */
-            kind: "approval" | "http" | "wait" | "child";
+            kind: "approval" | "http" | "wait" | "child" | "generateDocument";
             /** @description Set while the step (kind wait) waits for this message (docs/build/S16). */
             messageName?: string | null;
             since: components["schemas"]["Timestamp"];
@@ -2068,8 +2321,8 @@ export interface components {
         };
         Attention: {
             /** @enum {string} */
-            reason: "RETRIES_EXHAUSTED" | "EFFECT_UNKNOWN" | "EFFECT_REJECTED" | "RESPONSE_INVALID" | "CONNECTION_UNAVAILABLE" | "POLICY_DENIED" | "INTERNAL_ERROR";
-            nodeId: string;
+            reason: "RETRIES_EXHAUSTED" | "EFFECT_UNKNOWN" | "EFFECT_REJECTED" | "RESPONSE_INVALID" | "CONNECTION_UNAVAILABLE" | "POLICY_DENIED" | "INTERNAL_ERROR" | "RUN_WAITING_ON_NOTHING";
+            nodeId: string | null;
             effectId?: components["schemas"]["Uuid"] | null;
             /** @description Business-readable, redacted */
             message: string;
@@ -2288,7 +2541,7 @@ export interface components {
             from: string;
             to: string;
             /** @enum {string} */
-            on: "next" | "approved" | "rejected" | "timedOut" | "condition" | "default";
+            on: "next" | "approved" | "rejected" | "timedOut" | "failed" | "condition" | "default";
             /** @description The designer's route label. Conditions are never included. */
             label?: string | null;
         };
@@ -2299,13 +2552,13 @@ export interface components {
             enteredAt: components["schemas"]["Timestamp"];
             leftAt: components["schemas"]["Timestamp"] | null;
             /** @description Null while the request is still at the step. */
-            outcome: ("approved" | "rejected" | "timedOut" | "completed" | "cancelled") | null;
+            outcome: ("approved" | "rejected" | "timedOut" | "failed" | "completed" | "cancelled") | null;
         };
         PathCurrent: {
             nodeId: string;
             label: string;
             /** @enum {string} */
-            kind: "approval" | "http" | "wait" | "child";
+            kind: "approval" | "http" | "wait" | "child" | "generateDocument";
             /** @enum {string} */
             status: "waiting" | "running" | "needsAttention";
             since: components["schemas"]["Timestamp"];
@@ -2373,7 +2626,7 @@ export interface components {
             reference: string;
             workflow: components["schemas"]["InsightsWorkflow"];
             /** @enum {string} */
-            reason: "RETRIES_EXHAUSTED" | "EFFECT_UNKNOWN" | "EFFECT_REJECTED" | "RESPONSE_INVALID" | "CONNECTION_UNAVAILABLE" | "POLICY_DENIED" | "INTERNAL_ERROR";
+            reason: "RETRIES_EXHAUSTED" | "EFFECT_UNKNOWN" | "EFFECT_REJECTED" | "RESPONSE_INVALID" | "CONNECTION_UNAVAILABLE" | "POLICY_DENIED" | "INTERNAL_ERROR" | "RUN_WAITING_ON_NOTHING";
             since: components["schemas"]["Timestamp"];
             stepLabel: string | null;
         };
@@ -2661,7 +2914,7 @@ export interface components {
         PermissionGrant: {
             id: components["schemas"]["Uuid"];
             /** @enum {string} */
-            permission: "workflow.start" | "connection.manage" | "message.send";
+            permission: "workflow.start" | "connection.manage" | "message.send" | "document.browse";
             workflowId: components["schemas"]["Uuid"] | null;
             principal: components["schemas"]["Principal"];
             createdAt: components["schemas"]["Timestamp"];
@@ -3029,7 +3282,7 @@ export interface components {
         id: string;
         /** @description ISO-8601 duration in days, hours and minutes only (for example PT1M, PT48H, P2D, P1DT12H). The compiler enforces PT1M to P90D (WF_DURATION_TOO_SHORT, WF_DURATION_TOO_LONG). */
         duration: string;
-        /** @description /input/<fieldKey> or /steps/<nodeId>/<outputKey>. Exactly one level below input or a step in v0. */
+        /** @description /input/<fieldKey> or /steps/<nodeId>/<outputKey>. Exactly one level below input or a step in v0. A list of rows on the request form also offers two derived values (S35): /input/<fieldKey>/count (number of rows) and /input/<fieldKey>/sum/<columnKey> (exact total of a numeric column); both are 0 when the list is absent. */
         fieldRef: string;
         /** @description Comparison/output literal. String literals are additionally restricted by compiler rule WF_LITERAL_UNSAFE. */
         literal: string | number | boolean;
@@ -3043,6 +3296,11 @@ export interface components {
         /** @description A calendar date YYYY-MM-DD. The compiler also rejects dates that do not exist (WF_FORM_INVALID). */
         calendarDate: string;
         scalarFormField: {
+            /**
+             * @description Permit operator incident correction before captured effects or successful data-consuming steps. Request scalar fields only.
+             * @constant
+             */
+            incidentEditable?: true;
             /** @enum {unknown} */
             type: "string" | "number" | "integer" | "boolean";
             title: string;
@@ -3068,6 +3326,27 @@ export interface components {
             /** @enum {unknown} */
             multipleOf?: 0.01 | 1;
         } & unknown;
+        /** @description One row of a list of rows: a small object of scalar fields (S35). */
+        rowSchema: {
+            /** @constant */
+            type: "object";
+            /** @constant */
+            additionalProperties: false;
+            required?: components["schemas"]["fieldKey"][];
+            properties: {
+                [key: string]: components["schemas"]["scalarFormField"];
+            };
+        };
+        /** @description A list of rows (up to 50), each with the scalar fields of rowSchema. */
+        rowsFormField: {
+            /** @constant */
+            type: "array";
+            title: components["schemas"]["label"];
+            description?: string;
+            items: components["schemas"]["rowSchema"];
+            minItems: number;
+            maxItems: number;
+        };
         arrayFormField: {
             /** @constant */
             type: "array";
@@ -3077,6 +3356,7 @@ export interface components {
             maxItems: number;
         };
         formField: unknown;
+        condition: unknown;
         nodeBase: {
             id: components["schemas"]["id"];
             type: string;
@@ -3090,7 +3370,9 @@ export interface components {
             title?: string;
             required?: boolean;
         };
-        condition: unknown;
+        decisionCondition: components["schemas"]["atomicCondition"] | {
+            all: components["schemas"]["atomicCondition"][];
+        };
         decisionOutput: {
             [key: string]: components["schemas"]["literal"];
         };
@@ -3104,6 +3386,18 @@ export interface components {
             properties: {
                 [key: string]: components["schemas"]["formField"];
             };
+        };
+        formSection: {
+            id: components["schemas"]["key"];
+            title: components["schemas"]["label"];
+            description?: string;
+            /**
+             * @description Fields per row on a wide screen; one column below 640 px.
+             * @enum {unknown}
+             */
+            columns?: 1 | 2;
+            fields: components["schemas"]["fieldKey"][];
+            visibleWhen?: components["schemas"]["condition"];
         };
         startNode: {
             id?: unknown;
@@ -3122,8 +3416,22 @@ export interface components {
                 candidateGroupRef: components["schemas"]["key"];
                 /** @constant */
                 rejectReasonRequired: true;
-                /** @description Display-only due date in R0. No reminder or escalation is executed. */
+                /** @description Due date: elapsed hours, or working hours when calendar is set. Execution timeout remains wall-clock. */
                 dueAfterHours?: number;
+                /** @description All required workspace group keys, in addition to the candidate group. Membership grants no extra permission. */
+                requiredSkills?: components["schemas"]["key"][];
+                calendar?: {
+                    zone: string;
+                    weekdays: number[];
+                    holidays?: string[];
+                    start: string;
+                    end: string;
+                };
+                /** @description Recurring in-app overdue notices for the current eligible assignee; no automatic reassignment. */
+                escalation?: {
+                    intervalHours: number;
+                    maxNotices: number;
+                };
                 /** @description Optional. When nobody decides within this time, the approval ends and the request continues on the timedOut route (for example to an escalation approval, or to a rejection). Adds a timedOut route and the decision value timedOut. See S12. */
                 timeoutAfter?: components["schemas"]["duration"];
             };
@@ -3161,6 +3469,8 @@ export interface components {
                     [key: string]: string;
                 };
                 timeoutSeconds: number;
+                /** @description Documentation and validation only (S32): this step is the designer's undo of the named earlier step, which must be a call to a system that can change something. Orqix never infers or runs undo operations by itself. */
+                compensates?: components["schemas"]["id"];
             };
         } & components["schemas"]["nodeBase"];
         notificationNode: {
@@ -3270,10 +3580,25 @@ export interface components {
                 /** @description Business-facing outcome label shown to users, e.g. Fulfilled, Rejected, Completed. */
                 businessOutcome: string;
                 /**
-                 * @description Reporting class. A rejected business outcome is a completed process, not a technical failure.
+                 * @description Reporting class. A rejected business outcome is a completed process, not a technical failure. failed is a business outcome reached when a step that can fail has failed for good and the designer chose how to end (S32).
                  * @enum {unknown}
                  */
-                outcomeKind: "success" | "rejected";
+                outcomeKind: "success" | "rejected" | "failed";
+            };
+        } & components["schemas"]["nodeBase"];
+        generateDocumentNode: {
+            id?: unknown;
+            label?: unknown;
+            /** @constant */
+            type?: "generateDocument";
+            config?: {
+                /** @enum {unknown} */
+                format: "pdf" | "docx";
+                fileName: string;
+                template: string;
+                inputMapping: {
+                    [key: string]: components["schemas"]["fieldRef"];
+                };
             };
         } & components["schemas"]["nodeBase"];
         transition: {
@@ -3281,19 +3606,19 @@ export interface components {
             from: components["schemas"]["id"];
             to: components["schemas"]["id"];
             /** @enum {unknown} */
-            on: "next" | "approved" | "rejected" | "timedOut" | "condition" | "default";
+            on: "next" | "approved" | "rejected" | "timedOut" | "failed" | "condition" | "default";
             /** @description Optional business explanation shown on the canvas, e.g. 'USD 5,000 or more'. */
             label?: string;
             condition?: components["schemas"]["condition"];
         };
-        /** @description Authoring semantics: at most one row matches (UNIQUE); the default applies only when no row matches. All rows test the same field (compiler rule WF_DECISION_MIXED_FIELDS) and must be pairwise disjoint (WF_DECISION_OVERLAP). Compiled to DMN as FIRST with a trailing catch-all row. */
+        /** @description Authoring semantics: at most one row matches (UNIQUE); the default applies only when no row matches. Scalar rows test the same field; conjunctive All rows support 2 to 8 distinct fields. Rows must be pairwise disjoint (WF_DECISION_OVERLAP). Compiled to DMN as FIRST with a trailing catch-all row. */
         decisionTable: {
             key: components["schemas"]["key"];
             version: number;
             /** @constant */
             hitPolicy: "UNIQUE";
             rows: {
-                when: components["schemas"]["atomicCondition"];
+                when: components["schemas"]["decisionCondition"];
                 then: components["schemas"]["decisionOutput"];
             }[];
             default: components["schemas"]["decisionOutput"];
@@ -3332,10 +3657,27 @@ export interface components {
                 };
                 /** @constant */
                 currency?: "USD";
+                /** @description Show a field only while its condition holds (S35). Conditions use the branch condition shape on /input/<fieldKey> references (never derived values). A hidden field is not validated and is not stored with the request. */
+                visibleWhen?: {
+                    [key: string]: components["schemas"]["condition"];
+                };
+                /** @description Make an optional field required while its condition holds and the field is visible (S35). */
+                requiredWhen?: {
+                    [key: string]: components["schemas"]["condition"];
+                };
+                /** @description Titled field groups with one or two columns (S35). Fields in no section follow the sections in the usual order. */
+                layout?: {
+                    sections?: components["schemas"]["formSection"][];
+                    /**
+                     * @description Where a field's description appears: below the field (default) or above it.
+                     * @enum {unknown}
+                     */
+                    helpText?: "above" | "below";
+                };
             };
             outputSchema: components["schemas"]["formSchema"];
             triggers: ("manual" | "api")[];
-            nodes: (components["schemas"]["startNode"] | components["schemas"]["approvalNode"] | components["schemas"]["decisionNode"] | components["schemas"]["branchNode"] | components["schemas"]["httpNode"] | components["schemas"]["notificationNode"] | components["schemas"]["parallelSplitNode"] | components["schemas"]["parallelJoinNode"] | components["schemas"]["waitNode"] | components["schemas"]["startWorkflowNode"] | components["schemas"]["waitForMessageNode"] | components["schemas"]["endNode"])[];
+            nodes: (components["schemas"]["startNode"] | components["schemas"]["approvalNode"] | components["schemas"]["decisionNode"] | components["schemas"]["branchNode"] | components["schemas"]["httpNode"] | components["schemas"]["notificationNode"] | components["schemas"]["parallelSplitNode"] | components["schemas"]["parallelJoinNode"] | components["schemas"]["waitNode"] | components["schemas"]["startWorkflowNode"] | components["schemas"]["waitForMessageNode"] | components["schemas"]["endNode"] | components["schemas"]["generateDocumentNode"])[];
             transitions: components["schemas"]["transition"][];
             decisions: components["schemas"]["decisionTable"][];
             /** @description maxAttempts/retryDelaySeconds apply only to external service work (http nodes), never to human decisions. */
@@ -3394,7 +3736,7 @@ export interface components {
                 id: string;
                 fieldKey: string;
                 label: string;
-                /** @description /input/<fieldKey> or /steps/<nodeId>/<outputKey>. Exactly one level below input or a step in v0. */
+                /** @description /input/<fieldKey> or /steps/<nodeId>/<outputKey>. Exactly one level below input or a step in v0. A list of rows on the request form also offers two derived values (S35): /input/<fieldKey>/count (number of rows) and /input/<fieldKey>/sum/<columnKey> (exact total of a numeric column); both are 0 when the list is absent. */
                 fieldRef: string;
                 /** @description Comparison/output literal. String literals are additionally restricted by compiler rule WF_LITERAL_UNSAFE. */
                 literal: string | number | boolean;
@@ -3409,6 +3751,39 @@ export interface components {
                     properties: {
                         [key: string]: components["schemas"]["formField"];
                     };
+                };
+                formSection: {
+                    id: components["schemas"]["key"];
+                    title: components["schemas"]["label"];
+                    description?: string;
+                    /**
+                     * @description Fields per row on a wide screen; one column below 640 px.
+                     * @enum {unknown}
+                     */
+                    columns?: 1 | 2;
+                    fields: components["schemas"]["fieldKey"][];
+                    visibleWhen?: components["schemas"]["condition"];
+                };
+                /** @description One row of a list of rows: a small object of scalar fields (S35). */
+                rowSchema: {
+                    /** @constant */
+                    type: "object";
+                    /** @constant */
+                    additionalProperties: false;
+                    required?: components["schemas"]["fieldKey"][];
+                    properties: {
+                        [key: string]: components["schemas"]["scalarFormField"];
+                    };
+                };
+                /** @description A list of rows (up to 50), each with the scalar fields of rowSchema. */
+                rowsFormField: {
+                    /** @constant */
+                    type: "array";
+                    title: components["schemas"]["label"];
+                    description?: string;
+                    items: components["schemas"]["rowSchema"];
+                    minItems: number;
+                    maxItems: number;
                 };
                 formField: unknown;
                 nodeBase: {
@@ -3434,8 +3809,22 @@ export interface components {
                         candidateGroupRef: components["schemas"]["key"];
                         /** @constant */
                         rejectReasonRequired: true;
-                        /** @description Display-only due date in R0. No reminder or escalation is executed. */
+                        /** @description Due date: elapsed hours, or working hours when calendar is set. Execution timeout remains wall-clock. */
                         dueAfterHours?: number;
+                        /** @description All required workspace group keys, in addition to the candidate group. Membership grants no extra permission. */
+                        requiredSkills?: components["schemas"]["key"][];
+                        calendar?: {
+                            zone: string;
+                            weekdays: number[];
+                            holidays?: string[];
+                            start: string;
+                            end: string;
+                        };
+                        /** @description Recurring in-app overdue notices for the current eligible assignee; no automatic reassignment. */
+                        escalation?: {
+                            intervalHours: number;
+                            maxNotices: number;
+                        };
                         /** @description Optional. When nobody decides within this time, the approval ends and the request continues on the timedOut route (for example to an escalation approval, or to a rejection). Adds a timedOut route and the decision value timedOut. See S12. */
                         timeoutAfter?: components["schemas"]["duration"];
                     };
@@ -3473,6 +3862,8 @@ export interface components {
                             [key: string]: string;
                         };
                         timeoutSeconds: number;
+                        /** @description Documentation and validation only (S32): this step is the designer's undo of the named earlier step, which must be a call to a system that can change something. Orqix never infers or runs undo operations by itself. */
+                        compensates?: components["schemas"]["id"];
                     };
                 } & components["schemas"]["nodeBase"];
                 notificationNode: {
@@ -3591,10 +3982,10 @@ export interface components {
                         /** @description Business-facing outcome label shown to users, e.g. Fulfilled, Rejected, Completed. */
                         businessOutcome: string;
                         /**
-                         * @description Reporting class. A rejected business outcome is a completed process, not a technical failure.
+                         * @description Reporting class. A rejected business outcome is a completed process, not a technical failure. failed is a business outcome reached when a step that can fail has failed for good and the designer chose how to end (S32).
                          * @enum {unknown}
                          */
-                        outcomeKind: "success" | "rejected";
+                        outcomeKind: "success" | "rejected" | "failed";
                     };
                 } & components["schemas"]["nodeBase"];
                 transition: {
@@ -3602,19 +3993,22 @@ export interface components {
                     from: components["schemas"]["id"];
                     to: components["schemas"]["id"];
                     /** @enum {unknown} */
-                    on: "next" | "approved" | "rejected" | "timedOut" | "condition" | "default";
+                    on: "next" | "approved" | "rejected" | "timedOut" | "failed" | "condition" | "default";
                     /** @description Optional business explanation shown on the canvas, e.g. 'USD 5,000 or more'. */
                     label?: string;
                     condition?: components["schemas"]["condition"];
                 };
-                /** @description Authoring semantics: at most one row matches (UNIQUE); the default applies only when no row matches. All rows test the same field (compiler rule WF_DECISION_MIXED_FIELDS) and must be pairwise disjoint (WF_DECISION_OVERLAP). Compiled to DMN as FIRST with a trailing catch-all row. */
+                decisionCondition: components["schemas"]["atomicCondition"] | {
+                    all: components["schemas"]["atomicCondition"][];
+                };
+                /** @description Authoring semantics: at most one row matches (UNIQUE); the default applies only when no row matches. Scalar rows test the same field; conjunctive All rows support 2 to 8 distinct fields. Rows must be pairwise disjoint (WF_DECISION_OVERLAP). Compiled to DMN as FIRST with a trailing catch-all row. */
                 decisionTable: {
                     key: components["schemas"]["key"];
                     version: number;
                     /** @constant */
                     hitPolicy: "UNIQUE";
                     rows: {
-                        when: components["schemas"]["atomicCondition"];
+                        when: components["schemas"]["decisionCondition"];
                         then: components["schemas"]["decisionOutput"];
                     }[];
                     default: components["schemas"]["decisionOutput"];
@@ -3623,6 +4017,11 @@ export interface components {
                     [key: string]: components["schemas"]["literal"];
                 };
                 scalarFormField: {
+                    /**
+                     * @description Permit operator incident correction before captured effects or successful data-consuming steps. Request scalar fields only.
+                     * @constant
+                     */
+                    incidentEditable?: true;
                     /** @enum {unknown} */
                     type: "string" | "number" | "integer" | "boolean";
                     title: string;
@@ -3664,6 +4063,21 @@ export interface components {
                     operator: "eq" | "ne" | "gte" | "gt" | "lt" | "lte";
                     value: components["schemas"]["literal"];
                 };
+                generateDocumentNode: {
+                    id?: unknown;
+                    label?: unknown;
+                    /** @constant */
+                    type?: "generateDocument";
+                    config?: {
+                        /** @enum {unknown} */
+                        format: "pdf" | "docx";
+                        fileName: string;
+                        template: string;
+                        inputMapping: {
+                            [key: string]: components["schemas"]["fieldRef"];
+                        };
+                    };
+                } & components["schemas"]["nodeBase"];
             };
         };
         scalarField: {
@@ -4006,6 +4420,42 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    correctRunInput: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CorrectRunInputRequest"];
+            };
+        };
+        responses: {
+            /** @description Corrected, or stable acceptance metadata on an identical replay */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunInputCorrection"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
     getMigrationPolicy: {
         parameters: {
             query?: never;
@@ -4692,6 +5142,107 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["Unprocessable"];
+        };
+    };
+    getWorkflowTestSuite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Shared suite */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowTestSuite"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    saveWorkflowTestSuite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveWorkflowTestSuite"];
+            };
+        };
+        responses: {
+            /** @description Shared suite */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowTestSuite"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    runWorkflowTestSuite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunWorkflowTestSuite"];
+            };
+        };
+        responses: {
+            /** @description Test report */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowTestReport"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
         };
     };
     simulateWorkflow: {
@@ -6252,7 +6803,7 @@ export interface operations {
             content: {
                 "application/json": {
                     /** @enum {string} */
-                    permission: "workflow.start" | "connection.manage" | "message.send";
+                    permission: "workflow.start" | "connection.manage" | "message.send" | "document.browse";
                     /** @description Restrict workflow.start to one workflow; omit for workspace-wide (connection.manage and message.send are always workspace-wide). */
                     workflowId?: components["schemas"]["Uuid"] | null;
                     principal: components["schemas"]["PrincipalRef"];
@@ -6602,6 +7153,175 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["Unprocessable"];
+        };
+    };
+    listDocumentSources: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Approved document resource */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentSource"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listDocumentSourceGrants: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Approved document resource */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentSourceGrant"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    putDocumentSourceGrant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PutDocumentSourceGrant"];
+            };
+        };
+        responses: {
+            /** @description Approved document resource */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentSourceGrant"];
+                };
+            };
+            /** @description Invalid input or stale resource revision */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Invalid input or stale resource revision */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listDocumentSourceFiles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Approved document resource */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentSourceFiles"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Approved source is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listDocumentSourceFileVersions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                sourceId: string;
+                itemId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Approved document resource */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentSourceVersions"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Approved source is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
 }

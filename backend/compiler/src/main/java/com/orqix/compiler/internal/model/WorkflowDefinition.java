@@ -76,12 +76,38 @@ public record WorkflowDefinition(
         public record Field(String key, FieldKind type, String title, List<String> enumValues, Integer minLength,
                             Integer maxLength, BigDecimal minimum, BigDecimal maximum, BigDecimal multipleOf,
                             Field items, Integer minItems, Integer maxItems, String formatMinimum,
-                            String formatMaximum) {
+                            String formatMaximum, boolean incidentEditable, List<String> rowRequired,
+                            Map<String, Field> rowFields) {
+            public Field(String key, FieldKind type, String title, List<String> enumValues, Integer minLength,
+                         Integer maxLength, BigDecimal minimum, BigDecimal maximum, BigDecimal multipleOf,
+                         Field items, Integer minItems, Integer maxItems, String formatMinimum,
+                         String formatMaximum, boolean incidentEditable) {
+                this(key, type, title, enumValues, minLength, maxLength, minimum, maximum, multipleOf, items, minItems,
+                        maxItems, formatMinimum, formatMaximum, incidentEditable, List.of(), Map.of());
+            }
+
+            /** True for a list whose items are rows of several scalar fields (S35); {@code items.rowFields} are the columns. */
+            public boolean rows() {
+                return type == FieldKind.ARRAY && items != null && items.type == FieldKind.OBJECT;
+            }
         }
     }
 
-    /** Presentation hints; {@code widgets} sorted by key. */
-    public record InputUi(List<String> order, Map<String, String> widgets) {
+    /**
+     * Presentation hints; {@code widgets} sorted by key. {@code visibleWhen} and {@code requiredWhen} map a field to its
+     * condition (S35); {@code sections} are the titled groups of {@code layout}; {@code helpAbove} is true when
+     * descriptions show above the control.
+     */
+    public record InputUi(List<String> order, Map<String, String> widgets, Map<String, Condition> visibleWhen,
+                          Map<String, Condition> requiredWhen, List<Section> sections, boolean helpAbove) {
+        public InputUi(List<String> order, Map<String, String> widgets) {
+            this(order, widgets, Map.of(), Map.of(), List.of(), false);
+        }
+
+        /** A titled group of fields; {@code condition} may be null. */
+        public record Section(int index, String id, String title, int columns, List<String> fields,
+                              Condition condition) {
+        }
     }
 
     public record Execution(int maxConcurrentRuns, int maxAttempts, int retryDelaySeconds) {

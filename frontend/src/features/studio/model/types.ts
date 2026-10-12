@@ -2,9 +2,9 @@
  * Canonical workflow v0.1 document as the studio edits it (contracts/workflow-v0.schema.json).
  * Drafts may be incomplete, so every container is normalized on load and every accessor is defensive.
  */
-export type NodeKind = 'start' | 'approval' | 'decision' | 'branch' | 'http' | 'notification' | 'parallelSplit' | 'parallelJoin' | 'wait' | 'waitForMessage' | 'startWorkflow' | 'end'
+export type NodeKind = 'start' | 'approval' | 'decision' | 'branch' | 'http' | 'generateDocument' | 'notification' | 'parallelSplit' | 'parallelJoin' | 'wait' | 'waitForMessage' | 'startWorkflow' | 'end'
 export type Operator = 'eq' | 'ne' | 'gte' | 'gt' | 'lt' | 'lte'
-export type RouteKind = 'next' | 'approved' | 'rejected' | 'timedOut' | 'condition' | 'default'
+export type RouteKind = 'next' | 'approved' | 'rejected' | 'timedOut' | 'failed' | 'condition' | 'default'
 export type Literal = string | number | boolean
 
 export interface AtomicCondition {
@@ -35,7 +35,7 @@ export interface Transition {
 }
 
 export interface DecisionRow {
-  when: AtomicCondition
+  when: Condition
   then: Record<string, Literal>
 }
 
@@ -48,7 +48,8 @@ export interface DecisionTable {
 }
 
 export interface FieldSchemaDoc {
-  type: 'string' | 'number' | 'integer' | 'boolean' | 'array'
+  incidentEditable?: true
+  type: 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'object'
   title: string
   description?: string
   enum?: string[]
@@ -65,6 +66,9 @@ export interface FieldSchemaDoc {
   maximum?: number
   multipleOf?: number
   items?: FieldSchemaDoc
+  properties?: Record<string, FieldSchemaDoc>
+  required?: string[]
+  additionalProperties?: false
   minItems?: number
   maxItems?: number
 }
@@ -80,6 +84,9 @@ export interface InputUiDoc {
   order?: string[]
   widgets?: Record<string, string>
   currency?: 'USD'
+  visibleWhen?: Record<string, Condition>
+  requiredWhen?: Record<string, Condition>
+  layout?: { sections?: Array<{ id: string; title: string; fields: string[]; columns?: 1 | 2; visibleWhen?: Condition }>; helpText?: 'above' | 'below' }
 }
 
 export interface Position {

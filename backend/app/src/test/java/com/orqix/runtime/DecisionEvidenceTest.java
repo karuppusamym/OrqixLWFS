@@ -8,6 +8,22 @@ import com.orqix.support.RuntimeTestBase;
 import tools.jackson.databind.JsonNode;
 
 class DecisionEvidenceTest extends RuntimeTestBase {
+    @Test void pinnedConjunctiveDmnUsesBothInputsAndShowsRejectedEvidence() throws Exception {
+        UUID workflow=publishPurchase(PURCHASING, definition -> {
+            var row=(tools.jackson.databind.node.ObjectNode)definition.path("decisions").get(0).path("rows").get(0);
+            var previous=row.path("when").deepCopy();
+            var all=row.putObject("when").putArray("all");
+            all.add(previous);
+            all.addObject().put("fieldRef","/input/costCenter").put("operator","eq").put("value","OPS");
+        });
+        UUID run=UUID.fromString(start("rhea.requester",PURCHASING,workflow,new BigDecimal("5000")).path("id").asString());
+        approve("mani.manager",PURCHASING,run,"manager");
+        JsonNode event=decisionEvent("rhea.requester",run);
+        assertThat(event.path("evidence").path("inputs").size()).isEqualTo(2);
+        assertThat(event.path("matched").asString()).isEqualTo("r1");
+        assertThat(event.path("evidence").path("rows").get(0).path("matched").asBoolean()).isTrue();
+        assertThat(decisionEvent("vic.viewer",run).has("evidence")).isFalse();
+    }
     @Test void pinnedDecisionEvidenceIsVisibleToRequesterParticipantAndDataReaderButNotMetadataViewer() throws Exception {
         UUID workflow=publishPurchase(PURCHASING, definition -> {
             var table=definition.withArray("decisions").get(0);

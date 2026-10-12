@@ -1,5 +1,5 @@
 import { isCalendarDate } from '@/lib/dates'
-import { isAtomicCondition, type AtomicCondition, type Condition, type Definition, type Literal, type Transition, type WorkflowNode } from '@/features/studio/model/types'
+import { conditionTerms, isAtomicCondition, type AtomicCondition, type Condition, type Definition, type Literal, type Transition, type WorkflowNode } from '@/features/studio/model/types'
 
 /**
  * Mock-side port of the dry run ("Test this workflow", docs/build/S4-workflow-compiler.md section 13). The Java class
@@ -320,6 +320,16 @@ class Run {
         return this.branch(node)
       case 'http':
         return this.http(node)
+      case 'generateDocument': {
+        const mapping = (node.config.inputMapping ?? {}) as Record<string, string>
+        if (Object.values(mapping).some((ref) => this.resolve(ref) == null)) {
+          this.stall(node, 'TEST_DOCUMENT_FIELD_MISSING', 'A mapped document field is missing from this sample request.')
+          return null
+        }
+        const t = this.next(node, 'next')
+        this.add(node, `The workflow would generate a ${String(node.config.format).toUpperCase()} document from its pinned template. This test creates no file.`, { format: String(node.config.format), mappedFieldCount: Object.keys(mapping).length }, null, t)
+        return t
+      }
       case 'notification': {
         const message = String(node.config.message ?? '')
         const t = this.next(node, 'next')
@@ -413,8 +423,8 @@ class Run {
     d.version = table.version
     const values = new Map<string, unknown>()
     const inputs: Json[] = []
-    for (const row of table.rows) {
-      const ref = row.when.fieldRef
+    for (const term of table.rows.flatMap(row => conditionTerms(row.when))) {
+      const ref = term.fieldRef
       if (!values.has(ref)) {
         const v = this.resolve(ref)
         values.set(ref, v ?? null)
@@ -427,9 +437,8 @@ class Run {
     let failure: string | null = null
     try {
       for (const [i, row] of table.rows.entries()) {
-        const v = values.get(row.when.fieldRef)
-        if (v === null || v === undefined) throw new Error(`No value for ${row.when.fieldRef}`)
-        if (matches(row.when.operator, v, row.when.value)) {
+        if (conditionTerms(row.when).some(term => values.get(term.fieldRef) == null)) throw new Error('Missing decision input')
+        if (this.evaluate(row.when, [])) {
           matchedRow = i
           break
         }
@@ -446,16 +455,8 @@ class Run {
     const rows: Json[] = []
     let firstMatch: number | null = null
     for (const [i, row] of table.rows.entries()) {
-      const v = values.get(row.when.fieldRef)
       let m: boolean | null
-      if (v === null || v === undefined) m = null
-      else {
-        try {
-          m = matches(row.when.operator, v, row.when.value)
-        } catch {
-          m = null
-        }
-      }
+      try { m = this.evaluate(row.when, []) } catch { m = null }
       if (m === true && firstMatch === null) firstMatch = i
       rows.push({ row: i + 1, condition: this.conditionText(row.when, false, undefined), matched: m, selected: matchedRow === i, outputs: sortedLiterals(row.then) })
     }
@@ -471,7 +472,7 @@ class Run {
     if (matchedRow === null) sentence = `${quote(n.label)}: no rule applies, so the "otherwise" result is used: ${outputsText}.`
     else {
       const row = table.rows[matchedRow] as { when: AtomicCondition }
-      sentence = `${quote(n.label)}: rule ${matchedRow + 1} applies because ${this.conditionText(row.when, true, values.get(row.when.fieldRef))}, so ${outputsText}.`
+      sentence = `${quote(n.label)}: rule ${matchedRow + 1} applies because ${this.conditionText(row.when, true, isAtomicCondition(row.when) ? values.get(row.when.fieldRef) : undefined)}, so ${outputsText}.`
     }
     const t = this.next(n, 'next')
     this.add(n, sentence, d, output, t)
@@ -953,7 +954,7 @@ class Run {
     for (const issue of this.ctx.issues) if (issue.severity === 'warning') this.warn(issue.code, issue.nodeId ?? null, issue.message)
     for (const table of this.def.decisions) {
       for (const [i, row] of table.rows.entries()) {
-        const why = this.impossible(row.when)
+        const why = isAtomicCondition(row.when) ? this.impossible(row.when) : null
         if (why !== null) this.warn('RULE_NEVER_MATCHES', this.decisionStep(table.key), `Rule ${i + 1} of ${quote(table.key)} can never apply: ${why}`)
       }
     }
@@ -1055,7 +1056,7 @@ class Run {
   private routeDescription(t: Transition): string {
     const from = this.byId.get(t.from) as WorkflowNode
     const to = this.byId.get(t.to) as WorkflowNode
-    const when = { approved: 'when approved', rejected: 'when rejected', timedOut: 'when the time limit fires', default: 'otherwise', condition: `when ${this.routeName(t)}`, next: 'next' }[t.on]
+    const when = { approved: 'when approved', rejected: 'when rejected', timedOut: 'when the time limit fires', failed: 'when the step fails', default: 'otherwise', condition: `when ${this.routeName(t)}`, next: 'next' }[t.on]
     return `${from.label}, ${when}, goes to ${to.label}`
   }
 }
@@ -1067,6 +1068,7 @@ const KIND_LABEL: Record<string, string> = {
   branch: 'Choose a path',
   http: 'Call a system',
   notification: 'Notify someone',
+  generateDocument: 'Generate a document',
   parallelSplit: 'Run in parallel',
   parallelJoin: 'Wait for all',
   wait: 'Wait',

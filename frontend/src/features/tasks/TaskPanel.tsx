@@ -43,7 +43,7 @@ export function whyNotText(task: TaskDetail): string | null {
     case 'SELF_APPROVAL_DENIED':
       return "You can't approve your own request."
     case 'NOT_ELIGIBLE':
-      return `You're not in the ${task.candidateGroup.name} group, so you can't decide this task.`
+      return `This task requires the ${task.candidateGroup.name} group and every configured skill group.`
     case 'TASK_ALREADY_CLAIMED':
       return 'Another approver already claimed this task.'
     default:

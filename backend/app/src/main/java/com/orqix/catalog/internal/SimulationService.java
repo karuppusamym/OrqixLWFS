@@ -158,6 +158,12 @@ public class SimulationService {
         return body;
     }
 
+    /** Suite execution supplies its own transaction and records expected validation failures per case. */
+    public JsonNode simulateSavedCase(Caller caller, UUID workspaceId, UUID workflowId,
+            CatalogDtos.SimulateRequest request) {
+        return simulate(caller, workspaceId, workflowId, request);
+    }
+
     /** The active release definitions of every workflow the definition starts, directly or through its children. */
     private Map<String, String> childDefinitions(UUID workspaceId, String definitionJson) {
         Map<String, String> found = new LinkedHashMap<>();

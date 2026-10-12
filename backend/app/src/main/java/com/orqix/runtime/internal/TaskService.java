@@ -86,7 +86,7 @@ public class TaskService {
     @Transactional(readOnly = true)
     public RuntimeDtos.TaskPage listTasks(Caller caller, UUID workspaceId, String view, String cursor, Integer limit,
             String requestedSort, Integer requestedMinPriority) {
-        WorkspaceAccess access = policy.requireVisible(caller, workspaceId);
+        WorkspaceAccess access = freshVisible(caller, workspaceId);
         String sort = requestedSort == null ? "priority" : requestedSort;
         int minPriority = requestedMinPriority == null ? 0 : requestedMinPriority;
         if (!List.of("priority", "oldest", "newest").contains(sort) || minPriority < 0 || minPriority > 100)
@@ -375,13 +375,13 @@ public class TaskService {
     }
 
     private VisibleTask visible(Caller caller, UUID workspaceId, String taskId) {
-        WorkspaceAccess access = policy.requireVisible(caller, workspaceId);
+        WorkspaceAccess access = freshVisible(caller, workspaceId);
         TaskStore.TaskRow task = tasks.find(workspaceId, taskId).orElseThrow(ApiException::notFound);
         return check(access, task);
     }
 
     private VisibleTask visibleLocked(Caller caller, UUID workspaceId, String taskId) {
-        WorkspaceAccess access = policy.requireVisible(caller, workspaceId);
+        WorkspaceAccess access = freshVisible(caller, workspaceId);
         TaskStore.TaskRow task = tasks.lock(workspaceId, taskId).orElseThrow(ApiException::notFound);
         return check(access, task);
     }
@@ -389,7 +389,7 @@ public class TaskService {
     /** Visible to eligible candidates, the assignee, past deciders and run.read holders; otherwise 404. */
     private VisibleTask check(WorkspaceAccess access, TaskStore.TaskRow task) {
         UUID me = access.subjectId();
-        boolean candidate = access.groupKeys().contains(task.candidateGroupKey()) && access.has(Permission.TASK_ACT);
+        boolean candidate = access.groupKeys().contains(task.candidateGroupKey()) && hasSkills(access,task) && access.has(Permission.TASK_ACT);
         boolean visible = access.has(Permission.RUN_READ) || me.equals(task.assignee()) || candidate
                 || taskQueries.decisionForTask(task.workspaceId(), task.taskId())
                         .map(d -> d.actor().equals(me)).orElse(false);
@@ -405,9 +405,9 @@ public class TaskService {
             throw policy.deny(access.workspaceId(), access.subjectId(), "task.act", operationId, false,
                     new ApiException(ProblemCode.FORBIDDEN));
         }
-        if (!access.groupKeys().contains(task.candidateGroupKey())) {
+        if (!access.groupKeys().contains(task.candidateGroupKey()) || !hasSkills(access,task)) {
             throw policy.deny(access.workspaceId(), access.subjectId(), "task.act", operationId, false,
-                    new ApiException(ProblemCode.NOT_ELIGIBLE, "You are not in the group for this task."));
+                    new ApiException(ProblemCode.NOT_ELIGIBLE, "This task requires its candidate group and every required skill group."));
         }
         if (!task.selfApprovalAllowed() && task.initiator().equals(access.subjectId())) {
             throw policy.deny(access.workspaceId(), access.subjectId(), "task.act", operationId, false,
@@ -435,6 +435,7 @@ public class TaskService {
                 subject.externalSubject(), subjects.storedGroups(subjectId), false);
         WorkspaceAccess access = policy.freshAccess(other, workspaceId).orElse(null);
         return access != null && access.has(Permission.TASK_ACT)
+                && hasSkills(access,task)
                 && policy.groupKeys(workspaceId, subjectId, other.groups()).contains(task.candidateGroupKey());
     }
 
@@ -448,7 +449,7 @@ public class TaskService {
         TaskQueries.DecisionRow own = history.stream().filter(d -> d.taskId().equals(task.taskId())).findFirst()
                 .orElse(null);
         boolean participant = !access.has(Permission.RUN_READ) || access.has(Permission.RUN_READ_DATA)
-                || access.subjectId().equals(task.assignee()) || access.groupKeys().contains(task.candidateGroupKey())
+                || access.subjectId().equals(task.assignee()) || access.groupKeys().contains(task.candidateGroupKey()) && hasSkills(access,task)
                 || run.initiator().equals(access.subjectId());
         RuntimeDtos.TaskSummary summary = views.task(task, run, names, own, participant);
         JsonNode input = participant ? run.input() : json.object();
@@ -475,14 +476,22 @@ public class TaskService {
         return node == null ? null : node.path("label").asString(null);
     }
 
-    private static RuntimeDtos.AllowedTaskActions allowed(WorkspaceAccess access, TaskStore.TaskRow task) {
+    private boolean hasSkills(WorkspaceAccess access, TaskStore.TaskRow task) {
+        return access.groupKeys().containsAll(tasks.requiredSkills(task.workspaceId(),task.taskId()));
+    }
+
+    private WorkspaceAccess freshVisible(Caller caller, UUID workspaceId) {
+        return policy.freshAccess(caller,workspaceId).filter(WorkspaceAccess::visible).orElseThrow(ApiException::notFound);
+    }
+
+    private RuntimeDtos.AllowedTaskActions allowed(WorkspaceAccess access, TaskStore.TaskRow task) {
         UUID me = access.subjectId();
         RuntimeDtos.ActionAvailability notOpen = new RuntimeDtos.ActionAvailability(false, "TASK_NOT_OPEN");
         if (!task.isOpen()) {
             return new RuntimeDtos.AllowedTaskActions(notOpen, notOpen, notOpen, notOpen, notOpen);
         }
         String eligibility = !access.has(Permission.TASK_ACT) ? "FORBIDDEN"
-                : !access.groupKeys().contains(task.candidateGroupKey()) ? "NOT_ELIGIBLE"
+                : !access.groupKeys().contains(task.candidateGroupKey()) || !hasSkills(access,task) ? "NOT_ELIGIBLE"
                 : (!task.selfApprovalAllowed() && task.initiator().equals(me)) ? "SELF_APPROVAL_DENIED" : null;
         RuntimeDtos.ActionAvailability claim = eligibility != null ? new RuntimeDtos.ActionAvailability(false, eligibility)
                 : task.assignee() != null ? new RuntimeDtos.ActionAvailability(false, "TASK_ALREADY_CLAIMED")

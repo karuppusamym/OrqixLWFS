@@ -28,6 +28,33 @@ class MicrosoftGraphDocumentsTest {
     private ConnectionDefinition definition;
     private Target target;
 
+    @Test void browseListsOnlyDirectFilesFromExplicitFolderGrantWithoutSignedUrls() throws Exception {
+        var v2 = ConnectionDefinition.parse(json.parse(Files.readString(Path.of("../../examples/connections/microsoft-documents-v4.json"))), "test-v2");
+        var input = json.object().put("driveId", "approved-drive").put("folderId", "approved-folder");
+        server.stubFor(get(urlPathEqualTo("/v1.0/drives/approved-drive/items/approved-folder/children"))
+                .willReturn(okJson("""
+                    {"value":[{"id":"item","name":"Policy.docx","size":100,"file":{"mimeType":"application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
+                      "parentReference":{"id":"approved-folder","driveId":"approved-drive"},"@microsoft.graph.downloadUrl":"secret-download-url"},
+                      {"id":"subfolder","name":"Nested","folder":{}}]}
+                    """)));
+        var result = documents.read(target, v2.operation("browseFolder"), input, "token", 5);
+        assertThat(result.path("fileCount").asInt()).isEqualTo(1);
+        assertThat(result.path("hasMore").asBoolean()).isFalse();
+        assertThat(result.toString()).contains("Policy.docx").doesNotContain("secret-download-url", "Nested");
+        assertThatThrownBy(() -> documents.read(target, v2.operation("browseFolder"), input.deepCopy().put("folderId", "unapproved"), "token", 5))
+                .isInstanceOf(MicrosoftGraphDocuments.Failure.class);
+        server.verify(1, getRequestedFor(urlPathEqualTo("/v1.0/drives/approved-drive/items/approved-folder/children")));
+    }
+
+    @Test void browseRejectsCrossFolderPagingWithoutFollowingIt() throws Exception {
+        var v2 = ConnectionDefinition.parse(json.parse(Files.readString(Path.of("../../examples/connections/microsoft-documents-v4.json"))), "test-v2");
+        server.stubFor(get(urlPathEqualTo("/v1.0/drives/approved-drive/items/approved-folder/children"))
+                .willReturn(okJson("{\"value\":[],\"@odata.nextLink\":\"" + server.baseUrl() + "/v1.0/drives/approved-drive/items/private/children\"}")));
+        assertThatThrownBy(() -> documents.read(target, v2.operation("browseFolder"), json.object().put("driveId", "approved-drive").put("folderId", "approved-folder"), "token", 5))
+                .isInstanceOf(MicrosoftGraphDocuments.Failure.class).satisfies(e -> assertThat(((MicrosoftGraphDocuments.Failure) e).code()).isEqualTo("DOCUMENT_FOLDER_PAGING_REJECTED"));
+        server.verify(0, getRequestedFor(urlPathEqualTo("/v1.0/drives/approved-drive/items/private/children")));
+    }
+
     @BeforeEach
     void setup() throws Exception {
         server = new WireMockServer(0);

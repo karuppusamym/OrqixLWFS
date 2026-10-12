@@ -10,6 +10,7 @@ import { routeText } from '../model/summary'
 import { KIND_ICON } from '../nodeMeta'
 import { BranchInspector } from './BranchInspector'
 import { DecisionInspector } from './DecisionInspector'
+import { GenerateDocumentInspector } from './GenerateDocumentInspector'
 import { HttpInspector } from './HttpInspector'
 import { MessageInspector } from './MessageInspector'
 import { ChildInspector, ParallelInspector, WaitInspector } from './PatternInspectors'
@@ -103,6 +104,7 @@ function NodeInspector({ nodeId, onDeleteNode }: { nodeId: string; onDeleteNode:
       {node.type === 'approval' ? <ApprovalInspector node={node} /> : null}
       {node.type === 'decision' ? <DecisionInspector node={node} /> : null}
       {node.type === 'branch' ? <BranchInspector node={node} /> : null}
+      {node.type === 'generateDocument' ? <GenerateDocumentInspector node={node} /> : null}
       {node.type === 'http' ? <HttpInspector node={node} /> : null}
       {node.type === 'parallelSplit' || node.type === 'parallelJoin' ? <ParallelInspector node={node} /> : null}
       {node.type === 'wait' ? <WaitInspector node={node} /> : null}

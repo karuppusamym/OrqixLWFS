@@ -132,7 +132,7 @@ public class RuntimeViews {
             return null;
         }
         String effectId = attention.path("effectId").asString(null);
-        return new RuntimeDtos.Attention(attention.path("reason").asString(), attention.path("nodeId").asString(),
+        return new RuntimeDtos.Attention(attention.path("reason").asString(), attention.path("nodeId").asString(null),
                 effectId == null ? null : UUID.fromString(effectId), attention.path("message").asString(),
                 instant(attention.path("since")));
     }

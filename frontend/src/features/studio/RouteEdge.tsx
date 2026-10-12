@@ -100,6 +100,7 @@ const TEXT_CLASS: Record<RouteKind, string> = {
   approved: 'text-edge-approved',
   rejected: 'text-edge-rejected',
   timedOut: 'text-edge-condition',
+  failed: 'text-edge-rejected',
   condition: 'text-edge-condition',
   default: 'text-foreground',
   next: 'text-foreground',

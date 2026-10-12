@@ -65,12 +65,12 @@ public class TaskQueries {
             case "oldest" -> "t.created_at ASC,t.engine_task_id ASC";
             default -> "t.created_at DESC,t.engine_task_id DESC";
         };
-        String ownership = assigned ? "t.assignee_subject_id=:subject" : "t.assignee_subject_id IS NULL AND t.candidate_group_key IN (:groups) AND (t.self_approval_allowed OR t.initiator_subject_id<>:subject)";
+        String ownership = assigned ? "t.assignee_subject_id=:subject" : "t.assignee_subject_id IS NULL AND t.candidate_group_key IN (:groups) AND t.required_skills <@ CAST(:skills AS jsonb) AND (t.self_approval_allowed OR t.initiator_subject_id<>:subject)";
         var query = jdbc.sql("SELECT " + T_COLUMNS + " FROM task_context t WHERE t.workspace_id=:ws AND t.status='open' AND " + ownership
                 + " AND t.priority>=:minPriority AND (CAST(:afterAt AS timestamptz) IS NULL OR " + comparison + ") ORDER BY " + order + " LIMIT :limit")
                 .param("ws",workspaceId).param("subject",subject).param("minPriority",minPriority)
                 .param("afterAt",after == null ? null : Sql.ts(after.at())).param("afterId",id).param("limit",limit);
-        if (!assigned) query.param("groups",List.copyOf(groups));
+        if (!assigned) query.param("groups",List.copyOf(groups)).param("skills",json.write(groups));
         if ("priority".equals(sort)) query.param("afterPriority",priority);
         return query.query(TaskStore::map).list();
     }
@@ -106,8 +106,9 @@ public class TaskQueries {
                 SELECT count(*) FROM task_context
                 WHERE workspace_id = :ws AND status = 'open' AND assignee_subject_id IS NULL
                   AND candidate_group_key IN (:groups) AND (self_approval_allowed OR initiator_subject_id <> :s)
+                  AND required_skills <@ CAST(:skills AS jsonb)
                 """)
-                .param("ws", workspaceId).param("s", subject).param("groups", List.copyOf(groups))
+                .param("ws", workspaceId).param("s", subject).param("groups", List.copyOf(groups)).param("skills",json.write(groups))
                 .query(Integer.class).single();
     }
 

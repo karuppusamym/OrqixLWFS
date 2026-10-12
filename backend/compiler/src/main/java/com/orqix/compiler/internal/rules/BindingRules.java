@@ -65,6 +65,22 @@ final class BindingRules {
                         + " has no configured members. If its members come from the identity provider, make sure"
                         + " that group is not empty, or nobody can act on " + q(n) + ".");
             }
+            for (String skill : a.requiredSkills()) {
+                if (!groups.containsKey(skill)) rc.issues().blocker("WF_SKILL_UNBOUND", n.configPath("requiredSkills"),
+                        n.id(), null, "Required skill group " + q(skill) + " does not exist in this workspace.");
+            }
+            if (a.calendar() != null) {
+                try {
+                    com.orqix.compiler.BusinessCalendar.read(a.calendar()).deadline(java.time.Instant.EPOCH,
+                            a.dueAfterHours() == null ? 1 : a.dueAfterHours());
+                } catch (IllegalArgumentException e) {
+                    rc.issues().blocker("WF_CALENDAR_INVALID", n.configPath("calendar"), n.id(), null, e.getMessage());
+                }
+                if (a.dueAfterHours() == null) rc.issues().blocker("WF_CALENDAR_DUE_REQUIRED", n.configPath("dueAfterHours"),
+                        n.id(), null, "Set working hours for the calendar deadline.");
+            }
+            if (a.escalation() != null && a.dueAfterHours() == null) rc.issues().blocker("WF_ESCALATION_DUE_REQUIRED",
+                    n.configPath("escalation"), n.id(), null, "Recurring overdue notices require a due date.");
         }
     }
 

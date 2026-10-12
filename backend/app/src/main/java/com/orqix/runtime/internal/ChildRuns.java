@@ -74,7 +74,7 @@ public class ChildRuns {
         }
         if (pin == null) throw new IllegalStateException("Child release was not pinned at publication");
         ReleaseQueries.ReleaseView child = releases.require(workspaceId, UUID.fromString(pin.path("releaseId").asString()));
-        if (!forms.validate(json.write(child.inputSchema()), json.write(input)).isEmpty()) {
+        if (!forms.validate(json.write(child.inputSchema()), json.write(input),json.write(child.inputUi())).isEmpty()) {
             throw new IllegalStateException("Mapped child input does not satisfy the published request form");
         }
         if (runs.countActive(workspaceId, child.workflowId()) >= child.maxConcurrentRuns()) {

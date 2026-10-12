@@ -42,13 +42,13 @@ function inputFields(def: Definition): FieldInfo[] {
   const order = def.inputUi?.order ?? []
   const keys = Object.keys(def.inputSchema.properties)
   const ordered = [...order.filter((k) => keys.includes(k)), ...keys.filter((k) => !order.includes(k))]
-  return ordered.map((key) => {
+  return ordered.filter(key => def.inputSchema.properties[key]?.type !== 'object').map((key) => {
     const field = def.inputSchema.properties[key]
     return {
       ref: `/input/${key}`,
       label: field?.title || humanize(key),
       group: REQUEST_GROUP,
-      type: field?.format === 'date' && field.type === 'string' ? 'date' : (field?.type ?? 'string'),
+      type: field?.format === 'date' && field.type === 'string' ? 'date' : (field?.type === 'object' ? 'array' : field?.type ?? 'string'),
       ...(field?.enum ? { enumValues: field.enum } : {}),
     }
   })
@@ -151,13 +151,14 @@ export function chipFor(def: Definition, ref: string, lookup?: ConnectionLookup)
 
 /** Rewrite every reference in the document with `map`. Used when a field key or step id changes. */
 export function rewriteRefs(def: Definition, map: (ref: string) => string): void {
+  for (const condition of [...Object.values(def.inputUi?.visibleWhen ?? {}), ...Object.values(def.inputUi?.requiredWhen ?? {}), ...(def.inputUi?.layout?.sections ?? []).flatMap(section => section.visibleWhen ? [section.visibleWhen] : [])]) for (const term of conditionTerms(condition)) term.fieldRef = map(term.fieldRef)
   for (const t of def.transitions) if (t.condition) for (const term of conditionTerms(t.condition)) term.fieldRef = map(term.fieldRef)
   for (const d of def.decisions) {
-    for (const r of d.rows) r.when.fieldRef = map(r.when.fieldRef)
+    for (const r of d.rows) for (const term of conditionTerms(r.when)) term.fieldRef = map(term.fieldRef)
   }
   for (const n of def.nodes) {
     if (n.type === 'waitForMessage' && typeof n.config.correlationField === 'string') n.config.correlationField = map(n.config.correlationField)
-    if (n.type === 'http' || n.type === 'startWorkflow') {
+    if (n.type === 'http' || n.type === 'generateDocument' || n.type === 'startWorkflow') {
       const mapping = n.config.inputMapping as Record<string, string> | undefined
       if (mapping) for (const k of Object.keys(mapping)) mapping[k] = map(mapping[k] as string)
       const each = n.config.forEach as { itemsRef: string } | undefined
@@ -174,11 +175,11 @@ export function usagesOfRef(def: Definition, predicate: (ref: string) => boolean
     if (t.condition && conditionTerms(t.condition).some(term => predicate(term.fieldRef))) places.push(`the path "${t.label ?? t.id}" from ${nodeById(def, t.from)?.label ?? t.from}`)
   }
   for (const d of def.decisions) {
-    if (d.rows.some((r) => predicate(r.when.fieldRef))) places.push(`the rule table "${d.key}"`)
+    if (d.rows.some((r) => conditionTerms(r.when).some(term => predicate(term.fieldRef)))) places.push(`the rule table "${d.key}"`)
   }
   for (const n of def.nodes) {
     if (n.type === 'waitForMessage' && typeof n.config.correlationField === 'string' && predicate(n.config.correlationField)) places.push(`the step "${n.label}"`)
-    if (n.type === 'http' || n.type === 'startWorkflow') {
+    if (n.type === 'http' || n.type === 'generateDocument' || n.type === 'startWorkflow') {
       const mapping = (n.config.inputMapping ?? {}) as Record<string, string>
       if (Object.values(mapping).some(predicate)) places.push(`the step "${n.label}"`)
       const each = n.config.forEach as { itemsRef: string } | undefined

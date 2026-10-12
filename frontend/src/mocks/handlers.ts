@@ -1,8 +1,9 @@
 import { delay, http, HttpResponse, type HttpHandler, type JsonBodyType } from 'msw'
+import type { components } from '@/api/schema'
 import type { Permission, ProblemCode, TaskDetail, ValidationIssue } from '@/api/types'
 import { nodeById } from '@/features/studio/model/graph'
 import { sendMessage, validMessageName } from './messages'
-import { addEvent, canSeeRunData, isRunParticipant, evaluateTable, requestTitleOf, claim, createRun, decide, cancelRun, currentRelease, reconcileRun, retryRun, release as releaseTask, selfApprovalAllowed, toRun, toRunDetail, toTaskSummary } from './engine'
+import { addEvent, canSeeRunData, hasTaskSkills, isRunParticipant, evaluateTable, requestTitleOf, claim, createRun, decide, cancelRun, currentRelease, reconcileRun, retryRun, release as releaseTask, selfApprovalAllowed, toRun, toRunDetail, toTaskSummary } from './engine'
 import { makeRelease } from './seed'
 import { attachStartFiles, planStartFiles } from './caseFiles'
 import { migrationPublishDenial } from './migration'
@@ -237,7 +238,7 @@ function findWorkflow(wsId: string, id: string): MockWorkflow | undefined {
 
 /** Visible to the assignee, the decider, the initiator and eligible candidates (also after completion, so a late approver can see who won). */
 function isOpenTaskVisible(user: MockUser, task: MockTask, run: MockRun): boolean {
-  return task.assigneeId === user.id || task.completedById === user.id || inGroup(user, task.candidateGroup) || run.initiatorId === user.id
+  return task.assigneeId === user.id || task.completedById === user.id || inGroup(user, task.candidateGroup) && hasTaskSkills(run,task,user) || run.initiatorId === user.id
 }
 
 function taskDetail(user: MockUser, perms: Permission[], run: MockRun, task: MockTask): TaskDetail {
@@ -245,7 +246,7 @@ function taskDetail(user: MockUser, perms: Permission[], run: MockRun, task: Moc
   const summaryValue = toTaskSummary(run, task)
   const isAssignee = task.assigneeId === user.id
   const open = task.status === 'open'
-  const eligibleGroup = inGroup(user, task.candidateGroup) && perms.includes('task.act')
+  const eligibleGroup = inGroup(user, task.candidateGroup) && hasTaskSkills(run,task,user) && perms.includes('task.act')
   const own = run.initiatorId === user.id && !selfApprovalAllowed(run, rel)
   const claimAllowed = open && !task.assigneeId && eligibleGroup && !own
   return {
@@ -257,7 +258,7 @@ function taskDetail(user: MockUser, perms: Permission[], run: MockRun, task: Moc
     allowedActions: {
       claim: claimAllowed ? { allowed: true } : { allowed: false, reasonCode: !open ? 'TASK_NOT_OPEN' : task.assigneeId ? 'TASK_ALREADY_CLAIMED' : own ? 'SELF_APPROVAL_DENIED' : 'NOT_ELIGIBLE' },
       release: open && isAssignee ? { allowed: true } : { allowed: false, reasonCode: 'TASK_NOT_CLAIMED_BY_CALLER' },
-      decide: open && isAssignee && perms.includes('task.act') ? { allowed: true } : { allowed: false, reasonCode: !open ? 'TASK_NOT_OPEN' : 'TASK_NOT_CLAIMED_BY_CALLER' },
+      decide: open && isAssignee && eligibleGroup && !own ? { allowed: true } : { allowed: false, reasonCode: !open ? 'TASK_NOT_OPEN' : 'TASK_NOT_CLAIMED_BY_CALLER' },
       priority: open && (perms.includes("run.operate") || isAssignee && eligibleGroup && !own) ? { allowed: true } : { allowed: false, reasonCode: !open ? "TASK_NOT_OPEN" : "FORBIDDEN" },
       reassign: open && perms.includes('run.operate') ? { allowed: true } : { allowed: false, reasonCode: 'FORBIDDEN' },
     },
@@ -286,6 +287,8 @@ function problemFromValidation(issues: ValidationIssue[]) {
 const B = '*/api/v1'
 
 export function createHandlers(): HttpHandler[] {
+  type SharedCase = components['schemas']['WorkflowTestCase']
+  const childPins = (ws: string, except: string) => JSON.stringify([...db.workflows.values()].filter(w => w.wsId === ws && w.id !== except).map(w => [w.key, w.activeReleaseId]).sort())
   const slow = async () => {
     if (db.latencyMs > 0) await delay(db.latencyMs)
   }
@@ -430,6 +433,42 @@ export function createHandlers(): HttpHandler[] {
       return HttpResponse.json(result)
     }),
 
+    http.get(`${B}/workspaces/:ws/workflows/:id/test-suite`, ({ params }) => {
+      const g = guard(params.ws, 'workflow.edit'); if (!g.ok) return g.res
+      const wf = findWorkflow(str(params.ws), str(params.id)); if (!wf) return notFound()
+      return HttpResponse.json(wf.testSuite ?? { version: 0, cases: [] })
+    }),
+    http.put(`${B}/workspaces/:ws/workflows/:id/test-suite`, async ({ params, request }) => {
+      const g = guard(params.ws, 'workflow.edit'); if (!g.ok) return g.res
+      const wf = findWorkflow(str(params.ws), str(params.id)); if (!wf) return notFound()
+      const input = await body<{ expectedVersion: number; cases: SharedCase[] }>(request)
+      const current = wf.testSuite ?? { version: 0, cases: [] }
+      if (input.expectedVersion !== current.version) return problem(409, 'WORKFLOW_VERSION_CONFLICT', 'The shared tests changed. Reload before saving.')
+      if (!Array.isArray(input.cases) || input.cases.length > 20 || input.cases.some(c => !c.expect || c.scenario?.simulateChildren)) return problem(422, 'VALIDATION_FAILED', 'Use at most 20 tests with explicit expectations and child outcomes.')
+      if (new TextEncoder().encode(JSON.stringify(input.cases)).length > 65536) return problem(413, 'PAYLOAD_TOO_LARGE', 'Shared tests exceed 64 KiB.')
+      const suite = { version: current.version + 1, cases: structuredClone(input.cases) }
+      wf.testSuite = suite
+      return HttpResponse.json(suite)
+    }),
+    http.post(`${B}/workspaces/:ws/workflows/:id/test-suite/run`, async ({ params, request }) => {
+      const g = guard(params.ws, 'workflow.edit'); if (!g.ok) return g.res
+      const wf = findWorkflow(str(params.ws), str(params.id)); if (!wf) return notFound()
+      const input = await body<{ revision: number; suiteVersion: number }>(request)
+      const suite = wf.testSuite
+      if (!suite || suite.version !== input.suiteVersion) return problem(409, 'WORKFLOW_VERSION_CONFLICT', 'The shared tests changed. Reload before testing.')
+      if (!wf.drafts.some(d => d.revision === input.revision)) return notFound()
+      const results = []
+      for (const c of suite.cases) {
+        const response = await fetch(new URL(`/api/v1/workspaces/${wf.wsId}/workflows/${wf.id}/simulate`, request.url), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ revision: input.revision, input: c.input, scenario: c.scenario }) })
+        const output = await response.json() as { outcome?: { status: string; businessOutcome?: string } }
+        const status = output.outcome?.status ?? 'invalid'
+        const actual = status === 'needsAttention' ? '__needsAttention__' : output.outcome?.businessOutcome
+        results.push({ id: c.id, passed: response.ok && c.expect === actual, status })
+      }
+      const passed = results.length > 0 && results.every(r => r.passed)
+      wf.testPass = { version: suite.version, revision: input.revision, passed, dependencies: childPins(wf.wsId, wf.id) }
+      return HttpResponse.json({ suiteVersion: suite.version, revision: input.revision, passed, results })
+    }),
     // "Test this workflow": a dry run with the mock-side port of the simulator (mocks/simulator.ts).
     http.post(`${B}/workspaces/:ws/workflows/:id/simulate`, async ({ params, request }) => {
       await slow()
@@ -501,6 +540,8 @@ export function createHandlers(): HttpHandler[] {
         if (!draft) return notFound()
         const denial = migrationPublishDenial(wf, g.user, draft.revision)
         if (denial) return problem(denial.status, denial.code, denial.title, { detail: denial.detail })
+        const suite = wf.testSuite, tested = wf.testPass
+        if (suite?.cases.length && (!tested?.passed || tested.version !== suite.version || tested.revision !== draft.revision || tested.dependencies !== childPins(wf.wsId, wf.id))) return problem(422, 'WORKFLOW_INVALID', 'Shared tests must pass', { detail: 'Run and pass the current shared tests against this exact draft before publishing.' })
         const issues = validateDefinition(draft.definition, validationContext(wf.wsId))
         if (issues.some((i) => i.severity === 'blocker')) return problem(422, 'WORKFLOW_INVALID', 'The workflow has blocking problems', problemFromValidation(issues))
         const warnings = issues.filter((i) => i.severity === 'warning')
@@ -653,7 +694,7 @@ export function createHandlers(): HttpHandler[] {
       const g = guard(params.ws); if (!g.ok) return g.res
       const run = db.runs.get(str(params.id))
       if (!run || run.wsId !== str(params.ws) || !canReadRun(g.user, g.perms, run)) return notFound()
-      const participant = run.tasks.some(t => t.assigneeId === g.user.id || t.completedById === g.user.id || (g.perms.includes('task.act') && inGroup(g.user,t.candidateGroup) && (selfApprovalAllowed(run, currentRelease(run)) || run.initiatorId !== g.user.id)))
+      const participant = isRunParticipant(run,g.user)
       if (!toRunDetail(run,g.user).input || !(run.initiatorId === g.user.id || participant || g.perms.includes('run.operate'))) return problem(403, 'FORBIDDEN', 'You do not have permission to delegate this task')
       const input = await body<{ text: string }>(request)
       if (typeof input.text !== 'string' || !input.text.trim() || input.text.length > 2000) return problem(422, 'VALIDATION_FAILED', 'Some values are not valid', { fieldErrors: [{ pointer: '/text', code: 'maxLength', message: 'Comment must contain 1 to 2000 characters.' }] })
@@ -800,7 +841,7 @@ export function createHandlers(): HttpHandler[] {
       const view = url.searchParams.get('view')
       if (view !== 'assigned' && view !== 'claimable' && view !== 'completed') return problem(400, 'MALFORMED_REQUEST', 'view is required')
       const all = [...db.runs.values()].filter((r) => r.wsId === str(params.ws)).flatMap((run) => run.tasks.map((task) => ({ run, task })))
-      const claimable = all.filter(({ run, task }) => task.status === 'open' && !task.assigneeId && inGroup(g.user, task.candidateGroup) && (run.initiatorId !== g.user.id || selfApprovalAllowed(run, currentRelease(run))))
+      const claimable = all.filter(({ run, task }) => task.status === 'open' && !task.assigneeId && inGroup(g.user, task.candidateGroup) && hasTaskSkills(run,task,g.user) && (run.initiatorId !== g.user.id || selfApprovalAllowed(run, currentRelease(run))))
       const assigned = all.filter(({ task }) => task.status === 'open' && task.assigneeId === g.user.id)
       const completed = all.filter(({ task }) => task.status === 'completed' && task.completedById === g.user.id)
       const sort = url.searchParams.get('sort') ?? 'priority'
@@ -832,7 +873,7 @@ export function createHandlers(): HttpHandler[] {
       const found = findTask(str(params.ws), str(params.id))
       if (!found || !(g.perms.includes('run.read') || isOpenTaskVisible(g.user, found.task, found.run))) return notFound()
       const {run, task} = found
-      if (!g.perms.includes('run.operate') && !(task.assigneeId === g.user.id && g.perms.includes('task.act') && inGroup(g.user, task.candidateGroup) && (run.initiatorId !== g.user.id || selfApprovalAllowed(run, currentRelease(run))))) return forbidden()
+      if (!g.perms.includes('run.operate') && !(task.assigneeId === g.user.id && g.perms.includes('task.act') && inGroup(g.user, task.candidateGroup) && hasTaskSkills(run,task,g.user) && (run.initiatorId !== g.user.id || selfApprovalAllowed(run, currentRelease(run))))) return forbidden()
       const input = await body<{ priority: number; expectedVersion: number; reason: string }>(request)
       if (!Number.isInteger(input.priority) || input.priority < 0 || input.priority > 100 || !Number.isInteger(input.expectedVersion) || input.expectedVersion < 1 || !input.reason?.trim() || input.reason.length > 500) return problem(422, 'VALIDATION_FAILED', 'Priority, version and reason are required')
       if (task.status !== 'open') return problem(409, 'TASK_NOT_OPEN', 'Task is no longer open')
@@ -858,7 +899,7 @@ export function createHandlers(): HttpHandler[] {
       if (!found) return notFound()
       const { run, task } = found
       const input = await body<{ expectedVersion: number }>(request)
-      if (!inGroup(g.user, task.candidateGroup)) return problem(403, 'NOT_ELIGIBLE', 'Not eligible')
+      if (!inGroup(g.user, task.candidateGroup) || !hasTaskSkills(run,task,g.user)) return problem(403, 'NOT_ELIGIBLE', 'Not eligible')
       if (run.initiatorId === g.user.id && !selfApprovalAllowed(run, currentRelease(run))) return problem(403, 'SELF_APPROVAL_DENIED', 'You cannot act on your own request')
       if (task.status !== 'open') return problem(409, 'TASK_NOT_OPEN', 'The task is no longer open', { currentVersion: task.version })
       if (task.assigneeId) return problem(409, 'TASK_ALREADY_CLAIMED', 'The task is already claimed', { currentVersion: task.version })
@@ -893,6 +934,7 @@ export function createHandlers(): HttpHandler[] {
         if (task.status !== 'open') return problem(409, 'TASK_NOT_OPEN', 'The task is no longer open', { currentVersion: task.version })
         if (input.expectedVersion !== task.version) return problem(409, 'TASK_VERSION_CONFLICT', 'The task changed', { currentVersion: task.version })
         if (task.assigneeId !== g.user.id) return problem(409, 'TASK_NOT_CLAIMED_BY_CALLER', 'Claim the task first')
+        if (!inGroup(g.user,task.candidateGroup) || !hasTaskSkills(run,task,g.user)) return problem(403,'NOT_ELIGIBLE','This task requires every skill group')
         if (input.action === 'reject' && !input.reason?.trim()) return problem(422, 'REASON_REQUIRED', 'A reason is required to reject', { fieldErrors: [{ pointer: '/reason', code: 'required', message: 'Add a reason so the requester knows what to change.' }] })
         const decision = decide(run, task, g.user, input.action, input.action === 'reject' ? (input.reason?.trim() ?? null) : null, input.comment?.trim() || null)
         return { status: 201, body: decision }
@@ -905,10 +947,10 @@ export function createHandlers(): HttpHandler[] {
       const found = findTask(str(params.ws), str(params.id))
       if (!found) return notFound()
       const { run, task } = found
-      if (task.status !== 'open' || task.assigneeId !== g.user.id || !inGroup(g.user, task.candidateGroup)) return problem(403, 'FORBIDDEN', 'You do not have permission to delegate this task')
+      if (task.status !== 'open' || task.assigneeId !== g.user.id || !inGroup(g.user, task.candidateGroup) || !hasTaskSkills(run,task,g.user)) return problem(403, 'FORBIDDEN', 'You do not have permission to delegate this task')
       if (run.initiatorId === g.user.id && !selfApprovalAllowed(run, currentRelease(run))) return problem(403, 'SELF_APPROVAL_DENIED', 'You cannot act on your own request')
       const candidates = USERS.slice(0, 500).filter((user) => user.id !== g.user.id && isMember(user, run.wsId)
-        && permissionsOf(user, run.wsId).includes('task.act') && inGroup(user, task.candidateGroup)
+        && permissionsOf(user, run.wsId).includes('task.act') && inGroup(user, task.candidateGroup) && hasTaskSkills(run,task,user)
         && (user.id !== run.initiatorId || selfApprovalAllowed(run, currentRelease(run))))
       return HttpResponse.json(candidates.slice(0, 100).map((user) => ({ id: user.id, displayName: user.displayName })))
     }),
@@ -920,14 +962,14 @@ export function createHandlers(): HttpHandler[] {
       if (!found) return notFound()
       const { run, task } = found
       const input = await body<{ expectedVersion: number; assigneeSubjectId: string; reason: string }>(request)
-      if (task.assigneeId !== g.user.id || !inGroup(g.user, task.candidateGroup) || !input.assigneeSubjectId || input.assigneeSubjectId === g.user.id) return problem(403, 'FORBIDDEN', 'You do not have permission to delegate this task')
+      if (task.assigneeId !== g.user.id || !inGroup(g.user, task.candidateGroup) || !hasTaskSkills(run,task,g.user) || !input.assigneeSubjectId || input.assigneeSubjectId === g.user.id) return problem(403, 'FORBIDDEN', 'You do not have permission to delegate this task')
       if (run.initiatorId === g.user.id && !selfApprovalAllowed(run, currentRelease(run))) return problem(403, 'SELF_APPROVAL_DENIED', 'You cannot act on your own request')
       if (!input.reason?.trim()) return problem(422, 'REASON_REQUIRED', 'A reason is required', { fieldErrors: [{ pointer: '/reason', code: 'required', message: 'Add a reason.' }] })
       if (task.status !== 'open') return problem(409, 'TASK_NOT_OPEN', 'The task is no longer open')
       if (input.expectedVersion !== task.version) return problem(409, 'TASK_VERSION_CONFLICT', 'The task changed', { currentVersion: task.version })
       const target = userById(input.assigneeSubjectId)
       if (!target || !isMember(target, run.wsId) || !permissionsOf(target, run.wsId).includes('task.act')
-          || !inGroup(target, task.candidateGroup) || (target.id === run.initiatorId && !selfApprovalAllowed(run, currentRelease(run))))
+          || !inGroup(target, task.candidateGroup) || !hasTaskSkills(run,task,target) || (target.id === run.initiatorId && !selfApprovalAllowed(run, currentRelease(run))))
         return problem(422, 'VALIDATION_FAILED', 'Not eligible', { fieldErrors: [{ pointer: '/assigneeSubjectId', code: 'enum', message: 'Not an eligible member of the candidate group.' }] })
       task.assigneeId = target.id
       task.version += 1
@@ -947,7 +989,7 @@ export function createHandlers(): HttpHandler[] {
       if (task.status !== 'open') return problem(409, 'TASK_NOT_OPEN', 'The task is no longer open')
       if (input.expectedVersion !== task.version) return problem(409, 'TASK_VERSION_CONFLICT', 'The task changed', { currentVersion: task.version })
       const target = input.assigneeSubjectId ? userById(input.assigneeSubjectId) : undefined
-      if (input.assigneeSubjectId && (!target || !inGroup(target, task.candidateGroup))) return problem(422, 'VALIDATION_FAILED', 'Not eligible', { fieldErrors: [{ pointer: '/assigneeSubjectId', code: 'eligible', message: 'This person is not in the approver group.' }] })
+      if (input.assigneeSubjectId && (!target || !inGroup(target, task.candidateGroup) || !hasTaskSkills(run,task,target))) return problem(422, 'VALIDATION_FAILED', 'Not eligible', { fieldErrors: [{ pointer: '/assigneeSubjectId', code: 'eligible', message: 'This person is not in the approver group or required skill groups.' }] })
       task.assigneeId = target?.id ?? null
       task.version += 1
       run.version += 1
@@ -1021,6 +1063,41 @@ export function createHandlers(): HttpHandler[] {
       if (str(params.key) === 'vendor-risk-assistant') return agentTest(input.input)
       if (db.procurementFault === 'down') return HttpResponse.json({ outcome: 'failed', httpStatus: null, durationMs: 3012, errorCode: 'CONNECT_FAILED', detail: 'The service did not answer in time.' })
       return HttpResponse.json({ outcome: 'succeeded', httpStatus: 200, durationMs: 41, errorCode: null, detail: null })
+    }),
+
+    // Approved document sources: explicit workspace grant AND resource audience, with fixture data only.
+    http.get(`${B}/workspaces/:ws/document-sources`, ({ params }) => {
+      const g = guard(params.ws, 'document.browse'); if (!g.ok) return g.res
+      return HttpResponse.json([...(db.documentSources?.values() ?? [])].filter((entry) => entry.wsId === str(params.ws) && entry.grant.enabled && entry.grant.audience.some((p) => p.type === 'subject' && p.value === g.user.id)).map((entry) => entry.grant.source))
+    }),
+    http.get(`${B}/workspaces/:ws/document-sources/grants`, ({ params }) => {
+      const g = guard(params.ws, 'workspace.manage-access'); if (!g.ok) return g.res
+      return HttpResponse.json([...(db.documentSources?.values() ?? [])].filter((entry) => entry.wsId === str(params.ws)).map((entry) => entry.grant))
+    }),
+    http.put(`${B}/workspaces/:ws/document-sources/grants/:id`, async ({ params, request }) => {
+      const g = guard(params.ws, 'workspace.manage-access'); if (!g.ok) return g.res
+      const input = await body<components['schemas']['PutDocumentSourceGrant']>(request)
+      const existing = db.documentSources?.get(str(params.id))
+      if (existing && existing.wsId !== str(params.ws)) return notFound()
+      if ((existing?.grant.revision ?? 0) !== input.expectedRevision) return problem(412, 'STALE_REVISION', 'Reload the source before saving')
+      // Mock mode has no Microsoft connection binding; only an explicit test fixture may be edited.
+      if (!existing || input.connectionKey !== existing.grant.source.connectionKey || input.definitionVersion !== existing.grant.source.definitionVersion || input.driveId !== existing.grant.source.driveId || input.folderId !== existing.grant.source.folderId) return problem(422, 'VALIDATION_FAILED', 'Configure an approved Microsoft source fixture before editing this grant')
+      if (!input.label.trim() || !input.audience.length || input.audience.length > 100) return problem(400, 'MALFORMED_REQUEST', 'A source name and bounded audience are required')
+      existing.grant = { source: { ...existing.grant.source, label: input.label }, browseOperation: input.browseOperation, versionsOperation: input.versionsOperation, audience: input.audience, enabled: input.enabled, revision: existing.grant.revision + 1 }
+      return HttpResponse.json(existing.grant)
+    }),
+    http.get(`${B}/workspaces/:ws/document-sources/:id/files`, ({ params }) => {
+      const g = guard(params.ws, 'document.browse'); if (!g.ok) return g.res
+      const entry = db.documentSources?.get(str(params.id))
+      if (!entry || entry.wsId !== str(params.ws) || !entry.grant.enabled || !entry.grant.audience.some((p) => p.type === 'subject' && p.value === g.user.id)) return notFound()
+      return HttpResponse.json({ driveId: entry.grant.source.driveId, folderId: entry.grant.source.folderId, filesJson: JSON.stringify(entry.files), fileCount: entry.files.length, hasMore: false })
+    }),
+    http.get(`${B}/workspaces/:ws/document-sources/:id/files/:item/versions`, ({ params }) => {
+      const g = guard(params.ws, 'document.browse'); if (!g.ok) return g.res
+      const entry = db.documentSources?.get(str(params.id))
+      if (!entry || entry.wsId !== str(params.ws) || !entry.grant.enabled || !entry.grant.audience.some((p) => p.type === 'subject' && p.value === g.user.id) || !entry.files.some((file) => file.itemId === str(params.item))) return notFound()
+      const versions = entry.versions[str(params.item)] ?? []
+      return HttpResponse.json({ driveId: entry.grant.source.driveId, itemId: str(params.item), versionsJson: JSON.stringify(versions), versionCount: versions.length, hasMore: false })
     }),
 
     // Access -------------------------------------------------------------------------------------------------------------------------------

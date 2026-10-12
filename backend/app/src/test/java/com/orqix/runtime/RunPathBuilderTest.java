@@ -37,6 +37,22 @@ class RunPathBuilderTest {
     }
 
     @Test
+    void handledFailureMarksOnlyTheFailedRouteEvenWhenSuccessHasTheSameTarget() {
+        JsonNode definition = JSON.readTree("""
+            {"nodes":[{"id":"start","type":"start"},{"id":"call","type":"http"},{"id":"end","type":"end"}],
+             "transitions":[{"id":"begin","from":"start","to":"call","on":"next"},
+                {"id":"success","from":"call","to":"end","on":"next"},
+                {"id":"failure","from":"call","to":"end","on":"failed"}]}
+            """);
+        var result = RunPathBuilder.build(RUN,"completed",definition,null,List.of(
+                ev(1,"RUN_STARTED",null,0,Map.of()), ev(2,"STEP_FAILED","call",1,Map.of("outcome","failed")),
+                ev(3,"RUN_COMPLETED","end",2,Map.of())),List.of(),null);
+        assertThat(result.taken()).containsExactly("begin","failure");
+        assertThat(result.visited()).filteredOn(v -> "call".equals(v.nodeId()))
+                .extracting(RunPathBuilder.Visit::outcome).containsExactly("failed");
+    }
+
+    @Test
     void waitingAtTheFirstApprovalShowsStartPassedAndTheApprovalCurrent() {
         RunPathBuilder.Result r = RunPathBuilder.build(RUN, "waiting", Fixtures.purchaseTemplate(), null,
                 List.of(ev(1, "RUN_STARTED", null, 0, Map.of()), ev(2, "TASK_CREATED", "manager", 0, Map.of())),

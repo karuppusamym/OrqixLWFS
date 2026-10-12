@@ -96,7 +96,7 @@ public final class DefaultWorkflowSimulator implements WorkflowSimulator {
                     "type", "The sample request must be an object with the form answers.")), List.of(), 0, 0, null);
         }
         List<FormValidator.FieldError> errors = Compilers.formValidator().validate(
-                StrictJson.write(root.path("inputSchema")), StrictJson.write(input));
+                StrictJson.write(root.path("inputSchema")), StrictJson.write(input),root.has("inputUi") ? StrictJson.write(root.path("inputUi")) : null);
         if (!errors.isEmpty()) {
             return new SimulationResult(SimulationResult.Status.INVALID_INPUT, errors, List.of(), 0, 0, null);
         }

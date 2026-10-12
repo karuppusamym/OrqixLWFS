@@ -69,12 +69,52 @@ public final class DmnGenerator {
         return x.finish();
     }
 
+    public static java.util.List<String> inputFields(DecisionTable table) {
+        return table.rows().stream().flatMap(r -> (r.when().compound()?r.when().terms():java.util.List.of(r.when())).stream())
+            .map(Condition::fieldRef).distinct().sorted().toList();
+    }
+
+    /** Flat conjunctions become one DMN input column per distinct canonical field. */
+    public static String generate(DecisionTable table, Map<String,FieldKind> kinds) {
+        if(table.rows().stream().noneMatch(r->r.when().compound())) return generate(table,kinds.get(table.rows().get(0).when().fieldRef()));
+        var fields=inputFields(table);
+        String key=table.key();
+        XmlOut x=new XmlOut();
+        x.open("","definitions",DMN_NS).defaultNamespace(DMN_NS).attr("id","dmn_"+key+"_v"+table.version()).attr("name",key).attr("namespace",DECISIONS_NAMESPACE);
+        x.open("","decision",DMN_NS).attr("id",key).attr("name",key);
+        x.open("","decisionTable",DMN_NS).attr("id",key+"__table").attr("hitPolicy","FIRST");
+        for(int i=0;i<fields.size();i++) {
+            x.open("","input",DMN_NS).attr("id",key+"__in"+(i+1)).attr("label",fields.get(i));
+            x.inline("","inputExpression",DMN_NS,"text","in"+(i+1),false,"id",key+"__inexpr"+(i+1),"typeRef",typeRef(kinds.get(fields.get(i))));
+            x.close();
+        }
+        table.defaultOutput().forEach((name,literal)->x.leaf("","output",DMN_NS).attr("id",key+"__out_"+name).attr("name",name).attr("typeRef",literal.typeName()));
+        for(DecisionTable.Row row:table.rows()) {
+            String rule=key+"__r"+(row.index()+1);
+            x.open("","rule",DMN_NS).attr("id",rule);
+            var terms=row.when().compound()?row.when().terms():java.util.List.of(row.when());
+            for(int i=0;i<fields.size();i++) {
+                String field=fields.get(i);
+                String entry=terms.stream().filter(t->t.fieldRef().equals(field)).findFirst().map(DmnGenerator::inputEntry).orElse("-");
+                x.inline("","inputEntry",DMN_NS,"text",entry,true,"id",rule+"_in"+(i+1));
+            }
+            table.defaultOutput().keySet().forEach(name->x.inline("","outputEntry",DMN_NS,"text",outputEntry(row.then().get(name)),true,"id",rule+"_"+name));
+            x.close();
+        }
+        String rule=key+"__default";
+        x.open("","rule",DMN_NS).attr("id",rule);
+        for(int i=0;i<fields.size();i++) x.inline("","inputEntry",DMN_NS,"text","-",false,"id",rule+"_in"+(i+1));
+        table.defaultOutput().forEach((name,literal)->x.inline("","outputEntry",DMN_NS,"text",outputEntry(literal),true,"id",rule+"_"+name));
+        x.close(); x.close(); x.close(); x.close();
+        return x.finish();
+    }
+
     static String typeRef(FieldKind kind) {
         return switch (kind) {
             case STRING -> "string";
             case NUMBER, INTEGER -> "number";
             case BOOLEAN -> "boolean";
-            case ARRAY, DATE, ATTACHMENT -> throw new IllegalArgumentException("Collection, date and file conditions are not supported");
+            case ARRAY, OBJECT, DATE, ATTACHMENT -> throw new IllegalArgumentException("Collection, object, date and file conditions are not supported");
         };
     }
 

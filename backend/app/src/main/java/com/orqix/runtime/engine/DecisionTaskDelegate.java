@@ -62,11 +62,20 @@ public class DecisionTaskDelegate implements JavaDelegate {
         if (table == null) {
             throw new IllegalStateException("Decision table " + decisionKey + " not in release");
         }
-        String fieldRef = table.path("rows").path(0).path("when").path("fieldRef").asString();
-        Object value = ProcessData.requireScalar(execution, json, fieldRef);
-
-        Result result = evaluatePinned(execution.getProcessDefinitionId(), execution.getTenantId(), decisionKey, value,
-                table.path("rows").size());
+        Map<String,Object> values=new LinkedHashMap<>();
+        Map<String,Object> variables=new LinkedHashMap<>();
+        java.util.Set<String> referenced=new java.util.TreeSet<>();
+        for(JsonNode row:table.path("rows")) {
+            JsonNode condition=row.path("when");
+            if(condition.has("all")) for(JsonNode term:condition.path("all")) referenced.add(term.path("fieldRef").asString());
+            else referenced.add(condition.path("fieldRef").asString());
+        }
+        var fields=List.copyOf(referenced);
+        for(int i=0;i<fields.size();i++) {
+            Object value=ProcessData.requireScalar(execution,json,fields.get(i));
+            values.put(fields.get(i),value); variables.put("in"+(i+1),value);
+        }
+        Result result=evaluatePinnedVariables(execution.getProcessDefinitionId(),execution.getTenantId(),decisionKey,variables,table.path("rows").size());
         execution.setVariable(ProcessData.stepVariable(element.getId()), json.write(result.outputs()));
 
         Map<String, Object> data = new LinkedHashMap<>();
@@ -74,7 +83,7 @@ public class DecisionTaskDelegate implements JavaDelegate {
         data.put("version", Integer.valueOf(version));
         data.put("matched", result.matched());
         data.put("outputs", result.outputs());
-        data.put("evidence", evidence(table, fieldRef, value, result.matched()));
+        data.put("evidence", evidenceValues(table, values, result.matched()));
         events.append(workspaceId, runId, "DECISION_EVALUATED", element.getId(), null, data);
     }
 
@@ -89,6 +98,11 @@ public class DecisionTaskDelegate implements JavaDelegate {
      */
     public Result evaluatePinned(String processDefinitionId, String tenantId, String decisionKey, Object value,
             int rowCount) {
+        return evaluatePinnedVariables(processDefinitionId,tenantId,decisionKey,Map.of(INPUT_VARIABLE,value),rowCount);
+    }
+
+    public Result evaluatePinnedVariables(String processDefinitionId, String tenantId, String decisionKey,
+            Map<String,Object> values, int rowCount) {
         String deploymentId = ProcessDefinitionUtil.getProcessDefinition(processDefinitionId).getDeploymentId();
         long pinned = CommandContextUtil.getDmnRepositoryService().createDecisionQuery()
                 .decisionKey(decisionKey).parentDeploymentId(deploymentId).decisionTenantId(tenantId).count();
@@ -99,7 +113,7 @@ public class DecisionTaskDelegate implements JavaDelegate {
                 .decisionKey(decisionKey)
                 .parentDeploymentId(deploymentId)
                 .tenantId(tenantId)
-                .variable(INPUT_VARIABLE, value)
+                .variables(values)
                 .executeWithAuditTrail();
         if (Boolean.TRUE.equals(audit.isFailed())) {
             throw new IllegalStateException("Decision " + decisionKey + " failed: " + audit.getExceptionMessage());
@@ -121,18 +135,27 @@ public class DecisionTaskDelegate implements JavaDelegate {
     /** All bounded canonical candidates are checked with the compiler's typed scalar matcher.
      * Selection is confirmed against the actual pinned DMN result, never substituted for it. */
     ObjectNode evidence(JsonNode table, String fieldRef, Object value, String selected) {
+        return evidenceValues(table,Map.of(fieldRef,value),selected);
+    }
+
+    ObjectNode evidenceValues(JsonNode table, Map<String,Object> values, String selected) {
         JsonNode rows = table.path("rows");
         if (!rows.isArray() || rows.size() < 1 || rows.size() > 50)
             throw new IllegalStateException("Decision evidence requires 1..50 canonical rows");
         ObjectNode evidence = json.object();
-        evidence.putArray("inputs").add(json.objectOf(Map.of("fieldRef", fieldRef, "value", value)));
+        var inputs=evidence.putArray("inputs");
+        values.forEach((field,value)->inputs.add(json.objectOf(Map.of("fieldRef",field,"value",value))));
         var candidates = evidence.putArray("rows");
         String expected = "default";
         for (int i = 0; i < rows.size(); i++) {
             JsonNode condition = rows.get(i).path("when");
-            if (!fieldRef.equals(condition.path("fieldRef").asString()))
-                throw new IllegalStateException("Decision evidence field differs from canonical input");
-            boolean matched = ConditionMatcher.matches(condition.path("operator").asString(), value, Json.scalar(condition.path("value")));
+            var terms=condition.has("all")?condition.path("all"):json.object().putArray("terms").add(condition);
+            boolean matched=true;
+            for(JsonNode term:terms) {
+                String ref=term.path("fieldRef").asString();
+                if(!values.containsKey(ref)) throw new IllegalStateException("Decision evidence input missing");
+                matched &= ConditionMatcher.matches(term.path("operator").asString(),values.get(ref),Json.scalar(term.path("value")));
+            }
             String id = "r" + (i + 1);
             if (matched && "default".equals(expected)) expected = id;
             ObjectNode row = json.object();

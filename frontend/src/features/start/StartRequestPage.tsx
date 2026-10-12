@@ -1,3 +1,4 @@
+import { RequestDocumentPicker } from './RequestDocumentPicker'
 import { useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -22,6 +23,7 @@ import { Label } from '@/components/ui/label'
 import { useAnnounce } from '@/components/common/Announcer'
 import { buildFields, parseFormSchema, parseFormUi, type FieldDef } from '@/lib/form/schema'
 import { carryOverValues, validateForm, type FieldErrors, type RawValue, type RawValues } from '@/lib/form/values'
+import { visibleFields } from '@/lib/form/visibility'
 import { describeProblem, fieldErrorMap } from '@/lib/problemMessages'
 import { formatUsd } from '@/lib/money'
 import { requestId, runProgressText } from '@/lib/runText'
@@ -31,6 +33,7 @@ const ID_PREFIX = 'req'
 
 /** Display a typed value the way the review step and the confirmation show it. */
 export function displayValue(field: FieldDef, raw: RawValue | undefined): string {
+  if (Array.isArray(raw)) return raw.length ? raw.map((value, index) => typeof value === 'object' ? `Row ${index + 1}: ${Object.entries(value).map(([key, cell]) => `${field.schema.items?.properties?.[key]?.title ?? key}: ${typeof cell === 'boolean' ? cell ? 'Yes' : 'No' : cell || '—'}`).join('; ')}` : typeof value === 'boolean' ? value ? 'Yes' : 'No' : value).join('\n') : '—'
   if (field.schema.type === 'boolean') return raw === true ? 'Yes' : 'No'
   const text = typeof raw === 'string' ? raw : ''
   if (text === '') return '—'
@@ -40,7 +43,7 @@ export function displayValue(field: FieldDef, raw: RawValue | undefined): string
 
 export function StartRequestPage() {
   const { workflowId = '' } = useParams()
-  const { workspace } = useWorkspace()
+  const { workspace, can } = useWorkspace()
   const ws = workspace.id
   const client = useQueryClient()
   const announce = useAnnounce()
@@ -200,7 +203,7 @@ export function StartRequestPage() {
           <CardContent className="space-y-5 pt-5">
             <p className="text-sm text-muted-foreground">Please check the details below. You can go back and change them before you submit.</p>
             <dl className="divide-y divide-border rounded-card border border-border" aria-label="Request summary">
-              {fields.map((f) => (
+              {visibleFields(fields, values).map((f) => (
                 <div key={f.key} className="grid gap-1 px-4 py-3 sm:grid-cols-[14rem_1fr]">
                   <dt className="text-sm font-semibold text-muted-foreground">{f.label}</dt>
                   <dd className="whitespace-pre-wrap wrap-anywhere">{displayValue(f, values[f.key])}</dd>
@@ -257,6 +260,7 @@ export function StartRequestPage() {
             <FormRenderer key={`${ws}:${workflowId}:${startForm.releaseNumber}`} fields={fields} values={values} onChange={change} errors={errors} idPrefix={ID_PREFIX} onFileBusyChange={(key, busy) => {
               setUploadingFields((previous) => { const next = new Set(previous); if (busy) next.add(key); else next.delete(key); return next })
             }} />
+            {can('document.browse') ? <RequestDocumentPicker key={`${ws}:${workflowId}:${startForm.releaseId}`} workspaceId={ws} fields={fields} onApply={(references) => Object.entries(references).forEach(([key, value]) => change(key, value))} /> : null}
             {uploadingFields.size ? <p role="status">Wait for your files to finish uploading before reviewing the request.</p> : null}
             <details className="rounded-control border border-border px-4 py-2">
               <summary className="cursor-pointer text-sm font-semibold">Add your own reference number (optional)</summary>

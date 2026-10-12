@@ -33,8 +33,14 @@ public final class DefaultFormValidator implements FormValidator {
 
     @Override
     public List<FieldError> validate(String inputSchemaJson, String inputJson) {
+        return validate(inputSchemaJson,inputJson,null);
+    }
+
+    @Override
+    public List<FieldError> validate(String inputSchemaJson,String inputJson,String inputUiJson) {
         JsonNode schema = StrictJson.parse(inputSchemaJson);
         JsonNode input = StrictJson.parse(inputJson);
+        JsonNode ui=StrictJson.parse(inputUiJson==null ? "{}" : inputUiJson);
         if (!schema.isObject()) {
             throw new IllegalArgumentException("The input schema must be a JSON object");
         }
@@ -55,16 +61,20 @@ public final class DefaultFormValidator implements FormValidator {
                 }
             }
         }
-        for (JsonNode required : schema.path("required")) {
-            String name = required.stringValue("");
-            if (!input.has(name)) {
+        var requiredNames=new java.util.HashSet<String>();
+        schema.path("required").forEach(n->requiredNames.add(n.asString()));
+        ui.path("requiredWhen").propertyNames().forEach(requiredNames::add);
+        for (String name:requiredNames) {
+            if (com.orqix.compiler.FormVisibility.required(schema,ui,input,name) && !input.has(name)) {
                 errors.add(new FieldError(JsonPointers.of(name), "required", "This field is required."));
             }
         }
         for (Map.Entry<String, JsonNode> e : properties.properties()) {
             JsonNode value = input.get(e.getKey());
             if (value != null) {
-                field(JsonPointers.of(e.getKey()), e.getValue(), value, errors);
+                if (!com.orqix.compiler.FormVisibility.visible(ui,input,e.getKey()))
+                    errors.add(new FieldError(JsonPointers.of(e.getKey()),"hidden","This field is not visible for this request; omit it."));
+                else field(JsonPointers.of(e.getKey()), e.getValue(), value, errors);
             }
         }
         errors.sort(Comparator.comparing(FieldError::pointer, JsonPointers::compare)
@@ -82,6 +92,7 @@ public final class DefaultFormValidator implements FormValidator {
             case "integer" -> value.isNumber() && integral(value.decimalValue());
             case "boolean" -> value.isBoolean();
             case "array" -> value.isArray();
+            case "object" -> value.isObject();
             default -> throw new IllegalArgumentException("Unsupported field type in input schema: " + type);
         };
         if (!typeOk) {
@@ -90,6 +101,7 @@ public final class DefaultFormValidator implements FormValidator {
                 case "number" -> "Enter a number.";
                 case "integer" -> "Enter a whole number.";
                 case "array" -> "Enter a list of values.";
+                case "object" -> "Enter a row of field values.";
                 default -> "Choose true or false.";
             };
             errors.add(new FieldError(pointer, "type", expected));
@@ -101,6 +113,16 @@ public final class DefaultFormValidator implements FormValidator {
             if (value.size() > schema.path("maxItems").asInt(25))
                 errors.add(new FieldError(pointer, "maxItems", "Enter at most " + schema.path("maxItems").asInt(25) + " items."));
             for (int i = 0; i < value.size(); i++) field(pointer + "/" + i, schema.path("items"), value.get(i), errors);
+        }
+        if (value.isObject()) {
+            JsonNode properties=schema.path("properties");
+            for(String key:value.propertyNames())if(!properties.has(key))
+                errors.add(new FieldError(pointer+"/"+key,"additionalProperties","This column is not part of the row."));
+            for(JsonNode key:schema.path("required"))if(!value.has(key.asString()))
+                errors.add(new FieldError(pointer+"/"+key.asString(),"required","This column is required."));
+            for(var entry:properties.properties())if(value.has(entry.getKey()))
+                field(pointer+"/"+entry.getKey(),entry.getValue(),value.path(entry.getKey()),errors);
+            return;
         }
         if (value.isString() && "attachment".equals(schema.path("format").stringValue(""))) {
             // The value is the ID of an uploaded file; the runtime checks that the file exists, is the caller's and

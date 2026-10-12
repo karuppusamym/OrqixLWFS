@@ -76,13 +76,14 @@ public final class MicrosoftGraphDocuments {
             throw fail("DOCUMENT_INPUT_INVALID");
         }
         String path = operation.path();
-        if (!java.util.Set.of("/metadata", "/text", "/extract", "/pinLatest", "/extractSnapshot", "/resolveLink", "/versions").contains(path)
+        if (!java.util.Set.of("/metadata", "/text", "/extract", "/pinLatest", "/extractSnapshot", "/resolveLink", "/versions", "/browseFolder").contains(path)
                 || operation.effectClass() != ConnectionDefinition.EffectClass.READ_ONLY) {
             throw fail("DOCUMENT_OPERATION_INVALID");
         }
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(Math.max(1, timeoutSeconds));
         if ("/resolveLink".equals(path)) { return resolveLink(target, operation, input, token, deadline); }
         String drive = segment(input.path("driveId").asString(""));
+        if ("/browseFolder".equals(path)) return browseFolder(target, operation, input, drive, token, deadline);
         String item = segment(input.path("itemId").asString(""));
         String version = input.path("versionId").asString("");
         if (!version.isEmpty()) { version = segment(version); }
@@ -240,6 +241,53 @@ public final class MicrosoftGraphDocuments {
         if (listing.getBytes(StandardCharsets.UTF_8).length > MAX_TEXT_BYTES) { throw fail("DOCUMENT_VERSION_LIST_LIMIT_EXCEEDED"); }
         return json.object().put("driveId", drive).put("itemId", item).put("versionsJson", listing)
                 .put("versionCount", entries.size()).put("hasMore", false);
+    }
+
+    /** Only direct files of explicitly granted folders; no search, recursive descent or caller-provided cursor. */
+    private ObjectNode browseFolder(Target target, ConnectionDefinition.Operation operation, JsonNode input,
+            String drive, String token, long deadline) {
+        String folder = segment(input.path("folderId").asString(""));
+        for (String key : java.util.List.of("driveId", "folderId")) {
+            JsonNode allowed = operation.requestSchema().path("properties").path(key).path("enum");
+            String selected = input.path(key).asString();
+            boolean approved = false;
+            if (allowed.isArray() && allowed.size() <= 100) for (JsonNode grant : allowed) approved |= selected.equals(grant.asString());
+            if (!approved) throw fail("DOCUMENT_FOLDER_NOT_APPROVED");
+        }
+        String base = target.baseUrl().replaceAll("/+$", ""); URI origin = URI.create(base);
+        String path = origin.getPath().replaceAll("/+$", "") + "/drives/" + drive + "/items/" + folder + "/children";
+        URI next = URI.create(base + "/drives/" + drive + "/items/" + folder + "/children?$select=id,name,size,file,parentReference&$top=100");
+        var files = json.object().putArray("files");
+        java.util.Set<String> visited = new java.util.HashSet<>(), ids = new java.util.HashSet<>(); int pages = 0, count = 0;
+        while (next != null) {
+            if (++pages > 10 || !visited.add(next.toString())) throw fail("DOCUMENT_FOLDER_LIST_LIMIT_EXCEEDED");
+            if (!origin.getScheme().equalsIgnoreCase(next.getScheme()) || !origin.getHost().equalsIgnoreCase(next.getHost())
+                    || origin.getPort() != next.getPort() || !path.equals(next.getPath()) || next.getRawUserInfo() != null || next.getRawFragment() != null)
+                throw fail("DOCUMENT_FOLDER_PAGING_REJECTED");
+            check(next, false); JsonNode page = parse(send(next, token, deadline, "application/json"));
+            if (!page.path("value").isArray()) throw fail("DOCUMENT_RESPONSE_INVALID");
+            for (JsonNode entry : page.path("value")) {
+                if (++count > 100) throw fail("DOCUMENT_FOLDER_LIST_LIMIT_EXCEEDED");
+                String id = segment(entry.path("id").asString(""));
+                if (!ids.add(id)) throw fail("DOCUMENT_RESPONSE_INVALID");
+                if (!entry.path("file").isObject()) continue;
+                if (!folder.equals(entry.path("parentReference").path("id").asString())
+                        || !drive.equals(entry.path("parentReference").path("driveId").asString())) throw fail("DOCUMENT_RESPONSE_INVALID");
+                String name = entry.path("name").asString(""); long size = entry.path("size").asLong(-1);
+                if (name.isBlank() || name.length() > 256 || size < 0) throw fail("DOCUMENT_RESPONSE_INVALID");
+                files.addObject().put("itemId", id).put("name", name).put("size", size)
+                        .put("contentType", entry.path("file").path("mimeType").asString(""));
+            }
+            JsonNode cursor = page.get("@odata.nextLink");
+            if (cursor == null || cursor.isNull()) next = null;
+            else {
+                if (!cursor.isString() || cursor.asString().length() > 4000) throw fail("DOCUMENT_FOLDER_PAGING_REJECTED");
+                try { next = URI.create(cursor.asString()); } catch (IllegalArgumentException e) { throw fail("DOCUMENT_FOLDER_PAGING_REJECTED"); }
+            }
+        }
+        String listing = json.write(files);
+        if (listing.getBytes(StandardCharsets.UTF_8).length > MAX_TEXT_BYTES) throw fail("DOCUMENT_FOLDER_LIST_LIMIT_EXCEEDED");
+        return json.object().put("driveId", drive).put("folderId", folder).put("filesJson", listing).put("fileCount", files.size()).put("hasMore", false);
     }
 
     private void requireSnapshots(Target target) {

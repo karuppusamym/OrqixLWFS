@@ -4,6 +4,7 @@ Logs in through the real OIDC authorization-code flow (Keycloak login form), kee
 and sends the CSRF header like the SPA does. Passwords come from the dev realm file and are never printed.
 """
 import json
+import os
 from pathlib import Path
 import re
 import uuid
@@ -11,7 +12,7 @@ from html import unescape
 
 import requests
 
-BASE = "http://localhost:8080"
+BASE = os.environ.get("ORQIX_BASE_URL", "http://localhost:8080").rstrip("/")
 REALM_FILE = str(Path(__file__).resolve().parents[2] / "deploy" / "compose" / "keycloak" / "orqix-dev-realm.json")
 
 

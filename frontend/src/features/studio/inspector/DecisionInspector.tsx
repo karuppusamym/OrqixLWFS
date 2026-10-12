@@ -10,10 +10,10 @@ import { Input, Select } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { humanize } from '@/lib/text'
 import { useStudio, useStudioContext } from '../StudioContext'
-import { availableFields, chipLabel } from '../model/fieldRefs'
+import { availableFields, chipLabel, type FieldInfo } from '../model/fieldRefs'
 import { renameDecisionKey, upsertDecision } from '../model/ops'
 import { outputsInWords } from '@/lib/events'
-import { isAtomicCondition, type Condition, type DecisionTable, type Literal, type WorkflowNode } from '../model/types'
+import { conditionTerms, isAtomicCondition, type Condition, type DecisionTable, type Literal, type WorkflowNode } from '../model/types'
 import { Advanced, CommitInput, CommitNumber, InspectorSection } from './controls'
 import { ConditionEditor, defaultLiteral, LiteralInput } from './ConditionEditor'
 
@@ -52,7 +52,7 @@ export function DecisionInspector({ node }: { node: WorkflowNode }) {
   }
 
   const keys = Object.keys(table.default)
-  const fieldRef = table.rows[0]?.when.fieldRef ?? (pendingField || fields.find((f) => f.type === 'number')?.ref || fields[0]?.ref || '')
+  const fieldRef = (table.rows[0] ? conditionTerms(table.rows[0].when)[0]?.fieldRef : undefined) ?? (pendingField || fields.find((f) => f.type === 'number')?.ref || fields[0]?.ref || '')
   const info = fields.find((f) => f.ref === fieldRef)
   const save = (next: DecisionTable) => store.getState().apply((d) => upsertDecision(d, next))
 
@@ -62,7 +62,7 @@ export function DecisionInspector({ node }: { node: WorkflowNode }) {
     const numeric = next?.type === 'number' || next?.type === 'integer'
     save({
       ...table,
-      rows: table.rows.map((r) => ({ ...r, when: { fieldRef: ref2, operator: numeric ? r.when.operator : 'eq', value: typeof r.when.value === (numeric ? 'number' : next?.type === 'boolean' ? 'boolean' : 'string') ? r.when.value : defaultLiteral(next?.type, next?.enumValues) } })),
+      rows: table.rows.map((r) => ({ ...r, when: { fieldRef: ref2, operator: numeric ? (conditionTerms(r.when)[0]?.operator ?? 'eq') : 'eq', value: (typeof conditionTerms(r.when)[0]?.value === (numeric ? 'number' : next?.type === 'boolean' ? 'boolean' : 'string') ? conditionTerms(r.when)[0]?.value : defaultLiteral(next?.type, next?.enumValues)) ?? '' } })),
     })
   }
 
@@ -73,7 +73,7 @@ export function DecisionInspector({ node }: { node: WorkflowNode }) {
   }
 
   const setRowWhen = (index: number, when: Condition) => {
-    if (!isAtomicCondition(when)) throw new Error('Decision table row conditions must be atomic.')
+    if (!isAtomicCondition(when) && !('all' in when)) throw new Error('Decision rows support All comparisons only.')
     save({ ...table, rows: table.rows.map((r, i) => (i === index ? { ...r, when } : r)) })
   }
   const setRowOutput = (index: number, key: string, value: Literal) => save({ ...table, rows: table.rows.map((r, i) => (i === index ? { ...r, then: { ...r.then, [key]: value } } : r)) })
@@ -99,7 +99,7 @@ export function DecisionInspector({ node }: { node: WorkflowNode }) {
       <InspectorSection title="Basic">
         <div className="space-y-1.5">
           <Label htmlFor={`dec-field-${node.id}`}>Input field</Label>
-          <Select id={`dec-field-${node.id}`} data-field="table" value={fieldRef} disabled={readOnly} onChange={(e) => setField(e.target.value)}>
+          <Select id={`dec-field-${node.id}`} data-field="table" value={fieldRef} disabled={readOnly || table.rows.some(r => !isAtomicCondition(r.when))} onChange={(e) => setField(e.target.value)}>
             {!info && fieldRef ? <option value={fieldRef}>{fieldRef}</option> : null}
             {fields.map((f) => (
               <option key={f.ref} value={f.ref}>
@@ -107,7 +107,7 @@ export function DecisionInspector({ node }: { node: WorkflowNode }) {
               </option>
             ))}
           </Select>
-          <p className="text-xs text-muted-foreground">Every row looks at this same value. Rows must not overlap.</p>
+          <p className="text-xs text-muted-foreground">Scalar rows use this field. Choose All comparisons for multiple distinct inputs; rows must not overlap.</p>
         </div>
 
         <ol className="space-y-3" aria-label="Rule rows">
@@ -121,7 +121,7 @@ export function DecisionInspector({ node }: { node: WorkflowNode }) {
                   </Button>
                 ) : null}
               </div>
-              <ConditionEditor idBase={`dec-${node.id}-r${i}`} dataFieldBase={`rows.${i}.when`} condition={row.when} fields={fields} fixedField disabled={readOnly} onChange={(c) => setRowWhen(i, c)} />
+              <ConditionEditor idBase={`dec-${node.id}-r${i}`} dataFieldBase={`rows.${i}.when`} condition={row.when} fields={fields} conjunctionOnly disabled={readOnly} onChange={(c) => setRowWhen(i, c)} />
               <div className="space-y-2 border-t border-border pt-3">
                 <p className="text-xs font-semibold text-muted-foreground uppercase">Then</p>
                 {keys.map((k) => (
@@ -150,7 +150,7 @@ export function DecisionInspector({ node }: { node: WorkflowNode }) {
           ))}
         </div>
 
-        <TestRule key={`${table.key}-${fieldRef}`} fieldRef={fieldRef} info={info} tableKey={table.key} wsId={wsId} workflowId={workflowId} flush={() => saver.flush()} revision={() => store.getState().revision} />
+        <TestRule key={`${table.key}-${fieldRef}`} fieldRef={fieldRef} info={info} inputs={[...new Set(table.rows.flatMap(r => conditionTerms(r.when).map(t => t.fieldRef)))].map(ref => ({ ref, info: fields.find(f => f.ref === ref) }))} tableKey={table.key} wsId={wsId} workflowId={workflowId} flush={() => saver.flush()} revision={() => store.getState().revision} />
       </InspectorSection>
 
       <Advanced>
@@ -205,12 +205,14 @@ export function DecisionInspector({ node }: { node: WorkflowNode }) {
 function TestRule({
   fieldRef,
   info,
+  inputs,
   tableKey,
   wsId,
   workflowId,
   flush,
   revision,
 }: {
+  inputs: Array<{ ref: string; info: Pick<FieldInfo, 'type' | 'enumValues'> | undefined }>
   fieldRef: string
   info: { type: 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'date'; enumValues?: string[] } | undefined
   tableKey: string
@@ -220,6 +222,7 @@ function TestRule({
   revision: () => number
 }) {
   const [sample, setSample] = useState<Literal>(() => defaultLiteral(info?.type, info?.enumValues))
+  const [samples, setSamples] = useState<Record<string, Literal>>({})
   const [result, setResult] = useState<DecisionEvaluateResult | null>(null)
   const [error, setError] = useState<ProblemError | null>(null)
   const [pending, setPending] = useState(false)
@@ -232,7 +235,7 @@ function TestRule({
       // The server evaluates the saved draft, so save first.
       const saved = await flush()
       if (!saved) throw new Error('save')
-      setResult(await endpoints.evaluateDecision(wsId, workflowId, tableKey, { revision: revision(), values: { [fieldRef]: sample } }))
+      setResult(await endpoints.evaluateDecision(wsId, workflowId, tableKey, { revision: revision(), values: Object.fromEntries(inputs.map(input => [input.ref, input.ref === fieldRef ? sample : samples[input.ref] ?? defaultLiteral(input.info?.type, input.info?.enumValues)])) }))
     } catch (cause) {
       setError(toProblem(cause))
     } finally {
@@ -245,6 +248,7 @@ function TestRule({
       <h4 className="flex items-center gap-1.5 text-sm font-semibold">
         <FlaskConical className="size-4" aria-hidden="true" /> Test this rule
       </h4>
+      {inputs.filter(input => input.ref !== fieldRef).map(input => <div key={input.ref}><Label htmlFor={`test-${tableKey}-${input.ref}`}>Sample: {input.ref}</Label><LiteralInput id={`test-${tableKey}-${input.ref}`} info={input.info} value={samples[input.ref] ?? defaultLiteral(input.info?.type, input.info?.enumValues)} label={`Sample: ${input.ref}`} onCommit={v => setSamples(old => ({ ...old, [input.ref]: v }))} /></div>)}
       <div className="space-y-1.5">
         <Label htmlFor={`test-${tableKey}`}>Sample value</Label>
         <LiteralInput id={`test-${tableKey}`} info={info} value={sample} label="Sample value" onCommit={setSample} />

@@ -186,6 +186,8 @@ export function describeEvent(event: RunEvent, ctx: EventContext): string {
     }
     case 'TASK_PRIORITY_CHANGED':
       return `${actorName(event, ctx)} changed ${label} priority from ${event.data.from} to ${event.data.to}${str(event.data.reason) ? `: ${str(event.data.reason)}` : ''}`
+    case 'INPUT_CORRECTED':
+      return `${actorName(event,ctx)} corrected ${event.data.fields} request field${event.data.fields===1 ? '' : 's'}${str(event.data.reason) ? `: ${str(event.data.reason)}` : ''}`
     case 'TASK_DECIDED': {
       const action = event.data.action === 'reject' ? 'rejected' : 'approved'
       return `${actorName(event, ctx)} ${action} ${label}`
@@ -211,6 +213,8 @@ export function describeEvent(event: RunEvent, ctx: EventContext): string {
       return `${label} needs attention — an operator has been alerted.`
     case 'OPERATOR_RETRY':
       return `${actorName(event, ctx)} retried ${label}`
+    case 'STEP_FAILED':
+      return `${label} took the workflow's failure path`
     case 'EFFECT_RECONCILED':
       return `${actorName(event, ctx)} confirmed the outcome of ${label}`
     case 'NOTIFICATION_CREATED':
@@ -261,6 +265,8 @@ export function attentionNextStep(reason: string): string {
       return 'Fix or enable the connection address, then retry the step.'
     case 'POLICY_DENIED':
       return 'Restore access, or cancel the request.'
+    case 'RUN_WAITING_ON_NOTHING':
+      return 'Inspect the request and engine history. Cancel it if it cannot safely continue.';
     default:
       return 'Ask engineering to look at it, then retry the step when it is fixed.'
   }

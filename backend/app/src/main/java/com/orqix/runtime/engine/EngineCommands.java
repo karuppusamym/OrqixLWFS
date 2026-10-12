@@ -62,6 +62,11 @@ public class EngineCommands {
         });
     }
 
+    /** Sets request data without retrying or triggering the paused execution. */
+    public void correctInput(String processInstanceId,String inputJson,UUID actor) {
+        as(actor,()-> { runtimeService.setVariable(processInstanceId,ProcessData.INPUT,inputJson); return null; });
+    }
+
     public void unclaim(String taskId, UUID actor) {
         as(actor, () -> {
             taskService.unclaim(taskId);
@@ -134,6 +139,28 @@ public class EngineCommands {
     public boolean hasExecutableOrTimerJob(String processInstanceId) {
         return managementService.createJobQuery().processInstanceId(processInstanceId).count() > 0
                 || managementService.createTimerJobQuery().processInstanceId(processInstanceId).count() > 0;
+    }
+
+    /** Conservative watchdog snapshot: any engine activity or durable job counts as work. */
+    public boolean hasOutstandingWork(String processInstanceId) {
+        if (processInstanceId == null) {
+            return false;
+        }
+        var instance = runtimeService.createProcessInstanceQuery().processInstanceId(processInstanceId).singleResult();
+        if (instance != null && instance.isSuspended()) {
+            return true;
+        }
+        return (instance != null && !runtimeService.getActiveActivityIds(processInstanceId).isEmpty())
+                || taskService.createTaskQuery().processInstanceId(processInstanceId).count() > 0
+                || runtimeService.createEventSubscriptionQuery().processInstanceId(processInstanceId).count() > 0
+                || hasExecutableOrTimerJob(processInstanceId)
+                || managementService.createDeadLetterJobQuery().processInstanceId(processInstanceId).count() > 0
+                || managementService.createSuspendedJobQuery().processInstanceId(processInstanceId).count() > 0;
+    }
+
+    public boolean processExists(String processInstanceId) {
+        return processInstanceId != null
+                && runtimeService.createProcessInstanceQuery().processInstanceId(processInstanceId).count() > 0;
     }
 
     private <T> T as(UUID actor, Supplier<T> action) {

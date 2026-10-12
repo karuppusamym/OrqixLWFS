@@ -207,6 +207,24 @@ final class SimulationRun {
             case Node.Decision n -> decision(n);
             case Node.Branch n -> branch(n);
             case Node.Http n -> http(n);
+            case Node.GenerateDocument n -> {
+                ObjectNode inputs = F.objectNode();
+                boolean missing = false;
+                for (var entry : n.inputMapping().entrySet()) {
+                    Object value = resolve(entry.getValue());
+                    if (value == null) { missing = true; break; }
+                    inputs.set(entry.getKey(), DefaultWorkflowSimulator.json(value));
+                }
+                if (missing) {
+                    stall(n, "TEST_DOCUMENT_FIELD_MISSING", "A mapped document field is missing from this sample request.");
+                    yield null;
+                }
+                Transition t = next(n, Route.NEXT);
+                ObjectNode detail = F.objectNode().put("format", n.format()).put("mappedFieldCount", n.inputMapping().size());
+                add(n, "The workflow would generate a " + n.format().toUpperCase(java.util.Locale.ROOT)
+                        + " document from its pinned template. This test creates no file.", detail, null, t);
+                yield t;
+            }
             case Node.Notification n -> notification(n);
             case Node.ParallelSplit n -> split(n);
             case Node.ParallelJoin n -> {
@@ -332,7 +350,8 @@ final class SimulationRun {
         Map<String, Object> values = new LinkedHashMap<>();
         ArrayNode inputs = d.putArray("inputs");
         for (DecisionTable.Row row : table.rows()) {
-            String ref = row.when().fieldRef();
+            for(Condition term:row.when().compound()?row.when().terms():List.of(row.when())) {
+            String ref = term.fieldRef();
             if (!values.containsKey(ref)) {
                 Object v = resolve(ref);
                 values.put(ref, v);
@@ -341,6 +360,7 @@ final class SimulationRun {
                 in.put("label", info(ref).label());
                 in.set("value", DefaultWorkflowSimulator.json(v));
                 in.put("shown", v == null ? "no value" : Text.value(v, info(ref).money()));
+            }
             }
         }
         DecisionEvaluator.Result result;
@@ -356,7 +376,7 @@ final class SimulationRun {
         ArrayNode rows = d.putArray("rows");
         Integer firstMatch = null;
         for (DecisionTable.Row row : table.rows()) {
-            Boolean matched = matches(row.when(), values.get(row.when().fieldRef()));
+            Boolean matched = row.when().compound()?evaluate(row.when(),F.arrayNode()):matches(row.when(), values.get(row.when().fieldRef()));
             if (Boolean.TRUE.equals(matched) && firstMatch == null) {
                 firstMatch = row.index();
             }
@@ -607,6 +627,9 @@ final class SimulationRun {
                 }
             }
             d.put("failure", failure);
+            if (("EFFECT_REJECTED".equals(reason) || "RESPONSE_INVALID".equals(reason)) && next(n, Route.FAILED) != null) {
+                return knownFailure(n, d, callText + " " + what, reason);
+            }
             stallWith(n, callText + " " + what + " " + consequence, d, reason, what + " " + consequence);
             return null;
         }
@@ -634,6 +657,9 @@ final class SimulationRun {
             String consequence = readOnly ? "The request needs attention. Someone must fix the connection and retry."
                     : "The request needs attention. Someone must check the other system before retrying.";
             d.put("failure", "unknownOutcome");
+            if (readOnly && next(n, Route.FAILED) != null) {
+                return knownFailure(n, d, callText + " " + what, "RESPONSE_INVALID");
+            }
             stallWith(n, callText + " " + what + " " + consequence, d, readOnly ? "RESPONSE_INVALID" : "EFFECT_UNKNOWN",
                     what + " " + consequence);
             return null;
@@ -646,6 +672,22 @@ final class SimulationRun {
                 + outputsText(out) + ".";
         add(n, callText + " " + returns, d, out, t);
         return t;
+    }
+
+    /** Only known rejections and unusable read-only answers take the authored failure route. */
+    private Transition knownFailure(Node.Http n, ObjectNode details, String description, String reason) {
+        String kind = "EFFECT_REJECTED".equals(reason) ? "rejected" : "invalidResponse";
+        String message = "rejected".equals(kind) ? "The external system rejected the request."
+                : "The external system returned an unusable response.";
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("failureKind", kind);
+        out.put("failureHttpStatus", "rejected".equals(kind) ? 400 : 0);
+        out.put("failureMessage", message);
+        steps.put(n.id(), out);
+        details.put("routed", true);
+        Transition route = next(n, Route.FAILED);
+        add(n, description + " The workflow takes its authored failure path.", details, out, route);
+        return route;
     }
 
     private static JsonNode pointer(JsonNode body, String pointer) {

@@ -19,7 +19,8 @@ public enum Permission {
     CONNECTION_MANAGE("connection.manage"),
     WORKSPACE_MANAGE_ACCESS("workspace.manage-access"),
     AUDIT_READ("audit.read"),
-    MESSAGE_SEND("message.send");
+    MESSAGE_SEND("message.send"),
+    DOCUMENT_BROWSE("document.browse");
 
     private final String value;
 

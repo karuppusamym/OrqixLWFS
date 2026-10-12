@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { PURCHASE_WORKFLOW_ID, USERS } from '@/mocks/state'
 import { renderApp, signInAs, WS } from '@/test/utils'
+import { http, HttpResponse } from 'msw'
+import { server } from '@/test/server'
 
 const EDIT = `/w/${WS}/workflows/${PURCHASE_WORKFLOW_ID}/edit`
 
@@ -23,6 +25,29 @@ configure({ asyncUtilTimeout: 15000 })
 
 describe('Test this workflow (panel)', () => {
   beforeEach(() => window.localStorage.clear())
+
+  it('shares valid expected cases and records an exact-draft publication result', async () => {
+    let saved: unknown
+    let tested: unknown
+    const path = '*/api/v1/workspaces/:ws/workflows/:wf/test-suite'
+    server.use(
+      http.get(path, () => HttpResponse.json({ version: 2, cases: [] })),
+      http.put(path, async ({ request }) => { saved = await request.json(); return HttpResponse.json({ version: 3, cases: [] }) }),
+      http.post(`${path}/run`, async ({ request }) => { tested = await request.json(); return HttpResponse.json({ suiteVersion: 3, revision: 1, passed: true, results: [{ id: 'saved', passed: true, status: 'finished' }] }) }),
+    )
+    signInAs('dana.designer')
+    const user = userEvent.setup()
+    renderApp(EDIT)
+    const panel = await openPanel(user)
+    await user.click(within(panel).getByTestId('run-test'))
+    await within(panel).findByTestId('test-outcome')
+    await user.type(within(panel).getByLabelText(/Keep this case/), 'Shared purchase')
+    await user.click(within(panel).getByRole('button', { name: 'Save case' }))
+    await user.click(within(panel).getByRole('button', { name: 'Share and test for publication' }))
+    await waitFor(() => expect(within(panel).getByTestId('case-notice')).toHaveTextContent('This exact draft satisfies'))
+    expect(saved).toMatchObject({ expectedVersion: 2, cases: [{ name: 'Shared purchase', expect: 'Fulfilled', input: { amount: 1000 } }] })
+    expect(tested).toEqual({ revision: 1, suiteVersion: 3 })
+  }, 90000)
 
   it('runs the sample request, explains each step in business words and says what was covered', async () => {
     signInAs('dana.designer')

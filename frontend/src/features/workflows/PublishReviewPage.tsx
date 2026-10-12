@@ -312,6 +312,7 @@ export function PublishReviewPage() {
               <Textarea id="release-note" value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000} rows={2} />
             </div>
             {error && describeProblem(error).behavior !== 'open-validation' ? <ProblemAlert error={error} onRetry={describeProblem(error).retryable ? () => void publish() : undefined} retrying={pending} /> : null}
+            {error?.code === 'WORKFLOW_INVALID' && error.issues.length === 0 && error.detail ? <Alert tone="warning" title="Publication requirement">{error.detail}</Alert> : null}
             {error && describeProblem(error).behavior === 'open-validation' ? (
               <Alert tone="danger" title="The server found problems">
                 {describeProblem(error).message} The list above shows what to fix.

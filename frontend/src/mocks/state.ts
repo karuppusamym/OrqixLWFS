@@ -119,7 +119,7 @@ export function userById(id: string): MockUser | undefined {
 
 export function permissionsOf(user: MockUser, wsId: string): Permission[] {
   const roles = MEMBERSHIPS[user.username]?.[wsId] ?? []
-  return [...new Set(roles.flatMap((r) => ROLE_PERMISSIONS[r] ?? []))]
+  return [...new Set([...roles.flatMap((r) => ROLE_PERMISSIONS[r] ?? []), ...(db.documentBrowseGrants?.some((grant) => grant.wsId === wsId && grant.subjectId === user.id) ? ['document.browse' as const] : [])])]
 }
 
 export function isMember(user: MockUser, wsId: string): boolean {
@@ -199,6 +199,8 @@ export interface MockWorkflow {
   updatedAt: string
   /** Set when the draft was created by converting an imported source (maker-checker governance). */
   migration?: { migrationId: string; mapperId: string | null }
+  testSuite?: components['schemas']['WorkflowTestSuite']
+  testPass?: { version: number; revision: number; passed: boolean; dependencies: string }
 }
 
 export interface MockEvent {
@@ -340,7 +342,17 @@ export interface MockMigrationReview {
 
 export type ProcurementFault = 'none' | 'failOnce' | 'unknown' | 'down' | 'rejected'
 
+export interface MockDocumentSource {
+  wsId: string
+  grant: components['schemas']['DocumentSourceGrant']
+  files: Array<{ itemId: string; name: string; size: number; contentType: string }>
+  versions: Record<string, Array<{ versionId: string; size: number; lastModifiedDateTime: string; newestListed: boolean }>>
+}
+
 export interface MockDb {
+  documentSources?: Map<string, MockDocumentSource>
+  documentBrowseGrants?: Array<{ wsId: string; subjectId: string }>
+
   migrations: Map<string, MockMigration>
   migrationProjects: Map<string, MockMigrationProject>
   /** Workspace id -> independent-review policy (absent = never set). */

@@ -42,6 +42,36 @@ tags:
   - name: Attachments
 
 paths:
+  /workspaces/{workspaceId}/runs/{runId}/correct-input:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+    post:
+      tags: [Runs]
+      operationId: correctRunInput
+      summary: Correct explicitly editable input before prior data consumption
+      description: Requires fresh run.operate and request-data visibility. Only needsAttention runs without effects, active jobs/timers or preceding data consumers can be corrected. Updates projection and process input atomically; does not retry. Values and reason in the timeline require request-data permission; audit stores counts/version only.
+      x-orqix-permission: run.operate
+      x-orqix-audit: run.input-corrected
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CorrectRunInputRequest' }
+      responses:
+        '200':
+          description: Corrected, or stable acceptance metadata on an identical replay
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RunInputCorrection' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
   /workspaces/{workspaceId}/migration-policy:
     parameters:
     - $ref: '#/components/parameters/WorkspaceId'
@@ -640,6 +670,85 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/workflows/{workflowId}/test-suite:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+    get:
+      tags: [Workflows]
+      operationId: getWorkflowTestSuite
+      summary: Read designer-only shared test samples
+      x-orqix-permission: workflow.edit
+      responses:
+        '200':
+          description: Shared suite
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkflowTestSuite' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+    put:
+      tags: [Workflows]
+      operationId: saveWorkflowTestSuite
+      summary: Save an immutable shared test suite revision
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: workflow.tests.saved
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SaveWorkflowTestSuite' }
+      responses:
+        '200':
+          description: Shared suite
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkflowTestSuite' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /workspaces/{workspaceId}/workflows/{workflowId}/test-suite/run:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+    post:
+      tags: [Workflows]
+      operationId: runWorkflowTestSuite
+      summary: Test the exact draft and current shared suite; retain count-only pass/fail results
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: workflow.tests.run
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RunWorkflowTestSuite' }
+      responses:
+        '200':
+          description: Test report
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkflowTestReport' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
 
   /workspaces/{workspaceId}/workflows/{workflowId}/simulate:
     parameters:
@@ -1962,7 +2071,7 @@ paths:
               additionalProperties: false
               required: [permission, principal]
               properties:
-                permission: { type: string, enum: [workflow.start, connection.manage, message.send] }
+                permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse] }
                 workflowId:
                   description: Restrict workflow.start to one workflow; omit for workspace-wide (connection.manage and message.send are always workspace-wide).
                   oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }]
@@ -2260,6 +2369,175 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
 
+  /workspaces/{workspaceId}/document-sources:
+    parameters:
+    - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags:
+      - Connections
+      operationId: listDocumentSources
+      x-orqix-permission: document.browse
+      responses:
+        '200':
+          description: Approved document resource
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 50
+                items:
+                  $ref: '#/components/schemas/DocumentSource'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /workspaces/{workspaceId}/document-sources/grants:
+    parameters:
+    - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags:
+      - Connections
+      operationId: listDocumentSourceGrants
+      x-orqix-permission: workspace.manage-access
+      responses:
+        '200':
+          description: Approved document resource
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 50
+                items:
+                  $ref: '#/components/schemas/DocumentSourceGrant'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /workspaces/{workspaceId}/document-sources/grants/{sourceId}:
+    parameters:
+    - $ref: '#/components/parameters/WorkspaceId'
+    - name: sourceId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    put:
+      tags:
+      - Connections
+      operationId: putDocumentSourceGrant
+      x-orqix-permission: workspace.manage-access
+      x-orqix-audit: document.source.updated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PutDocumentSourceGrant'
+      responses:
+        '200':
+          description: Approved document resource
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentSourceGrant'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '400':
+          description: Invalid input or stale resource revision
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '412':
+          description: Invalid input or stale resource revision
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /workspaces/{workspaceId}/document-sources/{sourceId}/files:
+    parameters:
+    - $ref: '#/components/parameters/WorkspaceId'
+    - name: sourceId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      tags:
+      - Connections
+      operationId: listDocumentSourceFiles
+      x-orqix-permission: document.browse
+      responses:
+        '200':
+          description: Approved document resource
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentSourceFiles'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          description: Approved source is unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /workspaces/{workspaceId}/document-sources/{sourceId}/files/{itemId}/versions:
+    parameters:
+    - $ref: '#/components/parameters/WorkspaceId'
+    - name: sourceId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: itemId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 200
+        pattern: ^[A-Za-z0-9!._~-]+$
+    get:
+      tags:
+      - Connections
+      operationId: listDocumentSourceFileVersions
+      x-orqix-permission: document.browse
+      responses:
+        '200':
+          description: Approved document resource
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentSourceVersions'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          description: Approved source is unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
 components:
   securitySchemes:
     sessionCookie:
@@ -2422,6 +2700,31 @@ components:
       content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } }
 
   schemas:
+    CorrectRunInputRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, reason, changes]
+      properties:
+        expectedVersion: { type: integer, minimum: 1 }
+        reason: { type: string, minLength: 1, maxLength: 500 }
+        changes:
+          type: object
+          minProperties: 1
+          maxProperties: 30
+          additionalProperties:
+            oneOf:
+              - { type: string }
+              - { type: number }
+              - { type: boolean }
+    RunInputCorrection:
+      type: object
+      additionalProperties: false
+      required: [runId, version, fields, replayed]
+      properties:
+        runId: { $ref: '#/components/schemas/Uuid' }
+        version: { type: integer, minimum: 1 }
+        fields: { type: integer, minimum: 1, maximum: 30 }
+        replayed: { type: boolean }
     MigrationPolicy:
       type: object
       additionalProperties: false
@@ -2743,7 +3046,159 @@ components:
       enum: [running, waiting, needsAttention, completed, cancelled]
     OutcomeKind:
       type: string
-      enum: [success, rejected]
+      enum: [success, rejected, failed]
+    DocumentSource:
+      type: object
+      required:
+      - id
+      - label
+      - connectionKey
+      - definitionVersion
+      - driveId
+      - folderId
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        label:
+          type: string
+        connectionKey:
+          type: string
+        definitionVersion:
+          type: integer
+        driveId:
+          type: string
+        folderId:
+          type: string
+      additionalProperties: false
+    DocumentSourcePrincipal:
+      type: object
+      required:
+      - type
+      - value
+      properties:
+        type:
+          enum:
+          - subject
+          - idpGroup
+        value:
+          type: string
+          minLength: 1
+          maxLength: 256
+      additionalProperties: false
+    DocumentSourceGrant:
+      type: object
+      required:
+      - source
+      - browseOperation
+      - versionsOperation
+      - audience
+      - enabled
+      - revision
+      properties:
+        source:
+          $ref: '#/components/schemas/DocumentSource'
+        browseOperation:
+          type: string
+        versionsOperation:
+          type: string
+        audience:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/DocumentSourcePrincipal'
+        enabled:
+          type: boolean
+        revision:
+          type: integer
+          minimum: 1
+      additionalProperties: false
+    PutDocumentSourceGrant:
+      type: object
+      required:
+      - label
+      - connectionKey
+      - definitionVersion
+      - browseOperation
+      - versionsOperation
+      - driveId
+      - folderId
+      - audience
+      - enabled
+      - expectedRevision
+      properties:
+        label:
+          type: string
+        connectionKey:
+          type: string
+        definitionVersion:
+          type: integer
+        driveId:
+          type: string
+        folderId:
+          type: string
+        browseOperation:
+          type: string
+        versionsOperation:
+          type: string
+        audience:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/DocumentSourcePrincipal'
+        enabled:
+          type: boolean
+        expectedRevision:
+          type: integer
+          minimum: 0
+          maximum: 2147483646
+      additionalProperties: false
+    DocumentSourceFiles:
+      type: object
+      required:
+      - driveId
+      - folderId
+      - filesJson
+      - fileCount
+      - hasMore
+      properties:
+        driveId:
+          type: string
+        folderId:
+          type: string
+        filesJson:
+          type: string
+        fileCount:
+          type: integer
+          minimum: 0
+          maximum: 100
+        hasMore:
+          const: false
+      additionalProperties: false
+    DocumentSourceVersions:
+      type: object
+      required:
+      - driveId
+      - itemId
+      - versionsJson
+      - versionCount
+      - hasMore
+      properties:
+        driveId:
+          type: string
+        itemId:
+          type: string
+        versionsJson:
+          type: string
+        versionCount:
+          type: integer
+          minimum: 0
+          maximum: 100
+        hasMore:
+          const: false
+      additionalProperties: false
+
     Permission:
       type: string
       enum:
@@ -2761,6 +3216,7 @@ components:
         - workspace.manage-access
         - audit.read
         - message.send
+        - document.browse
     WorkspaceRole:
       type: string
       enum: [WORKSPACE_ADMIN, WORKFLOW_DESIGNER, PUBLISHER, OPERATOR, VIEWER, APPROVER]
@@ -2824,6 +3280,7 @@ components:
             - MIGRATION_BLOCKED
             - ATTACHMENT_BLOCKED
             - ATTACHMENT_LIMIT_REACHED
+            - INTERNAL_ERROR
         correlationId: { type: string }
         fieldErrors:
           type: array
@@ -3041,6 +3498,56 @@ components:
         usedDefault: { type: boolean }
         output: { type: object, additionalProperties: { type: [string, number, boolean] } }
 
+    WorkflowTestCase:
+      type: object
+      additionalProperties: false
+      required: [id, name, input, expect]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 80 }
+        name: { type: string, minLength: 1, maxLength: 120 }
+        input: { type: object, additionalProperties: true }
+        scenario: { $ref: '#/components/schemas/SimulationScenario' }
+        expect: { type: string, minLength: 1, maxLength: 200, description: 'Expected business outcome, or __needsAttention__' }
+    WorkflowTestSuite:
+      type: object
+      additionalProperties: false
+      required: [version, cases]
+      properties:
+        version: { type: integer, minimum: 0 }
+        cases: { type: array, maxItems: 20, items: { $ref: '#/components/schemas/WorkflowTestCase' } }
+    SaveWorkflowTestSuite:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, cases]
+      properties:
+        expectedVersion: { type: integer, minimum: 0 }
+        cases: { type: array, maxItems: 20, items: { $ref: '#/components/schemas/WorkflowTestCase' } }
+    RunWorkflowTestSuite:
+      type: object
+      additionalProperties: false
+      required: [revision, suiteVersion]
+      properties:
+        revision: { type: integer, minimum: 1 }
+        suiteVersion: { type: integer, minimum: 1 }
+    WorkflowTestReport:
+      type: object
+      additionalProperties: false
+      required: [suiteVersion, revision, passed, results]
+      properties:
+        suiteVersion: { type: integer, minimum: 1 }
+        revision: { type: integer, minimum: 1 }
+        passed: { type: boolean }
+        results:
+          type: array
+          maxItems: 20
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, passed, status]
+            properties:
+              id: { type: string }
+              passed: { type: boolean }
+              status: { type: string, enum: [finished, needsAttention, invalid] }
     SimulateRequest:
       type: object
       additionalProperties: false
@@ -3300,7 +3807,7 @@ components:
       properties:
         nodeId: { type: string }
         label: { type: string }
-        kind: { type: string, enum: [approval, http, wait, child] }
+        kind: { type: string, enum: [approval, http, wait, child, generateDocument] }
         messageName: { type: [string, 'null'], description: 'Set while the step (kind wait) waits for this message (docs/build/S16).' }
         since: { $ref: '#/components/schemas/Timestamp' }
         candidateGroup: { type: [string, 'null'] }
@@ -3312,8 +3819,8 @@ components:
       properties:
         reason:
           type: string
-          enum: [RETRIES_EXHAUSTED, EFFECT_UNKNOWN, EFFECT_REJECTED, RESPONSE_INVALID, CONNECTION_UNAVAILABLE, POLICY_DENIED, INTERNAL_ERROR]
-        nodeId: { type: string }
+          enum: [RETRIES_EXHAUSTED, EFFECT_UNKNOWN, EFFECT_REJECTED, RESPONSE_INVALID, CONNECTION_UNAVAILABLE, POLICY_DENIED, INTERNAL_ERROR, RUN_WAITING_ON_NOTHING]
+        nodeId: { type: [string, 'null'] }
         effectId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }] }
         message: { type: string, description: 'Business-readable, redacted' }
         since: { $ref: '#/components/schemas/Timestamp' }
@@ -3589,7 +4096,7 @@ components:
         id: { type: string }
         from: { type: string }
         to: { type: string }
-        on: { type: string, enum: [next, approved, rejected, timedOut, condition, default] }
+        on: { type: string, enum: [next, approved, rejected, timedOut, failed, condition, default] }
         label: { type: [string, 'null'], description: The designer's route label. Conditions are never included. }
     PathVisit:
       type: object
@@ -3601,7 +4108,7 @@ components:
         leftAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
         outcome:
           oneOf:
-            - { type: string, enum: [approved, rejected, timedOut, completed, cancelled] }
+            - { type: string, enum: [approved, rejected, timedOut, failed, completed, cancelled] }
             - { type: 'null' }
           description: Null while the request is still at the step.
     PathCurrent:
@@ -3610,7 +4117,7 @@ components:
       properties:
         nodeId: { type: string }
         label: { type: string }
-        kind: { type: string, enum: [approval, http, wait, child] }
+        kind: { type: string, enum: [approval, http, wait, child, generateDocument] }
         status: { type: string, enum: [waiting, running, needsAttention] }
         since: { $ref: '#/components/schemas/Timestamp' }
         candidateGroup: { type: [string, 'null'] }
@@ -3686,7 +4193,7 @@ components:
         runId: { $ref: '#/components/schemas/Uuid' }
         reference: { type: string }
         workflow: { $ref: '#/components/schemas/InsightsWorkflow' }
-        reason: { type: string, enum: [RETRIES_EXHAUSTED, EFFECT_UNKNOWN, EFFECT_REJECTED, RESPONSE_INVALID, CONNECTION_UNAVAILABLE, POLICY_DENIED, INTERNAL_ERROR] }
+        reason: { type: string, enum: [RETRIES_EXHAUSTED, EFFECT_UNKNOWN, EFFECT_REJECTED, RESPONSE_INVALID, CONNECTION_UNAVAILABLE, POLICY_DENIED, INTERNAL_ERROR, RUN_WAITING_ON_NOTHING] }
         since: { $ref: '#/components/schemas/Timestamp' }
         stepLabel: { type: [string, 'null'] }
     InsightsTimeout:
@@ -4035,7 +4542,7 @@ components:
       required: [id, permission, workflowId, principal, createdAt]
       properties:
         id: { $ref: '#/components/schemas/Uuid' }
-        permission: { type: string, enum: [workflow.start, connection.manage, message.send] }
+        permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse] }
         workflowId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }] }
         principal: { $ref: '#/components/schemas/Principal' }
         createdAt: { $ref: '#/components/schemas/Timestamp' }

@@ -91,7 +91,9 @@ def main():
     check("a: the request starts with its files", started.status_code == 201, f"{started.status_code} {started.text[:300]}")
     run = started.json()
     run_id = run["id"]
-    check("f: the request starts in stage 1 of 3", run.get("stage", {}).get("index") == 1
+    # Stage projection is finalized at commit; inspect the committed run rather than the pre-commit start DTO.
+    run = base.wait_run(rhea, ws, run_id, lambda current: bool(current.get("stage")), timeout=20)
+    check("f: the request starts in stage 1 of 3", (run.get("stage") or {}).get("index") == 1
           and run["stage"]["total"] == 3 and run["stage"]["dueAt"], str(run.get("stage")))
 
     # b: list and download
@@ -152,10 +154,15 @@ def main():
     kinds = [e["type"] + ":" + e["data"].get("stageId", "") for e in events(rhea, ws, run_id) if e["type"].startswith("STAGE")]
     check("f: the timeline shows each stage change once", kinds == ["STAGE_ENTERED:intake", "STAGE_COMPLETED:intake",
                                                                   "STAGE_ENTERED:assessment"], str(kinds))
-    cancelled = rhea.post(f"/workspaces/{ws}/runs/{run_id}/cancel", {"reason": "e2e cleanup",
+    operator = Client("olga.operator")
+    cancelled = operator.post(f"/workspaces/{ws}/runs/{run_id}/cancel", {"reason": "e2e cleanup",
                                                                       "expectedVersion": detail["version"]}, idem=True)
-    print("cleanup cancel:", cancelled.status_code)
+    check("cleanup: an operator cancels the test request", cancelled.status_code == 200, str(cancelled.status_code))
     print("scenario 50 done")
+    failures = [name for name, passed in base.results if not passed]
+    print(f"scenario 50: {len(base.results) - len(failures)} passed, {len(failures)} failed")
+    if failures:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

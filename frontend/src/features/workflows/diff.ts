@@ -29,7 +29,7 @@ function describeRow(row: DecisionRow): string {
   const outputs = Object.entries(row.then)
     .map(([k, v]) => `${k} = ${String(v)}`)
     .join(', ')
-  return `${row.when.fieldRef} ${OPERATOR_LABEL[row.when.operator]} ${String(row.when.value)} → ${outputs}`
+  return `${describeCondition(row.when)} → ${outputs}`
 }
 
 function describeCondition(condition: Condition | undefined): string {

@@ -23,6 +23,7 @@ import { describeProblem, fieldErrorMap } from '@/lib/problemMessages'
 import { EFFECT_CLASS_LABEL } from '@/features/runs/operatorText'
 import { AgentTest } from './AgentTest'
 import { AGENT_USES_AI, AiAgentBadge } from './AgentSpecView'
+import { DocumentFolderPicker } from './DocumentFolderPicker'
 import { DocumentVersionPicker, type DocumentOperation } from './DocumentVersionPicker'
 
 export function ConnectionsPanel() {
@@ -267,6 +268,7 @@ export function TestConnection({ connection, detail }: { connection: ConnectionS
   const definition = detail.definitions.find((item) => item.version === connection.latestVersion)?.definition
   const definitions = definition?.operations as Record<string, DocumentOperation> | undefined
   const operationSchema = definitions?.[operation]?.requestSchema
+  const folderOperation = testable.find((entry) => definitions?.[entry.name]?.path === '/browseFolder')
   const versionOperation = testable.find((entry) => definitions?.[entry.name]?.path === '/versions')
   const documentFields = Object.keys(operationSchema?.properties ?? { driveId: {}, itemId: {}, versionId: {} })
   const requiredFields = operationSchema?.required ?? documentFields
@@ -314,6 +316,15 @@ export function TestConnection({ connection, detail }: { connection: ConnectionS
                   }} autoComplete="off" spellCheck={false} />}
                 </FormField>
               ))}
+              {documentFields.includes('itemId') && folderOperation ? <DocumentFolderPicker
+                key={`${workspace.id}:${connection.key}:${connection.latestVersion}:${operation}:${documentRef.driveId}`}
+                workspaceId={workspace.id} connectionKey={connection.key} connectionVersion={connection.latestVersion}
+                operation={folderOperation.name} driveId={documentRef.driveId?.trim() ?? ''}
+                approvedDrives={definitions?.[folderOperation.name]?.requestSchema?.properties?.driveId?.enum ?? []}
+                approvedFolders={definitions?.[folderOperation.name]?.requestSchema?.properties?.folderId?.enum ?? []}
+                enabled={connection.binding.configured && connection.binding.enabled && !pending}
+                onSelect={(itemId) => { setDocumentRef({ ...documentRef, itemId, versionId: '', snapshotId: '' }); setResult(null) }}
+              /> : null}
               {documentFields.includes('versionId') && versionOperation ? <DocumentVersionPicker
                 key={`${workspace.id}:${connection.key}:${connection.latestVersion}:${operation}:${documentRef.driveId}:${documentRef.itemId}`}
                 workspaceId={workspace.id} connectionKey={connection.key} connectionVersion={connection.latestVersion}

@@ -1,5 +1,5 @@
 import type { Effect, Run, RunDetail, TaskDecision, TaskSummary } from '@/api/types'
-import { isAtomicCondition, type Condition, type Definition, type Literal, type WorkflowNode } from '@/features/studio/model/types'
+import { conditionTerms, isAtomicCondition, type Condition, type Definition, type Literal, type WorkflowNode } from '@/features/studio/model/types'
 import { nodeById, outgoing } from '@/features/studio/model/graph'
 import { dateWaitDue } from './dateWait'
 import { reconcileStages, stageOfNode, stageProgress } from './stages'
@@ -88,7 +88,7 @@ export function evaluateTable(
   values: Record<string, Literal | undefined>,
 ): { matchedRow: number | null; usedDefault: boolean; output: Record<string, Literal> } {
   for (const [i, row] of table.rows.entries()) {
-    if (evaluateCondition(row.when, values[row.when.fieldRef])) return { matchedRow: i, usedDefault: false, output: row.then }
+    if (conditionTerms(row.when).every(term => evaluateCondition(term, values[term.fieldRef]))) return { matchedRow: i, usedDefault: false, output: row.then }
   }
   return { matchedRow: null, usedDefault: true, output: table.default }
 }
@@ -291,14 +291,14 @@ function advanceFrom(run: MockRun, nodeId: string): void {
         const table = def.decisions.find((d) => d.key === node.config.decisionRef)
         if (!table) return
         const values: Record<string, Literal | undefined> = {}
-        for (const row of table.rows) values[row.when.fieldRef] = resolveRef(run, row.when.fieldRef)
+        for (const row of table.rows) for (const term of conditionTerms(row.when)) values[term.fieldRef] = resolveRef(run, term.fieldRef)
         const result = evaluateTable(table, values)
         run.steps[node.id] = result.output
         addEvent(run, 'DECISION_EVALUATED', {
           nodeId: node.id,
           data: { label: node.label, decisionKey: table.key, version: table.version, matched: result.usedDefault ? 'default' : `r${(result.matchedRow ?? 0) + 1}`, outputs: result.output, evidence: {
             inputs: Object.entries(values).map(([fieldRef,value]) => ({fieldRef,value})),
-            rows: table.rows.map((row,index) => ({rowId:`r${index+1}`,condition:row.when,matched:evaluateCondition(row.when,values[row.when.fieldRef]),selected:index===result.matchedRow})),
+            rows: table.rows.map((row,index) => ({rowId:`r${index+1}`,condition:row.when,matched:conditionTerms(row.when).every(term => evaluateCondition(term,values[term.fieldRef])),selected:index===result.matchedRow})),
             defaultSelected:result.usedDefault,
           } },
         })
@@ -662,9 +662,14 @@ export function requestTitleOf(run: MockRun): string | null {
 }
 
 /** The rule for request data (docs/build/S3-api.md section 3 rule 4): the initiator, a task participant, or run.read-data. */
+export function hasTaskSkills(run: MockRun, task: MockTask, user: MockUser): boolean {
+  const required = nodeById(currentRelease(run).definition, task.nodeId)?.config.requiredSkills
+  return !Array.isArray(required) || required.every(skill => typeof skill === 'string' && inGroup(user,skill))
+}
+
 export function isRunParticipant(run: MockRun, user: MockUser): boolean {
   const permissions = permissionsOf(user,run.wsId)
-  return run.tasks.some((t) => t.assigneeId === user.id || t.completedById === user.id || t.status === 'open' && permissions.includes('task.act') && inGroup(user,t.candidateGroup) && (run.initiatorId !== user.id || selfApprovalAllowed(run,currentRelease(run))))
+  return run.tasks.some((t) => t.assigneeId === user.id || t.completedById === user.id || t.status === 'open' && permissions.includes('task.act') && inGroup(user,t.candidateGroup) && hasTaskSkills(run,t,user) && (run.initiatorId !== user.id || selfApprovalAllowed(run,currentRelease(run))))
 }
 
 export function canSeeRunData(run: MockRun, user: MockUser): boolean {

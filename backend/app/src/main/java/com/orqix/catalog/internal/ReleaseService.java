@@ -67,6 +67,7 @@ public class ReleaseService {
     private final CompileContextFactory contexts;
     private final AgentAvailabilityCheck agentCheck;
     private final MigrationGovernance migrationGovernance;
+    private final TestSuiteService tests;
     private final EngineDeployer deployer;
     private final IdempotencyService idempotency;
     private final ConnectionService connections;
@@ -78,7 +79,9 @@ public class ReleaseService {
     public ReleaseService(CatalogStore store, WorkflowService workflows, PolicyService policy, SubjectService subjects,
             WorkflowCompiler compiler, CompileContextFactory contexts, EngineDeployer deployer,
             IdempotencyService idempotency, ConnectionService connections, AuditWriter audit, CursorCodec cursors,
-            Json json, Clock clock, AgentAvailabilityCheck agentCheck, MigrationGovernance migrationGovernance) {
+            Json json, Clock clock, AgentAvailabilityCheck agentCheck, MigrationGovernance migrationGovernance,
+            TestSuiteService tests) {
+        this.tests = tests;
         this.migrationGovernance = migrationGovernance;
         this.agentCheck = agentCheck;
         this.store = store;
@@ -143,6 +146,7 @@ public class ReleaseService {
                     .with("issues", WorkflowService.issues(e.report().issues()));
         }
 
+        tests.requirePublish(workspaceId, workflowId, draft.revision(), compiled);
         int number = store.nextReleaseNumber(workspaceId, workflowId);
         Map<String, byte[]> resources = new LinkedHashMap<>();
         resources.put("process.bpmn20.xml", compiled.bpmnXml().getBytes(StandardCharsets.UTF_8));

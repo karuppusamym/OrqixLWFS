@@ -54,8 +54,8 @@ public final class ProcessData {
      */
     public static JsonNode resolve(VariableScope scope, Json json, String fieldRef) {
         String[] parts = fieldRef.split("/");
-        if (parts.length == 3 && "input".equals(parts[1])) {
-            return input(scope, json).path(parts[2]);
+        if (fieldRef.startsWith("/input/")) {
+            return com.orqix.compiler.InputValues.resolve(input(scope, json), fieldRef);
         }
         if (parts.length == 4 && "steps".equals(parts[1])) {
             return step(scope, json, parts[2]).map(node -> node.path(parts[3]))

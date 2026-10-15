@@ -539,7 +539,7 @@ export function applyFields(def: Definition, fields: FormFieldModel[]): Definiti
   next.inputSchema = { type: 'object', additionalProperties: false, required, properties }
   next.inputUi = { ...next.inputUi, order: fields.map((f) => f.key), widgets, currency: 'USD' }
   for (const name of ['visibleWhen', 'requiredWhen'] as const) if (next.inputUi[name]) next.inputUi[name] = Object.fromEntries(Object.entries(next.inputUi[name]!).filter(([key]) => key in properties))
-  if (next.inputUi.layout?.sections) next.inputUi.layout.sections = next.inputUi.layout.sections.map(section => ({ ...section, fields: section.fields.filter(key => key in properties) })).filter(section => section.fields.length > 0)
+  if (next.inputUi.layout?.sections) next.inputUi.layout.sections = next.inputUi.layout.sections.map(section => ({ ...section, fields: section.fields.filter(key => key in properties) }))
   return sameJson(next.inputSchema, def.inputSchema) && sameJson(next.inputUi, def.inputUi) ? def : next
 }
 
@@ -569,7 +569,7 @@ export function renameFieldKey(def: Definition, oldKey: string, newKey: string):
   }
   for (const section of prepared.inputUi?.layout?.sections ?? []) section.fields = section.fields.map(key => key === oldKey ? newKey : key)
   const next = clone(applyFields(prepared, fields))
-  rewriteRefs(next, (ref) => (ref === `/input/${oldKey}` ? `/input/${newKey}` : ref))
+  rewriteRefs(next, (ref) => (ref === `/input/${oldKey}` || ref.startsWith(`/input/${oldKey}/`) ? `/input/${newKey}${ref.slice(`/input/${oldKey}`.length)}` : ref))
   return { ok: true, def: next }
 }
 

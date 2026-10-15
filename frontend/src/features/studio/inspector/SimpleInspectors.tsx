@@ -190,6 +190,7 @@ export function EndInspector({ node }: { node: WorkflowNode }) {
             >
               <option value="success">Successful</option>
               <option value="rejected">Rejected</option>
+              <option value="failed">Failed</option>
             </Select>
           )}
         </FormField>

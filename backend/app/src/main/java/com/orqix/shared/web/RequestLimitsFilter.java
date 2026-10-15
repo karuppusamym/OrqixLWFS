@@ -30,6 +30,7 @@ import com.orqix.shared.problem.ProblemWriter;
 public class RequestLimitsFilter extends OncePerRequestFilter {
 
     private static final Pattern DRAFT_PATH = Pattern.compile("^/api/v1/workspaces/[^/]+/workflows/[^/]+/draft$");
+    private static final Pattern OPENAPI_REVIEW_PATH = Pattern.compile("^/api/v1/workspaces/[^/]+/connections/import-openapi$");
     /** Multipart file uploads (docs/build/S17): the form-request upload and the upload to a request. */
     private static final Pattern ATTACHMENT_UPLOAD_PATH = Pattern
             .compile("^/api/v1/workspaces/[^/]+/(attachment-uploads|runs/[^/]+/attachments)$");
@@ -61,6 +62,7 @@ public class RequestLimitsFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         boolean upload = "POST".equals(request.getMethod()) && ATTACHMENT_UPLOAD_PATH.matcher(request.getRequestURI()).matches();
         long limit = upload ? attachments.maxFileBytes() + MULTIPART_ENVELOPE
+                : OPENAPI_REVIEW_PATH.matcher(request.getRequestURI()).matches() ? 4_194_304
                 : MIGRATION_UPLOAD_PATH.matcher(request.getRequestURI()).matches() ? 2_097_152
                 : DRAFT_PATH.matcher(request.getRequestURI()).matches() || MIGRATION_CONVERT_PATH.matcher(request.getRequestURI()).matches()
                 ? properties.limits().draftMaxBytes() + DRAFT_ENVELOPE

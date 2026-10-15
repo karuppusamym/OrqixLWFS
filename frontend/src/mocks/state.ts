@@ -240,7 +240,7 @@ export interface MockRun {
   initiatorId: string
   lifecycle: 'running' | 'waiting' | 'needsAttention' | 'completed' | 'cancelled'
   outcome: string | null
-  outcomeKind: 'success' | 'rejected' | null
+  outcomeKind: components['schemas']['OutcomeKind'] | null
   input: Record<string, unknown>
   output: Record<string, unknown> | null
   steps: Record<string, Record<string, unknown>>

@@ -1848,6 +1848,34 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
 
+  /workspaces/{workspaceId}/connections/import-openapi:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    post:
+      tags: [Connections]
+      operationId: reviewOpenApiConnection
+      summary: Review a local OpenAPI file and explicitly choose operations and retry behavior
+      description: No remote references or servers are fetched. Returns a candidate definition; registration and workspace binding use the existing separate APIs. Source is limited to 2 MiB UTF-8, with a 4 MiB encoded request limit.
+      x-orqix-permission: connection.manage
+      x-orqix-audit: connection.openapi-reviewed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OpenApiReviewRequest' }
+      responses:
+        '200':
+          description: Bounded review report and an optional candidate definition
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OpenApiReviewResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
   /workspaces/{workspaceId}/connections:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
     get:
@@ -3047,6 +3075,82 @@ components:
     OutcomeKind:
       type: string
       enum: [success, rejected, failed]
+    OpenApiReviewRequest:
+      type: object
+      additionalProperties: false
+      required: [source]
+      properties:
+        source: { type: string, minLength: 1, maxLength: 2097152 }
+        fileName: { type: string, maxLength: 200 }
+        key: { type: string, pattern: '^[a-z][a-z0-9-]{0,62}[a-z0-9]$' }
+        version: { type: integer, minimum: 1 }
+        name: { type: string, minLength: 1, maxLength: 100 }
+        description: { type: string, maxLength: 2000 }
+        confirmEffects: { type: boolean, default: false }
+        selections:
+          type: array
+          maxItems: 20
+          items:
+            type: object
+            additionalProperties: false
+            required: [key, effectClass]
+            properties:
+              key: { type: string, minLength: 1, maxLength: 80 }
+              effectClass: { type: string, enum: [readOnly, idempotentWithKey, nonIdempotent] }
+              idempotencyHeader: { type: string, maxLength: 64 }
+    OpenApiReviewResult:
+      type: object
+      additionalProperties: false
+      required: [report, definition]
+      properties:
+        definition:
+          oneOf:
+            - $ref: './connection-definition-v0.schema.json'
+            - type: 'null'
+        report:
+          type: object
+          required: [source, servers, auth, summary, operations, issues, suggestedKey, suggestedName]
+          properties:
+            source: { type: object, additionalProperties: true }
+            servers: { type: array, items: { type: object, additionalProperties: true } }
+            auth: { type: object, additionalProperties: true }
+            suggestedKey: { type: string }
+            suggestedName: { type: string }
+            summary:
+              type: object
+              additionalProperties: { type: integer }
+            issues:
+              type: array
+              items:
+                type: object
+                required: [severity, code, message]
+                properties:
+                  severity: { type: string }
+                  code: { type: string }
+                  message: { type: string }
+            operations:
+              type: array
+              maxItems: 200
+              items:
+                type: object
+                required: [key, method, path, disposition, blockers, notes, testable, deprecated, selectedByDefault, inputs, outputs]
+                properties:
+                  key: { type: string }
+                  method: { type: string }
+                  path: { type: string }
+                  summary: { type: string }
+                  disposition: { type: string, enum: [supported, simplified, blocked] }
+                  blockers: { type: array, items: { type: string } }
+                  notes: { type: array, items: { type: string } }
+                  suggestedEffectClass: { type: string }
+                  effectReason: { type: string }
+                  idempotencyHeader: { type: string }
+                  testable: { type: boolean }
+                  deprecated: { type: boolean }
+                  selectedByDefault: { type: boolean }
+                  inputs: { type: array, items: { type: string } }
+                  outputs: { type: array, items: { type: string } }
+
     DocumentSource:
       type: object
       required:

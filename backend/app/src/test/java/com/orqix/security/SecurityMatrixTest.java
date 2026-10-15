@@ -287,6 +287,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "putConnectionBinding" -> Map.of("baseUrl", "https://public.test.example", "auth", Map.of("type", "none"),
                     "enabled", true);
             case "testConnection" -> Map.of("version", 1, "operation", "health");
+            case "reviewOpenApiConnection" -> Map.of("source", "{}");
             case "createRoleBinding" -> Map.of("role", "VIEWER", "principal", principal);
             case "createPermissionGrant" -> Map.of("permission", "workflow.start", "principal", principal);
             case "putGroup" -> Map.of("name", "Foreign", "members", List.of());

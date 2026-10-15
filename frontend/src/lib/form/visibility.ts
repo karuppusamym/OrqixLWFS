@@ -16,6 +16,19 @@ export function visibleFields(fields: FieldDef[], raw: RawValues): FieldDef[] {
     const pattern = field.isMoney ? MONEY_PATTERN : field.schema.type === 'integer' ? /^-?\d+$/ : /^-?\d+(\.\d+)?$/
     if (pattern.test(text) && Number.isFinite(Number(text))) return Number(text)
   }
+  return fieldsForInput(fields, Object.fromEntries(fields.map(field => [field.key, actual(`/input/${field.key}`)])))
+}
+
+/** Server-shaped input validation keeps wrong JSON types wrong instead of coercing them into controllers. */
+export function fieldsForInput(fields: FieldDef[], input: Record<string, unknown>): FieldDef[] {
+  const actual = (ref: string): string | number | boolean | undefined => {
+    const field = fields.find(f => `/input/${f.key}` === ref)
+    if (!field || field.schema.type === 'array' || field.schema.type === 'object') return
+    const value = input[field.key]
+    if (field.schema.type === 'boolean') return typeof value === 'boolean' ? value : undefined
+    if (field.schema.type === 'string') return typeof value === 'string' ? value : undefined
+    return typeof value === 'number' && Number.isFinite(value) && (field.schema.type !== 'integer' || Number.isInteger(value)) ? value : undefined
+  }
   const matches = (condition: Condition): boolean => {
     if (!isAtomicCondition(condition)) return 'all' in condition ? conditionTerms(condition).every(matches) : conditionTerms(condition).some(matches)
     const value = actual(condition.fieldRef), expected = condition.value

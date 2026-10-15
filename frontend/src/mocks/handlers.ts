@@ -8,8 +8,8 @@ import { makeRelease } from './seed'
 import { attachStartFiles, planStartFiles } from './caseFiles'
 import { migrationPublishDenial } from './migration'
 import { normalizeDefinition, type Definition, type Literal } from '@/features/studio/model/types'
-import { buildFields, parseFormSchema } from '@/lib/form/schema'
-import { validateJsonInput } from '@/lib/form/validate'
+import { buildFields, parseFormSchema, parseFormUi } from '@/lib/form/schema'
+import { validateJsonForm } from '@/lib/form/validate'
 import { waitHorizonErrors } from './dateWait'
 import { validateDefinition, type ValidationContext } from './validate'
 import { ScenarioError, simulateDefinition, type SimConnection, type SimContext, type SimulationScenario } from './simulator'
@@ -509,7 +509,7 @@ export function createHandlers(): HttpHandler[] {
         validateInput: (d, values) => {
           const schema = parseFormSchema(d.inputSchema)
           const fields = buildFields(schema, {})
-          return validateJsonInput(schema, values).map((i) => ({
+          return validateJsonForm(schema, parseFormUi(d.inputUi), values).map((i) => ({
             pointer: `/input${i.pointer}`,
             code: i.keyword,
             message: `${fields.find((f) => `/${f.key}` === i.pointer)?.label ?? i.pointer.slice(1)} is not valid (${i.keyword}).`,
@@ -631,9 +631,11 @@ export function createHandlers(): HttpHandler[] {
       let runs = [...db.runs.values()].filter((r) => r.wsId === str(params.ws))
       const lifecycle = url.searchParams.get('lifecycle')
       const workflowId = url.searchParams.get('workflowId')
+      const outcomeKind = url.searchParams.get('outcomeKind')
       const key = url.searchParams.get('businessKey')
       if (lifecycle) runs = runs.filter((r) => r.lifecycle === lifecycle)
       if (workflowId) runs = runs.filter((r) => r.workflowId === workflowId)
+      if (outcomeKind) runs = runs.filter((r) => r.outcomeKind === outcomeKind)
       if (key) runs = runs.filter((r) => r.businessKey === key || r.reference === key)
       runs.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       const page = paginate(runs, url)
@@ -652,7 +654,7 @@ export function createHandlers(): HttpHandler[] {
         if (input.expectedReleaseId && input.expectedReleaseId !== rel.id) return problem(409, 'RELEASE_NOT_ACTIVE', 'The form was updated')
         const schema = parseFormSchema(rel.definition.inputSchema)
         const fields = buildFields(schema, {})
-        const issues = validateJsonInput(schema, input.input ?? {})
+        const issues = validateJsonForm(schema, parseFormUi(rel.definition.inputUi), input.input ?? {})
         const horizon = issues.length === 0 ? waitHorizonErrors(rel.definition, input.input ?? {}, clock.now()) : []
         if (issues.length > 0 || horizon.length > 0) {
           return problem(422, 'VALIDATION_FAILED', 'The request has invalid fields', {

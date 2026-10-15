@@ -101,7 +101,7 @@ export function FileField({ field, value, onChange, error, id, disabled, onBusyC
   const shownError = problem ?? error
   const busy = progress !== null
   return (
-    <FormField label={field.label} description={<>{field.description} {fileLimitsText(field)}</>} error={shownError} required={field.required} id={id}>
+    <FormField label={field.label} description={<>{field.description} {fileLimitsText(field)}</>} descriptionPlacement={field.helpAbove === undefined ? undefined : field.helpAbove ? 'above' : 'below'} error={shownError} required={field.required} id={id}>
       {(ids) => (
         <div className="space-y-2">
           <input

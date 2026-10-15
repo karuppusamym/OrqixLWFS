@@ -325,11 +325,9 @@ public final class OpenApiConverter {
                     return truncate(shown.replace("%7B", "{").replace("%7D", "}"), 200);
                 }
             } catch (IllegalArgumentException ignored) {
-                // fall through to the cleaned text
+                // Never reflect malformed URI text: it may still contain credentials.
             }
-            int cut = Math.min(cleaned.indexOf('?') < 0 ? cleaned.length() : cleaned.indexOf('?'),
-                    cleaned.indexOf('@') < 0 ? cleaned.length() : cleaned.indexOf('@'));
-            return truncate(cleaned.substring(0, cut), 200);
+            return "Invalid server URL";
         }
 
         Map<String, Scheme> schemes() {

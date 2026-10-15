@@ -1,5 +1,5 @@
 import type { Node, NodeProps } from '@xyflow/react'
-import { AlertTriangle, Ban, CheckCircle2, Circle, Clock, Hourglass, MapPin, MinusCircle, ThumbsDown, ThumbsUp, Timer, type LucideIcon } from 'lucide-react'
+import { AlertTriangle, Ban, CheckCircle2, Circle, Clock, Hourglass, MapPin, MinusCircle, ThumbsDown, ThumbsUp, Timer, XCircle, type LucideIcon } from 'lucide-react'
 import { memo } from 'react'
 import { cn } from '@/lib/cn'
 import { StepNode, type StepFlowNode, type StepNodeData } from '@/features/studio/StepNode'
@@ -24,6 +24,7 @@ const ICON: Record<StepStatus, LucideIcon> = {
   done: CheckCircle2,
   approved: ThumbsUp,
   rejected: ThumbsDown,
+  failed: XCircle,
   timedOut: Timer,
   stopped: Ban,
   skipped: MinusCircle,
@@ -38,6 +39,7 @@ const CHIP: Record<StepStatus, string> = {
   done: 'border-status-success-fg bg-status-success-bg text-status-success-fg',
   approved: 'border-status-success-fg bg-status-success-bg text-status-success-fg',
   rejected: 'border-status-rejected-fg bg-status-rejected-bg text-status-rejected-fg',
+  failed: 'border-danger bg-danger-soft text-danger-foreground',
   timedOut: 'border-status-attention-fg bg-status-attention-bg text-status-attention-fg',
   stopped: 'border-status-cancelled-fg bg-status-cancelled-bg text-status-cancelled-fg',
   skipped: 'border-border bg-surface-muted text-muted-foreground',

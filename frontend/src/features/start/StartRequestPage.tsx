@@ -73,7 +73,7 @@ export function StartRequestPage() {
   useEffect(() => {
     if (pendingFocus.current && stage === 'edit') {
       pendingFocus.current = false
-      focusFirstInvalid(fields, errors, ID_PREFIX)
+      focusFirstInvalid(visibleFields(fields, values), errors, ID_PREFIX)
     }
   })
 
@@ -106,7 +106,7 @@ export function StartRequestPage() {
       setShowSummary(true)
       pendingFocus.current = true
       announce(`${Object.keys(result.errors).length} problems to fix`)
-      focusFirstInvalid(fields, result.errors, ID_PREFIX)
+      focusFirstInvalid(visibleFields(fields, values), result.errors, ID_PREFIX)
       return
     }
     setErrors({})
@@ -256,7 +256,7 @@ export function StartRequestPage() {
       >
         <Card>
           <CardContent className="space-y-5 pt-5">
-            {showSummary ? <ErrorSummary ref={summaryRef} fields={fields} errors={errors} idPrefix={ID_PREFIX} /> : null}
+            {showSummary ? <ErrorSummary ref={summaryRef} fields={visibleFields(fields, values)} errors={errors} idPrefix={ID_PREFIX} /> : null}
             <FormRenderer key={`${ws}:${workflowId}:${startForm.releaseNumber}`} fields={fields} values={values} onChange={change} errors={errors} idPrefix={ID_PREFIX} onFileBusyChange={(key, busy) => {
               setUploadingFields((previous) => { const next = new Set(previous); if (busy) next.add(key); else next.delete(key); return next })
             }} />

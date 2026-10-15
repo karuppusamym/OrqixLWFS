@@ -1,6 +1,7 @@
 import { humanize } from '../text'
 import { displayJsonValue, displayLooseValue } from './display'
 import type { FieldDef } from './schema'
+import { fieldsForInput } from './visibility'
 
 export interface RequestRow {
   key: string
@@ -16,7 +17,7 @@ export interface RequestRow {
 export function orderedRequestRows(input: Record<string, unknown>, fields: FieldDef[], labels: Record<string, string>): RequestRow[] {
   const rows: RequestRow[] = []
   const seen = new Set<string>()
-  for (const f of fields) {
+  for (const f of fieldsForInput(fields, input)) {
     seen.add(f.key)
     // A form field the requester left empty still shows, as an em dash, so the request reads like the form did.
     rows.push({ key: f.key, label: f.label, value: displayJsonValue(f, input[f.key]) })

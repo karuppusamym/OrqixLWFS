@@ -85,7 +85,7 @@ public class RuntimeController {
         if (lifecycle != null && !LIFECYCLES.contains(lifecycle)) {
             throw ApiException.malformed("Unknown lifecycle.");
         }
-        if (outcomeKind != null && !Set.of("success", "rejected").contains(outcomeKind)) {
+        if (outcomeKind != null && !Set.of("success", "rejected", "failed").contains(outcomeKind)) {
             throw ApiException.malformed("Unknown outcomeKind.");
         }
         if (businessKey != null && businessKey.length() > 100) {

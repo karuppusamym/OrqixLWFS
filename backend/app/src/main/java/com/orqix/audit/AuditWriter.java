@@ -104,6 +104,7 @@ public class AuditWriter {
             Map.entry("workflow.tests.run", Set.of("suiteVersion", "revision", "cases", "passed")),
             Map.entry("run.input-corrected", Set.of("fields", "version")),
             Map.entry("document.source.updated", Set.of("revision", "audienceCount", "enabled")),
+            Map.entry("connection.openapi-reviewed", Set.of("operations", "selected")),
             Map.entry("agent.call", Set.of("key", "operation", "profile", "model", "outcome", "toolCalls", "inputTokens",
                     "outputTokens", "costUsd", "durationMs", "effectId")));
 

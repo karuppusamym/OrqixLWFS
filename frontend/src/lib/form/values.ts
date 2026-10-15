@@ -1,7 +1,7 @@
 import { formatCalendarDate } from '../dates'
 import { MONEY_PATTERN, formatUsd } from '../money'
 import type { FieldDef } from './schema'
-import { buildFields, type FormSchema, type FormUi } from './schema'
+import { buildFields, type FormFieldSchema, type FormSchema, type FormUi } from './schema'
 import { validateJsonInput, type IssueKeyword } from './validate'
 import { visibleFields } from './visibility'
 
@@ -134,6 +134,7 @@ export function buildPayload(fields: FieldDef[], raw: RawValues): BuildResult {
 function messageFor(f: FieldDef, keyword: IssueKeyword, typedLength: number): string {
   const s = f.schema
   switch (keyword) {
+    case 'hidden': return 'This question is hidden. Change its controlling answers before providing a value.'
     case 'minItems': return `Add at least ${s.minItems} item${s.minItems === 1 ? '' : 's'}.`
     case 'maxItems': return `Use at most ${s.maxItems} items.`
     case 'required':
@@ -197,6 +198,6 @@ export function validateForm(schema: FormSchema, ui: FormUi, raw: RawValues): Va
   return { payload, errors, valid: Object.keys(errors).length === 0 }
 }
 
-export function rowFields(schema: import('./schema').FormFieldSchema): FieldDef[] {
+export function rowFields(schema: FormFieldSchema): FieldDef[] {
   return buildFields({ type: 'object', additionalProperties: false, required: schema.required ?? [], properties: schema.properties ?? {} }, {})
 }

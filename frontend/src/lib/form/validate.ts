@@ -1,5 +1,6 @@
 import { isCalendarDate } from '../dates'
-import type { FormFieldSchema, FormSchema } from './schema'
+import { buildFields, type FormFieldSchema, type FormSchema, type FormUi } from './schema'
+import { fieldsForInput } from './visibility'
 
 /**
  * Interpretive validator for the approved form-schema subset.
@@ -25,6 +26,7 @@ export type IssueKeyword =
   | 'multipleOf'
   | 'minItems'
   | 'maxItems'
+  | 'hidden'
 
 export interface JsonIssue {
   /** JSON Pointer relative to the input object, e.g. "/amount". */
@@ -129,6 +131,17 @@ export function validateJsonInput(schema: FormSchema, data: unknown): JsonIssue[
     }
   }
   return issues
+}
+
+/** Mock API parity for pinned form UI: submitted hidden values are rejected, never silently stripped. */
+export function validateJsonForm(schema: FormSchema, ui: FormUi, data: unknown): JsonIssue[] {
+  if (typeof data !== 'object' || data === null || Array.isArray(data)) return validateJsonInput(schema, data)
+  const input = data as Record<string, unknown>
+  const fields = fieldsForInput(buildFields(schema, ui), input)
+  const visible = new Set(fields.map(field => field.key))
+  const hidden = Object.keys(schema.properties).filter(key => !visible.has(key) && key in input)
+  const checked = Object.fromEntries(Object.entries(input).filter(([key]) => !(key in schema.properties) || visible.has(key)))
+  return [...hidden.map(key => ({ pointer: `/${escapePointer(key)}`, keyword: 'hidden' as const })), ...validateJsonInput({ ...schema, properties: Object.fromEntries(fields.map(field => [field.key, field.schema])), required: fields.filter(field => field.required).map(field => field.key) }, checked)]
 }
 
 /** The JSON Schema document ajv would receive for the same subset (used by parity tests and docs). */

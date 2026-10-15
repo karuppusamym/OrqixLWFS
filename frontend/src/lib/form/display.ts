@@ -10,6 +10,7 @@ export function displayJsonValue(field: FieldDef | undefined, value: unknown): s
   if (typeof value === 'string' && field?.schema.format === 'attachment') return 'File attached (see Files below)'
   if (typeof value === 'string' && field?.schema.format === 'date') return formatCalendarDate(value)
   if (typeof value === 'string') return field?.isMoney ? formatUsd(value) : value
+  if (Array.isArray(value) && field?.schema.items?.type === 'object') return value.map((row, i) => `Row ${i + 1}: ${Object.entries(field.schema.items?.properties ?? {}).map(([key, column]) => `${column.title}: ${displayJsonValue({ ...field, schema: column, isMoney: false }, typeof row === 'object' && row !== null ? (row as Record<string, unknown>)[key] : undefined)}`).join('; ')}`).join('\n') || '—'
   return JSON.stringify(value)
 }
 

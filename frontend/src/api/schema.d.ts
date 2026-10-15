@@ -1178,6 +1178,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/connections/import-openapi": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Review a local OpenAPI file and explicitly choose operations and retry behavior
+         * @description No remote references or servers are fetched. Returns a candidate definition; registration and workspace binding use the existing separate APIs. Source is limited to 2 MiB UTF-8, with a 4 MiB encoded request limit.
+         */
+        post: operations["reviewOpenApiConnection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/connections": {
         parameters: {
             query?: never;
@@ -1817,6 +1839,64 @@ export interface components {
         Lifecycle: "running" | "waiting" | "needsAttention" | "completed" | "cancelled";
         /** @enum {string} */
         OutcomeKind: "success" | "rejected" | "failed";
+        OpenApiReviewRequest: {
+            source: string;
+            fileName?: string;
+            key?: string;
+            version?: number;
+            name?: string;
+            description?: string;
+            /** @default false */
+            confirmEffects: boolean;
+            selections?: {
+                key: string;
+                /** @enum {string} */
+                effectClass: "readOnly" | "idempotentWithKey" | "nonIdempotent";
+                idempotencyHeader?: string;
+            }[];
+        };
+        OpenApiReviewResult: {
+            definition: components["schemas"]["connection-definition-v0.schema"] | null;
+            report: {
+                source: {
+                    [key: string]: unknown;
+                };
+                servers: {
+                    [key: string]: unknown;
+                }[];
+                auth: {
+                    [key: string]: unknown;
+                };
+                suggestedKey: string;
+                suggestedName: string;
+                summary: {
+                    [key: string]: number;
+                };
+                issues: {
+                    severity: string;
+                    code: string;
+                    message: string;
+                }[];
+                operations: {
+                    key: string;
+                    method: string;
+                    path: string;
+                    summary?: string;
+                    /** @enum {string} */
+                    disposition: "supported" | "simplified" | "blocked";
+                    blockers: string[];
+                    notes: string[];
+                    suggestedEffectClass?: string;
+                    effectReason?: string;
+                    idempotencyHeader?: string;
+                    testable: boolean;
+                    deprecated: boolean;
+                    selectedByDefault: boolean;
+                    inputs: string[];
+                    outputs: string[];
+                }[];
+            };
+        };
         DocumentSource: {
             id: components["schemas"]["Uuid"];
             label: string;
@@ -3347,11 +3427,22 @@ export interface components {
             minItems: number;
             maxItems: number;
         };
+        objectRowField: {
+            /** @constant */
+            type: "object";
+            title?: components["schemas"]["label"];
+            /** @constant */
+            additionalProperties: false;
+            properties: {
+                [key: string]: components["schemas"]["scalarFormField"];
+            };
+            required?: components["schemas"]["fieldKey"][];
+        };
         arrayFormField: {
             /** @constant */
             type: "array";
             title: components["schemas"]["label"];
-            items: components["schemas"]["scalarFormField"];
+            items: components["schemas"]["scalarFormField"] | components["schemas"]["objectRowField"];
             minItems: number;
             maxItems: number;
         };
@@ -4053,9 +4144,20 @@ export interface components {
                     /** @constant */
                     type: "array";
                     title: components["schemas"]["label"];
-                    items: components["schemas"]["scalarFormField"];
+                    items: components["schemas"]["scalarFormField"] | components["schemas"]["objectRowField"];
                     minItems: number;
                     maxItems: number;
+                };
+                objectRowField: {
+                    /** @constant */
+                    type: "object";
+                    title?: components["schemas"]["label"];
+                    /** @constant */
+                    additionalProperties: false;
+                    properties: {
+                        [key: string]: components["schemas"]["scalarFormField"];
+                    };
+                    required?: components["schemas"]["fieldKey"][];
                 };
                 atomicCondition: {
                     fieldRef: components["schemas"]["fieldRef"];
@@ -6547,6 +6649,38 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    reviewOpenApiConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OpenApiReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Bounded review report and an optional candidate definition */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenApiReviewResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["PayloadTooLarge"];
             422: components["responses"]["Unprocessable"];
         };
     };

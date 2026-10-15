@@ -7,6 +7,14 @@ const make = (name: string, expectOutcome: string | null = 'Fulfilled'): SavedCa
 describe('saved test cases', () => {
   beforeEach(() => window.localStorage.clear())
 
+  it('round-trips bounded scalar row dictionaries through export, import and personal storage', () => {
+    const rowCase = { ...make('Rows'), values: { lines: [{ name: 'Laptop', quantity: '2', urgent: false }] } }
+    const imported = importCases(exportCases('workflow', [rowCase]), [])
+    expect(imported.cases[0]?.values).toEqual(rowCase.values)
+    storeCases('ws', 'wf', imported.cases, 'designer')
+    expect(loadCases('ws', 'wf', 'designer')[0]?.values).toEqual(rowCase.values)
+  })
+
   it('keeps cases per workflow in this browser and survives broken storage', () => {
     storeCases('ws1', 'wf1', [make('Small')], 'person1')
     expect(loadCases('ws1', 'wf1', 'person1').map((c) => c.name)).toEqual(['Small'])

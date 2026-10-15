@@ -73,7 +73,8 @@ function FieldControl({
       const columns = rowFields(f.schema.items)
       return <fieldset className="space-y-3" disabled={disabled} id={id} aria-describedby={error ? `${id}-error` : undefined}>
         <legend className="text-sm font-semibold">{f.label}{f.required ? ' (required)' : ''}</legend>
-        <p className="text-sm text-muted-foreground">{f.description} Add {f.schema.minItems} to {f.schema.maxItems} rows.</p>
+        {f.description && f.helpAbove !== false ? <p className="text-sm text-muted-foreground">{f.description}</p> : null}
+        <p className="text-sm text-muted-foreground">Add {f.schema.minItems} to {f.schema.maxItems} rows.</p>
         {entries.map((entry, index) => <fieldset key={index} className="rounded-card border border-border p-3 space-y-3"><legend>Row {index + 1}</legend>
           {columns.map(column => <FieldControl key={column.key} field={{ ...column, label: `${f.label}, row ${index + 1}: ${column.label}` }} value={typeof entry === 'object' ? entry[column.key] : undefined} onChange={next => {
             if (Array.isArray(next)) return
@@ -82,13 +83,15 @@ function FieldControl({
           <Button type="button" size="sm" variant="ghost" onClick={() => onChange(entries.filter((_, i) => i !== index))}>Remove {f.label} row {index + 1}</Button>
         </fieldset>)}
         <Button type="button" variant="secondary" disabled={disabled || entries.length >= (f.schema.maxItems ?? 25)} onClick={() => onChange([...entries, emptyValues(columns) as RowRawValue])}>Add {f.label} row</Button>
+        {f.description && f.helpAbove === false ? <p className="text-sm text-muted-foreground">{f.description}</p> : null}
         {error ? <FieldError id={`${id}-error`} message={error} /> : null}
       </fieldset>
     }
     const itemField = buildFields({ type: 'object', additionalProperties: false, required: ['item'], properties: { item: f.schema.items } }, {})[0]!
     return <fieldset className="space-y-3" disabled={disabled} id={id} aria-describedby={error ? `${id}-error` : undefined}>
       <legend className="text-sm font-semibold">{f.label}{f.required ? ' (required)' : ''}</legend>
-      <p className="text-sm text-muted-foreground">{f.description} Add {f.schema.minItems} to {f.schema.maxItems} items.</p>
+      {f.description && f.helpAbove !== false ? <p className="text-sm text-muted-foreground">{f.description}</p> : null}
+      <p className="text-sm text-muted-foreground">Add {f.schema.minItems} to {f.schema.maxItems} items.</p>
       {entries.map((entry, index) => <div key={index} className="rounded-card border border-border p-3 space-y-2">
         <FieldControl field={{ ...itemField, label: `${f.label}: item ${index + 1}` }} value={typeof entry === 'object' ? undefined : entry} onChange={next => {
           if (Array.isArray(next)) return
@@ -97,6 +100,7 @@ function FieldControl({
         <Button type="button" variant="ghost" size="sm" disabled={disabled} onClick={() => onChange(entries.filter((_, i) => i !== index))} aria-label={`Remove ${f.label} item ${index + 1}`}>Remove item</Button>
       </div>)}
       <Button type="button" variant="secondary" disabled={disabled || entries.length >= (f.schema.maxItems ?? 25)} onClick={() => onChange([...entries, f.schema.items?.type === 'boolean' ? false : ''])}>Add {f.label} item</Button>
+      {f.description && f.helpAbove === false ? <p className="text-sm text-muted-foreground">{f.description}</p> : null}
       {error ? <FieldError id={`${id}-error`} message={error} /> : null}
     </fieldset>
   }
@@ -107,6 +111,7 @@ function FieldControl({
     const describedBy = [f.description ? descId : null, error ? errId : null].filter(Boolean).join(' ') || undefined
     return (
       <div className="space-y-1.5">
+        {f.description && f.helpAbove === true ? <p id={descId} className="text-sm text-muted-foreground">{f.description}</p> : null}
         <div className="flex items-start gap-3">
           <Checkbox
             id={id}
@@ -122,7 +127,7 @@ function FieldControl({
             {f.required ? <span className="ml-1.5 text-xs font-normal text-muted-foreground">(required)</span> : null}
           </Label>
         </div>
-        {f.description ? (
+        {f.description && f.helpAbove !== true ? (
           <p id={descId} className="ml-9 text-sm text-muted-foreground">
             {f.description}
           </p>
@@ -142,7 +147,7 @@ function FieldControl({
           {f.label}
           {f.required ? <span className="ml-1.5 text-xs font-normal text-muted-foreground">(required)</span> : null}
         </legend>
-        {f.description ? (
+        {f.description && f.helpAbove !== false ? (
           <p id={descId} className="text-sm text-muted-foreground">
             {f.description}
           </p>
@@ -157,6 +162,7 @@ function FieldControl({
             </div>
           ))}
         </RadioGroup>
+        {f.description && f.helpAbove === false ? <p id={descId} className="text-sm text-muted-foreground">{f.description}</p> : null}
         {error ? <FieldError id={errId} message={error} /> : null}
       </fieldset>
     )
@@ -175,7 +181,7 @@ function FieldControl({
   ) : undefined
 
   return (
-    <FormField label={f.label} description={description} error={error} required={f.required} id={id}>
+    <FormField label={f.label} description={description} descriptionPlacement={f.helpAbove === undefined ? undefined : f.helpAbove ? 'above' : 'below'} error={error} required={f.required} id={id}>
       {(ids) => {
         const common = {
           id: ids.input,

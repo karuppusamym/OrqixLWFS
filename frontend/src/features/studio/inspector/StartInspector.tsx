@@ -14,6 +14,7 @@ import type { WorkflowNode } from '../model/types'
 import { Advanced, CommitInput, CommitNumber, CommitTextarea, InspectorSection } from './controls'
 import { StagesInspector } from './StagesInspector'
 import { RowColumnsEditor } from './RowColumnsEditor'
+import { FieldConditionsEditor, FormLayoutEditor } from './FormBehaviorEditor'
 
 const KIND_ORDER: FieldKind[] = ['text', 'longText', 'number', 'money', 'integer', 'date', 'yesNo', 'choice', 'collection', 'file']
 
@@ -41,13 +42,13 @@ export function StartInspector({ node }: { node: WorkflowNode }) {
   const remove = (key: string) => store.getState().apply((d) => applyFields(d, fieldsFromDefinition(d).filter((f) => f.key !== key)))
 
   const requestDelete = (key: string) => {
-    const uses = usagesOfRef(def, (ref) => ref === `/input/${key}`)
+    const uses = usagesOfRef(def, (ref) => ref === `/input/${key}` || ref.startsWith(`/input/${key}/`))
     if (uses.length === 0) remove(key)
     else setPendingDelete(key)
   }
 
   const deleting = pendingDelete ? fields.find((f) => f.key === pendingDelete) : undefined
-  const deletingUses = pendingDelete ? usagesOfRef(def, (ref) => ref === `/input/${pendingDelete}`) : []
+  const deletingUses = pendingDelete ? usagesOfRef(def, (ref) => ref === `/input/${pendingDelete}` || ref.startsWith(`/input/${pendingDelete}/`)) : []
 
   return (
     <>
@@ -79,6 +80,7 @@ export function StartInspector({ node }: { node: WorkflowNode }) {
         ) : null}
       </InspectorSection>
       <StagesInspector />
+      <FormLayoutEditor />
       <Advanced>
         <FormField label="Step name" id={`start-label-${node.id}`}>
           {(ids) => <CommitInput id={ids.input} value={node.label} disabled={readOnly} onCommit={(v) => store.getState().updateNodeLabel(node.id, v)} />}
@@ -170,6 +172,7 @@ function FieldCard({
       <FormField label="Help text" optionalText id={`${p}-help`}>
         {(ids) => <CommitInput id={ids.input} value={f.help} maxLength={500} disabled={readOnly} onCommit={(v) => onChange({ help: v })} />}
       </FormField>
+      <FieldConditionsEditor fieldKey={f.key} />
       {f.kind === 'collection' ? <>
         <FormField label="Item type" id={`${p}-item-type`}>
           {ids => <Select id={ids.input} value={f.itemSchema?.type ?? 'string'} disabled={readOnly} onChange={e => onChange({ itemSchema: { type: e.target.value as 'string' | 'number' | 'integer' | 'boolean' | 'object', title: 'Item', ...(e.target.value === 'string' ? { minLength: 1, maxLength: 200 } : e.target.value === 'object' ? { additionalProperties: false, required: ['name'], properties: { name: { type: 'string', title: 'Name', minLength: 1, maxLength: 200 } } } : {}) } })}>
@@ -219,8 +222,8 @@ function FieldCard({
         </FormField>
       ) : null}
       <Advanced label="Advanced">
-        {f.kind !== 'file' && f.kind !== 'collection' ? <label className="flex items-center gap-2 text-sm">
-          <Checkbox checked={!!f.incidentEditable} disabled={readOnly} onCheckedChange={checked => onChange({incidentEditable: checked === true})} />
+        {f.kind !== 'file' && f.kind !== 'collection' ? <label htmlFor={`${p}-incident-editable`} className="flex items-center gap-2 text-sm">
+          <Checkbox id={`${p}-incident-editable`} checked={!!f.incidentEditable} disabled={readOnly} onCheckedChange={checked => onChange({incidentEditable: checked === true})} />
           Allow operator correction during an incident before data is consumed
         </label> : null}
         <FormField label="Field key" id={`${p}-key`} error={keyError} description="Used in rules and exports. Changing it updates every place that uses this question.">

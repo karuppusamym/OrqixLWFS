@@ -14,7 +14,7 @@ class FailureRoutesCompilerTest {
     private final WorkflowCompiler compiler = Compilers.workflowCompiler();
     private static ObjectNode object(String text) { return (ObjectNode) StrictJson.parse(text); }
     private static ObjectNode end(String id) {
-        return object("{\"id\":\""+id+"\",\"type\":\"end\",\"label\":\"Finished "+id+"\",\"config\":{\"businessOutcome\":\""+id+"\",\"outcomeKind\":\"success\"}}");
+        return object("{\"id\":\""+id+"\",\"type\":\"end\",\"label\":\"Finished "+id+"\",\"config\":{\"businessOutcome\":\""+Character.toUpperCase(id.charAt(0))+id.substring(1)+"\",\"outcomeKind\":\"success\"}}");
     }
     private static ObjectNode flow(String id, String from, String to, String route) {
         return object("{\"id\":\""+id+"\",\"from\":\""+from+"\",\"to\":\""+to+"\",\"on\":\""+route+"\"}");
@@ -69,7 +69,7 @@ class FailureRoutesCompilerTest {
     }
     private ObjectNode mappedDocument(ObjectNode doc, String ref, String fromRoute) {
         ((ArrayNode)doc.path("nodes")).add(object("{\"id\":\"receipt\",\"type\":\"generateDocument\",\"label\":\"Record routed facts\",\"config\":{\"format\":\"docx\",\"fileName\":\"Facts\",\"template\":\"Value: {{value}}\",\"inputMapping\":{\"value\":\""+ref+"\"}}}"));
-        for(var path:doc.path("transitions")) if(fromRoute.equals(path.path("on").asString())) ((ObjectNode)path).put("to","receipt");
+        for(var path:doc.path("transitions")) if("place".equals(path.path("from").asString()) && fromRoute.equals(path.path("on").asString())) ((ObjectNode)path).put("to","receipt");
         ((ArrayNode)doc.path("transitions")).add(flow("receiptEnd","receipt",fromRoute.equals("failed")?"failure":"success","next"));
         return doc;
     }
@@ -96,7 +96,7 @@ class FailureRoutesCompilerTest {
         var doc=compensation();config(doc,"undo").put("compensates",target);assertThat(blockers(doc)).contains(code);
     }
     @Test void readOnlyCallsAndCallsThatAreNotGuaranteedEarlierCannotBeCompensated() {
-        var doc=compensation();config(doc,"place").put("operation","health").put("timeoutSeconds",5);config(doc,"place").set("inputMapping",object("{}"));config(doc,"place").set("resultMapping",object("{}"));
+        var doc=compensation();config(doc,"place").put("operation","health").put("timeoutSeconds",5);config(doc,"place").set("inputMapping",object("{}"));config(doc,"place").set("resultMapping",object("{\"status\":\"/status\"}"));
         assertThat(blockers(doc)).contains("WF_COMPENSATES_TARGET");
         doc=sample();((ArrayNode)doc.path("nodes")).add(call("undo"));config(doc,"place").put("compensates","undo");
         ((ObjectNode)doc.path("transitions").get(1)).put("to","undo");((ArrayNode)doc.path("transitions")).add(flow("undone","undo","success","next"));
@@ -116,5 +116,49 @@ class FailureRoutesCompilerTest {
         ((ArrayNode)doc.path("transitions")).add(object("{\"id\":\"exhausted\",\"from\":\"classifyFailure\",\"to\":\"failure\",\"on\":\"condition\",\"condition\":{\"fieldRef\":\"/steps/place/failureKind\",\"operator\":\"eq\",\"value\":\"retriesExhausted\"}}"));
         ((ArrayNode)doc.path("transitions")).add(flow("otherwise","classifyFailure","failure","default"));
         assertThat(blockers(doc)).contains("WF_LITERAL_NOT_IN_DOMAIN");
+    }
+
+    private SimulationResult simulateFailure(ObjectNode doc, String failure) {
+        return Compilers.workflowSimulator().simulate(TestSupport.text(doc),
+                "{\"title\":\"Laptop\",\"purpose\":\"Purchase\",\"costCenter\":\"IT\",\"amount\":10}",
+                "{\"calls\":{\"place\":{\"failure\":\""+failure+"\"}}}",
+                new SimulationContext(TestSupport.defaultContext(),null,java.time.LocalDate.of(2026,10,15)));
+    }
+    private tools.jackson.databind.JsonNode callTrace(SimulationResult result) {
+        assertThat(result.json()).isNotNull();
+        for(var step:StrictJson.parse(result.json()).path("trace")) if("place".equals(step.path("stepId").asString())) return step;
+        throw new AssertionError("Call step was not included in the simulation trace");
+    }
+    @Test void simulationKnownRejectionFollowsFailureRouteWithTheSameRedactedFacts() {
+        var result=simulateFailure(sample(),"rejected");assertThat(result.status()).isEqualTo(SimulationResult.Status.FINISHED);
+        var step=callTrace(result);assertThat(step.path("transitionId").asString()).isEqualTo("failed");
+        assertThat(step.path("wrote").path("failureKind").asString()).isEqualTo("rejected");
+        assertThat(step.path("wrote").path("failureHttpStatus").asInt()).isEqualTo(400);
+        assertThat(step.path("wrote").path("failureMessage").asString()).isEqualTo("The external system rejected this request.");
+        assertThat(step.path("details").path("routed").asBoolean()).isTrue();
+    }
+    @Test void simulationOnlyRoutesUnusableResponsesOfReadOnlyCalls() {
+        var doc=sample();var config=config(doc,"place");config.put("operation","health").put("timeoutSeconds",5);
+        config.set("inputMapping",object("{}"));config.set("resultMapping",object("{\"status\":\"/status\"}"));
+        var read=simulateFailure(doc,"unknownOutcome");assertThat(read.status()).isEqualTo(SimulationResult.Status.FINISHED);
+        var step=callTrace(read);assertThat(step.path("wrote").path("failureKind").asString()).isEqualTo("invalidResponse");
+        assertThat(step.path("wrote").path("failureHttpStatus").asInt()).isZero();
+        assertThat(step.path("wrote").path("failureMessage").asString()).isEqualTo("The read-only system returned an invalid response.");
+        var write=simulateFailure(sample(),"unknownOutcome");assertThat(write.status()).isEqualTo(SimulationResult.Status.NEEDS_ATTENTION);
+        assertThat(StrictJson.parse(write.json()).at("/outcome/attention/reason").asString()).isEqualTo("EFFECT_UNKNOWN");
+        assertThat(callTrace(write).path("transitionId").isNull()).isTrue();assertThat(callTrace(write).has("wrote")).isFalse();
+    }
+    @Test void simulationExhaustedRetriesRetainOperatorAttentionInsteadOfInventingAFailureRoute() {
+        var result=simulateFailure(sample(),"unavailable");assertThat(result.status()).isEqualTo(SimulationResult.Status.NEEDS_ATTENTION);
+        assertThat(StrictJson.parse(result.json()).at("/outcome/attention/reason").asString()).isEqualTo("RETRIES_EXHAUSTED");
+        assertThat(callTrace(result).path("transitionId").isNull()).isTrue();assertThat(callTrace(result).has("wrote")).isFalse();
+    }
+    @Test void bodylessGetCanIgnoreResultsWhileRequiredPostInputsRemainEnforced() throws Exception {
+        var read=sample();var config=config(read,"place");config.put("operation","health").put("timeoutSeconds",5);
+        config.set("inputMapping",object("{}"));config.set("resultMapping",object("{}"));
+        assertThat(blockers(read)).as(compiler.validate(TestSupport.text(read),TestSupport.defaultContext()).issues().toString()).isEmpty();
+        assertThat(compiler.compile(TestSupport.text(read),TestSupport.defaultContext()).bpmnXml()).contains("operation=\"health\"");
+        var write=sample();config(write,"place").set("inputMapping",object("{}"));
+        assertThat(blockers(write)).contains("WF_MAPPING_MISSING_REQUIRED");
     }
 }

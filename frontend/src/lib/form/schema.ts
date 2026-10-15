@@ -213,7 +213,7 @@ export function buildFields(schema: FormSchema, ui: FormUi): FieldDef[] {
       visibleWhen: [ui.visibleWhen?.[key], section?.visibleWhen].filter((c): c is Condition => !!c),
       requiredWhen: ui.requiredWhen?.[key],
       section: section ? { id: section.id, title: section.title, columns: section.columns ?? 1 } : undefined,
-      helpAbove: ui.layout?.helpText === 'above',
+      helpAbove: ui.layout ? ui.layout.helpText === 'above' : undefined,
     }
   })
 }

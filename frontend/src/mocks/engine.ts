@@ -2,6 +2,7 @@ import type { Effect, Run, RunDetail, TaskDecision, TaskSummary } from '@/api/ty
 import { conditionTerms, isAtomicCondition, type Condition, type Definition, type Literal, type WorkflowNode } from '@/features/studio/model/types'
 import { nodeById, outgoing } from '@/features/studio/model/graph'
 import { dateWaitDue } from './dateWait'
+import { resolveInputAggregate } from '@/lib/form/aggregates'
 import { reconcileStages, stageOfNode, stageProgress } from './stages'
 import { resumeMessageTimers, startMessageWait } from './messages'
 import {
@@ -51,6 +52,8 @@ export function addEvent(run: MockRun, type: string, opts: { nodeId?: string | n
 }
 
 function resolveRef(run: MockRun, ref: string): Literal | undefined {
+  const aggregate = resolveInputAggregate(run.input, ref)
+  if (aggregate !== undefined) return aggregate
   const input = /^\/input\/(.+)$/.exec(ref)
   if (input) return run.input[input[1] as string] as Literal | undefined
   const step = /^\/steps\/([^/]+)\/(.+)$/.exec(ref)
@@ -242,7 +245,7 @@ function finish(run: MockRun, release: MockRelease, node: WorkflowNode): void {
   if (!active(run)) return
   run.lifecycle = 'completed'
   run.outcome = (node.config.businessOutcome as string) ?? 'Completed'
-  run.outcomeKind = (node.config.outcomeKind as 'success' | 'rejected') ?? 'success'
+  run.outcomeKind = (node.config.outcomeKind as NonNullable<MockRun['outcomeKind']>) ?? 'success'
   run.endedAt = clock.iso()
   const out: Record<string, unknown> = {}
   for (const [key, m] of Object.entries(release.definition.outputMapping)) {

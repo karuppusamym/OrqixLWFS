@@ -119,7 +119,7 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
         if (stage) data.stage = stage.label
         if (n.type === 'approval' || n.type === 'waitForMessage') data.timeout = !!n.config.timeoutAfter
         if (n.type === 'end') {
-          data.outcomeKind = n.config.outcomeKind === 'rejected' ? 'rejected' : 'success'
+          data.outcomeKind = n.config.outcomeKind === 'failed' ? 'failed' : n.config.outcomeKind === 'rejected' ? 'rejected' : 'success'
           if (typeof n.config.businessOutcome === 'string') data.outcome = n.config.businessOutcome
         }
         return {

@@ -157,7 +157,7 @@ export function buildRunPath(opts: {
           id: n.id,
           kind: n.type,
           label: n.label,
-          outcomeKind: n.type === 'end' ? ((n.config.outcomeKind as 'success' | 'rejected' | undefined) ?? null) : null,
+          outcomeKind: n.type === 'end' ? ((n.config.outcomeKind as 'success' | 'rejected' | 'failed' | undefined) ?? null) : null,
           outcome: n.type === 'end' ? ((n.config.businessOutcome as string | undefined) ?? null) : null,
           hasTimeout: !!n.config.timeoutAfter,
           position: p ? { x: p.x, y: p.y } : null,

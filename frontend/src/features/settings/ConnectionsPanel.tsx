@@ -25,17 +25,17 @@ import { AgentTest } from './AgentTest'
 import { AGENT_USES_AI, AiAgentBadge } from './AgentSpecView'
 import { DocumentFolderPicker } from './DocumentFolderPicker'
 import { DocumentVersionPicker, type DocumentOperation } from './DocumentVersionPicker'
+import { OpenApiImport } from './OpenApiImport'
 
 export function ConnectionsPanel() {
   const { workspace } = useWorkspace()
   const query = useConnections(workspace.id)
   if (query.isPending) return <LoadingBlock rows={2} label="Loading connections" />
   if (query.isError) return <QueryError error={query.error} onRetry={() => void query.refetch()} what="connections" />
-  if (query.data.items.length === 0) {
-    return <p className="rounded-card border border-dashed border-input-border bg-surface p-6 text-sm text-muted-foreground">No connections are registered in this workspace.</p>
-  }
   return (
     <div className="space-y-8">
+      <OpenApiImport />
+      {query.data.items.length === 0 ? <p>No connections are registered in this workspace.</p> : null}
       <div className="rounded-card border border-border bg-surface-muted p-5">
         <h2>Connect a workflow to another system</h2>
         <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-muted-foreground">

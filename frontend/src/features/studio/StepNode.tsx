@@ -1,6 +1,7 @@
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
 import { AlertTriangle, CheckCircle2, XCircle } from 'lucide-react'
 import { memo } from 'react'
+import type { OutcomeKind } from '@/api/types'
 import { cn } from '@/lib/cn'
 import { KINDS } from './model/kinds'
 import { APPROVAL_HEIGHT, NODE_HEIGHT } from './model/layout'
@@ -14,7 +15,7 @@ export interface StepNodeData extends Record<string, unknown> {
   blockers: number
   warnings: number
   /** Finish steps only: which kind of outcome the step ends with. */
-  outcomeKind?: 'success' | 'rejected'
+  outcomeKind?: OutcomeKind
   /** Finish steps only: the outcome name shown on the card, for example "Fulfilled". */
   outcome?: string
   timeout?: boolean
@@ -34,7 +35,7 @@ function StepNodeComponent({ data, selected }: NodeProps<StepFlowNode>) {
   const Icon = KIND_ICON[data.kind]
   const issues = data.blockers + data.warnings
   const isEnd = data.kind === 'end'
-  const rejectedEnd = isEnd && data.outcomeKind === 'rejected'
+  const rejectedEnd = isEnd && (data.outcomeKind === 'rejected' || data.outcomeKind === 'failed')
   const OutcomeIcon = rejectedEnd ? XCircle : CheckCircle2
   return (
     <div
@@ -80,7 +81,7 @@ function StepNodeComponent({ data, selected }: NodeProps<StepFlowNode>) {
         {isEnd ? (
           <p className={cn('inline-flex items-center gap-1.5 text-[17px] leading-6 font-semibold', rejectedEnd ? 'text-status-rejected-fg' : 'text-status-success-fg')} title={data.subtitle}>
             <OutcomeIcon className="size-5 shrink-0" aria-hidden="true" />
-            <span className="truncate">{data.outcome || (rejectedEnd ? 'Rejected' : 'Completed')}</span>
+            <span className="truncate">{data.outcomeKind === 'failed' ? (data.outcome && !/fail/i.test(data.outcome) ? `${data.outcome} · Failed` : data.outcome || 'Failed') : data.outcome || (rejectedEnd ? 'Rejected' : 'Completed')}</span>
           </p>
         ) : (
           <p className="truncate text-[17px] leading-6 text-muted-foreground" title={data.subtitle}>

@@ -1,7 +1,7 @@
 import { Activity, AlertTriangle, Check, Clock } from 'lucide-react'
 import { useListFilters } from '@/lib/useListFilters'
 import { useRuns, useWorkflows } from '@/api/queries'
-import type { Lifecycle } from '@/api/types'
+import type { Lifecycle, OutcomeKind } from '@/api/types'
 import { useWorkspace } from '@/app/workspace'
 import { EmptyState } from '@/components/common/EmptyState'
 import { LoadingBlock } from '@/components/common/LoadingBlock'
@@ -22,8 +22,10 @@ export function RunsPage() {
   const { params, update, lifecycle } = useListFilters()
   const workflowId = params.get('workflowId') ?? ''
   const appliedKey = params.get('businessKey') ?? ''
+  const rawOutcome = params.get('outcomeKind') ?? ''
+  const outcomeKind: OutcomeKind | '' = rawOutcome === 'success' || rawOutcome === 'rejected' || rawOutcome === 'failed' ? rawOutcome : ''
   const clearFilters = () => {
-    update({ lifecycle: '', workflowId: '', businessKey: '', overdue: '' })
+    update({ lifecycle: '', workflowId: '', businessKey: '', overdue: '', outcomeKind: '' })
   }
   const overdueOnly = params.get('overdue') === 'true'
   const attentionOnly = lifecycle === 'needsAttention'
@@ -35,6 +37,7 @@ export function RunsPage() {
     ...(workflowId ? { workflowId } : {}),
     ...(overdueOnly ? { overdue: true } : {}),
     ...(appliedKey ? { businessKey: appliedKey } : {}),
+    ...(outcomeKind ? { outcomeKind } : {}),
   })
   const runs = query.data?.pages.flatMap((p) => p.items) ?? []
 
@@ -70,6 +73,12 @@ export function RunsPage() {
           </Select>
         </div>
         <div className="space-y-1.5">
+          <Label htmlFor="runs-outcome">Business outcome kind</Label>
+          <Select id="runs-outcome" value={outcomeKind} onChange={event => update({outcomeKind: event.target.value})}>
+            <option value="">All outcome kinds</option><option value="success">Successful</option><option value="rejected">Rejected</option><option value="failed">Failed</option>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
           <Label htmlFor="runs-workflow">Workflow</Label>
           <Select id="runs-workflow" value={workflowId} onChange={(e) => update({ workflowId: e.target.value })} className="w-56">
             <option value="">All workflows</option>
@@ -100,7 +109,7 @@ export function RunsPage() {
             Search
           </Button>
         </form>
-        {lifecycle || workflowId || appliedKey || overdueOnly ? <Button variant="ghost" onClick={clearFilters}>Clear filters</Button> : null}
+        {lifecycle || workflowId || appliedKey || overdueOnly || outcomeKind ? <Button variant="ghost" onClick={clearFilters}>Clear filters</Button> : null}
       </div>
       {query.isFetching && !query.isPending ? <p role="status" className="mb-3 text-sm text-muted-foreground">Updating runs…</p> : null}
       {query.isPending ? (
@@ -108,7 +117,7 @@ export function RunsPage() {
       ) : query.isError ? (
         <QueryError error={query.error} onRetry={() => void query.refetch()} what="runs" />
       ) : runs.length === 0 ? (
-        <EmptyState icon={Activity} title={attentionOnly ? 'Nothing needs attention' : overdueOnly ? 'Nothing is overdue' : 'No runs match these filters'} action={lifecycle || workflowId || appliedKey || overdueOnly ? <Button onClick={clearFilters}>Show all runs</Button> : undefined}>
+        <EmptyState icon={Activity} title={attentionOnly ? 'Nothing needs attention' : overdueOnly ? 'Nothing is overdue' : 'No runs match these filters'} action={lifecycle || workflowId || appliedKey || overdueOnly || outcomeKind ? <Button onClick={clearFilters}>Show all runs</Button> : undefined}>
           {attentionOnly ? 'When a request is stuck on another system, it shows up here with the next step.' : 'Try clearing a filter.'}
         </EmptyState>
       ) : (

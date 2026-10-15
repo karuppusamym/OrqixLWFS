@@ -31,7 +31,7 @@ export function parseCase(raw: unknown): SavedCase | null {
   const values: RawValues = {}
   for (const [k, v] of Object.entries(raw.values)) {
     if (typeof v === 'string' || typeof v === 'boolean') values[k] = v
-    else if (Array.isArray(v) && v.length <= 25 && v.every((x) => typeof x === 'string' || typeof x === 'boolean')) values[k] = v as string[]
+    else if (Array.isArray(v) && v.length <= 25 && v.every(x => typeof x === 'string' || typeof x === 'boolean' || (isRecord(x) && Object.keys(x).length <= 10 && Object.values(x).every(cell => typeof cell === 'string' || typeof cell === 'boolean')))) values[k] = v as RawValues[string]
   }
   const s = isRecord(raw.settings) ? raw.settings : {}
   if (isRecord(s.children) && Object.values(s.children).some(v => isRecord(v) && Array.isArray(v.outcomes) && v.outcomes.length > 25)) return null

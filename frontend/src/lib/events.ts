@@ -77,7 +77,7 @@ export function eventTone(event: Pick<RunEvent, 'type' | 'data'>): EventTone {
     case 'EFFECT_RECONCILED':
       return 'success'
     case 'RUN_COMPLETED':
-      return event.data.outcomeKind === 'rejected' ? 'rejected' : 'success'
+      return event.data.outcomeKind === 'failed' ? 'danger' : event.data.outcomeKind === 'rejected' ? 'rejected' : 'success'
     case 'RUN_CANCELLED':
       return 'cancelled'
     case 'EFFECT_FAILED':

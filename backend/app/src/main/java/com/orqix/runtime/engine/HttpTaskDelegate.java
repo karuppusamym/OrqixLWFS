@@ -131,12 +131,12 @@ public class HttpTaskDelegate implements JavaDelegate {
             UUID workspaceId, UUID runId, String connection, String operation) {
         if (failed.retryable() || !"permanent".equals(failed.classification()) || failed.effectId() == null) return false;
         boolean rejected = "EFFECT_REJECTED".equals(failed.attentionReason()) && knownRejection(failed.httpStatus(), failed.errorCode());
-        boolean invalidRead = "RESPONSE_INVALID".equals(failed.attentionReason()) && "readOnly".equals(failed.effectClass());
+        boolean invalidRead = "RESPONSE_INVALID".equals(failed.attentionReason()) && knownInvalidRead(failed.effectClass(), failed.errorCode());
         if (!rejected && !invalidRead) return false;
         var candidate = OrqixModel.model(execution.getProcessDefinitionId()).getFlowElement(element.getId() + "__failed");
         if (!(candidate instanceof BoundaryEvent boundary) || !element.getId().equals(boundary.getAttachedToRefId())
                 || boundary.getEventDefinitions().stream().noneMatch(definition -> definition instanceof ErrorEventDefinition error
-                        && "error__stepFailed".equals(error.getErrorRef()))) return false;
+                        && ("error__stepFailed".equals(error.getErrorCode()) || "ORQIX_STEP_FAILED".equals(error.getErrorCode())))) return false;
         // Never route an uncertain effect or a policy/configuration failure merely because its result was classified.
         // The stable effect id must identify this exact run/node/occurrence and a completed permanent journal result.
         boolean recorded = jdbc.sql("""
@@ -166,6 +166,11 @@ public class HttpTaskDelegate implements JavaDelegate {
                 && status != 429 && ("HTTP_" + status).equals(code);
     }
 
+    private static boolean knownInvalidRead(String effectClass, String code) {
+        return "readOnly".equals(effectClass) && code != null
+                && java.util.Set.of("RESPONSE_INVALID", "RESPONSE_TOO_LARGE", "UNEXPECTED_STATUS").contains(code);
+    }
+
     private EffectDispatcher.Failed recordedFailure(UUID workspaceId, UUID runId, String node, String connection,
             int connectionVersion, String operation, String requestHash) {
         return jdbc.sql("""
@@ -179,7 +184,7 @@ public class HttpTaskDelegate implements JavaDelegate {
                     Integer status = rs.getObject("last_http_status", Integer.class); String code = rs.getString("last_error_code");
                     String effectClass = rs.getString("effect_class");
                     String reason = knownRejection(status, code) ? "EFFECT_REJECTED"
-                            : "readOnly".equals(effectClass) && code != null && java.util.Set.of("RESPONSE_INVALID", "RESPONSE_TOO_LARGE", "UNEXPECTED_STATUS").contains(code)
+                            : knownInvalidRead(effectClass, code)
                             ? "RESPONSE_INVALID" : null;
                     return reason == null ? null : new EffectDispatcher.Failed(rs.getObject("id", UUID.class), rs.getInt("attempts"), false,
                             reason, code, "permanent", status, effectClass, "Recorded known failure");

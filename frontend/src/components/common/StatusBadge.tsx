@@ -9,6 +9,7 @@ const TONE_CLASS: Record<StatusTone, string> = {
   attention: 'bg-status-attention-bg text-status-attention-fg',
   success: 'bg-status-success-bg text-status-success-fg',
   rejected: 'bg-status-rejected-bg text-status-rejected-fg',
+  failed: 'bg-danger-soft text-danger-foreground',
   cancelled: 'bg-status-cancelled-bg text-status-cancelled-fg',
 }
 
@@ -18,6 +19,7 @@ const TONE_ICON: Record<StatusTone, typeof Clock> = {
   attention: AlertTriangle,
   success: CheckCircle2,
   rejected: XCircle,
+  failed: XCircle,
   cancelled: Ban,
 }
 

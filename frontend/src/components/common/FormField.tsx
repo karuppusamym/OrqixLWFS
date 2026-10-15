@@ -24,6 +24,7 @@ export function FormField({
   className,
   children,
   hideLabel,
+  descriptionPlacement = 'above',
 }: {
   label: ReactNode
   description?: ReactNode
@@ -34,6 +35,7 @@ export function FormField({
   id?: string
   className?: string
   hideLabel?: boolean
+  descriptionPlacement?: 'above' | 'below'
   children: (ids: FieldIds) => ReactNode
 }) {
   const generated = useId()
@@ -51,12 +53,13 @@ export function FormField({
         {required ? <span className="ml-1.5 text-xs font-normal text-muted-foreground">(required)</span> : null}
         {optionalText ? <span className="ml-1.5 text-xs font-normal text-muted-foreground">(optional)</span> : null}
       </Label>
-      {description ? (
+      {description && descriptionPlacement === 'above' ? (
         <p id={ids.description} className="text-sm text-muted-foreground">
           {description}
         </p>
       ) : null}
       {children(ids)}
+      {description && descriptionPlacement === 'below' ? <p id={ids.description} className="text-sm text-muted-foreground">{description}</p> : null}
       {error ? (
         <p id={ids.error} className="flex items-start gap-1.5 text-sm font-medium text-danger" data-field-error>
           <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />

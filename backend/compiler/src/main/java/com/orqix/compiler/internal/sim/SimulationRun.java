@@ -75,6 +75,7 @@ final class SimulationRun {
     private final Connections connections;
     private final String definitionJson;
     private final Map<String, Object> input;
+    private final JsonNode inputValues;
     private final JsonNode scenario;
     private final SimulationContext context;
     private final CompileContext workspace;
@@ -101,6 +102,7 @@ final class SimulationRun {
         this.graph = outcome.analysis().graph();
         this.connections = outcome.analysis().connections();
         this.definitionJson = definitionJson;
+        this.inputValues = input;
         this.input = new LinkedHashMap<>();
         input.properties().forEach(e -> this.input.put(e.getKey(), DefaultWorkflowSimulator.plain(e.getValue())));
         this.scenario = scenario;
@@ -677,8 +679,8 @@ final class SimulationRun {
     /** Only known rejections and unusable read-only answers take the authored failure route. */
     private Transition knownFailure(Node.Http n, ObjectNode details, String description, String reason) {
         String kind = "EFFECT_REJECTED".equals(reason) ? "rejected" : "invalidResponse";
-        String message = "rejected".equals(kind) ? "The external system rejected the request."
-                : "The external system returned an unusable response.";
+        String message = "rejected".equals(kind) ? "The external system rejected this request."
+                : "The read-only system returned an invalid response.";
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("failureKind", kind);
         out.put("failureHttpStatus", "rejected".equals(kind) ? 400 : 0);
@@ -1144,8 +1146,8 @@ final class SimulationRun {
         } catch (IllegalArgumentException e) {
             return null;
         }
-        if (tokens.size() == 2 && "input".equals(tokens.get(0))) {
-            return input.get(tokens.get(1));
+        if (tokens.size() >= 2 && "input".equals(tokens.get(0))) {
+            return DefaultWorkflowSimulator.plain(com.orqix.compiler.InputValues.resolve(inputValues, ref));
         }
         if (tokens.size() == 3 && "steps".equals(tokens.get(0))) {
             Map<String, Object> step = steps.get(tokens.get(1));

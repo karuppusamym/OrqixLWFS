@@ -42,15 +42,21 @@ function inputFields(def: Definition): FieldInfo[] {
   const order = def.inputUi?.order ?? []
   const keys = Object.keys(def.inputSchema.properties)
   const ordered = [...order.filter((k) => keys.includes(k)), ...keys.filter((k) => !order.includes(k))]
-  return ordered.filter(key => def.inputSchema.properties[key]?.type !== 'object').map((key) => {
+  return ordered.filter(key => def.inputSchema.properties[key]?.type !== 'object').flatMap((key) => {
     const field = def.inputSchema.properties[key]
-    return {
+    const base: FieldInfo = {
       ref: `/input/${key}`,
       label: field?.title || humanize(key),
       group: REQUEST_GROUP,
       type: field?.format === 'date' && field.type === 'string' ? 'date' : (field?.type === 'object' ? 'array' : field?.type ?? 'string'),
       ...(field?.enum ? { enumValues: field.enum } : {}),
     }
+    if (field?.type !== 'array') return [base]
+    const derived: FieldInfo[] = [{ ref: `/input/${key}/count`, label: `${base.label}: count`, group: REQUEST_GROUP, type: 'integer' }]
+    if (field.items?.type === 'object') for (const [columnKey, column] of Object.entries(field.items.properties ?? {})) {
+      if (column.type === 'number' || column.type === 'integer') derived.push({ ref: `/input/${key}/sum/${columnKey}`, label: `${base.label}: total ${column.title || humanize(columnKey)}`, group: REQUEST_GROUP, type: column.type })
+    }
+    return [base, ...derived]
   })
 }
 
@@ -132,7 +138,7 @@ export function fieldInfo(def: Definition, ref: string, lookup?: ConnectionLooku
 
 /** Parse a field reference. */
 export function parseRef(ref: string): { kind: 'input'; key: string } | { kind: 'step'; nodeId: string; key: string } | null {
-  const input = /^\/input\/([a-z][A-Za-z0-9]{0,63})$/.exec(ref)
+  const input = /^\/input\/([a-z][A-Za-z0-9]{0,63})(?:\/(?:count|sum\/[a-z][A-Za-z0-9]{0,63}))?$/.exec(ref)
   if (input) return { kind: 'input', key: input[1] as string }
   const step = /^\/steps\/([A-Za-z][A-Za-z0-9_-]{0,63})\/([a-z][A-Za-z0-9]{0,63})$/.exec(ref)
   if (step) return { kind: 'step', nodeId: step[1] as string, key: step[2] as string }

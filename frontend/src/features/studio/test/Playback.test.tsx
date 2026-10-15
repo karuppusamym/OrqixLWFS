@@ -28,6 +28,12 @@ function Harness() {
 }
 
 describe('playback of a test run', () => {
+  it('shows a failed terminal outcome with negative styling and an explicit Failed label',()=>{
+    const failed={...result,outcome:{...result.outcome,businessOutcome:'Unavailable',outcomeKind:'failed' as const}}
+    render(<Playback result={failed} index={0} onIndex={()=>{}} />)
+    expect(screen.getByText('Failed · Unavailable')).toBeInTheDocument()
+    expect(screen.getByTestId('test-outcome')).not.toHaveClass('bg-status-success-bg')
+  })
   it('explains one step at a time and lists all of them as text', async () => {
     const user = userEvent.setup()
     render(<Harness />)

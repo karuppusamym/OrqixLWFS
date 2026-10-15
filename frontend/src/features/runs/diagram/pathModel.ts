@@ -8,7 +8,7 @@ import type { PathCurrent, PathVisit, RunPath } from './api'
  * What the diagram shows for one step. Every status has a text label and an icon in the component: color is never the
  * only signal.
  */
-export type StepStatus = 'waiting' | 'running' | 'attention' | 'done' | 'approved' | 'rejected' | 'timedOut' | 'stopped' | 'skipped' | 'ahead'
+export type StepStatus = 'waiting' | 'running' | 'attention' | 'done' | 'approved' | 'rejected' | 'failed' | 'timedOut' | 'stopped' | 'skipped' | 'ahead'
 
 export interface StepView {
   id: string
@@ -27,6 +27,8 @@ function visitStatus(visit: PathVisit | undefined): StepStatus {
       return 'approved'
     case 'rejected':
       return 'rejected'
+    case 'failed':
+      return 'failed'
     case 'timedOut':
       return 'timedOut'
     case 'cancelled':
@@ -61,7 +63,7 @@ export function buildStepViews(path: RunPath): Map<string, StepView> {
     const current = currentByNode.get(node.id)
     let status: StepStatus
     if (current) status = current.status === 'needsAttention' ? 'attention' : current.status === 'running' ? 'running' : 'waiting'
-    else if (visits.length > 0) status = visitStatus(visits[visits.length - 1])
+    else if (visits.length > 0) status = node.kind === 'end' && node.outcomeKind === 'failed' ? 'failed' : visitStatus(visits[visits.length - 1])
     else {
       const ins = incoming.get(node.id) ?? []
       const passedOver =
@@ -91,6 +93,7 @@ export const STATUS_TEXT: Record<StepStatus, StatusPresentation> = {
   done: { label: 'Done', requesterLabel: 'Done' },
   approved: { label: 'Approved', requesterLabel: 'Approved' },
   rejected: { label: 'Rejected', requesterLabel: 'Rejected' },
+  failed: { label: 'Failed', requesterLabel: 'Failed' },
   timedOut: { label: 'Timed out', requesterLabel: 'Timed out' },
   stopped: { label: 'Stopped', requesterLabel: 'Stopped' },
   skipped: { label: 'Not used', requesterLabel: 'Not used' },
@@ -185,6 +188,11 @@ export function describeStep(view: StepView, ctx: DescribeContext): Described {
     case 'stopped': {
       summary = 'The request ended while it was at this step.'
       if (last?.leftAt) lines.push({ label: 'Stopped', value: formatDateTime(last.leftAt) })
+      break
+    }
+    case 'failed': {
+      summary = view.kind === 'end' ? 'The request finished with a failed business outcome.' : 'This step failed; the request followed its configured failure route.'
+      if (last?.leftAt) lines.push({ label: 'Failed', value: formatDateTime(last.leftAt) })
       break
     }
     case 'done': {

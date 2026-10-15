@@ -182,6 +182,11 @@ export function validateDefinition(def: Definition, ctx: ValidationContext): Iss
         break
       }
       case 'startWorkflow': {
+        const each = c.forEach as { itemsRef?: string } | undefined
+        if (each?.itemsRef?.startsWith('/input/')) {
+          const collection = def.inputSchema.properties[each.itemsRef.slice('/input/'.length)]
+          if (collection?.items?.type === 'object') issues.push(issue('WF_FOREACH_COLLECTION', 'blocker', 'Repeating workflows currently accept scalar collections only. Repeating object rows are supported as request data.', nodePath(n, '/config/forEach/itemsRef'), n.id))
+        }
         const ref = c.workflowRef as string | undefined
         if (!ref) issues.push(issue('WF_SCHEMA_INVALID', 'blocker', `"${n.label}" needs a workflow to start.`, nodePath(n, '/config/workflowRef'), n.id))
         else if (ref === def.workflowKey) issues.push(issue('WF_CHILD_CYCLE', 'blocker', `"${n.label}" starts this same workflow.`, nodePath(n, '/config/workflowRef'), n.id))
@@ -349,7 +354,7 @@ function checkMessageField(def: Definition, n: WorkflowNode, ref: string, issues
   }
   const input = /^\/input\/(.+)$/.exec(ref)?.[1]
   if (input) {
-    if (!(def.inputSchema.required ?? []).includes(input)) issues.push(issue('WF_MESSAGE_CORRELATION_OPTIONAL', 'blocker', `"${n.label}" identifies the request by "${known.label}", but that field is optional on the request form. Make the field required.`, path, n.id))
+    if (!/^\/input\/[a-z][A-Za-z0-9]{0,63}\/(count|sum\/[a-z][A-Za-z0-9]{0,63})$/.test(ref) && !(def.inputSchema.required ?? []).includes(input)) issues.push(issue('WF_MESSAGE_CORRELATION_OPTIONAL', 'blocker', `"${n.label}" identifies the request by "${known.label}", but that field is optional on the request form. Make the field required.`, path, n.id))
   } else if (!availableFields(def, n.id).some((f) => f.ref === ref)) {
     issues.push(issue('WF_FIELDREF_NOT_GUARANTEED', 'blocker', `"${known.group} → ${known.label}" is not always available before "${n.label}".`, path, n.id))
   }

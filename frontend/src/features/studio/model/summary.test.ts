@@ -6,6 +6,10 @@ const end = (config: Record<string, unknown>) => ({ id: 'end', type: 'end', labe
 
 describe('Finish step subtitle', () => {
   const def = { nodes: [], transitions: [] } as unknown as Definition
+  it('identifies failed business outcomes without relabelling them rejected',()=>{
+    expect(nodeSubtitle(def,end({businessOutcome:'Unavailable',outcomeKind:'failed'}),{})).toBe('Finish · Unavailable · Failed')
+    expect(nodeSubtitle(def,end({businessOutcome:'Payment failed',outcomeKind:'failed'}),{})).toBe('Finish · Payment failed')
+  })
   it('reads "Finish · Rejected" when the outcome already says rejected', () => {
     expect(nodeSubtitle(def, end({ businessOutcome: 'Rejected', outcomeKind: 'rejected' }), {})).toBe('Finish · Rejected')
   })

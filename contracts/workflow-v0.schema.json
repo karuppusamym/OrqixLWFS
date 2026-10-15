@@ -913,7 +913,7 @@
             },
             "inputMapping": {
               "type": "object",
-              "minProperties": 1,
+              "minProperties": 0,
               "propertyNames": {
                 "$ref": "#/$defs/fieldKey"
               },
@@ -923,7 +923,7 @@
             },
             "resultMapping": {
               "type": "object",
-              "minProperties": 1,
+              "minProperties": 0,
               "propertyNames": {
                 "$ref": "#/$defs/fieldKey"
               },
@@ -1384,8 +1384,26 @@
     },
     "decisionCondition": {
       "oneOf": [
-        {"$ref": "#/$defs/atomicCondition"},
-        {"type":"object","properties":{"all":{"type":"array","minItems":2,"maxItems":8,"items":{"$ref":"#/$defs/atomicCondition"}}},"required":["all"],"additionalProperties":false}
+        {
+          "$ref": "#/$defs/atomicCondition"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "all": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 8,
+              "items": {
+                "$ref": "#/$defs/atomicCondition"
+              }
+            }
+          },
+          "required": [
+            "all"
+          ],
+          "additionalProperties": false
+        }
       ]
     },
     "decisionTable": {
@@ -1450,7 +1468,10 @@
     "scalarFormField": {
       "type": "object",
       "properties": {
-        "incidentEditable": { "const": true, "description": "Permit operator incident correction before captured effects or successful data-consuming steps. Request scalar fields only." },
+        "incidentEditable": {
+          "const": true,
+          "description": "Permit operator incident correction before captured effects or successful data-consuming steps. Request scalar fields only."
+        },
         "type": {
           "enum": [
             "string",
@@ -1618,7 +1639,14 @@
           "$ref": "#/$defs/label"
         },
         "items": {
-          "oneOf": [{"$ref":"#/$defs/scalarFormField"},{"$ref":"#/$defs/objectRowField"}]
+          "oneOf": [
+            {
+              "$ref": "#/$defs/scalarFormField"
+            },
+            {
+              "$ref": "#/$defs/objectRowField"
+            }
+          ]
         },
         "minItems": {
           "type": "integer",
@@ -1641,11 +1669,42 @@
       "additionalProperties": false
     },
     "objectRowField": {
-      "type":"object","additionalProperties":false,"required":["type","additionalProperties","properties"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "additionalProperties",
+        "properties"
+      ],
       "properties": {
-        "type":{"const":"object"},"title":{"$ref":"#/$defs/label"},"additionalProperties":{"const":false},
-        "properties":{"type":"object","minProperties":1,"maxProperties":10,"propertyNames":{"$ref":"#/$defs/fieldKey"},"additionalProperties":{"$ref":"#/$defs/scalarFormField"}},
-        "required":{"type":"array","maxItems":10,"uniqueItems":true,"items":{"$ref":"#/$defs/fieldKey"}}
+        "type": {
+          "const": "object"
+        },
+        "title": {
+          "$ref": "#/$defs/label"
+        },
+        "additionalProperties": {
+          "const": false
+        },
+        "properties": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 10,
+          "propertyNames": {
+            "$ref": "#/$defs/fieldKey"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/scalarFormField"
+          }
+        },
+        "required": {
+          "type": "array",
+          "maxItems": 10,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/fieldKey"
+          }
+        }
       }
     },
     "atomicCondition": {

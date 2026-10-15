@@ -77,13 +77,13 @@ export function nodeSubtitle(def: Definition, node: WorkflowNode, groupNames: Re
     case 'startWorkflow':
       return (c.workflowRef as string) || 'No workflow chosen'
     case 'end':
-      return endSubtitle((c.businessOutcome as string) || 'No outcome', c.outcomeKind === 'rejected')
+      return endSubtitle((c.businessOutcome as string) || 'No outcome', c.outcomeKind === 'rejected' ? 'rejected' : c.outcomeKind === 'failed' ? 'failed' : 'success')
   }
 }
 
 /** "Finish · Rejected": the outcome name, plus "Rejected" only when the name does not already say so. */
-function endSubtitle(outcome: string, rejected: boolean): string {
-  return `Finish · ${outcome}${rejected && !/reject/i.test(outcome) ? ' · Rejected' : ''}`
+function endSubtitle(outcome: string, kind: 'success' | 'rejected' | 'failed'): string {
+  return `Finish · ${outcome}${kind === 'rejected' && !/reject/i.test(outcome) ? ' · Rejected' : kind === 'failed' && !/fail/i.test(outcome) ? ' · Failed' : ''}`
 }
 
 /** Time of day (UTC) at which a "wait until a date" step ends when none is chosen (S12 section 10). */

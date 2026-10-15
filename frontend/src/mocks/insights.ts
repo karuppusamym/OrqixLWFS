@@ -43,7 +43,7 @@ interface RunFact {
   createdAt: number
   endedAt: number | null
   lifecycle: S['Lifecycle']
-  outcomeKind: 'success' | 'rejected' | null
+  outcomeKind: S['OutcomeKind'] | null
   attention: { reason: S['InsightsAttentionRun']['reason']; since: number } | null
   stepLabel: string | null
   steps: StepFact[]

@@ -1,4 +1,5 @@
 import { isCalendarDate } from '@/lib/dates'
+import { resolveInputAggregate } from '@/lib/form/aggregates'
 import { conditionTerms, isAtomicCondition, type AtomicCondition, type Condition, type Definition, type Literal, type Transition, type WorkflowNode } from '@/features/studio/model/types'
 
 /**
@@ -910,6 +911,13 @@ class Run {
   private info(ref: string): { label: string; money: boolean } {
     const tokens = parsePointer(ref)
     if (!tokens) return { label: ref, money: false }
+    if (tokens[0] === 'input' && tokens.length > 2) {
+      const list = this.def.inputSchema.properties[tokens[1] ?? '']
+      const title = list?.title ?? tokens[1]
+      if (tokens[2] === 'count') return { label: `${title}: count`, money: false }
+      const column = list?.items?.properties?.[tokens[3] ?? '']
+      if (tokens[2] === 'sum') return { label: `${title}: total ${column?.title ?? tokens[3]}`, money: false }
+    }
     if (tokens.length === 2 && tokens[0] === 'input') {
       const key = tokens[1] as string
       const field = this.def.inputSchema.properties[key]
@@ -924,6 +932,8 @@ class Run {
   }
 
   private resolve(ref: string): unknown {
+    const aggregate = resolveInputAggregate(this.input, ref)
+    if (aggregate !== undefined) return aggregate
     const tokens = parsePointer(ref)
     if (!tokens) return null
     if (tokens.length === 2 && tokens[0] === 'input') return this.input[tokens[1] as string] ?? null

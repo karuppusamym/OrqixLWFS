@@ -84,11 +84,11 @@ function subtitleOf(node: PathNode, run: RunDetail): string {
 
 /** The route color follows the route kind (theme tokens in src/index.css). */
 function routeColor(on: RouteKind): string {
-  return `var(--edge-${on === 'timedOut' ? 'condition' : on === 'default' ? 'default' : on})`
+  return `var(--edge-${on === 'failed' ? 'rejected' : on === 'timedOut' ? 'condition' : on === 'default' ? 'default' : on})`
 }
 
 function handleFor(on: RouteKind): string {
-  return on === 'approved' ? 'approved' : on === 'rejected' ? 'rejected' : on === 'timedOut' ? 'timedOut' : on === 'condition' || on === 'default' ? 'route' : 'next'
+  return on === 'approved' ? 'approved' : on === 'rejected' || on === 'failed' ? 'rejected' : on === 'timedOut' ? 'timedOut' : on === 'condition' || on === 'default' ? 'route' : 'next'
 }
 
 interface Props {
@@ -171,7 +171,7 @@ function DiagramInner({ ws, run, operator, path }: Props & { path: RunPath }) {
       const card: StepNodeData = { kind, label: n.label, subtitle: subtitleOf(n, run), blockers: 0, warnings: 0 }
       if (kind === 'approval' || kind === 'waitForMessage') card.timeout = n.hasTimeout === true
       if (kind === 'end') {
-        card.outcomeKind = n.outcomeKind === 'rejected' ? 'rejected' : 'success'
+        card.outcomeKind = n.outcomeKind === 'failed' ? 'failed' : n.outcomeKind === 'rejected' ? 'rejected' : 'success'
         if (n.outcome) card.outcome = n.outcome
       }
       const descriptionId = `run-step-desc-${index}`

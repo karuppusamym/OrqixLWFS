@@ -149,7 +149,8 @@ export function Playback({ result, index, onIndex }: { result: SimulationResult;
   const last = trace.length - 1
   const entry = trace[Math.min(Math.max(index, 0), last)] as SimulationStep
   const outcome = result.outcome
-  const rejected = outcome.status === 'finished' && outcome.outcomeKind === 'rejected'
+  const failed = outcome.status === 'finished' && outcome.outcomeKind === 'failed'
+  const rejected = outcome.status === 'finished' && (outcome.outcomeKind === 'rejected' || failed)
   const attention = outcome.status === 'needsAttention'
   const Icon = attention ? AlertTriangle : rejected ? XCircle : CheckCircle2
   const currentRef = useRef<HTMLButtonElement>(null)
@@ -171,7 +172,7 @@ export function Playback({ result, index, onIndex }: { result: SimulationResult;
       <div className={cn('flex gap-2 rounded-card border-2 p-3', attention ? 'border-warning-foreground bg-warning-soft' : rejected ? 'border-outcome-rejected-border bg-status-rejected-bg' : 'border-outcome-success-border bg-status-success-bg')} data-testid="test-outcome">
         <Icon className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
         <div>
-          <p className="font-semibold">{attention ? 'Needs attention' : outcome.businessOutcome}</p>
+          <p className="font-semibold">{attention ? 'Needs attention' : failed ? `Failed · ${outcome.businessOutcome}` : outcome.businessOutcome}</p>
           <p className="text-sm">{outcome.summary}</p>
         </div>
       </div>

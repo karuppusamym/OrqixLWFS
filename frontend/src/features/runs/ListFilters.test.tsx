@@ -2,8 +2,22 @@ import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { renderApp, signInAs, WS } from '@/test/utils'
+import { db } from '@/mocks/state'
 
 describe('workspace list filters', () => {
+  it('filters failed outcomes on the server and preserves the filter in the URL',async()=>{
+    signInAs('olga.operator')
+    const failed=[...db.runs.values()].find(run=>run.lifecycle==='completed')!
+    failed.outcomeKind='failed';failed.outcome='Unavailable'
+    const user=userEvent.setup();const {router}=renderApp(`/w/${WS}/runs`)
+    const filter=await screen.findByLabelText('Business outcome kind')
+    await user.selectOptions(filter,'failed')
+    expect(router.state.location.search).toBe('?outcomeKind=failed')
+    expect(await screen.findByText('Failed · Unavailable')).toBeInTheDocument()
+    await user.click(screen.getByRole('button',{name:'Clear filters'}))
+    expect(filter).toHaveValue('')
+    expect(router.state.location.search).toBe('')
+  })
   it('restores run filters from a shared URL and clears them without losing unrelated parameters', async () => {
     signInAs('olga.operator')
     const user = userEvent.setup()

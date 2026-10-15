@@ -45,6 +45,7 @@ public record ImportReport(Source source, List<Server> servers, Auth auth, Summa
      * @param notes what was simplified or dropped (disposition simplified)
      * @param suggestedEffectClass always a suggestion that a person must confirm; null for blocked operations
      */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Operation(String key, String method, String path, String summary, String disposition,
             List<String> blockers, List<String> notes, String suggestedEffectClass, String effectReason,
             String idempotencyHeader, boolean testable, boolean deprecated, boolean selectedByDefault,

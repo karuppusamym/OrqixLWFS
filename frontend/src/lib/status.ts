@@ -1,7 +1,7 @@
 import type { Lifecycle, OutcomeKind } from '@/api/types'
 
 /** Run status shown to people: lifecycle plus outcome, never color alone (docs/build/S7-frontend.md section 8). */
-export type StatusTone = 'waiting' | 'running' | 'attention' | 'success' | 'rejected' | 'cancelled'
+export type StatusTone = 'waiting' | 'running' | 'attention' | 'success' | 'rejected' | 'failed' | 'cancelled'
 
 export interface DisplayStatus {
   tone: StatusTone
@@ -25,6 +25,7 @@ export function runStatus(run: {
     case 'completed': {
       const outcome = run.outcome?.trim()
       const kind = run.outcomeKind
+      if (kind === 'failed') return { tone: 'failed', label: outcome ? `Failed · ${outcome}` : 'Failed' }
       return {
         tone: kind === 'rejected' ? 'rejected' : 'success',
         label: outcome ? `Completed · ${outcome}` : 'Completed',

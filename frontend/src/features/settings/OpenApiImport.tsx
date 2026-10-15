@@ -74,6 +74,7 @@ export function OpenApiImport() {
     <Button disabled={pending || !source.trim()} onClick={() => void review(false)}>Review operations</Button>
     {result ? <div className="space-y-4">
       <p role="status">{result.report.summary.operations} operations: {result.report.summary.supported} supported, {result.report.summary.simplified} simplified, {result.report.summary.blocked} blocked. Select at most 20.</p>
+      {typeof result.report.auth.message === 'string' ? <p className="text-sm">Authentication review: {result.report.auth.message}</p> : null}
       {result.report.issues.map((issue, index) => <Alert key={`${issue.code}-${index}`} tone={issue.severity === 'blocker' ? 'danger' : 'warning'}>{issue.message}</Alert>)}
       {result.report.operations.map(operation => <div key={operation.key} className="space-y-2 rounded-card border border-border p-3">
         <div className="flex items-start gap-2"><Checkbox id={`import-${operation.key}`} checked={!!selected[operation.key]} disabled={pending || operation.disposition === 'blocked' || (!selected[operation.key] && Object.keys(selected).length >= 20)} onCheckedChange={checked => changeSelection(operation.key, checked ? { key: operation.key, effectClass: operation.suggestedEffectClass as Selection['effectClass'] ?? 'nonIdempotent', ...(operation.idempotencyHeader ? { idempotencyHeader: operation.idempotencyHeader } : {}) } : null)} /><Label htmlFor={`import-${operation.key}`}>{operation.method} {operation.path} — {operation.summary ?? operation.key} ({operation.disposition})</Label></div>
@@ -87,7 +88,11 @@ export function OpenApiImport() {
       <div><Label htmlFor="import-version">Connection version</Label><Input id="import-version" type="number" min={1} value={version} disabled={pending} onChange={event => { setVersion(event.target.value); setResult({ ...result, definition: null }) }} /></div>
       <div className="flex gap-2"><Checkbox id="confirm-import-effects" checked={confirmed} disabled={pending} onCheckedChange={checked => { setConfirmed(checked === true); if (!checked) setResult({ ...result, definition: null }) }} /><Label htmlFor="confirm-import-effects">I confirmed the retry behavior of the selected operations with the system owner</Label></div>
       <Button disabled={pending || !confirmed || !Object.keys(selected).length} onClick={() => void review(true)}>Build reviewed definition</Button>
-      {result.definition ? <div className="space-y-3"><details><summary className="cursor-pointer">Review connection definition</summary><pre className="max-h-96 overflow-auto text-xs">{JSON.stringify(result.definition, null, 2)}</pre></details><Button disabled={pending} onClick={() => void register()}>Register reviewed connection</Button></div> : null}
+      {result.definition ? <div className="space-y-3"><details><summary className="cursor-pointer">Review connection definition</summary>
+        {/* Keyboard users need focus to scroll this named region (WCAG 2.1.1), as with ScrollTable. */}
+        {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex */}
+        <pre tabIndex={0} role="region" aria-label="Reviewed connection definition" className="max-h-96 overflow-auto text-xs">{JSON.stringify(result.definition, null, 2)}</pre>
+      </details><Button disabled={pending} onClick={() => void register()}>Register reviewed connection</Button></div> : null}
     </div> : null}
     {error ? <><ProblemAlert error={error} />{error.detail ? <p className="text-sm text-danger">{error.detail}</p> : null}</> : null}
     {notice ? <p role="status">{notice}</p> : null}

@@ -27,6 +27,24 @@ python tools/api-e2e/e2e_scenarios.py --faults   # adds 7-9: retries, commit-the
 The script publishes release 1 as `paul.publisher` if the template has no active release, and resets the stub before
 each scenario group. Exit code 0 means every check passed.
 
+For a separate verification stack, set `ORQIX_BASE_URL` (for example `http://localhost:18080`) and
+`ORQIX_STUB_URL` (for example `http://localhost:18095`). Run scenario scripts sequentially because they share
+the stub's fault settings and order journal. Existing stack volumes do not need to be reset.
+
+## Reviewed imports and conditional row forms (`e2e_authoring.py`)
+
+```bash
+python tools/api-e2e/e2e_authoring.py
+```
+
+Uses real OIDC, API authorization, immutable registration, publication and PostgreSQL/Flowable execution.
+Checks import permission denials, credential redaction, explicit retry confirmation and separate registration;
+then publishes a conditional form with strict numeric rows and a pinned multi-input decision. Forged hidden
+answers and malformed rows are rejected. Actual count/sum outputs are checked against simulation, including
+exact decimal addition and zero totals for omitted optional rows. Creates unique resources without changing
+connection bindings or calling remote source systems. This establishes local runtime behavior, not tenant or
+source-system acceptance.
+
 ## Operations scenarios 10-14 (`e2e_operations.py`)
 
 ```bash

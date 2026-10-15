@@ -1,7 +1,22 @@
 # Feature implementation status (R0)
-Updated 10 October 2026 · deliverable 18 · status vocabulary from [doc 09](09-master-plan.md#definition-of-a-build-ticket)
+Updated 15 October 2026 · status vocabulary from [doc 09](09-master-plan.md#definition-of-a-build-ticket)
 
 **Verified** = automated tests pass against real PostgreSQL/Flowable (and, where stated, the Docker stack with real Keycloak and the procurement stub). **Implemented** = code exists; integration or acceptance verification is pending or limited as stated in the row. Nothing is marked Verified on mocks alone.
+
+## Current verified checkpoint - 15 October 2026
+
+The resumed competitive batch verifies fourteen bounded tickets in the [delivery register](22-competitive-gap-delivery.md). These include group-based skill restrictions, working calendars, overdue notices, shared publication test suites, conjunctive decisions, generated PDF/DOCX, approved Microsoft folder/version choices, guarded incident correction, empty-run detection, known HTTP failure routes, conditional forms/typed rows/counts/totals, and reviewed OpenAPI import. Their limits and remaining epics are explicit in [product closeout](21-product-closeout.md).
+
+| Check | Final observed evidence |
+|---|---|
+| Backend | Compiler 440 pass; application 651 unique cases, 647 pass/four intentional skips, zero unresolved failures/errors. Full clean run plus corrected two-test aggregate fixture rerun; final verify/packaging and unchanged coverage gate pass |
+| Frontend | 716 tests pass; final import UI checks 3/3; static checks and production/mock builds pass |
+| Browser | Mock Edge 62 pass/four real-only skips; added real OpenAPI import browser test passes with actual Keycloak, keyboard focus, axe and separate registration |
+| Docker API scenarios | 94/94 checks across authoring/import/rows/DMN, attachment streaming limits/stages, simple/medium flows and complex parallel/timer/child execution |
+| Contracts/tools | 88 contract checks, four offline migration tests and 132 manifest checks pass; OpenAPI lint passes with 48 documentation warnings |
+| Local deployment | Healthy isolated stack at http://localhost:18080; image `orqix/orqix:validated-1015`, migrations through V29. Existing stack and volumes are preserved |
+
+[Doc 19](19-product-build-tracker.md#competitive-batch-verification--15-october-2026) records exact logs, combined-run methodology and image identity. Nineteen broader engineering epics and external/customer/infrastructure acceptance gates remain open. Historical totals and limits below describe their dated checkpoints; this section and the delivery register govern the current batch.
 
 ## Prior committed baseline - 10 October 2026 (demo release candidate, second pass)
 

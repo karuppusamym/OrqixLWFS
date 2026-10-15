@@ -1,6 +1,6 @@
 # Product closeout and remaining work
 
-Updated 11 October 2026. This is the current remaining-item register. The R0 implementation checklist, current build batch, future product roadmap and customer acceptance are separate scopes. Closing the batch does not mean every R1–R3 epic is implemented. [Build evidence](19-product-build-tracker.md) records the checks for the combined tree.
+Updated 15 October 2026. This is the current remaining-item register. The R0 implementation checklist, current build batch, future product roadmap and customer acceptance are separate scopes. Closing a bounded batch does not mean every R1–R3 epic is implemented. [Build evidence](19-product-build-tracker.md) records final verification and its limits; [competitive delivery](22-competitive-gap-delivery.md) tracks every authorized gap.
 
 ## Previous build batch - complete
 
@@ -35,6 +35,20 @@ The five authorized slices are complete and verified locally. Full runs, reviewe
 | Test workflow | Pure dry-run trace/reasons, route coverage, saved browser cases, nested child simulation with global limits; S26 | Simulated outcomes do not prove external effects or engine timing; cases do not gate publication |
 | Attachments and stages | Request-form uploads, request file lifecycle/quotas, optional scanner hook, declared case stages/deadlines/notice history and Studio authoring; S25 | Scanner-disabled files show Not scanned; no document generation, adaptive CMMN or stage-driven rerouting |
 
+## Current competitive batch: verified locally
+
+| Bounded implementation | Current boundary |
+|---|---|
+| Skills, working calendars and overdue notices; [S27](build/S27-work-management.md) | Fresh group-based skill intersection and existing candidate queues; pinned working-hour due dates; bounded assignee in-app notices. No proficiency/load dispatch, shared calendar administration or automatic reassignment |
+| Shared tests and multi-input decisions; [S28](build/S28-rules-authoring.md) | Designer-only samples and exact suite/draft/dependency publication attestations; flat 2–8-field AND rules with disjoint UNIQUE behavior. Other hit policies/effective-dated packs remain open |
+| Generated documents and Microsoft browsing; [S29](build/S29-documents-integrations.md) | Plain-text PDF/DOCX templates pinned in releases, attachment authorization/limits/deduplication, and explicit approved-folder file/version choices with separate grants/audiences. No rich document designer or unrestricted tenant search |
+| Incident correction and watchdog; [S30](build/S30-incident-correction.md), [S31](build/S31-run-watchdog.md) | Explicitly editable scalar input before any captured effect/prior consuming step; separate retry. Proven-empty stale requests become operator incidents with controlled cancellation; no arbitrary token reconstruction |
+| Known HTTP failure routes; [S32](build/S32-known-failure-routes.md) | Journal-confirmed permanent rejection or read-only invalid response, guarded failure facts and replay without resend. Failed business outcomes have distinct presentation/filtering. Unknown effects and retry exhaustion remain incidents; generic compensation/signal support is open |
+| Conditional questions/layouts and typed rows; [S35](build/S35-conditional-forms.md) | Pinned server validation, hidden-value rejection, guarded consumption, bounded scalar row columns and Studio/request integration. Count/sum use a shared bounded resolver; object-row workflow iteration/general task correction remain open |
+| OpenAPI connection import; [S36](build/S36-openapi-import.md) | Bounded local JSON/YAML review, explicit selected operations/retry confirmation, separate immutable registration and ordinary binding/security rules. Unsupported shapes have reasons; remote compatibility requires acceptance |
+
+Final combined verification: 440 compiler cases and 651 application cases (647 pass, four intentional skips), zero unresolved failures/errors, coverage gate and executable packaging pass. The full run plus corrected two-test aggregate fixture rerun is explicitly distinguished from a second full run. Frontend passes all 716 tests; final import UI regression passes 3/3. Contracts/static checks pass, the mock browser suite passes 62 with four real-only skips, the real import browser test passes, and Docker API scenarios pass 94/94 checks. The rebuilt private stack is healthy at http://localhost:18080. [Doc 19](19-product-build-tracker.md#competitive-batch-verification--15-october-2026) records exact logs, image identity and scope. Fourteen bounded slices are verified; nineteen broader engineering epics and customer/infra acceptance gates remain open.
+
 ## Customer and source acceptance still open
 
 These are not infrastructure-only tasks and cannot be closed using synthetic fixtures.
@@ -53,10 +67,10 @@ These are engineering features, not infrastructure. They remain in the [full bac
 | Area | Remaining functionality |
 |---|---|
 | Migration breadth | Broader/dynamic form import, optional reviewed AI mapping proposals, additional native connectors, multi-decision selection inside projects, native user-task multi-instance and broader BPMN loss-aware import |
-| Execution and cases | Generic boundary/error/compensation/signal events, subprocesses/CMMN, mutable correction forms, nested/object collections, adaptive case stages, business calendars and recurring escalation |
-| Banking and rules | Effective-dated rule packs, multi-input rule tables, stored publish-gating decision tests, cross-stage separation of duties and multi-currency rules |
-| Operations and authoring | Audited incident variable correction, waiting-on-nothing detection, swimlanes, threaded element discussion, Pega-style UI designer, skills-based work queues, external-worker SDK, in-flight migration and canary releases |
-| Documents and integrations | OCR, Microsoft tenant file browsing, document generation, OAuth lifecycle automation, Teams/mail and approved write-capable agent tools |
+| Execution and cases | Generic boundary/error/compensation/signal events beyond S32, subprocesses/CMMN, mutable task/case correction, nested collections and object-row workflow iteration, adaptive case stages, centrally administered calendars and broader escalation/dispatch policies |
+| Banking and rules | Effective-dated rule packs, additional hit policies/OR/nested decision rows and broader FEEL, cross-stage separation of duties and multi-currency rules |
+| Operations and authoring | Arbitrary incident variable/token correction beyond S30/S31, suspend/resume, in-flight release migration, swimlanes, threaded element discussion, full application UI designer, proficiency/load-based dispatch, external-worker SDK and canary releases |
+| Documents and integrations | OCR, rich/versioned template library and lifecycle administration, unrestricted tenant search, OAuth lifecycle automation, Teams/mail/JDBC/Kafka adapters and approved write-capable agent tools |
 | Platform organization and delivery | Remaining R1–R3 folder/shared-asset organization, advanced triggers/search/analytics, Git promotion and environment lifecycle contracts described by the backlog |
 
 ## Infrastructure excluded from this build

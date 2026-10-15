@@ -33,6 +33,21 @@ export function renderApp(path: string) {
   return { ...utils, router, client }
 }
 
+/** Resolve the initial route's lazy modules before starting component/data readiness assertions. */
+export async function renderAppReady(path: string) {
+  const router = createMemoryRouter(routes, { initialEntries: [path] })
+  if (!router.state.initialized) await new Promise<void>(resolve => {
+    const unsubscribe = router.subscribe(state => {
+      if (!state.initialized) return
+      unsubscribe()
+      resolve()
+    })
+  })
+  const client = testQueryClient()
+  const utils = render(<Providers client={client}><RouterProvider router={router} /></Providers>)
+  return { ...utils, router, client }
+}
+
 /** Render one element inside the workspace route tree (so useWorkspace works). */
 export function renderInWorkspace(element: ReactElement, path = `/w/${WS_PURCHASING}/test`) {
   const testRoutes: RouteObject[] = [

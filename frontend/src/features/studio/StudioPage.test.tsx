@@ -4,7 +4,7 @@ import { http } from 'msw'
 import { describe, expect, it } from 'vitest'
 import { db, PURCHASE_WORKFLOW_ID } from '@/mocks/state'
 import { server } from '@/test/server'
-import { renderApp, signInAs, WS } from '@/test/utils'
+import { renderAppReady, signInAs, WS } from '@/test/utils'
 
 const EDIT = `/w/${WS}/workflows/${PURCHASE_WORKFLOW_ID}/edit`
 
@@ -25,7 +25,7 @@ describe('studio (Steps tab, inspector, autosave, check, conflicts)', () => {
   it('commits and autosaves step notes before checking the exact revision', async () => {
     signInAs('dana.designer')
     const user = userEvent.setup()
-    renderApp(EDIT)
+    await renderAppReady(EDIT)
     await openSteps(user)
     await user.click(stepButton('manager'))
     await user.type(screen.getByLabelText(/Step notes/), 'Document reviewer rationale')
@@ -42,7 +42,7 @@ describe('studio (Steps tab, inspector, autosave, check, conflicts)', () => {
     draft.inputSchema.properties.items = { type: 'array', title: 'Purchase titles', items: { type: 'string', title: 'Title' }, minItems: 1, maxItems: 3 }
     draft.inputSchema.required = [...(draft.inputSchema.required ?? []), 'items']
     const user = userEvent.setup()
-    renderApp(EDIT)
+    await renderAppReady(EDIT)
     await openSteps(user)
     await user.click(stepButton('procure'))
     await user.selectOptions(await screen.findByLabelText('Execution order'), 'parallel')
@@ -59,7 +59,7 @@ describe('studio (Steps tab, inspector, autosave, check, conflicts)', () => {
     node.type = 'wait'
     node.config = { duration: 'PT1H' }
     const user = userEvent.setup()
-    renderApp(EDIT)
+    await renderAppReady(EDIT)
     await openSteps(user)
     await user.click(stepButton('manager'))
     const duration = await screen.findByLabelText(/^Wait duration/)
@@ -79,7 +79,7 @@ describe('studio (Steps tab, inspector, autosave, check, conflicts)', () => {
     node.type = 'wait'
     node.config = { duration: 'PT1H' }
     const user = userEvent.setup()
-    renderApp(EDIT)
+    await renderAppReady(EDIT)
     await openSteps(user)
     await user.click(stepButton('manager'))
     expect(await screen.findByLabelText(/^Wait duration/)).toBeInTheDocument()
@@ -111,7 +111,7 @@ describe('studio (Steps tab, inspector, autosave, check, conflicts)', () => {
     draft.nodes.find((n) => n.id === 'manager')!.config.timeoutAfter = 'PT2H'
     draft.transitions.push({ id: 'timeout-route', from: 'manager', to: 'rejected', on: 'timedOut' })
     const user = userEvent.setup()
-    renderApp(EDIT)
+    await renderAppReady(EDIT)
     await openSteps(user)
     expect(within(screen.getByTestId('step-row-manager')).getByLabelText('Timed out')).toHaveValue('rejected')
     await user.click(stepButton('manager'))
@@ -128,7 +128,7 @@ describe('studio (Steps tab, inspector, autosave, check, conflicts)', () => {
     const draft = db.workflows.get(PURCHASE_WORKFLOW_ID)!.drafts.at(-1)!.definition
     draft.dependencies.connections[0]!.definitionVersion = 2
     const user = userEvent.setup()
-    renderApp(EDIT)
+    await renderAppReady(EDIT)
     await openSteps(user)
     await user.click(stepButton('procure'))
     await screen.findByText(/Connection version 2 is unavailable/)
@@ -138,7 +138,7 @@ describe('studio (Steps tab, inspector, autosave, check, conflicts)', () => {
   it('loads the draft with its header, steps in order, and Canvas and Steps tabs', async () => {
     signInAs('dana.designer')
     const user = userEvent.setup()
-    renderApp(EDIT)
+    await renderAppReady(EDIT)
     const steps = await openSteps(user)
     expect(screen.getByTestId('save-state')).toHaveTextContent('Saved')
     expect(screen.getByRole('tab', { name: 'Canvas' })).toBeInTheDocument()
@@ -172,7 +172,7 @@ describe('studio (Steps tab, inspector, autosave, check, conflicts)', () => {
         return undefined
       }),
     )
-    renderApp(EDIT)
+    await renderAppReady(EDIT)
     await openSteps(user)
     await user.selectOptions(within(screen.getByTestId('step-row-manager')).getByLabelText('When rejected'), 'rejected')
     expect(screen.getByTestId('save-state')).toHaveTextContent('Unsaved changes')
@@ -186,7 +186,7 @@ describe('studio (Steps tab, inspector, autosave, check, conflicts)', () => {
   it('undo and redo work with the keyboard and return to the saved state', async () => {
     signInAs('dana.designer')
     const user = userEvent.setup()
-    renderApp(EDIT)
+    await renderAppReady(EDIT)
     await openSteps(user)
     const select = within(screen.getByTestId('step-row-manager')).getByLabelText('When rejected')
     await user.selectOptions(select, 'rejected')
@@ -206,7 +206,7 @@ describe('studio (Steps tab, inspector, autosave, check, conflicts)', () => {
     const user = userEvent.setup()
     // Someone else saved revision 2 in the meantime.
     const wf = db.workflows.get(PURCHASE_WORKFLOW_ID)!
-    renderApp(EDIT)
+    await renderAppReady(EDIT)
     await openSteps(user)
     wf.drafts.push({ revision: 2, savedAt: new Date().toISOString(), savedById: wf.ownerId, definition: structuredClone(wf.drafts[0]!.definition) })
     await user.selectOptions(within(screen.getByTestId('step-row-manager')).getByLabelText('When rejected'), 'rejected')
@@ -222,7 +222,7 @@ describe('studio (Steps tab, inspector, autosave, check, conflicts)', () => {
   it('Check workflow lists issues by step and Go to step opens the field the issue names', async () => {
     signInAs('dana.designer')
     const user = userEvent.setup()
-    renderApp(EDIT)
+    await renderAppReady(EDIT)
     await openSteps(user)
     // Break the approval: no approver group.
     await user.click(stepButton('manager'))
@@ -248,7 +248,7 @@ describe('studio (Steps tab, inspector, autosave, check, conflicts)', () => {
   it('deleting a step lists what goes with it, prunes layout and rule table, and can be undone', async () => {
     signInAs('dana.designer')
     const user = userEvent.setup()
-    renderApp(EDIT)
+    await renderAppReady(EDIT)
     await openSteps(user)
     await user.click(within(screen.getByTestId('step-row-amountPolicy')).getByRole('button', { name: 'Delete Check purchase amount' }))
     const dialog = await screen.findByRole('dialog', { name: 'Delete "Check purchase amount"?' })
@@ -263,7 +263,7 @@ describe('studio (Steps tab, inspector, autosave, check, conflicts)', () => {
   it('is read-only for a viewer: no palette, no add or delete, disabled routes', async () => {
     signInAs('vic.viewer')
     const user = userEvent.setup()
-    renderApp(EDIT)
+    await renderAppReady(EDIT)
     await openSteps(user)
     expect(screen.getByText(/You can look at this draft but not change it/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Add step after/ })).not.toBeInTheDocument()
@@ -274,7 +274,7 @@ describe('studio (Steps tab, inspector, autosave, check, conflicts)', () => {
   it('tests a rule with a sample value (Test this rule)', async () => {
     signInAs('dana.designer')
     const user = userEvent.setup()
-    renderApp(EDIT)
+    await renderAppReady(EDIT)
     await openSteps(user)
     await user.click(stepButton('amountPolicy'))
     const sample = await screen.findByLabelText('Sample value')
@@ -293,7 +293,7 @@ describe('studio (Steps tab, inspector, autosave, check, conflicts)', () => {
   it('call-a-system inspector offers connections and builds the mapping from the operation contract', async () => {
     signInAs('dana.designer')
     const user = userEvent.setup()
-    renderApp(EDIT)
+    await renderAppReady(EDIT)
     await openSteps(user)
     await user.click(stepButton('procure'))
     expect(await screen.findByLabelText(/^Connection/)).toHaveValue('procurement')
@@ -319,7 +319,7 @@ describe('studio (Steps tab, inspector, autosave, check, conflicts)', () => {
     }
     draft.dependencies.connections = [{ key: 'vendor-risk-assistant', definitionVersion: 1 }]
     const user = userEvent.setup()
-    renderApp(EDIT)
+    await renderAppReady(EDIT)
     await openSteps(user)
     await user.click(stepButton('procure'))
     const connection = await screen.findByLabelText(/^Connection/)

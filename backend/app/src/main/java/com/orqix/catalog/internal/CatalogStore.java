@@ -25,7 +25,7 @@ public class CatalogStore {
 
     public record WorkflowRow(UUID id, UUID workspaceId, String key, String name, String description, UUID owner,
             int draftRevision, UUID activeReleaseId, int version, Instant createdAt, Instant updatedAt,
-            Integer activeReleaseNumber, Instant activePublishedAt, Integer activeDraftRevision) {
+            Integer activeReleaseNumber, Instant activePublishedAt, Integer activeDraftRevision, UUID folderId) {
     }
 
     public record DraftRow(UUID workflowId, int revision, String definitionJson, String schemaVersion, UUID savedBy,
@@ -52,10 +52,11 @@ public class CatalogStore {
     private static final String WORKFLOW_COLUMNS = """
             w.id, w.workspace_id, w.key, w.name, w.description, w.owner_subject_id, w.draft_revision, w.active_release_id,
             w.version, w.created_at, w.updated_at, r.release_number AS active_release_number,
-            r.published_at AS active_published_at, r.draft_revision AS active_draft_revision
+            r.published_at AS active_published_at, r.draft_revision AS active_draft_revision, fi.folder_id
             """;
     private static final String WORKFLOW_FROM = """
             FROM workflow w LEFT JOIN workflow_release r ON r.workspace_id = w.workspace_id AND r.id = w.active_release_id
+            LEFT JOIN workflow_folder_item fi ON fi.workspace_id = w.workspace_id AND fi.workflow_id = w.id
             """;
     private static final String RELEASE_COLUMNS = """
             id, workspace_id, workflow_id, release_number, draft_revision, definition::text AS definition, schema_version,
@@ -126,7 +127,7 @@ public class CatalogStore {
     /** Keyset page (created_at DESC, id DESC), {@code limit + 1} rows. */
     @Transactional(readOnly = true)
     public List<WorkflowRow> workflows(UUID workspaceId, String query, boolean onlyActive, java.util.Set<UUID> restrictTo,
-            CursorCodec.Position after, int limitPlusOne) {
+            UUID folder, boolean unfiled, UUID owner, CursorCodec.Position after, int limitPlusOne) {
         String like = query == null || query.isBlank() ? null : "%" + query.trim().toLowerCase().replace("%", "\\%")
                 .replace("_", "\\_") + "%";
         return jdbc.sql("SELECT " + WORKFLOW_COLUMNS + WORKFLOW_FROM + """
@@ -134,13 +135,16 @@ public class CatalogStore {
                    AND (CAST(:like AS text) IS NULL OR lower(w.name) LIKE :like OR lower(w.key) LIKE :like)
                    AND (:onlyActive = false OR w.active_release_id IS NOT NULL)
                    AND (:unrestricted = true OR w.id IN (:restrictTo))
+                   AND (CAST(:folder AS uuid) IS NULL OR fi.folder_id = CAST(:folder AS uuid))
+                   AND (:unfiled = false OR fi.folder_id IS NULL)
+                   AND (CAST(:owner AS uuid) IS NULL OR w.owner_subject_id = CAST(:owner AS uuid))
                    AND (CAST(:afterAt AS timestamptz) IS NULL
                         OR (w.created_at, w.id) < (CAST(:afterAt AS timestamptz), CAST(:afterId AS uuid)))
                  ORDER BY w.created_at DESC, w.id DESC
                  LIMIT :limit
                 """)
                 .param("ws", workspaceId).param("like", like).param("onlyActive", onlyActive)
-                .param("unrestricted", restrictTo == null)
+                .param("unrestricted", restrictTo == null).param("folder", folder).param("unfiled", unfiled).param("owner", owner)
                 .param("restrictTo", restrictTo == null || restrictTo.isEmpty() ? List.of(new UUID(0, 0)) : List.copyOf(restrictTo))
                 .param("afterAt", after == null ? null : Sql.ts(after.at()))
                 .param("afterId", after == null ? null : UUID.fromString(after.id()))
@@ -271,7 +275,7 @@ public class CatalogStore {
                 rs.getString("description"), Sql.uuid(rs, "owner_subject_id"), rs.getInt("draft_revision"),
                 Sql.uuid(rs, "active_release_id"), rs.getInt("version"), Sql.instant(rs, "created_at"),
                 Sql.instant(rs, "updated_at"), (Integer) rs.getObject("active_release_number"),
-                Sql.instant(rs, "active_published_at"), (Integer) rs.getObject("active_draft_revision"));
+                Sql.instant(rs, "active_published_at"), (Integer) rs.getObject("active_draft_revision"), Sql.uuid(rs, "folder_id"));
     }
 
     private ReleaseRow mapRelease(ResultSet rs, int n) throws SQLException {

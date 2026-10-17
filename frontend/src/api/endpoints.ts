@@ -15,8 +15,30 @@ export const getMe = () => call(api.GET('/me'))
 // Templates and workflows
 export const listTemplates = (ws: string) => call(api.GET('/workspaces/{workspaceId}/templates', { params: { path: { workspaceId: ws } } }))
 
-export const listWorkflows = (ws: string, query: { q?: string; startable?: boolean; cursor?: string; limit?: number } = {}) =>
+export const listWorkflows = (ws: string, query: { q?: string; startable?: boolean; folder?: string; owner?: string; cursor?: string; limit?: number } = {}) =>
   call(api.GET('/workspaces/{workspaceId}/workflows', { params: { path: { workspaceId: ws }, query } }))
+
+// Folders and owners (PL01)
+export const getWorkflowOrganization = (ws: string) =>
+  call(api.GET('/workspaces/{workspaceId}/workflow-organization', { params: { path: { workspaceId: ws } } }))
+
+export const listWorkflowOwnerCandidates = (ws: string) =>
+  call(api.GET('/workspaces/{workspaceId}/workflow-owner-candidates', { params: { path: { workspaceId: ws } } }))
+
+export const createWorkflowFolder = (ws: string, name: string) =>
+  call(api.POST('/workspaces/{workspaceId}/workflow-folders', { params: { path: { workspaceId: ws } }, body: { name } }))
+
+export const renameWorkflowFolder = (ws: string, folderId: string, body: S['RenameWorkflowFolder']) =>
+  call(api.PUT('/workspaces/{workspaceId}/workflow-folders/{folderId}', { params: { path: { workspaceId: ws, folderId } }, body }))
+
+export const deleteWorkflowFolder = (ws: string, folderId: string) =>
+  callVoid(api.DELETE('/workspaces/{workspaceId}/workflow-folders/{folderId}', { params: { path: { workspaceId: ws, folderId } } }))
+
+export const setWorkflowFolder = (ws: string, workflowId: string, body: S['SetWorkflowFolder']) =>
+  call(api.PUT('/workspaces/{workspaceId}/workflows/{workflowId}/folder', { params: { path: { workspaceId: ws, workflowId } }, body }))
+
+export const setWorkflowOwner = (ws: string, workflowId: string, body: S['SetWorkflowOwner']) =>
+  call(api.PUT('/workspaces/{workspaceId}/workflows/{workflowId}/owner', { params: { path: { workspaceId: ws, workflowId } }, body }))
 
 export const createWorkflow = (ws: string, body: S['CreateWorkflowRequest']) =>
   call(api.POST('/workspaces/{workspaceId}/workflows', { params: { path: { workspaceId: ws } }, body }))

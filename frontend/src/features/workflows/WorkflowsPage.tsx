@@ -4,7 +4,8 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import * as endpoints from '@/api/endpoints'
 import type { ProblemError } from '@/api/problem'
-import { useTemplates, useWorkflows } from '@/api/queries'
+import { useTemplates, useWorkflowOrganization, useWorkflows } from '@/api/queries'
+import type { components } from '@/api/schema'
 import { useWorkspace } from '@/app/workspace'
 import { FormField } from '@/components/common/FormField'
 import { EmptyState } from '@/components/common/EmptyState'
@@ -25,6 +26,7 @@ import { humanize, KEY_PATTERN, toKey } from '@/lib/text'
 import { useListFilters } from '@/lib/useListFilters'
 import { DescribeItChoice, DescribeItDialog } from '@/features/ai/DescribeItDialog'
 import { PinnedWorkflows, PinWorkflowButton } from './PinnedWorkflows'
+import { folderName, ManageFoldersButton, OrganizationFilters, OrganizeWorkflowDialog } from './Organization'
 
 /** Workflow list with "New workflow" (docs/build/S7-frontend.md section 2). */
 export function WorkflowsPage() {
@@ -32,10 +34,15 @@ export function WorkflowsPage() {
   const ws = workspace.id
   const { params, update } = useListFilters()
   const applied = params.get('q') ?? ''
-  const clearSearch = () => update({ q: '' })
+  const folder = params.get('folder') ?? ''
+  const owner = params.get('owner') ?? ''
+  const filtered = applied !== '' || folder !== '' || owner !== ''
+  const clearSearch = () => update({ q: '', folder: '', owner: '' })
   const [creating, setCreating] = useState(false)
+  const [organizing, setOrganizing] = useState<components['schemas']['WorkflowSummary'] | null>(null)
   const canRead = can('workflow.read')
-  const query = useWorkflows(ws, applied ? { q: applied } : {})
+  const org = useWorkflowOrganization(ws, canRead)
+  const query = useWorkflows(ws, { ...(applied ? { q: applied } : {}), ...(canRead && folder ? { folder } : {}), ...(canRead && owner ? { owner } : {}) })
   const items = query.data?.pages.flatMap((p) => p.items) ?? []
 
   return (
@@ -46,6 +53,7 @@ export function WorkflowsPage() {
         actions={
           can('workflow.edit') ? (
             <div className="flex flex-wrap gap-2">
+            <ManageFoldersButton />
             <Button asChild size="lg"><Link to={`/w/${ws}/migrations`}>Import workflow</Link></Button>
             <Button variant="primary" size="lg" onClick={() => setCreating(true)}>
               <FilePlus2 aria-hidden="true" /> New workflow
@@ -71,7 +79,8 @@ export function WorkflowsPage() {
         <Button type="submit" variant="secondary">
           Search
         </Button>
-        {applied ? <Button variant="ghost" onClick={clearSearch}>Clear search</Button> : null}
+        {canRead ? <OrganizationFilters folder={folder} owner={owner} onChange={update} /> : null}
+        {filtered ? <Button variant="ghost" onClick={clearSearch}>Clear filters</Button> : null}
       </form>
 
       {query.isPending ? (
@@ -79,8 +88,8 @@ export function WorkflowsPage() {
       ) : query.isError ? (
         <QueryError error={query.error} onRetry={() => void query.refetch()} what="workflows" />
       ) : items.length === 0 ? (
-        <EmptyState icon={WorkflowIcon} title={applied ? 'No workflows match your search' : 'No workflows yet'} action={applied ? <Button onClick={clearSearch}>Show all workflows</Button> : undefined}>
-          {applied ? 'Try another name or clear your search.' : can('workflow.edit') ? 'Create one from a template to get started.' : 'Ask a designer to publish a workflow.'}
+        <EmptyState icon={WorkflowIcon} title={filtered ? 'No workflows match your search' : 'No workflows yet'} action={filtered ? <Button onClick={clearSearch}>Show all workflows</Button> : undefined}>
+          {filtered ? 'Try another name, folder or owner, or clear your filters.' : can('workflow.edit') ? 'Create one from a template to get started.' : 'Ask a designer to publish a workflow.'}
         </EmptyState>
       ) : (
         <>
@@ -92,6 +101,7 @@ export function WorkflowsPage() {
                   <TH>Name</TH>
                   <TH>Status</TH>
                   <TH>Draft</TH>
+                  {canRead ? <TH>Folder and owner</TH> : null}
                   <TH>Last change</TH>
                   <TH>
                     <span className="sr-only">Actions</span>
@@ -130,12 +140,19 @@ export function WorkflowsPage() {
                       )}
                     </TD>
                     <TD>Revision {w.draftRevision}</TD>
+                    {canRead ? (
+                      <TD>
+                        <span className="block">{folderName(org.data?.folders, w.folderId) ?? (w.folderId ? 'Folder' : 'Unfiled')}</span>
+                        <span className="block text-xs text-muted-foreground">Owner: {w.owner?.displayName ?? 'Unknown'}</span>
+                      </TD>
+                    ) : null}
                     <TD className="whitespace-nowrap text-muted-foreground">
                       <RelativeTime value={w.updatedAt} />
                     </TD>
                     <TD>
                       <div className="flex flex-wrap justify-end gap-2">
                         {canRead ? <PinWorkflowButton id={w.id} name={w.name} /> : null}
+                        {can('workflow.edit') ? <Button size="sm" variant="secondary" aria-label={`Organize ${w.name}`} onClick={() => setOrganizing(w)}>Organize</Button> : null}
                         {w.canStart ? (
                           <Button asChild size="sm" variant="primary">
                             <Link to={`/w/${ws}/start/${w.id}`} aria-label={`Start ${w.name}`}>
@@ -167,6 +184,7 @@ export function WorkflowsPage() {
         </>
       )}
       {creating ? <NewWorkflowDialog onClose={() => setCreating(false)} /> : null}
+      {organizing ? <OrganizeWorkflowDialog workflow={organizing} onClose={() => setOrganizing(null)} /> : null}
     </>
   )
 }

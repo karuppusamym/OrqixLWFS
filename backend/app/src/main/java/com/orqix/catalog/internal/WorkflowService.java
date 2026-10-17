@@ -89,6 +89,16 @@ public class WorkflowService {
     @Transactional(readOnly = true)
     public CatalogDtos.WorkflowPage listWorkflows(Caller caller, UUID workspaceId, String q, boolean startable,
             String cursor, Integer limit) {
+        return listWorkflows(caller, workspaceId, q, startable, null, null, cursor, limit);
+    }
+
+    /**
+     * {@code folder} is a folder ID or {@code none}; {@code owner} a subject ID. Both only narrow what the caller may
+     * already read: they never reveal, hide or grant anything (S46).
+     */
+    @Transactional(readOnly = true)
+    public CatalogDtos.WorkflowPage listWorkflows(Caller caller, UUID workspaceId, String q, boolean startable,
+            String folder, String owner, String cursor, Integer limit) {
         WorkspaceAccess access = policy.requireVisible(caller, workspaceId);
         boolean reader = access.has(Permission.WORKFLOW_READ);
         if (!reader && !access.canStartAnything()) {
@@ -98,13 +108,24 @@ public class WorkflowService {
         if (q != null && q.length() > 100) {
             throw ApiException.malformed("q must be at most 100 characters.");
         }
+        boolean unfiled = "none".equals(folder);
+        UUID folderId = folder == null || unfiled ? null : Ids.parseOrNull(folder);
+        UUID ownerId = owner == null ? null : Ids.parseOrNull(owner);
+        if ((folder != null && !unfiled && folderId == null) || (owner != null && ownerId == null)) {
+            throw ApiException.malformed("folder must be a folder ID or none, and owner a subject ID.");
+        }
+        if ((folder != null || owner != null) && !reader) {
+            throw policy.deny(workspaceId, caller.subjectId(), "workflow.read", "listWorkflows", false,
+                    new ApiException(ProblemCode.FORBIDDEN));
+        }
         int size = Limits.of(limit);
-        String filterKey = "listWorkflows|" + workspaceId + "|" + (q == null ? "" : q) + "|" + startable + "|" + reader;
+        String filterKey = "listWorkflows|" + workspaceId + "|" + (q == null ? "" : q) + "|" + startable + "|" + reader
+                + "|" + (folder == null ? "" : folder) + "|" + (owner == null ? "" : owner);
         CursorCodec.Position after = cursors.decode(cursor, filterKey);
         // Starters without workflow.read only see workflows they may start now (active release + grant).
         boolean onlyStartable = startable || !reader;
         Set<UUID> restrictTo = onlyStartable && !access.has(Permission.WORKFLOW_START) ? access.workflowStartGrants() : null;
-        List<CatalogStore.WorkflowRow> rows = store.workflows(workspaceId, q, onlyStartable, restrictTo, after, size + 1);
+        List<CatalogStore.WorkflowRow> rows = store.workflows(workspaceId, q, onlyStartable, restrictTo, folderId, unfiled, ownerId, after, size + 1);
         Page.Result<CatalogStore.WorkflowRow> page = Page.of(rows, size,
                 row -> new CursorCodec.Position(row.createdAt(), row.id().toString()), cursors, filterKey);
         Map<UUID, String> names = subjects.displayNames(page.items().stream().map(CatalogStore.WorkflowRow::owner).toList());
@@ -283,7 +304,7 @@ public class WorkflowService {
         return new CatalogDtos.WorkflowView(summary.id(), summary.key(), summary.name(), summary.description(),
                 summary.owner(), summary.draftRevision(), summary.activeRelease(), summary.canStart(),
                 summary.updatedAt(), row.version(), row.createdAt(),
-                Permission.apiValues(access.permissions(), access.canStartAnything()));
+                Permission.apiValues(access.permissions(), access.canStartAnything()), summary.folderId());
     }
 
     private CatalogDtos.WorkflowView summary(CatalogStore.WorkflowRow row, WorkspaceAccess access, Map<UUID, String> names) {
@@ -292,7 +313,7 @@ public class WorkflowService {
                         row.activeDraftRevision());
         return new CatalogDtos.WorkflowView(row.id(), row.key(), row.name(), row.description(),
                 subjects.ref(row.owner(), names), row.draftRevision(), active, canStart(access, row), row.updatedAt(),
-                null, null, null);
+                null, null, null, access.has(Permission.WORKFLOW_READ) ? row.folderId() : null);
     }
 
     private CatalogDtos.WorkflowDraft draftView(CatalogStore.DraftRow draft) {

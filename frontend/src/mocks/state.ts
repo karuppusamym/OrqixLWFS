@@ -199,8 +199,19 @@ export interface MockWorkflow {
   updatedAt: string
   /** Set when the draft was created by converting an imported source (maker-checker governance). */
   migration?: { migrationId: string; mapperId: string | null }
+  /** PL01: the folder this workflow is filed in; a label only, never an access rule. */
+  folderId?: string
   testSuite?: components['schemas']['WorkflowTestSuite']
   testPass?: { version: number; revision: number; passed: boolean; dependencies: string }
+}
+
+export interface MockFolder {
+  id: string
+  wsId: string
+  name: string
+  version: number
+  createdAt: string
+  updatedAt: string
 }
 
 export interface MockEvent {
@@ -363,6 +374,7 @@ export interface MockDb {
   migrationPolicies: Map<string, MockMigrationPolicy>
   migrationReviews: MockMigrationReview[]
   workflows: Map<string, MockWorkflow>
+  workflowFolders: Map<string, MockFolder>
   runs: Map<string, MockRun>
   notifications: MockNotification[]
   bindings: Map<string, MockBinding>
@@ -453,6 +465,7 @@ export function emptyDb(): MockDb {
     migrationPolicies: new Map(),
     migrationReviews: [],
     workflows: new Map(),
+    workflowFolders: new Map(),
     runs: new Map(),
     notifications: [],
     bindings: new Map(),
@@ -505,6 +518,7 @@ interface DbSnapshot {
   migrationPolicies?: Array<[string, MockMigrationPolicy]>
   migrationReviews?: MockMigrationReview[]
   workflows: Array<[string, MockWorkflow]>
+  workflowFolders?: Array<[string, MockFolder]>
   runs: Array<[string, MockRun]>
   notifications: MockNotification[]
   bindings: Array<[string, MockBinding]>
@@ -522,6 +536,7 @@ export function snapshotDb(): string {
     migrationPolicies: [...db.migrationPolicies],
     migrationReviews: db.migrationReviews,
     workflows: [...db.workflows],
+    workflowFolders: [...db.workflowFolders],
     runs: [...db.runs],
     notifications: db.notifications,
     bindings: [...db.bindings],
@@ -543,6 +558,7 @@ export function restoreDb(json: string): boolean {
     next.migrationPolicies = new Map(snap.migrationPolicies ?? [])
     next.migrationReviews = snap.migrationReviews ?? []
     next.workflows = new Map(snap.workflows)
+    next.workflowFolders = new Map(snap.workflowFolders ?? [])
     next.runs = new Map(snap.runs)
     next.notifications = snap.notifications
     next.bindings = new Map(snap.bindings)

@@ -344,6 +344,83 @@ class ConverterExpansionTest {
         }
     }
 
+    @Test
+    void extendedFeelFormsConvertToCanonicalGroupsThatTheCompilerAcceptsAndBehaveAtEveryBoundary() throws Exception {
+        var analysis = analyze("expression-feel-extended.bpmn");
+        var converted = Converter.convert(analysis, request("{\"workflowKey\":\"feel-ext\",\"name\":\"Feel ext\",\"acknowledgeInfo\":true}"), JSON, Map.of());
+        assertThat(converted.definition()).isNotNull();
+        assertThat(blockers(converted.definition(), emptyContext())).isEmpty();
+        Map<String, JsonNode> byId = new LinkedHashMap<>();
+        converted.definition().path("transitions").forEach(t -> byId.put(t.path("id").asString(), t));
+        assertThat(byId.get("tierLarge").path("condition").toString())
+                .isEqualTo("{\"fieldRef\":\"/input/amount\",\"operator\":\"gt\",\"value\":10000}");
+        assertThat(byId.get("tierMedium").path("condition").toString()).isEqualTo(
+                "{\"all\":[{\"fieldRef\":\"/input/amount\",\"operator\":\"gt\",\"value\":1000},{\"fieldRef\":\"/input/amount\",\"operator\":\"lte\",\"value\":10000}]}");
+        assertThat(byId.get("regionOutside").path("condition").toString()).isEqualTo(
+                "{\"all\":[{\"fieldRef\":\"/input/region\",\"operator\":\"ne\",\"value\":\"EU\"},{\"fieldRef\":\"/input/region\",\"operator\":\"ne\",\"value\":\"UK\"}]}");
+        assertThat(byId.get("riskEscalate").path("condition").toString()).isEqualTo(
+                "{\"any\":[{\"fieldRef\":\"/input/riskLevel\",\"operator\":\"eq\",\"value\":\"high\"},{\"fieldRef\":\"/input/riskLevel\",\"operator\":\"eq\",\"value\":\"critical\"},"
+                        + "{\"fieldRef\":\"/input/riskScore\",\"operator\":\"gte\",\"value\":80}]}");
+        var conditions = converted.report().issues().stream().filter(i -> "CONDITION_CONVERTED".equals(i.reasonCode())).toList();
+        assertThat(conditions).extracting(Report.Issue::sourceElementId).containsExactlyInAnyOrder("tierLarge", "tierMedium", "regionOutside", "riskEscalate");
+        assertThat(conditions).allMatch(i -> Report.REVIEW.equals(i.severity()));
+        JsonNode definition = converted.definition();
+        assertThat(endOf(definition, values("10000.01", "EU", "low", "1"))).isEqualTo("Large");
+        assertThat(endOf(definition, values("10000", "EU", "low", "1"))).isEqualTo("Medium");
+        assertThat(endOf(definition, values("1000.01", "EU", "low", "1"))).isEqualTo("Medium");
+        assertThat(endOf(definition, values("1000", "EU", "low", "1"))).as("(1000..10000] excludes 1000").isEqualTo("Routine");
+        assertThat(endOf(definition, values("999.99", "US", "low", "1"))).isEqualTo("Outside");
+        assertThat(endOf(definition, values("999.99", "UK", "low", "1"))).as("UK is listed").isEqualTo("Routine");
+        assertThat(endOf(definition, values("500", "EU", "high", "1"))).isEqualTo("Escalated");
+        assertThat(endOf(definition, values("500", "EU", "critical", "1"))).isEqualTo("Escalated");
+        assertThat(endOf(definition, values("500", "EU", "low", "80"))).isEqualTo("Escalated");
+        assertThat(endOf(definition, values("500", "EU", "low", "79.99"))).isEqualTo("Routine");
+    }
+
+    @Test
+    void everyUnsupportedFeelConstructIsReportedAsABlockerWithItsTextAndNeverConverted() {
+        List<String> unsupported = List.of("= amount in (>5, 6)", "= amount in [1..x]", "= amount in [5..1]", "= amount between 1 and amount2",
+                "= contains(region, \"E\")", "= amount + 1 > 5", "= if amount > 1 then true else false", "= region in (\"EU\", \"UK\") and amount > 1",
+                "= (amount > 1 or amount < 0) and region = \"EU\"", "= some x in items satisfies x > 1", "= amount > 1 and (region = \"a\" or region = \"b\")",
+                "= amount = null", "= items[1] > 1", "= not(amount > 5 and region = \"EU\" or amount < 1)");
+        for (String condition : unsupported) {
+            String escaped = condition.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+            var analysis = Analyzer.analyze(gatewayProcess("<sequenceFlow id=\"f1\" sourceRef=\"gw\" targetRef=\"a\"><conditionExpression>" + escaped
+                    + "</conditionExpression></sequenceFlow><sequenceFlow id=\"f2\" sourceRef=\"gw\" targetRef=\"b\"/>").replace("<exclusiveGateway id=\"gw\"/>",
+                    "<exclusiveGateway id=\"gw\" default=\"f2\"/>"), Limits.DEFAULT);
+            var items = issues(analysis);
+            assertThat(items).as(condition).anySatisfy(i -> {
+                assertThat(i.sourceElementId()).isEqualTo("f1");
+                assertThat(i.reasonCode()).isEqualTo("EXPRESSION_NOT_SUPPORTED");
+                assertThat(i.severity()).isEqualTo(Report.BLOCKER);
+                assertThat(i.explanation()).contains(condition);
+            });
+            assertThat(Converter.report(analysis, items).publishable()).as(condition).isFalse();
+            var converted = Converter.convert(analysis, request("{\"workflowKey\":\"blocked\",\"name\":\"Blocked\",\"acknowledgeInfo\":true}"), JSON, Map.of());
+            assertThat(converted.definition()).as("%s must not convert", condition).isNull();
+        }
+    }
+
+    @Test
+    void aConditionOnAUserTaskExitIsReportedWithItsSourceTextEvenThoughOutcomesAreMapped() {
+        var analysis = Analyzer.analyze("""
+                <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" targetNamespace="urn:test">
+                 <process id="u" isExecutable="true"><startEvent id="start"/><userTask id="review" name="Review"/>
+                  <endEvent id="a" name="Alpha"/><endEvent id="b" name="Beta"/>
+                  <sequenceFlow id="f0" sourceRef="start" targetRef="review"/>
+                  <sequenceFlow id="f1" sourceRef="review" targetRef="a"><conditionExpression>= amount between 1 and 5</conditionExpression></sequenceFlow>
+                  <sequenceFlow id="f2" sourceRef="review" targetRef="b"><conditionExpression>= contains(x, "y")</conditionExpression></sequenceFlow>
+                 </process></definitions>""", Limits.DEFAULT);
+        var items = issues(analysis);
+        for (String flow : List.of("f1", "f2")) {
+            assertThat(items).as(flow).anySatisfy(i -> {
+                assertThat(i.sourceElementId()).isEqualTo(flow);
+                assertThat(i.reasonCode()).isEqualTo("CONDITION_DROPPED");
+                assertThat(i.explanation()).contains(flow.equals("f1") ? "amount between 1 and 5" : "contains(x, \"y\")");
+            });
+        }
+    }
+
     private static String gatewayProcess(String conditions) {
         return """
                 <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" targetNamespace="urn:test">
@@ -354,7 +431,7 @@ class ConverterExpansionTest {
 
     @Test
     void unsupportedExpressionsStayBlockedWithTheOriginalTextAndAReason() {
-        for (String condition : List.of("${amount > 1 &amp;&amp; amount &lt; 5 || amount == 9}", "${not (amount &gt; 5 &amp;&amp; amount &lt; 9)}", "${customer.score &gt; 5}",
+        for (String condition : List.of("${amount > 1 &amp;&amp; amount &lt; 5 || amount == 9}", "${not (amount &gt; 5 || amount &lt; 9) || amount == 1}", "${customer.score &gt; 5}",
                 "${amount * 2 &gt; 5}", "${(amount &gt; 1 and amount &lt; 5) or amount == 9}")) {
             var analysis = Analyzer.analyze(gatewayProcess("<sequenceFlow id=\"f1\" sourceRef=\"gw\" targetRef=\"a\"><conditionExpression>" + condition
                     + "</conditionExpression></sequenceFlow><sequenceFlow id=\"f2\" sourceRef=\"gw\" targetRef=\"b\"/>").replace("<exclusiveGateway id=\"gw\"/>",

@@ -44,7 +44,7 @@ class FixtureDispositionTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"camunda7-purchase.bpmn", "camunda8-purchase.bpmn", "unsupported-features.bpmn", "parallel-timer-child.bpmn",
-            "expression-operators.bpmn", "expression-operators-feel.bpmn", "service-task-groups.bpmn", "multi-instance-call.bpmn",
+            "expression-operators.bpmn", "expression-operators-feel.bpmn", "expression-feel-extended.bpmn", "service-task-groups.bpmn", "multi-instance-call.bpmn",
             "multi-instance-unsupported.bpmn", "business-rule-task.bpmn"})
     void everyElementOfEveryFixtureHasADisposition(String name) throws Exception {
         String xml = fixture(name);

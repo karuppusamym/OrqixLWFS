@@ -16,6 +16,10 @@ import java.util.regex.Pattern;
  *   <li>a bare boolean variable ({@code ${approved}}, {@code ${!approved}}, {@code = not(approved)}),</li>
  *   <li>a flat group of 2 to 8 such comparisons joined only by {@code and} or only by {@code or}
  *       ({@code all} / {@code any} in the canonical schema).</li>
+ *   <li>FEEL only: {@code x between a and b}, {@code x in [a..b)} and {@code x in ("a", "b")} (a list of equalities), read
+ *       as the equivalent flat {@code all} / {@code any} group; a literal on the left ({@code 5000 <= amount}) is turned
+ *       around; {@code not(...)} over a flat group is inverted term by term (De Morgan); parenthesised groups of the same
+ *       connective are flattened.</li>
  * </ul>
  * JUEL: {@code ${amount >= 5000 && status != 'new'}}, {@code ${a gt 1 and b le 3}}. FEEL: {@code = amount > 5000 and
  * status = "new"}. Everything else (mixed {@code and}/{@code or}, parentheses around groups, {@code not} over a
@@ -183,23 +187,32 @@ public final class Expressions {
 
     // ------------------------------------------------------------------------------------------------ grammar
 
-    /** Splits the tokens at top-level and/or and reads every operand as one atomic term. */
+    /** Splits the tokens at top-level and/or and reads every operand as one atom or one parenthesised group. */
     private static Parsed interpret(List<Token> tokens, boolean feel) {
-        // Parentheses are only accepted around one atomic term or one not(...) argument; groups are flat.
         List<List<Token>> operands = new ArrayList<>();
         String connective = null;
         List<Token> current = new ArrayList<>();
         int depth = 0;
+        boolean betweenOpen = false;
         for (Token t : tokens) {
-            if (t.is('o', "(")) {
+            if (t.is('o', "(") || t.is('o', "[")) {
                 depth++;
-            } else if (t.is('o', ")")) {
+            } else if (t.is('o', ")") || t.is('o', "]")) {
                 depth--;
                 if (depth < 0) {
                     return new Unsupported("The parentheses do not match.");
                 }
             }
+            if (depth == 0 && feel && t.is('i', "between")) {
+                betweenOpen = true;
+            }
             String joined = depth == 0 ? connectiveOf(t, feel) : null;
+            if (joined != null && betweenOpen && "and".equals(joined)) {
+                // the 'and' of 'x between a and b' belongs to the range, not to the group
+                betweenOpen = false;
+                current.add(t);
+                continue;
+            }
             if (joined != null) {
                 if (connective != null && !connective.equals(joined)) {
                     return new Unsupported("It mixes 'and' with 'or'. A canonical condition group uses one connective only.");
@@ -222,31 +235,81 @@ public final class Expressions {
         }
         operands.add(current);
         if (operands.size() == 1) {
-            return atom(operands.get(0), feel);
+            return operand(operands.get(0), feel);
         }
-        if (operands.size() > MAX_TERMS) {
-            return new Unsupported("It combines " + operands.size() + " conditions; at most " + MAX_TERMS + " are supported.");
-        }
+        String group = "and".equals(connective) ? "all" : "any";
         List<Comparison> terms = new ArrayList<>();
         for (List<Token> operand : operands) {
-            Parsed term = atom(operand, feel);
+            Parsed term = operand(operand, feel);
             if (term instanceof Unsupported u) {
                 return u;
             }
-            if (!(term instanceof Comparison c)) {
-                return new Unsupported("Groups inside a group are not supported.");
+            if (term instanceof Logical l) {
+                if (!l.group().equals(group)) {
+                    return new Unsupported("It nests a group of conditions inside parentheses. Only one flat group of 'and' or "
+                            + "'or' conditions is supported.");
+                }
+                terms.addAll(l.terms());
+            } else {
+                terms.add((Comparison) term);
             }
-            terms.add(c);
         }
-        // All terms on one variable must agree on the value type (the compiler types every field once).
-        for (Comparison a : terms) {
-            for (Comparison b : terms) {
+        if (terms.size() > MAX_TERMS) {
+            return new Unsupported("It combines " + terms.size() + " conditions; at most " + MAX_TERMS + " are supported.");
+        }
+        return checked(new Logical(group, terms));
+    }
+
+    /** All terms on one variable must agree on the value type (the compiler types every field once). */
+    private static Parsed checked(Logical logical) {
+        for (Comparison a : logical.terms()) {
+            for (Comparison b : logical.terms()) {
                 if (a.variable().equals(b.variable()) && !a.valueType().equals(b.valueType())) {
                     return new Unsupported("The variable '" + a.variable() + "' is compared with values of different types.");
                 }
             }
         }
-        return new Logical("and".equals(connective) ? "all" : "any", terms);
+        return logical;
+    }
+
+    /**
+     * One operand of a group: a parenthesised sub-group of the same connective (flattened by the caller), not() over a
+     * group (De Morgan: the connective and every operator are inverted), or an atom.
+     */
+    private static Parsed operand(List<Token> original, boolean feel) {
+        List<Token> t = original;
+        while (t.size() >= 3 && t.get(0).is('o', "(") && t.get(t.size() - 1).is('o', ")") && matching(t)) {
+            t = t.subList(1, t.size() - 1);
+        }
+        int n = t.size();
+        boolean grouped = t.stream().anyMatch(token -> connectiveOf(token, feel) != null)
+                || t.stream().anyMatch(token -> feel && token.is('i', "between"));
+        if (n >= 4 && (t.get(0).is('i', "not") || t.get(0).is('o', "!") && !feel) && t.get(1).is('o', "(") && t.get(n - 1).is('o', ")")
+                && matching(t.subList(1, n))) {
+            List<Token> inner = t.subList(2, n - 1);
+            boolean innerCompound = inner.stream().anyMatch(token -> connectiveOf(token, feel) != null || feel && token.is('i', "between")
+                    || feel && token.is('i', "in"));
+            if (innerCompound) {
+                Parsed parsedInner = interpret(inner, feel);
+                if (parsedInner instanceof Logical l) {
+                    List<Comparison> negated = l.terms().stream().map(Comparison::negated).toList();
+                    return checked(new Logical("all".equals(l.group()) ? "any" : "all", negated));
+                }
+                if (parsedInner instanceof Comparison c && !c.booleanShortcut()) {
+                    return c.negated();
+                }
+                return parsedInner instanceof Unsupported ? parsedInner : new Unsupported("It negates a comparison or a group with "
+                        + "'not'. Only a yes/no variable can be negated; use the opposite operator instead.");
+            }
+        }
+        if (grouped && original.size() == t.size() && t.stream().noneMatch(token -> token.is('o', "("))) {
+            // a bare 'between' range only: handled by atom()
+            return atom(t, feel);
+        }
+        if (grouped && t.size() != original.size()) {
+            return interpret(t, feel);
+        }
+        return atom(t, feel);
     }
 
     /** {@code and} / {@code or} for a connective token, or null. {@code &&} and {@code ||} are JUEL only. */
@@ -295,8 +358,57 @@ public final class Expressions {
         if (n == 3 && t.get(0).kind() == 'i' && (t.get(1).kind() == 'o' || t.get(1).kind() == 'i') && isLiteral(t.get(2))) {
             return comparison(t.get(0).text(), t.get(1).text(), t.get(2), feel);
         }
+        if (n == 3 && isLiteral(t.get(0)) && t.get(1).kind() == 'o' && t.get(2).kind() == 'i' && !isLiteral(t.get(2))
+                && !t.get(2).is('i', "null") && !t.get(2).is('i', "not")) {
+            // 5000 <= amount reads as amount >= 5000
+            String flipped = switch (t.get(1).text()) {
+                case ">=" -> "<=";
+                case ">" -> "<";
+                case "<" -> ">";
+                case "<=" -> ">=";
+                default -> t.get(1).text();
+            };
+            return comparison(t.get(2).text(), flipped, t.get(0), feel);
+        }
         if (n == 3 && isLiteral(t.get(0)) && t.get(2).kind() == 'i') {
             return new Unsupported("The variable must be on the left of the comparison.");
+        }
+        if (feel && n == 5 && t.get(0).kind() == 'i' && t.get(1).is('i', "between") && t.get(3).is('i', "and")
+                && t.get(2).kind() == 'n' && t.get(4).kind() == 'n') {
+            // x between a and b: both bounds included
+            return range(t.get(0).text(), t.get(2), true, t.get(4), true, feel);
+        }
+        if (feel && n == 8 && t.get(0).kind() == 'i' && t.get(1).is('i', "in") && "[(]".contains(t.get(2).text())
+                && t.get(2).kind() == 'o' && t.get(3).kind() == 'n' && t.get(4).is('o', ".") && t.get(5).is('o', ".")
+                && t.get(6).kind() == 'n' && t.get(7).kind() == 'o' && "])[".contains(t.get(7).text())) {
+            // x in [a..b] closed, ( or ] open at the start, ) or [ open at the end
+            return range(t.get(0).text(), t.get(3), "[".equals(t.get(2).text()), t.get(6), "]".equals(t.get(7).text()), feel);
+        }
+        if (feel && n >= 4 && t.get(0).kind() == 'i' && t.get(1).is('i', "in") && t.get(2).is('o', "(") && t.get(n - 1).is('o', ")")) {
+            // x in ("a", "b"): equality with each listed literal, any of them
+            List<Token> items = t.subList(3, n - 1);
+            String shape = "The list after 'in' must hold plain text, number or yes/no values separated by commas.";
+            if (items.isEmpty() || items.size() % 2 == 0) {
+                return new Unsupported(shape);
+            }
+            List<Comparison> options = new ArrayList<>();
+            for (int i = 0; i < items.size(); i++) {
+                Token item = items.get(i);
+                if (i % 2 == 1 ? !item.is('o', ",") : !isLiteral(item)) {
+                    return new Unsupported(shape);
+                }
+                if (i % 2 == 0) {
+                    Parsed one = comparison(t.get(0).text(), "==", item, feel);
+                    if (one instanceof Unsupported u) {
+                        return u;
+                    }
+                    options.add((Comparison) one);
+                }
+            }
+            if (options.size() > MAX_TERMS) {
+                return new Unsupported("The list after 'in' has " + options.size() + " values; at most " + MAX_TERMS + " are supported.");
+            }
+            return options.size() == 1 ? options.get(0) : checked(new Logical("any", options));
         }
         if (n == 3 && t.get(0).kind() == 'i' && t.get(2).is('i', "null") && (t.get(1).kind() == 'o' || t.get(1).kind() == 'i')) {
             return new Unsupported("It tests whether '" + t.get(0).text() + "' is null. Workflow conditions compare a field with a text, "
@@ -357,6 +469,21 @@ public final class Expressions {
             return new Unsupported("It is a constant, not a comparison of a variable.");
         }
         return new Comparison(variable, Op.EQ, expected, true);
+    }
+
+    private static Parsed range(String variable, Token lo, boolean loClosed, Token hi, boolean hiClosed, boolean feel) {
+        if (new BigDecimal(lo.text()).compareTo(new BigDecimal(hi.text())) > 0) {
+            return new Unsupported("The range " + lo.text() + ".." + hi.text() + " ends below where it starts.");
+        }
+        Parsed low = comparison(variable, loClosed ? ">=" : ">", lo, feel);
+        Parsed high = comparison(variable, hiClosed ? "<=" : "<", hi, feel);
+        if (low instanceof Unsupported) {
+            return low;
+        }
+        if (high instanceof Unsupported) {
+            return high;
+        }
+        return new Logical("all", List.of((Comparison) low, (Comparison) high));
     }
 
     private static boolean isLiteral(Token token) {

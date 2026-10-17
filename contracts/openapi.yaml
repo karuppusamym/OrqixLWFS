@@ -789,6 +789,136 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /workspaces/{workspaceId}/document-templates:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [Workflows]
+      operationId: listDocumentTemplates
+      summary: The workspace library of document templates (latest version of each)
+      x-orqix-permission: workflow.read
+      parameters:
+        - { name: includeArchived, in: query, required: false, schema: { type: boolean, default: false } }
+      responses:
+        '200':
+          description: Templates ordered by name
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DocumentTemplatePage' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Workflows]
+      operationId: createDocumentTemplate
+      summary: Create a template with its first version (at most 200 per workspace; names unique ignoring case)
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: document.template.created
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateDocumentTemplate' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DocumentTemplate' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/document-templates/{templateId}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: templateId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Uuid' }
+    get:
+      tags: [Workflows]
+      operationId: getDocumentTemplate
+      summary: A template with every version, newest first
+      x-orqix-permission: workflow.read
+      responses:
+        '200':
+          description: The template
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DocumentTemplate' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/document-templates/{templateId}/versions:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: templateId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Uuid' }
+    post:
+      tags: [Workflows]
+      operationId: addDocumentTemplateVersion
+      summary: Add an immutable version (409 WORKFLOW_VERSION_CONFLICT when the latest version is not the one the caller saw)
+      description: A version identical to the latest and a version of an archived template are refused. A published workflow keeps the text it was published with.
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: document.template.versioned
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddDocumentTemplateVersion' }
+      responses:
+        '201':
+          description: Version added
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DocumentTemplate' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/document-templates/{templateId}/archived:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: templateId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Uuid' }
+    put:
+      tags: [Workflows]
+      operationId: setDocumentTemplateArchived
+      summary: Archive a template (hidden from the picker, history kept) or restore it
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: document.template.archived
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [archived]
+              properties:
+                archived: { type: boolean }
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DocumentTemplate' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /workspaces/{workspaceId}/workflows/{workflowId}/folder:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -1486,6 +1616,132 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+
+  /workspaces/{workspaceId}/runs/{runId}/attachments/{attachmentId}/quarantine:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+      - $ref: '#/components/parameters/AttachmentId'
+    post:
+      tags: [Attachments]
+      operationId: quarantineAttachment
+      summary: Quarantine a file - download and text extraction are refused while the bytes are kept for review
+      description: Needs run.operate. Quarantining a quarantined file succeeds without change. Quarantined files are never removed by retention.
+      x-orqix-permission: run.operate
+      x-orqix-audit: attachment.quarantined
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/QuarantineAttachment' }
+      responses:
+        '204': { description: Quarantined }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/runs/{runId}/attachments/{attachmentId}/release:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+      - $ref: '#/components/parameters/AttachmentId'
+    post:
+      tags: [Attachments]
+      operationId: releaseAttachment
+      summary: Release a quarantined file so it can be downloaded again (a file blocked by the virus scan stays blocked)
+      x-orqix-permission: run.operate
+      x-orqix-audit: attachment.released
+      responses:
+        '204': { description: Released }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/runs/{runId}/attachments/{attachmentId}/ocr:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+      - $ref: '#/components/parameters/AttachmentId'
+    get:
+      tags: [Attachments]
+      operationId: getAttachmentOcr
+      summary: The stored text extraction of a file (404 until one was requested)
+      description: Visible like the request data. The text is deleted with the file and when the file is quarantined.
+      x-orqix-permission: run.read-data | initiator | taskParticipant
+      responses:
+        '200':
+          description: The extraction result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AttachmentOcr' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    post:
+      tags: [Attachments]
+      operationId: requestAttachmentOcr
+      summary: Extract text from a file with the configured OCR provider
+      description: |
+        Needs run.operate and request-data visibility. The shipped provider is a local stub that reads text and CSV
+        files and reports every other type as `unsupported`; no external OCR service is called. Quarantined, blocked
+        and removed files are refused. A new request replaces the earlier result.
+      x-orqix-permission: run.operate
+      x-orqix-audit: attachment.ocr.requested
+      responses:
+        '200':
+          description: The extraction result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AttachmentOcr' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/attachment-retention:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [Attachments]
+      operationId: getAttachmentRetention
+      summary: The workspace file retention setting and how many files the next sweep would remove
+      x-orqix-permission: workspace.manage-access
+      responses:
+        '200':
+          description: The setting (retentionDays null means files are kept until removed)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AttachmentRetention' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Attachments]
+      operationId: setAttachmentRetention
+      summary: Set (1 to 3650 days) or clear the number of days after a request ends that its files are kept
+      x-orqix-permission: workspace.manage-access
+      x-orqix-audit: attachment.retention.updated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetAttachmentRetention' }
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AttachmentRetention' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
 
   /workspaces/{workspaceId}/runs/{runId}/events:
     parameters:
@@ -4983,7 +5239,9 @@ components:
         removedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
         removedBy: { oneOf: [{ $ref: '#/components/schemas/SubjectRef' }, { type: 'null' }] }
         canRemove: { type: boolean }
-        downloadable: { type: boolean, description: False for removed files and files blocked by the scan }
+        downloadable: { type: boolean, description: False for removed files, quarantined files and files blocked by the scan }
+        quarantinedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+        quarantineReason: { type: [string, 'null'], maxLength: 300 }
     AttachmentLimits:
       type: object
       additionalProperties: false
@@ -5003,6 +5261,107 @@ components:
         items: { type: array, items: { $ref: '#/components/schemas/Attachment' } }
         limits: { $ref: '#/components/schemas/AttachmentLimits' }
         canAdd: { type: boolean }
+    QuarantineAttachment:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 3, maxLength: 300 }
+    AttachmentOcr:
+      type: object
+      additionalProperties: false
+      required: [attachmentId, provider, status, extractedAt]
+      properties:
+        attachmentId: { $ref: '#/components/schemas/Uuid' }
+        provider: { type: string, description: 'The provider that produced the result, for example local-stub' }
+        status: { type: string, enum: [extracted, unsupported] }
+        text: { type: [string, 'null'], maxLength: 100000, description: Present only when status is extracted }
+        extractedAt: { $ref: '#/components/schemas/Timestamp' }
+    AttachmentRetention:
+      type: object
+      additionalProperties: false
+      required: [version, eligibleNow]
+      properties:
+        retentionDays: { type: [integer, 'null'], minimum: 1, maximum: 3650 }
+        version: { type: integer, minimum: 0, description: '0 until a setting is saved' }
+        eligibleNow: { type: integer, minimum: 0, description: Files the next sweep would remove under this setting }
+        updatedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+    SetAttachmentRetention:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        retentionDays: { type: [integer, 'null'], minimum: 1, maximum: 3650 }
+        expectedVersion: { type: integer, minimum: 0 }
+    DocumentFormat:
+      type: string
+      enum: [pdf, docx]
+    DocumentTemplateSummary:
+      type: object
+      additionalProperties: false
+      required: [id, name, latestVersion, format, placeholderCount, archived, createdAt, updatedAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        name: { type: string, minLength: 1, maxLength: 80 }
+        description: { type: [string, 'null'], maxLength: 300 }
+        latestVersion: { type: integer, minimum: 1 }
+        format: { $ref: '#/components/schemas/DocumentFormat' }
+        placeholderCount: { type: integer, minimum: 0 }
+        archived: { type: boolean }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+        updatedAt: { $ref: '#/components/schemas/Timestamp' }
+    DocumentTemplatePage:
+      type: object
+      additionalProperties: false
+      required: [items, templateLimit]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/DocumentTemplateSummary' } }
+        templateLimit: { type: integer }
+    DocumentTemplateVersion:
+      type: object
+      additionalProperties: false
+      required: [version, format, body, placeholders, sha256, createdBy, createdAt]
+      properties:
+        version: { type: integer, minimum: 1 }
+        format: { $ref: '#/components/schemas/DocumentFormat' }
+        body: { type: string, minLength: 1, maxLength: 16000 }
+        placeholders: { type: array, items: { type: string } }
+        sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        changeNote: { type: [string, 'null'], maxLength: 300 }
+        createdBy: { $ref: '#/components/schemas/SubjectRef' }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+    DocumentTemplate:
+      type: object
+      additionalProperties: false
+      required: [id, name, latestVersion, archived, createdAt, updatedAt, versions]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        name: { type: string }
+        description: { type: [string, 'null'] }
+        latestVersion: { type: integer, minimum: 1 }
+        archived: { type: boolean }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+        updatedAt: { $ref: '#/components/schemas/Timestamp' }
+        versions: { type: array, items: { $ref: '#/components/schemas/DocumentTemplateVersion' } }
+    CreateDocumentTemplate:
+      type: object
+      additionalProperties: false
+      required: [name, format, body]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+        description: { type: [string, 'null'], maxLength: 300 }
+        format: { $ref: '#/components/schemas/DocumentFormat' }
+        body: { type: string, minLength: 1, maxLength: 16000, description: 'Plain text with {{field}} placeholders, as in the Generate a document step' }
+        changeNote: { type: [string, 'null'], maxLength: 300 }
+    AddDocumentTemplateVersion:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, format, body]
+      properties:
+        expectedVersion: { type: integer, minimum: 1 }
+        format: { $ref: '#/components/schemas/DocumentFormat' }
+        body: { type: string, minLength: 1, maxLength: 16000 }
+        changeNote: { type: [string, 'null'], maxLength: 300 }
     RunComment:
       type: object
       additionalProperties: false

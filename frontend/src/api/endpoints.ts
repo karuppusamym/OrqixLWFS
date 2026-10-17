@@ -354,3 +354,19 @@ export const approveMigrationReview = (ws: string, workflowId: string, body: S['
 // Inbound messages (docs/build/S16): tell requests that wait for a named message that it arrived.
 export const sendMessage = (ws: string, body: S['SendMessageRequest'], idempotencyKey: string) =>
   call(api.POST('/workspaces/{workspaceId}/messages', { params: { path: { workspaceId: ws }, header: { 'Idempotency-Key': idempotencyKey } }, body }))
+
+// Document template registry (DOC08)
+export const listDocumentTemplates = (ws: string, includeArchived = false) =>
+  call(api.GET('/workspaces/{workspaceId}/document-templates', { params: { path: { workspaceId: ws }, query: { includeArchived } } }))
+
+export const getDocumentTemplate = (ws: string, templateId: string) =>
+  call(api.GET('/workspaces/{workspaceId}/document-templates/{templateId}', { params: { path: { workspaceId: ws, templateId } } }))
+
+export const createDocumentTemplate = (ws: string, body: S['CreateDocumentTemplate']) =>
+  call(api.POST('/workspaces/{workspaceId}/document-templates', { params: { path: { workspaceId: ws } }, body }))
+
+export const addDocumentTemplateVersion = (ws: string, templateId: string, body: S['AddDocumentTemplateVersion']) =>
+  call(api.POST('/workspaces/{workspaceId}/document-templates/{templateId}/versions', { params: { path: { workspaceId: ws, templateId } }, body }))
+
+export const setDocumentTemplateArchived = (ws: string, templateId: string, archived: boolean) =>
+  call(api.PUT('/workspaces/{workspaceId}/document-templates/{templateId}/archived', { params: { path: { workspaceId: ws, templateId } }, body: { archived } }))

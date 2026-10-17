@@ -13,9 +13,11 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { useWorkspace } from '@/app/workspace'
 import { formatDateTime } from '@/lib/dates'
 import { describeProblem } from '@/lib/problemMessages'
 import { uuid } from '@/lib/text'
+import { OcrPanel, QuarantineBadgeDetail, QuarantineButton, QuarantineDialog, ReleaseButton } from './FileLifecycle'
 
 const scanText: Record<Attachment['scanStatus'], { label: string; tone: 'neutral' | 'success' | 'danger' | 'warning' }> = {
   notScanned: { label: 'Not scanned', tone: 'neutral' },
@@ -31,7 +33,7 @@ export function useRunFiles(ws: string, runId: string, enabled = true) {
   return useQuery({ queryKey: filesKey(ws, runId), queryFn: () => listAttachments(ws, runId), enabled })
 }
 
-function FileRow({ file, onDownload, onRemove, readOnly, busy }: { file: Attachment; onDownload: () => void; onRemove: () => void; readOnly: boolean; busy: boolean }) {
+function FileRow({ ws, runId, file, onDownload, onRemove, onQuarantine, onChanged, readOnly, busy, operator }: { ws: string; runId: string; file: Attachment; onDownload: () => void; onRemove: () => void; onQuarantine: () => void; onChanged: () => void; readOnly: boolean; busy: boolean; operator: boolean }) {
   const removed = file.removedAt != null
   const scan = scanText[file.scanStatus]
   return (
@@ -46,13 +48,17 @@ function FileRow({ file, onDownload, onRemove, readOnly, busy }: { file: Attachm
         </p>
         <p className="flex flex-wrap items-center gap-2 pt-0.5">
           {removed ? <Badge tone="neutral">Removed</Badge> : <Badge tone={scan.tone} data-testid="scan-status">{scan.label}</Badge>}
+          {!removed && file.quarantinedAt ? <Badge tone="warning" data-testid="quarantine-status">Quarantined</Badge> : null}
         </p>
+        {!removed ? <QuarantineBadgeDetail file={file} /> : null}
       </div>
       {!removed ? (
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="secondary" size="sm" disabled={!file.downloadable || busy} onClick={onDownload} aria-label={`Download ${file.name}`}>
             <Download className="size-4" aria-hidden="true" /> Download
           </Button>
+          {!readOnly && operator && file.quarantinedAt ? <ReleaseButton ws={ws} runId={runId} file={file} disabled={busy} onDone={onChanged} /> : null}
+          {!readOnly && operator && !file.quarantinedAt ? <QuarantineButton file={file} disabled={busy} onClick={onQuarantine} /> : null}
           {!readOnly && file.canRemove ? (
             <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={onRemove} aria-label={`Remove ${file.name}`}>
               <Trash2 className="size-4" aria-hidden="true" /> Remove
@@ -60,6 +66,7 @@ function FileRow({ file, onDownload, onRemove, readOnly, busy }: { file: Attachm
           ) : null}
         </div>
       ) : null}
+      {!removed && !file.quarantinedAt && file.downloadable ? <OcrPanel ws={ws} runId={runId} file={file} canExtract={!readOnly && operator} /> : null}
     </li>
   )
 }
@@ -72,6 +79,9 @@ function FileRow({ file, onDownload, onRemove, readOnly, busy }: { file: Attachm
 export function RunFiles({ ws, runId, readOnly = false }: { ws: string; runId: string; readOnly?: boolean }) {
   const queryClient = useQueryClient()
   const files = useRunFiles(ws, runId)
+  const { can } = useWorkspace()
+  const operator = can('run.operate')
+  const [quarantine, setQuarantine] = useState<Attachment | null>(null)
   const [description, setDescription] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [localError, setLocalError] = useState<string | null>(null)
@@ -97,6 +107,10 @@ export function RunFiles({ ws, runId, readOnly = false }: { ws: string; runId: s
     },
     onSettled: () => setProgress(null),
   })
+  const changed = async () => {
+    await queryClient.invalidateQueries({ queryKey: filesKey(ws, runId) })
+    await queryClient.invalidateQueries({ queryKey: keys.run(ws, runId) })
+  }
   const remove = useMutation({
     mutationFn: (attachment: Attachment) => removeAttachment(ws, runId, attachment.id),
     onSuccess: async () => {
@@ -145,7 +159,7 @@ export function RunFiles({ ws, runId, readOnly = false }: { ws: string; runId: s
         {data && data.items.length > 0 ? (
           <ul className="space-y-2">
             {data.items.map((f) => (
-              <FileRow key={f.id} file={f} readOnly={readOnly} busy={remove.isPending} onDownload={() => void download(f)} onRemove={() => setConfirm(f)} />
+              <FileRow key={f.id} ws={ws} runId={runId} file={f} readOnly={readOnly} operator={operator} busy={remove.isPending} onDownload={() => void download(f)} onRemove={() => setConfirm(f)} onQuarantine={() => setQuarantine(f)} onChanged={() => void changed()} />
             ))}
           </ul>
         ) : null}
@@ -191,6 +205,16 @@ export function RunFiles({ ws, runId, readOnly = false }: { ws: string; runId: s
           </form>
         ) : null}
       </CardContent>
+      <QuarantineDialog
+        ws={ws}
+        runId={runId}
+        file={quarantine}
+        onClose={() => setQuarantine(null)}
+        onDone={() => {
+          setQuarantine(null)
+          void changed()
+        }}
+      />
       <ConfirmDialog
         open={confirm !== null}
         title="Remove this file?"

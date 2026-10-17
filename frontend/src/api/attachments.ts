@@ -1,7 +1,7 @@
 import { api, call, callVoid } from './client'
 import { networkProblem, problemFromResponse } from './problem'
 import { readCookie } from './auth'
-import type { Attachment, StagedUpload } from './types'
+import type { Attachment, AttachmentOcr, AttachmentRetention, StagedUpload } from './types'
 import { uuid } from '@/lib/text'
 
 export { FILE_TYPES, ALL_FILE_TYPES, MAX_FILE_BYTES, formatBytes, describeTypes, acceptAttribute, checkFile } from '@/lib/files'
@@ -106,3 +106,22 @@ export async function downloadAttachment(ws: string, runId: string, attachment: 
   link.remove()
   setTimeout(() => URL.revokeObjectURL(link.href), 10_000)
 }
+
+// Quarantine, text extraction and retention (DOC08)
+export const quarantineAttachment = (ws: string, runId: string, attachmentId: string, reason: string) =>
+  callVoid(api.POST('/workspaces/{workspaceId}/runs/{runId}/attachments/{attachmentId}/quarantine', { params: { path: { workspaceId: ws, runId, attachmentId } }, body: { reason } }))
+
+export const releaseAttachment = (ws: string, runId: string, attachmentId: string) =>
+  callVoid(api.POST('/workspaces/{workspaceId}/runs/{runId}/attachments/{attachmentId}/release', { params: { path: { workspaceId: ws, runId, attachmentId } } }))
+
+export const requestAttachmentOcr = (ws: string, runId: string, attachmentId: string): Promise<AttachmentOcr> =>
+  call(api.POST('/workspaces/{workspaceId}/runs/{runId}/attachments/{attachmentId}/ocr', { params: { path: { workspaceId: ws, runId, attachmentId } } }))
+
+export const getAttachmentOcr = (ws: string, runId: string, attachmentId: string): Promise<AttachmentOcr> =>
+  call(api.GET('/workspaces/{workspaceId}/runs/{runId}/attachments/{attachmentId}/ocr', { params: { path: { workspaceId: ws, runId, attachmentId } } }))
+
+export const getAttachmentRetention = (ws: string): Promise<AttachmentRetention> =>
+  call(api.GET('/workspaces/{workspaceId}/attachment-retention', { params: { path: { workspaceId: ws } } }))
+
+export const setAttachmentRetention = (ws: string, retentionDays: number | null, expectedVersion: number): Promise<AttachmentRetention> =>
+  call(api.PUT('/workspaces/{workspaceId}/attachment-retention', { params: { path: { workspaceId: ws } }, body: { retentionDays, expectedVersion } }))

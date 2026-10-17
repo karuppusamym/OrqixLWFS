@@ -308,7 +308,9 @@ public class RunService {
             redacted.put("detailsRedacted", true);
             return redacted;
         }
-        if (!dataVisible && ("ATTACHMENT_ADDED".equals(row.type()) || "ATTACHMENT_REMOVED".equals(row.type()))) {
+        if (!dataVisible && ("ATTACHMENT_ADDED".equals(row.type()) || "ATTACHMENT_REMOVED".equals(row.type())
+                || "ATTACHMENT_QUARANTINED".equals(row.type()) || "ATTACHMENT_RELEASED".equals(row.type())
+                || "ATTACHMENT_PURGED".equals(row.type()))) {
             // File names and descriptions belong to the request data; a reader without it sees only that a file changed.
             ObjectNode redacted = json.object();
             redacted.set("attachmentId", row.data().path("attachmentId"));

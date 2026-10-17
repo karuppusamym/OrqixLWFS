@@ -50,7 +50,8 @@ public class RunAttachments {
 
     public record Attachment(UUID id, UUID runId, String fieldKey, String name, String description, String contentType,
             long sizeBytes, String sha256, String scanStatus, SubjectRef uploadedBy, Instant uploadedAt,
-            Instant removedAt, SubjectRef removedBy, boolean canRemove, boolean downloadable) {
+            Instant removedAt, SubjectRef removedBy, boolean canRemove, boolean downloadable, Instant quarantinedAt,
+            String quarantineReason) {
     }
 
     public record Limits(long maxFileBytes, int maxFiles, long maxTotalBytes, int usedFiles, long usedBytes,
@@ -87,7 +88,7 @@ public class RunAttachments {
 
     private static final String COLUMNS = """
             a.id, a.run_id, a.field_key, a.uploaded_by, a.file_name, a.description, a.content_type, a.size_bytes, a.sha256,
-            a.scan_status, a.created_at, a.expires_at, a.deleted_at, a.deleted_by
+            a.scan_status, a.created_at, a.expires_at, a.deleted_at, a.deleted_by, a.quarantined_at, a.quarantine_reason
             """;
 
     private final JdbcClient jdbc;
@@ -221,6 +222,9 @@ public class RunAttachments {
         if (row == null || row.deletedAt() != null) {
             throw ApiException.notFound();
         }
+        if (row.quarantinedAt() != null) {
+            throw new ApiException(ProblemCode.ATTACHMENT_BLOCKED, "This file is quarantined while it is reviewed.");
+        }
         if (AttachmentScanner.Status.of(row.scanStatus()).blocksDownload()) {
             throw new ApiException(ProblemCode.ATTACHMENT_BLOCKED, row.scanStatus().equals("infected")
                     ? "This file was blocked because the virus scan found a problem."
@@ -259,6 +263,7 @@ public class RunAttachments {
                 """).param("now", Sql.ts(clock.instant())).param("by", caller.subjectId()).param("id", attachmentId).update();
         if (changed == 0) return;
         jdbc.sql("DELETE FROM run_attachment_content WHERE attachment_id = :id").param("id", attachmentId).update();
+        jdbc.sql("DELETE FROM attachment_ocr_result WHERE attachment_id = :id").param("id", attachmentId).update();
         audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.USER, caller.subjectId(),
                 "attachment.removed", "attachment", attachmentId.toString(), AuditWriter.Outcome.SUCCESS,
                 Map.of("runId", runId.toString(), "attachmentId", attachmentId.toString())));
@@ -449,7 +454,7 @@ public class RunAttachments {
 
     private record Row(UUID id, UUID runId, String fieldKey, UUID uploadedBy, String name, String description,
             String contentType, long size, String sha256, String scanStatus, Instant createdAt, Instant expiresAt,
-            Instant deletedAt, UUID deletedBy) {
+            Instant deletedAt, UUID deletedBy, Instant quarantinedAt, String quarantineReason) {
     }
 
     private static Row row(java.sql.ResultSet rs, int n) throws java.sql.SQLException {
@@ -457,7 +462,7 @@ public class RunAttachments {
                 rs.getString("file_name"), rs.getString("description"), rs.getString("content_type"),
                 rs.getLong("size_bytes"), rs.getString("sha256"), rs.getString("scan_status"),
                 Sql.instant(rs, "created_at"), Sql.instant(rs, "expires_at"), Sql.instant(rs, "deleted_at"),
-                Sql.uuid(rs, "deleted_by"));
+                Sql.uuid(rs, "deleted_by"), Sql.instant(rs, "quarantined_at"), rs.getString("quarantine_reason"));
     }
 
     private Row find(UUID workspaceId, UUID runId, UUID id) {
@@ -486,7 +491,8 @@ public class RunAttachments {
         return new Attachment(r.id(), r.runId(), r.fieldKey(), r.name(), r.description(), r.contentType(), r.size(),
                 r.sha256(), r.scanStatus(), subjects.ref(r.uploadedBy(), names), r.createdAt(), r.deletedAt(),
                 r.deletedBy() == null ? null : subjects.ref(r.deletedBy(), names), canRemove && !removed,
-                !removed && !AttachmentScanner.Status.of(r.scanStatus()).blocksDownload());
+                !removed && r.quarantinedAt() == null && !AttachmentScanner.Status.of(r.scanStatus()).blocksDownload(),
+                r.quarantinedAt(), r.quarantineReason());
     }
 
     private Limits limits(int usedFiles, long usedBytes) {
@@ -510,7 +516,8 @@ public class RunAttachments {
 
     /** The initiator while the request runs, and operators at any time. */
     private static boolean canRemove(RunAccess.Visible visible, Row row) {
-        return (visible.initiator() && visible.run().isActive()) || visible.access().has(Permission.RUN_OPERATE);
+        return (visible.initiator() && visible.run().isActive() && row.quarantinedAt() == null)
+                || visible.access().has(Permission.RUN_OPERATE);
     }
 
     private void requireFile(Upload upload) {

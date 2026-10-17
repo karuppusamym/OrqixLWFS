@@ -24,6 +24,9 @@ export interface MockAttachment {
   uploadedAt: string
   removedAt: string | null
   removedById: string | null
+  quarantinedAt?: string | null
+  quarantineReason?: string | null
+  ocr?: { provider: string; status: 'extracted' | 'unsupported'; text: string | null; extractedAt: string }
 }
 
 interface Staged extends MockAttachment {
@@ -97,7 +100,7 @@ async function build(user: MockUser, name: string, data: Uint8Array, description
 }
 
 const ref = (id: string | null) => (id ? { id, displayName: userById(id)?.displayName ?? 'Unknown' } : null)
-const blocked = (a: MockAttachment) => a.scanStatus === 'infected' || a.scanStatus === 'error'
+const blocked = (a: MockAttachment) => a.scanStatus === 'infected' || a.scanStatus === 'error' || !!a.quarantinedAt
 
 function view(run: MockRun, a: MockAttachment, user: MockUser): Attachment {
   const operator = permissionsOf(user, run.wsId).includes('run.operate')
@@ -105,7 +108,8 @@ function view(run: MockRun, a: MockAttachment, user: MockUser): Attachment {
   return {
     id: a.id, runId: run.id, fieldKey: a.fieldKey, name: a.name, description: a.description, contentType: a.contentType, sizeBytes: a.sizeBytes,
     sha256: a.sha256, scanStatus: a.scanStatus, uploadedBy: ref(a.uploadedById)!, uploadedAt: a.uploadedAt, removedAt: a.removedAt, removedBy: ref(a.removedById),
-    canRemove: !a.removedAt && ((run.initiatorId === user.id && active) || operator), downloadable: !a.removedAt && !blocked(a),
+    canRemove: !a.removedAt && ((run.initiatorId === user.id && active && !a.quarantinedAt) || operator), downloadable: !a.removedAt && !blocked(a),
+    quarantinedAt: a.quarantinedAt ?? null, quarantineReason: a.quarantineReason ?? null,
   }
 }
 
@@ -230,6 +234,7 @@ export function createCaseFileHandlers(): HttpHandler[] {
       if (!canSeeRunData(run, user)) return forbidden()
       const file = (run.attachments ?? []).find((a) => a.id === String(params.id))
       if (!file || file.removedAt) return notFound()
+      if (file.quarantinedAt) return problem(409, 'ATTACHMENT_BLOCKED', 'The file is blocked and cannot be downloaded', { detail: 'This file is quarantined while it is reviewed.' })
       if (blocked(file)) return problem(409, 'ATTACHMENT_BLOCKED', 'The file is blocked and cannot be downloaded')
       const content = bytes.get(file.id) ?? new TextEncoder().encode(`${file.name}: the demo file content is not kept after a reload.`)
       return new HttpResponse(content as BodyInit, {
@@ -246,16 +251,86 @@ export function createCaseFileHandlers(): HttpHandler[] {
       const file = (run.attachments ?? []).find((a) => a.id === String(params.id))
       if (!file) return notFound()
       const active = run.lifecycle === 'running' || run.lifecycle === 'waiting' || run.lifecycle === 'needsAttention'
-      if (!((run.initiatorId === user.id && active) || permissionsOf(user, run.wsId).includes('run.operate'))) return forbidden()
+      if (!((run.initiatorId === user.id && active && !file.quarantinedAt) || permissionsOf(user, run.wsId).includes('run.operate'))) return forbidden()
       if (!file.removedAt) {
         file.removedAt = clock.iso()
         file.removedById = user.id
         bytes.delete(file.id)
+        file.ocr = undefined
         addEvent(run, 'ATTACHMENT_REMOVED', { actorId: user.id, data: { attachmentId: file.id, name: file.name } })
       }
       return new HttpResponse(null, { status: 204 })
     }),
+    // DOC08: quarantine, release and the OCR contract with its local stub (text and CSV only).
+    http.post(`${B}/workspaces/:ws/runs/:run/attachments/:id/quarantine`, async ({ params, request }) => {
+      await slow()
+      const found = access(String(params.ws), String(params.run))
+      if (found instanceof Response) return found
+      const { user, run } = found
+      if (!permissionsOf(user, run.wsId).includes('run.operate')) return forbidden()
+      const file = (run.attachments ?? []).find((a) => a.id === String(params.id))
+      if (!file) return notFound()
+      const body = (await request.json().catch(() => ({}))) as { reason?: string }
+      if (typeof body.reason !== 'string' || body.reason.trim().length < 3) return problem(422, 'VALIDATION_FAILED', 'Some values are not valid', { fieldErrors: [{ pointer: '/reason', code: 'size', message: 'Add a reason of at least 3 characters.' }] })
+      if (file.removedAt) return problem(409, 'ATTACHMENT_BLOCKED', 'The file is blocked and cannot be downloaded', { detail: 'A removed file cannot be quarantined.' })
+      if (!file.quarantinedAt) {
+        file.quarantinedAt = clock.iso()
+        file.quarantineReason = body.reason.trim().slice(0, 300)
+        file.ocr = undefined
+        addEvent(run, 'ATTACHMENT_QUARANTINED', { actorId: user.id, data: { attachmentId: file.id, name: file.name } })
+      }
+      return new HttpResponse(null, { status: 204 })
+    }),
+    http.post(`${B}/workspaces/:ws/runs/:run/attachments/:id/release`, async ({ params }) => {
+      await slow()
+      const found = access(String(params.ws), String(params.run))
+      if (found instanceof Response) return found
+      const { user, run } = found
+      if (!permissionsOf(user, run.wsId).includes('run.operate')) return forbidden()
+      const file = (run.attachments ?? []).find((a) => a.id === String(params.id))
+      if (!file) return notFound()
+      if (file.quarantinedAt) {
+        file.quarantinedAt = null
+        file.quarantineReason = null
+        addEvent(run, 'ATTACHMENT_RELEASED', { actorId: user.id, data: { attachmentId: file.id, name: file.name } })
+      }
+      return new HttpResponse(null, { status: 204 })
+    }),
+    http.post(`${B}/workspaces/:ws/runs/:run/attachments/:id/ocr`, async ({ params }) => {
+      await slow()
+      const found = access(String(params.ws), String(params.run))
+      if (found instanceof Response) return found
+      const { user, run } = found
+      if (!permissionsOf(user, run.wsId).includes('run.operate')) return forbidden()
+      const file = (run.attachments ?? []).find((a) => a.id === String(params.id))
+      if (!file || file.removedAt) return notFound()
+      if (blocked(file)) return problem(409, 'ATTACHMENT_BLOCKED', 'The file is blocked and cannot be downloaded')
+      const textual = file.contentType === 'text/plain' || file.contentType === 'text/csv'
+      const text = textual ? new TextDecoder().decode(bytes.get(file.id) ?? new Uint8Array()).slice(0, 100_000) : null
+      file.ocr = { provider: 'local-stub', status: textual ? 'extracted' : 'unsupported', text, extractedAt: clock.iso() }
+      return HttpResponse.json({ attachmentId: file.id, ...file.ocr })
+    }),
+    http.get(`${B}/workspaces/:ws/runs/:run/attachments/:id/ocr`, async ({ params }) => {
+      await slow()
+      const found = access(String(params.ws), String(params.run))
+      if (found instanceof Response) return found
+      const { user, run } = found
+      if (!canSeeRunData(run, user)) return forbidden()
+      const file = (run.attachments ?? []).find((a) => a.id === String(params.id))
+      if (!file || file.removedAt || !file.ocr) return notFound()
+      if (blocked(file)) return problem(409, 'ATTACHMENT_BLOCKED', 'The file is blocked and cannot be downloaded')
+      return HttpResponse.json({ attachmentId: file.id, ...file.ocr })
+    }),
   ]
+}
+
+/** Test helper: attach a file with known content to a run. */
+export function seedRunFile(run: MockRun, file: Pick<MockAttachment, 'name' | 'contentType'> & { text: string; uploadedById: string }): MockAttachment {
+  const data = new TextEncoder().encode(file.text)
+  const row: MockAttachment = { id: newId(), fieldKey: null, name: file.name, description: null, contentType: file.contentType, sizeBytes: data.length, sha256: '0'.repeat(64), scanStatus: 'notScanned', uploadedById: file.uploadedById, uploadedAt: clock.iso(), removedAt: null, removedById: null }
+  bytes.set(row.id, data)
+  ;(run.attachments ??= []).push(row)
+  return row
 }
 
 /** Test helper: forget every staged file and stored byte. */

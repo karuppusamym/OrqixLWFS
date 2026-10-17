@@ -1,0 +1,34 @@
+{
+  "adapter": "pega-decision-snapshot-0.1",
+  "sourceSha256": "aa582cf38694a19f73a5c788c806914e2aca46ed10e03ec2217f2e18012cd2f7",
+  "sourceFormat": "pega-decision-authoring-json-subset",
+  "targetSha256": "a938b65ba01a78f07db7ef63d7272b4ff1332409776b68fcc5343862f24db920",
+  "decisionId": "PurchaseRoute",
+  "sourceIdentity": {
+    "pyClassName": "Demo-Work-Purchase",
+    "pyPurpose": "PurchaseRoute",
+    "pyRuleSet": "Demo",
+    "pyRuleSetVersion": "01-01-01"
+  },
+  "rowMappings": [
+    {
+      "targetRuleId": "pegaRow1",
+      "sourcePath": "/pyResults/0"
+    },
+    {
+      "targetRuleId": "pegaRow2",
+      "sourcePath": "/pyResults/1"
+    },
+    {
+      "targetRuleId": "pegaRow3",
+      "sourcePath": "/pyDefaultResult"
+    }
+  ],
+  "nativeRapDecoded": false,
+  "sourceRuntimeEquivalenceEstablished": false,
+  "presentationExcluded": [],
+  "limitations": [
+    "Caller must select the effective source rule; inheritance and circumstances are not resolved.",
+    "Target import review and publication are required. Source execution has not been observed."
+  ]
+}

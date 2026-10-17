@@ -1,0 +1,18 @@
+{
+  "pxObjClass": "Rule-Declare-DecisionTable",
+  "pyClassName": "Demo-Work-Purchase",
+  "pyPurpose": "PurchaseRoute",
+  "pyLabel": "Synthetic purchase routing",
+  "pyRuleSet": "Demo",
+  "pyRuleSetVersion": "01-01-01",
+  "pyRuleAvailable": "Yes",
+  "pyEvaluateAllRows": "no",
+  "pyDefaultAction": "RETURN",
+  "pyDefaultResult": "Standard",
+  "pyColumns": [{
+    "pyProperty": ".Amount",
+    "pyColumnDataType": "decimal",
+    "pyCondition": [">=10000", ">=5000"]
+  }],
+  "pyResults": ["Director", "Finance"]
+}

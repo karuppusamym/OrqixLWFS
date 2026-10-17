@@ -65,3 +65,7 @@ Every packaged file has a checksum and byte count. Identical evidence produces i
 contain different IDs and timestamps. `results.json` always records `nativePegaConversionVerified: false` and
 `sourceRuntimeEquivalenceEstablished: false`. The synthetic XML is descriptive fixture data and the canonical targets
 are manually authored; no native Pega parser or independent Pega execution is implied.
+
+## Readable Pega decision snapshots
+
+`pega_decision.py` converts a strict one-column, first-match subset of Pega decision-table authoring JSON to DMN plus a source-hash provenance sidecar. See [S55](../../docs/build/S55-pega-decisions.md) for usage, source evidence and limitations. It does not decode RAP or extract/resolve source rules. Run its tests with `python -m unittest discover -s tools/migration-equivalence -p test_pega_decision.py` from the repository root.

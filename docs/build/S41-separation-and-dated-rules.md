@@ -34,3 +34,9 @@ A decision row may carry `effective: { from?, to? }`, an inclusive window of UTC
 ## Tests
 
 `SeparationRulesTest`, `EffectiveDatedRowsTest` (compiler: window overlap, evaluator, DMN columns, simulator day); `SeparationOfDutiesTest` and `DecisionHitPolicyTest` (PostgreSQL + Flowable: a decider cannot claim, see or decide the next step while the other manager can; dated rows judged by the pinned DMN with `inWindow` evidence). Studio and mock: `WorkManagementFields.test.tsx`, `decisionPolicy.test.ts`.
+
+## Studio authoring correction - 16 October 2026
+
+UI05 closes two authoring gaps in the existing separation control. Renaming an approval ID now rewrites exact `separateFrom` references while preserving other IDs and the original document. The approval selector offers only reachable approval steps that dominate the current reachable step. Later, bypassed and unreachable approvals are not offered as new selections. Existing invalid or missing selections remain checked with an explanation and can be explicitly removed; editing the graph never silently removes a separation requirement. Read-only views retain disabled controls. Publication validation and runtime enforcement remain authoritative and unchanged.
+
+Verification: 58 frontend cases pass across `ops.test.ts`, `WorkManagementFields.test.tsx` and `StudioPage.test.tsx`. Coverage includes reference preservation and rename round-trip, reactive checked state after a store rename, later/bypassed/unreachable steps, explicit removal of invalid selections, read-only controls and existing Studio autosave behavior. Frontend typecheck and scoped lint pass. Logs: `evidence/separation-authoring-tests-final.log`, `evidence/separation-authoring-types-final.log`, `evidence/separation-authoring-lint.log`. No fresh browser, backend suite or Docker rollout is claimed for this frontend correction.

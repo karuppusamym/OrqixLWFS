@@ -199,3 +199,7 @@ The source XML is descriptive synthetic fixture data and the targets are manuall
 ## HTTP failure authoring correction - 16 October 2026
 
 UI04 is closed: Studio now exposes the existing HTTP Failed path in Steps, canvas connections and add-after insertion, while preserving the Next path. Saved failure edges use the correct handle and route color. Explicit compensation references follow a step-ID rename. Verification: 52 focused frontend tests, one mock Edge browser/axe journey, frontend/E2E typecheck, scoped lint and mock build pass. [S32](build/S32-known-failure-routes.md#studio-authoring-gap-closed---16-october-2026) records evidence and the browser/runtime boundary. The private Docker image was not refreshed by this frontend-only correction.
+
+## Separation control authoring correction - 16 October 2026
+
+UI05 is closed: approval-ID renames preserve separation references, and Studio offers only approvals guaranteed to precede the current reachable step. Existing invalid selections stay visible for explicit removal. Verification: 58 frontend tests, typecheck and scoped lint pass. [S41](build/S41-separation-and-dated-rules.md#studio-authoring-correction---16-october-2026) records details. Backend enforcement is unchanged; this correction has not been deployed to Docker.

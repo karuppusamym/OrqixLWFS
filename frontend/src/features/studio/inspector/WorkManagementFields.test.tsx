@@ -1,18 +1,20 @@
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import type { DraftSaver } from '@/stores/draftSaver'
 import { createStudioStore } from '@/stores/studioStore'
 import purchase from '../../../../../examples/purchase-approval.json'
 import { StudioProvider, useStudio } from '../StudioContext'
-import { normalizeDefinition } from '../model/types'
+import { normalizeDefinition, type Definition } from '../model/types'
 import { WorkManagementFields } from './WorkManagementFields'
 
-function setup(readOnly=false) {
+function setup(readOnly=false, nodeId='manager', configure?: (def: Definition) => void) {
   const store=createStudioStore()
-  store.getState().load({ workflowId:'workflow',revision:1,definition:normalizeDefinition(purchase) })
+  const definition=normalizeDefinition(purchase)
+  configure?.(definition)
+  store.getState().load({ workflowId:'workflow',revision:1,definition })
   function Fields() {
-    const node=useStudio(state=>state.definition.nodes.find(node=>node.id==='manager')!)
+    const node=useStudio(state=>state.definition.nodes.find(node=>node.id===nodeId)!)
     return <WorkManagementFields node={node} groups={[{key:'finance-approvers',name:'Finance expertise'},{key:'managers',name:'Management'}]} />
   }
   render(<StudioProvider value={{store,saver:{} as DraftSaver,wsId:'workspace',workflowId:'workflow',readOnly,connections:{responseType:()=>undefined}}}><Fields /></StudioProvider>)
@@ -34,11 +36,50 @@ describe('work management authoring',()=>{
     expect(store.getState().definition.nodes.find(node=>node.id==='manager')!.config.calendar).toBeUndefined()
   })
   it('keeps an approval apart from earlier approvals and removes the setting again',async()=>{
-    const store=setup(); const user=userEvent.setup()
-    await user.click(screen.getByRole('checkbox',{name:'Finance review'}))
-    expect(store.getState().definition.nodes.find(node=>node.id==='manager')!.config.separateFrom).toEqual(['finance'])
-    await user.click(screen.getByRole('checkbox',{name:'Finance review'}))
-    expect(store.getState().definition.nodes.find(node=>node.id==='manager')!.config.separateFrom).toBeUndefined()
+    const store=setup(false,'finance'); const user=userEvent.setup()
+    await user.click(screen.getByRole('checkbox',{name:'Review request'}))
+    expect(store.getState().definition.nodes.find(node=>node.id==='finance')!.config.separateFrom).toEqual(['manager'])
+    await user.click(screen.getByRole('checkbox',{name:'Review request'}))
+    expect(store.getState().definition.nodes.find(node=>node.id==='finance')!.config.separateFrom).toBeUndefined()
+  })
+  it('does not offer later approvals',()=>{
+    setup()
+    expect(screen.queryByRole('checkbox',{name:'Finance review'})).not.toBeInTheDocument()
+  })
+  it('retains bypassed and missing selections for explicit removal',async()=>{
+    const store=setup(false,'finance',def=>{
+      def.transitions.push({id:'bypass',from:'start',to:'finance',on:'next'})
+      def.nodes.find(node=>node.id==='finance')!.config.separateFrom=['manager','missing']
+    })
+    const user=userEvent.setup()
+    const invalid=screen.getByRole('checkbox',{name:'Review request (not an earlier approval on every path)'})
+    expect(invalid).toBeChecked()
+    expect(screen.queryByRole('checkbox',{name:'Review request'})).not.toBeInTheDocument()
+    expect(screen.getByRole('checkbox',{name:'missing (not an earlier approval on every path)'})).toBeChecked()
+    expect(store.getState().definition.nodes.find(node=>node.id==='finance')!.config.separateFrom).toEqual(['manager','missing'])
+    await user.click(invalid)
+    expect(store.getState().definition.nodes.find(node=>node.id==='finance')!.config.separateFrom).toEqual(['missing'])
+  })
+  it('keeps the selected approval checked after its ID changes in the store',async()=>{
+    const store=setup(false,'finance'); const user=userEvent.setup()
+    await user.click(screen.getByRole('checkbox',{name:'Review request'}))
+    act(()=>{store.getState().renameNodeId('manager','initialReview')})
+    expect(screen.getByRole('checkbox',{name:'Review request'})).toBeChecked()
+    expect(store.getState().definition.nodes.find(node=>node.id==='finance')!.config.separateFrom).toEqual(['initialReview'])
+  })
+  it('does not offer approvals for an unreachable step',()=>{
+    setup(false,'finance',def=>{
+      def.transitions=def.transitions.filter(route=>route.to!=='finance')
+    })
+    expect(screen.queryByRole('checkbox',{name:'Review request'})).not.toBeInTheDocument()
+  })
+  it('keeps invalid stored controls disabled in read-only mode',()=>{
+    setup(true,'manager',def=>{
+      def.nodes.find(node=>node.id==='manager')!.config.separateFrom=['finance']
+    })
+    const invalid=screen.getByRole('checkbox',{name:'Finance review (not an earlier approval on every path)'})
+    expect(invalid).toBeChecked()
+    expect(invalid).toBeDisabled()
   })
   it('declares correctable request fields from the single-value fields only',async()=>{
     const store=setup(); const user=userEvent.setup()

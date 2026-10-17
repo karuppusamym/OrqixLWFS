@@ -206,6 +206,19 @@ describe('adding, inserting and removing steps', () => {
     const moved = moveNodes(def, { start: { x: 100.4, y: 210 } })
     expect(moved.uiLayout?.positions.start).toEqual({ x: 100, y: 210 })
   })
+
+  it('preserves separation controls across approval rename without changing other references or the original', () => {
+    const def = template()
+    def.nodes.find(n => n.id === 'finance')!.config.separateFrom = ['manager', 'managerBackup']
+    const renamed = renameNodeId(def, 'manager', 'initialReview')
+    expect(renamed.ok).toBe(true)
+    if (!renamed.ok) return
+    expect(renamed.def.nodes.find(n => n.id === 'finance')!.config.separateFrom).toEqual(['initialReview', 'managerBackup'])
+    expect(def.nodes.find(n => n.id === 'finance')!.config.separateFrom).toEqual(['manager', 'managerBackup'])
+    expect(renamed.def.transitions.filter(t => t.from === 'manager' || t.to === 'manager')).toEqual([])
+    const restored = renameNodeId(renamed.def, 'initialReview', 'manager')
+    expect(restored.ok && restored.def).toEqual(def)
+  })
 })
 
 describe('Steps tab route selection', () => {

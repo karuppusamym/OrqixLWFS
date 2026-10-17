@@ -131,6 +131,9 @@ export function renameNodeId(def: Definition, oldId: string, newId: string): OpR
   for (const n of next.nodes) {
     if (n.type === 'parallelSplit' && n.config.joinRef === oldId) n.config.joinRef = newId
     if (n.type === 'http' && n.config.compensates === oldId) n.config.compensates = newId
+    if (n.type === 'approval' && Array.isArray(n.config.separateFrom)) {
+      n.config.separateFrom = n.config.separateFrom.map((id: unknown) => id === oldId ? newId : id)
+    }
   }
   if (next.stages) next.stages = next.stages.map((stage) => ({ ...stage, nodes: stage.nodes.map((id) => id === oldId ? newId : id) }))
   const positions = next.uiLayout?.positions

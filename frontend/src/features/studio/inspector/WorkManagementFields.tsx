@@ -4,6 +4,7 @@ import { Select } from '@/components/ui/input'
 import { FormField } from '@/components/common/FormField'
 import { useStudio, useStudioContext } from '../StudioContext'
 import { cfg, type WorkflowNode } from '../model/types'
+import { guaranteedBefore, reachableFrom, startNode } from '../model/graph'
 import { CommitInput, CommitNumber, CommitTextarea, InspectorSection } from './controls'
 
 type Calendar = { zone: string; weekdays: number[]; holidays?: string[]; start: string; end: string }
@@ -18,7 +19,11 @@ export function WorkManagementFields({ node, groups }: { node: WorkflowNode; gro
   const separateFrom = cfg<string[]>(node, 'separateFrom') ?? []
   const definition = useStudio(state => state.definition)
   // Only approvals that every path passes through before this step can be kept apart; the server checks the same rule.
-  const otherApprovals = definition.nodes.filter(other => other.type === 'approval' && other.id !== node.id)
+  const before = guaranteedBefore(definition, node.id)
+  const start = startNode(definition)
+  const reachable = start ? reachableFrom(definition, start.id) : new Set<string>()
+  const otherApprovals = definition.nodes.filter(other => other.type === 'approval' && other.id !== node.id
+    && reachable.has(node.id) && reachable.has(other.id) && before.has(other.id))
   const correctable = cfg<string[]>(node, 'correctable') ?? []
   const setCorrectable = (keys: string[]) => set({ correctable: keys.length ? keys : undefined })
   // Single-value request fields only; lists, rows and files cannot be corrected.
@@ -48,7 +53,7 @@ export function WorkManagementFields({ node, groups }: { node: WorkflowNode; gro
           onCheckedChange={checked => setSeparate(checked ? [...separateFrom, other.id] : separateFrom.filter(id => id !== other.id))} />{other.label}
       </label>)}
       {separateFrom.filter(id => !otherApprovals.some(other => other.id === id)).map(id => <label key={id} className="flex items-center gap-2 text-sm">
-        <Checkbox checked onCheckedChange={() => setSeparate(separateFrom.filter(ref => ref !== id))} />{id} (no longer an approval step)
+        <Checkbox checked onCheckedChange={() => setSeparate(separateFrom.filter(ref => ref !== id))} />{definition.nodes.find(other => other.id === id)?.label ?? id} (not an earlier approval on every path)
       </label>)}
     </fieldset> : null}
     {correctableCandidates.length > 0 || correctable.length > 0 ? <fieldset disabled={readOnly} className="space-y-2">

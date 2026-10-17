@@ -1729,7 +1729,7 @@ public final class Analyzer {
             }
         } else if (analysis.userTasks.containsKey(flow.source.id)) {
             add(e, "sequenceFlow", Report.INFO, "CONDITION_DROPPED",
-                    "The condition on this flow leaving the user task '" + from + "' is not imported; the approved and "
+                    "The condition '" + conditionText(flow) + "' on this flow leaving the user task '" + from + "' is not imported; the approved and "
                             + "rejected paths are chosen in the mapping step.",
                     "Acknowledge.", Need.ACKNOWLEDGE, null);
         } else {

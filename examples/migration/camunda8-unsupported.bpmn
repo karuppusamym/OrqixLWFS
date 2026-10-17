@@ -46,7 +46,7 @@
     <bpmn:sequenceFlow id="gFunctionDefault" sourceRef="gFunction" targetRef="merge1" />
     <bpmn:sequenceFlow id="byNull" sourceRef="gNull" targetRef="merge2"><bpmn:conditionExpression>= owner = null</bpmn:conditionExpression></bpmn:sequenceFlow>
     <bpmn:sequenceFlow id="gNullDefault" sourceRef="gNull" targetRef="merge2" />
-    <bpmn:sequenceFlow id="byIn" sourceRef="gIn" targetRef="merge3"><bpmn:conditionExpression>= status in ("a", "b")</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="byIn" sourceRef="gIn" targetRef="merge3"><bpmn:conditionExpression>= status in ("a", "b") and other = 1</bpmn:conditionExpression></bpmn:sequenceFlow>
     <bpmn:sequenceFlow id="gInDefault" sourceRef="gIn" targetRef="merge3" />
     <bpmn:sequenceFlow id="m1" sourceRef="merge1" targetRef="gNull" />
     <bpmn:sequenceFlow id="m2" sourceRef="merge2" targetRef="gIn" />

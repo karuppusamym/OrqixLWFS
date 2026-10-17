@@ -108,8 +108,23 @@ class ExpressionsTest {
     @ParameterizedTest
     @CsvSource(delimiter = '|', value = {
             "${a > 1 && b < 2 || c == 3}|mixes 'and' with 'or'",
-            "${!(a > 1 && b < 2)}|negates",
-            "= not(a > 1 and b < 2)|negates",
+            "= status in (\"a\", b)|list after 'in'",
+            "= status in (\"a\",)|list after 'in'",
+            "= status in ()|list after 'in'",
+            "= status in (>5, 6)|list after 'in'",
+            "= status in (\"a\", \"b\") and other = 1|nests a group",
+            "= x between 1 and \"z\"|not supported",
+            "= x between a and 5|not supported",
+            "= x in [5..1]|ends below",
+            "= x in [\"a\"..\"b\"]|not supported",
+            "= x in [1..2] or y = 1 and z = 2|mixes",
+            "= x between 1 and 2 or y between 3 and 4|nests a group",
+            "= (a > 1 or b > 1) and c > 1|nests a group",
+            "= date(x) > 1|function call",
+            "= 5 < 6|not a simple",
+            "= x between 1 and 2 + 3|not supported",
+            "${x between 1 and 2}|not supported",
+            "${x in (1, 2)}|not supported",
             "${(a > 1 && b < 2) || c == 3}|nests a group",
             "${customer.age > 18}|property access",
             "${fn(x) > 1}|function call",
@@ -117,14 +132,11 @@ class ExpressionsTest {
             "= owner = null|null",
             "= owner != null|null",
             "${owner == null}|null",
-            "= status in (\"a\", \"b\")|'in'",
             "= if a > 1 then true else false|FEEL construct",
-            "= a > 1 and b between 1 and 2|not supported",
             "= items[1] > 1|list, range or context",
             "= not(a.b > 1)|property access",
             "${amount * 2 > 100}|arithmetic",
             "${amount > 1 ? 2 : 3}|arithmetic",
-            "${5000 <= amount}|variable must be on the left",
             "${amount > limit}|simple comparison",
             "${amount >}|simple comparison",
             "${a > 1 &&}|simple comparison",
@@ -137,6 +149,78 @@ class ExpressionsTest {
         if (reasonPart != null && !reasonPart.isEmpty()) {
             assertThat(((Unsupported) parsed).reason()).as(text).contains(reasonPart);
         }
+    }
+
+    @Test
+    void literalOnTheLeftIsTurnedAround() {
+        assertThat(one("${5000 <= amount}")).extracting(Comparison::variable, Comparison::op).containsExactly("amount", Op.GTE);
+        assertThat(one("= 5000 > amount")).extracting(Comparison::op).isEqualTo(Op.LT);
+        assertThat(one("= \"new\" = status")).extracting(Comparison::op, Comparison::literal).containsExactly(Op.EQ, "new");
+        assertThat(one("= 5 < amount")).extracting(Comparison::op).isEqualTo(Op.GT);
+        assertThat(Expressions.parse("${\"a\" < status}", null, null)).isInstanceOf(Unsupported.class);
+    }
+
+    @Test
+    void betweenAndRangesBecomeAnAllGroupWithTheRightBounds() {
+        Logical between = (Logical) Expressions.parse("= amount between 1000 and 5000", null, null);
+        assertThat(between.group()).isEqualTo("all");
+        assertThat(between.terms()).extracting(Comparison::op).containsExactly(Op.GTE, Op.LTE);
+        Logical halfOpen = (Logical) Expressions.parse("= amount in [1000..5000)", null, null);
+        assertThat(halfOpen.terms()).extracting(Comparison::op).containsExactly(Op.GTE, Op.LT);
+        Logical open = (Logical) Expressions.parse("= amount in (1.5..5)", null, null);
+        assertThat(open.terms()).extracting(Comparison::op).containsExactly(Op.GT, Op.LT);
+        assertThat(open.describe()).isEqualTo("amount > 1.5 and amount < 5");
+    }
+
+    @Test
+    void betweenJoinsAGroupWithoutStealingItsAnd() {
+        Logical group = (Logical) Expressions.parse("= amount between 1 and 5 and status = \"open\"", null, null);
+        assertThat(group.group()).isEqualTo("all");
+        assertThat(group.terms()).extracting(Comparison::describe).containsExactly("amount >= 1", "amount <= 5", "status == 'open'");
+    }
+
+    @Test
+    void inListBecomesAnAnyGroupOfEqualities() {
+        Logical list = (Logical) Expressions.parse("= region in (\"EU\", \"UK\", \"CH\")", null, null);
+        assertThat(list.group()).isEqualTo("any");
+        assertThat(list.terms()).extracting(Comparison::literal).containsExactly("EU", "UK", "CH");
+        assertThat(Expressions.parse("= level in (1, 2)", null, null)).isInstanceOf(Logical.class);
+        assertThat(Expressions.parse("= region in (\"EU\")", null, null)).isInstanceOf(Comparison.class);
+        Logical orGroup = (Logical) Expressions.parse("= region in (\"EU\", \"UK\") or risk = \"high\"", null, null);
+        assertThat(orGroup.terms()).hasSize(3);
+        assertThat(((Unsupported) Expressions.parse("= region in (\"a;b\", \"c\")", null, null)).reason()).contains("characters");
+        assertThat(((Unsupported) Expressions.parse("= x in (1, \"a\")", null, null)).reason()).contains("different types");
+        String nine = String.join(", ", java.util.Collections.nCopies(9, "1"));
+        assertThat(((Unsupported) Expressions.parse("= x in (" + nine + ")", null, null)).reason()).contains("at most 8");
+    }
+
+    @Test
+    void notOverAGroupIsInvertedTermByTerm() {
+        Logical a = (Logical) Expressions.parse("= not(a > 1 and b < 2)", null, null);
+        assertThat(a.group()).isEqualTo("any");
+        assertThat(a.terms()).extracting(Comparison::op).containsExactly(Op.LTE, Op.GTE);
+        Logical b = (Logical) Expressions.parse("${!(a > 1 || status == 'x')}", null, null);
+        assertThat(b.group()).isEqualTo("all");
+        assertThat(b.terms()).extracting(Comparison::op).containsExactly(Op.LTE, Op.NE);
+        Logical c = (Logical) Expressions.parse("= not(x between 1 and 5)", null, null);
+        assertThat(c.group()).isEqualTo("any");
+        assertThat(c.terms()).extracting(Comparison::op).containsExactly(Op.LT, Op.GT);
+        Logical d = (Logical) Expressions.parse("= not(region in (\"EU\", \"UK\"))", null, null);
+        assertThat(d.group()).isEqualTo("all");
+        assertThat(d.terms()).extracting(Comparison::op).containsExactly(Op.NE, Op.NE);
+    }
+
+    @Test
+    void sameConnectiveGroupsInsideParenthesesAreFlattened() {
+        Logical g = (Logical) Expressions.parse("${(a > 1 && b < 2) && (c == 3 && d != 4)}", null, null);
+        assertThat(g.group()).isEqualTo("all");
+        assertThat(g.terms()).extracting(Comparison::variable).containsExactly("a", "b", "c", "d");
+        Logical h = (Logical) Expressions.parse("= (a > 1 or b < 2) or c = 3", null, null);
+        assertThat(h.group()).isEqualTo("any");
+        assertThat(h.terms()).hasSize(3);
+        String five = String.join(" and ", java.util.Collections.nCopies(5, "x > 1"));
+        var tooMany = Expressions.parse("= (" + five + ") and (" + five + ")", null, null);
+        assertThat(((Unsupported) tooMany).reason()).contains("at most 8");
     }
 
     @Test

@@ -1,3 +1,4 @@
+import { ArrowDown, ArrowUp } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
@@ -42,6 +43,21 @@ export function FormLayoutEditor() {
   const sections = def.inputUi?.layout?.sections ?? []
   type Section = NonNullable<NonNullable<InputUiDoc['layout']>['sections']>[number]
   const save = (next: Section[]) => store.getState().apply(d => ({ ...d, inputUi: { ...d.inputUi, layout: { ...d.inputUi?.layout, sections: next } } }))
+  const moveSection = (index: number, delta: -1 | 1) => {
+    const next = [...sections]
+    const other = index + delta
+    if (other < 0 || other >= next.length) return
+    ;[next[index], next[other]] = [next[other]!, next[index]!]
+    save(next)
+  }
+  const moveQuestion = (sectionIndex: number, fieldIndex: number, delta: -1 | 1) => {
+    const next = sections.map(section => ({ ...section, fields: [...section.fields] }))
+    const fields = next[sectionIndex]?.fields
+    const other = fieldIndex + delta
+    if (!fields || other < 0 || other >= fields.length) return
+    ;[fields[fieldIndex], fields[other]] = [fields[other]!, fields[fieldIndex]!]
+    save(next)
+  }
   const keys = Object.keys(def.inputSchema.properties)
   return <InspectorSection title="Form layout">
     <Label htmlFor="form-help-position">Help text position</Label><Select id="form-help-position" value={def.inputUi?.layout?.helpText ?? 'above'} disabled={readOnly} onChange={e => store.getState().apply(d => ({ ...d, inputUi: { ...d.inputUi, layout: { ...d.inputUi?.layout, helpText: e.target.value as 'above' | 'below' } } }))}><option value="above">Above the control</option><option value="below">Below the control</option></Select>
@@ -50,9 +66,20 @@ export function FormLayoutEditor() {
       const controllers = inputControllers(def, section.fields, true)
       const set = (patch: Partial<Section>) => save(sections.map((old, i) => i === index ? { ...old, ...patch } : old))
       return <fieldset key={section.id} className="space-y-3 rounded border border-border p-3"><legend>Section {index + 1}</legend>
+        <div className="flex gap-1">
+          <Button variant="ghost" size="icon" aria-label={`Move section ${section.title} up`} disabled={readOnly || index === 0} onClick={() => moveSection(index, -1)}><ArrowUp aria-hidden="true" /></Button>
+          <Button variant="ghost" size="icon" aria-label={`Move section ${section.title} down`} disabled={readOnly || index === sections.length - 1} onClick={() => moveSection(index, 1)}><ArrowDown aria-hidden="true" /></Button>
+        </div>
         <Label htmlFor={`${section.id}-title`}>Section title</Label><CommitInput id={`${section.id}-title`} value={section.title} disabled={readOnly} maxLength={100} onCommit={title => set({ title })} />
         <Label htmlFor={`${section.id}-columns`}>Section columns</Label><Select id={`${section.id}-columns`} value={section.columns ?? 1} disabled={readOnly} onChange={e => set({ columns: e.target.value === '2' ? 2 : 1 })}><option value="1">One column</option><option value="2">Two columns on larger screens</option></Select>
         {keys.map(key => <div key={key} className="flex items-center gap-2"><Checkbox id={`${section.id}-${key}`} checked={section.fields.includes(key)} disabled={readOnly || sections.some((other, i) => i !== index && other.fields.includes(key)) || (!section.fields.includes(key) && !!section.visibleWhen && inputControllers(def, [...section.fields, key], true).length === 0)} onCheckedChange={checked => set({ fields: checked ? [...section.fields, key] : section.fields.filter(old => old !== key) })} /><Label htmlFor={`${section.id}-${key}`}>Include {def.inputSchema.properties[key]!.title}</Label></div>)}
+        {section.fields.length > 1 ? <ol aria-label={`Question order in ${section.title}`} className="space-y-1">
+          {section.fields.map((key, fieldIndex) => <li key={key} className="flex items-center gap-2 text-sm">
+            <span className="min-w-0 flex-1 truncate">{def.inputSchema.properties[key]?.title ?? key}</span>
+            <Button variant="ghost" size="icon" aria-label={`Move ${key} up in ${section.title}`} disabled={readOnly || fieldIndex === 0} onClick={() => moveQuestion(index, fieldIndex, -1)}><ArrowUp aria-hidden="true" /></Button>
+            <Button variant="ghost" size="icon" aria-label={`Move ${key} down in ${section.title}`} disabled={readOnly || fieldIndex === section.fields.length - 1} onClick={() => moveQuestion(index, fieldIndex, 1)}><ArrowDown aria-hidden="true" /></Button>
+          </li>)}
+        </ol> : null}
         <div className="flex items-center gap-2"><Checkbox id={`${section.id}-conditional`} checked={!!section.visibleWhen} disabled={readOnly || (!section.visibleWhen && !controllers.length)} onCheckedChange={checked => {
           const field = controllers[0]
           set({ visibleWhen: checked && field ? { fieldRef: field.ref, operator: 'eq', value: defaultLiteral(field.type, field.enumValues) } : undefined })

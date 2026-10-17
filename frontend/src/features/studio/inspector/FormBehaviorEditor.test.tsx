@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import type { DraftSaver } from '@/stores/draftSaver'
@@ -6,6 +6,7 @@ import { createStudioStore } from '@/stores/studioStore'
 import purchase from '../../../../../examples/purchase-approval.json'
 import { StudioProvider, useStudio } from '../StudioContext'
 import { normalizeDefinition } from '../model/types'
+import { buildFields, parseFormSchema, parseFormUi } from '@/lib/form/schema'
 import { StartInspector } from './StartInspector'
 
 function setup() {
@@ -22,6 +23,25 @@ function setup() {
 }
 
 describe('conditional form and row authoring', () => {
+  it('reorders sections and questions without changing their field rules', async () => {
+    const store = setup(), user = userEvent.setup()
+    act(() => store.getState().apply(d => ({ ...d, inputUi: { ...d.inputUi, layout: { sections: [
+      { id: 'review', title: 'Review', fields: ['purpose', 'amount'], columns: 2 },
+      { id: 'identity', title: 'Identity', fields: ['title'], columns: 1 },
+    ] } } })))
+    const sections = store.getState().definition.inputUi?.layout?.sections
+    expect(sections).toHaveLength(2)
+    await user.click(screen.getByRole('button', { name: 'Move amount up in Review' }))
+    expect(store.getState().definition.inputUi?.layout?.sections?.[0]?.fields).toEqual(['amount', 'purpose'])
+    await user.click(screen.getByRole('button', { name: 'Move section Review down' }))
+    expect(store.getState().definition.inputUi?.layout?.sections?.map(s => s.id)).toEqual(['identity', 'review'])
+    const current = store.getState().definition
+    expect(buildFields(parseFormSchema(current.inputSchema), parseFormUi(current.inputUi)).slice(0, 3).map(f => f.key)).toEqual(['title', 'amount', 'purpose'])
+    expect(store.getState().definition.inputSchema.properties.amount?.title).toBe('Amount (USD)')
+    expect(store.getState().definition.inputSchema.properties.amount?.incidentEditable).toBe(true)
+    act(() => store.getState().undo())
+    expect(store.getState().definition.inputUi?.layout?.sections?.[0]?.id).toBe('review')
+  })
   it('authors a conditional field and section and preserves them across question edits', async () => {
     const store = setup(), user = userEvent.setup()
     const purpose = within(screen.getByTestId('field-card-purpose'))

@@ -285,3 +285,7 @@ The XPDL work is now present in the current branch through `e7a9d8c` and `46ec06
 ## Readable Pega decision snapshots — 17 October 2026
 
 MIG14 adds the offline `pega_decision.py` converter described in [S55](build/S55-pega-decisions.md): strict readable decision-table authoring JSON to DMN, explicit first-match behavior, source/target hashes, row provenance and refusal of unsupported source behavior. The output enters the existing DMN review/publication flow. A synthetic fixture and target compiler boundary checks accompany the converter. This is a bounded additional migration path; MIG11 native RAP decoding/effective-rule resolution and AC01 source-runtime acceptance remain open in their recorded scopes. No new Docker deployment or browser acceptance is claimed.
+
+## Full CMMN and application UI designer selected — 17 October 2026
+
+The user selected the full CMMN 1.1 and general application UI designer targets for WM04 and UI02. [S56](build/S56-adaptive-cases-ui-designer-scope.md) records the normative CMMN baseline, preferred Flowable engine integration, case execution and conformance acceptance, plus the versioned view/action/page/extension requirements and tests for the designer. Both epics remain open. The first UI02 increment lets designers reorder form sections and their questions with accessible controls and undo while retaining the existing pinned form contract. Three focused frontend tests and typecheck pass. This increment is not shared view/action delivery, and no CMMN runtime is yet integrated.

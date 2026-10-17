@@ -227,3 +227,7 @@ MIG13 is closed for a bounded XPDL 2.0 flow-export grammar. The backend automati
 ## Readable Pega decision snapshot converter — 17 October 2026
 
 [S55](build/S55-pega-decisions.md) adds an offline converter from a bounded Pega decision-table authoring JSON snapshot to importable DMN plus a provenance sidecar. It accepts one direct scalar input, first-match rows, literal comparisons and plain text results; unknown fields, side effects, expressions and unresolved native formats are refused. The source shape is grounded in Pega's published authoring schema; the included fixture is synthetic. It does not extract from Pega, decode RAP or establish source-runtime equivalence. Use the existing DMN import/review/publication flow; this delivery adds no UI or deployment.
+
+## Adaptive cases and general UI designer — full targets selected
+
+The user selected full CMMN 1.1 for WM04 and a general application UI designer for UI02. [S56](build/S56-adaptive-cases-ui-designer-scope.md) defines the acceptance boundaries and the proposed Flowable CMMN integration path. Neither epic is complete. Studio now supports accessible ordering of form sections and questions within sections using the existing undoable draft and pinned form rendering contract; shared view assets and action authoring remain open. This first UI increment passed its focused tests and frontend typecheck; it has no real-browser or CMMN runtime acceptance yet.

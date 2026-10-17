@@ -5,7 +5,7 @@ Updated 15 October 2026 · status vocabulary from [doc 09](09-master-plan.md#def
 
 ## Current verified checkpoint - 15 October 2026
 
-The resumed competitive batch verifies fifteen bounded tickets in the [delivery register](22-competitive-gap-delivery.md) (EX04 operator suspend/resume and compatible release migration, added 16 October, is recorded in [doc 19](19-product-build-tracker.md)). These include group-based skill restrictions, working calendars, overdue notices, shared publication test suites, conjunctive decisions, generated PDF/DOCX, approved Microsoft folder/version choices, guarded incident correction, empty-run detection, known HTTP failure routes, conditional forms/typed rows/counts/totals, and reviewed OpenAPI import. Their limits and remaining epics are explicit in [product closeout](21-product-closeout.md).
+The resumed competitive batch verifies twenty bounded tickets in the [delivery register](22-competitive-gap-delivery.md) (EX04, WM06, WM07, RL03, RL04 and EX01, added 16–17 October, are recorded in [doc 19](19-product-build-tracker.md)). These include group-based skill restrictions, working calendars, overdue notices, shared publication test suites, conjunctive decisions, generated PDF/DOCX, approved Microsoft folder/version choices, guarded incident correction, empty-run detection, known HTTP failure routes, conditional forms/typed rows/counts/totals, and reviewed OpenAPI import. Their limits and remaining epics are explicit in [product closeout](21-product-closeout.md).
 
 | Check | Final observed evidence |
 |---|---|
@@ -16,7 +16,7 @@ The resumed competitive batch verifies fifteen bounded tickets in the [delivery 
 | Contracts/tools | 88 contract checks, four offline migration tests and 132 manifest checks pass; OpenAPI lint passes with 48 documentation warnings |
 | Local deployment | Healthy isolated stack at http://localhost:18080; image `orqix/orqix:validated-1015`, migrations through V29. Existing stack and volumes are preserved |
 
-[Doc 19](19-product-build-tracker.md#competitive-batch-verification--15-october-2026) records exact logs, combined-run methodology and image identity. Eighteen broader engineering epics and external/customer/infrastructure acceptance gates remain open. Historical totals and limits below describe their dated checkpoints; this section and the delivery register govern the current batch.
+[Doc 19](19-product-build-tracker.md#competitive-batch-verification--15-october-2026) records exact logs, combined-run methodology and image identity. Thirteen broader engineering epics and external/customer/infrastructure acceptance gates remain open. Historical totals and limits below describe their dated checkpoints; this section and the delivery register govern the current batch.
 
 ## Prior committed baseline - 10 October 2026 (demo release candidate, second pass)
 

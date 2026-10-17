@@ -256,3 +256,16 @@ MIG12 is closed. The planner accepts multiple supported decisions in a DMN file,
 Observed verification: all 15 focused backend cases pass (seven planner and eight API) on real PostgreSQL/Flowable, including two separately published callers producing Finance versus Manager from the same 5,000 input through different tables in one source. Missing/unknown selection creates no workflow; identical replay succeeds and changed selection conflicts. All 29 focused frontend cases and one mock Edge upload/selection/conversion journey with axe pass. Frontend/E2E typechecks, scoped lint and isolated mock build pass. [Backend](../evidence/multi-dmn-backend.log), [frontend](../evidence/multi-dmn-frontend.log), [browser](../evidence/multi-dmn-browser.log), [types](../evidence/multi-dmn-types.log), [E2E types](../evidence/multi-dmn-e2e-types.log), [lint](../evidence/multi-dmn-lint.log), [build](../evidence/multi-dmn-build.log).
 
 These are focused checks, not another full-suite run, customer-source equivalence or Docker deployment. The browser uses mock conversion; actual target execution is verified separately through the backend API tests. Previously blocked stored plans require source reimport.
+
+## Second competitive batch - 16/17 October 2026
+
+Specs: [S39](build/S39-task-dispatch.md) (WM06), [S40](build/S40-decision-hit-policies.md) (RL04), [S41](build/S41-separation-and-dated-rules.md) (RL03), [S42](build/S42-approver-correction.md) (WM07), [S43](build/S43-external-workers.md) (EX01). Migrations V31 (task separation) and V32 (external jobs). Each is bounded; the limits are in its spec and in [doc 22](22-competitive-gap-delivery.md).
+
+| Check | Result |
+|---|---|
+| Backend | Clean `verify` at `cad1519`: compiler 454, application 684 (680 pass, four intentional skips), zero failures/errors, coverage gate and packaging. [Log](../evidence/batch2-backend-verify-1017.log). Earlier clean run at `5d54758`: 450 and 678. [Log](../evidence/batch1-backend-verify-1016.log) |
+| Frontend | 779/779 tests (91 files); typecheck, lint and API drift pass. [Log](../evidence/batch2-frontend-1017.log) |
+| Contracts and SDK | 88 contract checks; 6 worker SDK protocol tests |
+| Not run | Real Docker stack, mock or real browser suites for these tickets, refreshed image |
+
+Concurrent work: another session committed to the same branch during this batch (Pega migration documents, Studio failure-route authoring, Insights downloads, workflow pinning). Its commits and uncommitted files were left untouched; this batch staged only its own files. Verification above covers the tree as committed at the stated commits, which includes that work.

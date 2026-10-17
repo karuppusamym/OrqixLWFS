@@ -1574,6 +1574,145 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/adapters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Outbound adapter definitions (email, Teams, JDBC read, Kafka produce); never secrets */
+        get: operations["listAdapters"];
+        put?: never;
+        /**
+         * Define an adapter with exact allowlists and a secret reference
+         * @description Closed configuration per kind; unknown fields (including anything resembling a secret) are refused. Teams base URLs pass the egress policy. Only the local stub transport exists in this build.
+         */
+        post: operations["createAdapter"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/adapters/{adapterKey}/test-send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                adapterKey: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Validate a request against the adapter rules and deliver it to the local stub only
+         * @description No remote system is contacted; the outcome is always stubbed. Live acceptance is an external gate.
+         */
+        post: operations["testAdapterSend"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/inbound-triggers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Inbound triggers; the secret reference and receive path are shown to managers only */
+        get: operations["listInboundTriggers"];
+        put?: never;
+        /**
+         * Define a signed inbound trigger that maps payload values into a workflow's start input
+         * @description A received event never starts a run by itself; a person with workflow.start starts it.
+         */
+        post: operations["createInboundTrigger"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/inbound/{triggerId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                triggerId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Receive one signed event (no session or token)
+         * @description Authenticated by `X-Orqix-Signature: sha256=<hex HMAC-SHA256(secret, timestamp + "." + rawBody)>` with
+         *     `X-Orqix-Timestamp` (epoch seconds, within 5 minutes) and a unique `X-Orqix-Event-Id` per trigger. Bodies are
+         *     limited to 64 KiB. Only mapped scalar values are stored; a repeated event id is acknowledged as a duplicate.
+         */
+        post: operations["receiveInboundEvent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/inbound-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Received events for workflows the caller may start, newest first
+         * @description Mapped values are request data, so only people who can start the target workflow see the event.
+         */
+        get: operations["listInboundEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/inbound-events/{eventId}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start a run from a received event as the signed-in person
+         * @description Uses the caller's own workflow.start rights. The event is locked, so it starts at most one run; a repeat returns that run.
+         */
+        post: operations["startInboundEvent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/connections": {
         parameters: {
             query?: never;
@@ -2213,6 +2352,125 @@ export interface components {
         Lifecycle: "running" | "waiting" | "needsAttention" | "completed" | "cancelled";
         /** @enum {string} */
         OutcomeKind: "success" | "rejected" | "failed";
+        Adapter: {
+            /** Format: uuid */
+            id: string;
+            key: string;
+            /** @enum {string} */
+            kind: "email" | "teams" | "jdbc" | "kafka";
+            name: string;
+            /** @description Shown to connection.manage only */
+            secretRef?: string | null;
+            config: {
+                [key: string]: unknown;
+            };
+            enabled: boolean;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        AdapterList: {
+            items: components["schemas"]["Adapter"][];
+        };
+        AdapterCreateRequest: {
+            key: string;
+            /** @enum {string} */
+            kind: "email" | "teams" | "jdbc" | "kafka";
+            name: string;
+            secretRef: string;
+            config: {
+                [key: string]: unknown;
+            };
+        };
+        AdapterSendRequest: {
+            payload: {
+                [key: string]: unknown;
+            };
+        };
+        AdapterSendResult: {
+            adapter: string;
+            /** @enum {string} */
+            kind: "email" | "teams" | "jdbc" | "kafka";
+            /** @enum {string} */
+            outcome: "stubbed";
+            detail: {
+                [key: string]: unknown;
+            };
+        };
+        InboundTrigger: {
+            /** Format: uuid */
+            id: string;
+            key: string;
+            /** @enum {string} */
+            source: "email" | "teams" | "jdbc" | "kafka";
+            name: string;
+            /** Format: uuid */
+            workflowId: string;
+            secretRef?: string | null;
+            filter: {
+                [key: string]: unknown;
+            };
+            mapping: {
+                [key: string]: string;
+            };
+            enabled: boolean;
+            receivePath?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        InboundTriggerList: {
+            items: components["schemas"]["InboundTrigger"][];
+        };
+        InboundTriggerCreateRequest: {
+            key: string;
+            /** @enum {string} */
+            source: "email" | "teams" | "jdbc" | "kafka";
+            name: string;
+            /** Format: uuid */
+            workflowId: string;
+            secretRef: string;
+            filter?: {
+                [key: string]: unknown;
+            };
+            mapping: {
+                [key: string]: string;
+            };
+        };
+        InboundAccepted: {
+            /** Format: uuid */
+            eventId: string;
+            /** @enum {string} */
+            status: "received" | "started";
+            duplicate: boolean;
+        };
+        InboundEvent: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            triggerId: string;
+            triggerKey: string;
+            /** Format: uuid */
+            workflowId: string;
+            eventId: string;
+            /** @enum {string} */
+            status: "received" | "started";
+            input: {
+                [key: string]: unknown;
+            };
+            /** Format: uuid */
+            runId?: string | null;
+            /** Format: date-time */
+            receivedAt: string;
+        };
+        InboundEventList: {
+            items: components["schemas"]["InboundEvent"][];
+        };
+        InboundStarted: {
+            /** Format: uuid */
+            eventId: string;
+            /** Format: uuid */
+            runId: string;
+            alreadyStarted: boolean;
+        };
         OpenApiReviewRequest: {
             source: string;
             fileName?: string;
@@ -7842,6 +8100,243 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listAdapters: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Adapters */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdapterList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createAdapter: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdapterCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Adapter"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    testAdapterSend: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                adapterKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdapterSendRequest"];
+            };
+        };
+        responses: {
+            /** @description Stub outcome */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdapterSendResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listInboundTriggers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Triggers */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InboundTriggerList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createInboundTrigger: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InboundTriggerCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InboundTrigger"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    receiveInboundEvent: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Orqix-Event-Id": string;
+                "X-Orqix-Timestamp": string;
+                "X-Orqix-Signature": string;
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                triggerId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description Accepted (or acknowledged duplicate) */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InboundAccepted"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listInboundEvents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Events */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InboundEventList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    startInboundEvent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Started (or already started) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InboundStarted"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             422: components["responses"]["Unprocessable"];
         };
     };

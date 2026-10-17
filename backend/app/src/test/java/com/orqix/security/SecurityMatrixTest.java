@@ -302,6 +302,12 @@ class SecurityMatrixTest extends RuntimeTestBase {
                     "enabled", true);
             case "testConnection" -> Map.of("version", 1, "operation", "health");
             case "reviewOpenApiConnection" -> Map.of("source", "{}");
+            case "createAdapter" -> Map.of("key", "foreign-adapter", "kind", "kafka", "name", "Foreign", "secretRef", "foreign-ref",
+                    "config", Map.of("allowedTopics", List.of("foreign.topic")));
+            case "testAdapterSend" -> Map.of("payload", Map.of("topic", "foreign.topic", "value", Map.of("a", 1)));
+            case "createInboundTrigger" -> Map.of("key", "foreign-trigger", "source", "teams", "name", "Foreign",
+                    "workflowId", ids.get("workflowId"), "secretRef", "foreign-ref", "mapping", Map.of("title", "/text"));
+            case "receiveInboundEvent" -> Map.of("text", "foreign");
             case "createRoleBinding" -> Map.of("role", "VIEWER", "principal", principal);
             case "createPermissionGrant" -> Map.of("permission", "workflow.start", "principal", principal);
             case "putGroup" -> Map.of("name", "Foreign", "members", List.of());
@@ -316,7 +322,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
                 "workspace_group", "workspace_group_member", "migration_job", "migration_project", "migration_policy", "migration_review", "workflow", "workflow_folder", "workflow_folder_item", "workflow_draft_revision", "workflow_release",
                 "release_artifact", "connection_definition", "connection_binding", "workflow_run", "task_context",
                 "run_attachment", "run_attachment_content", "run_stage", "workflow_test_suite", "workflow_test_result", "document_source",
-                "task_decision", "task_reminder", "inbound_message", "message_subscription", "document_snapshot", "effect_journal", "run_event", "notification", "idempotency_record",
+                "task_decision", "task_reminder", "inbound_message", "message_subscription", "document_snapshot", "adapter_config", "inbound_trigger", "inbound_event", "effect_journal", "run_event", "notification", "idempotency_record",
                 "act_re_deployment", "act_ru_execution", "act_ru_task", "act_ru_job", "act_ru_deadletter_job")) {
             counts.put(table, jdbc.sql("SELECT count(*) FROM " + table).query(Long.class).single());
         }

@@ -114,6 +114,32 @@ public class RuntimeController {
         return replayAware(operator.cancel(callers.current(), workspaceId, runId, idempotencyKey, request));
     }
 
+    @PostMapping("/runs/{runId}/suspend")
+    public ResponseEntity<RuntimeDtos.RunDetail> suspendRun(@PathVariable UUID workspaceId, @PathVariable UUID runId,
+            @RequestHeader(name = IdempotencyService.HEADER, required = false) String idempotencyKey,
+            @Valid @RequestBody RuntimeDtos.SuspendRunRequest request) {
+        return replayAware(operator.suspend(callers.current(), workspaceId, runId, idempotencyKey, request));
+    }
+
+    @PostMapping("/runs/{runId}/resume")
+    public ResponseEntity<RuntimeDtos.RunDetail> resumeRun(@PathVariable UUID workspaceId, @PathVariable UUID runId,
+            @RequestHeader(name = IdempotencyService.HEADER, required = false) String idempotencyKey,
+            @Valid @RequestBody RuntimeDtos.ResumeRunRequest request) {
+        return replayAware(operator.resume(callers.current(), workspaceId, runId, idempotencyKey, request));
+    }
+
+    @GetMapping("/runs/{runId}/migration-options")
+    public RuntimeDtos.MigrationOptions getRunMigrationOptions(@PathVariable UUID workspaceId, @PathVariable UUID runId) {
+        return operator.migrationOptions(callers.current(), workspaceId, runId);
+    }
+
+    @PostMapping("/runs/{runId}/migrate")
+    public ResponseEntity<RuntimeDtos.RunDetail> migrateRun(@PathVariable UUID workspaceId, @PathVariable UUID runId,
+            @RequestHeader(name = IdempotencyService.HEADER, required = false) String idempotencyKey,
+            @Valid @RequestBody RuntimeDtos.MigrateRunRequest request) {
+        return replayAware(operator.migrate(callers.current(), workspaceId, runId, idempotencyKey, request));
+    }
+
     @PostMapping("/runs/{runId}/retry")
     public ResponseEntity<RuntimeDtos.RunDetail> retryRun(@PathVariable UUID workspaceId, @PathVariable UUID runId,
             @RequestHeader(name = IdempotencyService.HEADER, required = false) String idempotencyKey,

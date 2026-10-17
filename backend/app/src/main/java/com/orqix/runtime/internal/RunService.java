@@ -62,12 +62,14 @@ public class RunService {
     private final Json json;
     private final RunAttachments attachments;
     private final RunStages stages;
+    private final RunSuspensions suspensions;
 
     public RunService(PolicyService policy, ReleaseQueries releases, FormValidator formValidator, RunStore runs,
             RunEvents events, RunQueries runQueries, TaskStore tasks, TaskQueries taskQueries, RunAccess runAccess,
             RuntimeViews views, EngineCommands engine, EffectJournal journal, IdempotencyService idempotency,
             AuditWriter audit, RuntimeMetrics metrics, CursorCodec cursors, OrqixProperties properties, Json json,
-            RunAttachments attachments, RunStages stages) {
+            RunAttachments attachments, RunStages stages, RunSuspensions suspensions) {
+        this.suspensions = suspensions;
         this.attachments = attachments;
         this.stages = stages;
         this.policy = policy;
@@ -337,23 +339,37 @@ public class RunService {
                 .map(e -> views.effect(e, label(release, e.nodeId()))).toList();
         RuntimeDtos.RunSummary summary = views.run(run, names, access.workspace().isTest(), data);
         RuntimeDtos.StageProgress stageProgress = stages.progress(run, release);
+        RunSuspensions.Suspension suspended = suspensions.find(run.workspaceId(), run.id()).orElse(null);
+        String suspendBlocker = operate && suspended == null && run.isActive()
+                ? OperatorService.suspendBlocker(run, runs, engine) : null;
         return new RuntimeDtos.RunDetail(summary.id(), summary.reference(), summary.workflow(), summary.release(), summary.businessKey(),
                 summary.requestTitle(),
                 summary.initiator(), summary.lifecycle(), summary.outcome(), summary.outcomeKind(), summary.currentSteps(),
                 summary.attention(), summary.createdAt(), summary.updatedAt(), summary.endedAt(), summary.isTest(),
                 summary.version(), data ? run.input() : null, RuntimeViews.inputLabels(release),
                 data ? run.output() : null, taskViews, effectViews, reversedViews,
-                allowedActions(run, operate, effects), summary.parentRun(), views.children(run),
-                stageProgress == null ? null : stageProgress.current(),
-                stageProgress == null ? List.of() : stageProgress.stages());
+                allowedActions(run, operate, effects, suspended != null, suspendBlocker), summary.parentRun(),
+                views.children(run), stageProgress == null ? null : stageProgress.current(),
+                stageProgress == null ? List.of() : stageProgress.stages(),
+                suspended == null ? null : new RuntimeDtos.Suspension(suspended.suspendedAt(),
+                        operate ? suspended.reason() : null));
     }
 
     static RuntimeDtos.AllowedRunActions allowedActions(RunStore.RunRow run, boolean operate,
-            List<EffectJournal.Effect> effects) {
+            List<EffectJournal.Effect> effects, boolean suspended, String suspendBlocker) {
         RuntimeDtos.ActionAvailability forbidden = new RuntimeDtos.ActionAvailability(false, "FORBIDDEN");
         if (!operate) {
-            return new RuntimeDtos.AllowedRunActions(forbidden, forbidden, forbidden);
+            return new RuntimeDtos.AllowedRunActions(forbidden, forbidden, forbidden, forbidden, forbidden);
         }
+        RuntimeDtos.ActionAvailability suspend = !run.isActive()
+                ? new RuntimeDtos.ActionAvailability(false, "RUN_NOT_ACTIVE")
+                : suspended ? new RuntimeDtos.ActionAvailability(false, "RUN_SUSPENDED")
+                : suspendBlocker != null ? new RuntimeDtos.ActionAvailability(false, "RUN_NOT_SUSPENDABLE")
+                : new RuntimeDtos.ActionAvailability(true, null);
+        RuntimeDtos.ActionAvailability resume = !run.isActive()
+                ? new RuntimeDtos.ActionAvailability(false, "RUN_NOT_ACTIVE")
+                : suspended ? new RuntimeDtos.ActionAvailability(true, null)
+                : new RuntimeDtos.ActionAvailability(false, "RUN_NOT_SUSPENDED");
         RuntimeDtos.ActionAvailability cancel = run.isActive() ? new RuntimeDtos.ActionAvailability(true, null)
                 : new RuntimeDtos.ActionAvailability(false, "RUN_NOT_ACTIVE");
         boolean unknown = effects.stream().anyMatch(e -> EffectJournal.UNKNOWN.equals(e.state()));
@@ -372,7 +388,11 @@ public class RunService {
         RuntimeDtos.ActionAvailability reconcile = reconcilable && run.isActive()
                 ? new RuntimeDtos.ActionAvailability(true, null)
                 : new RuntimeDtos.ActionAvailability(false, "EFFECT_STATE_CONFLICT");
-        return new RuntimeDtos.AllowedRunActions(cancel, retry, reconcile);
+        if (suspended) {
+            retry = new RuntimeDtos.ActionAvailability(false, "RUN_SUSPENDED");
+            reconcile = new RuntimeDtos.ActionAvailability(false, "RUN_SUSPENDED");
+        }
+        return new RuntimeDtos.AllowedRunActions(cancel, retry, reconcile, suspend, resume);
     }
 
     static String label(ReleaseQueries.ReleaseView release, String nodeId) {

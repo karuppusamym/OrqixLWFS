@@ -154,6 +154,17 @@ public class ReleaseQueries {
                 .optional();
     }
 
+    /** Releases of one workflow, newest first. */
+    @Transactional(readOnly = true)
+    public java.util.List<UUID> releaseIds(UUID workspaceId, UUID workflowId, int limit) {
+        return jdbc.sql("""
+                SELECT id FROM workflow_release WHERE workspace_id = :ws AND workflow_id = :wf
+                ORDER BY release_number DESC LIMIT :limit
+                """)
+                .param("ws", workspaceId).param("wf", workflowId).param("limit", limit)
+                .query((rs, n) -> Sql.uuid(rs, "id")).list();
+    }
+
     public ReleaseView require(UUID workspaceId, UUID releaseId) {
         return find(workspaceId, releaseId)
                 .orElseThrow(() -> new IllegalStateException("Release " + releaseId + " not found in workspace"));

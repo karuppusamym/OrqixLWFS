@@ -185,4 +185,21 @@ The partial work from other models has been reviewed and integrated. S27–S32, 
 
 Bounded implementations include skill-restricted queues, working calendars, recurring overdue notices, shared publication tests, conjunctive decisions, generated PDF/DOCX, approved Microsoft folder/file/version selection, controlled input correction, stale-empty request detection, known HTTP failure routes, conditional forms/typed rows/counts/totals and reviewed OpenAPI import. Limits are explicit in [doc 21](21-product-closeout.md) and ticket-by-ticket in [doc 22](22-competitive-gap-delivery.md).
 
-Still open: advanced cases/CMMN, general task correction and object-row iteration, automatic skills/load dispatch, broader BPMN events/subprocesses/human multi-instance, general worker SDK, suspend/resume/in-flight migration, full application UI design/shared assets, richer rule policies, OCR/rich document administration, additional integrations/OAuth lifecycle and environment/Git promotion. Genuine customer source equivalence, tenant/scanner/integration/banking acceptance and excluded production infrastructure cannot be closed by local fixtures.
+Still open: advanced cases/CMMN, general task correction and object-row iteration, automatic skills/load dispatch, broader BPMN events/subprocesses/human multi-instance, general worker SDK, migration beyond a single waiting approval/wait, full application UI design/shared assets, richer rule policies, OCR/rich document administration, additional integrations/OAuth lifecycle and environment/Git promotion. Genuine customer source equivalence, tenant/scanner/integration/banking acceptance and excluded production infrastructure cannot be closed by local fixtures.
+
+## EX04 suspend/resume and release migration — 16 October 2026
+
+Specs: [S37](build/S37-suspend-resume.md), [S38](build/S38-release-migration.md); register row EX04 in [doc 22](22-competitive-gap-delivery.md). Built on the 15 October tree (migration V30 adds `run_suspension`; no other schema change).
+
+| Check | Result |
+|---|---|
+| Backend | Clean `verify`: compiler 440 pass; application 667 cases, 663 pass, four intentional skips (same as 15 October), zero failures/errors; coverage gate and packaging pass. [Log](../evidence/ex04-backend-verify-1016.log) |
+| New backend tests | `RunSuspensionTest` 3, `RunMigrationTest` 4 (PostgreSQL + Flowable, public API), `ReleaseCompatibilityTest` 9; `SecurityMatrixTest` covers suspendRun, resumeRun, migrateRun and getRunMigrationOptions |
+| Frontend | 719/719 tests (84 files); typecheck, lint and API type drift pass. [Log](../evidence/ex04-frontend-1016.log) |
+| Contracts | 88 checks pass (OpenAPI problem codes, audit actions, message table, generated types) |
+| Browser | Mock-mode Edge spec `t-ex-04-suspend-resume` passes with axe scans. [Log](../evidence/ex04-browser-mock-1016.log). Full mock suite was not rerun |
+| Not run | Real Docker stack and real-stack browser suite, a refreshed image, OpenAPI lint warnings count, and a browser spec for the migration dialog |
+
+Defect found by the tests: the first compatibility rule compared node settings only, so a request that had passed a decision could move to a release with a different decision table. The rule now compares the decision table and connection version each travelled step references (`HISTORY_CHANGED`). Engine behavior confirmed by execution: Flowable migrates a suspended instance directly, keeping its task, timers and variables.
+
+Limits: due dates, stage deadlines and overdue notices keep running while suspended; timers fire after resume if they fell due; only a request waiting at exactly one approval, timer wait or message wait can move; a request with running child requests cannot be suspended.

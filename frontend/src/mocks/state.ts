@@ -230,6 +230,8 @@ export interface MockTask {
 
 export interface MockRun {
   comments?: components['schemas']['RunComment'][]
+  /** Operator suspension (docs/build/S37): tasks, timers and messages are held while set. */
+  suspension?: { since: string; reason: string; byId: string } | null
   id: string
   /** Optional for compatibility with older persisted mock fixtures. */
   reference?: string

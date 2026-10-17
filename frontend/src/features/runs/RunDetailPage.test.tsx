@@ -4,7 +4,8 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { eventsPollInterval } from '@/api/queries'
 import { claim, decide } from '@/mocks/engine'
-import { db, userByName, type MockRun } from '@/mocks/state'
+import { currentRelease } from '@/mocks/engine'
+import { db, userByName, type MockRun, type MockWorkflow } from '@/mocks/state'
 import { renderApp, signInAs, WS } from '@/test/utils'
 
 function runByKey(key: string): MockRun {
@@ -148,6 +149,87 @@ describe('run detail', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Cancel request' }))
     await waitFor(() => expect(screen.getByTestId('run-status')).toHaveTextContent('Cancelled'))
     expect(screen.getByTestId('timeline')).toHaveTextContent('Olga Operator cancelled the request: Duplicate request')
+  })
+
+  it('suspends a waiting request with a reason, holds approvals, and resumes it', async () => {
+    signInAs('olga.operator')
+    const user = userEvent.setup()
+    const run = runByKey('ORQ-1005') // waiting for a manager
+    renderApp(at(run))
+    await user.click(await screen.findByRole('button', { name: 'Suspend request' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Suspend this request' })
+    await user.click(within(dialog).getByRole('button', { name: 'Suspend request' }))
+    expect(within(dialog).getByText(/Add a reason/)).toBeInTheDocument()
+    expect(run.suspension).toBeFalsy()
+    await user.type(within(dialog).getByLabelText(/Reason/), 'Policy review in progress')
+    await user.click(within(dialog).getByRole('button', { name: 'Suspend request' }))
+    expect(await screen.findByTestId('suspension-message')).toHaveTextContent('Reason: Policy review in progress')
+    expect(run.lifecycle).toBe('waiting')
+    expect(screen.getByTestId('timeline')).toHaveTextContent('Olga Operator suspended the request: Policy review in progress')
+    expect(screen.queryByRole('button', { name: 'Suspend request' })).not.toBeInTheDocument()
+
+    await user.click(await screen.findByRole('button', { name: 'Resume request' }))
+    const resume = await screen.findByRole('dialog', { name: 'Resume this request' })
+    await user.type(within(resume).getByLabelText(/Reason/), 'Review finished')
+    await user.click(within(resume).getByRole('button', { name: 'Resume request' }))
+    await waitFor(() => expect(screen.queryByTestId('suspension-message')).not.toBeInTheDocument())
+    expect(run.suspension).toBeFalsy()
+    expect(screen.getByTestId('timeline')).toHaveTextContent('Olga Operator resumed the request: Review finished')
+  })
+
+  it('moves a suspended request to a compatible version and explains why another version is refused', async () => {
+    signInAs('olga.operator')
+    const user = userEvent.setup()
+    const run = runByKey('ORQ-1005') // waiting for a manager on version 1
+    const wf = db.workflows.get(run.workflowId) as MockWorkflow
+    const v1 = currentRelease(run)
+    const renamed = structuredClone(v1)
+    renamed.id = 'release-renamed'
+    renamed.releaseNumber = 2
+    renamed.definition.nodes.find((n) => n.id === 'manager')!.label = 'Line manager review'
+    const slower = structuredClone(v1)
+    slower.id = 'release-slower'
+    slower.releaseNumber = 3
+    ;(slower.definition.nodes.find((n) => n.id === 'manager')!.config as Record<string, unknown>).dueAfterHours = 99
+    wf.releases.push(renamed, slower)
+
+    renderApp(at(run))
+    expect(screen.queryByRole('button', { name: 'Move to another version' })).not.toBeInTheDocument() // only while suspended
+    await user.click(await screen.findByRole('button', { name: 'Suspend request' }))
+    const suspend = await screen.findByRole('dialog', { name: 'Suspend this request' })
+    await user.type(within(suspend).getByLabelText(/Reason/), 'Moving to a new version')
+    await user.click(within(suspend).getByRole('button', { name: 'Suspend request' }))
+
+    await user.click(await screen.findByRole('button', { name: 'Move to another version' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Move to another version' })
+    const refused = await within(dialog).findByTestId('migrate-option-3')
+    expect(refused).toHaveTextContent('The settings of the step')
+    expect(within(refused).getByRole('radio')).toBeDisabled()
+    const allowed = within(dialog).getByTestId('migrate-option-2')
+    expect(allowed).toHaveTextContent('The request can continue here.')
+
+    await user.click(within(dialog).getByRole('button', { name: 'Move request' }))
+    expect(within(dialog).getByText(/Choose a version/)).toBeInTheDocument()
+    await user.click(within(allowed).getByRole('radio'))
+    await user.click(within(dialog).getByRole('button', { name: 'Move request' }))
+    expect(within(dialog).getByText(/Add a reason/)).toBeInTheDocument()
+    await user.type(within(dialog).getByLabelText(/Reason/), 'Pick up the new wording')
+    await user.click(within(dialog).getByRole('button', { name: 'Move request' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(run.releaseId).toBe('release-renamed')
+    expect(run.suspension).toBeTruthy() // still suspended; the operator resumes explicitly
+    expect(screen.getByTestId('timeline')).toHaveTextContent('Olga Operator moved the request from version 1 to version 2: Pick up the new wording')
+    expect(run.tasks.find((t) => t.status === 'open')?.label).toBe('Line manager review')
+  })
+
+  it('shows requesters that the request is paused without the operator reason or controls', async () => {
+    signInAs('rhea.requester')
+    const run = runByKey('ORQ-1005')
+    run.suspension = { since: '2026-01-05T10:00:00Z', reason: 'Internal audit hold', byId: userByName('olga.operator').id }
+    renderApp(at(run))
+    expect(await screen.findByTestId('suspension-message')).toBeInTheDocument()
+    expect(screen.getByTestId('suspension-message')).not.toHaveTextContent('Internal audit hold')
+    expect(screen.queryByRole('button', { name: 'Resume request' })).not.toBeInTheDocument()
   })
 
   it('reassigns a waiting task to a person or back to the group, with a reason', async () => {

@@ -57,11 +57,16 @@ public class OperatorService {
     private final Json json;
     private final Clock clock;
     private final ChildRuns children;
+    private final RunSuspensions suspensions;
+    private final RunMigrations migrations;
 
     public OperatorService(PolicyService policy, RunAccess runAccess, RunStore runs, TaskStore tasks, RunEvents events,
             RunService runService, RuntimeViews views, ReleaseQueries releases, ConnectionService connections,
             EffectJournal journal, EngineCommands engine, NotificationService notifications,
-            IdempotencyService idempotency, AuditWriter audit, Json json, Clock clock, ChildRuns children) {
+            IdempotencyService idempotency, AuditWriter audit, Json json, Clock clock, ChildRuns children,
+            RunSuspensions suspensions, RunMigrations migrations) {
+        this.migrations = migrations;
+        this.suspensions = suspensions;
         this.policy = policy;
         this.runAccess = runAccess;
         this.runs = runs;
@@ -293,6 +298,7 @@ public class OperatorService {
                     .withHeader("Retry-After", "5");
         }
         Instant now = clock.instant();
+        suspensions.remove(workspaceId, runId);
         tasks.cancelOpenForRun(workspaceId, runId, now);
         runs.mutate(workspaceId, runId, m -> {
             m.lifecycle = RunStore.CANCELLED;
@@ -317,6 +323,197 @@ public class OperatorService {
                 "run", runId.toString(), AuditWriter.Outcome.SUCCESS, Map.of()));
         idempotency.complete(claim, "run", runId.toString(), 200);
         return new Result<>(runService.detail(runAccess.require(caller, workspaceId, runId), succeeded), false);
+    }
+
+    // ---------------------------------------------------------------- suspend and resume (docs/build/S37)
+
+    @Transactional
+    public Result<RuntimeDtos.RunDetail> suspend(Caller caller, UUID workspaceId, UUID runId, String idempotencyKey,
+            RuntimeDtos.SuspendRunRequest request) {
+        String key = IdempotencyService.requireKey(idempotencyKey);
+        RunAccess.Visible visible = runAccess.require(caller, workspaceId, runId);
+        policy.require(visible.access(), Permission.RUN_OPERATE, "suspendRun", true);
+        String hash = idempotency.requestHash("suspendRun", Map.of("workspaceId", workspaceId.toString(),
+                "runId", runId.toString()), request);
+        IdempotencyService.Claim claim = idempotency.claim(workspaceId, caller.subjectId(), "suspendRun", key, hash);
+        if (claim.isReplay()) {
+            return new Result<>(detailWithEffects(caller, workspaceId, runId), true);
+        }
+        RunStore.RunRow run = runs.lock(workspaceId, runId).orElseThrow(ApiException::notFound);
+        if (!run.isActive()) {
+            throw new ApiException(ProblemCode.RUN_NOT_ACTIVE, "The run has already ended.")
+                    .with("currentVersion", run.version());
+        }
+        requireVersion(run, request.expectedVersion());
+        if (suspensions.isSuspended(workspaceId, runId)) {
+            throw new ApiException(ProblemCode.RUN_SUSPENDED, "The run is already suspended.")
+                    .with("currentVersion", run.version());
+        }
+        String blocked = suspendBlocker(run, runs, engine);
+        if (blocked != null) {
+            throw new ApiException(ProblemCode.RUN_NOT_SUSPENDABLE, blocked).with("currentVersion", run.version());
+        }
+        try {
+            engine.suspendProcessInstance(run.engineProcessInstanceId(), caller.subjectId());
+        } catch (EngineCommands.EngineConflictException e) {
+            throw new ApiException(ProblemCode.RUN_BUSY, "A step of this run is executing; try again shortly.")
+                    .withHeader("Retry-After", "5");
+        }
+        suspensions.insert(workspaceId, runId, caller.subjectId(), request.reason());
+        runs.mutate(workspaceId, runId, m -> { });
+        events.append(workspaceId, runId, "RUN_SUSPENDED", null, caller.subjectId(), Map.of("reason", request.reason()));
+        notifyInitiator(run, "suspended", "Your request was paused by an operator. It continues when it is resumed.");
+        audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.USER, caller.subjectId(), "run.suspended",
+                "run", runId.toString(), AuditWriter.Outcome.SUCCESS, Map.of()));
+        idempotency.complete(claim, "run", runId.toString(), 200);
+        return new Result<>(runService.detail(runAccess.require(caller, workspaceId, runId), List.of()), false);
+    }
+
+    @Transactional
+    public Result<RuntimeDtos.RunDetail> resume(Caller caller, UUID workspaceId, UUID runId, String idempotencyKey,
+            RuntimeDtos.ResumeRunRequest request) {
+        String key = IdempotencyService.requireKey(idempotencyKey);
+        RunAccess.Visible visible = runAccess.require(caller, workspaceId, runId);
+        policy.require(visible.access(), Permission.RUN_OPERATE, "resumeRun", true);
+        String hash = idempotency.requestHash("resumeRun", Map.of("workspaceId", workspaceId.toString(),
+                "runId", runId.toString()), request);
+        IdempotencyService.Claim claim = idempotency.claim(workspaceId, caller.subjectId(), "resumeRun", key, hash);
+        if (claim.isReplay()) {
+            return new Result<>(detailWithEffects(caller, workspaceId, runId), true);
+        }
+        RunStore.RunRow run = runs.lock(workspaceId, runId).orElseThrow(ApiException::notFound);
+        if (!run.isActive()) {
+            throw new ApiException(ProblemCode.RUN_NOT_ACTIVE, "The run has already ended.")
+                    .with("currentVersion", run.version());
+        }
+        requireVersion(run, request.expectedVersion());
+        if (!suspensions.isSuspended(workspaceId, runId)) {
+            throw new ApiException(ProblemCode.RUN_NOT_SUSPENDED, "The run is not suspended.")
+                    .with("currentVersion", run.version());
+        }
+        try {
+            if (engine.isSuspended(run.engineProcessInstanceId())) {
+                engine.activateProcessInstance(run.engineProcessInstanceId(), caller.subjectId());
+            }
+        } catch (EngineCommands.EngineConflictException e) {
+            throw new ApiException(ProblemCode.RUN_BUSY, "The run is busy; try again shortly.")
+                    .withHeader("Retry-After", "5");
+        }
+        suspensions.remove(workspaceId, runId);
+        runs.mutate(workspaceId, runId, m -> { });
+        events.append(workspaceId, runId, "RUN_RESUMED", null, caller.subjectId(), Map.of("reason", request.reason()));
+        notifyInitiator(run, "resumed", "Your request was resumed by an operator.");
+        audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.USER, caller.subjectId(), "run.resumed",
+                "run", runId.toString(), AuditWriter.Outcome.SUCCESS, Map.of()));
+        idempotency.complete(claim, "run", runId.toString(), 200);
+        return new Result<>(runService.detail(runAccess.require(caller, workspaceId, runId), List.of()), false);
+    }
+
+    // ---------------------------------------------------------------- release migration (docs/build/S38)
+
+    @Transactional(readOnly = true)
+    public RuntimeDtos.MigrationOptions migrationOptions(Caller caller, UUID workspaceId, UUID runId) {
+        RunAccess.Visible visible = runAccess.require(caller, workspaceId, runId);
+        policy.require(visible.access(), Permission.RUN_OPERATE, "getRunMigrationOptions", true);
+        return migrations.options(visible.run(), suspensions.isSuspended(workspaceId, runId));
+    }
+
+    @Transactional
+    public Result<RuntimeDtos.RunDetail> migrate(Caller caller, UUID workspaceId, UUID runId, String idempotencyKey,
+            RuntimeDtos.MigrateRunRequest request) {
+        String key = IdempotencyService.requireKey(idempotencyKey);
+        RunAccess.Visible visible = runAccess.require(caller, workspaceId, runId);
+        policy.require(visible.access(), Permission.RUN_OPERATE, "migrateRun", true);
+        String hash = idempotency.requestHash("migrateRun", Map.of("workspaceId", workspaceId.toString(),
+                "runId", runId.toString()), request);
+        IdempotencyService.Claim claim = idempotency.claim(workspaceId, caller.subjectId(), "migrateRun", key, hash);
+        if (claim.isReplay()) {
+            return new Result<>(detailWithEffects(caller, workspaceId, runId), true);
+        }
+        RunStore.RunRow run = runs.lock(workspaceId, runId).orElseThrow(ApiException::notFound);
+        if (!run.isActive()) {
+            throw new ApiException(ProblemCode.RUN_NOT_ACTIVE, "The run has already ended.")
+                    .with("currentVersion", run.version());
+        }
+        requireVersion(run, request.expectedVersion());
+        if (!suspensions.isSuspended(workspaceId, runId)) {
+            throw new ApiException(ProblemCode.RUN_NOT_SUSPENDED, "Suspend the request before moving it to another release.")
+                    .with("currentVersion", run.version());
+        }
+        ReleaseQueries.ReleaseView source = releases.require(workspaceId, run.releaseId());
+        ReleaseQueries.ReleaseView target = releases.find(workspaceId, request.targetReleaseId())
+                .filter(r -> r.workflowId().equals(run.workflowId())).orElseThrow(ApiException::notFound);
+        if (target.id().equals(source.id())) {
+            throw new ApiException(ProblemCode.RUN_NOT_MIGRATABLE, "The request is already on that release.");
+        }
+        List<ReleaseCompatibility.Finding> findings = migrations.evaluate(run, source, target);
+        if (!findings.isEmpty()) {
+            throw new ApiException(ProblemCode.RUN_NOT_MIGRATABLE, findings.getFirst().message())
+                    .with("findings", findings.stream()
+                            .map(f -> new RuntimeDtos.MigrationFinding(f.code(), f.message(), f.nodeId())).toList());
+        }
+        try {
+            List<String> engineProblems = engine.migrationProblems(run.engineProcessInstanceId(),
+                    target.processDefinitionId());
+            if (!engineProblems.isEmpty()) {
+                throw new ApiException(ProblemCode.RUN_NOT_MIGRATABLE,
+                        "The workflow engine cannot move this request: " + String.join("; ", engineProblems));
+            }
+            engine.migrateProcessInstance(run.engineProcessInstanceId(), target.processDefinitionId(), caller.subjectId());
+        } catch (EngineCommands.EngineConflictException e) {
+            throw new ApiException(ProblemCode.RUN_BUSY, "The run is busy; try again shortly.")
+                    .withHeader("Retry-After", "5");
+        }
+        runs.setRelease(workspaceId, runId, target.id());
+        runs.mutate(workspaceId, runId, m -> {
+            for (var step : run.currentSteps()) {
+                String nodeId = step.path("nodeId").asString("");
+                String label = target.nodeLabel(nodeId);
+                if (label != null) {
+                    m.updateStep(nodeId, s -> s.put("label", label));
+                    tasks.relabelOpenForNode(workspaceId, runId, nodeId, label);
+                }
+            }
+        });
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("fromReleaseNumber", source.releaseNumber());
+        data.put("toReleaseNumber", target.releaseNumber());
+        data.put("reason", request.reason());
+        events.append(workspaceId, runId, "RUN_MIGRATED", null, caller.subjectId(), data);
+        notifyInitiator(run, "migrated", "Your request now follows version " + target.releaseNumber()
+                + " of the workflow. Where it is waiting has not changed.");
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("fromRelease", source.releaseNumber());
+        metadata.put("toRelease", target.releaseNumber());
+        audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.USER, caller.subjectId(), "run.migrated",
+                "run", runId.toString(), AuditWriter.Outcome.SUCCESS, metadata));
+        idempotency.complete(claim, "run", runId.toString(), 200);
+        return new Result<>(runService.detail(runAccess.require(caller, workspaceId, runId), List.of()), false);
+    }
+
+    /** Why a run cannot be suspended now, or null. Shared with the allowed-actions view. */
+    static String suspendBlocker(RunStore.RunRow run, RunStore runs, EngineCommands engine) {
+        if (RunStore.NEEDS_ATTENTION.equals(run.lifecycle())) {
+            return "A request that needs attention is recovered, not suspended.";
+        }
+        if (run.isChild()) {
+            return "A child request follows its parent; suspend the parent request instead.";
+        }
+        if (runs.descendantsDeepestFirst(run.workspaceId(), run.id()).stream().anyMatch(RunStore.RunRow::isActive)) {
+            return "A request with running child requests cannot be suspended.";
+        }
+        if (!engine.processExists(run.engineProcessInstanceId())) {
+            return "The request has no live engine state to suspend.";
+        }
+        return null;
+    }
+
+    private void notifyInitiator(RunStore.RunRow run, String what, String message) {
+        if (notifications.create(run.workspaceId(), run.initiator(), run.id(), NotificationService.Kind.WORKFLOW_MESSAGE,
+                run.id() + ":" + what + ":" + clock.instant().toEpochMilli(), message)) {
+            events.append(run.workspaceId(), run.id(), "NOTIFICATION_CREATED", null, null,
+                    Map.of("kind", NotificationService.Kind.WORKFLOW_MESSAGE.value(), "recipient", "initiator"));
+        }
     }
 
     private RuntimeDtos.RunDetail detailWithEffects(Caller caller, UUID workspaceId, UUID runId) {

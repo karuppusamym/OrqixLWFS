@@ -50,9 +50,11 @@ public class MessageDelivery {
     private final EngineCommands engine;
     private final Json json;
     private final Clock clock;
+    private final RunSuspensions suspensions;
 
     public MessageDelivery(MessageStore store, RunStore runs, RunEvents events, ReleaseQueries releases,
-            EngineCommands engine, Json json, Clock clock) {
+            EngineCommands engine, Json json, Clock clock, RunSuspensions suspensions) {
+        this.suspensions = suspensions;
         this.store = store;
         this.runs = runs;
         this.events = events;
@@ -75,6 +77,10 @@ public class MessageDelivery {
         if (run.isEmpty() || !run.get().isActive()) {
             store.lock(workspaceId, subscription.id()).ifPresent(s ->
                     store.close(workspaceId, s.id(), MessageStore.CANCELLED, null, now));
+            return skipped();
+        }
+        if (suspensions.isSuspended(workspaceId, subscription.runId())) {
+            // Frozen by an operator: keep the wait open and the message buffered; the sweeper delivers it after resume.
             return skipped();
         }
         MessageStore.Subscription current = store.lock(workspaceId, subscription.id())

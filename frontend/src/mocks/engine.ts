@@ -624,7 +624,45 @@ export function reconcileRun(
   }
 }
 
+/** Why a request cannot be suspended now, or null (mirrors OperatorService.suspendBlocker). */
+export function suspendBlocker(run: MockRun): string | null {
+  if (run.lifecycle === 'needsAttention') return 'A request that needs attention is recovered, not suspended.'
+  if (run.parentRunId) return 'A child request follows its parent; suspend the parent request instead.'
+  for (const c of db.runs.values()) if (c.parentRunId === run.id && active(c)) return 'A request with running child requests cannot be suspended.'
+  return null
+}
+
+export function suspendRun(run: MockRun, user: MockUser, reason: string): void {
+  run.suspension = { since: clock.iso(), reason, byId: user.id }
+  run.version += 1
+  addEvent(run, 'RUN_SUSPENDED', { actorId: user.id, data: { reason } })
+  notify(run, run.initiatorId, 'workflowMessage', 'Your request was paused by an operator. It continues when it is resumed.')
+}
+
+export function resumeRun(run: MockRun, user: MockUser, reason: string): void {
+  run.suspension = null
+  run.version += 1
+  addEvent(run, 'RUN_RESUMED', { actorId: user.id, data: { reason } })
+  notify(run, run.initiatorId, 'workflowMessage', 'Your request was resumed by an operator.')
+}
+
+/** Re-points a suspended request at another release (mirrors OperatorService.migrate; compatibility is checked by the caller). */
+export function migrateRunTo(run: MockRun, user: MockUser, releaseId: string, reason: string): void {
+  const from = currentRelease(run)
+  run.releaseId = releaseId
+  const to = currentRelease(run)
+  for (const t of run.tasks) {
+    if (t.status !== 'open') continue
+    const label = nodeById(to.definition, t.nodeId)?.label
+    if (label) t.label = label
+  }
+  run.version += 1
+  addEvent(run, 'RUN_MIGRATED', { actorId: user.id, data: { fromReleaseNumber: from.releaseNumber, toReleaseNumber: to.releaseNumber, reason } })
+  notify(run, run.initiatorId, 'workflowMessage', `Your request now follows version ${to.releaseNumber} of the workflow. Where it is waiting has not changed.`)
+}
+
 export function cancelRun(run: MockRun, user: MockUser, reason: string, cascade = false): void {
+  run.suspension = null
   for (const childId of Object.values(run.childWaits ?? {})) {
     const c = db.runs.get(childId)
     if (c && active(c)) cancelRun(c, user, 'The request that started this one was cancelled.', true)
@@ -807,7 +845,10 @@ export function toRunDetail(run: MockRun, user: MockUser): RunDetail {
     }),
     ...(operator ? { effects: run.effects.map(({ runId: _runId, ...e }) => e) } : {}),
     ...(run.lifecycle === 'cancelled' ? { completedEffectsNotReversed: run.effects.filter((e) => run.cancelledEffects.includes(e.id)).map(({ runId: _runId, ...e }) => e) } : {}),
+    ...(run.suspension ? { suspension: { since: run.suspension.since, ...(operator ? { reason: run.suspension.reason } : {}) } } : {}),
     allowedActions: {
+      suspend: !operator ? { allowed: false, reasonCode: 'FORBIDDEN' } : !active ? { allowed: false, reasonCode: 'RUN_NOT_ACTIVE' } : run.suspension ? { allowed: false, reasonCode: 'RUN_SUSPENDED' } : suspendBlocker(run) ? { allowed: false, reasonCode: 'RUN_NOT_SUSPENDABLE' } : { allowed: true },
+      resume: !operator ? { allowed: false, reasonCode: 'FORBIDDEN' } : !active ? { allowed: false, reasonCode: 'RUN_NOT_ACTIVE' } : run.suspension ? { allowed: true } : { allowed: false, reasonCode: 'RUN_NOT_SUSPENDED' },
       cancel: active ? { allowed: operator } : { allowed: false, reasonCode: 'RUN_NOT_ACTIVE' },
       retry: !attention ? { allowed: false, reasonCode: 'RUN_NOT_RECOVERABLE' } : unknownEffect ? { allowed: false, reasonCode: 'EFFECT_NOT_RECONCILED' } : { allowed: operator },
       reconcile: run.effects.some((e) => e.state === 'unknown' || e.state === 'permanentFailure' || e.state === 'retryableFailure') && attention ? { allowed: operator } : { allowed: false, reasonCode: 'NOTHING_TO_RECONCILE' },

@@ -68,7 +68,7 @@ Every error body:
 | 401 | `UNAUTHENTICATED` |
 | 403 | `FORBIDDEN`, `CSRF_INVALID`, `SELF_APPROVAL_DENIED`, `NOT_ELIGIBLE` |
 | 404 | `NOT_FOUND` |
-| 409 | `IDEMPOTENCY_KEY_REUSED`, `DUPLICATE_KEY`, `WORKFLOW_VERSION_CONFLICT`, `RELEASE_NOT_ACTIVE`, `TASK_VERSION_CONFLICT`, `TASK_ALREADY_CLAIMED`, `TASK_NOT_CLAIMED_BY_CALLER`, `TASK_NOT_OPEN`, `RUN_NOT_ACTIVE`, `RUN_BUSY`, `RUN_NOT_RECOVERABLE`, `EFFECT_NOT_RECONCILED`, `EFFECT_STATE_CONFLICT`, `GROUP_REVISION_CONFLICT` |
+| 409 | `IDEMPOTENCY_KEY_REUSED`, `DUPLICATE_KEY`, `WORKFLOW_VERSION_CONFLICT`, `RELEASE_NOT_ACTIVE`, `TASK_VERSION_CONFLICT`, `TASK_ALREADY_CLAIMED`, `TASK_NOT_CLAIMED_BY_CALLER`, `TASK_NOT_OPEN`, `RUN_NOT_ACTIVE`, `RUN_BUSY`, `RUN_NOT_RECOVERABLE`, `RUN_SUSPENDED`, `RUN_NOT_SUSPENDED`, `RUN_NOT_SUSPENDABLE`, `RUN_NOT_MIGRATABLE`, `EFFECT_NOT_RECONCILED`, `EFFECT_STATE_CONFLICT`, `GROUP_REVISION_CONFLICT` |
 | 412 | `STALE_REVISION` |
 | 413 | `PAYLOAD_TOO_LARGE` |
 | 422 | `VALIDATION_FAILED`, `WORKFLOW_INVALID`, `WARNINGS_NOT_ACKNOWLEDGED`, `NO_ACTIVE_RELEASE`, `REASON_REQUIRED`, `CONNECTION_NOT_BOUND`, `EGRESS_NOT_ALLOWED`, `OPERATION_NOT_TESTABLE` |
@@ -138,7 +138,7 @@ Every response is correct without SSE; SSE (E17, R1) will read the same `run_eve
 | Administration | `listOrganizations`, `createOrganization`, `listWorkspacesAdmin`, `createWorkspace` → platform.admin |
 | Workflows | `listTemplates` → workflow.edit; `listWorkflows` → workflow.read or workflow.start; `createWorkflow`, `saveDraft` → workflow.edit; `getWorkflow`, `getDraft`, `validateDraft`, `evaluateDecision` → workflow.read |
 | Releases | `publishDraft`, `setActiveRelease` → workflow.publish; `listReleases`, `getRelease` → workflow.read; `exportRelease` → workflow.export |
-| Runs | `getStartForm`, `startRun` → workflow.start; `listRuns` → run.read; `getRun`, `listRunEvents` → run.read, initiator or task participant; `listMyRequests` → workspace.member; `cancelRun`, `retryRun`, `reconcileEffect` → run.operate |
+| Runs | `getStartForm`, `startRun` → workflow.start; `listRuns` → run.read; `getRun`, `listRunEvents` → run.read, initiator or task participant; `listMyRequests` → workspace.member; `cancelRun`, `retryRun`, `reconcileEffect`, `suspendRun`, `resumeRun`, `migrateRun`, `getRunMigrationOptions` → run.operate |
 | Tasks | `listTasks` → task.act; `getTask` → eligible/assignee/decider or run.read; `claimTask` → task.act + candidate; `releaseTask` → assignee; `decideTask` → assignee + task.act; `reassignTask` → run.operate |
 | Notifications | `listMyNotifications` → workspace.member; `markNotificationRead` → recipient |
 | Connections | `listConnections`, `getConnection` → connection.read; `registerConnectionVersion`, `putConnectionBinding`, `testConnection` → connection.manage |

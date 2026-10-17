@@ -1466,6 +1466,120 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
 
+  /workspaces/{workspaceId}/runs/{runId}/suspend:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+    post:
+      tags: [Runs]
+      operationId: suspendRun
+      summary: Pause an active request without ending it
+      description: >-
+        Freezes the request's tasks, timers and jobs. Refused with 409 RUN_NOT_SUSPENDABLE for requests that need
+        attention, child requests and requests with running child requests. Messages sent meanwhile are buffered.
+      x-orqix-permission: run.operate
+      x-orqix-audit: run.suspended
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SuspendRunRequest' }
+      responses:
+        '200':
+          description: Suspended (or replay)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RunDetail' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /workspaces/{workspaceId}/runs/{runId}/resume:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+    post:
+      tags: [Runs]
+      operationId: resumeRun
+      summary: Continue a suspended request
+      description: Timers that fell due while the request was suspended fire after it resumes.
+      x-orqix-permission: run.operate
+      x-orqix-audit: run.resumed
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResumeRunRequest' }
+      responses:
+        '200':
+          description: Resumed (or replay)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RunDetail' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /workspaces/{workspaceId}/runs/{runId}/migration-options:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+    get:
+      tags: [Runs]
+      operationId: getRunMigrationOptions
+      summary: Releases this request could move to, with the reasons it cannot move to the others
+      description: >-
+        Newest first, at most 20, excluding the release the request follows. `ready` is false until the request is
+        suspended; the options are still listed so an operator can see what would be possible.
+      x-orqix-permission: run.operate
+      responses:
+        '200':
+          description: Migration options
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MigrationOptions' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/runs/{runId}/migrate:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+    post:
+      tags: [Runs]
+      operationId: migrateRun
+      summary: Move a suspended request to another release of its workflow
+      description: >-
+        Only while the request is suspended, and only when the part of the workflow already travelled and the step it
+        waits at are identical in the target release. Refused with 409 RUN_NOT_MIGRATABLE and a `findings` list
+        otherwise. The request stays suspended; resume it afterwards.
+      x-orqix-permission: run.operate
+      x-orqix-audit: run.migrated
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MigrateRunRequest' }
+      responses:
+        '200':
+          description: Migrated (or replay)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RunDetail' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
   /workspaces/{workspaceId}/runs/{runId}/retry:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -3358,6 +3472,10 @@ components:
             - RUN_NOT_ACTIVE
             - RUN_BUSY
             - RUN_NOT_RECOVERABLE
+            - RUN_SUSPENDED
+            - RUN_NOT_SUSPENDED
+            - RUN_NOT_SUSPENDABLE
+            - RUN_NOT_MIGRATABLE
             - EFFECT_NOT_RECONCILED
             - EFFECT_STATE_CONFLICT
             - GROUP_REVISION_CONFLICT
@@ -4043,13 +4161,23 @@ components:
               description: After cancellation, external effects that had already succeeded.
               type: array
               items: { $ref: '#/components/schemas/Effect' }
+            suspension:
+              description: Present while an operator has suspended the request. `reason` is shown to run.operate holders only.
+              type: object
+              additionalProperties: false
+              required: [since]
+              properties:
+                since: { $ref: '#/components/schemas/Timestamp' }
+                reason: { type: string }
             allowedActions:
               type: object
-              required: [cancel, retry, reconcile]
+              required: [cancel, retry, reconcile, suspend, resume]
               properties:
                 cancel: { $ref: '#/components/schemas/ActionAvailability' }
                 retry: { $ref: '#/components/schemas/ActionAvailability' }
                 reconcile: { $ref: '#/components/schemas/ActionAvailability' }
+                suspend: { $ref: '#/components/schemas/ActionAvailability' }
+                resume: { $ref: '#/components/schemas/ActionAvailability' }
     ActionAvailability:
       type: object
       required: [allowed]
@@ -4374,6 +4502,67 @@ components:
         items: { type: array, maxItems: 200, items: { $ref: '#/components/schemas/InsightsStep' } }
         truncated: { type: boolean }
     CancelRunRequest:
+      type: object
+      additionalProperties: false
+      required: [reason, expectedVersion]
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 500 }
+        expectedVersion: { type: integer, minimum: 1 }
+    SuspendRunRequest:
+      type: object
+      additionalProperties: false
+      required: [reason, expectedVersion]
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 500 }
+        expectedVersion: { type: integer, minimum: 1 }
+    MigrateRunRequest:
+      type: object
+      additionalProperties: false
+      required: [targetReleaseId, reason, expectedVersion]
+      properties:
+        targetReleaseId: { $ref: '#/components/schemas/Uuid' }
+        reason: { type: string, minLength: 1, maxLength: 500 }
+        expectedVersion: { type: integer, minimum: 1 }
+    MigrationFinding:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code: { type: string, enum: [STEP_COUNT, STEP_UNKNOWN, STEP_KIND, STEP_MISSING, STEP_CHANGED, HISTORY_CHANGED, PARALLEL_REGION, STAGES_CHANGED, INPUT_INVALID] }
+        message: { type: string }
+        nodeId: { type: [string, 'null'] }
+    MigrationOption:
+      type: object
+      additionalProperties: false
+      required: [release, active, publishedAt, compatible, findings]
+      properties:
+        release:
+          type: object
+          additionalProperties: false
+          required: [id, releaseNumber]
+          properties:
+            id: { $ref: '#/components/schemas/Uuid' }
+            releaseNumber: { type: integer, minimum: 1 }
+        active: { type: boolean, description: This is the release new requests start on. }
+        publishedAt: { $ref: '#/components/schemas/Timestamp' }
+        compatible: { type: boolean }
+        findings: { type: array, items: { $ref: '#/components/schemas/MigrationFinding' } }
+    MigrationOptions:
+      type: object
+      additionalProperties: false
+      required: [current, ready, options]
+      properties:
+        current:
+          type: object
+          additionalProperties: false
+          required: [id, releaseNumber]
+          properties:
+            id: { $ref: '#/components/schemas/Uuid' }
+            releaseNumber: { type: integer, minimum: 1 }
+        ready: { type: boolean }
+        notReadyReason: { type: [string, 'null'] }
+        options: { type: array, items: { $ref: '#/components/schemas/MigrationOption' } }
+    ResumeRunRequest:
       type: object
       additionalProperties: false
       required: [reason, expectedVersion]

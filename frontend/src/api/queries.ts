@@ -32,6 +32,7 @@ export const keys = {
   myRequests: (ws: string, filter?: unknown) => ['ws', ws, 'requests', filter ?? {}] as const,
   run: (ws: string, id: string) => ['ws', ws, 'run', id] as const,
   runEvents: (ws: string, id: string) => ['ws', ws, 'run', id, 'events'] as const,
+  runMigrationOptions: (ws: string, id: string) => ['ws', ws, 'run', id, 'migration-options'] as const,
   notifications: (ws: string) => ['ws', ws, 'notifications'] as const,
 }
 
@@ -190,6 +191,10 @@ export function useMyRequests(ws: string, filter: { lifecycle?: Lifecycle } = {}
 
 export function useRun(ws: string, runId: string) {
   return useQuery({ queryKey: keys.run(ws, runId), queryFn: () => endpoints.getRun(ws, runId), retry: false })
+}
+
+export function useRunMigrationOptions(ws: string, runId: string, enabled: boolean) {
+  return useQuery({ queryKey: keys.runMigrationOptions(ws, runId), queryFn: () => endpoints.getRunMigrationOptions(ws, runId), enabled, retry: false })
 }
 
 export interface RunEventsState {

@@ -1,14 +1,15 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, Ban } from 'lucide-react'
+import { AlertTriangle, Ban, Pause, Play } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import * as endpoints from '@/api/endpoints'
 import { fingerprintOf, useIdempotencyKey } from '@/api/idempotency'
 import { type ProblemError } from '@/api/problem'
-import { keys, useConnection, useGroups, useRelease } from '@/api/queries'
+import { keys, useConnection, useGroups, useRelease, useRunMigrationOptions } from '@/api/queries'
 import type { Effect, RunDetail, TaskSummary } from '@/api/types'
 import { useWorkspace } from '@/app/workspace'
 import { useAnnounce } from '@/components/common/Announcer'
 import { FormField } from '@/components/common/FormField'
+import { LoadingBlock } from '@/components/common/LoadingBlock'
 import { ProblemAlert, toProblem } from '@/components/common/ProblemAlert'
 import { Alert } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -16,11 +17,13 @@ import { Dialog } from '@/components/ui/dialog'
 import { Input, Select, Textarea } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { formatDateTime } from '@/lib/dates'
 import { describeProblem, fieldErrorMap } from '@/lib/problemMessages'
 import { candidateEffects, EFFECT_STATE_LABEL } from './operatorText'
 
 /**
- * Operator dialogs (docs/build/S7-frontend.md section 4): Retry, Reconcile, Cancel, Reassign.
+ * Operator dialogs (docs/build/S7-frontend.md section 4): Retry, Reconcile, Cancel, Reassign, and Suspend/Resume
+ * (docs/build/S37-suspend-resume.md).
  * Every one requires a reason. Each keeps one idempotency key per unchanged input, so a retry after a
  * timeout cannot repeat the action.
  */
@@ -222,6 +225,172 @@ export function CancelDialog({ open, run, onClose }: DialogProps) {
           )}
         </Alert>
         <ReasonField id="cancel-reason" value={reason} onChange={setReason} error={reasonError} help="Shown to the requester and recorded in the audit log." />
+        <DialogError error={error} />
+      </div>
+    </Dialog>
+  )
+}
+
+// Suspend and resume ------------------------------------------------------------------------------
+
+function SuspendResumeDialog({ open, run, onClose, mode }: DialogProps & { mode: 'suspend' | 'resume' }) {
+  const { workspace } = useWorkspace()
+  const ws = workspace.id
+  const refresh = useRefresh(run.id)
+  const announce = useAnnounce()
+  const key = useIdempotencyKey()
+  const [reason, setReason] = useState('')
+  const [reasonError, setReasonError] = useState<string>()
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState<ProblemError | null>(null)
+  const suspending = mode === 'suspend'
+
+  const submit = async () => {
+    if (!reason.trim()) return setReasonError('Add a reason. It is recorded in the audit log.')
+    setReasonError(undefined)
+    setPending(true)
+    setError(null)
+    try {
+      const idem = key.keyFor(fingerprintOf(run.id, mode, reason.trim(), run.version))
+      const body = { reason: reason.trim(), expectedVersion: run.version }
+      await (suspending ? endpoints.suspendRun(ws, run.id, body, idem) : endpoints.resumeRun(ws, run.id, body, idem))
+      await refresh()
+      announce(suspending ? 'The request is suspended.' : 'The request was resumed.')
+      onClose()
+    } catch (cause) {
+      setError(toProblem(cause))
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title={suspending ? 'Suspend this request' : 'Resume this request'}
+      dismissible={!pending}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={pending}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={() => void submit()} loading={pending}>
+            {pending ? null : suspending ? <Pause aria-hidden="true" /> : <Play aria-hidden="true" />}
+            {suspending ? 'Suspend request' : 'Resume request'}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <Alert tone="info" title={suspending ? 'Nothing moves while a request is suspended' : 'The request continues where it stopped'}>
+          {suspending
+            ? 'Approvals cannot be claimed or decided, timers do not run and messages wait. The requester is told it is paused. Cancelling is still possible.'
+            : 'Timers that came due while the request was suspended fire now, and waiting messages are delivered.'}
+        </Alert>
+        <ReasonField id={`${mode}-reason`} value={reason} onChange={setReason} error={reasonError} />
+        <DialogError error={error} />
+      </div>
+    </Dialog>
+  )
+}
+
+export function SuspendDialog(props: DialogProps) {
+  return <SuspendResumeDialog {...props} mode="suspend" />
+}
+
+export function ResumeDialog(props: DialogProps) {
+  return <SuspendResumeDialog {...props} mode="resume" />
+}
+
+// Move to another release -------------------------------------------------------------------------
+
+export function MigrateDialog({ open, run, onClose }: DialogProps) {
+  const { workspace } = useWorkspace()
+  const ws = workspace.id
+  const refresh = useRefresh(run.id)
+  const announce = useAnnounce()
+  const key = useIdempotencyKey()
+  const options = useRunMigrationOptions(ws, run.id, open)
+  const [targetId, setTargetId] = useState('')
+  const [reason, setReason] = useState('')
+  const [reasonError, setReasonError] = useState<string>()
+  const [targetError, setTargetError] = useState<string>()
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState<ProblemError | null>(null)
+  const list = options.data?.options ?? []
+  const chosen = list.find((o) => o.release.id === targetId)
+
+  const submit = async () => {
+    if (!chosen?.compatible) return setTargetError('Choose a version the request can move to.')
+    setTargetError(undefined)
+    if (!reason.trim()) return setReasonError('Add a reason. It is recorded in the audit log.')
+    setReasonError(undefined)
+    setPending(true)
+    setError(null)
+    try {
+      const idem = key.keyFor(fingerprintOf(run.id, 'migrate', chosen.release.id, reason.trim(), run.version))
+      await endpoints.migrateRun(ws, run.id, { targetReleaseId: chosen.release.id, reason: reason.trim(), expectedVersion: run.version }, idem)
+      await refresh()
+      announce(`The request now follows version ${chosen.release.releaseNumber}. It is still suspended.`)
+      onClose()
+    } catch (cause) {
+      setError(toProblem(cause))
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title="Move to another version"
+      dismissible={!pending}
+      description={`This request follows version ${run.release.releaseNumber} of the workflow. Move it to a version that keeps the part it has already been through and the step it is waiting at exactly as they are.`}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={pending}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={() => void submit()} loading={pending} disabled={!options.data?.ready}>
+            Move request
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        {options.isPending ? <LoadingBlock rows={2} label="Loading versions" /> : null}
+        {options.isError ? <ProblemAlert error={toProblem(options.error)} /> : null}
+        {options.data && !options.data.ready ? <Alert tone="warning" title="Not ready to move">{options.data.notReadyReason}</Alert> : null}
+        {options.data && list.length === 0 ? <p className="text-sm text-muted-foreground">There is no other published version of this workflow.</p> : null}
+        {list.length > 0 ? (
+          <fieldset className="space-y-2" aria-describedby={targetError ? 'migrate-target-error' : undefined}>
+            <legend className="text-sm font-semibold">Version to move to</legend>
+            <RadioGroup value={targetId} onValueChange={setTargetId}>
+              {list.map((o) => (
+                <div key={o.release.id} className="flex items-start gap-3" data-testid={`migrate-option-${o.release.releaseNumber}`}>
+                  <RadioGroupItem value={o.release.id} id={`mig-${o.release.id}`} disabled={!o.compatible || !options.data?.ready} />
+                  <Label htmlFor={`mig-${o.release.id}`} className="font-normal">
+                    <span className="font-semibold">Version {o.release.releaseNumber}</span>
+                    {o.active ? ' (used for new requests)' : ''} &middot; published {formatDateTime(o.publishedAt)}
+                    {o.compatible ? (
+                      <span className="block text-sm text-muted-foreground">The request can continue here.</span>
+                    ) : (
+                      <ul className="mt-1 list-disc pl-5 text-sm text-muted-foreground">
+                        {o.findings.map((f, i) => (
+                          <li key={`${f.code}-${i}`}>{f.message}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </Label>
+                </div>
+              ))}
+            </RadioGroup>
+            {targetError ? <p id="migrate-target-error" className="text-sm text-danger" role="alert">{targetError}</p> : null}
+          </fieldset>
+        ) : null}
+        <ReasonField id="migrate-reason" value={reason} onChange={setReason} error={reasonError} />
         <DialogError error={error} />
       </div>
     </Dialog>

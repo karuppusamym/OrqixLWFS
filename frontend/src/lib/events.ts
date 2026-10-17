@@ -80,6 +80,8 @@ export function eventTone(event: Pick<RunEvent, 'type' | 'data'>): EventTone {
       return event.data.outcomeKind === 'failed' ? 'danger' : event.data.outcomeKind === 'rejected' ? 'rejected' : 'success'
     case 'RUN_CANCELLED':
       return 'cancelled'
+    case 'RUN_SUSPENDED':
+      return 'waiting'
     case 'EFFECT_FAILED':
     case 'EFFECT_UNKNOWN':
     case 'STAGE_OVERDUE':
@@ -241,6 +243,18 @@ export function describeEvent(event: RunEvent, ctx: EventContext): string {
     case 'RUN_CANCELLED': {
       const reason = str(event.data.reason)
       return `${actorName(event, ctx)} cancelled the request${reason ? `: ${reason}` : ''}`
+    }
+    case 'RUN_SUSPENDED': {
+      const reason = str(event.data.reason)
+      return `${actorName(event, ctx)} suspended the request${reason ? `: ${reason}` : ''}`
+    }
+    case 'RUN_MIGRATED': {
+      const reason = str(event.data.reason)
+      return `${actorName(event, ctx)} moved the request from version ${String(event.data.fromReleaseNumber ?? '?')} to version ${String(event.data.toReleaseNumber ?? '?')}${reason ? `: ${reason}` : ''}`
+    }
+    case 'RUN_RESUMED': {
+      const reason = str(event.data.reason)
+      return `${actorName(event, ctx)} resumed the request${reason ? `: ${reason}` : ''}`
     }
     default:
       return humanize(event.type)

@@ -1,4 +1,4 @@
-import { AlertTriangle, Ban, CheckCircle2, Clock, RefreshCw, Wrench, XCircle } from 'lucide-react'
+import { AlertTriangle, Ban, CheckCircle2, Clock, Pause, Play, RefreshCw, Wrench, XCircle } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { asRecord, type Effect, type RunDetail, type RunEvent } from '@/api/types'
@@ -23,7 +23,7 @@ import { humanize } from '@/lib/text'
 import { isTerminal } from '@/lib/status'
 import { readStorage, writeStorage } from '@/lib/storage'
 import { RunProgressPanel, type RunView } from './RunProgressPanel'
-import { CancelDialog, ReassignDialog, ReconcileDialog, RetryDialog } from './OperatorDialogs'
+import { CancelDialog, MigrateDialog, ReassignDialog, ReconcileDialog, ResumeDialog, RetryDialog, SuspendDialog } from './OperatorDialogs'
 import { RunCommentsPanel } from './RunCommentsPanel'
 import { RunFiles } from './RunFiles'
 import { StageProgress } from './StageProgress'
@@ -42,7 +42,7 @@ const TONE_DOT: Record<EventTone, string> = {
   danger: 'bg-danger',
 }
 
-type DialogName = 'retry' | 'reconcile' | 'cancel' | 'reassign' | null
+type DialogName = 'retry' | 'reconcile' | 'cancel' | 'reassign' | 'suspend' | 'resume' | 'migrate' | null
 
 /**
  * Run detail for requesters, approvers and operators (docs/build/S7-frontend.md section 4).
@@ -166,6 +166,15 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
         </Alert>
       ) : null}
 
+      {run.suspension ? (
+        <Alert tone="warning" title="This request is suspended" className="mb-6" live="polite">
+          <p data-testid="suspension-message">
+            An operator paused it on {formatDateTime(run.suspension.since)}. Approvals, timers and messages are held until it is resumed.
+            {operator && run.suspension.reason ? <> Reason: {run.suspension.reason}</> : null}
+          </p>
+        </Alert>
+      ) : null}
+
       {run.lifecycle === 'cancelled' ? (
         <Alert tone="warning" title="This request was cancelled" className="mb-6">
           {notReversed.length > 0 ? (
@@ -205,6 +214,20 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
             <Button variant={nextAction === 'reassign' ? 'primary' : 'secondary'} onClick={() => setDialog('reassign')} disabled={openTasks.length === 0} title="Give the open approval task to another eligible person">
               Reassign task
             </Button>
+            {run.suspension ? (
+              <Button variant="primary" onClick={() => setDialog('resume')} disabled={!allowed.resume.allowed} title="Let this request continue where it stopped">
+                <Play aria-hidden="true" /> Resume request
+              </Button>
+            ) : (
+              <Button variant="secondary" onClick={() => setDialog('suspend')} disabled={!allowed.suspend.allowed} title="Pause this request: approvals, timers and messages are held">
+                <Pause aria-hidden="true" /> Suspend request
+              </Button>
+            )}
+            {run.suspension ? (
+              <Button variant="secondary" onClick={() => setDialog('migrate')} title="Continue this request on another published version of the workflow">
+                Move to another version
+              </Button>
+            ) : null}
             <Button variant="danger" onClick={() => setDialog('cancel')} disabled={!allowed.cancel.allowed} title="Stop this request. Work already done in other systems is not undone.">
               <Ban aria-hidden="true" /> Cancel request
             </Button>
@@ -212,6 +235,7 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
           <ul className="mt-3 space-y-1 text-sm text-muted-foreground">
             {!allowed.retry.allowed && needsAttention ? <li>Retry: {reasonText(allowed.retry.reasonCode)}</li> : null}
             {!allowed.cancel.allowed ? <li>Cancel: {reasonText(allowed.cancel.reasonCode)}</li> : null}
+            {!run.suspension && !allowed.suspend.allowed && run.lifecycle !== 'cancelled' && run.lifecycle !== 'completed' ? <li>Suspend: {reasonText(allowed.suspend.reasonCode)}</li> : null}
           </ul>
         </section>
       ) : null}
@@ -352,6 +376,9 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
       {dialog === 'retry' ? <RetryDialog open run={run} onClose={() => setDialog(null)} onNeedReconcile={() => { setDialog('reconcile') }} /> : null}
       {dialog === 'reconcile' ? <ReconcileDialog open run={run} onClose={() => setDialog(null)} initialEffectId={reconcileId ?? reconcileCandidates[0]?.id} /> : null}
       {dialog === 'cancel' ? <CancelDialog open run={run} onClose={() => setDialog(null)} /> : null}
+      {dialog === 'suspend' ? <SuspendDialog open run={run} onClose={() => setDialog(null)} /> : null}
+      {dialog === 'resume' ? <ResumeDialog open run={run} onClose={() => setDialog(null)} /> : null}
+      {dialog === 'migrate' ? <MigrateDialog open run={run} onClose={() => setDialog(null)} /> : null}
       {dialog === 'reassign' ? <ReassignDialog open run={run} onClose={() => setDialog(null)} /> : null}
     </>
   )

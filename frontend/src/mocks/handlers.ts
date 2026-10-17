@@ -3,9 +3,10 @@ import type { components } from '@/api/schema'
 import type { Permission, ProblemCode, TaskDetail, ValidationIssue } from '@/api/types'
 import { nodeById } from '@/features/studio/model/graph'
 import { sendMessage, validMessageName } from './messages'
-import { addEvent, canSeeRunData, hasTaskSkills, isRunParticipant, evaluateTable, requestTitleOf, claim, createRun, decide, cancelRun, currentRelease, reconcileRun, retryRun, release as releaseTask, selfApprovalAllowed, toRun, toRunDetail, toTaskSummary } from './engine'
+import { migrateRunTo, suspendBlocker, suspendRun, resumeRun, addEvent, canSeeRunData, hasTaskSkills, isRunParticipant, evaluateTable, requestTitleOf, claim, createRun, decide, cancelRun, currentRelease, reconcileRun, retryRun, release as releaseTask, selfApprovalAllowed, toRun, toRunDetail, toTaskSummary } from './engine'
 import { makeRelease } from './seed'
 import { attachStartFiles, planStartFiles } from './caseFiles'
+import { evaluate, migrationOptions } from './releaseMigration'
 import { migrationPublishDenial } from './migration'
 import { normalizeDefinition, type Definition, type Literal } from '@/features/studio/model/types'
 import { buildFields, parseFormSchema, parseFormUi } from '@/lib/form/schema'
@@ -756,6 +757,70 @@ export function createHandlers(): HttpHandler[] {
         return { status: 200, body: toRunDetail(run, g.user) }
       })
     }),
+    http.post(`${B}/workspaces/:ws/runs/:id/suspend`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws, 'run.operate')
+      if (!g.ok) return g.res
+      const run = db.runs.get(str(params.id))
+      if (!run || run.wsId !== str(params.ws)) return notFound()
+      const input = await body<{ reason: string; expectedVersion: number }>(request)
+      return idempotent(request, g.user, 'suspendRun', input, () => {
+        if (!input.reason?.trim()) return problem(422, 'REASON_REQUIRED', 'A reason is required', { fieldErrors: [{ pointer: '/reason', code: 'required', message: 'Add a reason.' }] })
+        if (run.lifecycle === 'completed' || run.lifecycle === 'cancelled') return problem(409, 'RUN_NOT_ACTIVE', 'The request already finished')
+        if (input.expectedVersion !== run.version) return problem(409, 'RUN_NOT_ACTIVE', 'The request changed', { currentVersion: run.version })
+        if (run.suspension) return problem(409, 'RUN_SUSPENDED', 'The request is already suspended', { currentVersion: run.version })
+        const blocker = suspendBlocker(run)
+        if (blocker) return problem(409, 'RUN_NOT_SUSPENDABLE', 'The request cannot be suspended', { detail: blocker, currentVersion: run.version })
+        suspendRun(run, g.user, input.reason.trim())
+        return { status: 200, body: toRunDetail(run, g.user) }
+      })
+    }),
+    http.post(`${B}/workspaces/:ws/runs/:id/resume`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws, 'run.operate')
+      if (!g.ok) return g.res
+      const run = db.runs.get(str(params.id))
+      if (!run || run.wsId !== str(params.ws)) return notFound()
+      const input = await body<{ reason: string; expectedVersion: number }>(request)
+      return idempotent(request, g.user, 'resumeRun', input, () => {
+        if (!input.reason?.trim()) return problem(422, 'REASON_REQUIRED', 'A reason is required', { fieldErrors: [{ pointer: '/reason', code: 'required', message: 'Add a reason.' }] })
+        if (run.lifecycle === 'completed' || run.lifecycle === 'cancelled') return problem(409, 'RUN_NOT_ACTIVE', 'The request already finished')
+        if (input.expectedVersion !== run.version) return problem(409, 'RUN_NOT_ACTIVE', 'The request changed', { currentVersion: run.version })
+        if (!run.suspension) return problem(409, 'RUN_NOT_SUSPENDED', 'The request is not suspended', { currentVersion: run.version })
+        resumeRun(run, g.user, input.reason.trim())
+        return { status: 200, body: toRunDetail(run, g.user) }
+      })
+    }),
+    http.get(`${B}/workspaces/:ws/runs/:id/migration-options`, async ({ params }) => {
+      await slow()
+      const g = guard(params.ws, 'run.operate')
+      if (!g.ok) return g.res
+      const run = db.runs.get(str(params.id))
+      if (!run || run.wsId !== str(params.ws)) return notFound()
+      return HttpResponse.json(migrationOptions(run))
+    }),
+    http.post(`${B}/workspaces/:ws/runs/:id/migrate`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws, 'run.operate')
+      if (!g.ok) return g.res
+      const run = db.runs.get(str(params.id))
+      if (!run || run.wsId !== str(params.ws)) return notFound()
+      const input = await body<{ targetReleaseId: string; reason: string; expectedVersion: number }>(request)
+      return idempotent(request, g.user, 'migrateRun', input, () => {
+        if (!input.reason?.trim()) return problem(422, 'REASON_REQUIRED', 'A reason is required', { fieldErrors: [{ pointer: '/reason', code: 'required', message: 'Add a reason.' }] })
+        if (run.lifecycle === 'completed' || run.lifecycle === 'cancelled') return problem(409, 'RUN_NOT_ACTIVE', 'The request already finished')
+        if (input.expectedVersion !== run.version) return problem(409, 'RUN_NOT_ACTIVE', 'The request changed', { currentVersion: run.version })
+        if (!run.suspension) return problem(409, 'RUN_NOT_SUSPENDED', 'Suspend the request before moving it to another release', { currentVersion: run.version })
+        const wf = db.workflows.get(run.workflowId) as MockWorkflow
+        const target = wf.releases.find((r) => r.id === input.targetReleaseId)
+        if (!target) return notFound()
+        if (target.id === run.releaseId) return problem(409, 'RUN_NOT_MIGRATABLE', 'The request is already on that release')
+        const findings = evaluate(run, target.definition)
+        if (findings.length > 0) return problem(409, 'RUN_NOT_MIGRATABLE', 'The request cannot move to that release', { detail: findings[0]?.message, findings })
+        migrateRunTo(run, g.user, target.id, input.reason.trim())
+        return { status: 200, body: toRunDetail(run, g.user) }
+      })
+    }),
     http.post(`${B}/workspaces/:ws/runs/:id/retry`, async ({ params, request }) => {
       await slow()
       const g = guard(params.ws, 'run.operate')
@@ -904,6 +969,7 @@ export function createHandlers(): HttpHandler[] {
       if (!inGroup(g.user, task.candidateGroup) || !hasTaskSkills(run,task,g.user)) return problem(403, 'NOT_ELIGIBLE', 'Not eligible')
       if (run.initiatorId === g.user.id && !selfApprovalAllowed(run, currentRelease(run))) return problem(403, 'SELF_APPROVAL_DENIED', 'You cannot act on your own request')
       if (task.status !== 'open') return problem(409, 'TASK_NOT_OPEN', 'The task is no longer open', { currentVersion: task.version })
+      if (run.suspension) return problem(409, 'RUN_SUSPENDED', 'The request is suspended; resume it first')
       if (task.assigneeId) return problem(409, 'TASK_ALREADY_CLAIMED', 'The task is already claimed', { currentVersion: task.version })
       if (input.expectedVersion !== task.version) return problem(409, 'TASK_VERSION_CONFLICT', 'The task changed', { currentVersion: task.version })
       claim(run, task, g.user)
@@ -919,6 +985,7 @@ export function createHandlers(): HttpHandler[] {
       const input = await body<{ expectedVersion: number }>(request)
       if (task.status !== 'open') return problem(409, 'TASK_NOT_OPEN', 'The task is no longer open')
       if (task.assigneeId !== g.user.id) return problem(409, 'TASK_NOT_CLAIMED_BY_CALLER', 'Not your task')
+      if (run.suspension) return problem(409, 'RUN_SUSPENDED', 'The request is suspended; resume it first')
       if (input.expectedVersion !== task.version) return problem(409, 'TASK_VERSION_CONFLICT', 'The task changed', { currentVersion: task.version })
       releaseTask(run, task, g.user)
       return HttpResponse.json(taskDetail(g.user, g.perms, run, task))
@@ -934,6 +1001,7 @@ export function createHandlers(): HttpHandler[] {
       return idempotent(request, g.user, 'decideTask', input, () => {
         if (run.initiatorId === g.user.id && !selfApprovalAllowed(run, currentRelease(run))) return problem(403, 'SELF_APPROVAL_DENIED', 'You cannot act on your own request')
         if (task.status !== 'open') return problem(409, 'TASK_NOT_OPEN', 'The task is no longer open', { currentVersion: task.version })
+        if (run.suspension) return problem(409, 'RUN_SUSPENDED', 'The request is suspended; resume it first')
         if (input.expectedVersion !== task.version) return problem(409, 'TASK_VERSION_CONFLICT', 'The task changed', { currentVersion: task.version })
         if (task.assigneeId !== g.user.id) return problem(409, 'TASK_NOT_CLAIMED_BY_CALLER', 'Claim the task first')
         if (!inGroup(g.user,task.candidateGroup) || !hasTaskSkills(run,task,g.user)) return problem(403,'NOT_ELIGIBLE','This task requires every skill group')

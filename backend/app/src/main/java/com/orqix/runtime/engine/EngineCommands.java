@@ -10,6 +10,7 @@ import org.flowable.common.engine.api.FlowableObjectNotFoundException;
 import org.flowable.common.engine.api.FlowableOptimisticLockingException;
 import org.flowable.common.engine.impl.identity.Authentication;
 import org.flowable.engine.ManagementService;
+import org.flowable.engine.ProcessMigrationService;
 import org.flowable.engine.RuntimeService;
 import org.flowable.engine.TaskService;
 import org.flowable.engine.runtime.ProcessInstance;
@@ -35,8 +36,11 @@ public class EngineCommands {
     private final RuntimeService runtimeService;
     private final TaskService taskService;
     private final ManagementService managementService;
+    private final ProcessMigrationService migrationService;
 
-    public EngineCommands(RuntimeService runtimeService, TaskService taskService, ManagementService managementService) {
+    public EngineCommands(RuntimeService runtimeService, TaskService taskService, ManagementService managementService,
+            ProcessMigrationService migrationService) {
+        this.migrationService = migrationService;
         this.runtimeService = runtimeService;
         this.taskService = taskService;
         this.managementService = managementService;
@@ -156,6 +160,43 @@ public class EngineCommands {
                 || hasExecutableOrTimerJob(processInstanceId)
                 || managementService.createDeadLetterJobQuery().processInstanceId(processInstanceId).count() > 0
                 || managementService.createSuspendedJobQuery().processInstanceId(processInstanceId).count() > 0;
+    }
+
+    /** Freezes the instance: the engine moves its jobs and timers aside and rejects task and message commands. */
+    public void suspendProcessInstance(String processInstanceId, UUID actor) {
+        as(actor, () -> {
+            runtimeService.suspendProcessInstanceById(processInstanceId);
+            return null;
+        });
+    }
+
+    /** Reactivates the instance; jobs and timers that fell due while suspended become executable again. */
+    public void activateProcessInstance(String processInstanceId, UUID actor) {
+        as(actor, () -> {
+            runtimeService.activateProcessInstanceById(processInstanceId);
+            return null;
+        });
+    }
+
+    /** Engine-level verdict on moving the instance to another definition: empty when valid, else the engine's reasons. */
+    public List<String> migrationProblems(String processInstanceId, String targetProcessDefinitionId) {
+        var validation = migrationService.createProcessInstanceMigrationBuilder()
+                .migrateToProcessDefinition(targetProcessDefinitionId).validateMigration(processInstanceId);
+        return validation.isMigrationValid() ? List.of() : validation.getValidationMessages();
+    }
+
+    /** Re-points the instance at another definition, keeping its executions, tasks, timers and variables (S38). */
+    public void migrateProcessInstance(String processInstanceId, String targetProcessDefinitionId, UUID actor) {
+        as(actor, () -> {
+            migrationService.createProcessInstanceMigrationBuilder()
+                    .migrateToProcessDefinition(targetProcessDefinitionId).migrate(processInstanceId);
+            return null;
+        });
+    }
+
+    public boolean isSuspended(String processInstanceId) {
+        var instance = runtimeService.createProcessInstanceQuery().processInstanceId(processInstanceId).singleResult();
+        return instance != null && instance.isSuspended();
     }
 
     public boolean processExists(String processInstanceId) {

@@ -49,6 +49,18 @@ public final class RuntimeDtos {
             @NotNull @Min(1) Integer expectedVersion) {
     }
 
+    public record SuspendRunRequest(@NotNull @Size(min = 1, max = 500) String reason,
+            @NotNull @Min(1) Integer expectedVersion) {
+    }
+
+    public record MigrateRunRequest(@NotNull UUID targetReleaseId, @NotNull @Size(min = 1, max = 500) String reason,
+            @NotNull @Min(1) Integer expectedVersion) {
+    }
+
+    public record ResumeRunRequest(@NotNull @Size(min = 1, max = 500) String reason,
+            @NotNull @Min(1) Integer expectedVersion) {
+    }
+
     public record RetryRunRequest(UUID effectId, @NotNull @Size(min = 1, max = 500) String reason,
             @NotNull @Min(1) Integer expectedVersion) {
     }
@@ -94,7 +106,25 @@ public final class RuntimeDtos {
     public record ActionAvailability(boolean allowed, String reasonCode) {
     }
 
-    public record AllowedRunActions(ActionAvailability cancel, ActionAvailability retry, ActionAvailability reconcile) {
+    public record AllowedRunActions(ActionAvailability cancel, ActionAvailability retry, ActionAvailability reconcile,
+            ActionAvailability suspend, ActionAvailability resume) {
+    }
+
+    public record MigrationFinding(String code, String message, String nodeId) {
+    }
+
+    public record MigrationOption(ReleaseRef release, boolean active, Instant publishedAt, boolean compatible,
+            List<MigrationFinding> findings) {
+    }
+
+    /** Releases a request could move to, with the reasons it cannot. {@code ready} is false until it is suspended. */
+    public record MigrationOptions(ReleaseRef current, boolean ready, String notReadyReason,
+            List<MigrationOption> options) {
+    }
+
+    /** Present while an operator has suspended the request; {@code reason} is shown only to operators. */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record Suspension(Instant since, String reason) {
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -108,7 +138,7 @@ public final class RuntimeDtos {
             @JsonInclude(JsonInclude.Include.ALWAYS) JsonNode input, Map<String, String> inputLabels,
             @JsonInclude(JsonInclude.Include.ALWAYS) JsonNode output, List<TaskSummary> tasks, List<Effect> effects,
             List<Effect> completedEffectsNotReversed, AllowedRunActions allowedActions, ParentRef parentRun,
-            List<ChildRun> children, StageView stage, List<StageView> stages) {
+            List<ChildRun> children, StageView stage, List<StageView> stages, Suspension suspension) {
     }
 
     /**

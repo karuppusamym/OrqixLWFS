@@ -275,6 +275,13 @@ public class RunStore {
                 .query(Integer.class).optional().orElseThrow(()->new IllegalStateException("Locked correction version changed"));
     }
 
+    /** Points the request at another release of its workflow (docs/build/S38); the caller has migrated the engine. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void setRelease(UUID workspaceId, UUID runId, UUID releaseId) {
+        jdbc.sql("UPDATE workflow_run SET release_id = :release WHERE workspace_id = :ws AND id = :id")
+                .param("release", releaseId).param("ws", workspaceId).param("id", runId).update();
+    }
+
     /** Locks the run, applies {@code change} and writes the projection columns back with {@code version + 1}. */
     @Transactional(propagation = Propagation.MANDATORY)
     public RunRow mutate(UUID workspaceId, UUID runId, Consumer<Mutation> change) {

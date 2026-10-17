@@ -154,6 +154,33 @@ export const cancelRun = (ws: string, runId: string, body: S['CancelRunRequest']
     }),
   )
 
+export const suspendRun = (ws: string, runId: string, body: S['SuspendRunRequest'], idempotencyKey: string) =>
+  call(
+    api.POST('/workspaces/{workspaceId}/runs/{runId}/suspend', {
+      params: { path: { workspaceId: ws, runId }, header: { 'Idempotency-Key': idempotencyKey } },
+      body,
+    }),
+  )
+
+export const resumeRun = (ws: string, runId: string, body: S['ResumeRunRequest'], idempotencyKey: string) =>
+  call(
+    api.POST('/workspaces/{workspaceId}/runs/{runId}/resume', {
+      params: { path: { workspaceId: ws, runId }, header: { 'Idempotency-Key': idempotencyKey } },
+      body,
+    }),
+  )
+
+export const getRunMigrationOptions = (ws: string, runId: string) =>
+  call(api.GET('/workspaces/{workspaceId}/runs/{runId}/migration-options', { params: { path: { workspaceId: ws, runId } } }))
+
+export const migrateRun = (ws: string, runId: string, body: S['MigrateRunRequest'], idempotencyKey: string) =>
+  call(
+    api.POST('/workspaces/{workspaceId}/runs/{runId}/migrate', {
+      params: { path: { workspaceId: ws, runId }, header: { 'Idempotency-Key': idempotencyKey } },
+      body,
+    }),
+  )
+
 export const retryRun = (ws: string, runId: string, body: S['RetryRunRequest'], idempotencyKey: string) =>
   call(
     api.POST('/workspaces/{workspaceId}/runs/{runId}/retry', {

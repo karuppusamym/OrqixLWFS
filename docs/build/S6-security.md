@@ -111,7 +111,8 @@ Written in the command transaction. `metadata` is a whitelist per action — nev
 | `task.reassigned` | `taskId`, `toSubjectId` |
 | `task.priority-changed` | `taskId`, `from`, `to`; free-text reason remains in permission-scoped run history, excluded from global audit metadata |
 | `task.decided` | `taskId`, `nodeId`, `action`, `policyFlags` |
-| `run.cancelled`, `run.retry-requested` | `effectId` (retry) |
+| `run.cancelled`, `run.retry-requested`, `run.suspended`, `run.resumed` | `effectId` (retry) |
+| `run.migrated` | `fromRelease`, `toRelease` (version numbers) |
 | `effect.reconciled` | `effectId`, `resolution`, `remoteReference` |
 | `connection.version.created` | `key`, `version`, `definitionHash` |
 | `connection.binding.updated` | `key`, `host`, `authType`, `secretRef`, `enabled`, `revision` |

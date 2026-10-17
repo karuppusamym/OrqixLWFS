@@ -172,6 +172,16 @@ public class TaskStore {
                 .update();
     }
 
+    /** Renames the open task of a step after the request moved to a release that words the step differently. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public int relabelOpenForNode(UUID workspaceId, UUID runId, String nodeId, String label) {
+        return jdbc.sql("""
+                UPDATE task_context SET label = :label
+                WHERE workspace_id = :ws AND run_id = :run AND node_id = :node AND status = 'open'
+                """)
+                .param("label", label).param("ws", workspaceId).param("run", runId).param("node", nodeId).update();
+    }
+
     @Transactional(propagation = Propagation.MANDATORY)
     public int cancelOpenForRun(UUID workspaceId, UUID runId, Instant endedAt) {
         return jdbc.sql("""

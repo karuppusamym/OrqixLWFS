@@ -54,11 +54,13 @@ public class TaskService {
     private final CursorCodec cursors;
     private final Json json;
     private final Clock clock;
+    private final RunSuspensions suspensions;
 
     public TaskService(PolicyService policy, SubjectService subjects, TaskStore tasks, TaskQueries taskQueries,
             RunStore runs, RunEvents events, RuntimeViews views, ReleaseQueries releases, EngineCommands engine,
             IdempotencyService idempotency, AuditWriter audit, RuntimeMetrics metrics, CursorCodec cursors, Json json,
-            Clock clock) {
+            Clock clock, RunSuspensions suspensions) {
+        this.suspensions = suspensions;
         this.policy = policy;
         this.subjects = subjects;
         this.tasks = tasks;
@@ -145,6 +147,7 @@ public class TaskService {
             throw new ApiException(ProblemCode.TASK_NOT_OPEN, "This task is no longer open.");
         }
         requireEligible(access, task, "claimTask");
+        suspensions.requireNotSuspended(workspaceId, task.runId());
         if (task.assignee() != null) {
             throw new ApiException(ProblemCode.TASK_ALREADY_CLAIMED, "Someone else already claimed this task.")
                     .with("currentVersion", task.version());
@@ -178,6 +181,7 @@ public class TaskService {
         if (!caller.subjectId().equals(task.assignee())) {
             throw new ApiException(ProblemCode.FORBIDDEN, "Only the assignee can return this task.");
         }
+        suspensions.requireNotSuspended(workspaceId, task.runId());
         requireVersion(task, expectedVersion);
         try {
             engine.unclaim(taskId, caller.subjectId());
@@ -220,6 +224,7 @@ public class TaskService {
         if (!task.isOpen()) {
             throw new ApiException(ProblemCode.TASK_NOT_OPEN, "This task was already decided.");
         }
+        suspensions.requireNotSuspended(workspaceId, task.runId());
         boolean reject = "reject".equals(request.action());
         if (reject && (request.reason() == null || request.reason().isBlank())) {
             throw new ApiException(ProblemCode.REASON_REQUIRED, "Give a reason for the rejection.")
@@ -314,6 +319,7 @@ public class TaskService {
         if (!task.isOpen()) {
             throw new ApiException(ProblemCode.TASK_NOT_OPEN, "This task is no longer open.");
         }
+        suspensions.requireNotSuspended(workspaceId, task.runId());
         requireVersion(task, request.expectedVersion());
         UUID target = request.assigneeSubjectId();
         if (target != null && !eligibleSubject(workspaceId, task, target)) {
@@ -467,7 +473,8 @@ public class TaskService {
                 summary.decision(),
                 new RuntimeDtos.TaskRequest(input, release.inputSchema(),
                         release.inputUi().isMissingNode() ? null : release.inputUi()),
-                historyViews, new RuntimeDtos.TaskForm(reasonRequired), allowed(access, task),
+                historyViews, new RuntimeDtos.TaskForm(reasonRequired),
+                allowed(access, task, suspensions.isSuspended(task.workspaceId(), task.runId())),
                 own == null ? null : views.ref(own.actor(), names));
     }
 
@@ -484,11 +491,17 @@ public class TaskService {
         return policy.freshAccess(caller,workspaceId).filter(WorkspaceAccess::visible).orElseThrow(ApiException::notFound);
     }
 
-    private RuntimeDtos.AllowedTaskActions allowed(WorkspaceAccess access, TaskStore.TaskRow task) {
+    private RuntimeDtos.AllowedTaskActions allowed(WorkspaceAccess access, TaskStore.TaskRow task, boolean suspended) {
         UUID me = access.subjectId();
         RuntimeDtos.ActionAvailability notOpen = new RuntimeDtos.ActionAvailability(false, "TASK_NOT_OPEN");
         if (!task.isOpen()) {
             return new RuntimeDtos.AllowedTaskActions(notOpen, notOpen, notOpen, notOpen, notOpen);
+        }
+        if (suspended) {
+            RuntimeDtos.ActionAvailability frozen = new RuntimeDtos.ActionAvailability(false, "RUN_SUSPENDED");
+            return new RuntimeDtos.AllowedTaskActions(frozen, frozen, frozen, frozen,
+                    access.has(Permission.RUN_OPERATE) ? new RuntimeDtos.ActionAvailability(true, null)
+                            : new RuntimeDtos.ActionAvailability(false, "FORBIDDEN"));
         }
         String eligibility = !access.has(Permission.TASK_ACT) ? "FORBIDDEN"
                 : !access.groupKeys().contains(task.candidateGroupKey()) || !hasSkills(access,task) ? "NOT_ELIGIBLE"

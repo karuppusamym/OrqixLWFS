@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC XPDL 2.0 fixture; not a native customer export or Pega-version certification. -->
+<Package xmlns="http://www.wfmc.org/2004/XPDL2.0alpha" Id="package-small" Name="Synthetic small">
+  <PackageHeader><XPDLVersion>2.0</XPDLVersion><Vendor>Orqix synthetic fixture</Vendor></PackageHeader>
+  <WorkflowProcesses><WorkflowProcess Id="flow-small" Name="small">
+    <Activities><Activity Id="start" Name="Start"><Event><StartEvent Trigger="None"/></Event></Activity><Activity Id="done" Name="Done"><Event><EndEvent Result="None"/></Event></Activity></Activities>
+    <Transitions><Transition Id="next" From="start" To="done" Name=""></Transition></Transitions>
+  </WorkflowProcess></WorkflowProcesses>
+</Package>

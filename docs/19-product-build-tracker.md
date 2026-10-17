@@ -257,6 +257,12 @@ Observed verification: all 15 focused backend cases pass (seven planner and eigh
 
 These are focused checks, not another full-suite run, customer-source equivalence or Docker deployment. The browser uses mock conversion; actual target execution is verified separately through the backend API tests. Previously blocked stored plans require source reimport.
 
+## Automatic Pega XPDL flow exports - 17 October 2026
+
+MIG13 is closed within [S46](build/S46-pega-xpdl.md)'s exact XPDL 2.0 grammar. Source flow nodes, routing and simple inputs are derived automatically; no canonical target definition or manual archive mapping package is needed. Group assignments and approval paths remain explicit mappings. Unsupported executable extensions, rule pages and unknown source behavior block conversion. V33 and regenerated API types add `pegaXpdl`; audit distinguishes `pega-xpdl-import`. MIG11 still covers direct native RAP rule pages and AC01 still covers genuine source equivalence.
+
+Observed: all 30 backend cases pass (parser, real PostgreSQL/Flowable API scenarios, existing migration API and safety regressions), including six new target runs across completion, threshold boundaries, approval and rejection. All 21 frontend migration/review cases, 88 contract/consistency checks, typecheck, scoped lint and production build pass. [Backend](../evidence/pega-xpdl-backend-final.log), [frontend](../evidence/pega-xpdl-frontend-final.log), [types](../evidence/pega-xpdl-types-final.log), [lint](../evidence/pega-xpdl-lint-final.log), [build](../evidence/pega-xpdl-build.log), [contracts](../evidence/pega-xpdl-contracts.log). UI tests use API doubles; no new browser, full-suite, Docker rollout or real Pega acceptance claim is made. The existing archive/manual path remains supported and tested.
+
 ## Second competitive batch - 16/17 October 2026
 
 Specs: [S39](build/S39-task-dispatch.md) (WM06), [S40](build/S40-decision-hit-policies.md) (RL04), [S41](build/S41-separation-and-dated-rules.md) (RL03), [S42](build/S42-approver-correction.md) (WM07), [S43](build/S43-external-workers.md) (EX01). Migrations V31 (task separation) and V32 (external jobs). Each is bounded; the limits are in its spec and in [doc 22](22-competitive-gap-delivery.md).

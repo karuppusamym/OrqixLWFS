@@ -215,3 +215,7 @@ PL03 is closed: catalog and overview controls maintain a personal shortlist of u
 ## Multi-decision migration projects - 17 October 2026
 
 MIG12 is closed: a project DMN file may contain multiple supported decisions. Designers explicitly select one for its draft wrapper; BPMN callers independently embed their reviewed decision from the same source. Unsupported, missing and duplicate decisions still block. All 15 focused backend cases (PostgreSQL/Flowable plus planner), 29 frontend cases and one mock Edge browser/axe journey pass, as do typechecks, lint and mock build. [S45](build/S45-multi-decision-projects.md) records distinct execution outcomes at the same input. This does not add broader FEEL, create every decision as a workflow or certify native source-runtime equivalence. No Docker rollout is claimed.
+
+## Automatic Pega flow-export conversion - 17 October 2026
+
+MIG13 is closed for a bounded XPDL 2.0 flow-export grammar. The backend automatically derives target structure and simple request fields, retains original source hashes/maps and blocks unsupported behavior with reasons. Workspace group and approval mappings remain explicit; compiler validation and separate publication remain mandatory. All 30 focused backend cases, 21 frontend cases, 88 contract checks, typecheck, lint and production build pass. [S46](build/S46-pega-xpdl.md) records the exact scope and synthetic runtime evidence. Direct native RAP rule-page conversion remains MIG11; genuine source equivalence remains AC01. This feature is not yet deployed to Docker.

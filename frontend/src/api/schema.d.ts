@@ -10154,11 +10154,11 @@ export interface operations {
                     /** @description BPMN or DMN XML, or mapping JSON text; base64 for Pega archives. Decoded sources are limited to 1 MiB. */
                     content: string;
                     /**
-                     * @description bpmn is Camunda 7/8 BPMN 2.0; dmn is a Camunda DMN 1.1-1.4 file with decision tables; camundaForm is a Camunda Forms .form JSON file that is attached to a BPMN import through formMappings.
+                     * @description bpmn is Camunda 7/8 BPMN 2.0; dmn is a Camunda DMN 1.1-1.4 file with decision tables; camundaForm is a Camunda Forms .form JSON file attached through formMappings. pegaXpdl is a bounded XPDL 2.0 flow export; it does not resolve native RAP rule pages.
                      * @default bpmn
                      * @enum {string}
                      */
-                    sourceFormat?: "bpmn" | "dmn" | "camundaForm" | "pegaArchive" | "pegaMapping";
+                    sourceFormat?: "bpmn" | "dmn" | "camundaForm" | "pegaArchive" | "pegaMapping" | "pegaXpdl";
                 };
             };
         };

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC XPDL 2.0 fixture; not a native customer export or Pega-version certification. -->
+<Package xmlns="http://www.wfmc.org/2004/XPDL2.0alpha" Id="package-medium" Name="Synthetic medium">
+  <PackageHeader><XPDLVersion>2.0</XPDLVersion><Vendor>Orqix synthetic fixture</Vendor></PackageHeader>
+  <WorkflowProcesses><WorkflowProcess Id="flow-medium" Name="medium">
+    <Activities><Activity Id="start" Name="Start"><Event><StartEvent Trigger="None"/></Event></Activity><Activity Id="amountRoute" Name="Amount route"><Route GatewayType="XOR"/></Activity><Activity Id="high" Name="Finance"><Event><EndEvent Result="None"/></Event></Activity><Activity Id="low" Name="Standard"><Event><EndEvent Result="None"/></Event></Activity></Activities>
+    <Transitions><Transition Id="begin" From="start" To="amountRoute" Name=""></Transition><Transition Id="highPath" From="amountRoute" To="high" Name="High"><Condition Type="CONDITION">amount &gt;= 5000</Condition></Transition><Transition Id="lowPath" From="amountRoute" To="low" Name="Otherwise"><Condition Type="OTHERWISE"/></Transition></Transitions>
+  </WorkflowProcess></WorkflowProcesses>
+</Package>

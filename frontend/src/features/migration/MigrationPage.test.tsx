@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { HttpResponse, http } from 'msw'
 import { describe, expect, it } from 'vitest'
 import { server } from '@/test/server'
-import { renderApp, signInAs, WS } from '@/test/utils'
+import { renderApp, renderAppReady, signInAs, WS } from '@/test/utils'
 import type { components } from '@/api/schema'
 import { PURCHASE_WORKFLOW_ID } from '@/mocks/state'
 
@@ -16,6 +16,40 @@ const report = (): components['schemas']['CompatibilityReport'] => ({ sourceSyst
 const job = (): components['schemas']['MigrationJob'] => ({ id, fileName: 'approval.bpmn', status: 'analyzed', report: report(), createdAt: '2026-10-09T00:00:00Z' })
 
 describe('migration workbench', () => {
+  it('uploads an automatic Pega XPDL flow and uses the ordinary review form without a canonical mapping package', async () => {
+    signInAs('dana.designer')
+    let saved=job(); saved.fileName='review.xpdl'; saved.report.sourceSystem='pega'; saved.report.adapterVersion='pega-xpdl-0.1'
+    let submitted: Record<string,unknown> | null=null
+    server.use(
+      http.post('*/api/v1/workspaces/:ws/migrations',async({request})=>{
+        expect(await request.json()).toMatchObject({sourceFormat:'pegaXpdl',fileName:'review.xpdl',content:'<Package />'})
+        return HttpResponse.json(saved,{status:201})
+      }),
+      http.get('*/api/v1/workspaces/:ws/migrations/:id',()=>HttpResponse.json(saved)),
+      http.post('*/api/v1/workspaces/:ws/migrations/:id/convert',async({request})=>{
+        submitted=await request.json() as Record<string,unknown>
+        saved={...saved,status:'converted',convertedWorkflowId:PURCHASE_WORKFLOW_ID}
+        return HttpResponse.json({workflow:{id:PURCHASE_WORKFLOW_ID},draft:{},report:saved.report},{status:201})
+      }),
+    )
+    const user=userEvent.setup(); await renderAppReady(`/w/${WS}/migrations`)
+    await user.selectOptions(await screen.findByLabelText('Source format'),'pegaXpdl')
+    const file=new File(['<Package />'],'review.xpdl',{type:'application/xml'})
+    Object.defineProperty(file,'text',{value:async()=>'<Package />'})
+    await user.upload(screen.getByLabelText(/Source file/),file)
+    await user.click(screen.getByRole('button',{name:'Analyze source'}))
+    await screen.findByRole('option',{name:/^Managers$/})
+    expect(screen.getByLabelText('Request schema (optional JSON)')).toBeInTheDocument()
+    expect(screen.queryByText('Manual Pega mapping required')).not.toBeInTheDocument()
+    await user.selectOptions(screen.getByLabelText('Map source assignment: source-managers'),'managers')
+    await user.click(screen.getByRole('checkbox',{name:/I reviewed the assumptions/}))
+    await user.click(screen.getByRole('button',{name:'Convert to draft'}))
+    await waitFor(()=>expect(submitted,screen.queryAllByRole('alert').map(element=>element.textContent).join('\n')).not.toBeNull())
+    expect(saved.status).toBe('converted')
+    expect(submitted).toMatchObject({acknowledgeInfo:true,groupMappings:{'source-managers':'managers'}})
+    expect(submitted).not.toHaveProperty('definition')
+    expect(submitted).not.toHaveProperty('fileMappings')
+  })
   it('analyzes an uploaded file, maps a source group and opens the created draft with provenance', async () => {
     signInAs('dana.designer')
     let saved = job()

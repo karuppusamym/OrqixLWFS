@@ -50,7 +50,8 @@ public class DraftAuthoring {
     public enum Source {
         AI("ai", "generateAiDraft"),
         IMPORT("camunda-import", "convertMigration"),
-        PEGA_IMPORT("pega-manual-import", "convertMigration");
+        PEGA_IMPORT("pega-manual-import", "convertMigration"),
+        PEGA_XPDL_IMPORT("pega-xpdl-import", "convertMigration");
 
         private final String value;
         private final String operationId;

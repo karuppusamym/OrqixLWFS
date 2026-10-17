@@ -93,11 +93,13 @@ Seeded accounts: in the sandbox `dana.designer` maps, `paul.publisher` reviews, 
 
 ## Pega
 
+For automatic conversion of a supported flow export, select **Pega flow export (XPDL 2.0)** and upload `.xpdl`/`.xml`. [S46](build/S46-pega-xpdl.md) specifies the exact namespace and bounded flow grammar. The adapter derives target nodes, routing and simple request fields; assignments and approval routes are reviewed explicitly, then the normal compiler gates draft creation. This requires no canonical target definition. Unsupported constructs receive source-linked blockers. It does not automatically convert native RAP rule pages, resolve inheritance/circumstances or establish source-runtime equivalence.
+
 Select **Pega archive** and upload a ZIP/RAP package. This safely inventories archive files and recognizes selected XML rule identity fields (class, name, ruleset/version, availability and circumstance). Recognized dependency fields and rule-type mapping suggestions appear in each file report. These are descriptive source evidence; they do not resolve effective rules or establish runtime equivalence. Every file starts with a mapping blocker. Download the mapping package template, supply a manually authored canonical definition, source version and a disposition for every file, then upload it as **Pega reviewed mapping**.
 
 The `orqix-pega-mapping-0.1` package must reference the stored archive job in the same workspace and match its checksum. Each file needs either valid target node IDs or an explicit exclusion, with an explanation. Every target node needs source provenance. Unresolved items block conversion; accepted manual mappings require acknowledgement and normal compiler validation. The package can consolidate multiple rules into target nodes, so file-level provenance alone does not prove that every rule inside a file was preserved.
 
-Representative native exports and expected business scenarios are still needed to implement automatic Pega rule conversion. Stages, rule resolution, activities, declarative behavior and SLA calendars have no automatic equivalence claim. Running cases, history, users, attachments and credentials require separate migration work.
+Representative native exports and expected business scenarios are still needed for direct native RAP rule conversion and source qualification. Stages, rule resolution, activities, declarative behavior and SLA calendars have no automatic equivalence claim. Running cases, history, users, attachments and credentials require separate migration work.
 
 ## Access and limits
 
@@ -116,7 +118,7 @@ Use these seeded local accounts to validate the roles; their workspace bindings 
 
 Decoded sources are limited to 1 MiB. Archive inspection is bounded to 200 entries, 1 MiB per expanded entry and 4 MiB total; unsafe/duplicate paths and corrupt archives are rejected without extracting files. XML external entities and excessive parser depth/element counts are rejected. Source integration code is not evaluated.
 
-API endpoints under `/api/v1/workspaces/{workspaceId}/migrations`: `POST` uploads/analyzes; `GET /{migrationId}` retrieves the report and source map; `POST /{migrationId}/convert` validates mappings and creates a draft. Upload `sourceFormat` is `bpmn`, `dmn`, `pegaArchive` (base64 content), or `pegaMapping` (JSON text). Projects are under `/migrations/projects` and the review policy under `/migration-policy` and `/workflows/{workflowId}/migration-review`. See [OpenAPI](../contracts/openapi.yaml) for request schemas.
+API endpoints under `/api/v1/workspaces/{workspaceId}/migrations`: `POST` uploads/analyzes; `GET /{migrationId}` retrieves the report and source map; `POST /{migrationId}/convert` validates mappings and creates a draft. Upload `sourceFormat` is `bpmn`, `dmn`, `camundaForm`, `pegaXpdl` (XML text), `pegaArchive` (base64 content), or `pegaMapping` (JSON text). Projects are under `/migrations/projects` and the review policy under `/migration-policy` and `/workflows/{workflowId}/migration-review`. See [OpenAPI](../contracts/openapi.yaml) for request schemas.
 
 ## Evidence and remaining validation
 

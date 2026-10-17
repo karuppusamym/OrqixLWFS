@@ -16,6 +16,7 @@ import com.orqix.migration.dmn.DmnAnalyzer;
 import com.orqix.migration.dmn.DmnConverter;
 import com.orqix.migration.dmn.DmnTable;
 import com.orqix.migration.pega.PegaSource;
+import com.orqix.migration.pega.PegaXpdl;
 import com.orqix.shared.Ids;
 import com.orqix.shared.json.Json;
 import com.orqix.shared.problem.*;
@@ -51,6 +52,7 @@ public class MigrationService {
             if (bytes.length == 0 || bytes.length > Limits.DEFAULT.maxBytes()) throw new SourceException("Source must be between 1 byte and 1 MiB.",true);
             Report.CompatibilityReport report;
             if (format.equals("pegaArchive")) report=PegaSource.archive(bytes);
+            else if (format.equals("pegaXpdl")) report=PegaXpdl.analyze(content).report();
             else if (format.equals("pegaMapping")) {
                 JsonNode pkg=parsePackage(content);
                 Stored original=archiveForPackage(ws,pkg);
@@ -95,7 +97,13 @@ public class MigrationService {
             if (job.format.equals("pegaArchive")) throw new ApiException(ProblemCode.MIGRATION_BLOCKED,
                     "Native Pega archives are inventory-only. Upload a checksum-linked manual mapping package to create a draft.")
                     .with("openItems",job.view.report().issues());
-            if (job.format.equals("pegaMapping")) {
+            if (job.format.equals("pegaXpdl")) {
+                var model=PegaXpdl.analyze(new String(job.source,StandardCharsets.UTF_8));
+                if(model.blocked()) throw new ApiException(ProblemCode.MIGRATION_BLOCKED,"Unsupported XPDL behavior must be reconstructed before conversion.").with("openItems",model.report().issues());
+                var result=Converter.convert(model.analysis(),request,json,Map.of(),Map.of(),Map.of());
+                definition=result.definition(); sourceMap=result.sourceMap();
+                report=model.report(result.report(),request.path("acknowledgeInfo").asBoolean(false));
+            } else if (job.format.equals("pegaMapping")) {
                 var pkg=parsePackage(new String(job.source,StandardCharsets.UTF_8));
                 var original=archiveForPackage(ws,pkg);
                 report=PegaSource.mapping(pkg,original.view.report(),request.path("acknowledgeInfo").asBoolean(false));
@@ -120,7 +128,7 @@ public class MigrationService {
                     .with("openItems",report.issues().stream().filter(i -> Report.OPEN.equals(i.resolutionStatus())).toList());
             var created=drafts.createFromDefinition(caller,ws,new DraftAuthoring.NewDraft(request.path("workflowKey").asString(null),
                     request.path("name").asString(null),"Imported source; review compatibility report and verify behavior.",definition,
-                    job.format.equals("pegaMapping") ? DraftAuthoring.Source.PEGA_IMPORT : DraftAuthoring.Source.IMPORT,false));
+                    job.format.equals("pegaXpdl") ? DraftAuthoring.Source.PEGA_XPDL_IMPORT : job.format.equals("pegaMapping") ? DraftAuthoring.Source.PEGA_IMPORT : DraftAuthoring.Source.IMPORT,false));
             if (!created.report().path("publishable").asBoolean(false)) {
                 throw new ApiException(ProblemCode.MIGRATION_BLOCKED,"The mapped draft did not pass compiler validation. No workflow was created.")
                         .with("issues",created.report().path("issues"));

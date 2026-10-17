@@ -3571,7 +3571,7 @@ paths:
               properties:
                 fileName: { type: string, minLength: 1, maxLength: 200 }
                 content: { type: string, minLength: 1, maxLength: 1398104, description: 'BPMN or DMN XML, or mapping JSON text; base64 for Pega archives. Decoded sources are limited to 1 MiB.' }
-                sourceFormat: { type: string, enum: [bpmn, dmn, camundaForm, pegaArchive, pegaMapping], default: bpmn, description: 'bpmn is Camunda 7/8 BPMN 2.0; dmn is a Camunda DMN 1.1-1.4 file with decision tables; camundaForm is a Camunda Forms .form JSON file that is attached to a BPMN import through formMappings.' }
+                sourceFormat: { type: string, enum: [bpmn, dmn, camundaForm, pegaArchive, pegaMapping, pegaXpdl], default: bpmn, description: 'bpmn is Camunda 7/8 BPMN 2.0; dmn is a Camunda DMN 1.1-1.4 file with decision tables; camundaForm is a Camunda Forms .form JSON file attached through formMappings. pegaXpdl is a bounded XPDL 2.0 flow export; it does not resolve native RAP rule pages.' }
       responses:
         '201':
           description: Job created with its compatibility report

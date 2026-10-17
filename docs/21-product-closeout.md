@@ -52,6 +52,8 @@ The five authorized slices are complete and verified locally. Full runs, reviewe
 
 Final combined verification: 440 compiler cases and 651 application cases (647 pass, four intentional skips), zero unresolved failures/errors, coverage gate and executable packaging pass. The full run plus corrected two-test aggregate fixture rerun is explicitly distinguished from a second full run. Frontend passes all 716 tests; final import UI regression passes 3/3. Contracts/static checks pass, the mock browser suite passes 62 with four real-only skips, the real import browser test passes, and Docker API scenarios pass 94/94 checks. The rebuilt private stack is healthy at http://localhost:18080. [Doc 19](19-product-build-tracker.md#competitive-batch-verification--15-october-2026) records exact logs, image identity and scope. Fourteen bounded slices are verified; nineteen broader engineering epics and customer/infra acceptance gates remain open.
 
+16 October reporting follow-up: AN01 is complete within [S43](build/S43-insights-reports.md)'s bounded scope. Insights now downloads aggregate JSON and daily CSV with current filters, provenance/list-limit notes and stale-query/error guards. All 16 focused frontend cases and one mock Edge download/desktop/mobile accessibility journey pass; static checks and mock build pass. The broader PL02 analytics/environment epic remains open. No Docker rollout or fresh backend suite is claimed.
+
 ## Customer and source acceptance still open
 
 These are not infrastructure-only tasks and cannot be closed using synthetic fixtures.

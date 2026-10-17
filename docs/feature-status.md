@@ -203,3 +203,7 @@ UI04 is closed: Studio now exposes the existing HTTP Failed path in Steps, canva
 ## Separation control authoring correction - 16 October 2026
 
 UI05 is closed: approval-ID renames preserve separation references, and Studio offers only approvals guaranteed to precede the current reachable step. Existing invalid selections stay visible for explicit removal. Verification: 58 frontend tests, typecheck and scoped lint pass. [S41](build/S41-separation-and-dated-rules.md#studio-authoring-correction---16-october-2026) records details. Backend enforcement is unchanged; this correction has not been deployed to Docker.
+
+## Aggregate Insights downloads - 16 October 2026
+
+AN01 is closed: Insights can download an aggregate JSON report and daily throughput CSV for the selected filters. Reports retain workspace/date/workflow context, section generation times and list-limit warnings, and exclude individual requests. Complete report exports wait for all current sections and are blocked by section errors. Verification: 16 frontend tests, one mock Edge journey with actual downloads and desktop/mobile axe, frontend/E2E typechecks, scoped lint and mock build pass. [S43](build/S43-insights-reports.md) records the format and metric limits. Broader analytics remains PL02; this feature is not yet deployed to Docker.

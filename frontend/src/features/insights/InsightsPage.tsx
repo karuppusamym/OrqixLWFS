@@ -1,5 +1,5 @@
 import { AlertTriangle, Download, Hourglass, TimerOff } from 'lucide-react'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { useWorkflows } from '@/api/queries'
 import { useWorkspace } from '@/app/workspace'
@@ -13,12 +13,13 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Select } from '@/components/ui/input'
 import { ScrollTable } from '@/components/common/ScrollTable'
 import { TBody, TD, TH, THead, TR } from '@/components/ui/table'
-import { downloadBlob } from '@/lib/download'
+import { downloadBlob, downloadJson } from '@/lib/download'
 import { formatDateTime } from '@/lib/dates'
 import { humanize } from '@/lib/text'
 import { useInsightsSteps, useInsightsSummary, useInsightsThroughput, type InsightsSteps, type InsightsSummary } from './api'
 import { formatSeconds, percent, rangeFor, STEP_KIND_LABEL, stepsCsv } from './format'
 import { ThroughputChart } from './ThroughputChart'
+import { insightsReport, reportFilename, throughputCsv } from './report'
 
 const RANGES = [7, 30, 90] as const
 
@@ -40,6 +41,18 @@ export function InsightsPage() {
   const summary = useInsightsSummary(ws, query, allowed)
   const throughput = useInsightsThroughput(ws, query, allowed)
   const steps = useInsightsSteps(ws, query, allowed)
+  const [exportError, setExportError] = useState<string | null>(null)
+  // keepPreviousData deliberately shows the old chart during a filter change; it must never be exported as new data.
+  const reportReady = [summary, throughput, steps].every(result => result.isSuccess && !result.isFetching && !result.isPlaceholderData)
+  const downloadReport = () => {
+    if (!reportReady || !summary.data || !throughput.data || !steps.data) return
+    try {
+      downloadJson(insightsReport(workspace, query, summary.data, throughput.data, steps.data), reportFilename(query, 'json'))
+      setExportError(null)
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : 'Could not prepare the report. Refresh Insights and try again.')
+    }
+  }
 
   const set = (key: string, value: string | null) => {
     const next = new URLSearchParams(search)
@@ -62,7 +75,12 @@ export function InsightsPage() {
       <PageHeader
         title="Insights"
         description="How requests move through your workflows. These are figures only: no request titles or data."
+        actions={<Button variant="secondary" disabled={!reportReady} onClick={downloadReport} aria-describedby="insights-export-note">
+          <Download aria-hidden="true" /> Download report (JSON)
+        </Button>}
       />
+      <p id="insights-export-note" className="mb-4 text-sm text-muted-foreground">The report includes aggregate figures for the selected filters, generation times and list limits. Individual requests are excluded. Figures are calculated separately.</p>
+      {exportError ? <Alert tone="warning">{exportError}</Alert> : null}
 
       <div className="mb-6 flex flex-wrap items-end gap-4" role="search" aria-label="Insights filters">
         {options.length > 0 ? (
@@ -118,7 +136,12 @@ export function InsightsPage() {
 
           <Card>
             <CardHeader>
-              <h2>Requests per day</h2>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2>Requests per day</h2>
+                <Button variant="secondary" disabled={!throughput.isSuccess || throughput.isFetching || throughput.isPlaceholderData} onClick={() => {
+                  if (throughput.data) downloadBlob(new Blob([throughputCsv(throughput.data)], { type: 'text/csv;charset=utf-8' }), reportFilename(query, 'csv'))
+                }}><Download aria-hidden="true" /> Download daily CSV</Button>
+              </div>
             </CardHeader>
             <CardContent>
               {throughput.isPending ? <LoadingBlock rows={3} label="Loading the chart" /> : throughput.isError ? <QueryError error={throughput.error} onRetry={() => void throughput.refetch()} what="the chart" /> : <ThroughputChart days={throughput.data.days} />}

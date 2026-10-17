@@ -2571,6 +2571,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/runs/{runId}/mail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        /** Inspect stage email delivery status without message bodies or recipient addresses */
+        get: operations["getStageMail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/runs/{runId}/evidence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        /** Download ordered control evidence and a release manifest */
+        get: operations["exportCaseEvidence"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2973,7 +3013,7 @@ export interface components {
             detail?: string;
             instance?: string;
             /** @enum {string} */
-            code: "MALFORMED_REQUEST" | "IDEMPOTENCY_KEY_REQUIRED" | "INVALID_CURSOR" | "UNAUTHENTICATED" | "FORBIDDEN" | "CSRF_INVALID" | "SELF_APPROVAL_DENIED" | "SEPARATION_OF_DUTIES" | "NOT_ELIGIBLE" | "NOT_FOUND" | "IDEMPOTENCY_KEY_REUSED" | "DUPLICATE_KEY" | "WORKFLOW_VERSION_CONFLICT" | "RELEASE_NOT_ACTIVE" | "TASK_VERSION_CONFLICT" | "TASK_ALREADY_CLAIMED" | "TASK_NOT_CLAIMED_BY_CALLER" | "TASK_NOT_OPEN" | "RUN_NOT_ACTIVE" | "RUN_BUSY" | "RUN_NOT_RECOVERABLE" | "RUN_SUSPENDED" | "RUN_NOT_SUSPENDED" | "RUN_NOT_SUSPENDABLE" | "RUN_NOT_REPAIRABLE" | "RUN_NOT_MIGRATABLE" | "JOB_LEASE_LOST" | "JOB_NOT_OPEN" | "EFFECT_NOT_RECONCILED" | "EFFECT_STATE_CONFLICT" | "GROUP_REVISION_CONFLICT" | "STALE_REVISION" | "PAYLOAD_TOO_LARGE" | "VALIDATION_FAILED" | "WORKFLOW_INVALID" | "WARNINGS_NOT_ACKNOWLEDGED" | "NO_ACTIVE_RELEASE" | "REASON_REQUIRED" | "CONNECTION_NOT_BOUND" | "EGRESS_NOT_ALLOWED" | "OPERATION_NOT_TESTABLE" | "PRECONDITION_REQUIRED" | "QUOTA_EXCEEDED" | "RATE_LIMITED" | "DEPENDENCY_UNAVAILABLE" | "AI_NOT_CONFIGURED" | "AI_MODEL_NOT_ALLOWED" | "AI_OUTPUT_INVALID" | "AI_PROVIDER_UNAVAILABLE" | "AI_BUDGET_EXCEEDED" | "SOURCE_INVALID" | "MIGRATION_BLOCKED" | "ATTACHMENT_BLOCKED" | "ATTACHMENT_LIMIT_REACHED" | "INTERNAL_ERROR";
+            code: "MALFORMED_REQUEST" | "IDEMPOTENCY_KEY_REQUIRED" | "INVALID_CURSOR" | "UNAUTHENTICATED" | "FORBIDDEN" | "CSRF_INVALID" | "SELF_APPROVAL_DENIED" | "SEPARATION_OF_DUTIES" | "NOT_ELIGIBLE" | "NOT_FOUND" | "IDEMPOTENCY_KEY_REUSED" | "DUPLICATE_KEY" | "WORKFLOW_VERSION_CONFLICT" | "RELEASE_NOT_ACTIVE" | "TASK_VERSION_CONFLICT" | "TASK_ALREADY_CLAIMED" | "TASK_NOT_CLAIMED_BY_CALLER" | "TASK_NOT_OPEN" | "RUN_NOT_ACTIVE" | "RUN_HAS_OPEN_TASKS" | "RUN_BUSY" | "RUN_NOT_RECOVERABLE" | "RUN_SUSPENDED" | "RUN_NOT_SUSPENDED" | "RUN_NOT_SUSPENDABLE" | "RUN_NOT_REPAIRABLE" | "RUN_NOT_MIGRATABLE" | "JOB_LEASE_LOST" | "JOB_NOT_OPEN" | "EFFECT_NOT_RECONCILED" | "EFFECT_STATE_CONFLICT" | "GROUP_REVISION_CONFLICT" | "STALE_REVISION" | "PAYLOAD_TOO_LARGE" | "VALIDATION_FAILED" | "WORKFLOW_INVALID" | "WARNINGS_NOT_ACKNOWLEDGED" | "NO_ACTIVE_RELEASE" | "REASON_REQUIRED" | "CONNECTION_NOT_BOUND" | "EGRESS_NOT_ALLOWED" | "OPERATION_NOT_TESTABLE" | "PRECONDITION_REQUIRED" | "QUOTA_EXCEEDED" | "RATE_LIMITED" | "DEPENDENCY_UNAVAILABLE" | "AI_NOT_CONFIGURED" | "AI_MODEL_NOT_ALLOWED" | "AI_OUTPUT_INVALID" | "AI_PROVIDER_UNAVAILABLE" | "AI_BUDGET_EXCEEDED" | "SOURCE_INVALID" | "MIGRATION_BLOCKED" | "ATTACHMENT_BLOCKED" | "ATTACHMENT_LIMIT_REACHED" | "INTERNAL_ERROR";
             correlationId: string;
             fieldErrors?: components["schemas"]["FieldError"][];
             issues?: components["schemas"]["ValidationIssue"][];
@@ -4370,7 +4410,7 @@ export interface components {
         PermissionGrant: {
             id: components["schemas"]["Uuid"];
             /** @enum {string} */
-            permission: "workflow.start" | "connection.manage" | "message.send" | "document.browse" | "job.work";
+            permission: "workflow.start" | "connection.manage" | "message.send" | "document.browse" | "job.work" | "audit.read";
             workflowId: components["schemas"]["Uuid"] | null;
             principal: components["schemas"]["Principal"];
             createdAt: components["schemas"]["Timestamp"];
@@ -4830,6 +4870,12 @@ export interface components {
             label: components["schemas"]["label"];
             config: Record<string, never>;
         };
+        stageEmail: {
+            subject: string;
+            body: string;
+            recipients: ("requester" | "assignee" | "candidateGroup" | "supervisor" | "operators")[];
+            supervisorGroupRef?: components["schemas"]["key"];
+        };
         messagePayloadField: {
             name: string;
             /** @enum {unknown} */
@@ -4895,6 +4941,13 @@ export interface components {
                     holidays?: string[];
                     start: string;
                     end: string;
+                    revision?: string;
+                    /** Format: date */
+                    validFrom?: string;
+                    intervals?: {
+                        start: string;
+                        end: string;
+                    }[];
                 };
                 /** @description Several different people must each approve (docs/build/S51): the step creates this many parallel tasks for its candidate group and continues as approved only when all are approved; the first rejection rejects the step and cancels the others. Not combined with a time limit, escalation or correctable fields. */
                 multiInstance?: {
@@ -4916,6 +4969,14 @@ export interface components {
                 };
                 /** @description Optional. When nobody decides within this time, the approval ends and the request continues on the timedOut route (for example to an escalation approval, or to a rejection). Adds a timedOut route and the decision value timedOut. See S12. */
                 timeoutAfter?: components["schemas"]["duration"];
+                /** @description Elapsed minutes, or working minutes with calendar. Mutually exclusive with dueAfterHours. */
+                dueAfterMinutes?: number;
+                notifications?: {
+                    assignment: components["schemas"]["stageEmail"];
+                    completion: components["schemas"]["stageEmail"];
+                    rejection: components["schemas"]["stageEmail"];
+                    overdue: components["schemas"]["stageEmail"];
+                };
             };
         } & components["schemas"]["nodeBase"];
         decisionNode: {
@@ -5236,6 +5297,31 @@ export interface components {
                     zoom: number;
                 };
             };
+            /**
+             * @description Opt-in lightweight hackathon profile: at most 10 states, 5 routing groups, deterministic acyclic sequential work. Enforced by the compiler.
+             * @constant
+             */
+            acceptanceProfile?: "tier1";
+            /**
+             * @description Pinned manual closure policy. Tier-1 defaults to REQUIRE_NO_OPEN_TASKS; legacy workflows keep operator cancellation behavior.
+             * @enum {unknown}
+             */
+            closurePolicy?: "REQUIRE_NO_OPEN_TASKS" | "CANCEL_OPEN_TASKS";
+            provenance?: {
+                gitCommit: string;
+                reviewReference?: string;
+            };
+            terminalNotification?: components["schemas"]["stageEmail"];
+            tier1Assessment?: {
+                businessOwner: string;
+                requirementsReviewed: boolean;
+                /** @enum {unknown} */
+                regulatoryClassification: "standard" | "requiresPega" | "unclassified";
+                expectedDurationDays: number;
+                peakConcurrentUsers: number;
+                storedCases: number;
+                sourceReference?: string;
+            };
             $defs: {
                 key: string;
                 stage: {
@@ -5333,6 +5419,13 @@ export interface components {
                             holidays?: string[];
                             start: string;
                             end: string;
+                            revision?: string;
+                            /** Format: date */
+                            validFrom?: string;
+                            intervals?: {
+                                start: string;
+                                end: string;
+                            }[];
                         };
                         /** @description Several different people must each approve (docs/build/S51): the step creates this many parallel tasks for its candidate group and continues as approved only when all are approved; the first rejection rejects the step and cancels the others. Not combined with a time limit, escalation or correctable fields. */
                         multiInstance?: {
@@ -5354,6 +5447,14 @@ export interface components {
                         };
                         /** @description Optional. When nobody decides within this time, the approval ends and the request continues on the timedOut route (for example to an escalation approval, or to a rejection). Adds a timedOut route and the decision value timedOut. See S12. */
                         timeoutAfter?: components["schemas"]["duration"];
+                        /** @description Elapsed minutes, or working minutes with calendar. Mutually exclusive with dueAfterHours. */
+                        dueAfterMinutes?: number;
+                        notifications?: {
+                            assignment: components["schemas"]["stageEmail"];
+                            completion: components["schemas"]["stageEmail"];
+                            rejection: components["schemas"]["stageEmail"];
+                            overdue: components["schemas"]["stageEmail"];
+                        };
                     };
                 } & components["schemas"]["nodeBase"];
                 decisionNode: {
@@ -5650,6 +5751,12 @@ export interface components {
                         };
                     };
                 } & components["schemas"]["nodeBase"];
+                stageEmail: {
+                    subject: string;
+                    body: string;
+                    recipients: ("requester" | "assignee" | "candidateGroup" | "supervisor" | "operators")[];
+                    supervisorGroupRef?: components["schemas"]["key"];
+                };
             };
         };
         scalarField: {
@@ -9890,7 +9997,7 @@ export interface operations {
             content: {
                 "application/json": {
                     /** @enum {string} */
-                    permission: "workflow.start" | "connection.manage" | "message.send" | "document.browse" | "job.work";
+                    permission: "workflow.start" | "connection.manage" | "message.send" | "document.browse" | "job.work" | "audit.read";
                     /** @description Restrict workflow.start to one workflow; omit for workspace-wide (connection.manage, message.send, document.browse and job.work are always workspace-wide). */
                     workflowId?: components["schemas"]["Uuid"] | null;
                     principal: components["schemas"]["PrincipalRef"];
@@ -10409,6 +10516,80 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+        };
+    };
+    getStageMail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bounded delivery records, ordered by creation time and ID */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            /** Format: uuid */
+                            id: string;
+                            event: string;
+                            /** @enum {unknown} */
+                            status: "queued" | "providerAccepted" | "failed" | "suppressed" | "blocked";
+                            attempts: number;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            failureCode?: string;
+                        }[];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["PayloadTooLarge"];
+        };
+    };
+    exportCaseEvidence: {
+        parameters: {
+            query?: {
+                format?: "json" | "csv";
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bounded control metadata only; refuses truncation; CSV includes a manifest record */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                    "text/csv": string;
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
         };
     };
 }

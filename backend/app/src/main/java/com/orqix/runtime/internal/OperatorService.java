@@ -290,6 +290,7 @@ public class OperatorService {
     @Transactional
     public Result<RuntimeDtos.RunDetail> cancel(Caller caller, UUID workspaceId, UUID runId, String idempotencyKey,
             RuntimeDtos.CancelRunRequest request) {
+        if (request.reason().isBlank()) throw new ApiException(ProblemCode.REASON_REQUIRED, "Supply a closure reason.");
         String key = IdempotencyService.requireKey(idempotencyKey);
         RunAccess.Visible visible = runAccess.require(caller, workspaceId, runId);
         policy.require(visible.access(), Permission.RUN_OPERATE, "cancelRun", true);
@@ -305,6 +306,13 @@ public class OperatorService {
                     .with("currentVersion", run.version());
         }
         requireVersion(run, request.expectedVersion());
+        JsonNode definition = releases.require(workspaceId, run.releaseId()).definition();
+        String closure = definition.path("closurePolicy").asString(
+                "tier1".equals(definition.path("acceptanceProfile").asString()) ? "REQUIRE_NO_OPEN_TASKS" : "CANCEL_OPEN_TASKS");
+        var openTasks = tasks.forRun(workspaceId, runId).stream().filter(TaskStore.TaskRow::isOpen).map(TaskStore.TaskRow::taskId).toList();
+        if ("REQUIRE_NO_OPEN_TASKS".equals(closure) && !openTasks.isEmpty())
+            throw new ApiException(ProblemCode.RUN_HAS_OPEN_TASKS, "Resolve the open tasks before closing this case.")
+                    .with("openTaskIds", openTasks).with("currentVersion", run.version());
         try {
             boolean orphan = run.attention() != null
                     && RunWatchdog.REASON.equals(run.attention().path("reason").asString());
@@ -331,6 +339,8 @@ public class OperatorService {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("reason", request.reason());
         data.put("completedEffects", succeeded.size());
+        data.put("closurePolicy", closure);
+        data.put("cancelledTaskIds", openTasks);
         events.append(workspaceId, runId, "RUN_CANCELLED", null, caller.subjectId(), data);
         if (notifications.create(workspaceId, run.initiator(), runId, NotificationService.Kind.WORKFLOW_MESSAGE,
                 runId + ":cancelled:" + run.initiator(), "Your request was cancelled by an operator.")) {
@@ -338,7 +348,7 @@ public class OperatorService {
                     Map.of("kind", NotificationService.Kind.WORKFLOW_MESSAGE.value(), "recipient", "initiator"));
         }
         audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.USER, caller.subjectId(), "run.cancelled",
-                "run", runId.toString(), AuditWriter.Outcome.SUCCESS, Map.of()));
+                "run", runId.toString(), AuditWriter.Outcome.SUCCESS, Map.of("closurePolicy",closure,"cancelledTaskIds",openTasks)));
         idempotency.complete(claim, "run", runId.toString(), 200);
         return new Result<>(runService.detail(runAccess.require(caller, workspaceId, runId), succeeded), false);
     }

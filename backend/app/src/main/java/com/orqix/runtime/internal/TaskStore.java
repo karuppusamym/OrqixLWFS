@@ -202,11 +202,16 @@ public class TaskStore {
 
     @Transactional(propagation = Propagation.MANDATORY)
     public int cancelOpenForRun(UUID workspaceId, UUID runId, Instant endedAt) {
-        return jdbc.sql("""
+        int count = jdbc.sql("""
                 UPDATE task_context SET status = 'cancelled', ended_at = :ended, version = version + 1
                 WHERE workspace_id = :ws AND run_id = :run AND status = 'open'
                 """)
                 .param("ended", Sql.ts(endedAt)).param("ws", workspaceId).param("run", runId).update();
+        jdbc.sql("DELETE FROM task_reminder WHERE workspace_id=:ws AND task_id IN (SELECT engine_task_id FROM task_context WHERE workspace_id=:ws AND run_id=:run AND status<>'open')")
+                .param("ws",workspaceId).param("run",runId).update();
+        jdbc.sql("UPDATE stage_mail SET status='suppressed',failure_code='CASE_ENDED',updated_at=:now WHERE workspace_id=:ws AND run_id=:run AND status='queued' AND event_kind IN ('assignment','overdue')")
+                .param("ws",workspaceId).param("run",runId).param("now",Sql.ts(endedAt)).update();
+        return count;
     }
 
     static TaskRow map(ResultSet rs, int n) throws SQLException {

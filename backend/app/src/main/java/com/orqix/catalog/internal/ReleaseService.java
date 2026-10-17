@@ -123,6 +123,13 @@ public class ReleaseService {
                 .orElseThrow(() -> new ApiException(ProblemCode.VALIDATION_FAILED, "The draft revision does not exist.")
                         .withFieldErrors(List.of(new ApiException.FieldError("/draftRevision", "minimum",
                                 "Unknown draft revision"))));
+        JsonNode definition = json.parse(draft.definitionJson());
+        if ("tier1".equals(definition.path("acceptanceProfile").asString())) {
+            if (draft.revision() != workflow.draftRevision()) throw new ApiException(ProblemCode.STALE_REVISION, "Publish the latest reviewed draft.");
+            if (caller.subjectId().equals(draft.savedBy())) throw policy.deny(workspaceId, caller.subjectId(),
+                    "workflow.publish", "publishDraft", true, new ApiException(ProblemCode.FORBIDDEN, "Another person must review and publish a Tier-1 draft."));
+            if (!definition.has("provenance")) throw new ApiException(ProblemCode.WORKFLOW_INVALID, "Tier-1 publication needs the reviewed Git commit in provenance.");
+        }
         migrationGovernance.requirePublish(caller, workspaceId, workflowId, draft);
         CompileContext context = contexts.create(access.workspace(), draft.definitionJson());
         ValidationReport report = compiler.validate(draft.definitionJson(), context);
@@ -157,6 +164,11 @@ public class ReleaseService {
         UUID releaseId = Ids.newId();
         Instant now = clock.instant();
         ObjectNode manifest = manifest(releaseId, workflow.key(), compiled, deployed.processDefinitionId());
+        manifest.put("authorSubjectId", draft.savedBy().toString());
+        manifest.put("reviewerSubjectId", caller.subjectId().toString());
+        manifest.put("reviewedAt", now.toString());
+        if (definition.has("provenance")) manifest.set("provenance", definition.path("provenance"));
+        if (definition.has("acceptanceProfile")) manifest.put("acceptanceProfile", definition.path("acceptanceProfile").asString());
         store.insertRelease(new CatalogStore.ReleaseRow(releaseId, workspaceId, workflowId, number, draft.revision(),
                 draft.definitionJson(), "0.1", compiled.sourceHash(), compiled.semanticHash(), compiled.compilerVersion(),
                 json.write(manifest), compiled.sourceMapJson(),

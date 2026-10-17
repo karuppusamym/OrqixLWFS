@@ -38,10 +38,10 @@ public sealed interface Node {
                     Integer dueAfterHours, String timeoutAfter, java.util.List<String> requiredSkills,
                     tools.jackson.databind.JsonNode calendar, tools.jackson.databind.JsonNode escalation,
                     java.util.List<String> separateFrom, java.util.List<String> correctable,
-                    Integer approvers) implements Node {
+                    Integer approvers, Integer dueAfterMinutes) implements Node {
         public Approval(int index, String id, String label, String candidateGroupRef, boolean rejectReasonRequired,
                 Integer dueAfterHours, String timeoutAfter) {
-            this(index,id,label,candidateGroupRef,rejectReasonRequired,dueAfterHours,timeoutAfter,java.util.List.of(),null,null,java.util.List.of(),java.util.List.of(),null);
+            this(index,id,label,candidateGroupRef,rejectReasonRequired,dueAfterHours,timeoutAfter,java.util.List.of(),null,null,java.util.List.of(),java.util.List.of(),null,null);
         }
 
         /** @return true when several different people must each approve (S51); null {@code approvers} means one */

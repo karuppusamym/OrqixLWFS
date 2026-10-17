@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { useStudio, useStudioContext } from '../StudioContext'
 import { cfg, type WorkflowNode } from '../model/types'
 import { Advanced, CommitInput, CommitNumber, CommitTextarea, DurationPreview, InspectorSection } from './controls'
+import { StageEmailFields, Tier1Settings } from './StageEmailFields'
 import { WorkManagementFields } from './WorkManagementFields'
 
 /** Rename a step ID in Advanced: IDs are stable references, so the change is validated and applied everywhere. */
@@ -74,9 +75,13 @@ export function ApprovalInspector({ node }: { node: WorkflowNode }) {
               value={cfg<number>(node, 'dueAfterHours')}
               disabled={readOnly}
               aria-describedby={ids.describedBy}
-              onCommit={(v) => store.getState().updateNodeConfig(node.id, { dueAfterHours: v === undefined ? undefined : Math.min(720, Math.max(1, v)) })}
+              onCommit={(v) => store.getState().updateNodeConfig(node.id, { dueAfterHours: v === undefined ? undefined : Math.min(720, Math.max(1, v)), dueAfterMinutes: undefined })}
             />
           )}
+        </FormField>
+        <FormField label="Due after (business minutes)" optionalText id={`approval-minutes-${node.id}`} description="Uses the working calendar below. Setting minutes replaces hours. Reassignment and suspension do not pause this deadline.">
+          {ids => <CommitNumber id={ids.input} integer value={cfg<number>(node, 'dueAfterMinutes')} disabled={readOnly}
+            onCommit={value => store.getState().updateNodeConfig(node.id, { dueAfterMinutes: value === undefined ? undefined : Math.max(1, Math.min(43200, value)), dueAfterHours: undefined })} />}
         </FormField>
         <FormField label="Number of approvers" optionalText id={`approval-approvers-${node.id}`} description="Leave empty for one person. With 2 to 5, that many different people from the group must each approve; the first rejection rejects the step. Not combined with a time limit, reminders or corrections.">
           {(ids) => (
@@ -116,6 +121,7 @@ export function ApprovalInspector({ node }: { node: WorkflowNode }) {
         {cfg<string>(node, 'timeoutAfter') ? <DurationPreview text={cfg<string>(node, 'timeoutAfter') ?? ''} verb="allows" /> : null}
       </InspectorSection>
       <WorkManagementFields node={node} groups={items} />
+      <StageEmailFields node={node} />
       <Advanced>
         <StepIdField node={node} />
       </Advanced>
@@ -223,6 +229,7 @@ export function WorkflowInspector() {
   return (
     <div className="space-y-5 p-4">
       <p className="text-sm text-muted-foreground">Select a step on the canvas or in the Steps tab to edit it.</p>
+      <Tier1Settings />
       <InspectorSection title="Workflow">
         <FormField label="Name" id="wf-settings-name">
           {(ids) => <CommitInput id={ids.input} data-field="workflow.name" value={def.name} maxLength={200} disabled={readOnly} onCommit={(v) => store.getState().apply((d) => (d.name === v ? d : { ...d, name: v }))} />}

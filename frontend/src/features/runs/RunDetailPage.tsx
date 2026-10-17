@@ -24,6 +24,7 @@ import { isTerminal } from '@/lib/status'
 import { readStorage, writeStorage } from '@/lib/storage'
 import { RunProgressPanel, type RunView } from './RunProgressPanel'
 import { CancelDialog, MigrateDialog, ReassignDialog, RepairDialog, ReconcileDialog, ResumeDialog, RetryDialog, SuspendDialog } from './OperatorDialogs'
+import { CaseControlsPanel } from './CaseControlsPanel'
 import { RunCommentsPanel } from './RunCommentsPanel'
 import { RunFiles } from './RunFiles'
 import { StageProgress } from './StageProgress'
@@ -195,6 +196,7 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
         </Alert>
       ) : null}
 
+      <CaseControlsPanel runId={run.id} />
       <SendTestMessage run={run} />
       {releaseDefinition ? <IncidentCorrectionPanel run={run} inputSchema={releaseDefinition.inputSchema} /> : null}
 

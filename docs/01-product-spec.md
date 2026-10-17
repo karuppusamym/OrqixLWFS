@@ -3,6 +3,8 @@ Version 0.1 · proposed baseline · 7 October 2026
 
 ## Product promise
 
+For the supplied lightweight-engine hackathon, use the [revised hackathon baseline](23-hackathon-requirements-baseline.md). Its calendar-aware SLAs, stage email, Tier-1 limits and acceptance scenarios supersede historical R0 deferrals for that profile. The roadmap below retains its original release context and is not a statement of current implementation status.
+
 Orqix helps business teams create, approve and track routine work without needing to understand BPMN. Engineers retain control over integrations, identity, deployment and operational policy. AI may help draft or explain a workflow, but deterministic process execution remains with Flowable.
 
 “Lightweight” means a small operational footprint and a focused user experience: one application deployment and PostgreSQL, no required Kafka/Redis, no extra language runtime, and no long menu of unused tools.

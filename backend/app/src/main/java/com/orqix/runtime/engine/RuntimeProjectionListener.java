@@ -155,12 +155,22 @@ public class RuntimeProjectionListener implements FlowableEventListener {
         String group = groups.get(0);
         Instant now = clock.instant();
         Instant dueAt = OrqixModel.extension(element, "approval")
-                .filter(approval -> OrqixModel.attribute(approval,"dueAfterHours") != null)
+                .filter(approval -> OrqixModel.attribute(approval,"dueAfterHours") != null || OrqixModel.attribute(approval,"dueAfterMinutes") != null)
                 .map(approval -> {
-                    int hours = Integer.parseInt(OrqixModel.attribute(approval,"dueAfterHours"));
+                    String minuteValue = OrqixModel.attribute(approval,"dueAfterMinutes");
+                    int minutes = minuteValue != null ? Integer.parseInt(minuteValue) : Integer.parseInt(OrqixModel.attribute(approval,"dueAfterHours")) * 60;
                     String calendar = OrqixModel.attribute(approval,"calendar");
-                    return calendar == null ? now.plus(Duration.ofHours(hours))
-                            : com.orqix.compiler.BusinessCalendar.read(json.parse(calendar)).deadline(now,hours);
+                    if (calendar == null) return now.plus(Duration.ofMinutes(minutes));
+                    JsonNode configured = json.parse(calendar);
+                    var working = com.orqix.compiler.BusinessCalendar.read(configured);
+                    Instant deadline = working.deadlineMinutes(now, minutes);
+                    if (configured.has("validFrom")) {
+                        var from = java.time.LocalDate.parse(configured.path("validFrom").asString());
+                        var today = now.atZone(working.zone()).toLocalDate();
+                        if (today.isBefore(from) || !deadline.atZone(working.zone()).toLocalDate().isBefore(from.plusYears(10)))
+                            throw new IllegalArgumentException("The task exceeds its pinned calendar's ten-year scheduling horizon.");
+                    }
+                    return deadline;
                 })
                 .orElse(null);
         String label = element.getName() == null ? element.getId() : element.getName();

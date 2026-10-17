@@ -77,7 +77,7 @@ public class PolicyService {
 
     /** Workspace visible to the caller (member or manage-access), else 404 (S6 section 4 step 3). */
     public WorkspaceAccess requireVisible(Caller caller, UUID workspaceId) {
-        WorkspaceAccess access = access(caller, workspaceId).orElseThrow(ApiException::notFound);
+        WorkspaceAccess access = freshAccess(caller, workspaceId).orElseThrow(ApiException::notFound);
         if (!access.visible()) {
             throw ApiException.notFound();
         }
@@ -86,7 +86,7 @@ public class PolicyService {
 
     /** Workspace membership required (member only, not manage-access), else 404. */
     public WorkspaceAccess requireMember(Caller caller, UUID workspaceId) {
-        WorkspaceAccess access = access(caller, workspaceId).orElseThrow(ApiException::notFound);
+        WorkspaceAccess access = freshAccess(caller, workspaceId).orElseThrow(ApiException::notFound);
         if (!access.member()) {
             throw ApiException.notFound();
         }

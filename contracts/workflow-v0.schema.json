@@ -366,6 +366,87 @@
         "positions"
       ],
       "additionalProperties": false
+    },
+    "acceptanceProfile": {
+      "const": "tier1",
+      "description": "Opt-in lightweight hackathon profile: at most 10 states, 5 routing groups, deterministic acyclic sequential work. Enforced by the compiler."
+    },
+    "closurePolicy": {
+      "enum": [
+        "REQUIRE_NO_OPEN_TASKS",
+        "CANCEL_OPEN_TASKS"
+      ],
+      "description": "Pinned manual closure policy. Tier-1 defaults to REQUIRE_NO_OPEN_TASKS; legacy workflows keep operator cancellation behavior."
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gitCommit"
+      ],
+      "properties": {
+        "gitCommit": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}([a-f0-9]{24})?$"
+        },
+        "reviewReference": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      }
+    },
+    "terminalNotification": {
+      "$ref": "#/$defs/stageEmail"
+    },
+    "tier1Assessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "businessOwner",
+        "requirementsReviewed",
+        "regulatoryClassification",
+        "expectedDurationDays",
+        "peakConcurrentUsers",
+        "storedCases"
+      ],
+      "properties": {
+        "businessOwner": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "requirementsReviewed": {
+          "type": "boolean"
+        },
+        "regulatoryClassification": {
+          "enum": [
+            "standard",
+            "requiresPega",
+            "unclassified"
+          ]
+        },
+        "expectedDurationDays": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3650
+        },
+        "peakConcurrentUsers": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000
+        },
+        "storedCases": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000000
+        },
+        "sourceReference": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      }
     }
   },
   "required": [
@@ -806,6 +887,39 @@
                 "end": {
                   "type": "string",
                   "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+                },
+                "revision": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                "validFrom": {
+                  "type": "string",
+                  "format": "date",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                "intervals": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 8,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "start",
+                      "end"
+                    ],
+                    "properties": {
+                      "start": {
+                        "type": "string",
+                        "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+                      },
+                      "end": {
+                        "type": "string",
+                        "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+                      }
+                    }
+                  }
                 }
               }
             },
@@ -882,6 +996,36 @@
             "timeoutAfter": {
               "description": "Optional. When nobody decides within this time, the approval ends and the request continues on the timedOut route (for example to an escalation approval, or to a rejection). Adds a timedOut route and the decision value timedOut. See S12.",
               "$ref": "#/$defs/duration"
+            },
+            "dueAfterMinutes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 43200,
+              "description": "Elapsed minutes, or working minutes with calendar. Mutually exclusive with dueAfterHours."
+            },
+            "notifications": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "assignment",
+                "completion",
+                "rejection",
+                "overdue"
+              ],
+              "properties": {
+                "assignment": {
+                  "$ref": "#/$defs/stageEmail"
+                },
+                "completion": {
+                  "$ref": "#/$defs/stageEmail"
+                },
+                "rejection": {
+                  "$ref": "#/$defs/stageEmail"
+                },
+                "overdue": {
+                  "$ref": "#/$defs/stageEmail"
+                }
+              }
             }
           },
           "required": [
@@ -1936,6 +2080,45 @@
         }
       },
       "additionalProperties": false
+    },
+    "stageEmail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subject",
+        "body",
+        "recipients"
+      ],
+      "properties": {
+        "subject": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "body": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "recipients": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 5,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "requester",
+              "assignee",
+              "candidateGroup",
+              "supervisor",
+              "operators"
+            ]
+          }
+        },
+        "supervisorGroupRef": {
+          "$ref": "#/$defs/key"
+        }
+      }
     }
   }
 }

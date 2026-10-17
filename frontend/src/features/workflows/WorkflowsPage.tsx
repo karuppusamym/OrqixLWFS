@@ -25,6 +25,7 @@ import { fieldErrorMap } from '@/lib/problemMessages'
 import { humanize, KEY_PATTERN, toKey } from '@/lib/text'
 import { useListFilters } from '@/lib/useListFilters'
 import { DescribeItChoice, DescribeItDialog } from '@/features/ai/DescribeItDialog'
+import { GuidedWorkflowDialog } from './GuidedWorkflowDialog'
 import { PinnedWorkflows, PinWorkflowButton } from './PinnedWorkflows'
 import { folderName, ManageFoldersButton, OrganizationFilters, OrganizeWorkflowDialog } from './Organization'
 
@@ -204,6 +205,7 @@ function NewWorkflowDialog({ onClose }: { onClose: () => void }) {
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<ProblemError | null>(null)
   const [describing, setDescribing] = useState(false)
+  const [guided, setGuided] = useState(false)
 
   const effectiveKey = keyTouched ? key : toKey(name)
   const chosenTemplate = templateId === '' ? (templates.data?.items[0]?.id ?? 'blank') : templateId
@@ -237,6 +239,7 @@ function NewWorkflowDialog({ onClose }: { onClose: () => void }) {
     }
   }
 
+  if (guided) return <GuidedWorkflowDialog onClose={onClose} />
   if (describing) return <DescribeItDialog onClose={onClose} onBack={() => setDescribing(false)} />
 
   return (
@@ -285,6 +288,7 @@ function NewWorkflowDialog({ onClose }: { onClose: () => void }) {
               </div>
             </RadioGroup>
           )}
+          <Button variant="secondary" onClick={() => setGuided(true)}>Create with guided questions</Button>
           <DescribeItChoice onSelect={() => setDescribing(true)} />
         </fieldset>
         <FormField label="Name" required id="wf-name" error={errors.name}>

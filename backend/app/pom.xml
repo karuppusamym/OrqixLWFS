@@ -46,6 +46,12 @@
             <artifactId>spring-boot-starter-session-jdbc</artifactId>
         </dependency>
 
+        <!-- Optional SMTP transport; disabled unless explicitly configured. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+
         <!-- Persistence -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

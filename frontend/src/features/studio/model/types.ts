@@ -103,6 +103,11 @@ export interface Position {
 
 export interface Definition {
   schemaVersion: '0.1'
+  tier1Assessment?: { businessOwner: string; requirementsReviewed: boolean; regulatoryClassification: 'standard' | 'requiresPega' | 'unclassified'; expectedDurationDays: number; peakConcurrentUsers: number; storedCases: number; sourceReference?: string }
+  acceptanceProfile?: 'tier1'
+  closurePolicy?: 'REQUIRE_NO_OPEN_TASKS' | 'CANCEL_OPEN_TASKS'
+  provenance?: { gitCommit: string; reviewReference?: string }
+  terminalNotification?: StageEmail
   workflowKey: string
   name: string
   metadata: { description: string; tags?: string[]; stepNotes?: Record<string, string> }
@@ -169,4 +174,11 @@ export function normalizeDefinition(raw: unknown): Definition {
 /** Config helpers with defaults, so inspector code does not scatter casts. */
 export function cfg<T = unknown>(node: WorkflowNode, key: string): T | undefined {
   return node.config[key] as T | undefined
+}
+
+export interface StageEmail {
+  subject: string
+  body: string
+  recipients: Array<'requester' | 'assignee' | 'candidateGroup' | 'supervisor' | 'operators'>
+  supervisorGroupRef?: string
 }

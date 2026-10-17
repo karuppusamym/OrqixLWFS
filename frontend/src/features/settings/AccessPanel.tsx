@@ -27,6 +27,7 @@ const PERMISSION_HELP: Record<string, string> = {
   'workflow.start': 'Can start requests',
   'connection.manage': 'Can change connection addresses and test them',
   'document.browse': 'Can browse specifically granted document folders',
+  'audit.read': 'Can export control evidence for requests they can access',
   'job.work': 'Can take and complete jobs for external workers',
 }
 

@@ -37,6 +37,10 @@ public class TaskReminders {
                 .param("now",Sql.ts(clock.instant())).query((rs,n)->new Pending(Sql.uuid(rs,"workspace_id"),rs.getString("task_id"),
                         rs.getInt("notice_count"),rs.getInt("max_notices"),(Integer)rs.getObject("interval_hours"))).list();
         for (var p:pending) {
+            var snapshot=tasks.find(p.workspace(),p.task()).orElse(null);
+            if (snapshot==null) continue;
+            if (jdbc.sql("SELECT id FROM workflow_run WHERE workspace_id=:ws AND id=:run FOR UPDATE SKIP LOCKED")
+                    .param("ws",p.workspace()).param("run",snapshot.runId()).query(UUID.class).optional().isEmpty()) continue;
             var task=tasks.tryLock(p.workspace(),p.task()).orElse(null);
             // A busy task remains queued. Its FK guarantees it exists; retry on the next poll.
             if (task==null) continue;

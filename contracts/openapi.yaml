@@ -3339,7 +3339,7 @@ paths:
               additionalProperties: false
               required: [permission, principal]
               properties:
-                permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse, job.work] }
+                permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse, job.work, audit.read] }
                 workflowId:
                   description: Restrict workflow.start to one workflow; omit for workspace-wide (connection.manage, message.send, document.browse and job.work are always workspace-wide).
                   oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }]
@@ -3805,6 +3805,73 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+
+  /workspaces/{workspaceId}/runs/{runId}/mail:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+    get:
+      tags: [Runs]
+      operationId: getStageMail
+      summary: Inspect stage email delivery status without message bodies or recipient addresses
+      x-orqix-permission: run.operate
+      responses:
+        '200':
+          description: Bounded delivery records, ordered by creation time and ID
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    maxItems: 1000
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [id, event, status, attempts, createdAt, updatedAt]
+                      properties:
+                        id: { type: string, format: uuid }
+                        event: { type: string }
+                        status: { enum: [queued, providerAccepted, failed, suppressed, blocked] }
+                        attempts: { type: integer, minimum: 0, maximum: 3 }
+                        createdAt: { type: string, format: date-time }
+                        updatedAt: { type: string, format: date-time }
+                        failureCode: { type: string }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+
+  /workspaces/{workspaceId}/runs/{runId}/evidence:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+    get:
+      tags: [Runs]
+      operationId: exportCaseEvidence
+      summary: Download ordered control evidence and a release manifest
+      x-orqix-permission: audit.read
+      x-orqix-audit: run.evidence-exported
+      parameters:
+        - in: query
+          name: format
+          schema: { enum: [json, csv], default: json }
+      responses:
+        '200':
+          description: Bounded control metadata only; refuses truncation; CSV includes a manifest record
+          content:
+            application/json:
+              schema: { type: object, required: [manifest, audit, events], additionalProperties: true }
+            text/csv:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
 
 components:
   securitySchemes:
@@ -4712,6 +4779,7 @@ components:
             - TASK_NOT_CLAIMED_BY_CALLER
             - TASK_NOT_OPEN
             - RUN_NOT_ACTIVE
+            - RUN_HAS_OPEN_TASKS
             - RUN_BUSY
             - RUN_NOT_RECOVERABLE
             - RUN_SUSPENDED
@@ -6514,7 +6582,7 @@ components:
       required: [id, permission, workflowId, principal, createdAt]
       properties:
         id: { $ref: '#/components/schemas/Uuid' }
-        permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse, job.work] }
+        permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse, job.work, audit.read] }
         workflowId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }] }
         principal: { $ref: '#/components/schemas/Principal' }
         createdAt: { $ref: '#/components/schemas/Timestamp' }

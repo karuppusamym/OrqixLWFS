@@ -1,0 +1,17 @@
+{
+  "zone": "America/New_York",
+  "revision": "synthetic-demo-v1",
+  "validFrom": "2026-01-01",
+  "weekdays": [
+    1,
+    2,
+    3,
+    4,
+    5
+  ],
+  "start": "09:00",
+  "end": "17:00",
+  "holidays": [
+    "2026-10-19"
+  ]
+}

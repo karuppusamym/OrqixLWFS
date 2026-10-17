@@ -139,6 +139,7 @@ public final class BpmnGenerator {
                 if (a.dueAfterHours() != null) {
                     x.attr("dueAfterHours", a.dueAfterHours().toString());
                 }
+                if (a.dueAfterMinutes() != null) x.attr("dueAfterMinutes", a.dueAfterMinutes().toString());
                 if (a.timeoutAfter() != null) {
                     x.attr("timeoutAfter", a.timeoutAfter());
                 }

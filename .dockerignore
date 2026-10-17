@@ -10,8 +10,10 @@
 # Built outputs and dependencies
 **/node_modules
 **/target
+**/target-*
 **/dist
 **/dist-mock
+**/dist-embed
 **/coverage
 **/playwright-report
 **/test-results

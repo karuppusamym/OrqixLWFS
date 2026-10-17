@@ -7,7 +7,7 @@ import { cfg, type WorkflowNode } from '../model/types'
 import { guaranteedBefore, reachableFrom, startNode } from '../model/graph'
 import { CommitInput, CommitNumber, CommitTextarea, InspectorSection } from './controls'
 
-type Calendar = { zone: string; weekdays: number[]; holidays?: string[]; start: string; end: string }
+type Calendar = { revision?: string; validFrom?: string; intervals?: { start: string; end: string }[]; zone: string; weekdays: number[]; holidays?: string[]; start: string; end: string }
 type Escalation = { intervalHours: number; maxNotices: number }
 
 export function WorkManagementFields({ node, groups }: { node: WorkflowNode; groups: { key: string; name: string }[] }) {
@@ -77,10 +77,12 @@ export function WorkManagementFields({ node, groups }: { node: WorkflowNode; gro
     </FormField>
     <div className="flex items-center gap-2"><Checkbox id={`calendar-${node.id}`} checked={!!calendar} disabled={readOnly}
       onCheckedChange={checked => set({ calendar: checked ? { zone: 'UTC', weekdays: [1,2,3,4,5], start: '09:00', end: '17:00', holidays: [] } : undefined,
-        ...(checked && !cfg<number>(node, 'dueAfterHours') ? { dueAfterHours: 8 } : {}) })} />
+        ...(checked && !cfg<number>(node, 'dueAfterHours') && !cfg<number>(node, 'dueAfterMinutes') ? { dueAfterHours: 8 } : {}) })} />
       <Label htmlFor={`calendar-${node.id}`}>Count working hours for the due date</Label></div>
     {calendar ? <>
       <p className="text-xs text-muted-foreground">Due after counts elapsed time inside these hours. The execution time limit still uses wall-clock time. Overnight schedules are unsupported.</p>
+      <FormField label="Calendar revision" id={`calendar-revision-${node.id}`}>{ids => <CommitInput id={ids.input} value={calendar.revision ?? ''} disabled={readOnly} onCommit={revision => calendarSet({ revision })} />}</FormField>
+      <FormField label="Calendar valid from" id={`calendar-valid-${node.id}`} description="YYYY-MM-DD; Tier-1 checks clock boundaries over the following ten years.">{ids => <CommitInput id={ids.input} value={calendar.validFrom ?? ''} disabled={readOnly} onCommit={validFrom => calendarSet({ validFrom })} />}</FormField>
       <FormField label="Calendar time zone" id={`calendar-zone-${node.id}`}>{ids => <CommitInput id={ids.input} value={calendar.zone} disabled={readOnly} onCommit={zone => calendarSet({ zone: zone.trim() })} />}</FormField>
       <fieldset disabled={readOnly}><legend className="text-sm font-medium">Working days</legend>
         <div className="flex flex-wrap gap-3">{['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].map((day,index) => <label key={day} className="flex items-center gap-1 text-sm">
@@ -91,10 +93,12 @@ export function WorkManagementFields({ node, groups }: { node: WorkflowNode; gro
       <FormField label="Closing time" id={`calendar-end-${node.id}`}>{ids => <CommitInput id={ids.input} value={calendar.end} disabled={readOnly} onCommit={end => calendarSet({ end })} />}</FormField>
       <FormField label="Holidays" id={`calendar-holidays-${node.id}`} description="One YYYY-MM-DD date per line, up to 366 dates.">{ids => <CommitTextarea id={ids.input} value={(calendar.holidays ?? []).join('\n')} disabled={readOnly}
         onCommit={value => calendarSet({ holidays: value.split(/\r?\n/).map(day => day.trim()).filter(Boolean) })} />}</FormField>
+      <FormField label="Split working intervals" id={`calendar-intervals-${node.id}`} description="Optional; one HH:MM-HH:MM interval per line, up to eight. Replaces the opening/closing window and allows lunch breaks.">{ids => <CommitTextarea id={ids.input} value={(calendar.intervals ?? []).map(w => `${w.start}-${w.end}`).join('\n')} disabled={readOnly}
+        onCommit={value => calendarSet({ intervals: value.trim() ? value.split(/\r?\n/).filter(Boolean).map(line => { const [start = '', end = ''] = line.trim().split('-'); return { start, end } }) : undefined })} />}</FormField>
     </> : null}
     <div className="flex items-center gap-2"><Checkbox id={`escalation-${node.id}`} checked={!!escalation} disabled={readOnly}
       onCheckedChange={checked => set({ escalation: checked ? { intervalHours: 24, maxNotices: 3 } : undefined,
-        ...(checked && !cfg<number>(node,'dueAfterHours') ? { dueAfterHours: 24 } : {}) })} />
+        ...(checked && !cfg<number>(node,'dueAfterHours') && !cfg<number>(node,'dueAfterMinutes') ? { dueAfterHours: 24 } : {}) })} />
       <Label htmlFor={`escalation-${node.id}`}>Repeat overdue notices</Label></div>
     {escalation ? <>
       <p className="text-xs text-muted-foreground">Sends an in-app notice to the current eligible assignee at the due date, then at this interval. Stops at the cap or when the task ends. No automatic reassignment.</p>

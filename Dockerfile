@@ -31,7 +31,7 @@ COPY examples/ /src/examples/
 COPY contracts/ /src/contracts/
 # Brand palette (docs/build/S7-frontend.md section 8): wf (default) or orqix. docker build --build-arg ORQIX_BRAND=orqix
 ARG ORQIX_BRAND=wf
-RUN VITE_ORQIX_BRAND="$ORQIX_BRAND" npm run build
+RUN VITE_ORQIX_BRAND="$ORQIX_BRAND" npm run build:embedded
 
 # ---------------------------------------------------------------------------------------------------------------------
 # 2. Backend: the SPA is copied into the classpath static/ folder before packaging.

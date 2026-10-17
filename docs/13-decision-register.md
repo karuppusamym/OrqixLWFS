@@ -4,6 +4,8 @@ These items become blocking only when their dependent build/release work starts.
 
 ## Decision register
 
+The supplied lightweight-engine challenge now has a separate [hackathon baseline and HC01–HC07 qualification register](23-hackathon-requirements-baseline.md#12-remaining-external-decisions-and-sign-off). Its mandatory business-calendar SLA and stage email requirements override historical R0 deferrals for hackathon acceptance. D14 below remains a historical R0 planning decision, not a waiver of that profile. Proposed defaults resolve engineering choices; compliance, source qualification and procurement facts still require their named owners' evidence.
+
 | ID | Decision/input | Proposed default | Who resolves it | Needed by | If unresolved |
 |---|---|---|---|---|---|
 | D01 | R0 team and schedule | 3 experienced engineers for 5 days ([S8 §1](build/S8-r0-tickets.md#1-capacity-finding-read-first) option A; ticket-level P0 estimate ≈ 100 h exceeds the 72 h three-day capacity); business owner available | Sponsor/technical lead | **Before kickoff** | Keep 3 days only as a declared reduced-scope R0 (option C); no full-platform date commitment |

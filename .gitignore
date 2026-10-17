@@ -1,5 +1,7 @@
 # Build output
 target/
+target-hackathon/
+dist-embed/
 dist/
 dist-mock/
 /build/

@@ -29,9 +29,12 @@ public class RunEvents {
 
     private final JdbcClient jdbc;
     private final Json json;
+    public record Appended(UUID workspaceId, UUID runId, long sequence, String type, String nodeId, Map<String, ?> data) {}
+    private final org.springframework.context.ApplicationEventPublisher publisher;
     private final Clock clock;
 
-    public RunEvents(JdbcClient jdbc, Json json, Clock clock) {
+    public RunEvents(JdbcClient jdbc, Json json, Clock clock, org.springframework.context.ApplicationEventPublisher publisher) {
+        this.publisher = publisher;
         this.jdbc = jdbc;
         this.json = json;
         this.clock = clock;
@@ -56,6 +59,7 @@ public class RunEvents {
                 .param("node", nodeId).param("actor", actor).param("at", Sql.ts(now))
                 .param("data", json.write(data == null ? Map.of() : data))
                 .update();
+        publisher.publishEvent(new Appended(workspaceId, runId, seq, type, nodeId, data == null ? Map.of() : data));
         return seq;
     }
 

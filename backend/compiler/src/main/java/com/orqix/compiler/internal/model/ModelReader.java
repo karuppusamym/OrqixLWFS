@@ -113,7 +113,8 @@ public final class ModelReader {
                             .map(JsonNode::stringValue).toList() : List.of(),
                     c.has("correctable") ? java.util.stream.StreamSupport.stream(c.get("correctable").spliterator(),false)
                             .map(JsonNode::stringValue).toList() : List.of(),
-                    c.has("multiInstance") ? c.get("multiInstance").get("approvers").intValue() : null);
+                    c.has("multiInstance") ? c.get("multiInstance").get("approvers").intValue() : null,
+                    c.has("dueAfterMinutes") ? c.get("dueAfterMinutes").intValue() : null);
             case DECISION -> new Node.Decision(index, id, label, c.get("decisionRef").stringValue());
             case BRANCH -> new Node.Branch(index, id, label);
             case HTTP -> new Node.Http(index, id, label, c.get("connectionRef").stringValue(),

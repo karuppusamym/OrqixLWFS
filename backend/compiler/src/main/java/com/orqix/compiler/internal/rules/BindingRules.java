@@ -71,12 +71,12 @@ final class BindingRules {
             }
             if (a.calendar() != null) {
                 try {
-                    com.orqix.compiler.BusinessCalendar.read(a.calendar()).deadline(java.time.Instant.EPOCH,
-                            a.dueAfterHours() == null ? 1 : a.dueAfterHours());
+                    com.orqix.compiler.BusinessCalendar.read(a.calendar()).deadlineMinutes(java.time.Instant.EPOCH,
+                            a.dueAfterMinutes() != null ? a.dueAfterMinutes() : a.dueAfterHours() == null ? 60 : a.dueAfterHours() * 60);
                 } catch (IllegalArgumentException e) {
                     rc.issues().blocker("WF_CALENDAR_INVALID", n.configPath("calendar"), n.id(), null, e.getMessage());
                 }
-                if (a.dueAfterHours() == null) rc.issues().blocker("WF_CALENDAR_DUE_REQUIRED", n.configPath("dueAfterHours"),
+                if (a.dueAfterHours() == null && a.dueAfterMinutes() == null) rc.issues().blocker("WF_CALENDAR_DUE_REQUIRED", n.configPath("dueAfterHours"),
                         n.id(), null, "Set working hours for the calendar deadline.");
             }
             for (String ref : a.separateFrom()) {
@@ -90,7 +90,7 @@ final class BindingRules {
                         n.label() + " separates duties from " + q(ref) + ", which " + why + ".");
             }
             correctable(rc, n, a);
-            if (a.escalation() != null && a.dueAfterHours() == null) rc.issues().blocker("WF_ESCALATION_DUE_REQUIRED",
+            if (a.escalation() != null && a.dueAfterHours() == null && a.dueAfterMinutes() == null) rc.issues().blocker("WF_ESCALATION_DUE_REQUIRED",
                     n.configPath("escalation"), n.id(), null, "Recurring overdue notices require a due date.");
         }
     }

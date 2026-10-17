@@ -77,6 +77,7 @@ const TABLE = {
   TASK_NOT_CLAIMED_BY_CALLER: { behavior: 'refresh-task', message: 'This task is no longer assigned to you.' },
   TASK_NOT_OPEN: { behavior: 'refresh-task', message: (c) => taskConflictMessage(c, 'This task was already completed.') },
   RUN_NOT_ACTIVE: { behavior: 'operator-message', message: 'This request already finished or was cancelled. Reload to see its current state.' },
+  RUN_HAS_OPEN_TASKS: { behavior: 'operator-message', message: 'Resolve the remaining open tasks before closing this case. Its published closure policy requires this.' },
   RUN_BUSY: { behavior: 'operator-message', message: 'The request is being processed right now. Wait a moment, then try again.', retryable: true },
   RUN_SUSPENDED: { behavior: 'operator-message', message: 'This request is suspended by an operator. It can continue after it is resumed.' },
   JOB_LEASE_LOST: { behavior: 'message', message: 'A worker job is no longer held by that worker.' },

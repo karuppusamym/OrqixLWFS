@@ -42,6 +42,9 @@ public class RunMigrations {
         }
         List<ReleaseCompatibility.Finding> findings = new ArrayList<>(
                 ReleaseCompatibility.check(source.definition(), target.definition(), active));
+        if ("tier1".equals(source.definition().path("acceptanceProfile").asString()) || "tier1".equals(target.definition().path("acceptanceProfile").asString()))
+            findings.add(new ReleaseCompatibility.Finding("TIER1_PINNED_RELEASE", "Tier-1 cases retain their original release; in-place migration is excluded.", null));
+
         var errors = forms.validate(json.write(target.inputSchema()), json.write(run.input()),
                 json.write(target.inputUi()));
         if (!errors.isEmpty()) {

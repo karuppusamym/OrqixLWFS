@@ -1,0 +1,171 @@
+{
+  "schemaVersion": "0.1",
+  "workflowKey": "tier1-approval",
+  "name": "Synthetic Tier-1 approval",
+  "acceptanceProfile": "tier1",
+  "closurePolicy": "CANCEL_OPEN_TASKS",
+  "metadata": {
+    "description": "Synthetic hackathon fixture. Calendar dates and policies are examples, not organizational approvals."
+  },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "title",
+      "amount"
+    ],
+    "properties": {
+      "title": {
+        "type": "string",
+        "title": "Request title",
+        "maxLength": 200
+      },
+      "amount": {
+        "type": "number",
+        "title": "Amount",
+        "minimum": 0
+      }
+    }
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  },
+  "triggers": [
+    "manual",
+    "api"
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "label": "Request submitted",
+      "config": {}
+    },
+    {
+      "id": "manager",
+      "type": "approval",
+      "label": "Manager approval",
+      "config": {
+        "candidateGroupRef": "managers",
+        "rejectReasonRequired": true,
+        "dueAfterMinutes": 480,
+        "calendar": {
+          "zone": "America/New_York",
+          "revision": "synthetic-demo-v1",
+          "validFrom": "2026-01-01",
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "start": "09:00",
+          "end": "17:00",
+          "holidays": [
+            "2026-10-19"
+          ]
+        },
+        "notifications": {
+          "assignment": {
+            "subject": "{{reference}}: {{stage}}",
+            "body": "{{workflow}}: {{stage}}\nOutcome: {{outcome}}\nDue: {{dueAt}}\n{{link}}",
+            "recipients": [
+              "candidateGroup"
+            ]
+          },
+          "completion": {
+            "subject": "{{reference}}: {{stage}}",
+            "body": "{{workflow}}: {{stage}}\nOutcome: {{outcome}}\nDue: {{dueAt}}\n{{link}}",
+            "recipients": [
+              "requester"
+            ]
+          },
+          "rejection": {
+            "subject": "{{reference}}: {{stage}}",
+            "body": "{{workflow}}: {{stage}}\nOutcome: {{outcome}}\nDue: {{dueAt}}\n{{link}}",
+            "recipients": [
+              "requester"
+            ]
+          },
+          "overdue": {
+            "subject": "{{reference}}: {{stage}}",
+            "body": "{{workflow}}: {{stage}}\nOutcome: {{outcome}}\nDue: {{dueAt}}\n{{link}}",
+            "recipients": [
+              "operators"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "approved",
+      "type": "end",
+      "label": "Approved",
+      "config": {
+        "businessOutcome": "Approved",
+        "outcomeKind": "success"
+      }
+    },
+    {
+      "id": "rejected",
+      "type": "end",
+      "label": "Rejected",
+      "config": {
+        "businessOutcome": "Rejected",
+        "outcomeKind": "rejected"
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "id": "to-manager",
+      "from": "start",
+      "to": "manager",
+      "on": "next"
+    },
+    {
+      "id": "approve",
+      "from": "manager",
+      "to": "approved",
+      "on": "approved"
+    },
+    {
+      "id": "reject",
+      "from": "manager",
+      "to": "rejected",
+      "on": "rejected"
+    }
+  ],
+  "decisions": [],
+  "execution": {
+    "maxConcurrentRuns": 100,
+    "maxAttempts": 3,
+    "retryDelaySeconds": 5
+  },
+  "security": {
+    "selfApproval": "deny"
+  },
+  "dependencies": {
+    "connections": []
+  },
+  "outputMapping": {},
+  "terminalNotification": {
+    "subject": "{{reference}}: {{stage}}",
+    "body": "{{workflow}}: {{stage}}\nOutcome: {{outcome}}\nDue: {{dueAt}}\n{{link}}",
+    "recipients": [
+      "requester"
+    ]
+  },
+  "tier1Assessment": {
+    "businessOwner": "Synthetic demo process owner",
+    "requirementsReviewed": true,
+    "regulatoryClassification": "standard",
+    "expectedDurationDays": 30,
+    "peakConcurrentUsers": 50,
+    "storedCases": 10000,
+    "sourceReference": "Synthetic hackathon sample; no customer qualification claim"
+  }
+}

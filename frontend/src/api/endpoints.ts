@@ -392,3 +392,10 @@ export const addDocumentTemplateVersion = (ws: string, templateId: string, body:
 
 export const setDocumentTemplateArchived = (ws: string, templateId: string, archived: boolean) =>
   call(api.PUT('/workspaces/{workspaceId}/document-templates/{templateId}/archived', { params: { path: { workspaceId: ws, templateId } }, body: { archived } }))
+
+// Hackathon control evidence and durable mail status.
+export const getStageMail = (ws: string, runId: string) =>
+  call(api.GET('/workspaces/{workspaceId}/runs/{runId}/mail', { params: { path: { workspaceId: ws, runId } } }))
+
+export const exportCaseEvidence = (ws: string, runId: string, format: 'json' | 'csv') =>
+  call(api.GET('/workspaces/{workspaceId}/runs/{runId}/evidence', { params: { path: { workspaceId: ws, runId }, query: { format } }, parseAs: 'blob' }))

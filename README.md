@@ -8,6 +8,8 @@ The package accounts for all 25 sections of the supplied master prompt, all 18 r
 
 ## Reading path
 
+The revised [hackathon requirements baseline](docs/23-hackathon-requirements-baseline.md) defines the supplied lightweight-engine challenge, its mandatory scope, acceptance scenarios and external qualification gates. It is a separate acceptance profile from the historical R0 slice and the broader product roadmap; it does not certify the current implementation.
+
 | Need | Read |
 |---|---|
 | See what is built and verified | [Feature status](docs/feature-status.md) |

@@ -1,0 +1,22 @@
+# Optional local-only capture/embedding host. Apply together with docker-compose.yml and --profile app.
+services:
+  mail-capture:
+    build:
+      context: ../../tools/mail-capture
+      dockerfile: Dockerfile
+    image: orqix/mail-capture:dev
+    ports:
+      - "127.0.0.1:${MAIL_CAPTURE_HOST_PORT:-1080}:1080"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+  orqix:
+    depends_on:
+      mail-capture:
+        condition: service_healthy
+    environment:
+      ORQIX_MAIL_ENABLED: "true"
+      ORQIX_MAIL_HOST: mail-capture
+      ORQIX_MAIL_PORT: "1025"
+      ORQIX_MAIL_FROM: workflow@example.invalid
+      ORQIX_MAIL_APPLICATION_ORIGIN: http://localhost:${ORQIX_HOST_PORT:-8080}

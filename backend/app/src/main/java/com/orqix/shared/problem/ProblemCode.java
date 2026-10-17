@@ -23,6 +23,7 @@ public enum ProblemCode {
     TASK_NOT_CLAIMED_BY_CALLER(409, "The task is not claimed by you"),
     TASK_NOT_OPEN(409, "The task is no longer open"),
     RUN_NOT_ACTIVE(409, "The run is not active"),
+    RUN_HAS_OPEN_TASKS(409, "The case still has open tasks"),
     RUN_BUSY(409, "The run is busy; try again shortly"),
     RUN_NOT_RECOVERABLE(409, "The run cannot be recovered in its current state"),
     RUN_SUSPENDED(409, "The run is suspended; resume it first"),

@@ -85,6 +85,8 @@ public class CallerResolver {
         HttpSession session = currentSession();
         if (session != null && session.getAttribute(SESSION_ATTRIBUTE) instanceof Caller cached
                 && cached.externalSubject().equals(user instanceof OidcUser oidc ? oidc.getSubject() : user.getName())) {
+            if (subjects.find(cached.subjectId()).filter(subject -> !subject.disabled()).isEmpty())
+                throw new ApiException(ProblemCode.FORBIDDEN, "This account is disabled or unavailable.");
             return cached;
         }
         Caller caller = fromLogin(user, false);

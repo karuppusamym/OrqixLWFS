@@ -56,6 +56,10 @@ public class AuditWriter {
     }
 
     private static final Map<String, Set<String>> METADATA_WHITELIST = Map.ofEntries(
+            Map.entry("notification.attention", Set.of("reason")),
+            Map.entry("notification.delivery", Set.of("runId","status","attempts")),
+            Map.entry("run.evidence-exported", Set.of("auditCount","eventCount")),
+            Map.entry("task.sla-breached", Set.of("runId","dueAt","releaseId")),
             Map.entry("comment.created", Set.of("runId")),
             Map.entry("attachment.added", Set.of("runId", "attachmentId", "sizeBytes", "contentType", "scanStatus", "staged")),
             Map.entry("attachment.removed", Set.of("runId", "attachmentId")),
@@ -82,11 +86,11 @@ public class AuditWriter {
             Map.entry("run.started", Set.of("workflowKey", "releaseNumber")),
             Map.entry("task.claimed", Set.of("taskId", "nodeId")),
             Map.entry("task.released", Set.of("taskId", "nodeId")),
-            Map.entry("task.reassigned", Set.of("taskId", "toSubjectId")),
-            Map.entry("task.delegated", Set.of("taskId", "toSubjectId")),
+            Map.entry("task.reassigned", Set.of("taskId", "toSubjectId", "fromSubjectId")),
+            Map.entry("task.delegated", Set.of("taskId", "toSubjectId", "fromSubjectId")),
             Map.entry("task.priority-changed", Set.of("taskId", "from", "to")),
             Map.entry("task.decided", Set.of("taskId", "nodeId", "action", "policyFlags")),
-            Map.entry("run.cancelled", Set.of()),
+            Map.entry("run.cancelled", Set.of("closurePolicy","cancelledTaskIds")),
             Map.entry("task.input-corrected", Set.of("taskId", "nodeId", "fields")),
             Map.entry("externaljob.completed", Set.of("topic", "nodeId", "attempt")),
             Map.entry("externaljob.failed", Set.of("topic", "nodeId", "attempt")),

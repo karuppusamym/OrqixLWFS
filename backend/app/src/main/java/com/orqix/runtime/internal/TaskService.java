@@ -209,7 +209,7 @@ public class TaskService {
         VisibleTask visible = visibleLocked(caller, workspaceId, taskId);
         TaskStore.TaskRow task = visible.task();
         WorkspaceAccess access = visible.access();
-        policy.require(access, Permission.TASK_ACT, "decideTask", false);
+        policy.require(access, Permission.TASK_ACT, "decideTask", true);
         if (!caller.subjectId().equals(task.assignee())) {
             throw new ApiException(ProblemCode.TASK_NOT_CLAIMED_BY_CALLER, "Claim the task before deciding.");
         }
@@ -370,6 +370,7 @@ public class TaskService {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("taskId", taskId);
         metadata.put("toSubjectId", target == null ? null : target.toString());
+        metadata.put("fromSubjectId", task.assignee() == null ? null : task.assignee().toString());
         audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.USER, caller.subjectId(), delegation ? "task.delegated" : "task.reassigned",
                 "task", taskId, AuditWriter.Outcome.SUCCESS, metadata));
         return detail(visible(caller, workspaceId, taskId));
@@ -407,6 +408,10 @@ public class TaskService {
 
     private VisibleTask visibleLocked(Caller caller, UUID workspaceId, String taskId) {
         WorkspaceAccess access = freshVisible(caller, workspaceId);
+        TaskStore.TaskRow snapshot = tasks.find(workspaceId, taskId).orElseThrow(ApiException::notFound);
+        check(access, snapshot);
+        // Match operator closure and background workers: case first, then task. This serializes closure/decision races.
+        runs.lock(workspaceId, snapshot.runId()).orElseThrow(ApiException::notFound);
         TaskStore.TaskRow task = tasks.lock(workspaceId, taskId).orElseThrow(ApiException::notFound);
         return check(access, task);
     }
@@ -427,19 +432,19 @@ public class TaskService {
 
     private void requireEligible(WorkspaceAccess access, TaskStore.TaskRow task, String operationId) {
         if (!access.has(Permission.TASK_ACT)) {
-            throw policy.deny(access.workspaceId(), access.subjectId(), "task.act", operationId, false,
+            throw policy.deny(access.workspaceId(), access.subjectId(), "task.act", operationId, true,
                     new ApiException(ProblemCode.FORBIDDEN));
         }
         if (!access.groupKeys().contains(task.candidateGroupKey()) || !hasSkills(access,task)) {
-            throw policy.deny(access.workspaceId(), access.subjectId(), "task.act", operationId, false,
+            throw policy.deny(access.workspaceId(), access.subjectId(), "task.act", operationId, true,
                     new ApiException(ProblemCode.NOT_ELIGIBLE, "This task requires its candidate group and every required skill group."));
         }
         if (!task.selfApprovalAllowed() && task.initiator().equals(access.subjectId())) {
-            throw policy.deny(access.workspaceId(), access.subjectId(), "task.act", operationId, false,
+            throw policy.deny(access.workspaceId(), access.subjectId(), "task.act", operationId, true,
                     new ApiException(ProblemCode.SELF_APPROVAL_DENIED, "You cannot approve your own request."));
         }
         if (tasks.separatedFrom(task.workspaceId(), task.taskId(), access.subjectId())) {
-            throw policy.deny(access.workspaceId(), access.subjectId(), "task.act", operationId, false,
+            throw policy.deny(access.workspaceId(), access.subjectId(), "task.act", operationId, true,
                     new ApiException(ProblemCode.SEPARATION_OF_DUTIES,
                             "You decided an earlier step of this request, so another person must decide this one."));
         }

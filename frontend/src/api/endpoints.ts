@@ -40,6 +40,15 @@ export const setWorkflowFolder = (ws: string, workflowId: string, body: S['SetWo
 export const setWorkflowOwner = (ws: string, workflowId: string, body: S['SetWorkflowOwner']) =>
   call(api.PUT('/workspaces/{workspaceId}/workflows/{workflowId}/owner', { params: { path: { workspaceId: ws, workflowId } }, body }))
 
+export const getWorkflowDiscussion = (ws: string, workflowId: string, elementId?: string) =>
+  call(api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/discussion', { params: { path: { workspaceId: ws, workflowId }, query: elementId ? { elementId } : {} } }))
+
+export const postWorkflowComment = (ws: string, workflowId: string, body: S['PostWorkflowComment']) =>
+  call(api.POST('/workspaces/{workspaceId}/workflows/{workflowId}/discussion', { params: { path: { workspaceId: ws, workflowId } }, body }))
+
+export const resolveWorkflowThread = (ws: string, workflowId: string, commentId: string, resolved: boolean) =>
+  call(api.PUT('/workspaces/{workspaceId}/workflows/{workflowId}/discussion/{commentId}/resolution', { params: { path: { workspaceId: ws, workflowId, commentId } }, body: { resolved } }))
+
 export const createWorkflow = (ws: string, body: S['CreateWorkflowRequest']) =>
   call(api.POST('/workspaces/{workspaceId}/workflows', { params: { path: { workspaceId: ws } }, body }))
 

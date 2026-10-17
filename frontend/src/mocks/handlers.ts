@@ -622,6 +622,61 @@ export function createHandlers(): HttpHandler[] {
       return HttpResponse.json({ ...summary(wf, g.perms), version: wf.version, createdAt: wf.createdAt, permissions: g.perms })
     }),
 
+    // Threaded element discussion (UI03, docs/build/S53) -----------------------------------------------------
+    http.get(`${B}/workspaces/:ws/workflows/:id/discussion`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws, 'workflow.read')
+      if (!g.ok) return g.res
+      const wf = findWorkflow(str(params.ws), str(params.id))
+      if (!wf) return notFound()
+      const element = new URL(request.url).searchParams.get('elementId')
+      const mine = db.workflowComments.filter((c) => c.wfId === wf.id)
+      const view = (c: (typeof mine)[number]) => ({
+        id: c.id, elementId: c.elementId, parentId: c.parentId, body: c.body, authorId: c.authorId,
+        authorName: userById(c.authorId)?.displayName ?? 'Unknown user', createdAt: c.createdAt, resolved: c.resolvedAt !== null,
+        resolvedAt: c.resolvedAt, resolvedByName: c.resolvedById ? (userById(c.resolvedById)?.displayName ?? 'Unknown user') : null,
+      })
+      const threads = mine.filter((c) => !c.parentId && (!element || c.elementId === element)).map((c) => ({ root: view(c), replies: mine.filter((r) => r.parentId === c.id).map(view) }))
+      const openByElement: Record<string, number> = {}
+      for (const c of mine) if (!c.parentId && !c.resolvedAt) openByElement[c.elementId] = (openByElement[c.elementId] ?? 0) + 1
+      return HttpResponse.json({ threads, openByElement, canPost: g.perms.includes('workflow.edit') || g.perms.includes('workflow.publish') })
+    }),
+    http.post(`${B}/workspaces/:ws/workflows/:id/discussion`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws, 'workflow.read')
+      if (!g.ok) return g.res
+      if (!g.perms.includes('workflow.edit') && !g.perms.includes('workflow.publish')) return forbidden()
+      const wf = findWorkflow(str(params.ws), str(params.id))
+      if (!wf) return notFound()
+      const input = await body<{ elementId?: string; body?: string; parentId?: string }>(request)
+      const text = (input.body ?? '').trim()
+      if (!text || text.length > 2000 || !input.elementId) return problem(400, 'MALFORMED_REQUEST', 'The request is malformed', { fieldErrors: [{ pointer: '/body', code: 'Size', message: 'Use 1 to 2000 characters.' }] })
+      const def = wf.drafts.at(-1)!.definition
+      if (![...def.nodes, ...def.transitions].some((e) => e.id === input.elementId)) return problem(422, 'VALIDATION_FAILED', 'Some values are not valid', { detail: 'That step or connection is not in the current draft.' })
+      if (input.parentId) {
+        const parent = db.workflowComments.find((c) => c.wfId === wf.id && c.id === input.parentId)
+        if (!parent) return notFound()
+        if (parent.parentId || parent.elementId !== input.elementId) return problem(422, 'VALIDATION_FAILED', 'Some values are not valid', { detail: 'Reply to the first comment of the thread.' })
+      }
+      const comment = { id: newId(), wfId: wf.id, elementId: input.elementId, parentId: input.parentId ?? null, body: text, authorId: g.user.id, createdAt: clock.iso(), resolvedAt: null, resolvedById: null }
+      db.workflowComments.push(comment)
+      return HttpResponse.json({ id: comment.id, elementId: comment.elementId, parentId: comment.parentId, body: text, authorId: g.user.id, authorName: g.user.displayName, createdAt: comment.createdAt, resolved: false, resolvedAt: null, resolvedByName: null }, { status: 201 })
+    }),
+    http.put(`${B}/workspaces/:ws/workflows/:id/discussion/:cid/resolution`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws, 'workflow.read')
+      if (!g.ok) return g.res
+      if (!g.perms.includes('workflow.edit') && !g.perms.includes('workflow.publish')) return forbidden()
+      const wf = findWorkflow(str(params.ws), str(params.id))
+      const comment = wf ? db.workflowComments.find((c) => c.wfId === wf.id && c.id === str(params.cid)) : undefined
+      if (!wf || !comment) return notFound()
+      if (comment.parentId) return problem(422, 'VALIDATION_FAILED', 'Some values are not valid', { detail: 'Only a whole thread can be resolved.' })
+      const input = await body<{ resolved?: boolean }>(request)
+      if (input.resolved && !comment.resolvedAt) { comment.resolvedAt = clock.iso(); comment.resolvedById = g.user.id }
+      if (input.resolved === false) { comment.resolvedAt = null; comment.resolvedById = null }
+      return HttpResponse.json({ id: comment.id, elementId: comment.elementId, parentId: null, body: comment.body, authorId: comment.authorId, authorName: userById(comment.authorId)?.displayName ?? 'Unknown user', createdAt: comment.createdAt, resolved: comment.resolvedAt !== null, resolvedAt: comment.resolvedAt, resolvedByName: comment.resolvedById ? (userById(comment.resolvedById)?.displayName ?? 'Unknown user') : null })
+    }),
+
     // Runs ---------------------------------------------------------------------------------------------------------------
     // Folders and owners (PL01, docs/build/S46) -------------------------------------------------------------
     http.get(`${B}/workspaces/:ws/workflow-organization`, async ({ params }) => {

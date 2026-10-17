@@ -975,6 +975,84 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
 
+  /workspaces/{workspaceId}/workflows/{workflowId}/discussion:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+    get:
+      tags: [Workflows]
+      operationId: listWorkflowDiscussion
+      summary: Read threaded discussion on steps and connections (optionally one element)
+      x-orqix-permission: workflow.read
+      parameters:
+        - name: elementId
+          in: query
+          required: false
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        '200':
+          description: Threads in creation order, open-thread counts for every element, and whether the caller may post
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkflowDiscussion' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Workflows]
+      operationId: postWorkflowComment
+      summary: Start a thread on a step or connection of the current draft, or reply to a thread (workflow.edit or workflow.publish)
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: workflow.comment.created
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PostWorkflowComment' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkflowComment' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/workflows/{workflowId}/discussion/{commentId}/resolution:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+      - name: commentId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Uuid' }
+    put:
+      tags: [Workflows]
+      operationId: resolveWorkflowThread
+      summary: Resolve or reopen a thread (workflow.edit or workflow.publish); repeating the same state is a no-op
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: workflow.comment.resolved
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResolveWorkflowThread' }
+      responses:
+        '200':
+          description: The thread's first comment
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkflowComment' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
   /workspaces/{workspaceId}/workflows/{workflowId}/test-suite:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -4639,6 +4717,48 @@ components:
         folderId:
           oneOf: [{ type: 'null' }, { $ref: '#/components/schemas/Uuid' }]
         expectedFolderVersion: { type: integer, minimum: 1, description: 'Required with a folder; omitted when folderId is null' }
+    WorkflowComment:
+      type: object
+      required: [id, elementId, body, authorId, authorName, createdAt, resolved]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        elementId: { type: string }
+        parentId:
+          oneOf: [{ type: 'null' }, { $ref: '#/components/schemas/Uuid' }]
+        body: { type: string, minLength: 1, maxLength: 2000 }
+        authorId: { $ref: '#/components/schemas/Uuid' }
+        authorName: { type: string }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+        resolved: { type: boolean }
+        resolvedAt: { type: [string, 'null'], format: date-time }
+        resolvedByName: { type: [string, 'null'] }
+    WorkflowDiscussionThread:
+      type: object
+      required: [root, replies]
+      properties:
+        root: { $ref: '#/components/schemas/WorkflowComment' }
+        replies: { type: array, items: { $ref: '#/components/schemas/WorkflowComment' } }
+    WorkflowDiscussion:
+      type: object
+      required: [threads, openByElement, canPost]
+      properties:
+        threads: { type: array, items: { $ref: '#/components/schemas/WorkflowDiscussionThread' } }
+        openByElement: { type: object, additionalProperties: { type: integer, minimum: 1 } }
+        canPost: { type: boolean }
+    PostWorkflowComment:
+      type: object
+      additionalProperties: false
+      required: [elementId, body]
+      properties:
+        elementId: { type: string, minLength: 1, maxLength: 128, description: 'A step or connection ID of the current draft' }
+        body: { type: string, minLength: 1, maxLength: 2000 }
+        parentId: { $ref: '#/components/schemas/Uuid' }
+    ResolveWorkflowThread:
+      type: object
+      additionalProperties: false
+      required: [resolved]
+      properties:
+        resolved: { type: boolean }
     SetWorkflowOwner:
       type: object
       additionalProperties: false

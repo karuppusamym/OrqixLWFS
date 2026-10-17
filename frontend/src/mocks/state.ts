@@ -205,6 +205,19 @@ export interface MockWorkflow {
   testPass?: { version: number; revision: number; passed: boolean; dependencies: string }
 }
 
+/** A discussion comment on a step or connection (UI03, docs/build/S53). */
+export interface MockComment {
+  id: string
+  wfId: string
+  elementId: string
+  parentId: string | null
+  body: string
+  authorId: string
+  createdAt: string
+  resolvedAt: string | null
+  resolvedById: string | null
+}
+
 export interface MockFolder {
   id: string
   wsId: string
@@ -375,6 +388,7 @@ export interface MockDb {
   migrationReviews: MockMigrationReview[]
   workflows: Map<string, MockWorkflow>
   workflowFolders: Map<string, MockFolder>
+  workflowComments: MockComment[]
   runs: Map<string, MockRun>
   notifications: MockNotification[]
   bindings: Map<string, MockBinding>
@@ -466,6 +480,7 @@ export function emptyDb(): MockDb {
     migrationReviews: [],
     workflows: new Map(),
     workflowFolders: new Map(),
+    workflowComments: [],
     runs: new Map(),
     notifications: [],
     bindings: new Map(),
@@ -519,6 +534,7 @@ interface DbSnapshot {
   migrationReviews?: MockMigrationReview[]
   workflows: Array<[string, MockWorkflow]>
   workflowFolders?: Array<[string, MockFolder]>
+  workflowComments?: MockComment[]
   runs: Array<[string, MockRun]>
   notifications: MockNotification[]
   bindings: Array<[string, MockBinding]>
@@ -537,6 +553,7 @@ export function snapshotDb(): string {
     migrationReviews: db.migrationReviews,
     workflows: [...db.workflows],
     workflowFolders: [...db.workflowFolders],
+    workflowComments: db.workflowComments,
     runs: [...db.runs],
     notifications: db.notifications,
     bindings: [...db.bindings],
@@ -559,6 +576,7 @@ export function restoreDb(json: string): boolean {
     next.migrationReviews = snap.migrationReviews ?? []
     next.workflows = new Map(snap.workflows)
     next.workflowFolders = new Map(snap.workflowFolders ?? [])
+    next.workflowComments = snap.workflowComments ?? []
     next.runs = new Map(snap.runs)
     next.notifications = snap.notifications
     next.bindings = new Map(snap.bindings)

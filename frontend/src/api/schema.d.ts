@@ -1031,6 +1031,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/runs/{runId}/diagnosis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Compare what the request shows with what the engine holds
+         * @description Read-only. Reports inSync, projectionDrift (open approvals the engine holds are missing from the request; repairable), strandedToken (the engine has a token that nothing can move; cancel only), emptyRequest, engineMissing, unsupported, protected (suspended) or ended.
+         */
+        get: operations["getRunDiagnosis"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/runs/{runId}/repair": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rebuild the open approval steps of a request from the engine
+         * @description Only for projectionDrift on a running or waiting request that is not suspended. The decision is re-made under the request lock; the engine is never triggered, skipped or modified. Refused with 409 RUN_NOT_REPAIRABLE otherwise, including stranded tokens, which can only be cancelled.
+         */
+        post: operations["repairRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/runs/{runId}/resume": {
         parameters: {
             query?: never;
@@ -2290,7 +2336,7 @@ export interface components {
             detail?: string;
             instance?: string;
             /** @enum {string} */
-            code: "MALFORMED_REQUEST" | "IDEMPOTENCY_KEY_REQUIRED" | "INVALID_CURSOR" | "UNAUTHENTICATED" | "FORBIDDEN" | "CSRF_INVALID" | "SELF_APPROVAL_DENIED" | "SEPARATION_OF_DUTIES" | "NOT_ELIGIBLE" | "NOT_FOUND" | "IDEMPOTENCY_KEY_REUSED" | "DUPLICATE_KEY" | "WORKFLOW_VERSION_CONFLICT" | "RELEASE_NOT_ACTIVE" | "TASK_VERSION_CONFLICT" | "TASK_ALREADY_CLAIMED" | "TASK_NOT_CLAIMED_BY_CALLER" | "TASK_NOT_OPEN" | "RUN_NOT_ACTIVE" | "RUN_BUSY" | "RUN_NOT_RECOVERABLE" | "RUN_SUSPENDED" | "RUN_NOT_SUSPENDED" | "RUN_NOT_SUSPENDABLE" | "RUN_NOT_MIGRATABLE" | "JOB_LEASE_LOST" | "JOB_NOT_OPEN" | "EFFECT_NOT_RECONCILED" | "EFFECT_STATE_CONFLICT" | "GROUP_REVISION_CONFLICT" | "STALE_REVISION" | "PAYLOAD_TOO_LARGE" | "VALIDATION_FAILED" | "WORKFLOW_INVALID" | "WARNINGS_NOT_ACKNOWLEDGED" | "NO_ACTIVE_RELEASE" | "REASON_REQUIRED" | "CONNECTION_NOT_BOUND" | "EGRESS_NOT_ALLOWED" | "OPERATION_NOT_TESTABLE" | "PRECONDITION_REQUIRED" | "QUOTA_EXCEEDED" | "RATE_LIMITED" | "DEPENDENCY_UNAVAILABLE" | "AI_NOT_CONFIGURED" | "AI_MODEL_NOT_ALLOWED" | "AI_OUTPUT_INVALID" | "AI_PROVIDER_UNAVAILABLE" | "AI_BUDGET_EXCEEDED" | "SOURCE_INVALID" | "MIGRATION_BLOCKED" | "ATTACHMENT_BLOCKED" | "ATTACHMENT_LIMIT_REACHED" | "INTERNAL_ERROR";
+            code: "MALFORMED_REQUEST" | "IDEMPOTENCY_KEY_REQUIRED" | "INVALID_CURSOR" | "UNAUTHENTICATED" | "FORBIDDEN" | "CSRF_INVALID" | "SELF_APPROVAL_DENIED" | "SEPARATION_OF_DUTIES" | "NOT_ELIGIBLE" | "NOT_FOUND" | "IDEMPOTENCY_KEY_REUSED" | "DUPLICATE_KEY" | "WORKFLOW_VERSION_CONFLICT" | "RELEASE_NOT_ACTIVE" | "TASK_VERSION_CONFLICT" | "TASK_ALREADY_CLAIMED" | "TASK_NOT_CLAIMED_BY_CALLER" | "TASK_NOT_OPEN" | "RUN_NOT_ACTIVE" | "RUN_BUSY" | "RUN_NOT_RECOVERABLE" | "RUN_SUSPENDED" | "RUN_NOT_SUSPENDED" | "RUN_NOT_SUSPENDABLE" | "RUN_NOT_REPAIRABLE" | "RUN_NOT_MIGRATABLE" | "JOB_LEASE_LOST" | "JOB_NOT_OPEN" | "EFFECT_NOT_RECONCILED" | "EFFECT_STATE_CONFLICT" | "GROUP_REVISION_CONFLICT" | "STALE_REVISION" | "PAYLOAD_TOO_LARGE" | "VALIDATION_FAILED" | "WORKFLOW_INVALID" | "WARNINGS_NOT_ACKNOWLEDGED" | "NO_ACTIVE_RELEASE" | "REASON_REQUIRED" | "CONNECTION_NOT_BOUND" | "EGRESS_NOT_ALLOWED" | "OPERATION_NOT_TESTABLE" | "PRECONDITION_REQUIRED" | "QUOTA_EXCEEDED" | "RATE_LIMITED" | "DEPENDENCY_UNAVAILABLE" | "AI_NOT_CONFIGURED" | "AI_MODEL_NOT_ALLOWED" | "AI_OUTPUT_INVALID" | "AI_PROVIDER_UNAVAILABLE" | "AI_BUDGET_EXCEEDED" | "SOURCE_INVALID" | "MIGRATION_BLOCKED" | "ATTACHMENT_BLOCKED" | "ATTACHMENT_LIMIT_REACHED" | "INTERNAL_ERROR";
             correlationId: string;
             fieldErrors?: components["schemas"]["FieldError"][];
             issues?: components["schemas"]["ValidationIssue"][];
@@ -3208,6 +3254,19 @@ export interface components {
         SuspendRunRequest: {
             reason: string;
             expectedVersion: number;
+        };
+        RepairRunRequest: {
+            reason: string;
+            expectedVersion: number;
+        };
+        RunDiagnosis: {
+            /** @enum {string} */
+            state: "inSync" | "projectionDrift" | "strandedToken" | "emptyRequest" | "engineMissing" | "unsupported" | "protected" | "ended";
+            repairable: boolean;
+            message: string;
+            projectedNodeIds: string[];
+            engineNodeIds: string[];
+            version: number;
         };
         MigrateRunRequest: {
             targetReleaseId: components["schemas"]["Uuid"];
@@ -6962,6 +7021,66 @@ export interface operations {
         };
         responses: {
             /** @description Suspended (or replay) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunDetail"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    getRunDiagnosis: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Diagnosis */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunDiagnosis"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    repairRun: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RepairRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Repaired (or replay) */
             200: {
                 headers: {
                     [name: string]: unknown;

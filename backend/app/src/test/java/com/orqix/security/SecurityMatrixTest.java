@@ -284,7 +284,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "correctTaskInput" -> Map.of("expectedVersion", 1, "reason", "Foreign attempt", "changes", Map.of("amount", 1));
             case "migrateRun" -> Map.of("targetReleaseId", UUID.randomUUID().toString(), "reason", "Foreign attempt",
                     "expectedVersion", 1);
-            case "cancelRun", "retryRun", "suspendRun", "resumeRun" -> Map.of("reason", "Foreign attempt", "expectedVersion", 1);
+            case "cancelRun", "retryRun", "suspendRun", "resumeRun", "repairRun" -> Map.of("reason", "Foreign attempt", "expectedVersion", 1);
             case "reconcileEffect" -> Map.of("resolution", "confirmedNotApplied", "evidence",
                     Map.of("note", "Foreign attempt to reconcile"));
             case "claimTask", "releaseTask" -> Map.of("expectedVersion", 1);

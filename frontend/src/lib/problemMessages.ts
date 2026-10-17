@@ -83,6 +83,7 @@ const TABLE = {
   JOB_NOT_OPEN: { behavior: 'message', message: 'That worker job has already ended.' },
   RUN_NOT_MIGRATABLE: { behavior: 'operator-message', message: 'This request cannot move to that release. The reasons are listed in the dialog.' },
   RUN_NOT_SUSPENDED: { behavior: 'operator-message', message: 'This request is not suspended.' },
+  RUN_NOT_REPAIRABLE: { behavior: 'operator-message', message: 'There is nothing here that can be repaired safely. Cancel the request if it cannot continue.' },
   RUN_NOT_SUSPENDABLE: { behavior: 'operator-message', message: 'This request cannot be suspended in its current state.' },
   RUN_NOT_RECOVERABLE: { behavior: 'operator-message', message: 'This request cannot be recovered with retry. Reconcile the step or cancel the request.' },
   EFFECT_NOT_RECONCILED: { behavior: 'operator-message', message: 'The outcome of this step is unknown. Check the other system, reconcile the outcome, then retry.' },

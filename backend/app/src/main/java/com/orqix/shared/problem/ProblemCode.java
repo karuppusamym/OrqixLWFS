@@ -28,6 +28,7 @@ public enum ProblemCode {
     RUN_SUSPENDED(409, "The run is suspended; resume it first"),
     RUN_NOT_SUSPENDED(409, "The run is not suspended"),
     RUN_NOT_SUSPENDABLE(409, "The run cannot be suspended in its current state"),
+    RUN_NOT_REPAIRABLE(409, "The run has nothing that can be repaired safely"),
     RUN_NOT_MIGRATABLE(409, "The run cannot move to that release"),
     JOB_LEASE_LOST(409, "You no longer hold this job"),
     JOB_NOT_OPEN(409, "The job has ended"),

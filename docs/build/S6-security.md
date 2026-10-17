@@ -112,6 +112,7 @@ Written in the command transaction. `metadata` is a whitelist per action — nev
 | `task.priority-changed` | `taskId`, `from`, `to`; free-text reason remains in permission-scoped run history, excluded from global audit metadata |
 | `task.decided` | `taskId`, `nodeId`, `action`, `policyFlags` |
 | `run.cancelled`, `run.retry-requested`, `run.suspended`, `run.resumed` | `effectId` (retry) |
+| `run.projection-repaired` | `restored`, `removed` (counts of approval steps; the free-text reason stays in permission-scoped run history) |
 | `run.migrated` | `fromRelease`, `toRelease` (version numbers) |
 | `externaljob.completed`, `externaljob.failed` | `topic`, `nodeId`, `attempt` |
 | `task.input-corrected` | `taskId`, `nodeId`, `fields` (count; values stay in permission-scoped run history) |

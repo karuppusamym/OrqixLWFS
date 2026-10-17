@@ -1670,6 +1670,61 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
 
+  /workspaces/{workspaceId}/runs/{runId}/diagnosis:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+    get:
+      tags: [Runs]
+      operationId: getRunDiagnosis
+      summary: Compare what the request shows with what the engine holds
+      description: >-
+        Read-only. Reports inSync, projectionDrift (open approvals the engine holds are missing from the request; repairable),
+        strandedToken (the engine has a token that nothing can move; cancel only), emptyRequest, engineMissing,
+        unsupported, protected (suspended) or ended.
+      x-orqix-permission: run.operate
+      responses:
+        '200':
+          description: Diagnosis
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RunDiagnosis' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/runs/{runId}/repair:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+    post:
+      tags: [Runs]
+      operationId: repairRun
+      summary: Rebuild the open approval steps of a request from the engine
+      description: >-
+        Only for projectionDrift on a running or waiting request that is not suspended. The decision is re-made under
+        the request lock; the engine is never triggered, skipped or modified. Refused with 409 RUN_NOT_REPAIRABLE
+        otherwise, including stranded tokens, which can only be cancelled.
+      x-orqix-permission: run.operate
+      x-orqix-audit: run.projection-repaired
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RepairRunRequest' }
+      responses:
+        '200':
+          description: Repaired (or replay)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RunDetail' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
   /workspaces/{workspaceId}/runs/{runId}/resume:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -3794,6 +3849,7 @@ components:
             - RUN_SUSPENDED
             - RUN_NOT_SUSPENDED
             - RUN_NOT_SUSPENDABLE
+            - RUN_NOT_REPAIRABLE
             - RUN_NOT_MIGRATABLE
             - JOB_LEASE_LOST
             - JOB_NOT_OPEN
@@ -4967,6 +5023,24 @@ components:
       properties:
         reason: { type: string, minLength: 1, maxLength: 500 }
         expectedVersion: { type: integer, minimum: 1 }
+    RepairRunRequest:
+      type: object
+      additionalProperties: false
+      required: [reason, expectedVersion]
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 500 }
+        expectedVersion: { type: integer, minimum: 1 }
+    RunDiagnosis:
+      type: object
+      additionalProperties: false
+      required: [state, repairable, message, projectedNodeIds, engineNodeIds, version]
+      properties:
+        state: { type: string, enum: [inSync, projectionDrift, strandedToken, emptyRequest, engineMissing, unsupported, protected, ended] }
+        repairable: { type: boolean }
+        message: { type: string }
+        projectedNodeIds: { type: array, items: { type: string } }
+        engineNodeIds: { type: array, items: { type: string } }
+        version: { type: integer }
     MigrateRunRequest:
       type: object
       additionalProperties: false

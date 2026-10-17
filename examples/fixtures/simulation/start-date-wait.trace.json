@@ -1,0 +1,113 @@
+{
+  "outcome" : {
+    "status" : "finished",
+    "businessOutcome" : "First day reached",
+    "outcomeKind" : "success",
+    "endStepId" : "started",
+    "attention" : null,
+    "summary" : "The request would finish with the outcome \"First day reached\" (successful)."
+  },
+  "outputs" : { },
+  "trace" : [ {
+    "seq" : 1,
+    "stepId" : "start",
+    "stepLabel" : "Start requested",
+    "kind" : "start",
+    "kindLabel" : "Request form",
+    "summary" : "The request is submitted with the answers you entered.",
+    "details" : { },
+    "transitionId" : "t1",
+    "nextStepId" : "confirm"
+  }, {
+    "seq" : 2,
+    "stepId" : "confirm",
+    "stepLabel" : "Confirm the start",
+    "kind" : "approval",
+    "kindLabel" : "Ask for approval",
+    "summary" : "\"Confirm the start\" goes to Managers. In this test they approve.",
+    "details" : {
+      "group" : "managers",
+      "groupName" : "Managers",
+      "dueAfterHours" : 24,
+      "decision" : "approved"
+    },
+    "wrote" : {
+      "decision" : "approved",
+      "decidedBy" : "Test approver"
+    },
+    "transitionId" : "t2",
+    "nextStepId" : "untilStart"
+  }, {
+    "seq" : 3,
+    "stepId" : "untilStart",
+    "stepLabel" : "Wait until the start date",
+    "kind" : "wait",
+    "kindLabel" : "Wait",
+    "summary" : "\"Wait until the start date\": would wait until 2 Feb 2026, 09:00 UTC. The test skips the wait.",
+    "details" : {
+      "untilField" : "/input/startDate",
+      "atTime" : "09:00",
+      "until" : "2026-02-02 09:00 UTC"
+    },
+    "transitionId" : "t4",
+    "nextStepId" : "notifyStarted"
+  }, {
+    "seq" : 4,
+    "stepId" : "notifyStarted",
+    "stepLabel" : "Tell requester the first day began",
+    "kind" : "notification",
+    "kindLabel" : "Notify someone",
+    "summary" : "\"Tell requester the first day began\": the requester would get this in-app message: \"The first day of your new colleague has begun.\"",
+    "details" : {
+      "channel" : "inApp",
+      "recipient" : "initiator",
+      "message" : "The first day of your new colleague has begun."
+    },
+    "transitionId" : "t5",
+    "nextStepId" : "started"
+  }, {
+    "seq" : 5,
+    "stepId" : "started",
+    "stepLabel" : "First day reached",
+    "kind" : "end",
+    "kindLabel" : "Finish",
+    "summary" : "The request finishes: \"First day reached\" (successful).",
+    "details" : {
+      "businessOutcome" : "First day reached",
+      "outcomeKind" : "success"
+    },
+    "transitionId" : null,
+    "nextStepId" : null
+  } ],
+  "warnings" : [ ],
+  "coverage" : {
+    "steps" : {
+      "visited" : 5,
+      "total" : 7,
+      "notVisited" : [ {
+        "id" : "notifyRejected",
+        "label" : "Tell requester it was declined"
+      }, {
+        "id" : "declined",
+        "label" : "Declined"
+      } ]
+    },
+    "routes" : {
+      "notTaken" : [ {
+        "transitionId" : "t3",
+        "from" : "confirm",
+        "to" : "notifyRejected",
+        "description" : "Confirm the start, when rejected, goes to Tell requester it was declined"
+      } ],
+      "taken" : 1,
+      "total" : 2
+    },
+    "rules" : {
+      "notMatched" : [ ],
+      "matched" : 0,
+      "total" : 0
+    },
+    "summary" : "Tested 5 of 7 steps, 1 of 2 routes and 0 of 0 decision rules."
+  },
+  "limits" : "This is a dry run of the workflow as designed, not the workflow engine. It does not call real systems, check that connections work, that people are in the groups, or how long anything takes."
+}

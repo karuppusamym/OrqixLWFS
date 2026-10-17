@@ -1,0 +1,119 @@
+/*
+ * React Flow theme and polish (loaded after @xyflow/react/dist/style.css, unlayered on purpose so it wins).
+ * Every color is a theme token from src/index.css. Keyboard focus is visible on steps, connections and controls,
+ * and handles have a 24 x 24 px pointer target (WCAG 2.2 SC 2.5.8).
+ */
+.orqix-flow {
+  --xy-background-color: var(--canvas);
+  --xy-edge-stroke: var(--edge-default);
+  --xy-edge-stroke-width: 2.5;
+  --xy-minimap-background-color: var(--surface);
+  --xy-minimap-mask-background-color: var(--canvas-mask);
+  --xy-minimap-node-background-color: var(--kind-end);
+  --xy-controls-button-background-color: var(--surface);
+  --xy-controls-button-background-color-hover: var(--neutral-soft);
+  --xy-controls-button-color: var(--foreground);
+  --xy-controls-button-border-color: var(--border);
+  --xy-attribution-background-color: var(--surface);
+  --xy-handle-background-color: var(--surface);
+  --xy-handle-border-color: var(--primary);
+}
+
+/* The wrapper gets the focus; the ring follows the card's rounded corners. */
+.orqix-flow .react-flow__node {
+  border-radius: var(--radius);
+}
+.orqix-flow .react-flow__node:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 4px;
+}
+.orqix-flow .react-flow__edge:focus-visible .react-flow__edge-path {
+  stroke-width: 5;
+  stroke-opacity: 1;
+}
+.orqix-flow .react-flow__edge:focus-visible .react-flow__edge-text {
+  text-decoration: underline;
+}
+.orqix-flow .react-flow__controls-button:focus-visible,
+.orqix-flow .react-flow__minimap:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.orqix-flow .react-flow__handle {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  border: 0;
+  border-radius: 9999px;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.orqix-flow .react-flow__handle::after {
+  content: '';
+  display: block;
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  border: 2px solid var(--primary);
+  background: var(--surface);
+  pointer-events: none;
+}
+
+.orqix-flow .react-flow__handle.connectingto::after,
+.orqix-flow .react-flow__handle.valid::after,
+.orqix-flow .react-flow__handle:hover::after {
+  background: var(--primary);
+}
+
+/* Handles stay centred on the card edge (React Flow's default), so a route starts exactly at the edge of its card. */
+
+.orqix-flow .react-flow__attribution {
+  background: var(--surface);
+}
+.orqix-flow .react-flow__attribution a {
+  color: var(--muted-foreground);
+}
+
+.orqix-flow .react-flow__edge.selected .react-flow__edge-path {
+  stroke-width: 4;
+}
+
+.orqix-flow .react-flow__minimap {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.orqix-flow .react-flow__controls {
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgb(var(--shadow-rgb) / 0.18);
+}
+
+/* Test run playback ("Test this workflow"): the path taken, the step being explained, and what no run has reached.
+   State is always also said in words by the panel; these styles only make it visible on the canvas. */
+.orqix-flow .react-flow__node.sim-current > div {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 30%, transparent);
+}
+.orqix-flow .react-flow__node.sim-visited > div {
+  border-color: var(--primary);
+}
+.orqix-flow .react-flow__node.sim-ahead {
+  opacity: 0.75;
+}
+.orqix-flow .react-flow__node.sim-unreached {
+  opacity: 0.35;
+}
+.orqix-flow .react-flow__edge.sim-taken .react-flow__edge-path {
+  stroke-width: 5px !important;
+  stroke: var(--primary) !important;
+}
+.orqix-flow .react-flow__edge.sim-untaken {
+  opacity: 0.35;
+}

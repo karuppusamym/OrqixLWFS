@@ -1,0 +1,203 @@
+{
+  "outcome" : {
+    "status" : "finished",
+    "businessOutcome" : "Rejected",
+    "outcomeKind" : "rejected",
+    "endStepId" : "rejected",
+    "attention" : null,
+    "summary" : "The request would finish with the outcome \"Rejected\" (rejected)."
+  },
+  "outputs" : { },
+  "trace" : [ {
+    "seq" : 1,
+    "stepId" : "start",
+    "stepLabel" : "New colleague submitted",
+    "kind" : "start",
+    "kindLabel" : "Request form",
+    "summary" : "The request is submitted with the answers you entered.",
+    "details" : { },
+    "transitionId" : "t1",
+    "nextStepId" : "setup"
+  }, {
+    "seq" : 2,
+    "stepId" : "setup",
+    "stepLabel" : "Prepare in parallel",
+    "kind" : "parallelSplit",
+    "kindLabel" : "Run in parallel",
+    "summary" : "\"Prepare in parallel\": starts 2 branches at the same time.",
+    "details" : {
+      "joinRef" : "setupDone",
+      "branches" : 2
+    },
+    "transitionId" : null,
+    "nextStepId" : null
+  }, {
+    "seq" : 3,
+    "stepId" : "it",
+    "stepLabel" : "IT accounts and access",
+    "kind" : "approval",
+    "kindLabel" : "Ask for approval",
+    "branch" : "1",
+    "summary" : "\"IT accounts and access\" goes to IT service desk. In this test they approve.",
+    "details" : {
+      "group" : "it-desk",
+      "groupName" : "IT service desk",
+      "dueAfterHours" : 24,
+      "decision" : "approved"
+    },
+    "wrote" : {
+      "decision" : "approved",
+      "decidedBy" : "Test approver"
+    },
+    "transitionId" : "t4",
+    "nextStepId" : "itReady"
+  }, {
+    "seq" : 4,
+    "stepId" : "itReady",
+    "stepLabel" : "Tell requester IT access is approved",
+    "kind" : "notification",
+    "kindLabel" : "Notify someone",
+    "branch" : "1",
+    "summary" : "\"Tell requester IT access is approved\": the requester would get this in-app message: \"IT accounts and access were approved.\"",
+    "details" : {
+      "channel" : "inApp",
+      "recipient" : "initiator",
+      "message" : "IT accounts and access were approved."
+    },
+    "transitionId" : "t9",
+    "nextStepId" : "setupDone"
+  }, {
+    "seq" : 5,
+    "stepId" : "facilities",
+    "stepLabel" : "Desk and building pass",
+    "kind" : "approval",
+    "kindLabel" : "Ask for approval",
+    "branch" : "2",
+    "summary" : "\"Desk and building pass\" goes to Facilities team. In this test they reject it with the reason \"No desk free\".",
+    "details" : {
+      "group" : "facilities-team",
+      "groupName" : "Facilities team",
+      "dueAfterHours" : 48,
+      "decision" : "rejected",
+      "reason" : "No desk free"
+    },
+    "wrote" : {
+      "decision" : "rejected",
+      "reason" : "No desk free",
+      "decidedBy" : "Test approver"
+    },
+    "transitionId" : "t11",
+    "nextStepId" : "notifyRejected"
+  }, {
+    "seq" : 6,
+    "stepId" : "notifyRejected",
+    "stepLabel" : "Tell requester onboarding was rejected",
+    "kind" : "notification",
+    "kindLabel" : "Notify someone",
+    "branch" : "2",
+    "summary" : "\"Tell requester onboarding was rejected\": the requester would get this in-app message: \"Onboarding was rejected. Open the request to see the reason.\"",
+    "details" : {
+      "channel" : "inApp",
+      "recipient" : "initiator",
+      "message" : "Onboarding was rejected. Open the request to see the reason."
+    },
+    "transitionId" : "t19",
+    "nextStepId" : "rejected"
+  }, {
+    "seq" : 7,
+    "stepId" : "rejected",
+    "stepLabel" : "Rejected",
+    "kind" : "end",
+    "kindLabel" : "Finish",
+    "branch" : "2",
+    "summary" : "The request finishes: \"Rejected\" (rejected).",
+    "details" : {
+      "businessOutcome" : "Rejected",
+      "outcomeKind" : "rejected"
+    },
+    "transitionId" : null,
+    "nextStepId" : null
+  } ],
+  "warnings" : [ ],
+  "coverage" : {
+    "steps" : {
+      "visited" : 7,
+      "total" : 16,
+      "notVisited" : [ {
+        "id" : "itEscalation",
+        "label" : "IT lead review"
+      }, {
+        "id" : "setupDone",
+        "label" : "IT and Facilities are done"
+      }, {
+        "id" : "leadTime",
+        "label" : "Allow lead time before ordering"
+      }, {
+        "id" : "orderEquipment",
+        "label" : "Order equipment"
+      }, {
+        "id" : "equipmentOutcome",
+        "label" : "Was the equipment approved?"
+      }, {
+        "id" : "notifyReady",
+        "label" : "Tell requester onboarding is ready"
+      }, {
+        "id" : "ready",
+        "label" : "Ready"
+      }, {
+        "id" : "notifyEquipmentRejected",
+        "label" : "Tell requester equipment was not approved"
+      }, {
+        "id" : "equipmentRejected",
+        "label" : "Equipment not approved"
+      } ]
+    },
+    "routes" : {
+      "notTaken" : [ {
+        "transitionId" : "t5",
+        "from" : "it",
+        "to" : "notifyRejected",
+        "description" : "IT accounts and access, when rejected, goes to Tell requester onboarding was rejected"
+      }, {
+        "transitionId" : "t6",
+        "from" : "it",
+        "to" : "itEscalation",
+        "description" : "IT accounts and access, when the time limit fires, goes to IT lead review"
+      }, {
+        "transitionId" : "t7",
+        "from" : "itEscalation",
+        "to" : "itReady",
+        "description" : "IT lead review, when approved, goes to Tell requester IT access is approved"
+      }, {
+        "transitionId" : "t8",
+        "from" : "itEscalation",
+        "to" : "notifyRejected",
+        "description" : "IT lead review, when rejected, goes to Tell requester onboarding was rejected"
+      }, {
+        "transitionId" : "t10",
+        "from" : "facilities",
+        "to" : "setupDone",
+        "description" : "Desk and building pass, when approved, goes to IT and Facilities are done"
+      }, {
+        "transitionId" : "t15",
+        "from" : "equipmentOutcome",
+        "to" : "notifyReady",
+        "description" : "Was the equipment approved?, when Equipment approved, goes to Tell requester onboarding is ready"
+      }, {
+        "transitionId" : "t16",
+        "from" : "equipmentOutcome",
+        "to" : "notifyEquipmentRejected",
+        "description" : "Was the equipment approved?, otherwise, goes to Tell requester equipment was not approved"
+      } ],
+      "taken" : 2,
+      "total" : 9
+    },
+    "rules" : {
+      "notMatched" : [ ],
+      "matched" : 0,
+      "total" : 0
+    },
+    "summary" : "Tested 7 of 16 steps, 2 of 9 routes and 0 of 0 decision rules."
+  },
+  "limits" : "This is a dry run of the workflow as designed, not the workflow engine. It does not call real systems, check that connections work, that people are in the groups, or how long anything takes."
+}

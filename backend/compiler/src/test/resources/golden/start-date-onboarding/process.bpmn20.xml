@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:flowable="http://flowable.org/bpmn" xmlns:orqix="https://orqix.example/bpmn/v0" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC" xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI" targetNamespace="https://orqix.example/workflows">
+  <process id="start-date-onboarding" name="Prepare for a new colleague's start date" isExecutable="true">
+    <extensionElements>
+      <orqix:release schemaVersion="0.1" compilerVersion="0.2.0" semanticHash="77b0c5ddb5acccd11dcbc58fb90e39dbe0118eecc23e68e43b0adb0238c7694c"/>
+    </extensionElements>
+    <startEvent id="start" name="Start requested"/>
+    <userTask id="confirm" name="Confirm the start" flowable:candidateGroups="managers">
+      <extensionElements>
+        <orqix:approval rejectReasonRequired="true" dueAfterHours="24"/>
+      </extensionElements>
+    </userTask>
+    <sequenceFlow id="confirm__out" sourceRef="confirm" targetRef="confirm__route"/>
+    <exclusiveGateway id="confirm__route" name="Confirm the start: outcome"/>
+    <intermediateCatchEvent id="untilStart" name="Wait until the start date">
+      <extensionElements>
+        <orqix:wait untilField="/input/startDate" atTime="09:00"/>
+      </extensionElements>
+      <timerEventDefinition>
+        <timeDate><![CDATA[${orqixWait.until(execution, 'untilStart')}]]></timeDate>
+      </timerEventDefinition>
+    </intermediateCatchEvent>
+    <serviceTask id="notifyStarted" name="Tell requester the first day began" flowable:delegateExpression="${orqixNotificationTask}">
+      <extensionElements>
+        <orqix:notification channel="inApp" recipient="initiator" message="The first day of your new colleague has begun."/>
+      </extensionElements>
+    </serviceTask>
+    <endEvent id="started" name="First day reached">
+      <extensionElements>
+        <orqix:outcome label="First day reached" kind="success"/>
+      </extensionElements>
+    </endEvent>
+    <serviceTask id="notifyRejected" name="Tell requester it was declined" flowable:delegateExpression="${orqixNotificationTask}">
+      <extensionElements>
+        <orqix:notification channel="inApp" recipient="initiator" message="Your start request was declined."/>
+      </extensionElements>
+    </serviceTask>
+    <endEvent id="declined" name="Declined">
+      <extensionElements>
+        <orqix:outcome label="Declined" kind="rejected"/>
+      </extensionElements>
+    </endEvent>
+    <sequenceFlow id="t1" sourceRef="start" targetRef="confirm"/>
+    <sequenceFlow id="t2" sourceRef="confirm__route" targetRef="untilStart">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${orqixRoute.approved(execution, 'confirm')}]]></conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="t3" sourceRef="confirm__route" targetRef="notifyRejected">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${orqixRoute.rejected(execution, 'confirm')}]]></conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="t4" sourceRef="untilStart" targetRef="notifyStarted"/>
+    <sequenceFlow id="t5" sourceRef="notifyStarted" targetRef="started"/>
+    <sequenceFlow id="t6" sourceRef="notifyRejected" targetRef="declined"/>
+  </process>
+  <bpmndi:BPMNDiagram id="start-date-onboarding__diagram">
+    <bpmndi:BPMNPlane id="start-date-onboarding__plane" bpmnElement="start-date-onboarding">
+      <bpmndi:BPMNShape id="start__di" bpmnElement="start">
+        <omgdc:Bounds x="172" y="218" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="confirm__di" bpmnElement="confirm">
+        <omgdc:Bounds x="360" y="196" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="confirm__route__di" bpmnElement="confirm__route">
+        <omgdc:Bounds x="480" y="216" width="40" height="40"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="confirm__out__di" bpmnElement="confirm__out">
+        <omgdi:waypoint x="410" y="236"/>
+        <omgdi:waypoint x="500" y="236"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="untilStart__di" bpmnElement="untilStart">
+        <omgdc:Bounds x="632" y="218" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="notifyStarted__di" bpmnElement="notifyStarted">
+        <omgdc:Bounds x="840" y="196" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="started__di" bpmnElement="started">
+        <omgdc:Bounds x="1092" y="218" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="notifyRejected__di" bpmnElement="notifyRejected">
+        <omgdc:Bounds x="600" y="416" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="declined__di" bpmnElement="declined">
+        <omgdc:Bounds x="872" y="438" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="t1__di" bpmnElement="t1">
+        <omgdi:waypoint x="190" y="236"/>
+        <omgdi:waypoint x="410" y="236"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="t2__di" bpmnElement="t2">
+        <omgdi:waypoint x="500" y="236"/>
+        <omgdi:waypoint x="650" y="236"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="t3__di" bpmnElement="t3">
+        <omgdi:waypoint x="500" y="236"/>
+        <omgdi:waypoint x="650" y="456"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="t4__di" bpmnElement="t4">
+        <omgdi:waypoint x="650" y="236"/>
+        <omgdi:waypoint x="890" y="236"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="t5__di" bpmnElement="t5">
+        <omgdi:waypoint x="890" y="236"/>
+        <omgdi:waypoint x="1110" y="236"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="t6__di" bpmnElement="t6">
+        <omgdi:waypoint x="650" y="456"/>
+        <omgdi:waypoint x="890" y="456"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>

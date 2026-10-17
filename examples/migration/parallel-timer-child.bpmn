@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic supported-pattern fixture, not a customer export. -->
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" targetNamespace="urn:orqix:migration-patterns">
+ <process id="parallel-timer-child" name="Parallel waits then child" isExecutable="true">
+  <startEvent id="start"/><parallelGateway id="split"/>
+  <intermediateCatchEvent id="left"><timerEventDefinition><timeDuration>PT1M</timeDuration></timerEventDefinition></intermediateCatchEvent>
+  <intermediateCatchEvent id="right"><timerEventDefinition><timeDuration>PT1M</timeDuration></timerEventDefinition></intermediateCatchEvent>
+  <parallelGateway id="join"/><callActivity id="child" calledElement="reviewed-child"/><endEvent id="end"/>
+  <sequenceFlow id="a" sourceRef="start" targetRef="split"/><sequenceFlow id="b" sourceRef="split" targetRef="left"/>
+  <sequenceFlow id="c" sourceRef="split" targetRef="right"/><sequenceFlow id="d" sourceRef="left" targetRef="join"/>
+  <sequenceFlow id="e" sourceRef="right" targetRef="join"/><sequenceFlow id="f" sourceRef="join" targetRef="child"/>
+  <sequenceFlow id="g" sourceRef="child" targetRef="end"/>
+ </process>
+</definitions>

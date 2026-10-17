@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC hand-authored fixture, not a customer export. One decision per construct the DMN adapter blocks; the expected
+     reason code of each decision id is asserted in DmnImportTest. -->
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="unsupported-definitions" name="Unsupported DMN" namespace="urn:orqix:migration-fixture">
+  <decision id="collectPolicy" name="COLLECT policy">
+    <decisionTable id="collectTable" hitPolicy="COLLECT" aggregation="SUM">
+      <input id="collectIn"><inputExpression typeRef="number"><text>amount</text></inputExpression></input>
+      <output id="collectOut" name="fee" typeRef="number" />
+      <rule id="collectRule"><inputEntry><text>&gt; 1</text></inputEntry><outputEntry><text>1</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+  <decision id="ruleOrderPolicy" name="RULE ORDER policy">
+    <decisionTable id="ruleOrderTable" hitPolicy="RULE ORDER">
+      <input id="orderIn"><inputExpression typeRef="number"><text>amount</text></inputExpression></input>
+      <output id="orderOut" name="fee" typeRef="number" />
+      <rule id="orderRule"><inputEntry><text>&gt; 1</text></inputEntry><outputEntry><text>1</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+  <decision id="expressionEntry" name="Expression entry">
+    <decisionTable id="expressionEntryTable">
+      <input id="exprIn"><inputExpression typeRef="number"><text>amount</text></inputExpression></input>
+      <output id="exprOut" name="fee" typeRef="string" />
+      <rule id="exprRule"><inputEntry><text>&gt; limit * 2</text></inputEntry><outputEntry><text>"high"</text></outputEntry></rule>
+      <rule id="exprElse"><inputEntry><text>-</text></inputEntry><outputEntry><text>"low"</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+  <decision id="computedOutput" name="Computed output">
+    <decisionTable id="computedOutputTable" hitPolicy="FIRST">
+      <input id="computedIn"><inputExpression typeRef="number"><text>amount</text></inputExpression></input>
+      <output id="computedOut" name="fee" typeRef="number" />
+      <rule id="computedRule"><inputEntry><text>&gt;= 100</text></inputEntry><outputEntry><text>amount * 0.1</text></outputEntry></rule>
+      <rule id="computedElse"><inputEntry><text>-</text></inputEntry><outputEntry><text>0</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+  <decision id="twoInputs" name="Two inputs">
+    <decisionTable id="twoInputsTable">
+      <input id="twoA"><inputExpression typeRef="number"><text>amount</text></inputExpression></input>
+      <input id="twoB"><inputExpression typeRef="string"><text>region</text></inputExpression></input>
+      <output id="twoOut" name="route" typeRef="string" />
+      <rule id="twoRule1"><inputEntry><text>&gt;= 5</text></inputEntry><inputEntry><text>"EU"</text></inputEntry><outputEntry><text>"a"</text></outputEntry></rule>
+      <rule id="twoRule2"><inputEntry><text>&lt; 5</text></inputEntry><inputEntry><text>-</text></inputEntry><outputEntry><text>"b"</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+  <decision id="dateInput" name="Date input">
+    <decisionTable id="dateInputTable">
+      <input id="dateIn"><inputExpression typeRef="date"><text>dueDate</text></inputExpression></input>
+      <output id="dateOut" name="late" typeRef="boolean" />
+      <rule id="dateRule"><inputEntry><text>&lt; date("2026-01-01")</text></inputEntry><outputEntry><text>true</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+  <decision id="propertyInput" name="Property input">
+    <decisionTable id="propertyInputTable">
+      <input id="propertyIn"><inputExpression typeRef="number"><text>customer.age</text></inputExpression></input>
+      <output id="propertyOut" name="adult" typeRef="boolean" />
+      <rule id="propertyRule"><inputEntry><text>&gt;= 18</text></inputEntry><outputEntry><text>true</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+  <decision id="uniqueOverlap" name="UNIQUE overlap">
+    <decisionTable id="uniqueOverlapTable" hitPolicy="UNIQUE">
+      <input id="overlapIn"><inputExpression typeRef="number"><text>amount</text></inputExpression></input>
+      <output id="overlapOut" name="band" typeRef="string" />
+      <rule id="overlapLow"><inputEntry><text>&lt; 10</text></inputEntry><outputEntry><text>"low"</text></outputEntry></rule>
+      <rule id="overlapMid"><inputEntry><text>&lt;= 10</text></inputEntry><outputEntry><text>"mid"</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+  <decision id="gapWithoutCatchAll" name="Gap without catch-all">
+    <decisionTable id="gapTable">
+      <input id="gapIn"><inputExpression typeRef="number"><text>amount</text></inputExpression></input>
+      <output id="gapOut" name="band" typeRef="string" />
+      <rule id="gapLow"><inputEntry><text>&lt; 10</text></inputEntry><outputEntry><text>"low"</text></outputEntry></rule>
+      <rule id="gapHigh"><inputEntry><text>&gt; 10</text></inputEntry><outputEntry><text>"high"</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+  <decision id="twoBoundedRanges" name="Two bounded ranges">
+    <decisionTable id="twoRangesTable">
+      <input id="rangesIn"><inputExpression typeRef="number"><text>amount</text></inputExpression></input>
+      <output id="rangesOut" name="band" typeRef="string" />
+      <rule id="rangesA"><inputEntry><text>[0..10)</text></inputEntry><outputEntry><text>"a"</text></outputEntry></rule>
+      <rule id="rangesB"><inputEntry><text>[10..20)</text></inputEntry><outputEntry><text>"b"</text></outputEntry></rule>
+      <rule id="rangesC"><inputEntry><text>&gt;= 20</text></inputEntry><outputEntry><text>"c"</text></outputEntry></rule>
+      <rule id="rangesD"><inputEntry><text>&lt; 0</text></inputEntry><outputEntry><text>"d"</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+  <decision id="literalOnly" name="Literal expression decision">
+    <literalExpression id="literalBody"><text>amount * 2</text></literalExpression>
+  </decision>
+  <decision id="chained" name="Chained decision">
+    <informationRequirement id="chainedRequirement"><requiredDecision href="#collectPolicy" /></informationRequirement>
+    <decisionTable id="chainedTable">
+      <input id="chainedIn"><inputExpression typeRef="number"><text>fee</text></inputExpression></input>
+      <output id="chainedOut" name="flag" typeRef="boolean" />
+      <rule id="chainedRule"><inputEntry><text>&gt; 5</text></inputEntry><outputEntry><text>true</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+  <decision id="scriptEntry" name="Script entry">
+    <decisionTable id="scriptTable">
+      <input id="scriptIn"><inputExpression typeRef="number"><text>amount</text></inputExpression></input>
+      <output id="scriptOut" name="flag" typeRef="boolean" />
+      <rule id="scriptRule"><inputEntry expressionLanguage="juel"><text>${amount &gt; 5}</text></inputEntry><outputEntry><text>true</text></outputEntry></rule>
+    </decisionTable>
+  </decision>
+</definitions>

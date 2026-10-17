@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Hand-authored compatibility fixture, not a customer export. -->
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" xmlns:modeler="http://camunda.org/schema/modeler/1.0" targetNamespace="urn:orqix:migration-fixture" modeler:executionPlatform="Camunda Cloud" modeler:executionPlatformVersion="8.3.0">
+  <bpmn:process id="purchase-import" name="Imported purchase approval" isExecutable="true">
+    <bpmn:startEvent id="start" />
+    <bpmn:userTask id="manager" name="Manager review" ><bpmn:extensionElements><zeebe:assignmentDefinition candidateGroups="source-managers" /></bpmn:extensionElements></bpmn:userTask>
+    <bpmn:exclusiveGateway id="managerOutcome" />
+    <bpmn:exclusiveGateway id="amountRoute" default="smallPurchase" />
+    <bpmn:userTask id="finance" name="Finance review" ><bpmn:extensionElements><zeebe:assignmentDefinition candidateGroups="source-finance" /></bpmn:extensionElements></bpmn:userTask>
+    <bpmn:exclusiveGateway id="financeOutcome" />
+    <bpmn:serviceTask id="procure" name="Create purchase order" ><bpmn:extensionElements><zeebe:taskDefinition type="source-procurement-worker" /></bpmn:extensionElements></bpmn:serviceTask>
+    <bpmn:endEvent id="fulfilled" name="Fulfilled" />
+    <bpmn:endEvent id="rejected" name="Rejected" />
+    <bpmn:sequenceFlow id="begin" sourceRef="start" targetRef="manager" />
+    <bpmn:sequenceFlow id="managerDecided" sourceRef="manager" targetRef="managerOutcome" />
+    <bpmn:sequenceFlow id="managerApproved" sourceRef="managerOutcome" targetRef="amountRoute"><bpmn:conditionExpression>= approved</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="managerRejected" sourceRef="managerOutcome" targetRef="rejected"><bpmn:conditionExpression>= not(approved)</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="largePurchase" sourceRef="amountRoute" targetRef="finance"><bpmn:conditionExpression>= amount &gt;= 5000</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="smallPurchase" sourceRef="amountRoute" targetRef="procure" />
+    <bpmn:sequenceFlow id="financeDecided" sourceRef="finance" targetRef="financeOutcome" />
+    <bpmn:sequenceFlow id="financeApproved" sourceRef="financeOutcome" targetRef="procure"><bpmn:conditionExpression>= financeApproved</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="financeRejected" sourceRef="financeOutcome" targetRef="rejected"><bpmn:conditionExpression>= not(financeApproved)</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="orderCreated" sourceRef="procure" targetRef="fulfilled" />
+  </bpmn:process>
+</bpmn:definitions>

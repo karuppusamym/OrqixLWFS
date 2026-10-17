@@ -1,5 +1,5 @@
 # Full product backlog and acceptance contracts
-Revision 0.2. All epics below are Planned unless marked Needs input. Implementation has not started.
+Revision 0.7, 15 October 2026. The epics below describe the full product scope. Core and selected later slices are implemented; authoritative completion evidence is in [feature status](feature-status.md). Current build evidence is tracked in [the product build tracker](19-product-build-tracker.md); remaining engineering, customer/source acceptance and excluded infrastructure are separated in [product closeout](21-product-closeout.md). The [competitive delivery register](22-competitive-gap-delivery.md) records fourteen newly verified bounded slices and nineteen broader planned epics. Conditional forms/rows, shared publication tests, generated documents, approved requester browsing, controlled correction and OpenAPI import extend the implemented scope; they do not close whole epics.
 R0/R1/R2/R3 are defined in the [master plan](09-master-plan.md). Effort for R1–R3 must be estimated after the R0 integration spike and relevant discovery; no unsupported completion date is implied.
 
 ## E01 — Workspace and asset organization
@@ -15,7 +15,7 @@ Owner: frontend lead. Dependencies: compiler/capability manifest.
 
 Include searchable palette, drag/drop, undo/redo, copy/paste, duplication, multi-selection, keyboard shortcuts, inline properties, contextual help, schema-aware mappings, input/output preview, auto-connect suggestions and ELK layout. A suggestion requires a user's action and never modifies semantics silently. Node-level tests use authorized test bindings and sample input; workflow tests produce real labelled test runs.
 
-Later add version comparison, live execution highlighting, BPMN editing, Monaco JSON/YAML editing, accessible light/dark themes. Keep one authoritative source per mode; switching modes requires compatibility validation and creates a revision. Unknown fields/constructs produce issues, not silent loss.
+Published-version comparison and plain-text step notes are implemented in the current closeout. Later add live execution highlighting, BPMN editing, Monaco JSON/YAML editing, accessible light/dark themes. Keep one authoritative source per mode; switching modes requires compatibility validation and creates a revision. Unknown fields/constructs produce issues, not silent loss.
 Acceptance: graph edits survive reload; undo restores configuration and edges; keyboard step list supports equivalent edits; all six modes produce validated drafts; round-trip tests cover the documented subset; incompatible mode changes are blocked.
 
 ## E03 — Portable definitions and compiler
@@ -92,6 +92,8 @@ Records include ID, name, description, owner, endpoint binding, protocol/version
 
 Support synchronous invocation with bounded timeout and asynchronous invocation returning an operation ID. Callback correlates operation/workspace/run/activity/attempt, validates identity/signature, expiration and nonce, and ignores duplicate completion safely. Late responses after cancellation do not resume a run.
 Acceptance: real external agent result validated; endpoint revocation takes effect; duplicate/late/wrong-workspace callbacks blocked; health status does not substitute for runtime authorization. A2A is enabled only for an explicitly tested protocol version.
+
+Bounded agent tasks: an agent or tool-using model runs inside one bounded task with explicit tool grants, input/output validation, time and call limits, and audited external actions. Flowable alone decides durable process continuation after the validated task result. Do not require private model reasoning in the audit trail. Apply the current [MCP security best practices](https://modelcontextprotocol.io/docs/2026-07-28/tutorials/security/security_best_practices) (specification 2026-07-28) and evaluate outcomes from persisted state as in [doc 14](14-technical-references.md) section C. This applies to E09–E11 and remains R2 scope.
 
 ## E11 — MCP and unified tool registry
 Milestone: R2. Owner: integration/security leads. Dependencies: E08/E10 policies, remote test server.

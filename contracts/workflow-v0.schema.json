@@ -1,21 +1,18 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://orqix.example/schemas/workflow-v0.schema.json",
-  "title": "Orqix proposed workflow v0.1 — first-release subset",
-  "description": "Design contract only. Structural validation does not establish executable semantics, deployment readiness or authorization.",
+  "title": "Orqix canonical workflow v0.1 \u2014 R0 executable subset",
+  "description": "Structural contract for the R0 business-editor subset. Passing this schema does not establish graph correctness, type safety, authorization or deployability; the compiler rules in docs/build/S4-workflow-compiler.md are mandatory. Pre-freeze revision 2026-10-07: effect class moved to the connection operation, form keyword subset constrained, generic end outcomes, security block redefined.",
   "type": "object",
   "properties": {
     "schemaVersion": {
       "const": "0.1"
     },
     "workflowKey": {
-      "type": "string",
-      "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+      "$ref": "#/$defs/key"
     },
     "name": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 200
+      "$ref": "#/$defs/label"
     },
     "metadata": {
       "type": "object",
@@ -24,12 +21,25 @@
           "type": "string",
           "maxLength": 2000
         },
+        "stepNotes": {
+          "type": "object",
+          "description": "Plain-text design annotations keyed by step ID. Retained in published definitions; excluded from execution semantics.",
+          "maxProperties": 100,
+          "propertyNames": {
+            "$ref": "#/$defs/id"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
         "tags": {
           "type": "array",
+          "maxItems": 20,
           "items": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 200
+            "maxLength": 50
           },
           "uniqueItems": true
         }
@@ -40,10 +50,87 @@
       "additionalProperties": false
     },
     "inputSchema": {
-      "type": "object"
+      "$ref": "#/$defs/formSchema"
+    },
+    "inputUi": {
+      "type": "object",
+      "description": "Presentation hints for the request form. Never affects validation or execution.",
+      "properties": {
+        "order": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/fieldKey"
+          },
+          "uniqueItems": true
+        },
+        "widgets": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/fieldKey"
+          },
+          "additionalProperties": {
+            "enum": [
+              "text",
+              "textarea",
+              "number",
+              "money",
+              "select",
+              "radio",
+              "checkbox"
+            ]
+          }
+        },
+        "currency": {
+          "const": "USD"
+        },
+        "visibleWhen": {
+          "description": "Show a field only while its condition holds (S35). Conditions use the branch condition shape on /input/<fieldKey> references (never derived values). A hidden field is not validated and is not stored with the request.",
+          "type": "object",
+          "maxProperties": 30,
+          "propertyNames": {
+            "$ref": "#/$defs/fieldKey"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/condition"
+          }
+        },
+        "requiredWhen": {
+          "description": "Make an optional field required while its condition holds and the field is visible (S35).",
+          "type": "object",
+          "maxProperties": 30,
+          "propertyNames": {
+            "$ref": "#/$defs/fieldKey"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/condition"
+          }
+        },
+        "layout": {
+          "description": "Titled field groups with one or two columns (S35). Fields in no section follow the sections in the usual order.",
+          "type": "object",
+          "properties": {
+            "sections": {
+              "type": "array",
+              "maxItems": 10,
+              "items": {
+                "$ref": "#/$defs/formSection"
+              }
+            },
+            "helpText": {
+              "description": "Where a field's description appears: below the field (default) or above it.",
+              "enum": [
+                "above",
+                "below"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     },
     "outputSchema": {
-      "type": "object"
+      "$ref": "#/$defs/formSchema"
     },
     "triggers": {
       "type": "array",
@@ -63,299 +150,46 @@
       "items": {
         "oneOf": [
           {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string",
-                "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
-              },
-              "type": {
-                "const": "start"
-              },
-              "label": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 200
-              },
-              "config": {
-                "type": "object",
-                "properties": {},
-                "required": [],
-                "additionalProperties": false
-              }
-            },
-            "required": [
-              "id",
-              "type",
-              "label",
-              "config"
-            ],
-            "additionalProperties": false
+            "$ref": "#/$defs/startNode"
           },
           {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string",
-                "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
-              },
-              "type": {
-                "const": "approval"
-              },
-              "label": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 200
-              },
-              "config": {
-                "type": "object",
-                "properties": {
-                  "candidateGroupRef": {
-                    "type": "string",
-                    "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
-                  },
-                  "rejectReasonRequired": {
-                    "const": true
-                  }
-                },
-                "required": [
-                  "candidateGroupRef",
-                  "rejectReasonRequired"
-                ],
-                "additionalProperties": false
-              }
-            },
-            "required": [
-              "id",
-              "type",
-              "label",
-              "config"
-            ],
-            "additionalProperties": false
+            "$ref": "#/$defs/approvalNode"
           },
           {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string",
-                "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
-              },
-              "type": {
-                "const": "decision"
-              },
-              "label": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 200
-              },
-              "config": {
-                "type": "object",
-                "properties": {
-                  "decisionRef": {
-                    "type": "string",
-                    "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
-                  }
-                },
-                "required": [
-                  "decisionRef"
-                ],
-                "additionalProperties": false
-              }
-            },
-            "required": [
-              "id",
-              "type",
-              "label",
-              "config"
-            ],
-            "additionalProperties": false
+            "$ref": "#/$defs/decisionNode"
           },
           {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string",
-                "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
-              },
-              "type": {
-                "const": "branch"
-              },
-              "label": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 200
-              },
-              "config": {
-                "type": "object",
-                "properties": {},
-                "required": [],
-                "additionalProperties": false
-              }
-            },
-            "required": [
-              "id",
-              "type",
-              "label",
-              "config"
-            ],
-            "additionalProperties": false
+            "$ref": "#/$defs/branchNode"
           },
           {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string",
-                "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
-              },
-              "type": {
-                "const": "http"
-              },
-              "label": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 200
-              },
-              "config": {
-                "type": "object",
-                "properties": {
-                  "connectionRef": {
-                    "type": "string",
-                    "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
-                  },
-                  "operation": {
-                    "type": "string",
-                    "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
-                  },
-                  "inputMapping": {
-                    "type": "object",
-                    "minProperties": 1,
-                    "additionalProperties": {
-                      "$ref": "#/$defs/fieldRef"
-                    }
-                  },
-                  "resultMapping": {
-                    "type": "object",
-                    "minProperties": 1,
-                    "additionalProperties": {
-                      "type": "string",
-                      "pattern": "^/"
-                    }
-                  },
-                  "timeoutSeconds": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 30
-                  },
-                  "effectPolicy": {
-                    "enum": [
-                      "remoteIdempotency",
-                      "manualReconciliation"
-                    ]
-                  }
-                },
-                "required": [
-                  "connectionRef",
-                  "operation",
-                  "inputMapping",
-                  "resultMapping",
-                  "timeoutSeconds",
-                  "effectPolicy"
-                ],
-                "additionalProperties": false
-              }
-            },
-            "required": [
-              "id",
-              "type",
-              "label",
-              "config"
-            ],
-            "additionalProperties": false
+            "$ref": "#/$defs/httpNode"
           },
           {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string",
-                "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
-              },
-              "type": {
-                "const": "notification"
-              },
-              "label": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 200
-              },
-              "config": {
-                "type": "object",
-                "properties": {
-                  "channel": {
-                    "const": "inApp"
-                  },
-                  "recipient": {
-                    "const": "initiator"
-                  },
-                  "message": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 200
-                  }
-                },
-                "required": [
-                  "channel",
-                  "recipient",
-                  "message"
-                ],
-                "additionalProperties": false
-              }
-            },
-            "required": [
-              "id",
-              "type",
-              "label",
-              "config"
-            ],
-            "additionalProperties": false
+            "$ref": "#/$defs/notificationNode"
           },
           {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string",
-                "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
-              },
-              "type": {
-                "const": "end"
-              },
-              "label": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 200
-              },
-              "config": {
-                "type": "object",
-                "properties": {
-                  "businessOutcome": {
-                    "enum": [
-                      "Rejected",
-                      "Fulfilled"
-                    ]
-                  }
-                },
-                "required": [
-                  "businessOutcome"
-                ],
-                "additionalProperties": false
-              }
-            },
-            "required": [
-              "id",
-              "type",
-              "label",
-              "config"
-            ],
-            "additionalProperties": false
+            "$ref": "#/$defs/parallelSplitNode"
+          },
+          {
+            "$ref": "#/$defs/parallelJoinNode"
+          },
+          {
+            "$ref": "#/$defs/waitNode"
+          },
+          {
+            "$ref": "#/$defs/startWorkflowNode"
+          },
+          {
+            "$ref": "#/$defs/waitForMessageNode"
+          },
+          {
+            "$ref": "#/$defs/endNode"
+          },
+          {
+            "$ref": "#/$defs/generateDocumentNode"
+          },
+          {
+            "$ref": "#/$defs/externalTaskNode"
           }
         ]
       }
@@ -365,165 +199,19 @@
       "minItems": 1,
       "maxItems": 100,
       "items": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
-          },
-          "from": {
-            "type": "string",
-            "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
-          },
-          "to": {
-            "type": "string",
-            "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
-          },
-          "on": {
-            "enum": [
-              "next",
-              "approved",
-              "rejected",
-              "condition",
-              "default"
-            ]
-          },
-          "condition": {
-            "$ref": "#/$defs/condition"
-          }
-        },
-        "required": [
-          "id",
-          "from",
-          "to",
-          "on"
-        ],
-        "additionalProperties": false,
-        "allOf": [
-          {
-            "if": {
-              "properties": {
-                "on": {
-                  "const": "condition"
-                }
-              },
-              "required": [
-                "on"
-              ]
-            },
-            "then": {
-              "required": [
-                "condition"
-              ]
-            },
-            "else": {
-              "not": {
-                "required": [
-                  "condition"
-                ]
-              }
-            }
-          }
-        ]
+        "$ref": "#/$defs/transition"
       }
     },
     "decisions": {
       "type": "array",
       "maxItems": 20,
       "items": {
-        "type": "object",
-        "properties": {
-          "key": {
-            "type": "string",
-            "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
-          },
-          "version": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "hitPolicy": {
-            "const": "UNIQUE"
-          },
-          "rows": {
-            "type": "array",
-            "minItems": 1,
-            "items": {
-              "type": "object",
-              "properties": {
-                "when": {
-                  "type": "object",
-                  "properties": {
-                    "fieldRef": {
-                      "$ref": "#/$defs/fieldRef"
-                    },
-                    "operator": {
-                      "enum": [
-                        "eq",
-                        "gte",
-                        "lt"
-                      ]
-                    },
-                    "value": {
-                      "type": [
-                        "string",
-                        "number",
-                        "boolean",
-                        "null"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "fieldRef",
-                    "operator",
-                    "value"
-                  ],
-                  "additionalProperties": false
-                },
-                "then": {
-                  "type": "object",
-                  "minProperties": 1,
-                  "additionalProperties": {
-                    "type": [
-                      "string",
-                      "number",
-                      "boolean",
-                      "null"
-                    ]
-                  }
-                }
-              },
-              "required": [
-                "when",
-                "then"
-              ],
-              "additionalProperties": false
-            }
-          },
-          "default": {
-            "type": "object",
-            "minProperties": 1,
-            "additionalProperties": {
-              "type": [
-                "string",
-                "number",
-                "boolean",
-                "null"
-              ]
-            }
-          }
-        },
-        "required": [
-          "key",
-          "version",
-          "hitPolicy",
-          "rows",
-          "default"
-        ],
-        "additionalProperties": false
+        "$ref": "#/$defs/decisionTable"
       }
     },
     "execution": {
       "type": "object",
+      "description": "maxAttempts/retryDelaySeconds apply only to external service work (http nodes), never to human decisions.",
       "properties": {
         "maxConcurrentRuns": {
           "type": "integer",
@@ -537,7 +225,7 @@
         },
         "retryDelaySeconds": {
           "type": "integer",
-          "minimum": 1,
+          "minimum": 5,
           "maximum": 3600
         }
       },
@@ -550,26 +238,18 @@
     },
     "security": {
       "type": "object",
+      "description": "Per-workflow policy. Platform permissions (workflow.start, workflow.publish) are product-defined and not configurable here. Candidate groups are derived from approval nodes.",
       "properties": {
-        "requiredGroupRefs": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
-          },
-          "uniqueItems": true
-        },
-        "publishPermission": {
-          "const": "workflow.publish"
-        },
-        "runPermission": {
-          "const": "workflow.start"
+        "selfApproval": {
+          "description": "deny: the run initiator can never claim or decide its tasks. allow: only accepted by the compiler in a workspace whose policy permits it (test workspaces); every such decision is audited with policy=selfApprovalAllowed.",
+          "enum": [
+            "deny",
+            "allow"
+          ]
         }
       },
       "required": [
-        "requiredGroupRefs",
-        "publishPermission",
-        "runPermission"
+        "selfApproval"
       ],
       "additionalProperties": false
     },
@@ -578,12 +258,12 @@
       "properties": {
         "connections": {
           "type": "array",
+          "maxItems": 20,
           "items": {
             "type": "object",
             "properties": {
               "key": {
-                "type": "string",
-                "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+                "$ref": "#/$defs/key"
               },
               "definitionVersion": {
                 "type": "integer",
@@ -603,8 +283,19 @@
       ],
       "additionalProperties": false
     },
+    "stages": {
+      "description": "Optional case stages (docs/build/S17): a presentation and monitoring layer that groups steps to show progress and to watch an optional time limit (sla). Adds no behavior to the generated process.",
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "$ref": "#/$defs/stage"
+      }
+    },
     "outputMapping": {
       "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/fieldKey"
+      },
       "additionalProperties": {
         "type": "object",
         "properties": {
@@ -624,9 +315,13 @@
     },
     "uiLayout": {
       "type": "object",
+      "description": "Canvas presentation only. Excluded from the semantic hash; never affects execution.",
       "properties": {
         "positions": {
           "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/id"
+          },
           "additionalProperties": {
             "type": "object",
             "properties": {
@@ -691,11 +386,1457 @@
   ],
   "additionalProperties": false,
   "$defs": {
-    "fieldRef": {
+    "key": {
       "type": "string",
-      "pattern": "^/(input|steps)/[A-Za-z0-9_~/-]+$"
+      "pattern": "^[a-z][a-z0-9-]{0,62}[a-z0-9]$"
+    },
+    "stage": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/key"
+        },
+        "label": {
+          "$ref": "#/$defs/label"
+        },
+        "nodes": {
+          "description": "IDs of the steps in this stage. A step belongs to at most one stage (compiler rules WF_STAGE_*).",
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "sla": {
+          "description": "Optional time limit from the first step of the stage starting. The compiler enforces PT1M to P90D (WF_STAGE_SLA_*).",
+          "$ref": "#/$defs/duration"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "nodes"
+      ],
+      "additionalProperties": false
+    },
+    "id": {
+      "description": "Node/transition identifier. Stable through compilation; becomes the BPMN element ID. Double underscore is reserved for compiler-generated elements.",
+      "type": "string",
+      "pattern": "^(?!.*__)[A-Za-z][A-Za-z0-9_-]{0,63}$"
+    },
+    "fieldKey": {
+      "type": "string",
+      "pattern": "^[a-z][A-Za-z0-9]{0,63}$"
+    },
+    "label": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "fieldRef": {
+      "description": "/input/<fieldKey> or /steps/<nodeId>/<outputKey>. Exactly one level below input or a step in v0. A list of rows on the request form also offers two derived values (S35): /input/<fieldKey>/count (number of rows) and /input/<fieldKey>/sum/<columnKey> (exact total of a numeric column); both are 0 when the list is absent.",
+      "type": "string",
+      "pattern": "^/(input/[a-z][A-Za-z0-9]{0,63}(/count|/sum/[a-z][A-Za-z0-9]{0,63})?|steps/(?!.*__)[A-Za-z][A-Za-z0-9_-]{0,63}/[a-z][A-Za-z0-9]{0,63})$"
+    },
+    "literal": {
+      "description": "Comparison/output literal. String literals are additionally restricted by compiler rule WF_LITERAL_UNSAFE.",
+      "type": [
+        "string",
+        "number",
+        "boolean"
+      ]
     },
     "condition": {
+      "if": {
+        "required": [
+          "all"
+        ]
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "all": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 8,
+            "items": {
+              "$ref": "#/$defs/atomicCondition"
+            }
+          }
+        },
+        "required": [
+          "all"
+        ],
+        "additionalProperties": false
+      },
+      "else": {
+        "if": {
+          "required": [
+            "any"
+          ]
+        },
+        "then": {
+          "type": "object",
+          "properties": {
+            "any": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 8,
+              "items": {
+                "$ref": "#/$defs/atomicCondition"
+              }
+            }
+          },
+          "required": [
+            "any"
+          ],
+          "additionalProperties": false
+        },
+        "else": {
+          "$ref": "#/$defs/atomicCondition"
+        }
+      }
+    },
+    "formSchema": {
+      "description": "Approved JSON Schema keyword subset for request/output forms. No pattern, $ref, format other than date, nested objects, arrays or remote schemas in v0.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "object"
+        },
+        "additionalProperties": {
+          "const": false
+        },
+        "required": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/fieldKey"
+          },
+          "uniqueItems": true
+        },
+        "properties": {
+          "type": "object",
+          "maxProperties": 30,
+          "propertyNames": {
+            "$ref": "#/$defs/fieldKey"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/formField"
+          }
+        }
+      },
+      "required": [
+        "type",
+        "additionalProperties",
+        "properties"
+      ],
+      "additionalProperties": false
+    },
+    "formSection": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/key"
+        },
+        "title": {
+          "$ref": "#/$defs/label"
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "columns": {
+          "description": "Fields per row on a wide screen; one column below 640 px.",
+          "enum": [
+            1,
+            2
+          ]
+        },
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 30,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/fieldKey"
+          }
+        },
+        "visibleWhen": {
+          "$ref": "#/$defs/condition"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "fields"
+      ],
+      "additionalProperties": false
+    },
+    "rowSchema": {
+      "description": "One row of a list of rows: a small object of scalar fields (S35).",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "object"
+        },
+        "additionalProperties": {
+          "const": false
+        },
+        "required": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/fieldKey"
+          },
+          "uniqueItems": true
+        },
+        "properties": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 8,
+          "propertyNames": {
+            "$ref": "#/$defs/fieldKey"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/scalarFormField"
+          }
+        }
+      },
+      "required": [
+        "type",
+        "additionalProperties",
+        "properties"
+      ],
+      "additionalProperties": false
+    },
+    "rowsFormField": {
+      "description": "A list of rows (up to 50), each with the scalar fields of rowSchema.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "array"
+        },
+        "title": {
+          "$ref": "#/$defs/label"
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "items": {
+          "$ref": "#/$defs/rowSchema"
+        },
+        "minItems": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50
+        },
+        "maxItems": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50
+        }
+      },
+      "required": [
+        "type",
+        "title",
+        "items",
+        "minItems",
+        "maxItems"
+      ],
+      "additionalProperties": false
+    },
+    "formField": {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "array"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "if": {
+          "properties": {
+            "items": {
+              "properties": {
+                "type": {
+                  "const": "object"
+                }
+              },
+              "required": [
+                "type"
+              ]
+            }
+          },
+          "required": [
+            "items"
+          ]
+        },
+        "then": {
+          "$ref": "#/$defs/rowsFormField"
+        },
+        "else": {
+          "$ref": "#/$defs/arrayFormField"
+        }
+      },
+      "else": {
+        "$ref": "#/$defs/scalarFormField"
+      }
+    },
+    "nodeBase": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "type": {
+          "type": "string"
+        },
+        "label": {
+          "$ref": "#/$defs/label"
+        },
+        "config": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "label",
+        "config"
+      ]
+    },
+    "startNode": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/nodeBase"
+        }
+      ],
+      "properties": {
+        "id": true,
+        "label": true,
+        "type": {
+          "const": "start"
+        },
+        "config": {
+          "type": "object",
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "approvalNode": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/nodeBase"
+        }
+      ],
+      "properties": {
+        "id": true,
+        "label": true,
+        "type": {
+          "const": "approval"
+        },
+        "config": {
+          "type": "object",
+          "description": "Outputs at /steps/<id>/: decision (approved|rejected), reason, comment, decidedBy, decidedAt.",
+          "properties": {
+            "candidateGroupRef": {
+              "$ref": "#/$defs/key"
+            },
+            "rejectReasonRequired": {
+              "const": true
+            },
+            "dueAfterHours": {
+              "description": "Due date: elapsed hours, or working hours when calendar is set. Execution timeout remains wall-clock.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 720
+            },
+            "requiredSkills": {
+              "description": "All required workspace group keys, in addition to the candidate group. Membership grants no extra permission.",
+              "type": "array",
+              "maxItems": 10,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/key"
+              }
+            },
+            "calendar": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "zone",
+                "weekdays",
+                "start",
+                "end"
+              ],
+              "properties": {
+                "zone": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                "weekdays": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 7,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 7
+                  }
+                },
+                "holidays": {
+                  "type": "array",
+                  "maxItems": 366,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+                  }
+                },
+                "start": {
+                  "type": "string",
+                  "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+                },
+                "end": {
+                  "type": "string",
+                  "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+                }
+              }
+            },
+            "correctable": {
+              "description": "Request fields the person holding this task may correct before deciding (docs/build/S42). Scalar request fields only. Publishing proves that no earlier step has used them, so a correction can never contradict work that already happened.",
+              "type": "array",
+              "maxItems": 10,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/fieldKey"
+              }
+            },
+            "separateFrom": {
+              "description": "Separation of duties (docs/build/S41): ids of earlier approval steps that every path to this step passes through. Whoever decided one of them in the same request cannot claim, decide or be assigned this step.",
+              "type": "array",
+              "maxItems": 5,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/id"
+              }
+            },
+            "dispatch": {
+              "description": "Optional routing of each new task to one eligible person instead of leaving it in the group queue (docs/build/S39). leastLoaded: fewest open assigned tasks; roundRobin: the person assigned longest ago. The person can still return the task to the group. Nobody eligible: the task stays in the queue.",
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "policy"
+              ],
+              "properties": {
+                "policy": {
+                  "enum": [
+                    "leastLoaded",
+                    "roundRobin"
+                  ]
+                }
+              }
+            },
+            "escalation": {
+              "description": "Recurring in-app overdue notices for the current eligible assignee; no automatic reassignment.",
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "intervalHours",
+                "maxNotices"
+              ],
+              "properties": {
+                "intervalHours": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 720
+                },
+                "maxNotices": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 20
+                }
+              }
+            },
+            "timeoutAfter": {
+              "description": "Optional. When nobody decides within this time, the approval ends and the request continues on the timedOut route (for example to an escalation approval, or to a rejection). Adds a timedOut route and the decision value timedOut. See S12.",
+              "$ref": "#/$defs/duration"
+            }
+          },
+          "required": [
+            "candidateGroupRef",
+            "rejectReasonRequired"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "decisionNode": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/nodeBase"
+        }
+      ],
+      "properties": {
+        "id": true,
+        "label": true,
+        "type": {
+          "const": "decision"
+        },
+        "config": {
+          "type": "object",
+          "description": "Outputs at /steps/<id>/<outputKey> for every key in the table's then/default objects.",
+          "properties": {
+            "decisionRef": {
+              "$ref": "#/$defs/key"
+            }
+          },
+          "required": [
+            "decisionRef"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "branchNode": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/nodeBase"
+        }
+      ],
+      "properties": {
+        "id": true,
+        "label": true,
+        "type": {
+          "const": "branch"
+        },
+        "config": {
+          "type": "object",
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "httpNode": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/nodeBase"
+        }
+      ],
+      "properties": {
+        "id": true,
+        "label": true,
+        "type": {
+          "const": "http"
+        },
+        "config": {
+          "type": "object",
+          "description": "Effect class, idempotency header and success statuses come from the pinned connection operation, never from the workflow.",
+          "properties": {
+            "connectionRef": {
+              "$ref": "#/$defs/key"
+            },
+            "operation": {
+              "type": "string",
+              "pattern": "^[a-z][A-Za-z0-9]{0,63}$"
+            },
+            "inputMapping": {
+              "type": "object",
+              "minProperties": 0,
+              "propertyNames": {
+                "$ref": "#/$defs/fieldKey"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/fieldRef"
+              }
+            },
+            "resultMapping": {
+              "type": "object",
+              "minProperties": 0,
+              "propertyNames": {
+                "$ref": "#/$defs/fieldKey"
+              },
+              "additionalProperties": {
+                "description": "JSON Pointer (RFC 6901) into the response body.",
+                "type": "string",
+                "pattern": "^(/([^~/]|~[01])*)+$"
+              }
+            },
+            "timeoutSeconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 30
+            },
+            "compensates": {
+              "description": "Documentation and validation only (S32): this step is the designer's undo of the named earlier step, which must be a call to a system that can change something. Orqix never infers or runs undo operations by itself.",
+              "$ref": "#/$defs/id"
+            }
+          },
+          "required": [
+            "connectionRef",
+            "operation",
+            "inputMapping",
+            "resultMapping",
+            "timeoutSeconds"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "notificationNode": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/nodeBase"
+        }
+      ],
+      "properties": {
+        "id": true,
+        "label": true,
+        "type": {
+          "const": "notification"
+        },
+        "config": {
+          "type": "object",
+          "properties": {
+            "channel": {
+              "const": "inApp"
+            },
+            "recipient": {
+              "const": "initiator"
+            },
+            "message": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          "required": [
+            "channel",
+            "recipient",
+            "message"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "duration": {
+      "description": "ISO-8601 duration in days, hours and minutes only (for example PT1M, PT48H, P2D, P1DT12H). The compiler enforces PT1M to P90D (WF_DURATION_TOO_SHORT, WF_DURATION_TOO_LONG).",
+      "type": "string",
+      "maxLength": 20,
+      "pattern": "^P(?=\\d|T\\d)(\\d{1,3}D)?(T(?=\\d)(\\d{1,4}H)?(\\d{1,5}M)?)?$"
+    },
+    "parallelSplitNode": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/nodeBase"
+        }
+      ],
+      "properties": {
+        "id": true,
+        "label": true,
+        "type": {
+          "const": "parallelSplit"
+        },
+        "config": {
+          "type": "object",
+          "description": "Run in parallel: every outgoing next transition starts one branch. joinRef names the parallelJoin step where all branches must meet.",
+          "properties": {
+            "joinRef": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "required": [
+            "joinRef"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "parallelJoinNode": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/nodeBase"
+        }
+      ],
+      "properties": {
+        "id": true,
+        "label": true,
+        "type": {
+          "const": "parallelJoin"
+        },
+        "config": {
+          "type": "object",
+          "description": "Wait for all: continues once every branch of the matching parallelSplit has finished.",
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "waitNode": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/nodeBase"
+        }
+      ],
+      "properties": {
+        "id": true,
+        "label": true,
+        "type": {
+          "const": "wait"
+        },
+        "config": {
+          "type": "object",
+          "description": "Wait before the request continues: either for a fixed time (duration) or until a calendar date held in a date field (untilField, with an optional atTime, UTC). Exactly one of the two is required (compiler rule WF_WAIT_CHOICE). The timer runs on the job executor and survives restarts.",
+          "properties": {
+            "duration": {
+              "$ref": "#/$defs/duration"
+            },
+            "untilField": {
+              "$ref": "#/$defs/fieldRef"
+            },
+            "atTime": {
+              "description": "Time of day (UTC, HH:mm, default 09:00) at which the wait ends on the date of untilField.",
+              "type": "string",
+              "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+            }
+          },
+          "dependentRequired": {
+            "atTime": [
+              "untilField"
+            ]
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "startWorkflowNode": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/nodeBase"
+        }
+      ],
+      "properties": {
+        "id": true,
+        "label": true,
+        "type": {
+          "const": "startWorkflow"
+        },
+        "config": {
+          "type": "object",
+          "description": "Start another workflow as a child request and continue when it finishes. Outputs at /steps/<id>/: outcome, outcomeKind, reference and every key of resultMapping. The child release is pinned when this workflow is published.",
+          "properties": {
+            "workflowRef": {
+              "description": "Key of the workflow to start.",
+              "$ref": "#/$defs/key"
+            },
+            "repeat": {
+              "description": "Repeat sequential pinned child requests until an outcome matches, or the bound is reached. Every occurrence preserves its own tasks and effects. Inputs are reused. Cancellation stops repetition. Results include iterations and limitReached.",
+              "type": "object",
+              "properties": {
+                "maxIterations": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 25
+                },
+                "untilOutcome": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                }
+              },
+              "required": [
+                "maxIterations",
+                "untilOutcome"
+              ],
+              "additionalProperties": false
+            },
+            "inputMapping": {
+              "description": "Child request field -> value from this request.",
+              "type": "object",
+              "propertyNames": {
+                "$ref": "#/$defs/fieldKey"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/fieldRef"
+              }
+            },
+            "resultMapping": {
+              "description": "Output name in this request -> result field of the child (its outputSchema).",
+              "type": "object",
+              "propertyNames": {
+                "$ref": "#/$defs/fieldKey"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/fieldKey"
+              }
+            },
+            "forEach": {
+              "type": "object",
+              "description": "Sequentially start one pinned child per scalar item. The collection must contain 1 to 25 items. Inputs share inputMapping and itemInput receives the current item. Results are the last child result plus iterations and limitReached=false.",
+              "properties": {
+                "itemsRef": {
+                  "type": "string",
+                  "pattern": "^/input/[a-z][A-Za-z0-9]{0,63}$"
+                },
+                "itemInput": {
+                  "$ref": "#/$defs/fieldKey"
+                },
+                "maxItems": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 25
+                },
+                "mode": {
+                  "enum": [
+                    "sequential",
+                    "parallel"
+                  ],
+                  "default": "sequential"
+                }
+              },
+              "required": [
+                "itemsRef",
+                "itemInput",
+                "maxItems"
+              ],
+              "additionalProperties": false
+            },
+            "collectionMapping": {
+              "description": "Collected output name -> guaranteed scalar child result field, or outcome/outcomeKind/reference. For collection iteration only. Values follow input item order.",
+              "type": "object",
+              "propertyNames": {
+                "$ref": "#/$defs/fieldKey"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/fieldKey"
+              }
+            }
+          },
+          "required": [
+            "workflowRef",
+            "inputMapping",
+            "resultMapping"
+          ],
+          "additionalProperties": false,
+          "not": {
+            "required": [
+              "repeat",
+              "forEach"
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "waitForMessageNode": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/nodeBase"
+        }
+      ],
+      "properties": {
+        "id": true,
+        "label": true,
+        "type": {
+          "const": "waitForMessage"
+        },
+        "config": {
+          "type": "object",
+          "description": "Wait until an outside system or another process sends the named message for this request (docs/build/S16). correlationField names the request field or guaranteed earlier output whose value identifies the request; the message must carry the same value. Outputs at /steps/<id>/ are the declared payload fields. With timeoutAfter the step also needs one timedOut transition. A message that arrives before the step is reached is kept for a limited time (24 hours by default) and used when the step starts.",
+          "properties": {
+            "message": {
+              "description": "Message name: lowercase letters and digits in kebab-case or camelCase, for example payment-received.",
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 64,
+              "pattern": "^[a-z][a-zA-Z0-9]*(-[a-z0-9][a-zA-Z0-9]*)*$"
+            },
+            "correlationField": {
+              "$ref": "#/$defs/fieldRef"
+            },
+            "timeoutAfter": {
+              "$ref": "#/$defs/duration"
+            },
+            "payload": {
+              "description": "Values the message may carry. Each becomes an output of this step; a field that is not required may be missing.",
+              "type": "array",
+              "maxItems": 10,
+              "items": {
+                "$ref": "#/$defs/messagePayloadField"
+              }
+            }
+          },
+          "required": [
+            "message",
+            "correlationField"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "messagePayloadField": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][A-Za-z0-9]{0,63}$"
+        },
+        "type": {
+          "enum": [
+            "string",
+            "number",
+            "integer",
+            "boolean",
+            "date"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "required": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "endNode": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/nodeBase"
+        }
+      ],
+      "properties": {
+        "id": true,
+        "label": true,
+        "type": {
+          "const": "end"
+        },
+        "config": {
+          "type": "object",
+          "properties": {
+            "businessOutcome": {
+              "description": "Business-facing outcome label shown to users, e.g. Fulfilled, Rejected, Completed.",
+              "type": "string",
+              "pattern": "^[A-Z][A-Za-z ]{0,39}$"
+            },
+            "outcomeKind": {
+              "description": "Reporting class. A rejected business outcome is a completed process, not a technical failure. failed is a business outcome reached when a step that can fail has failed for good and the designer chose how to end (S32).",
+              "enum": [
+                "success",
+                "rejected",
+                "failed"
+              ]
+            }
+          },
+          "required": [
+            "businessOutcome",
+            "outcomeKind"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "transition": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "from": {
+          "$ref": "#/$defs/id"
+        },
+        "to": {
+          "$ref": "#/$defs/id"
+        },
+        "on": {
+          "enum": [
+            "next",
+            "approved",
+            "rejected",
+            "timedOut",
+            "failed",
+            "condition",
+            "default"
+          ]
+        },
+        "label": {
+          "description": "Optional business explanation shown on the canvas, e.g. 'USD 5,000 or more'.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "condition": {
+          "$ref": "#/$defs/condition"
+        }
+      },
+      "required": [
+        "id",
+        "from",
+        "to",
+        "on"
+      ],
+      "additionalProperties": false,
+      "if": {
+        "properties": {
+          "on": {
+            "const": "condition"
+          }
+        },
+        "required": [
+          "on"
+        ]
+      },
+      "then": {
+        "required": [
+          "condition"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "condition"
+          ]
+        }
+      }
+    },
+    "decisionCondition": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/atomicCondition"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "all": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 8,
+              "items": {
+                "$ref": "#/$defs/atomicCondition"
+              }
+            }
+          },
+          "required": [
+            "all"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "description": "Alternatives (OR): the row applies when at least one of 2 to 8 comparisons holds. Fields may repeat. Under UNIQUE the alternatives of all rows must still be pairwise exclusive.",
+          "properties": {
+            "any": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 8,
+              "items": {
+                "$ref": "#/$defs/atomicCondition"
+              }
+            }
+          },
+          "required": [
+            "any"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "decisionTable": {
+      "type": "object",
+      "description": "Authoring semantics: at most one row matches (UNIQUE); the default applies only when no row matches. Scalar rows test the same field; conjunctive All rows support 2 to 8 distinct fields. Rows must be pairwise disjoint (WF_DECISION_OVERLAP). Compiled to DMN as FIRST with a trailing catch-all row.",
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/key"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "hitPolicy": {
+          "description": "UNIQUE: at most one row can match, proven at publish time. FIRST: rows are tried in order and the first match wins, so rows may overlap (docs/build/S40).",
+          "enum": [
+            "UNIQUE",
+            "FIRST"
+          ]
+        },
+        "rows": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "properties": {
+              "when": {
+                "$ref": "#/$defs/decisionCondition"
+              },
+              "then": {
+                "$ref": "#/$defs/decisionOutput"
+              },
+              "effective": {
+                "description": "Optional inclusive UTC date window in which the row applies, judged by the date the request was submitted (docs/build/S41). Rows in disjoint windows may have overlapping conditions even under UNIQUE, so a rate or threshold can change on a date.",
+                "type": "object",
+                "minProperties": 1,
+                "properties": {
+                  "from": {
+                    "$ref": "#/$defs/calendarDate"
+                  },
+                  "to": {
+                    "$ref": "#/$defs/calendarDate"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "when",
+              "then"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "default": {
+          "$ref": "#/$defs/decisionOutput"
+        }
+      },
+      "required": [
+        "key",
+        "version",
+        "hitPolicy",
+        "rows",
+        "default"
+      ],
+      "additionalProperties": false
+    },
+    "decisionOutput": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 10,
+      "propertyNames": {
+        "$ref": "#/$defs/fieldKey"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/literal"
+      }
+    },
+    "scalarFormField": {
+      "type": "object",
+      "properties": {
+        "incidentEditable": {
+          "const": true,
+          "description": "Permit operator incident correction before captured effects or successful data-consuming steps. Request scalar fields only."
+        },
+        "type": {
+          "enum": [
+            "string",
+            "number",
+            "integer",
+            "boolean"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "format": {
+          "description": "date: a calendar date written YYYY-MM-DD, without time or time zone. attachment: a file chosen by the requester; the value is the ID of the uploaded file (docs/build/S17). Only on type string; attachment fields exist only on the request form.",
+          "enum": [
+            "date",
+            "attachment"
+          ]
+        },
+        "acceptTypes": {
+          "description": "Only with format attachment: the file types this field accepts (default: all allowed types).",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "pdf",
+              "png",
+              "jpeg",
+              "txt",
+              "csv",
+              "docx",
+              "xlsx",
+              "pptx"
+            ]
+          }
+        },
+        "maxFileBytes": {
+          "description": "Only with format attachment: the largest file this field accepts, in bytes (at most 10 MiB, the platform limit).",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10485760
+        },
+        "formatMinimum": {
+          "description": "Earliest allowed date (YYYY-MM-DD, inclusive). Only with format date.",
+          "$ref": "#/$defs/calendarDate"
+        },
+        "formatMaximum": {
+          "description": "Latest allowed date (YYYY-MM-DD, inclusive). Only with format date.",
+          "$ref": "#/$defs/calendarDate"
+        },
+        "enum": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "minLength": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxLength": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4000
+        },
+        "minimum": {
+          "type": "number"
+        },
+        "maximum": {
+          "type": "number"
+        },
+        "multipleOf": {
+          "enum": [
+            0.01,
+            1
+          ]
+        }
+      },
+      "if": {
+        "required": [
+          "format"
+        ]
+      },
+      "then": {
+        "properties": {
+          "type": {
+            "const": "string"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "format": {
+                "const": "date"
+              }
+            },
+            "required": [
+              "format"
+            ]
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "acceptTypes"
+                  ]
+                },
+                {
+                  "required": [
+                    "maxFileBytes"
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "dependentRequired": {
+        "acceptTypes": [
+          "format"
+        ],
+        "maxFileBytes": [
+          "format"
+        ],
+        "formatMinimum": [
+          "format"
+        ],
+        "formatMaximum": [
+          "format"
+        ]
+      },
+      "required": [
+        "type",
+        "title"
+      ],
+      "additionalProperties": false
+    },
+    "calendarDate": {
+      "description": "A calendar date YYYY-MM-DD. The compiler also rejects dates that do not exist (WF_FORM_INVALID).",
+      "type": "string",
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$"
+    },
+    "externalTaskNode": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/nodeBase"
+        }
+      ],
+      "properties": {
+        "id": true,
+        "label": true,
+        "type": {
+          "const": "externalTask"
+        },
+        "config": {
+          "description": "Work done by an external worker that takes the job over the worker API (docs/build/S43). The request waits until a worker completes the job with the declared result; a worker that disappears loses its lease and the job is offered again, up to the workflow's attempt limit, then the request needs attention.",
+          "type": "object",
+          "properties": {
+            "topic": {
+              "description": "The kind of job. Workers ask for the topics they serve.",
+              "$ref": "#/$defs/key"
+            },
+            "inputMapping": {
+              "description": "Request or earlier-step values sent to the worker, by name.",
+              "type": "object",
+              "maxProperties": 10,
+              "propertyNames": {
+                "pattern": "^[A-Za-z][A-Za-z0-9_]{0,62}$"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/fieldRef"
+              }
+            },
+            "result": {
+              "description": "Values the worker must return. Each becomes an output of this step; a field that is not required may be missing.",
+              "type": "array",
+              "maxItems": 10,
+              "items": {
+                "$ref": "#/$defs/messagePayloadField"
+              }
+            },
+            "leaseSeconds": {
+              "description": "How long a worker holds a job before it must extend the lease or lose it.",
+              "type": "integer",
+              "minimum": 30,
+              "maximum": 3600
+            }
+          },
+          "required": [
+            "topic",
+            "inputMapping",
+            "result"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "arrayFormField": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "array"
+        },
+        "title": {
+          "$ref": "#/$defs/label"
+        },
+        "items": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/scalarFormField"
+            },
+            {
+              "$ref": "#/$defs/objectRowField"
+            }
+          ]
+        },
+        "minItems": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 25
+        },
+        "maxItems": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 25
+        }
+      },
+      "required": [
+        "type",
+        "title",
+        "items",
+        "minItems",
+        "maxItems"
+      ],
+      "additionalProperties": false
+    },
+    "objectRowField": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "additionalProperties",
+        "properties"
+      ],
+      "properties": {
+        "type": {
+          "const": "object"
+        },
+        "title": {
+          "$ref": "#/$defs/label"
+        },
+        "additionalProperties": {
+          "const": false
+        },
+        "properties": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 10,
+          "propertyNames": {
+            "$ref": "#/$defs/fieldKey"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/scalarFormField"
+          }
+        },
+        "required": {
+          "type": "array",
+          "maxItems": 10,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/fieldKey"
+          }
+        }
+      }
+    },
+    "atomicCondition": {
       "type": "object",
       "properties": {
         "fieldRef": {
@@ -704,17 +1845,15 @@
         "operator": {
           "enum": [
             "eq",
+            "ne",
             "gte",
-            "lt"
+            "gt",
+            "lt",
+            "lte"
           ]
         },
         "value": {
-          "type": [
-            "string",
-            "number",
-            "boolean",
-            "null"
-          ]
+          "$ref": "#/$defs/literal"
         }
       },
       "required": [
@@ -722,6 +1861,58 @@
         "operator",
         "value"
       ],
+      "additionalProperties": false
+    },
+    "generateDocumentNode": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/nodeBase"
+        }
+      ],
+      "properties": {
+        "id": true,
+        "label": true,
+        "type": {
+          "const": "generateDocument"
+        },
+        "config": {
+          "type": "object",
+          "properties": {
+            "format": {
+              "enum": [
+                "pdf",
+                "docx"
+              ]
+            },
+            "fileName": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9 _.-]{0,99}$"
+            },
+            "template": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16000
+            },
+            "inputMapping": {
+              "type": "object",
+              "maxProperties": 50,
+              "propertyNames": {
+                "pattern": "^[A-Za-z][A-Za-z0-9_]{0,62}$"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/fieldRef"
+              }
+            }
+          },
+          "required": [
+            "format",
+            "fileName",
+            "template",
+            "inputMapping"
+          ],
+          "additionalProperties": false
+        }
+      },
       "additionalProperties": false
     }
   }

@@ -1,0 +1,470 @@
+{
+  "schemaVersion": "0.1",
+  "workflowKey": "new-hire-onboarding",
+  "name": "New hire onboarding",
+  "metadata": {
+    "description": "Get a new colleague ready. IT and Facilities approve in parallel (IT escalates to a lead if nobody decides within 4 hours). When both are done the request waits one minute, then the equipment is ordered as a separate purchase request and you are told the result.",
+    "tags": [
+      "onboarding",
+      "parallel",
+      "timer",
+      "child"
+    ]
+  },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "employeeName",
+      "role",
+      "department",
+      "equipment",
+      "equipmentBudget",
+      "justification"
+    ],
+    "properties": {
+      "employeeName": {
+        "type": "string",
+        "title": "New colleague",
+        "description": "Full name of the person who is joining.",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "role": {
+        "type": "string",
+        "title": "Job title",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "department": {
+        "type": "string",
+        "title": "Cost center",
+        "enum": [
+          "OPS",
+          "IT",
+          "HR"
+        ]
+      },
+      "equipment": {
+        "type": "string",
+        "title": "Equipment to order",
+        "description": "For example 'Laptop and docking station'.",
+        "minLength": 1,
+        "maxLength": 120
+      },
+      "equipmentBudget": {
+        "type": "number",
+        "title": "Equipment budget (USD)",
+        "description": "Total including tax and shipping.",
+        "minimum": 0.01,
+        "maximum": 1000000,
+        "multipleOf": 0.01
+      },
+      "justification": {
+        "type": "string",
+        "title": "Why this equipment",
+        "description": "The purchase approvers read this first.",
+        "minLength": 1,
+        "maxLength": 1000
+      }
+    }
+  },
+  "inputUi": {
+    "order": [
+      "employeeName",
+      "role",
+      "department",
+      "equipment",
+      "equipmentBudget",
+      "justification"
+    ],
+    "widgets": {
+      "department": "select",
+      "equipmentBudget": "money",
+      "justification": "textarea"
+    },
+    "currency": "USD"
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "equipmentOrderId": {
+        "type": "string",
+        "title": "Equipment purchase order"
+      }
+    }
+  },
+  "triggers": [
+    "manual",
+    "api"
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "label": "New colleague submitted",
+      "config": {}
+    },
+    {
+      "id": "setup",
+      "type": "parallelSplit",
+      "label": "Prepare in parallel",
+      "config": {
+        "joinRef": "setupDone"
+      }
+    },
+    {
+      "id": "it",
+      "type": "approval",
+      "label": "IT accounts and access",
+      "config": {
+        "candidateGroupRef": "it-desk",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 24,
+        "timeoutAfter": "PT4H"
+      }
+    },
+    {
+      "id": "itEscalation",
+      "type": "approval",
+      "label": "IT lead review",
+      "config": {
+        "candidateGroupRef": "managers",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 24
+      }
+    },
+    {
+      "id": "itReady",
+      "type": "notification",
+      "label": "Tell requester IT access is approved",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "IT accounts and access were approved."
+      }
+    },
+    {
+      "id": "facilities",
+      "type": "approval",
+      "label": "Desk and building pass",
+      "config": {
+        "candidateGroupRef": "facilities-team",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 48
+      }
+    },
+    {
+      "id": "setupDone",
+      "type": "parallelJoin",
+      "label": "IT and Facilities are done",
+      "config": {}
+    },
+    {
+      "id": "leadTime",
+      "type": "wait",
+      "label": "Allow lead time before ordering",
+      "config": {
+        "duration": "PT1M"
+      }
+    },
+    {
+      "id": "orderEquipment",
+      "type": "startWorkflow",
+      "label": "Order equipment",
+      "config": {
+        "workflowRef": "purchase-approval",
+        "inputMapping": {
+          "amount": "/input/equipmentBudget",
+          "costCenter": "/input/department",
+          "purpose": "/input/justification",
+          "title": "/input/equipment"
+        },
+        "resultMapping": {
+          "orderId": "procurementId"
+        }
+      }
+    },
+    {
+      "id": "equipmentOutcome",
+      "type": "branch",
+      "label": "Was the equipment approved?",
+      "config": {}
+    },
+    {
+      "id": "notifyReady",
+      "type": "notification",
+      "label": "Tell requester onboarding is ready",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "Onboarding is ready: access, desk and equipment are arranged."
+      }
+    },
+    {
+      "id": "ready",
+      "type": "end",
+      "label": "Ready",
+      "config": {
+        "businessOutcome": "Ready",
+        "outcomeKind": "success"
+      }
+    },
+    {
+      "id": "notifyEquipmentRejected",
+      "type": "notification",
+      "label": "Tell requester equipment was not approved",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "The equipment purchase was not approved. Open the request to see the details."
+      }
+    },
+    {
+      "id": "equipmentRejected",
+      "type": "end",
+      "label": "Equipment not approved",
+      "config": {
+        "businessOutcome": "Equipment rejected",
+        "outcomeKind": "rejected"
+      }
+    },
+    {
+      "id": "notifyRejected",
+      "type": "notification",
+      "label": "Tell requester onboarding was rejected",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "Onboarding was rejected. Open the request to see the reason."
+      }
+    },
+    {
+      "id": "rejected",
+      "type": "end",
+      "label": "Rejected",
+      "config": {
+        "businessOutcome": "Rejected",
+        "outcomeKind": "rejected"
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t1",
+      "from": "start",
+      "to": "setup",
+      "on": "next"
+    },
+    {
+      "id": "t2",
+      "from": "setup",
+      "to": "it",
+      "on": "next",
+      "label": "IT"
+    },
+    {
+      "id": "t3",
+      "from": "setup",
+      "to": "facilities",
+      "on": "next",
+      "label": "Facilities"
+    },
+    {
+      "id": "t4",
+      "from": "it",
+      "to": "itReady",
+      "on": "approved"
+    },
+    {
+      "id": "t5",
+      "from": "it",
+      "to": "notifyRejected",
+      "on": "rejected"
+    },
+    {
+      "id": "t6",
+      "from": "it",
+      "to": "itEscalation",
+      "on": "timedOut",
+      "label": "No decision in 4 hours"
+    },
+    {
+      "id": "t7",
+      "from": "itEscalation",
+      "to": "itReady",
+      "on": "approved"
+    },
+    {
+      "id": "t8",
+      "from": "itEscalation",
+      "to": "notifyRejected",
+      "on": "rejected"
+    },
+    {
+      "id": "t9",
+      "from": "itReady",
+      "to": "setupDone",
+      "on": "next"
+    },
+    {
+      "id": "t10",
+      "from": "facilities",
+      "to": "setupDone",
+      "on": "approved"
+    },
+    {
+      "id": "t11",
+      "from": "facilities",
+      "to": "notifyRejected",
+      "on": "rejected"
+    },
+    {
+      "id": "t12",
+      "from": "setupDone",
+      "to": "leadTime",
+      "on": "next"
+    },
+    {
+      "id": "t13",
+      "from": "leadTime",
+      "to": "orderEquipment",
+      "on": "next"
+    },
+    {
+      "id": "t14",
+      "from": "orderEquipment",
+      "to": "equipmentOutcome",
+      "on": "next"
+    },
+    {
+      "id": "t15",
+      "from": "equipmentOutcome",
+      "to": "notifyReady",
+      "on": "condition",
+      "label": "Equipment approved",
+      "condition": {
+        "fieldRef": "/steps/orderEquipment/outcomeKind",
+        "operator": "eq",
+        "value": "success"
+      }
+    },
+    {
+      "id": "t16",
+      "from": "equipmentOutcome",
+      "to": "notifyEquipmentRejected",
+      "on": "default",
+      "label": "Otherwise"
+    },
+    {
+      "id": "t17",
+      "from": "notifyReady",
+      "to": "ready",
+      "on": "next"
+    },
+    {
+      "id": "t18",
+      "from": "notifyEquipmentRejected",
+      "to": "equipmentRejected",
+      "on": "next"
+    },
+    {
+      "id": "t19",
+      "from": "notifyRejected",
+      "to": "rejected",
+      "on": "next"
+    }
+  ],
+  "decisions": [],
+  "execution": {
+    "maxConcurrentRuns": 200,
+    "maxAttempts": 3,
+    "retryDelaySeconds": 30
+  },
+  "security": {
+    "selfApproval": "deny"
+  },
+  "dependencies": {
+    "connections": []
+  },
+  "outputMapping": {
+    "equipmentOrderId": {
+      "fieldRef": "/steps/orderEquipment/orderId",
+      "required": false
+    }
+  },
+  "uiLayout": {
+    "positions": {
+      "start": {
+        "x": 60,
+        "y": 260
+      },
+      "setup": {
+        "x": 340,
+        "y": 260
+      },
+      "it": {
+        "x": 620,
+        "y": 60
+      },
+      "itEscalation": {
+        "x": 940,
+        "y": 60
+      },
+      "itReady": {
+        "x": 1260,
+        "y": 60
+      },
+      "facilities": {
+        "x": 620,
+        "y": 460
+      },
+      "setupDone": {
+        "x": 1580,
+        "y": 260
+      },
+      "leadTime": {
+        "x": 1860,
+        "y": 260
+      },
+      "orderEquipment": {
+        "x": 2140,
+        "y": 260
+      },
+      "equipmentOutcome": {
+        "x": 2460,
+        "y": 260
+      },
+      "notifyReady": {
+        "x": 2740,
+        "y": 140
+      },
+      "ready": {
+        "x": 3060,
+        "y": 140
+      },
+      "notifyEquipmentRejected": {
+        "x": 2740,
+        "y": 380
+      },
+      "equipmentRejected": {
+        "x": 3060,
+        "y": 380
+      },
+      "notifyRejected": {
+        "x": 1260,
+        "y": 660
+      },
+      "rejected": {
+        "x": 1580,
+        "y": 660
+      }
+    },
+    "viewport": {
+      "x": 0,
+      "y": 0,
+      "zoom": 0.8
+    }
+  }
+}

@@ -1,0 +1,296 @@
+{
+  "description": "Behavior fixtures for the purchase-approval template. Used by: canonical decision evaluator unit tests, compiled-DMN parity tests, engine integration tests and the Playwright demo path. Amounts are JSON numbers that the backend must read as BigDecimal.",
+  "inputValidation": [
+    {
+      "name": "valid-typical",
+      "input": {
+        "title": "Replacement laptop",
+        "purpose": "Device failed",
+        "costCenter": "OPS",
+        "amount": 1800
+      },
+      "valid": true
+    },
+    {
+      "name": "valid-cents",
+      "input": {
+        "title": "Monitor",
+        "purpose": "Second screen",
+        "costCenter": "IT",
+        "amount": 1800.07
+      },
+      "valid": true
+    },
+    {
+      "name": "fraction-of-cent",
+      "input": {
+        "title": "Monitor",
+        "purpose": "Second screen",
+        "costCenter": "IT",
+        "amount": 1800.071
+      },
+      "valid": false,
+      "fieldErrors": [
+        "/amount"
+      ]
+    },
+    {
+      "name": "zero-amount",
+      "input": {
+        "title": "Free item",
+        "purpose": "Test",
+        "costCenter": "IT",
+        "amount": 0
+      },
+      "valid": false,
+      "fieldErrors": [
+        "/amount"
+      ]
+    },
+    {
+      "name": "amount-as-string",
+      "input": {
+        "title": "Desk",
+        "purpose": "New hire",
+        "costCenter": "HR",
+        "amount": "1800"
+      },
+      "valid": false,
+      "fieldErrors": [
+        "/amount"
+      ]
+    },
+    {
+      "name": "unknown-cost-center",
+      "input": {
+        "title": "Desk",
+        "purpose": "New hire",
+        "costCenter": "FIN",
+        "amount": 300
+      },
+      "valid": false,
+      "fieldErrors": [
+        "/costCenter"
+      ]
+    },
+    {
+      "name": "extra-field",
+      "input": {
+        "title": "Desk",
+        "purpose": "New hire",
+        "costCenter": "HR",
+        "amount": 300,
+        "approver": "my-friend"
+      },
+      "valid": false,
+      "fieldErrors": [
+        "/approver"
+      ]
+    },
+    {
+      "name": "missing-purpose",
+      "input": {
+        "title": "Desk",
+        "costCenter": "HR",
+        "amount": 300
+      },
+      "valid": false,
+      "fieldErrors": [
+        "/purpose"
+      ]
+    }
+  ],
+  "decisionBoundaries": [
+    {
+      "amount": 0.01,
+      "route": "standard"
+    },
+    {
+      "amount": 1800,
+      "route": "standard"
+    },
+    {
+      "amount": 4999.99,
+      "route": "standard"
+    },
+    {
+      "amount": 5000,
+      "route": "financeReview"
+    },
+    {
+      "amount": 5000.0,
+      "route": "financeReview"
+    },
+    {
+      "amount": 5000.01,
+      "route": "financeReview"
+    },
+    {
+      "amount": 1000000,
+      "route": "financeReview"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "standard-approved",
+      "amount": 1800,
+      "decisions": [
+        {
+          "node": "manager",
+          "actor": "manager",
+          "action": "approve"
+        }
+      ],
+      "expect": {
+        "lifecycle": "completed",
+        "outcome": "Fulfilled",
+        "outcomeKind": "success",
+        "procurementCalls": 1,
+        "visited": [
+          "start",
+          "manager",
+          "amountPolicy",
+          "route",
+          "procure",
+          "notify",
+          "fulfilled"
+        ],
+        "notifications": 1,
+        "outputHas": [
+          "procurementId"
+        ]
+      }
+    },
+    {
+      "name": "manager-rejects",
+      "amount": 1800,
+      "decisions": [
+        {
+          "node": "manager",
+          "actor": "manager",
+          "action": "reject",
+          "reason": "Use the existing spare device"
+        }
+      ],
+      "expect": {
+        "lifecycle": "completed",
+        "outcome": "Rejected",
+        "outcomeKind": "rejected",
+        "procurementCalls": 0,
+        "visited": [
+          "start",
+          "manager",
+          "notifyRejected",
+          "rejected"
+        ],
+        "notifications": 1,
+        "outputHas": []
+      }
+    },
+    {
+      "name": "boundary-routes-to-finance-and-is-approved",
+      "amount": 5000,
+      "decisions": [
+        {
+          "node": "manager",
+          "actor": "manager",
+          "action": "approve"
+        },
+        {
+          "node": "finance",
+          "actor": "finance",
+          "action": "approve"
+        }
+      ],
+      "expect": {
+        "lifecycle": "completed",
+        "outcome": "Fulfilled",
+        "outcomeKind": "success",
+        "procurementCalls": 1,
+        "visited": [
+          "start",
+          "manager",
+          "amountPolicy",
+          "route",
+          "finance",
+          "procure",
+          "notify",
+          "fulfilled"
+        ],
+        "notifications": 1,
+        "outputHas": [
+          "procurementId"
+        ]
+      }
+    },
+    {
+      "name": "finance-rejects",
+      "amount": 5000.01,
+      "decisions": [
+        {
+          "node": "manager",
+          "actor": "manager",
+          "action": "approve"
+        },
+        {
+          "node": "finance",
+          "actor": "finance",
+          "action": "reject",
+          "reason": "Over quarterly budget"
+        }
+      ],
+      "expect": {
+        "lifecycle": "completed",
+        "outcome": "Rejected",
+        "outcomeKind": "rejected",
+        "procurementCalls": 0,
+        "visited": [
+          "start",
+          "manager",
+          "amountPolicy",
+          "route",
+          "finance",
+          "notifyRejected",
+          "rejected"
+        ],
+        "notifications": 1,
+        "outputHas": []
+      }
+    },
+    {
+      "name": "reject-without-reason-is-refused",
+      "amount": 1800,
+      "decisions": [
+        {
+          "node": "manager",
+          "actor": "manager",
+          "action": "reject"
+        }
+      ],
+      "expect": {
+        "httpStatus": 422,
+        "problemCode": "REASON_REQUIRED",
+        "lifecycle": "waiting",
+        "procurementCalls": 0
+      }
+    },
+    {
+      "name": "requester-cannot-approve-own-request",
+      "amount": 1800,
+      "initiatorIsManager": true,
+      "decisions": [
+        {
+          "node": "manager",
+          "actor": "initiator",
+          "action": "approve"
+        }
+      ],
+      "expect": {
+        "httpStatus": 403,
+        "problemCode": "SELF_APPROVAL_DENIED",
+        "lifecycle": "waiting",
+        "procurementCalls": 0
+      }
+    }
+  ]
+}

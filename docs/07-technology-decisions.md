@@ -32,11 +32,15 @@ Spring's current system requirements include Java 21 within its supported Java r
 
 Exact patch versions are intentionally not called “tested” in this planning package. Pin Maven BOMs, frontend lockfile and container digests at implementation kickoff, review security/support status and record them in a dependency manifest.
 
+Recheck on 7 October 2026 (details and candidate pins in [S1 §1](build/S1-engineering-baseline.md#1-version-pins)): Flowable 8.0.0 (27 February 2026) is still the latest open-source release; Spring Boot has moved to 4.0.8 and 4.1.1 (20 August 2026). Because Flowable 8.0.0 was built on Spring Framework 7.0, R0 pins the Boot 4.0.x line and tries 4.1.x only after the Day-1 spike passes. The MCP Java SDK 2.0.x documents protocol 2025-11-25, while the current MCP specification is 2026-07-28; that gap is an E11 (R2) decision, not an R0 concern.
+
 ## Open-source boundaries
 
 Flowable's public engine repository provides BPMN, CMMN and DMN engines under Apache 2.0. This supports the engine choice; it does not mean every commercial Flowable designer, work application or enterprise connector is included. Build the Orqix UI and integrations around the OSS engine APIs. [Flowable engine repository](https://github.com/flowable/flowable-engine)
 
 XYFlow documents its React Flow core as MIT licensed; paid examples/support are separate offerings. Use core features and project-owned node designs. [XYFlow open-source statement](https://xyflow.com/open-source)
+
+ELK.js 0.12 (studio *Auto-layout*) is dual-licensed EPL-2.0 OR GPL-3.0-or-later; Orqix uses it under **EPL-2.0**, unmodified, as a separately loaded browser chunk (about 440 KB gzip, fetched only when a designer runs auto-layout). Keep its licence text in the third-party notices of the image. [elkjs licence](https://github.com/kieler/elkjs/blob/master/LICENSE.md)
 
 bpmn-js has its own license text, including retention of its visible bpmn.io watermark. Do not categorize it as plain MIT or remove that attribution as a branding change. [bpmn-js license](https://github.com/bpmn-io/bpmn-js/blob/develop/LICENSE)
 

@@ -1,0 +1,66 @@
+# Local development against deploy/compose (PostgreSQL 5432, Keycloak 8180, procurement stub 8095).
+# Dev-only defaults match deploy/compose (docker-compose.yml, postgres/sql/orqix-init.sql); override through env.
+#   First run (and after pulling new migrations):  profiles migrate,dev  -> Flyway + dev seed + engine schema, then exit
+#   Then:                                           profile  dev          -> application on 8080 (management 8081)
+spring:
+  datasource:
+    url: ${ORQIX_DB_URL:jdbc:postgresql://localhost:5432/orqix}
+    username: ${ORQIX_DB_USER:orqix_app}
+    password: ${ORQIX_DB_PASSWORD:orqix_app}
+  flyway:
+    # Dev seed (S1 section 6.1) is an extra location, applied only when the dev profile is active.
+    locations: classpath:db/migration,classpath:db/dev-seed
+  security:
+    oauth2:
+      client:
+        registration:
+          orqix:
+            client-id: ${ORQIX_OIDC_CLIENT_ID:orqix-web}
+            client-secret: ${ORQIX_OIDC_CLIENT_SECRET:orqix-web-dev-secret}
+            client-authentication-method: client_secret_basic
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+            scope: openid,profile,email
+            provider: orqix
+        provider:
+          orqix:
+            # Explicit Keycloak endpoints: no discovery, so the application starts (and the Compose container works)
+            # without reaching Keycloak until somebody signs in.
+            authorization-uri: ${ORQIX_OIDC_ISSUER:http://localhost:8180/realms/orqix-dev}/protocol/openid-connect/auth
+            token-uri: ${ORQIX_OIDC_ISSUER:http://localhost:8180/realms/orqix-dev}/protocol/openid-connect/token
+            jwk-set-uri: ${ORQIX_OIDC_ISSUER:http://localhost:8180/realms/orqix-dev}/protocol/openid-connect/certs
+            user-info-uri: ${ORQIX_OIDC_ISSUER:http://localhost:8180/realms/orqix-dev}/protocol/openid-connect/userinfo
+            user-name-attribute: preferred_username
+      resourceserver:
+        jwt:
+          issuer-uri: ${ORQIX_OIDC_ISSUER:http://localhost:8180/realms/orqix-dev}
+          jwk-set-uri: ${ORQIX_OIDC_ISSUER:http://localhost:8180/realms/orqix-dev}/protocol/openid-connect/certs
+          audiences: orqix-api
+
+server:
+  servlet:
+    session:
+      cookie:
+        # Local http only; every other profile keeps Secure.
+        secure: ${ORQIX_COOKIE_SECURE:false}
+
+logging:
+  structured:
+    format:
+      console: ""
+
+orqix:
+  identity:
+    bootstrap-platform-admin-groups: orqix-platform-admins
+    end-session-uri: ${ORQIX_IDENTITY_END_SESSION_URI:${ORQIX_OIDC_ISSUER:http://localhost:8180/realms/orqix-dev}/protocol/openid-connect/logout}
+  egress:
+    allowed-hosts: localhost:8095
+    allowed-private-hosts: localhost:8095
+    plain-http-hosts: localhost:8095
+  secrets:
+    dir: ${ORQIX_SECRETS_DIR:../../deploy/compose/secrets}
+  db:
+    migrator-password: ${ORQIX_DB_MIGRATOR_PASSWORD:orqix_migrator}
+  dev-seed:
+    # Base URL of the procurement stub binding created by the dev seed (Compose network: http://procurement-stub:8090).
+    stub-base-url: ${ORQIX_DEV_STUB_BASE_URL:http://localhost:8095}

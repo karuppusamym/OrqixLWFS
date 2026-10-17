@@ -1,0 +1,160 @@
+{
+  "schemaVersion": "0.1",
+  "kind": "microsoftGraph",
+  "key": "microsoft-documents",
+  "version": 1,
+  "name": "SharePoint and OneDrive documents",
+  "description": "Read an explicitly selected document version. Bind to https://graph.microsoft.com/v1.0 with server-managed bearerToken credentials and approved egress hosts. Restrict driveId via requestSchema enum in tenant-specific definitions.",
+  "operations": {
+    "getMetadata": {
+      "label": "Read document metadata",
+      "method": "POST",
+      "path": "/metadata",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "driveId": {
+            "type": "string"
+          },
+          "itemId": {
+            "type": "string"
+          },
+          "versionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "driveId",
+          "itemId",
+          "versionId"
+        ],
+        "additionalProperties": false
+      },
+      "responseSchema": {
+        "type": "object",
+        "properties": {
+          "driveId": {
+            "type": "string"
+          },
+          "itemId": {
+            "type": "string"
+          },
+          "versionId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "webUrl": {
+            "type": "string"
+          },
+          "eTag": {
+            "type": "string"
+          },
+          "lastModifiedDateTime": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "driveId",
+          "itemId",
+          "versionId",
+          "name",
+          "webUrl",
+          "eTag",
+          "lastModifiedDateTime",
+          "size"
+        ],
+        "additionalProperties": false
+      },
+      "successStatuses": [
+        200
+      ],
+      "effectClass": "readOnly",
+      "maxTimeoutSeconds": 30,
+      "testable": true
+    },
+    "readText": {
+      "label": "Read pinned text document",
+      "method": "POST",
+      "path": "/text",
+      "requestSchema": {
+        "type": "object",
+        "properties": {
+          "driveId": {
+            "type": "string"
+          },
+          "itemId": {
+            "type": "string"
+          },
+          "versionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "driveId",
+          "itemId",
+          "versionId"
+        ],
+        "additionalProperties": false
+      },
+      "responseSchema": {
+        "type": "object",
+        "properties": {
+          "driveId": {
+            "type": "string"
+          },
+          "itemId": {
+            "type": "string"
+          },
+          "versionId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "webUrl": {
+            "type": "string"
+          },
+          "eTag": {
+            "type": "string"
+          },
+          "lastModifiedDateTime": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "text": {
+            "type": "string"
+          },
+          "contentSha256": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "driveId",
+          "itemId",
+          "versionId",
+          "name",
+          "webUrl",
+          "eTag",
+          "lastModifiedDateTime",
+          "size",
+          "text",
+          "contentSha256"
+        ],
+        "additionalProperties": false
+      },
+      "successStatuses": [
+        200
+      ],
+      "effectClass": "readOnly",
+      "maxTimeoutSeconds": 30,
+      "testable": true
+    }
+  }
+}

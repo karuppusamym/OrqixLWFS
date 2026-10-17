@@ -1,0 +1,212 @@
+{
+  "schemaVersion": "0.1",
+  "workflowKey": "order-payment-wait",
+  "name": "Hold an order until the payment arrives",
+  "metadata": {
+    "description": "An order waits for the message payment-received that carries its order number. The payment system sends it (or an operator sends a test message). If nothing arrives within two days the order is cancelled and the requester is told.",
+    "tags": [
+      "message",
+      "payment",
+      "timer"
+    ]
+  },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "orderNumber",
+      "customerName"
+    ],
+    "properties": {
+      "orderNumber": {
+        "type": "string",
+        "title": "Order number",
+        "description": "The number the payment system will quote when the payment arrives.",
+        "minLength": 3,
+        "maxLength": 40
+      },
+      "customerName": {
+        "type": "string",
+        "title": "Customer",
+        "description": "Who placed the order.",
+        "minLength": 1,
+        "maxLength": 100
+      }
+    }
+  },
+  "inputUi": {
+    "order": [
+      "orderNumber",
+      "customerName"
+    ],
+    "widgets": {}
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "paymentReference": {
+        "type": "string",
+        "title": "Payment reference"
+      }
+    }
+  },
+  "triggers": [
+    "manual",
+    "api"
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "label": "Order placed",
+      "config": {}
+    },
+    {
+      "id": "waitPayment",
+      "type": "waitForMessage",
+      "label": "Wait for the payment",
+      "config": {
+        "message": "payment-received",
+        "correlationField": "/input/orderNumber",
+        "timeoutAfter": "P2D",
+        "payload": [
+          {
+            "name": "paymentReference",
+            "type": "string",
+            "title": "Payment reference",
+            "required": true
+          },
+          {
+            "name": "amountPaid",
+            "type": "number",
+            "title": "Amount paid"
+          }
+        ]
+      }
+    },
+    {
+      "id": "notifyPaid",
+      "type": "notification",
+      "label": "Tell requester the payment arrived",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "The payment for your order arrived. It is now being fulfilled."
+      }
+    },
+    {
+      "id": "fulfilled",
+      "type": "end",
+      "label": "Order paid",
+      "config": {
+        "businessOutcome": "Order paid",
+        "outcomeKind": "success"
+      }
+    },
+    {
+      "id": "notifyCancelled",
+      "type": "notification",
+      "label": "Tell requester the order was cancelled",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "No payment arrived within two days, so your order was cancelled."
+      }
+    },
+    {
+      "id": "cancelled",
+      "type": "end",
+      "label": "Cancelled, no payment",
+      "config": {
+        "businessOutcome": "Cancelled no payment",
+        "outcomeKind": "rejected"
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t1",
+      "from": "start",
+      "to": "waitPayment",
+      "on": "next"
+    },
+    {
+      "id": "t2",
+      "from": "waitPayment",
+      "to": "notifyPaid",
+      "on": "next",
+      "label": "Payment arrived"
+    },
+    {
+      "id": "t3",
+      "from": "waitPayment",
+      "to": "notifyCancelled",
+      "on": "timedOut",
+      "label": "No payment in 2 days"
+    },
+    {
+      "id": "t4",
+      "from": "notifyPaid",
+      "to": "fulfilled",
+      "on": "next"
+    },
+    {
+      "id": "t5",
+      "from": "notifyCancelled",
+      "to": "cancelled",
+      "on": "next"
+    }
+  ],
+  "decisions": [],
+  "execution": {
+    "maxConcurrentRuns": 100,
+    "maxAttempts": 3,
+    "retryDelaySeconds": 30
+  },
+  "security": {
+    "selfApproval": "deny"
+  },
+  "dependencies": {
+    "connections": []
+  },
+  "outputMapping": {
+    "paymentReference": {
+      "fieldRef": "/steps/waitPayment/paymentReference",
+      "required": false
+    }
+  },
+  "uiLayout": {
+    "positions": {
+      "start": {
+        "x": 80,
+        "y": 200
+      },
+      "waitPayment": {
+        "x": 320,
+        "y": 200
+      },
+      "notifyPaid": {
+        "x": 600,
+        "y": 200
+      },
+      "fulfilled": {
+        "x": 860,
+        "y": 200
+      },
+      "notifyCancelled": {
+        "x": 600,
+        "y": 420
+      },
+      "cancelled": {
+        "x": 860,
+        "y": 420
+      }
+    },
+    "viewport": {
+      "x": 0,
+      "y": 0,
+      "zoom": 0.8
+    }
+  }
+}

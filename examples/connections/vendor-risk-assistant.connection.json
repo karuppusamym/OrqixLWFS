@@ -1,0 +1,89 @@
+{
+  "schemaVersion": "0.1",
+  "kind": "agent",
+  "key": "vendor-risk-assistant",
+  "version": 1,
+  "name": "Vendor risk assistant",
+  "description": "An AI assistant for the procurement team that checks a vendor in the vendor registry (an MCP tool server) and reports its risk score, risk band, sanctions flag and registry id. Read-only: it cannot change anything. The binding points at the MCP endpoint; the development stub implements it at /mcp (docs/build/S13-agents-mcp.md).",
+  "operations": {
+    "assessVendor": {
+      "label": "Assess vendor risk",
+      "description": "Looks the vendor up in the vendor registry and returns the registry's risk assessment.",
+      "requestSchema": {
+        "type": "object",
+        "required": [
+          "vendorName",
+          "country",
+          "annualSpend"
+        ],
+        "properties": {
+          "vendorName": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Legal name of the vendor, as the requester wrote it."
+          },
+          "country": {
+            "type": "string",
+            "maxLength": 60,
+            "description": "Country where the vendor is registered."
+          },
+          "annualSpend": {
+            "type": "number",
+            "description": "Expected annual spend with the vendor in USD."
+          }
+        },
+        "additionalProperties": false
+      },
+      "responseSchema": {
+        "type": "object",
+        "required": [
+          "riskScore",
+          "riskBand",
+          "sanctionsHit",
+          "registryId"
+        ],
+        "properties": {
+          "riskScore": {
+            "type": "integer",
+            "description": "Registry risk score, 0 (no risk) to 100 (highest risk)."
+          },
+          "riskBand": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "description": "Registry risk band for the score."
+          },
+          "sanctionsHit": {
+            "type": "boolean",
+            "description": "True when the vendor is on a sanctions list."
+          },
+          "registryId": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "The vendor's id in the registry."
+          }
+        },
+        "additionalProperties": false
+      },
+      "effectClass": "readOnly",
+      "maxTimeoutSeconds": 30,
+      "testable": true,
+      "agent": {
+        "instructions": "You are the vendor risk assistant of the procurement team. For the vendor in the task data, call the vendor_risk_lookup tool once, with the vendor name exactly as given. Then answer with the risk score, risk band, sanctions flag and registry id exactly as the tool returned them. Never estimate, correct or invent values. If the tool reports an error or returns nothing usable, do not guess: answer riskScore 100, riskBand high, sanctionsHit false and registryId UNKNOWN, so that a person reviews the vendor.",
+        "modelProfile": "economy",
+        "tools": [
+          {
+            "name": "vendor_risk_lookup",
+            "label": "Vendor registry",
+            "description": "Looks a vendor up by its legal name in the vendor registry. Returns vendorName, registryId, riskScore (0 to 100), riskBand (low, medium or high) and sanctionsHit (true when the vendor is on a sanctions list)."
+          }
+        ],
+        "maxToolCalls": 3,
+        "summary": "checked '{vendorName}' using {tools}: risk {riskScore} ({riskBand})"
+      }
+    }
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "today": "2026-01-15",
+  "groups": [
+    {
+      "key": "managers",
+      "name": "Managers"
+    },
+    {
+      "key": "finance-approvers",
+      "name": "Finance approvers"
+    },
+    {
+      "key": "it-desk",
+      "name": "IT service desk"
+    },
+    {
+      "key": "facilities-team",
+      "name": "Facilities team"
+    }
+  ],
+  "connections": [
+    {
+      "key": "procurement",
+      "definitionVersion": 1,
+      "definition": "examples/connections/procurement.connection.json",
+      "bindingEnabled": true
+    }
+  ],
+  "workflows": {
+    "purchase-approval": "examples/purchase-approval.json",
+    "review-request": "examples/simple-review.json"
+  }
+}

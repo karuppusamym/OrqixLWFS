@@ -1,0 +1,183 @@
+# Orqix local development stack (docs/build/S1 section 6). DEVELOPMENT ONLY: every credential below is a documented
+# dev default; override through deploy/compose/.env (copy .env.example). Never reuse these values anywhere else.
+#
+#   docker compose up -d postgres keycloak procurement-stub                # dependencies; run the backend from the IDE
+#   docker compose --profile app up -d --build                             # + migration job + the built app image
+#   docker compose --profile migrate run --rm orqix-migrate                # migration job only
+#
+# Host ports (all overridable): PostgreSQL 5432, Keycloak 8180, procurement stub 8095 (8090 inside the network),
+# app 8080 / management 8081.
+
+name: orqix
+
+# The migration service builds the shared app image; the app service uses that same image.
+x-orqix-build: &orqix-build
+  context: ../..
+  dockerfile: Dockerfile
+
+# Runtime constraints mirror OpenShift (restricted SCC): arbitrary non-root UID in group 0, read-only root filesystem,
+# writable /tmp, no capabilities. Running the dev stack like this exercises T-OPS-01 on every start.
+x-orqix-hardening: &orqix-hardening
+  user: "${ORQIX_UID:-1000770000}:0"
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:18-alpine}
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:-postgres-dev-only}
+      POSTGRES_DB: orqix
+      ORQIX_MIGRATOR_PASSWORD: ${ORQIX_MIGRATOR_PASSWORD:-orqix_migrator}
+      ORQIX_APP_PASSWORD: ${ORQIX_APP_PASSWORD:-orqix_app}
+    ports:
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    volumes:
+      # PostgreSQL 18+ images keep the cluster below /var/lib/postgresql/<major>; mount the parent.
+      - orqix-pgdata:/var/lib/postgresql
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+      - ./postgres/sql:/orqix-sql:ro
+    healthcheck:
+      # TCP (-h) on purpose: during first-time init the temporary server listens on the socket only.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d orqix"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  keycloak:
+    image: ${KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:26.8.0}
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin-dev-only}
+      # Issuer seen by browsers and written into tokens. The backchannel stays reachable as http://keycloak:8080.
+      KC_HOSTNAME: http://localhost:${KEYCLOAK_HOST_PORT:-8180}
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+      KC_LOG_LEVEL: ${KEYCLOAK_LOG_LEVEL:-info}
+    ports:
+      - "${KEYCLOAK_HOST_PORT:-8180}:8080"
+    volumes:
+      - ./keycloak/orqix-dev-realm.json:/opt/keycloak/data/import/orqix-dev-realm.json:ro
+    healthcheck:
+      # The Keycloak image has neither curl nor wget: speak HTTP to the management port (9000) with bash /dev/tcp.
+      test:
+        - "CMD-SHELL"
+        - "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '\"status\": \"UP\"' <&3"
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+
+  procurement-stub:
+    build:
+      context: ../..
+      dockerfile: tools/procurement-stub/Dockerfile
+    image: orqix/procurement-stub:dev
+    ports:
+      - "${STUB_HOST_PORT:-8095}:8090"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8090/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 15s
+
+  # One-shot migration job: Flyway (schema orqix) + Flowable schema creation (schema flowable), then exit.
+  orqix-migrate:
+    profiles: ["migrate", "app"]
+    build: *orqix-build
+    image: ${ORQIX_IMAGE:-orqix/orqix:dev}
+    <<: *orqix-hardening
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: ${ORQIX_MIGRATE_PROFILES:-migrate,dev}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/orqix
+      SPRING_DATASOURCE_USERNAME: orqix_migrator
+      SPRING_DATASOURCE_PASSWORD: ${ORQIX_MIGRATOR_PASSWORD:-orqix_migrator}
+      # Flyway placeholder ${app_role} used by the migrations' GRANT statements (orqix.migration.app-role).
+      ORQIX_APP_ROLE: orqix_app
+      # Dev seed only: the seeded procurement binding must point at the stub as the app container sees it.
+      ORQIX_DEV_STUB_BASE_URL: http://procurement-stub:8090
+      JAVA_OPTS: ${ORQIX_MIGRATE_JAVA_OPTS:--XX:MaxRAMPercentage=75}
+
+  orqix:
+    profiles: ["app"]
+    image: ${ORQIX_IMAGE:-orqix/orqix:dev}
+    <<: *orqix-hardening
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+      procurement-stub:
+        condition: service_healthy
+      orqix-migrate:
+        condition: service_completed_successfully
+    ports:
+      - "${ORQIX_HOST_PORT:-8080}:8080"
+      - "${ORQIX_MANAGEMENT_HOST_PORT:-8081}:8081"
+    volumes:
+      # One file per secretRef (orqix.secrets.dir); empty in dev because the stub needs no credential.
+      - ./secrets:/var/run/secrets/orqix:ro
+    environment:
+      SPRING_PROFILES_ACTIVE: ${ORQIX_PROFILES:-dev}
+      JAVA_OPTS: ${ORQIX_JAVA_OPTS:--XX:MaxRAMPercentage=75}
+      # --- database: runtime role, DML only ---
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/orqix
+      SPRING_DATASOURCE_USERNAME: orqix_app
+      SPRING_DATASOURCE_PASSWORD: ${ORQIX_APP_PASSWORD:-orqix_app}
+      # --- OIDC login: explicit endpoints (no issuer discovery) because the browser reaches Keycloak as
+      #     localhost:${KEYCLOAK_HOST_PORT} while this container reaches it as keycloak:8080 ---
+      SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_ORQIX_PROVIDER: orqix
+      SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_ORQIX_CLIENT_ID: orqix-web
+      SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_ORQIX_CLIENT_SECRET: ${ORQIX_WEB_CLIENT_SECRET:-orqix-web-dev-secret}
+      SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_ORQIX_CLIENT_AUTHENTICATION_METHOD: client_secret_basic
+      SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_ORQIX_AUTHORIZATION_GRANT_TYPE: authorization_code
+      SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_ORQIX_REDIRECT_URI: "{baseUrl}/login/oauth2/code/{registrationId}"
+      SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_ORQIX_SCOPE: openid,profile,email
+      SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_ORQIX_AUTHORIZATION_URI: http://localhost:${KEYCLOAK_HOST_PORT:-8180}/realms/orqix-dev/protocol/openid-connect/auth
+      SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_ORQIX_TOKEN_URI: http://keycloak:8080/realms/orqix-dev/protocol/openid-connect/token
+      SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_ORQIX_JWK_SET_URI: http://keycloak:8080/realms/orqix-dev/protocol/openid-connect/certs
+      SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_ORQIX_USER_INFO_URI: http://keycloak:8080/realms/orqix-dev/protocol/openid-connect/userinfo
+      SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_ORQIX_USER_NAME_ATTRIBUTE: preferred_username
+      # RP-initiated logout (S6 section 1): no issuer discovery here, so the end-session endpoint is explicit.
+      ORQIX_IDENTITY_END_SESSION_URI: http://localhost:${KEYCLOAK_HOST_PORT:-8180}/realms/orqix-dev/protocol/openid-connect/logout
+      # --- machine clients (bearer JWT): keys fetched from the backchannel, `iss` checked against the public issuer ---
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: http://localhost:${KEYCLOAK_HOST_PORT:-8180}/realms/orqix-dev
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: http://keycloak:8080/realms/orqix-dev/protocol/openid-connect/certs
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_AUDIENCES: orqix-api
+      # --- orqix.* (docs/build/S1 section 5) ---
+      ORQIX_IDENTITY_BOOTSTRAP_PLATFORM_ADMIN_GROUPS: orqix-platform-admins
+      ORQIX_EGRESS_ALLOWED_HOSTS: procurement-stub:8090
+      ORQIX_EGRESS_ALLOWED_PRIVATE_HOSTS: procurement-stub:8090
+      ORQIX_EGRESS_PLAIN_HTTP_HOSTS: procurement-stub:8090
+      ORQIX_SECRETS_DIR: /var/run/secrets/orqix
+      ORQIX_REMINDERS_ENABLED: ${ORQIX_REMINDERS_ENABLED:-true}
+      ORQIX_REMINDERS_AFTER: ${ORQIX_REMINDERS_AFTER:-24h}
+      ORQIX_REMINDERS_POLL_DELAY: ${ORQIX_REMINDERS_POLL_DELAY:-60s}
+      # AI assistance (S10). Empty = rules-only. Read unprefixed on purpose; set it in deploy/compose/.env (gitignored).
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+    healthcheck:
+      # Readiness on the management port; bash /dev/tcp because the runtime image is minimal.
+      test:
+        - "CMD-SHELL"
+        - "exec 3<>/dev/tcp/127.0.0.1/8081 && printf 'GET /actuator/health/readiness HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '\"status\":\"UP\"' <&3"
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 60s
+
+volumes:
+  orqix-pgdata:

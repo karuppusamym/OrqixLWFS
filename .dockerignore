@@ -1,0 +1,30 @@
+# Build context hygiene for the root Dockerfile. Host-built artifacts must never enter the image build: a Windows
+# node_modules or a stale target/ would overwrite what the container builds itself.
+**/.git
+.git
+.github
+.claude
+.idea
+.vscode
+
+# Built outputs and dependencies
+**/node_modules
+**/target
+**/dist
+**/dist-mock
+**/coverage
+**/playwright-report
+**/test-results
+**/blob-report
+**/*.log
+
+# Evidence packs, local environment files, planning material, deployment and tooling folders
+evidence
+**/.env
+**/.env.*
+!**/.env.example
+docs
+design
+deploy
+tools
+tests

@@ -1,0 +1,182 @@
+# NetworkPolicies for the Orqix pods (app and migration Job). All CIDRs below are RFC 5737 documentation addresses and
+# MUST be replaced per environment (overlay patches); an unreplaced placeholder blocks traffic, it never opens it.
+# Pods are selected by app.kubernetes.io/part-of=orqix, so other workloads in the namespace are unaffected.
+---
+# Baseline: nothing in, nothing out unless a policy below allows it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: orqix-default-deny
+  labels:
+    app.kubernetes.io/name: orqix
+    app.kubernetes.io/part-of: orqix
+    orqix.io/stage: prerequisites
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: orqix
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# Browser traffic: only the OpenShift router (ingress controller namespaces), only port 8080.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: orqix-allow-router-ingress
+  labels:
+    app.kubernetes.io/name: orqix
+    app.kubernetes.io/part-of: orqix
+    orqix.io/stage: prerequisites
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: orqix
+      app.kubernetes.io/component: app
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              # Label OpenShift puts on the namespace(s) hosting the default ingress controller. If routers run in a
+              # dedicated namespace, label that namespace the same way (or select it by kubernetes.io/metadata.name).
+              policy-group.network.openshift.io/ingress: ""
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+# Metrics and probes: port 8081 only from the monitoring namespaces. Kubelet probes originate on the node and are not
+# subject to NetworkPolicy.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: orqix-allow-monitoring-ingress
+  labels:
+    app.kubernetes.io/name: orqix
+    app.kubernetes.io/part-of: orqix
+    orqix.io/stage: prerequisites
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: orqix
+      app.kubernetes.io/component: app
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshift-monitoring
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshift-user-workload-monitoring
+      ports:
+        - protocol: TCP
+          port: 8081
+---
+# Cluster DNS for every Orqix pod (CoreDNS in openshift-dns listens on 53 and 5353).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: orqix-allow-dns-egress
+  labels:
+    app.kubernetes.io/name: orqix
+    app.kubernetes.io/part-of: orqix
+    orqix.io/stage: prerequisites
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: orqix
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshift-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+        - protocol: UDP
+          port: 5353
+        - protocol: TCP
+          port: 5353
+---
+# PostgreSQL, for the application pods and the migration Job.
+# REPLACE the CIDR (managed or external database). For a database inside the cluster use a podSelector/namespaceSelector
+# instead of ipBlock.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: orqix-allow-postgres-egress
+  labels:
+    app.kubernetes.io/name: orqix
+    app.kubernetes.io/part-of: orqix
+    orqix.io/stage: prerequisites
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: orqix
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 192.0.2.10/32   # REPLACE: PostgreSQL primary / HA virtual address
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+# Identity provider (OIDC discovery, token, JWKS, userinfo, end-session): application pods only.
+# REPLACE the CIDR with the IdP's address range and keep port 443.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: orqix-allow-idp-egress
+  labels:
+    app.kubernetes.io/name: orqix
+    app.kubernetes.io/part-of: orqix
+    orqix.io/stage: prerequisites
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: orqix
+      app.kubernetes.io/component: app
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 198.51.100.20/32   # REPLACE: identity provider
+      ports:
+        - protocol: TCP
+          port: 443
+---
+# Allowlisted business endpoints (connection bindings, for example the procurement service). The application also
+# enforces orqix.egress.allowed-hosts; this policy is the platform-level backstop that closes DNS time-of-check/time-of-use
+# gaps (decision D06). One ipBlock per approved endpoint; keep it in step with ORQIX_EGRESS_ALLOWED_HOSTS.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: orqix-allow-connection-egress
+  labels:
+    app.kubernetes.io/name: orqix
+    app.kubernetes.io/part-of: orqix
+    orqix.io/stage: prerequisites
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: orqix
+      app.kubernetes.io/component: app
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 203.0.113.30/32   # REPLACE: approved procurement endpoint
+      ports:
+        - protocol: TCP
+          port: 443

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC hand-authored fixture, not a customer export. Text input with comma lists, a number output and a yes/no
+     column that no rule tests (dropped, reported). Hit policy FIRST with a catch-all last rule, which becomes the default. -->
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="tier-definitions" name="Customer tier" namespace="urn:orqix:migration-fixture">
+  <decision id="customerDiscount" name="Customer discount">
+    <decisionTable id="customerDiscountTable" hitPolicy="FIRST">
+      <input id="tierColumn" label="Customer tier">
+        <inputExpression id="tierExpression" typeRef="string"><text>tier</text></inputExpression>
+      </input>
+      <input id="vipColumn" label="VIP">
+        <inputExpression id="vipExpression" typeRef="boolean"><text>vip</text></inputExpression>
+      </input>
+      <output id="discountColumn" label="Discount" name="discount" typeRef="double" />
+      <rule id="rulePremium">
+        <inputEntry id="premiumTier"><text>"gold","platinum"</text></inputEntry>
+        <inputEntry id="premiumVip"><text>-</text></inputEntry>
+        <outputEntry id="premiumDiscount"><text>0.20</text></outputEntry>
+      </rule>
+      <rule id="ruleSilver">
+        <inputEntry id="silverTier"><text>"silver"</text></inputEntry>
+        <inputEntry id="silverVip"><text></text></inputEntry>
+        <outputEntry id="silverDiscount"><text>0.10</text></outputEntry>
+      </rule>
+      <rule id="ruleOther">
+        <inputEntry id="otherTier"><text>-</text></inputEntry>
+        <inputEntry id="otherVip"><text>-</text></inputEntry>
+        <outputEntry id="otherDiscount"><text>0</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+</definitions>

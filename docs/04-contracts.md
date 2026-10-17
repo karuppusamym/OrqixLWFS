@@ -1,5 +1,7 @@
 # Data model, APIs and workflow contract
-Version 0.1. These are build contracts, not implemented endpoints.
+Version 0.2. These are build contracts, not implemented endpoints.
+
+**Machine-readable contracts now exist and are authoritative for R0:** [OpenAPI](../contracts/openapi.yaml), [reference DDL](../backend/app/src/main/resources/db/migration/V1__orqix_core.sql), [workflow schema](../contracts/workflow-v0.schema.json) and [connection definition schema](../contracts/connection-definition-v0.schema.json), explained in [S2](build/S2-data-model.md), [S3](build/S3-api.md) and [S4](build/S4-workflow-compiler.md). This page remains the overview; where it differs, the build contracts apply. Notable R0 refinements: forms, decisions and their versions are inline in the workflow and pinned by the release (shared form/decision assets are R1); one environment per installation, so deployment identifiers are stored on the release; run status is generic (below).
 
 ## Domain model
 
@@ -34,10 +36,10 @@ Use UUIDs for product identifiers and decimal/numeric for money. Engine task sta
 Draft → Validated → Published (immutable).
 Editing a published workflow creates another draft.
 
-Run: accepted → running ↔ waiting → completed; optional suspended/cancelled/needsAttention.
-NeedsAttention can recover into running after an authorized action.
-Business status: Submitted, AwaitingManager, AwaitingFinance, Approved, Rejected or Fulfilled.
-Rejected is normally a completed process with a rejected business outcome, not a technical engine error.
+Run lifecycle: running ↔ waiting → completed; also needsAttention and cancelled (suspended is R1). "Accepted" is the committed 201 response, not a stored state.
+NeedsAttention can recover into running after an authorized operator action.
+Business status is generic, not specific to one workflow: the current step(s) with owner ("Waiting for Managers: Review request") while active, and on completion the outcome label and kind defined by the reached end step (for the purchase template: Fulfilled/success or Rejected/rejected).
+Rejected is a completed process with a rejected business outcome, not a technical engine error.
 
 ## API conventions
 
@@ -59,9 +61,9 @@ Status semantics: 400 malformed request, 401 unauthenticated, 403 known resource
 | GET /workflows/{id}/draft | — | Canonical document and ETag |
 | PUT /workflows/{id}/draft | definition; If-Match | New draft revision; 412 if stale |
 | POST /workflows/{id}/validate | revision | Issues with nodeId/path/code/severity; no deployment |
-| POST /workflows/{id}/publish | revision, validationHash; idempotency key | Revalidate exact revision, deploy and return immutable release |
+| POST /workflows/{id}/publish | draftRevision, acknowledgeWarnings, activate; idempotency key | Revalidate exact revision, deploy and return immutable release |
 | GET /workflows/{id}/releases | cursor | Authorized immutable release metadata |
-| POST /runs | releaseId, input, businessKey optional; idempotency key | 201 run on commit; 200 on exact replay |
+| POST /runs | workflowId, input, expectedReleaseId and businessKey optional; idempotency key | Starts the workflow's active release; 201 run on commit; 200 on exact replay |
 | GET /runs | workflow/status/date filters | Workspace-scoped run summaries |
 | GET /runs/{id} | — | Version, lifecycle, business status, current work |
 | GET /runs/{id}/events | after, cursor | Ordered persisted events for polling |
@@ -88,11 +90,12 @@ Task decision body example:
 
 Caller cannot submit actor, workspace, assignee or protected run variables in formData. Those come from authenticated context and server mappings.
 
-Run creation request references a release in the same workspace:
+Run creation request references a workflow in the same workspace; the server starts its active release. `expectedReleaseId` (optional) is the release whose form the client rendered; if another release became active meanwhile the server returns 409 RELEASE_NOT_ACTIVE:
 
 ```json
 {
-  "releaseId": "release-identifier-from-publish",
+  "workflowId": "workflow-identifier",
+  "expectedReleaseId": "release-identifier-shown-in-the-form",
   "businessKey": "REQ-1042",
   "input": {
     "title": "Laptop purchase",
@@ -167,3 +170,20 @@ All paths below use the same workspace prefix and server authorization rules.
 | POST /connections | Versioned logical operation and environment binding refs | integration.admin grant; no secrets in response or arbitrary executable code |
 
 Suspension/resumption APIs arrive with R1 E04. Identity bootstrap, membership/grant management and the remaining registry/schedule APIs must be frozen in OpenAPI as part of E14/E08–E13 ticket readiness; they are not implemented by this prose table.
+
+## Pattern acceptance matrix
+
+Orqix acceptance matrix (the R0 version with test IDs is in [S4 §12](build/S4-workflow-compiler.md#12-pattern-acceptance-matrix)). All entries are Planned, not tested capabilities.
+
+| Pattern | Product representation | Target | Required behavior test |
+|---|---|---|---|
+| Sequence | Supported steps connected in order | R0 | Next step does not begin before predecessor completes |
+| Exclusive choice | Typed branch/default; approval outcome routing | R0 | Exactly one eligible route is selected |
+| Simple merge | Mutually exclusive paths converge on a supported step | R0 | Convergence triggers that step once, without waiting for the unused path |
+| Parallel split | Explicit matched fork | R1 | Each configured branch starts once |
+| Synchronization | Join paired with that fork | R1 | Continue once after every required branch completes, regardless of completion order |
+| Advanced branching / multiple instances | Explicit future node contracts | R3 | Document assumptions and test allowed combinations before exposure |
+
+Compiler/backend lead owns a capability entry with: pattern ID, schema version, engine version, supported configuration, compiler mapping, editor/import availability, restrictions, test IDs and evidence status. Reject a pattern outside the current supported subset even if the engine can execute it.
+
+[BPMN 2.0.2](https://www.omg.org/spec/BPMN/2.0.2/About-BPMN) semantics and the pinned runtime govern behavior; this table does not expand workflow-v0.schema.json.

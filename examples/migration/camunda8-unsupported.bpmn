@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Hand-authored compatibility fixture, not a customer export. One of each Camunda 8 construct the importer blocks. The chain is
+     only a valid BPMN graph so that every element is reachable; it is not a meaningful process. -->
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" xmlns:modeler="http://camunda.org/schema/modeler/1.0" targetNamespace="urn:orqix:migration-fixture" modeler:executionPlatform="Camunda Cloud" modeler:executionPlatformVersion="8.5.0">
+  <bpmn:message id="orderMessage" name="orderReceived"><bpmn:extensionElements><zeebe:subscription correlationKey="=&#34;a-&#34; + orderId" /></bpmn:extensionElements></bpmn:message>
+  <bpmn:signal id="alertSignal" name="alert" />
+  <bpmn:process id="c8-unsupported" name="Camunda 8 unsupported constructs" isExecutable="true">
+    <bpmn:extensionElements>
+      <zeebe:userTaskForm id="brokenForm">{"schemaVersion":16,"type":"default","id":"broken-form","components":[{"type":"textfield","id":"b1","key":"customer","label":"Customer"},{"type":"table","id":"b2","key":"rows","label":"Rows"},{"type":"dynamiclist","id":"b3","key":"lines","label":"Lines","components":[]},{"type":"filepicker","id":"b4","key":"files","label":"Files"},{"type":"expression","id":"b5","key":"total","expression":"=a+b"},{"type":"select","id":"b6","key":"country","label":"Country","valuesKey":"countries"},{"type":"textfield","id":"b7","key":"vat","label":"VAT number","conditional":{"hide":"=country = \"US\""}},{"type":"checklist","id":"b8","key":"extras","label":"Extras","values":[{"label":"A","value":"a"}]}]}</zeebe:userTaskForm>
+    </bpmn:extensionElements>
+    <bpmn:startEvent id="start" />
+    <bpmn:startEvent id="webhookStart" name="Webhook start"><bpmn:extensionElements><zeebe:properties><zeebe:property name="inbound.type" value="io.camunda:webhook:1" /></zeebe:properties></bpmn:extensionElements></bpmn:startEvent>
+    <bpmn:intermediateCatchEvent id="messageCatch" name="Order received"><bpmn:messageEventDefinition messageRef="orderMessage" /></bpmn:intermediateCatchEvent>
+    <bpmn:intermediateCatchEvent id="signalCatch" name="Alert"><bpmn:signalEventDefinition signalRef="alertSignal" /></bpmn:intermediateCatchEvent>
+    <bpmn:intermediateCatchEvent id="cycleTimer" name="Every day"><bpmn:timerEventDefinition><bpmn:timeCycle>R/P1D</bpmn:timeCycle></bpmn:timerEventDefinition></bpmn:intermediateCatchEvent>
+    <bpmn:intermediateCatchEvent id="fixedDate" name="Fixed date"><bpmn:timerEventDefinition><bpmn:timeDate>2030-01-01T09:00:00Z</bpmn:timeDate></bpmn:timerEventDefinition></bpmn:intermediateCatchEvent>
+    <bpmn:serviceTask id="slack" name="Tell the team"><bpmn:extensionElements><zeebe:taskDefinition type="io.camunda:slack:1" /></bpmn:extensionElements></bpmn:serviceTask>
+    <bpmn:sendTask id="mail" name="Send mail"><bpmn:extensionElements><zeebe:taskDefinition type="io.camunda:email:1" /></bpmn:extensionElements></bpmn:sendTask>
+    <bpmn:scriptTask id="calculate" name="Calculate"><bpmn:extensionElements><zeebe:script expression="=a + b" resultVariable="total" /></bpmn:extensionElements></bpmn:scriptTask>
+    <bpmn:exclusiveGateway id="gFunction" default="gFunctionDefault" />
+    <bpmn:exclusiveGateway id="gNull" default="gNullDefault" />
+    <bpmn:exclusiveGateway id="gIn" default="gInDefault" />
+    <bpmn:exclusiveGateway id="merge1" />
+    <bpmn:exclusiveGateway id="merge2" />
+    <bpmn:exclusiveGateway id="merge3" />
+    <bpmn:inclusiveGateway id="inclusive" />
+    <bpmn:userTask id="computedAssignee" name="Computed assignee"><bpmn:extensionElements><zeebe:userTask /><zeebe:assignmentDefinition assignee="=manager" /></bpmn:extensionElements></bpmn:userTask>
+    <bpmn:userTask id="lateTask" name="Late task"><bpmn:extensionElements><zeebe:userTask /><zeebe:assignmentDefinition candidateGroups="source-managers" /></bpmn:extensionElements></bpmn:userTask>
+    <bpmn:boundaryEvent id="nonInterrupting" cancelActivity="false" attachedToRef="lateTask"><bpmn:timerEventDefinition><bpmn:timeDuration>PT1H</bpmn:timeDuration></bpmn:timerEventDefinition></bpmn:boundaryEvent>
+    <bpmn:userTask id="eachItem" name="Review each item"><bpmn:extensionElements><zeebe:userTask /><zeebe:assignmentDefinition candidateGroups="source-managers" /></bpmn:extensionElements>
+      <bpmn:multiInstanceLoopCharacteristics><bpmn:extensionElements><zeebe:loopCharacteristics inputCollection="=items" inputElement="item" /></bpmn:extensionElements></bpmn:multiInstanceLoopCharacteristics></bpmn:userTask>
+    <bpmn:userTask id="formTask" name="Task with a broken form"><bpmn:extensionElements><zeebe:userTask /><zeebe:assignmentDefinition candidateGroups="source-managers" /><zeebe:formDefinition formKey="camunda-forms:bpmn:brokenForm" /></bpmn:extensionElements></bpmn:userTask>
+    <bpmn:businessRuleTask id="rules" name="Risk rules"><bpmn:extensionElements><zeebe:calledDecision decisionId="risk" resultVariable="riskResult" /></bpmn:extensionElements></bpmn:businessRuleTask>
+    <bpmn:subProcess id="nested" name="Nested work"><bpmn:startEvent id="nestedStart" /><bpmn:endEvent id="nestedEnd" /><bpmn:sequenceFlow id="nestedFlow" sourceRef="nestedStart" targetRef="nestedEnd" /></bpmn:subProcess>
+    <bpmn:endEvent id="done" name="Done" />
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="messageCatch" />
+    <bpmn:sequenceFlow id="f1b" sourceRef="webhookStart" targetRef="messageCatch" />
+    <bpmn:sequenceFlow id="f2" sourceRef="messageCatch" targetRef="signalCatch" />
+    <bpmn:sequenceFlow id="f3" sourceRef="signalCatch" targetRef="cycleTimer" />
+    <bpmn:sequenceFlow id="f4" sourceRef="cycleTimer" targetRef="fixedDate" />
+    <bpmn:sequenceFlow id="f5" sourceRef="fixedDate" targetRef="slack" />
+    <bpmn:sequenceFlow id="f6" sourceRef="slack" targetRef="mail" />
+    <bpmn:sequenceFlow id="f7" sourceRef="mail" targetRef="calculate" />
+    <bpmn:sequenceFlow id="f8" sourceRef="calculate" targetRef="gFunction" />
+    <bpmn:sequenceFlow id="byFunction" sourceRef="gFunction" targetRef="merge1"><bpmn:conditionExpression>= contains(name, "rush")</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="gFunctionDefault" sourceRef="gFunction" targetRef="merge1" />
+    <bpmn:sequenceFlow id="byNull" sourceRef="gNull" targetRef="merge2"><bpmn:conditionExpression>= owner = null</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="gNullDefault" sourceRef="gNull" targetRef="merge2" />
+    <bpmn:sequenceFlow id="byIn" sourceRef="gIn" targetRef="merge3"><bpmn:conditionExpression>= status in ("a", "b")</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="gInDefault" sourceRef="gIn" targetRef="merge3" />
+    <bpmn:sequenceFlow id="m1" sourceRef="merge1" targetRef="gNull" />
+    <bpmn:sequenceFlow id="m2" sourceRef="merge2" targetRef="gIn" />
+    <bpmn:sequenceFlow id="m3" sourceRef="merge3" targetRef="inclusive" />
+    <bpmn:sequenceFlow id="f9" sourceRef="inclusive" targetRef="computedAssignee" />
+    <bpmn:sequenceFlow id="f10" sourceRef="computedAssignee" targetRef="lateTask" />
+    <bpmn:sequenceFlow id="f11" sourceRef="lateTask" targetRef="eachItem" />
+    <bpmn:sequenceFlow id="lateFlow" sourceRef="nonInterrupting" targetRef="eachItem" />
+    <bpmn:sequenceFlow id="f12" sourceRef="eachItem" targetRef="formTask" />
+    <bpmn:sequenceFlow id="f13" sourceRef="formTask" targetRef="rules" />
+    <bpmn:sequenceFlow id="f14" sourceRef="rules" targetRef="nested" />
+    <bpmn:sequenceFlow id="f15" sourceRef="nested" targetRef="done" />
+  </bpmn:process>
+</bpmn:definitions>

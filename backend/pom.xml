@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>4.0.8</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.orqix</groupId>
+    <artifactId>orqix-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+    <name>Orqix</name>
+    <description>Orqix business workflow platform (R0)</description>
+
+    <modules>
+        <module>compiler</module>
+        <module>app</module>
+    </modules>
+
+    <!-- Version pins: docs/build/S1-engineering-baseline.md section 1, recorded in docs/adr/0001 after spike B01.2. -->
+    <properties>
+        <java.version>21</java.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <!-- Isolate verification from IDE incremental compilation when needed. -->
+        <orqix.buildDirectory>target</orqix.buildDirectory>
+        <flowable.version>8.0.0</flowable.version>
+        <spring-modulith.version>2.0.8</spring-modulith.version>
+        <json-schema-validator.version>3.0.8</json-schema-validator.version>
+        <json-canonicalization.version>1.1</json-canonicalization.version>
+        <uuid-creator.version>6.1.1</uuid-creator.version>
+        <archunit.version>1.5.1</archunit.version>
+        <wiremock.version>3.13.2</wiremock.version>
+    </properties>
+
+    <build>
+        <directory>${project.basedir}/${orqix.buildDirectory}</directory>
+    </build>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.springframework.modulith</groupId>
+                <artifactId>spring-modulith-bom</artifactId>
+                <version>${spring-modulith.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.orqix</groupId>
+                <artifactId>orqix-compiler</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.flowable</groupId>
+                <artifactId>flowable-spring-boot-starter-process</artifactId>
+                <version>${flowable.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.flowable</groupId>
+                <artifactId>flowable-spring-boot-starter-dmn</artifactId>
+                <version>${flowable.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.flowable</groupId>
+                <artifactId>flowable-dmn-spring-configurator</artifactId>
+                <version>${flowable.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.networknt</groupId>
+                <artifactId>json-schema-validator</artifactId>
+                <version>${json-schema-validator.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.erdtman</groupId>
+                <artifactId>java-json-canonicalization</artifactId>
+                <version>${json-canonicalization.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.github.f4b6a3</groupId>
+                <artifactId>uuid-creator</artifactId>
+                <version>${uuid-creator.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.tngtech.archunit</groupId>
+                <artifactId>archunit-junit5</artifactId>
+                <version>${archunit.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.wiremock</groupId>
+                <artifactId>wiremock-standalone</artifactId>
+                <version>${wiremock.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+</project>

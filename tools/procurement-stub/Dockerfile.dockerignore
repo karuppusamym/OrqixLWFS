@@ -1,0 +1,7 @@
+# Used by tools/procurement-stub/Dockerfile (build context = repository root): allow-list only what the build needs.
+*
+!tools/procurement-stub/pom.xml
+!tools/procurement-stub/mvnw
+!tools/procurement-stub/.mvn
+!tools/procurement-stub/src
+!examples/connections/procurement.connection.json

@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:flowable="http://flowable.org/bpmn" xmlns:orqix="https://orqix.example/bpmn/v0" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC" xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI" targetNamespace="https://orqix.example/workflows">
+  <process id="purchase-approval" name="Purchase approval" isExecutable="true">
+    <extensionElements>
+      <orqix:release schemaVersion="0.1" compilerVersion="0.2.0" semanticHash="6ae448102e3af36408646948be6e02a899e806a03afd6e3eee595db579484c7f"/>
+    </extensionElements>
+    <startEvent id="start" name="Request submitted"/>
+    <userTask id="manager" name="Review request" flowable:candidateGroups="managers">
+      <extensionElements>
+        <orqix:approval rejectReasonRequired="true" dueAfterHours="24"/>
+      </extensionElements>
+    </userTask>
+    <sequenceFlow id="manager__out" sourceRef="manager" targetRef="manager__route"/>
+    <exclusiveGateway id="manager__route" name="Review request: outcome"/>
+    <serviceTask id="amountPolicy" name="Check purchase amount" flowable:delegateExpression="${orqixDecisionTask}">
+      <extensionElements>
+        <orqix:decision ref="amount-policy" version="1" resource="decisions/amount-policy.dmn" fieldRef="/input/amount"/>
+      </extensionElements>
+    </serviceTask>
+    <exclusiveGateway id="route" name="Finance review needed?" default="t6"/>
+    <userTask id="finance" name="Finance review" flowable:candidateGroups="finance-approvers">
+      <extensionElements>
+        <orqix:approval rejectReasonRequired="true" dueAfterHours="48"/>
+      </extensionElements>
+    </userTask>
+    <sequenceFlow id="finance__out" sourceRef="finance" targetRef="finance__route"/>
+    <exclusiveGateway id="finance__route" name="Finance review: outcome"/>
+    <serviceTask id="procure" name="Create purchase order" flowable:async="true" flowable:exclusive="true" flowable:delegateExpression="${orqixHttpTask}">
+      <extensionElements>
+        <flowable:failedJobRetryTimeCycle>R3/PT30S</flowable:failedJobRetryTimeCycle>
+        <orqix:http connection="procurement" connectionVersion="1" operation="createOrder" timeoutSeconds="20">
+          <orqix:input name="amount" fieldRef="/input/amount"/>
+          <orqix:input name="costCenter" fieldRef="/input/costCenter"/>
+          <orqix:input name="title" fieldRef="/input/title"/>
+          <orqix:result name="procurementId" pointer="/id"/>
+        </orqix:http>
+      </extensionElements>
+    </serviceTask>
+    <serviceTask id="notify" name="Tell requester it is ordered" flowable:delegateExpression="${orqixNotificationTask}">
+      <extensionElements>
+        <orqix:notification channel="inApp" recipient="initiator" message="Your purchase request was approved and the purchase order has been created."/>
+      </extensionElements>
+    </serviceTask>
+    <endEvent id="fulfilled" name="Fulfilled">
+      <extensionElements>
+        <orqix:outcome label="Fulfilled" kind="success"/>
+      </extensionElements>
+    </endEvent>
+    <serviceTask id="notifyRejected" name="Tell requester it was rejected" flowable:delegateExpression="${orqixNotificationTask}">
+      <extensionElements>
+        <orqix:notification channel="inApp" recipient="initiator" message="Your purchase request was rejected. Open the request to see the reason."/>
+      </extensionElements>
+    </serviceTask>
+    <endEvent id="rejected" name="Rejected">
+      <extensionElements>
+        <orqix:outcome label="Rejected" kind="rejected"/>
+      </extensionElements>
+    </endEvent>
+    <sequenceFlow id="t1" sourceRef="start" targetRef="manager"/>
+    <sequenceFlow id="t2" sourceRef="manager__route" targetRef="amountPolicy">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${orqixRoute.approved(execution, 'manager')}]]></conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="t3" sourceRef="manager__route" targetRef="notifyRejected">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${orqixRoute.rejected(execution, 'manager')}]]></conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="t4" sourceRef="amountPolicy" targetRef="route"/>
+    <sequenceFlow id="t5" name="USD 5,000 or more" sourceRef="route" targetRef="finance">
+      <extensionElements>
+        <orqix:condition fieldRef="/steps/amountPolicy/route" operator="eq" valueType="string" value="financeReview"/>
+      </extensionElements>
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${orqixRoute.condition(execution, 't5')}]]></conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="t6" name="Under USD 5,000" sourceRef="route" targetRef="procure"/>
+    <sequenceFlow id="t7" sourceRef="finance__route" targetRef="procure">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${orqixRoute.approved(execution, 'finance')}]]></conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="t8" sourceRef="finance__route" targetRef="notifyRejected">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${orqixRoute.rejected(execution, 'finance')}]]></conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="t9" sourceRef="procure" targetRef="notify"/>
+    <sequenceFlow id="t10" sourceRef="notify" targetRef="fulfilled"/>
+    <sequenceFlow id="t11" sourceRef="notifyRejected" targetRef="rejected"/>
+  </process>
+  <bpmndi:BPMNDiagram id="purchase-approval__diagram">
+    <bpmndi:BPMNPlane id="purchase-approval__plane" bpmnElement="purchase-approval">
+      <bpmndi:BPMNShape id="start__di" bpmnElement="start">
+        <omgdc:Bounds x="172" y="218" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="manager__di" bpmnElement="manager">
+        <omgdc:Bounds x="360" y="196" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="manager__route__di" bpmnElement="manager__route">
+        <omgdc:Bounds x="480" y="216" width="40" height="40"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="manager__out__di" bpmnElement="manager__out">
+        <omgdi:waypoint x="410" y="236"/>
+        <omgdi:waypoint x="500" y="236"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="amountPolicy__di" bpmnElement="amountPolicy">
+        <omgdc:Bounds x="600" y="196" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="route__di" bpmnElement="route">
+        <omgdc:Bounds x="870" y="216" width="40" height="40"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="finance__di" bpmnElement="finance">
+        <omgdc:Bounds x="1060" y="56" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="finance__route__di" bpmnElement="finance__route">
+        <omgdc:Bounds x="1180" y="76" width="40" height="40"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="finance__out__di" bpmnElement="finance__out">
+        <omgdi:waypoint x="1110" y="96"/>
+        <omgdi:waypoint x="1200" y="96"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="procure__di" bpmnElement="procure">
+        <omgdc:Bounds x="1280" y="196" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="notify__di" bpmnElement="notify">
+        <omgdc:Bounds x="1500" y="196" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="fulfilled__di" bpmnElement="fulfilled">
+        <omgdc:Bounds x="1752" y="218" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="notifyRejected__di" bpmnElement="notifyRejected">
+        <omgdc:Bounds x="840" y="416" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="rejected__di" bpmnElement="rejected">
+        <omgdc:Bounds x="1092" y="438" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="t1__di" bpmnElement="t1">
+        <omgdi:waypoint x="190" y="236"/>
+        <omgdi:waypoint x="410" y="236"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="t2__di" bpmnElement="t2">
+        <omgdi:waypoint x="500" y="236"/>
+        <omgdi:waypoint x="650" y="236"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="t3__di" bpmnElement="t3">
+        <omgdi:waypoint x="500" y="236"/>
+        <omgdi:waypoint x="890" y="456"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="t4__di" bpmnElement="t4">
+        <omgdi:waypoint x="650" y="236"/>
+        <omgdi:waypoint x="890" y="236"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="t5__di" bpmnElement="t5">
+        <omgdi:waypoint x="890" y="236"/>
+        <omgdi:waypoint x="1110" y="96"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="t6__di" bpmnElement="t6">
+        <omgdi:waypoint x="890" y="236"/>
+        <omgdi:waypoint x="1330" y="236"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="t7__di" bpmnElement="t7">
+        <omgdi:waypoint x="1200" y="96"/>
+        <omgdi:waypoint x="1330" y="236"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="t8__di" bpmnElement="t8">
+        <omgdi:waypoint x="1200" y="96"/>
+        <omgdi:waypoint x="890" y="456"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="t9__di" bpmnElement="t9">
+        <omgdi:waypoint x="1330" y="236"/>
+        <omgdi:waypoint x="1550" y="236"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="t10__di" bpmnElement="t10">
+        <omgdi:waypoint x="1550" y="236"/>
+        <omgdi:waypoint x="1770" y="236"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="t11__di" bpmnElement="t11">
+        <omgdi:waypoint x="890" y="456"/>
+        <omgdi:waypoint x="1110" y="456"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>

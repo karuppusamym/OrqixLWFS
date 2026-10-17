@@ -1,0 +1,184 @@
+{
+  "schemaVersion": "0.1",
+  "workflowKey": "document-review",
+  "name": "Review a pinned SharePoint or OneDrive document",
+  "metadata": {
+    "description": "Read a selected historical UTF-8 document version, then ask a manager to review it. PDF and Office extraction are a later slice.",
+    "tags": [
+      "documents",
+      "approval"
+    ]
+  },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "driveId": {
+        "type": "string",
+        "title": "Drive ID",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "itemId": {
+        "type": "string",
+        "title": "Document item ID",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "versionId": {
+        "type": "string",
+        "title": "Document version ID",
+        "minLength": 1,
+        "maxLength": 200
+      }
+    },
+    "required": [
+      "driveId",
+      "itemId",
+      "versionId"
+    ]
+  },
+  "inputUi": {
+    "order": [
+      "driveId",
+      "itemId",
+      "versionId"
+    ],
+    "widgets": {}
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "documentName": {
+        "type": "string",
+        "title": "documentName"
+      },
+      "documentVersion": {
+        "type": "string",
+        "title": "documentVersion"
+      },
+      "documentHash": {
+        "type": "string",
+        "title": "documentHash"
+      }
+    }
+  },
+  "triggers": [
+    "manual",
+    "api"
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "label": "Document submitted",
+      "config": {}
+    },
+    {
+      "id": "document",
+      "type": "http",
+      "label": "Read approved document version",
+      "config": {
+        "connectionRef": "microsoft-documents",
+        "operation": "readText",
+        "resultMapping": {
+          "name": "/name",
+          "versionId": "/versionId",
+          "text": "/text",
+          "contentSha256": "/contentSha256"
+        },
+        "timeoutSeconds": 30,
+        "inputMapping": {
+          "driveId": "/input/driveId",
+          "itemId": "/input/itemId",
+          "versionId": "/input/versionId"
+        }
+      }
+    },
+    {
+      "id": "review",
+      "type": "approval",
+      "label": "Review document",
+      "config": {
+        "candidateGroupRef": "managers",
+        "rejectReasonRequired": true
+      }
+    },
+    {
+      "id": "approved",
+      "type": "end",
+      "label": "Accepted",
+      "config": {
+        "businessOutcome": "Document accepted",
+        "outcomeKind": "success"
+      }
+    },
+    {
+      "id": "rejected",
+      "type": "end",
+      "label": "Rejected",
+      "config": {
+        "businessOutcome": "Document rejected",
+        "outcomeKind": "rejected"
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t1",
+      "from": "start",
+      "to": "document",
+      "on": "next"
+    },
+    {
+      "id": "t2",
+      "from": "document",
+      "to": "review",
+      "on": "next"
+    },
+    {
+      "id": "t3",
+      "from": "review",
+      "to": "approved",
+      "on": "approved"
+    },
+    {
+      "id": "t4",
+      "from": "review",
+      "to": "rejected",
+      "on": "rejected"
+    }
+  ],
+  "decisions": [],
+  "execution": {
+    "maxConcurrentRuns": 500,
+    "maxAttempts": 3,
+    "retryDelaySeconds": 30
+  },
+  "security": {
+    "selfApproval": "deny"
+  },
+  "dependencies": {
+    "connections": [
+      {
+        "key": "microsoft-documents",
+        "definitionVersion": 1
+      }
+    ]
+  },
+  "outputMapping": {
+    "documentName": {
+      "fieldRef": "/steps/document/name",
+      "required": false
+    },
+    "documentVersion": {
+      "fieldRef": "/steps/document/versionId",
+      "required": false
+    },
+    "documentHash": {
+      "fieldRef": "/steps/document/contentSha256",
+      "required": false
+    }
+  }
+}

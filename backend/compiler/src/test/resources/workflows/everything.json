@@ -1,0 +1,85 @@
+{
+  "schemaVersion": "0.1",
+  "workflowKey": "everything",
+  "name": "Everything & more <test> \"quoted\"",
+  "metadata": {
+    "description": "Exercises every node kind, number/boolean/integer conditions and awkward label characters."
+  },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["title", "amount", "costCenter", "priority", "urgent", "quantity"],
+    "properties": {
+      "title": { "type": "string", "title": "Title", "minLength": 1, "maxLength": 120 },
+      "amount": { "type": "number", "title": "Amount", "minimum": 0.01, "multipleOf": 0.01 },
+      "costCenter": { "type": "string", "title": "Cost center", "enum": ["OPS", "IT"] },
+      "priority": { "type": "string", "title": "Priority", "enum": ["low", "high"] },
+      "urgent": { "type": "boolean", "title": "Urgent" },
+      "quantity": { "type": "integer", "title": "Quantity", "minimum": 1, "maximum": 100, "multipleOf": 1 }
+    }
+  },
+  "inputUi": {
+    "order": ["title", "amount", "costCenter", "priority", "urgent", "quantity"],
+    "widgets": { "amount": "money", "costCenter": "radio", "urgent": "checkbox", "quantity": "number" },
+    "currency": "USD"
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["decision"],
+    "properties": {
+      "decision": { "type": "string", "title": "Manager decision", "enum": ["approved", "rejected"] },
+      "level": { "type": "number", "title": "Risk level" }
+    }
+  },
+  "triggers": ["manual"],
+  "nodes": [
+    { "id": "start", "type": "start", "label": "Request <submitted> & logged", "config": {} },
+    { "id": "manager", "type": "approval", "label": "Prüfung ✓ \"manager\" & co", "config": { "candidateGroupRef": "managers", "rejectReasonRequired": true } },
+    { "id": "risk", "type": "decision", "label": "Assess risk", "config": { "decisionRef": "risk-policy" } },
+    { "id": "escalation", "type": "branch", "label": "Escalate?", "config": {} },
+    { "id": "procure", "type": "http", "label": "Create order", "config": { "connectionRef": "procurement", "operation": "createOrder", "inputMapping": { "title": "/input/title", "amount": "/input/amount", "costCenter": "/input/costCenter" }, "resultMapping": { "procurementId": "/id", "status": "/status" }, "timeoutSeconds": 10 } },
+    { "id": "size", "type": "branch", "label": "Large order?", "config": {} },
+    { "id": "urgency", "type": "branch", "label": "Urgent?", "config": {} },
+    { "id": "levelCheck", "type": "branch", "label": "High level?", "config": {} },
+    { "id": "notifyDone", "type": "notification", "label": "Say done", "config": { "channel": "inApp", "recipient": "initiator", "message": "Done: it's <ok> & \"fine\"\nsecond line" } },
+    { "id": "done", "type": "end", "label": "Done", "config": { "businessOutcome": "Completed", "outcomeKind": "success" } },
+    { "id": "no", "type": "end", "label": "Declined", "config": { "businessOutcome": "Rejected", "outcomeKind": "rejected" } }
+  ],
+  "transitions": [
+    { "id": "t1", "from": "start", "to": "manager", "on": "next" },
+    { "id": "t2", "from": "manager", "to": "risk", "on": "approved" },
+    { "id": "t3", "from": "manager", "to": "no", "on": "rejected" },
+    { "id": "t4", "from": "risk", "to": "escalation", "on": "next" },
+    { "id": "t5", "from": "escalation", "to": "procure", "on": "condition", "label": "Escalated\nfast lane", "condition": { "fieldRef": "/steps/risk/escalate", "operator": "eq", "value": true } },
+    { "id": "t6", "from": "escalation", "to": "size", "on": "default", "label": "Normal" },
+    { "id": "t7", "from": "size", "to": "urgency", "on": "condition", "label": "Fewer than 10", "condition": { "fieldRef": "/input/quantity", "operator": "lt", "value": 10 } },
+    { "id": "t8", "from": "size", "to": "procure", "on": "condition", "label": "Exactly 50", "condition": { "fieldRef": "/input/quantity", "operator": "eq", "value": 50 } },
+    { "id": "t9", "from": "size", "to": "levelCheck", "on": "default" },
+    { "id": "t10", "from": "urgency", "to": "procure", "on": "condition", "condition": { "fieldRef": "/input/urgent", "operator": "eq", "value": true } },
+    { "id": "t11", "from": "urgency", "to": "notifyDone", "on": "default" },
+    { "id": "t12", "from": "levelCheck", "to": "procure", "on": "condition", "condition": { "fieldRef": "/steps/risk/level", "operator": "gte", "value": 1.5 } },
+    { "id": "t13", "from": "levelCheck", "to": "notifyDone", "on": "default" },
+    { "id": "t14", "from": "procure", "to": "notifyDone", "on": "next" },
+    { "id": "t15", "from": "notifyDone", "to": "done", "on": "next" }
+  ],
+  "decisions": [
+    {
+      "key": "risk-policy",
+      "version": 3,
+      "hitPolicy": "UNIQUE",
+      "rows": [
+        { "when": { "fieldRef": "/input/priority", "operator": "eq", "value": "high" }, "then": { "escalate": true, "level": 2.5, "lane": "fast" } },
+        { "when": { "fieldRef": "/input/priority", "operator": "eq", "value": "low" }, "then": { "escalate": false, "level": 1, "lane": "slow" } }
+      ],
+      "default": { "escalate": false, "level": 0, "lane": "slow" }
+    }
+  ],
+  "execution": { "maxConcurrentRuns": 10, "maxAttempts": 1, "retryDelaySeconds": 5 },
+  "security": { "selfApproval": "deny" },
+  "dependencies": { "connections": [ { "key": "procurement", "definitionVersion": 1 } ] },
+  "outputMapping": {
+    "decision": { "fieldRef": "/steps/manager/decision", "required": true },
+    "level": { "fieldRef": "/steps/risk/level", "required": false }
+  }
+}

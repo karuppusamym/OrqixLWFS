@@ -1,0 +1,37 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: orqix
+  labels:
+    app.kubernetes.io/name: orqix
+    app.kubernetes.io/component: app
+    app.kubernetes.io/part-of: orqix
+    orqix.io/stage: app
+  annotations:
+    # HSTS is set at the route (docs/build/S6-security.md section 6).
+    haproxy.router.openshift.io/hsts_header: max-age=31536000;includeSubDomains;preload
+    # Per-source-IP connection and request-rate limits. Tune with the platform team; they are the only rate limit in R0.
+    haproxy.router.openshift.io/rate-limit-connections: "true"
+    haproxy.router.openshift.io/rate-limit-connections.concurrent-tcp: "50"
+    haproxy.router.openshift.io/rate-limit-connections.rate-tcp: "100"
+    haproxy.router.openshift.io/rate-limit-connections.rate-http: "200"
+    # Sessions live in PostgreSQL (JDBC): no sticky-session cookie, any pod serves any request.
+    haproxy.router.openshift.io/disable_cookies: "true"
+    # 180 s, not 60 s: AI draft generation (docs/build/S10) can take about a minute per model attempt and the application
+    # stops a generation at orqix.ai.generation-deadline (150 s). All other endpoints answer in well under a second.
+    haproxy.router.openshift.io/timeout: 180s
+spec:
+  host: orqix.apps.REPLACE.example.com
+  to:
+    kind: Service
+    name: orqix
+    weight: 100
+  # Port 8080 only. The management port (8081) is deliberately not routable.
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+    # Without a certificate the router's default wildcard certificate is used. Supply an organisation certificate
+    # through an overlay patch from the platform's secret tooling; never commit key material here.
+  wildcardPolicy: None

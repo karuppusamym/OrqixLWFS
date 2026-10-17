@@ -1,0 +1,45 @@
+{
+  "format": "orqix-pega-synthetic-suite-0.1",
+  "sourceValidation": "syntheticFixture",
+  "sourceVersion": "synthetic-pega-like-1",
+  "notice": "SYNTHETIC TEST FIXTURE: NOT a native Pega export and NOT a customer export.",
+  "workflows": [
+    {
+      "id": "small",
+      "archive": "small/archive.zip",
+      "definition": "small/definition.json",
+      "fileMappings": "small/mappings.json",
+      "dependencies": [],
+      "sourceCanonicalDefinition": "examples/simple-review.json",
+      "archiveSha256": "74e1dc98e5fd79c95a63dbccb867a36cdde5b27d3b35cc67356947d0a4a7f723",
+      "definitionSha256": "3d91d3c930393aeb117c04d18c55d72eafd99e83fcddb6b3f625278a02ef5fa8",
+      "fileMappingsSha256": "205051a8006839af508345733d8cbeaac150c85b95101a70223e42b49a006713"
+    },
+    {
+      "id": "medium",
+      "archive": "medium/archive.zip",
+      "definition": "medium/definition.json",
+      "fileMappings": "medium/mappings.json",
+      "dependencies": [
+        "small"
+      ],
+      "sourceCanonicalDefinition": "examples/medium-bounded-rework.json",
+      "archiveSha256": "ed5d1220e32c6adcc748344fc61e094abe8957d278965fce65ec4b98d5fd6311",
+      "definitionSha256": "71c656b505a5e5e984d35dd196a30e815b5a35cf0443876e45d6244123b9fec8",
+      "fileMappingsSha256": "2a28746cc7c64a3f3077ebe8bb8e52dd3753bfbcda504a27f66c2c6049969728"
+    },
+    {
+      "id": "complex",
+      "archive": "complex/archive.zip",
+      "definition": "complex/definition.json",
+      "fileMappings": "complex/mappings.json",
+      "dependencies": [
+        "small"
+      ],
+      "sourceCanonicalDefinition": "examples/complex-batch-review.json",
+      "archiveSha256": "118273038f80f757961ca836e66f077a19c3e9dd5e8f1e79464685d7ef42faba",
+      "definitionSha256": "328abe84a0d7e75fa426871c860d36b1523fd0005d41680f7fcbb9df2853a5c3",
+      "fileMappingsSha256": "adafbf00d63b8e038af4fcef1936c8a71a392a213373182bd37fa532f96e3691"
+    }
+  ]
+}

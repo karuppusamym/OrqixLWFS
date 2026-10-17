@@ -1,0 +1,55 @@
+{
+  "manifest.json": {
+    "disposition": "excluded",
+    "targetNodeIds": [],
+    "explanation": "Synthetic provenance/checksum metadata has no executable target node. It explicitly identifies the archive as neither a native export nor a customer export."
+  },
+  "rules/activities/unsupported-legacy-step.xml": {
+    "disposition": "excluded",
+    "targetNodeIds": [],
+    "explanation": "Unsupported source activity code and legacy database effects are deliberately excluded and never executed. No equivalent external side effect is included in these target scenarios."
+  },
+  "rules/flows/done.xml": {
+    "disposition": "mapped",
+    "targetNodeIds": [
+      "done"
+    ],
+    "explanation": "Synthetic descriptor manually maps to the reviewed end target done. Target behavior is authored in definition.json, not converted from a native Pega rule. Source-owner equivalence is unverified."
+  },
+  "rules/flows/reject.xml": {
+    "disposition": "mapped",
+    "targetNodeIds": [
+      "reject"
+    ],
+    "explanation": "Synthetic descriptor manually maps to the reviewed end target reject. Target behavior is authored in definition.json, not converted from a native Pega rule. Source-owner equivalence is unverified."
+  },
+  "rules/flows/review.xml": {
+    "disposition": "mapped",
+    "targetNodeIds": [
+      "review"
+    ],
+    "explanation": "Synthetic descriptor manually maps to the reviewed approval target review. Target behavior is authored in definition.json, not converted from a native Pega rule. Source-owner equivalence is unverified."
+  },
+  "rules/flows/start.xml": {
+    "disposition": "mapped",
+    "targetNodeIds": [
+      "start"
+    ],
+    "explanation": "Synthetic descriptor manually maps to the reviewed start target start. Target behavior is authored in definition.json, not converted from a native Pega rule. Source-owner equivalence is unverified."
+  },
+  "rules/properties/request-data.xml": {
+    "disposition": "excluded",
+    "targetNodeIds": [],
+    "explanation": "Property inventory is descriptive only. Target form types, requiredness and bounds are explicitly authored in definition.json; native Pega property semantics are not imported."
+  },
+  "rules/routing/manager-queue.xml": {
+    "disposition": "excluded",
+    "targetNodeIds": [],
+    "explanation": "Pega-like work-queue, skill and identity resolution is excluded. Target approval groups use the explicitly configured local managers group; this is not source routing equivalence."
+  },
+  "rules/sla/descriptive-deadline.xml": {
+    "disposition": "excluded",
+    "targetNodeIds": [],
+    "explanation": "Source SLA, escalation and business-calendar metadata is excluded. Only explicitly authored target timers and approval settings execute; no native SLA translation is claimed."
+  }
+}

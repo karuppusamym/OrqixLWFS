@@ -1,0 +1,53 @@
+# CI / Testcontainers. Connection details, egress hosts and WireMock ports are supplied by the test harness.
+spring:
+  security:
+    oauth2:
+      client:
+        registration:
+          orqix:
+            client-id: orqix-web
+            client-secret: test-only-secret
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+            scope: openid,profile,email
+            provider: orqix
+        provider:
+          orqix:
+            authorization-uri: https://idp.test.example/realms/orqix-test/protocol/openid-connect/auth
+            token-uri: https://idp.test.example/realms/orqix-test/protocol/openid-connect/token
+            jwk-set-uri: https://idp.test.example/realms/orqix-test/protocol/openid-connect/certs
+            user-info-uri: https://idp.test.example/realms/orqix-test/protocol/openid-connect/userinfo
+            user-name-attribute: preferred_username
+      resourceserver:
+        jwt:
+          issuer-uri: https://idp.test.example/realms/orqix-test
+          jwk-set-uri: https://idp.test.example/realms/orqix-test/protocol/openid-connect/certs
+          audiences: orqix-api
+
+server:
+  servlet:
+    session:
+      cookie:
+        secure: false
+
+logging:
+  structured:
+    format:
+      console: ""
+  level:
+    org.flowable: warn
+    com.zaxxer.hikari: warn
+    org.testcontainers: warn
+    com.github.dockerjava: warn
+    tc: warn
+    org.springframework.boot.autoconfigure: warn
+
+orqix:
+  identity:
+    bootstrap-platform-admin-groups: orqix-platform-admins
+    end-session-uri: https://idp.test.example/realms/orqix-test/protocol/openid-connect/logout
+  secrets:
+    dir: ${java.io.tmpdir}/orqix-test-secrets
+  ai:
+    # Tests never use a developer's real OpenRouter key; AI tests point a key and base URL at WireMock themselves.
+    api-key: ""

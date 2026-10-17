@@ -1,0 +1,27 @@
+# Procurement stub - development/E2E fixture (docs/build/S1 section 6.2). Not a real integration.
+server:
+  port: 8095              # host default; the container image sets SERVER_PORT=8090 (Compose network port)
+  shutdown: immediate     # fault modes sleep for tens of seconds; do not wait for them on stop
+spring:
+  application:
+    name: procurement-stub
+  threads:
+    virtual:
+      enabled: true       # sleeping fault modes must not exhaust the request thread pool
+  main:
+    banner-mode: "off"
+
+stub:
+  # The single shared contract (copied from examples/connections at build time, never duplicated in the repo).
+  contract-resource: classpath:procurement.connection.json
+  contract-operation: createOrder
+  # Default sleep for commitThenTimeout: longer than the 20 s maxTimeoutSeconds of createOrder.
+  commit-then-timeout-ms: 35000
+  # Upper bound accepted for a fault delayMs.
+  max-fault-delay-ms: 600000
+  # Maximum accepted request body.
+  max-body-bytes: 65536
+
+logging:
+  level:
+    com.orqix.stub: INFO

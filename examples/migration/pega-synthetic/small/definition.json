@@ -1,0 +1,146 @@
+{
+  "schemaVersion": "0.1",
+  "workflowKey": "review-request",
+  "name": "Simple review request",
+  "metadata": {
+    "description": "A simple human review. Accept or reject; each run keeps its own task history.",
+    "tags": [
+      "simple",
+      "review"
+    ]
+  },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "title",
+      "purpose",
+      "costCenter",
+      "amount"
+    ],
+    "properties": {
+      "title": {
+        "type": "string",
+        "title": "What are you buying?",
+        "description": "A short name for the purchase, for example 'Replacement laptop'.",
+        "minLength": 1,
+        "maxLength": 120
+      },
+      "purpose": {
+        "type": "string",
+        "title": "Business purpose",
+        "description": "Why the purchase is needed. Approvers read this first.",
+        "minLength": 1,
+        "maxLength": 1000
+      },
+      "costCenter": {
+        "type": "string",
+        "title": "Cost center",
+        "enum": [
+          "OPS",
+          "IT",
+          "HR"
+        ]
+      },
+      "amount": {
+        "type": "number",
+        "title": "Amount (USD)",
+        "description": "Total including tax and shipping.",
+        "minimum": 0.01,
+        "maximum": 1000000,
+        "multipleOf": 0.01
+      }
+    }
+  },
+  "inputUi": {
+    "order": [
+      "title",
+      "purpose",
+      "costCenter",
+      "amount"
+    ],
+    "widgets": {
+      "purpose": "textarea",
+      "costCenter": "select",
+      "amount": "money"
+    },
+    "currency": "USD"
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  },
+  "triggers": [
+    "manual",
+    "api"
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "label": "Submitted",
+      "config": {}
+    },
+    {
+      "id": "review",
+      "type": "approval",
+      "label": "Review review",
+      "config": {
+        "candidateGroupRef": "managers",
+        "rejectReasonRequired": true
+      }
+    },
+    {
+      "id": "done",
+      "type": "end",
+      "label": "Accepted",
+      "config": {
+        "businessOutcome": "Accepted",
+        "outcomeKind": "success"
+      }
+    },
+    {
+      "id": "reject",
+      "type": "end",
+      "label": "Rejected",
+      "config": {
+        "businessOutcome": "Rejected",
+        "outcomeKind": "rejected"
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t1",
+      "from": "start",
+      "to": "review",
+      "on": "next"
+    },
+    {
+      "id": "t2",
+      "from": "review",
+      "to": "done",
+      "on": "approved"
+    },
+    {
+      "id": "t3",
+      "from": "review",
+      "to": "reject",
+      "on": "rejected"
+    }
+  ],
+  "decisions": [],
+  "execution": {
+    "maxConcurrentRuns": 500,
+    "maxAttempts": 3,
+    "retryDelaySeconds": 30
+  },
+  "security": {
+    "selfApproval": "deny"
+  },
+  "dependencies": {
+    "connections": []
+  },
+  "outputMapping": {}
+}

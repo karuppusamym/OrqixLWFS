@@ -1,0 +1,204 @@
+{
+  "schemaVersion": "0.1",
+  "workflowKey": "document-snapshot-review",
+  "name": "Capture and review a PDF or Office document",
+  "metadata": {
+    "description": "Capture latest content as an immutable snapshot, extract bounded text, and review the pinned snapshot. Later source changes do not replace captured bytes.",
+    "tags": [
+      "documents",
+      "approval"
+    ]
+  },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "driveId": {
+        "type": "string",
+        "title": "Drive ID",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "itemId": {
+        "type": "string",
+        "title": "Document item ID",
+        "minLength": 1,
+        "maxLength": 200
+      }
+    },
+    "required": [
+      "driveId",
+      "itemId"
+    ]
+  },
+  "inputUi": {
+    "order": [
+      "driveId",
+      "itemId"
+    ],
+    "widgets": {}
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "documentName": {
+        "type": "string",
+        "title": "documentName"
+      },
+      "documentHash": {
+        "type": "string",
+        "title": "documentHash"
+      },
+      "documentSnapshot": {
+        "type": "string",
+        "title": "Immutable document snapshot"
+      }
+    }
+  },
+  "triggers": [
+    "manual",
+    "api"
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "label": "Document submitted",
+      "config": {}
+    },
+    {
+      "id": "capture",
+      "type": "http",
+      "label": "Capture latest document snapshot",
+      "config": {
+        "connectionRef": "microsoft-documents",
+        "operation": "pinLatest",
+        "resultMapping": {
+          "snapshotId": "/snapshotId",
+          "eTag": "/eTag",
+          "contentSha256": "/contentSha256",
+          "name": "/name"
+        },
+        "timeoutSeconds": 30,
+        "inputMapping": {
+          "driveId": "/input/driveId",
+          "itemId": "/input/itemId"
+        }
+      }
+    },
+    {
+      "id": "document",
+      "type": "http",
+      "label": "Extract the captured document",
+      "config": {
+        "connectionRef": "microsoft-documents",
+        "operation": "extractSnapshot",
+        "resultMapping": {
+          "name": "/name",
+          "snapshotId": "/snapshotId",
+          "text": "/text",
+          "contentSha256": "/contentSha256",
+          "extractionFormat": "/extractionFormat",
+          "extractedTextSha256": "/extractedTextSha256"
+        },
+        "timeoutSeconds": 30,
+        "inputMapping": {
+          "driveId": "/input/driveId",
+          "itemId": "/input/itemId",
+          "snapshotId": "/steps/capture/snapshotId"
+        }
+      }
+    },
+    {
+      "id": "review",
+      "type": "approval",
+      "label": "Review document",
+      "config": {
+        "candidateGroupRef": "managers",
+        "rejectReasonRequired": true
+      }
+    },
+    {
+      "id": "approved",
+      "type": "end",
+      "label": "Accepted",
+      "config": {
+        "businessOutcome": "Document accepted",
+        "outcomeKind": "success"
+      }
+    },
+    {
+      "id": "rejected",
+      "type": "end",
+      "label": "Rejected",
+      "config": {
+        "businessOutcome": "Document rejected",
+        "outcomeKind": "rejected"
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t1",
+      "from": "start",
+      "to": "capture",
+      "on": "next"
+    },
+    {
+      "id": "captureDone",
+      "from": "capture",
+      "to": "document",
+      "on": "next"
+    },
+    {
+      "id": "t2",
+      "from": "document",
+      "to": "review",
+      "on": "next"
+    },
+    {
+      "id": "t3",
+      "from": "review",
+      "to": "approved",
+      "on": "approved"
+    },
+    {
+      "id": "t4",
+      "from": "review",
+      "to": "rejected",
+      "on": "rejected"
+    }
+  ],
+  "decisions": [],
+  "execution": {
+    "maxConcurrentRuns": 500,
+    "maxAttempts": 3,
+    "retryDelaySeconds": 30
+  },
+  "security": {
+    "selfApproval": "deny"
+  },
+  "dependencies": {
+    "connections": [
+      {
+        "key": "microsoft-documents",
+        "definitionVersion": 2
+      }
+    ]
+  },
+  "outputMapping": {
+    "documentName": {
+      "fieldRef": "/steps/document/name",
+      "required": false
+    },
+    "documentHash": {
+      "fieldRef": "/steps/document/contentSha256",
+      "required": false
+    },
+    "documentSnapshot": {
+      "fieldRef": "/steps/document/snapshotId",
+      "required": false
+    }
+  }
+}

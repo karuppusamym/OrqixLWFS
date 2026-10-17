@@ -1,0 +1,13 @@
+# Redocly CLI configuration for CI stage 1 (npx @redocly/cli lint --config .github/redocly.yaml contracts/openapi.yaml).
+# The contract owner decides the rule levels; changes here need the same review as a contract change.
+extends:
+  - recommended
+
+rules:
+  # Internal product: there is no published licence.
+  info-license: off
+  # Conditional JSON Schema (if/then/else) in the linked *.schema.json files legitimately names properties declared elsewhere.
+  no-required-schema-properties-undefined: off
+  # Findings on the current contract (20 operations without `summary`, 9 tags without description): reported, not blocking yet.
+  operation-summary: warn
+  tag-description: warn

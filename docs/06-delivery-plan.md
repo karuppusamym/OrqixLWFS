@@ -167,3 +167,21 @@ As of this planning delivery: all runtime features are Not started. Documents/de
 ## Extended delivery control
 
 Use [09 — Master plan](09-master-plan.md) for milestone definitions, [10 — Full backlog](10-full-product-backlog.md) for later work, [12 — Coverage](12-requirements-coverage.md) for all master-prompt requirements, and [13 — Decisions](13-decision-register.md) for inputs and owners. R1–R3 dates remain uncommitted until their discovery and estimates are complete.
+
+## Evidence required by design rules
+
+These checks are part of existing work, not extra R0 feature commitments.
+
+| Work package / epic | Design rule | Evidence required |
+|---|---|---|
+| B03 compiler/runtime | Patterns are supported only when tested | Sequence, exclusive route and simple-merge tests; unsupported patterns rejected (S4 §12) |
+| B06/B07 business UX | Readable business labels; keyboard alternative to the canvas | Observed comprehension of approval/rejection paths; WCAG 2.2 AA checks (S7 §7) |
+| B05 integration recovery | Effect class per operation; unknown outcomes never auto-retried | Classification evidence, timeout/unknown-outcome handling and safe replay (S5 §6, T-EFF tests) |
+| E04 medium execution | Joins continue once | Both branch completion orders, one join continuation and restart during parallel work |
+| E05/E16 cases | Classify workflow versus case before conversion | Approved classification per migration candidate |
+| E16 migration | No silent conversion loss | Original source, mapping log, unresolved issues and behavior comparison fixture |
+| E09–E11 agents/tools | Bounded agent tasks under deterministic control | Allowlist denial, invalid output, timeout/budget and no unauthorized continuation tests |
+
+## Ticket-level plan
+
+[S8 — R0 tickets](build/S8-r0-tickets.md) breaks B01–B09 into tickets with acceptance criteria. Its ticket-level estimate is about 100 person-hours for P0 work, above the 72 hours assumed here; S8 §1 sets out the schedule options for decision D01. The B01–B09 estimates above are kept for traceability but are superseded by S8.

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:flowable="http://flowable.org/bpmn" targetNamespace="https://orqix.example/spike">
+  <process id="spikeApproval" name="Spike approval" isExecutable="true">
+    <startEvent id="start" name="Request submitted"/>
+    <sequenceFlow id="t1" sourceRef="start" targetRef="manager"/>
+    <userTask id="manager" name="Review request" flowable:candidateGroups="managers"/>
+    <sequenceFlow id="t2" sourceRef="manager" targetRef="end"/>
+    <endEvent id="end" name="Done"/>
+  </process>
+</definitions>

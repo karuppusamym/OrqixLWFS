@@ -1,0 +1,122 @@
+{
+  "outcome" : {
+    "status" : "finished",
+    "businessOutcome" : "Accepted",
+    "outcomeKind" : "success",
+    "endStepId" : "done",
+    "attention" : null,
+    "summary" : "The request would finish with the outcome \"Accepted\" (successful)."
+  },
+  "outputs" : {
+    "iterations" : 3,
+    "limitReached" : false
+  },
+  "trace" : [ {
+    "seq" : 1,
+    "stepId" : "start",
+    "stepLabel" : "Submitted",
+    "kind" : "start",
+    "kindLabel" : "Request form",
+    "summary" : "The request is submitted with the answers you entered.",
+    "details" : { },
+    "transitionId" : "t1",
+    "nextStepId" : "child"
+  }, {
+    "seq" : 2,
+    "stepId" : "child",
+    "stepLabel" : "Review until accepted",
+    "kind" : "startWorkflow",
+    "kindLabel" : "Start another workflow",
+    "summary" : "\"Review until accepted\": starts \"Simple review request\" 3 times. In this test it ends with \"Accepted\".",
+    "details" : {
+      "workflow" : "review-request",
+      "workflowName" : "Simple review request",
+      "simulated" : false,
+      "occurrences" : [ {
+        "occurrence" : 1,
+        "outcome" : "Rejected",
+        "outcomeKind" : "rejected"
+      }, {
+        "occurrence" : 2,
+        "outcome" : "Rejected",
+        "outcomeKind" : "rejected"
+      }, {
+        "occurrence" : 3,
+        "outcome" : "Accepted",
+        "outcomeKind" : "success"
+      } ],
+      "iterations" : 3,
+      "limitReached" : false,
+      "allSucceeded" : false
+    },
+    "wrote" : {
+      "outcome" : "Accepted",
+      "outcomeKind" : "success",
+      "reference" : "ORQ-TEST-3",
+      "iterations" : 3,
+      "limitReached" : false,
+      "allSucceeded" : false
+    },
+    "transitionId" : "t2",
+    "nextStepId" : "limit"
+  }, {
+    "seq" : 3,
+    "stepId" : "limit",
+    "stepLabel" : "Check review limit",
+    "kind" : "branch",
+    "kindLabel" : "Choose a path",
+    "summary" : "\"Check review limit\": takes the route \"Otherwise\" because none of the other routes applies.",
+    "details" : {
+      "routes" : [ {
+        "transitionId" : "t3",
+        "label" : "Review until accepted / limitReached is yes",
+        "condition" : "Review until accepted / limitReached is yes",
+        "matched" : false
+      } ],
+      "chosen" : "t4"
+    },
+    "transitionId" : "t4",
+    "nextStepId" : "done"
+  }, {
+    "seq" : 4,
+    "stepId" : "done",
+    "stepLabel" : "Accepted",
+    "kind" : "end",
+    "kindLabel" : "Finish",
+    "summary" : "The request finishes: \"Accepted\" (successful).",
+    "details" : {
+      "businessOutcome" : "Accepted",
+      "outcomeKind" : "success"
+    },
+    "transitionId" : null,
+    "nextStepId" : null
+  } ],
+  "warnings" : [ ],
+  "coverage" : {
+    "steps" : {
+      "visited" : 4,
+      "total" : 5,
+      "notVisited" : [ {
+        "id" : "reject",
+        "label" : "Rejected"
+      } ]
+    },
+    "routes" : {
+      "notTaken" : [ {
+        "transitionId" : "t3",
+        "from" : "limit",
+        "to" : "reject",
+        "description" : "Check review limit, when Review until accepted / limitReached is yes, goes to Rejected"
+      } ],
+      "taken" : 1,
+      "total" : 2
+    },
+    "rules" : {
+      "notMatched" : [ ],
+      "matched" : 0,
+      "total" : 0
+    },
+    "summary" : "Tested 4 of 5 steps, 1 of 2 routes and 0 of 0 decision rules."
+  },
+  "limits" : "This is a dry run of the workflow as designed, not the workflow engine. It does not call real systems, check that connections work, that people are in the groups, or how long anything takes."
+}

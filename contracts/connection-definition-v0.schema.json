@@ -1,0 +1,720 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orqix.example/schemas/connection-definition-v0.schema.json",
+  "title": "Orqix connection definition v0.1 \u2014 portable HTTP operation or AI agent contract",
+  "description": "Immutable, versioned, secret-free description of an approved integration: kind http (default) is an HTTP operation contract, kind agent is a bounded AI task that may call allow-listed tools of one MCP server (S13). Environment details (base URL or MCP endpoint, credential reference, enabled flag) live in the connection binding, which is not portable and never exported. See docs/build/S5-runtime.md for retry and effect semantics and docs/build/S13-agents-mcp.md for agents.",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": "0.1"
+    },
+    "kind": {
+      "description": "http (default): operations are HTTP calls. agent: operations are bounded AI tasks that call allow-listed tools of the MCP server in the binding; effect class is always readOnly. microsoftGraph: read-only document metadata or pinned-version UTF-8 text through Microsoft Graph.",
+      "enum": [
+        "http",
+        "agent",
+        "microsoftGraph"
+      ]
+    },
+    "key": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,62}[a-z0-9]$"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 2000
+    },
+    "operations": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 20,
+      "propertyNames": {
+        "pattern": "^[a-z][A-Za-z0-9]{0,63}$"
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "key",
+    "version",
+    "name",
+    "operations"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "operation": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "method": {
+          "enum": [
+            "GET",
+            "POST",
+            "PUT",
+            "PATCH"
+          ]
+        },
+        "path": {
+          "description": "Static path appended to the binding base URL. No templates or query strings in v0.",
+          "type": "string",
+          "pattern": "^/[A-Za-z0-9._~/-]{0,200}$"
+        },
+        "requestSchema": {
+          "description": "Flat JSON body. Required for POST/PUT/PATCH, forbidden for GET (compiler rule CONN_REQUEST_SCHEMA).",
+          "$ref": "#/$defs/requestObject"
+        },
+        "responseSchema": {
+          "$ref": "#/$defs/responseObject"
+        },
+        "successStatuses": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 200,
+            "maximum": 299
+          }
+        },
+        "effectClass": {
+          "description": "readOnly: no remote side effect, retried freely. idempotentWithKey: remote deduplicates by the idempotency header, retried with the same key. nonIdempotent: retried only when the request provably was not sent; otherwise the outcome is unknown and an operator must reconcile.",
+          "enum": [
+            "readOnly",
+            "idempotentWithKey",
+            "nonIdempotent"
+          ]
+        },
+        "idempotencyHeader": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9-]{0,63}$"
+        },
+        "maxTimeoutSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30
+        },
+        "testable": {
+          "description": "May be invoked from the connection test endpoint. Only allowed for readOnly operations.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "label",
+        "method",
+        "path",
+        "responseSchema",
+        "successStatuses",
+        "effectClass",
+        "maxTimeoutSeconds",
+        "testable"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "effectClass": {
+                "const": "idempotentWithKey"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "idempotencyHeader"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "idempotencyHeader"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "testable": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "effectClass": {
+                "const": "readOnly"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "GET"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "requestSchema"
+              ]
+            }
+          },
+          "else": {
+            "required": [
+              "requestSchema"
+            ]
+          }
+        }
+      ]
+    },
+    "scalarField": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "enum": [
+            "string",
+            "number",
+            "integer",
+            "boolean"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "enum": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "maxLength": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4000
+        },
+        "pattern": {
+          "type": "string",
+          "maxLength": 500
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "requestObject": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "object"
+        },
+        "required": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "properties": {
+          "type": "object",
+          "maxProperties": 30,
+          "propertyNames": {
+            "pattern": "^[a-z][A-Za-z0-9]{0,63}$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/scalarField"
+          }
+        },
+        "additionalProperties": {
+          "const": false
+        }
+      },
+      "required": [
+        "type",
+        "properties",
+        "additionalProperties"
+      ],
+      "additionalProperties": false
+    },
+    "responseObject": {
+      "description": "Remote APIs may add fields; unknown fields are ignored unless additionalProperties is false. Nesting is limited to three object levels by rule CONN_RESPONSE_DEPTH. Arrays are not mappable in v0.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "object"
+        },
+        "required": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "properties": {
+          "type": "object",
+          "maxProperties": 50,
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/scalarField"
+              },
+              {
+                "$ref": "#/$defs/responseObject"
+              }
+            ]
+          }
+        },
+        "additionalProperties": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "type",
+        "properties"
+      ],
+      "additionalProperties": false
+    },
+    "agentOperation": {
+      "description": "An AI task: a fixed instruction, an allow-list of MCP tools, structured input and a structured result. requestSchema is the input (flat scalars, mapped from workflow fields like an HTTP request); responseSchema is the result the agent must produce (additionalProperties false).",
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "requestSchema": {
+          "$ref": "#/$defs/requestObject"
+        },
+        "responseSchema": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/responseObject"
+            },
+            {
+              "required": [
+                "required",
+                "additionalProperties"
+              ],
+              "properties": {
+                "additionalProperties": {
+                  "const": false
+                }
+              }
+            }
+          ]
+        },
+        "effectClass": {
+          "description": "Agents cannot cause side effects in this release: always readOnly.",
+          "const": "readOnly"
+        },
+        "maxTimeoutSeconds": {
+          "description": "Wall-clock limit for the whole model and tool loop.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30
+        },
+        "testable": {
+          "type": "boolean"
+        },
+        "agent": {
+          "$ref": "#/$defs/agentSpec"
+        }
+      },
+      "required": [
+        "label",
+        "requestSchema",
+        "responseSchema",
+        "effectClass",
+        "maxTimeoutSeconds",
+        "testable",
+        "agent"
+      ],
+      "additionalProperties": false
+    },
+    "agentSpec": {
+      "type": "object",
+      "properties": {
+        "instructions": {
+          "description": "Fixed system prompt written by an administrator and versioned with the connection version. Run data is never part of it.",
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 4000
+        },
+        "modelProfile": {
+          "description": "Model profile of the AI settings (never a raw model id). Omitted: the deployment default profile.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,31}$"
+        },
+        "tools": {
+          "description": "Allow-list of tools of the MCP server in the binding. Only these are offered to the model and only these can be called.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/agentTool"
+          }
+        },
+        "maxToolCalls": {
+          "description": "Upper bound on tool calls in one execution; further calls are refused.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "summary": {
+          "description": "Business sentence shown on the run timeline, after the connection name. {field} is replaced by a request or result value, {tools} by the labels of the tools that were called.",
+          "type": "string",
+          "maxLength": 300
+        }
+      },
+      "required": [
+        "instructions",
+        "tools",
+        "maxToolCalls"
+      ],
+      "additionalProperties": false
+    },
+    "agentTool": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Tool name as listed by the MCP server.",
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,63}$"
+        },
+        "label": {
+          "description": "Business name of the tool or the system behind it, shown in the studio and on the run timeline.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "description": {
+          "description": "Optional administrator-written tool description offered to the model instead of the server's own description (which is untrusted).",
+          "type": "string",
+          "maxLength": 500
+        }
+      },
+      "required": [
+        "name",
+        "label"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "agent"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "operations": {
+            "additionalProperties": {
+              "$ref": "#/$defs/agentOperation"
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "operations": {
+            "additionalProperties": {
+              "$ref": "#/$defs/operation"
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "microsoftGraph"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "operations": {
+            "additionalProperties": {
+              "properties": {
+                "method": {
+                  "const": "POST"
+                },
+                "path": {
+                  "enum": [
+                    "/metadata",
+                    "/text",
+                    "/extract",
+                    "/pinLatest",
+                    "/extractSnapshot",
+                    "/resolveLink",
+                    "/versions",
+                    "/browseFolder"
+                  ]
+                },
+                "effectClass": {
+                  "const": "readOnly"
+                },
+                "successStatuses": {
+                  "const": [
+                    200
+                  ]
+                }
+              },
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "path": {
+                        "const": "/resolveLink"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "requestSchema": {
+                        "required": [
+                          "required",
+                          "properties"
+                        ],
+                        "properties": {
+                          "required": {
+                            "contains": {
+                              "const": "shareUrl"
+                            }
+                          },
+                          "properties": {
+                            "required": [
+                              "shareUrl",
+                              "driveId"
+                            ],
+                            "properties": {
+                              "shareUrl": {
+                                "required": [
+                                  "type"
+                                ],
+                                "properties": {
+                                  "type": {
+                                    "const": "string"
+                                  }
+                                },
+                                "anyOf": [
+                                  {
+                                    "required": [
+                                      "pattern"
+                                    ]
+                                  },
+                                  {
+                                    "required": [
+                                      "enum"
+                                    ]
+                                  }
+                                ]
+                              },
+                              "driveId": {
+                                "required": [
+                                  "type",
+                                  "enum"
+                                ],
+                                "properties": {
+                                  "type": {
+                                    "const": "string"
+                                  },
+                                  "enum": {
+                                    "minItems": 1
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "else": {
+                    "if": {
+                      "properties": {
+                        "path": {
+                          "const": "/browseFolder"
+                        }
+                      }
+                    },
+                    "then": {
+                      "properties": {
+                        "requestSchema": {
+                          "required": [
+                            "required",
+                            "properties",
+                            "additionalProperties"
+                          ],
+                          "properties": {
+                            "additionalProperties": {
+                              "const": false
+                            },
+                            "required": {
+                              "allOf": [
+                                {
+                                  "contains": {
+                                    "const": "driveId"
+                                  }
+                                },
+                                {
+                                  "contains": {
+                                    "const": "folderId"
+                                  }
+                                }
+                              ]
+                            },
+                            "properties": {
+                              "required": [
+                                "driveId",
+                                "folderId"
+                              ],
+                              "properties": {
+                                "driveId": {
+                                  "required": [
+                                    "type",
+                                    "enum"
+                                  ],
+                                  "properties": {
+                                    "type": {
+                                      "const": "string"
+                                    },
+                                    "enum": {
+                                      "type": "array",
+                                      "minItems": 1,
+                                      "maxItems": 100,
+                                      "items": {
+                                        "type": "string",
+                                        "pattern": "^[A-Za-z0-9!._~-]{1,200}$"
+                                      },
+                                      "uniqueItems": true
+                                    }
+                                  }
+                                },
+                                "folderId": {
+                                  "required": [
+                                    "type",
+                                    "enum"
+                                  ],
+                                  "properties": {
+                                    "type": {
+                                      "const": "string"
+                                    },
+                                    "enum": {
+                                      "type": "array",
+                                      "minItems": 1,
+                                      "maxItems": 100,
+                                      "items": {
+                                        "type": "string",
+                                        "pattern": "^[A-Za-z0-9!._~-]{1,200}$"
+                                      },
+                                      "uniqueItems": true
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "else": {
+                      "properties": {
+                        "requestSchema": {
+                          "properties": {
+                            "required": {
+                              "allOf": [
+                                {
+                                  "contains": {
+                                    "const": "driveId"
+                                  }
+                                },
+                                {
+                                  "contains": {
+                                    "const": "itemId"
+                                  }
+                                }
+                              ]
+                            },
+                            "properties": {
+                              "required": [
+                                "driveId",
+                                "itemId"
+                              ],
+                              "properties": {
+                                "driveId": {
+                                  "properties": {
+                                    "type": {
+                                      "const": "string"
+                                    }
+                                  }
+                                },
+                                "itemId": {
+                                  "properties": {
+                                    "type": {
+                                      "const": "string"
+                                    }
+                                  }
+                                },
+                                "versionId": {
+                                  "properties": {
+                                    "type": {
+                                      "const": "string"
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,209 @@
+{
+  "outcome" : {
+    "status" : "finished",
+    "businessOutcome" : "Rejected",
+    "outcomeKind" : "rejected",
+    "endStepId" : "reject",
+    "attention" : null,
+    "summary" : "The request would finish with the outcome \"Rejected\" (rejected)."
+  },
+  "outputs" : {
+    "outcomeItems" : [ "Accepted", "Rejected", "Accepted" ],
+    "referenceItems" : [ "ORQ-TEST-1", "ORQ-TEST-2", "ORQ-TEST-3" ]
+  },
+  "trace" : [ {
+    "seq" : 1,
+    "stepId" : "start",
+    "stepLabel" : "Submitted",
+    "kind" : "start",
+    "kindLabel" : "Request form",
+    "summary" : "The request is submitted with the answers you entered.",
+    "details" : { },
+    "transitionId" : "t1",
+    "nextStepId" : "split"
+  }, {
+    "seq" : 2,
+    "stepId" : "split",
+    "stepLabel" : "Prepare together",
+    "kind" : "parallelSplit",
+    "kindLabel" : "Run in parallel",
+    "summary" : "\"Prepare together\": starts 2 branches at the same time.",
+    "details" : {
+      "joinRef" : "join",
+      "branches" : 2
+    },
+    "transitionId" : null,
+    "nextStepId" : null
+  }, {
+    "seq" : 3,
+    "stepId" : "one",
+    "stepLabel" : "Review one",
+    "kind" : "approval",
+    "kindLabel" : "Ask for approval",
+    "branch" : "1",
+    "summary" : "\"Review one\" goes to Managers. In this test they approve.",
+    "details" : {
+      "group" : "managers",
+      "groupName" : "Managers",
+      "dueAfterHours" : null,
+      "decision" : "approved"
+    },
+    "wrote" : {
+      "decision" : "approved",
+      "decidedBy" : "Test approver"
+    },
+    "transitionId" : "t4",
+    "nextStepId" : "join"
+  }, {
+    "seq" : 4,
+    "stepId" : "two",
+    "stepLabel" : "Review two",
+    "kind" : "approval",
+    "kindLabel" : "Ask for approval",
+    "branch" : "2",
+    "summary" : "\"Review two\" goes to Managers. In this test they approve.",
+    "details" : {
+      "group" : "managers",
+      "groupName" : "Managers",
+      "dueAfterHours" : null,
+      "decision" : "approved"
+    },
+    "wrote" : {
+      "decision" : "approved",
+      "decidedBy" : "Test approver"
+    },
+    "transitionId" : "t5",
+    "nextStepId" : "join"
+  }, {
+    "seq" : 5,
+    "stepId" : "join",
+    "stepLabel" : "All preparations ready",
+    "kind" : "parallelJoin",
+    "kindLabel" : "Wait for all",
+    "summary" : "\"All preparations ready\": all 2 branches have finished, so the request continues.",
+    "details" : { },
+    "transitionId" : "t8",
+    "nextStepId" : "wait"
+  }, {
+    "seq" : 6,
+    "stepId" : "wait",
+    "stepLabel" : "Wait one minute",
+    "kind" : "wait",
+    "kindLabel" : "Wait",
+    "summary" : "\"Wait one minute\": would wait 1 minute. The test skips the wait.",
+    "details" : {
+      "duration" : "PT1M"
+    },
+    "transitionId" : "t9",
+    "nextStepId" : "child"
+  }, {
+    "seq" : 7,
+    "stepId" : "child",
+    "stepLabel" : "Review each purchase",
+    "kind" : "startWorkflow",
+    "kindLabel" : "Start another workflow",
+    "summary" : "\"Review each purchase\": starts \"Simple review request\" 3 times. In this test it ends with \"Accepted\".",
+    "details" : {
+      "workflow" : "review-request",
+      "workflowName" : "Simple review request",
+      "simulated" : false,
+      "occurrences" : [ {
+        "occurrence" : 1,
+        "outcome" : "Accepted",
+        "outcomeKind" : "success"
+      }, {
+        "occurrence" : 2,
+        "outcome" : "Rejected",
+        "outcomeKind" : "rejected"
+      }, {
+        "occurrence" : 3,
+        "outcome" : "Accepted",
+        "outcomeKind" : "success"
+      } ],
+      "iterations" : 3,
+      "limitReached" : false,
+      "allSucceeded" : false
+    },
+    "wrote" : {
+      "outcome" : "Accepted",
+      "outcomeKind" : "success",
+      "reference" : "ORQ-TEST-3",
+      "iterations" : 3,
+      "limitReached" : false,
+      "allSucceeded" : false,
+      "outcomeItems" : [ "Accepted", "Rejected", "Accepted" ],
+      "referenceItems" : [ "ORQ-TEST-1", "ORQ-TEST-2", "ORQ-TEST-3" ]
+    },
+    "transitionId" : "t10",
+    "nextStepId" : "results"
+  }, {
+    "seq" : 8,
+    "stepId" : "results",
+    "stepLabel" : "Check all item reviews",
+    "kind" : "branch",
+    "kindLabel" : "Choose a path",
+    "summary" : "\"Check all item reviews\": takes the route \"Otherwise\" because none of the other routes applies.",
+    "details" : {
+      "routes" : [ {
+        "transitionId" : "t11",
+        "label" : "Review each purchase / allSucceeded is yes",
+        "condition" : "Review each purchase / allSucceeded is yes",
+        "matched" : false
+      } ],
+      "chosen" : "t12"
+    },
+    "transitionId" : "t12",
+    "nextStepId" : "reject"
+  }, {
+    "seq" : 9,
+    "stepId" : "reject",
+    "stepLabel" : "Rejected",
+    "kind" : "end",
+    "kindLabel" : "Finish",
+    "summary" : "The request finishes: \"Rejected\" (rejected).",
+    "details" : {
+      "businessOutcome" : "Rejected",
+      "outcomeKind" : "rejected"
+    },
+    "transitionId" : null,
+    "nextStepId" : null
+  } ],
+  "warnings" : [ ],
+  "coverage" : {
+    "steps" : {
+      "visited" : 9,
+      "total" : 10,
+      "notVisited" : [ {
+        "id" : "done",
+        "label" : "Accepted"
+      } ]
+    },
+    "routes" : {
+      "notTaken" : [ {
+        "transitionId" : "t6",
+        "from" : "one",
+        "to" : "reject",
+        "description" : "Review one, when rejected, goes to Rejected"
+      }, {
+        "transitionId" : "t7",
+        "from" : "two",
+        "to" : "reject",
+        "description" : "Review two, when rejected, goes to Rejected"
+      }, {
+        "transitionId" : "t11",
+        "from" : "results",
+        "to" : "done",
+        "description" : "Check all item reviews, when Review each purchase / allSucceeded is yes, goes to Accepted"
+      } ],
+      "taken" : 3,
+      "total" : 6
+    },
+    "rules" : {
+      "notMatched" : [ ],
+      "matched" : 0,
+      "total" : 0
+    },
+    "summary" : "Tested 9 of 10 steps, 3 of 6 routes and 0 of 0 decision rules."
+  },
+  "limits" : "This is a dry run of the workflow as designed, not the workflow engine. It does not call real systems, check that connections work, that people are in the groups, or how long anything takes."
+}

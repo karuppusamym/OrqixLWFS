@@ -1,0 +1,13 @@
+# gitleaks configuration for CI (stage 4 secret scan): the default rules plus a narrow allowlist.
+title = "Orqix gitleaks"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Documented dev-only test values for the local Compose stack (realm users, client secrets). Never reused."
+paths = [
+  '''deploy/compose/keycloak/orqix-dev-realm\.json''',
+  '''deploy/compose/docker-compose\.yml''',
+  '''deploy/compose/\.env\.example''',
+]

@@ -1,0 +1,232 @@
+# Orqix application defaults (profile-neutral). Catalog: docs/build/S1-engineering-baseline.md section 5.
+# Profiles: dev (local Compose), test (CI/Testcontainers), migrate (Flyway + engine schema, then exit), prod (OpenShift).
+spring:
+  application:
+    name: orqix
+  main:
+    banner-mode: off
+  datasource:
+    url: ${ORQIX_DB_URL:jdbc:postgresql://localhost:5432/orqix}
+    username: ${ORQIX_DB_USER:orqix_app}
+    password: ${ORQIX_DB_PASSWORD:}
+    hikari:
+      pool-name: orqix
+      maximum-pool-size: 15
+      # Fail fast during a database outage (T-RES-04): a request waits at most 10 s for a connection, then answers
+      # 503 DEPENDENCY_UNAVAILABLE. The default 30 s held request threads and outlived the 3 s readiness probe timeout.
+      connection-timeout: 10000
+      # One datasource for both schemas (spike S-6): application tables in orqix, engine tables in flowable.
+      # TX-6: user transactions lock_timeout 10s / statement_timeout 30s (job transactions raise it with SET LOCAL).
+      connection-init-sql: "SET search_path TO orqix, flowable; SET lock_timeout = '10s'; SET statement_timeout = '30s'"
+  flyway:
+    # Pods never run DDL; the migration job (profile migrate) is the only writer.
+    enabled: false
+    default-schema: orqix
+    schemas: orqix
+    create-schemas: false
+    locations: classpath:db/migration
+    placeholders:
+      app_role: ${orqix.migration.app-role}
+  session:
+    timeout: ${orqix.identity.session-idle-timeout}
+    jdbc:
+      initialize-schema: never
+      table-name: SPRING_SESSION
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+  mvc:
+    problemdetails:
+      enabled: false
+  lifecycle:
+    timeout-per-shutdown-phase: 45s
+  servlet:
+    multipart:
+      # Attachment uploads (docs/build/S17): the container stops reading a file at 10 MiB (the platform maximum) and a
+      # request at 10 MiB + 64 KiB; RequestLimitsFilter also rejects a larger Content-Length before any byte is read.
+      # Files above 256 KiB are spooled to the temp directory (spring.servlet.multipart.location), not held in memory.
+      enabled: true
+      max-file-size: 10MB
+      max-request-size: 10304KB
+      file-size-threshold: 256KB
+
+server:
+  port: 8080
+  shutdown: graceful
+  forward-headers-strategy: framework
+  error:
+    whitelabel:
+      enabled: false
+    include-stacktrace: never
+    include-message: never
+  servlet:
+    session:
+      cookie:
+        name: ORQIX_SESSION
+        http-only: true
+        secure: ${ORQIX_COOKIE_SECURE:true}
+        same-site: lax
+  tomcat:
+    max-swallow-size: 2MB
+
+management:
+  server:
+    port: 8081
+  endpoints:
+    access:
+      default: none
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      access: read-only
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState,db
+    prometheus:
+      access: read-only
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+
+flowable:
+  # Pods: schema update off (S1 section 5); the migrate profile turns it on.
+  database-schema-update: "false"
+  async-executor-activate: true
+  history-level: audit
+  check-process-definitions: false
+  idm:
+    enabled: false
+  eventregistry:
+    enabled: false
+  process:
+    async:
+      executor:
+        async-job-lock-time: ${orqix.runtime.async-job-lock-time}
+        reset-expired-jobs-interval: ${orqix.runtime.reset-expired-jobs-interval}
+        lock-owner: ${orqix.runtime.lock-owner}
+        # Graceful shutdown drains in-flight jobs (the Orqix job pool is closed after the engine). With the Flowable
+        # default (true) the executor releases its locked jobs at the start of the shutdown, before the running job
+        # has finished: the job then fails to commit (optimistic lock), records a spurious EFFECT_FAILED and uses up a
+        # retry, although the effect is already journaled as succeeded. T-RES-05 (GracefulShutdownTest).
+        unlock-owned-jobs: false
+
+logging:
+  structured:
+    format:
+      console: ecs
+  level:
+    org.flowable.common.engine.impl.agenda: warn
+    org.flowable.engine.impl.bpmn.deployer: warn
+
+orqix:
+  identity:
+    registration-id: orqix
+    groups-claim: groups
+    bootstrap-platform-admin-groups: []
+    session-idle-timeout: 30m
+    session-absolute-timeout: 10h
+    # RP-initiated logout target when the provider metadata has no end_session_endpoint (explicit endpoints, no
+    # discovery). Env ORQIX_IDENTITY_END_SESSION_URI. Empty: local logout only.
+    end-session-uri: ""
+  policy:
+    # S6 promises access removal within 60 s; 50 s leaves margin for request timing (T-SEC-09 measured TTL + 0.1 s).
+    cache-ttl: 50s
+  idempotency:
+    retention: 30d
+  egress:
+    allowed-hosts: []
+    allowed-private-hosts: []
+    plain-http-hosts: []
+  secrets:
+    dir: /var/run/secrets/orqix
+  attachments:
+    # Files on requests (docs/build/S17). max-file-bytes cannot exceed 10 MiB (database, workflow schema, multipart cap).
+    max-file-bytes: 10485760
+    max-files-per-run: 25
+    max-bytes-per-run: 52428800
+    staged-ttl: 24h
+    max-staged-per-subject: 10
+    uploads-per-minute: 30
+    # Virus scanning is OFF unless a scanner is enabled; files are then stored as "notScanned". Production deployments that
+    # accept files from outside must enable ClamAV (clamd, TCP) or provide their own AttachmentScanner bean.
+    clamav:
+      enabled: false
+      host: localhost
+      port: 3310
+      timeout: 10s
+  limits:
+    draft-max-bytes: 262144
+    request-max-bytes: 65536
+    json-max-depth: 32
+  pagination:
+    # HMAC key for list cursors. Shared by all pods; the prod profile refuses the default.
+    cursor-secret: ${ORQIX_CURSOR_SECRET:orqix-development-cursor-secret-not-for-production}
+  runtime:
+    lock-owner: ${HOSTNAME:${COMPUTERNAME:orqix-local}}
+    async-job-lock-time: 60s
+    reset-expired-jobs-interval: 15s
+    executor-core-pool-size: 4
+    executor-max-pool-size: 6
+    executor-queue-size: 100
+  migration:
+    app-role: ${ORQIX_APP_ROLE:orqix_app}
+  db:
+    migrator-user: ${ORQIX_DB_MIGRATOR_USER:orqix_migrator}
+    migrator-password: ${ORQIX_DB_MIGRATOR_PASSWORD:}
+  ai:
+    # AI assistance (docs/build/S10-ai-assistance.md section 1). Optional: an empty key keeps the product rules-only
+    # (AI entry points hidden, AI endpoints 422 AI_NOT_CONFIGURED). The key is read unprefixed on purpose (local .env,
+    # gitignored; OpenShift Secret orqix-ai). Egress must allow openrouter.ai:443.
+    api-key: ${OPENROUTER_API_KEY:}
+    base-url: https://openrouter.ai/api/v1
+    default-profile: economy
+    # One extra attempt when the default profile cannot produce a valid draft; empty disables escalation.
+    escalation-profile: auto
+    profiles:
+      economy:
+        model: deepseek/deepseek-v3.2
+        label: Economy
+      auto:
+        # Jev Router picks the model and reasoning effort per request; variable price, bounded by the budgets.
+        model: typesafe/jev-router
+        label: Auto (Jev Router)
+    judge-model: anthropic/claude-haiku-5.5
+    vision-judge-model: anthropic/claude-haiku-5.5
+    # Costly model families and batch variants are refused for every profile (globs, case-insensitive).
+    excluded-models:
+      - "anthropic/claude-opus-*"
+      - "anthropic/claude-fable-*"
+      - "anthropic/claude-mythos-*"
+      - "openai/*-pro*"
+      - "*:batch"
+    allowed-models: []
+    max-price:
+      prompt-per-million: 1.00
+      completion-per-million: 3.00
+    budget:
+      monthly-usd: 10.00
+      per-request-max-usd: 0.50
+    # Per provider call, and the total wall-clock budget of one generation (all attempts; the OpenShift Route allows
+    # 180 s). No attempt is started that cannot finish before the deadline.
+    timeout: 120s
+    generation-deadline: 150s
+    max-repair-attempts: 2
+    # Draft envelopes measured at about 2-3k output tokens (tools/ai-eval); 8k leaves room for reasoning models.
+    max-output-tokens: 8000
+    # Fastest provider within max-price (OpenRouter provider.sort); empty lets OpenRouter balance by price.
+    provider-sort: throughput
+    # Async draft generation (POST /ai/drafts answers 202 and the client polls): bounded executor per pod, state in the
+    # database so any pod can answer the poll. A job whose pod died is failed after deadline + orphan-margin.
+    jobs:
+      threads: 4
+      queue: 16
+      active-per-user: 2
+      orphan-margin: 30s

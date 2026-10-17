@@ -1,0 +1,220 @@
+{
+  "schemaVersion": "0.1",
+  "workflowKey": "document-link-review",
+  "name": "Review a SharePoint or OneDrive file link",
+  "metadata": {
+    "description": "Resolve an approved file link, enforce the allowed drive, capture current content immutably, extract its text and obtain approval.",
+    "tags": [
+      "documents",
+      "approval"
+    ]
+  },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "shareUrl": {
+        "type": "string",
+        "title": "SharePoint or OneDrive file URL",
+        "minLength": 1,
+        "maxLength": 2000
+      }
+    },
+    "required": [
+      "shareUrl"
+    ]
+  },
+  "inputUi": {
+    "order": [
+      "shareUrl"
+    ],
+    "widgets": {}
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "documentName": {
+        "type": "string",
+        "title": "documentName"
+      },
+      "documentHash": {
+        "type": "string",
+        "title": "documentHash"
+      },
+      "documentSnapshot": {
+        "type": "string",
+        "title": "Immutable document snapshot"
+      }
+    }
+  },
+  "triggers": [
+    "manual",
+    "api"
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "label": "Document submitted",
+      "config": {}
+    },
+    {
+      "id": "resolve",
+      "type": "http",
+      "label": "Resolve approved document link",
+      "config": {
+        "connectionRef": "microsoft-documents",
+        "operation": "resolveLink",
+        "inputMapping": {
+          "shareUrl": "/input/shareUrl"
+        },
+        "resultMapping": {
+          "driveId": "/driveId",
+          "itemId": "/itemId",
+          "name": "/name"
+        },
+        "timeoutSeconds": 30
+      }
+    },
+    {
+      "id": "capture",
+      "type": "http",
+      "label": "Capture latest document snapshot",
+      "config": {
+        "connectionRef": "microsoft-documents",
+        "operation": "pinLatest",
+        "resultMapping": {
+          "snapshotId": "/snapshotId",
+          "eTag": "/eTag",
+          "contentSha256": "/contentSha256",
+          "name": "/name"
+        },
+        "timeoutSeconds": 30,
+        "inputMapping": {
+          "driveId": "/steps/resolve/driveId",
+          "itemId": "/steps/resolve/itemId"
+        }
+      }
+    },
+    {
+      "id": "document",
+      "type": "http",
+      "label": "Extract the captured document",
+      "config": {
+        "connectionRef": "microsoft-documents",
+        "operation": "extractSnapshot",
+        "resultMapping": {
+          "name": "/name",
+          "snapshotId": "/snapshotId",
+          "text": "/text",
+          "contentSha256": "/contentSha256",
+          "extractionFormat": "/extractionFormat",
+          "extractedTextSha256": "/extractedTextSha256"
+        },
+        "timeoutSeconds": 30,
+        "inputMapping": {
+          "driveId": "/steps/resolve/driveId",
+          "itemId": "/steps/resolve/itemId",
+          "snapshotId": "/steps/capture/snapshotId"
+        }
+      }
+    },
+    {
+      "id": "review",
+      "type": "approval",
+      "label": "Review document",
+      "config": {
+        "candidateGroupRef": "managers",
+        "rejectReasonRequired": true
+      }
+    },
+    {
+      "id": "approved",
+      "type": "end",
+      "label": "Accepted",
+      "config": {
+        "businessOutcome": "Document accepted",
+        "outcomeKind": "success"
+      }
+    },
+    {
+      "id": "rejected",
+      "type": "end",
+      "label": "Rejected",
+      "config": {
+        "businessOutcome": "Document rejected",
+        "outcomeKind": "rejected"
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t1",
+      "from": "start",
+      "to": "resolve",
+      "on": "next"
+    },
+    {
+      "id": "resolved",
+      "from": "resolve",
+      "to": "capture",
+      "on": "next"
+    },
+    {
+      "id": "captureDone",
+      "from": "capture",
+      "to": "document",
+      "on": "next"
+    },
+    {
+      "id": "t2",
+      "from": "document",
+      "to": "review",
+      "on": "next"
+    },
+    {
+      "id": "t3",
+      "from": "review",
+      "to": "approved",
+      "on": "approved"
+    },
+    {
+      "id": "t4",
+      "from": "review",
+      "to": "rejected",
+      "on": "rejected"
+    }
+  ],
+  "decisions": [],
+  "execution": {
+    "maxConcurrentRuns": 500,
+    "maxAttempts": 3,
+    "retryDelaySeconds": 30
+  },
+  "security": {
+    "selfApproval": "deny"
+  },
+  "dependencies": {
+    "connections": [
+      {
+        "key": "microsoft-documents",
+        "definitionVersion": 3
+      }
+    ]
+  },
+  "outputMapping": {
+    "documentName": {
+      "fieldRef": "/steps/document/name",
+      "required": false
+    },
+    "documentHash": {
+      "fieldRef": "/steps/document/contentSha256",
+      "required": false
+    },
+    "documentSnapshot": {
+      "fieldRef": "/steps/document/snapshotId",
+      "required": false
+    }
+  }
+}

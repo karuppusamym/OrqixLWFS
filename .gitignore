@@ -1,0 +1,37 @@
+# Build output
+target/
+dist/
+dist-mock/
+/build/
+*.class
+
+# Python
+__pycache__/
+*.pyc
+
+# Node
+node_modules/
+frontend/coverage/
+playwright-report/
+test-results/
+blob-report/
+
+# IDE / OS
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Local environment and evidence
+.env
+.env.local
+deploy/compose/.env
+evidence/
+*.log
+
+# Maven wrapper download cache (wrapper scripts and properties are committed)
+.mvn/wrapper/maven-wrapper.jar
+
+# Claude Code local worktrees
+.claude/worktrees/

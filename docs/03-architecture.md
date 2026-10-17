@@ -126,3 +126,13 @@ Readiness checks startup and ability to serve; liveness must not trigger restart
 Run schema migration once as a controlled predeployment job. Do not let every replica auto-upgrade engine tables. Rehearse vendor engine schema upgrades against a restored database. Use additive application migrations for safe rolling releases; destructive changes need a separate rollout.
 
 Instrument API latency, failed logins, denied access, job age, retry/dead-letter count, connector timeouts, database pool usage and task lateness. Correlate request ID, run ID and node ID across logs/traces without payload secrets. Test database restore and record measured RPO/RTO before production approval.
+
+## Pattern support and partial-success recovery
+
+A workflow pattern counts as supported only when the compiled model passes a behavior test for it; a node's presence on the canvas is not support. The acceptance matrix is in [S4 §12](build/S4-workflow-compiler.md#12-pattern-acceptance-matrix).
+
+Each connector operation declares its effect class — `readOnly`, `idempotentWithKey` or `nonIdempotent` — in its versioned connection definition, with evidence from the remote API contract. Reconciliation and compensation are separate, explicit operations. R0 implements the effect journal, safe retry by class, unknown-outcome detection and audited operator reconciliation ([S5 §6–7](build/S5-runtime.md)). Automated compensation remains E05/R3 and requires a specific business operation, its own permissions and recovery contract.
+
+For example, canceling a request after order creation may require an explicit order-cancellation operation. If that operation is unavailable or its outcome is unknown, surface the unresolved business effect. Do not report a clean rollback.
+
+Owners: backend/integration leads. Implementation detail for R0 — module rules, engine configuration, expression allowlist, projection listener, transaction rules and capacity — is in [docs/build](build/README.md).

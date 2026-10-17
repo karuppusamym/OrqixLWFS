@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC hand-authored fixture (Camunda 7), not a customer export. Six service tasks in three implementation groups:
+     three external-task workers for the topic 'send-mail', two tasks of the delegate class AuditDelegate and one with a
+     class of its own. One mapping per group covers every task of that implementation. -->
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" targetNamespace="urn:orqix:migration-fixture">
+  <bpmn:process id="service-task-groups" name="Service task groups" isExecutable="true">
+    <bpmn:startEvent id="start" />
+    <bpmn:serviceTask id="mailWelcome" name="Send welcome mail" camunda:type="external" camunda:topic="send-mail" />
+    <bpmn:serviceTask id="auditStart" name="Audit start" camunda:class="com.example.AuditDelegate" />
+    <bpmn:serviceTask id="mailReminder" name="Send reminder" camunda:type="external" camunda:topic="send-mail" />
+    <bpmn:serviceTask id="auditMiddle" name="Audit middle" camunda:class="com.example.AuditDelegate" />
+    <bpmn:serviceTask id="mailReceipt" name="Send receipt" camunda:type="external" camunda:topic="send-mail" />
+    <bpmn:serviceTask id="archive" name="Archive" camunda:class="com.example.ArchiveDelegate" />
+    <bpmn:endEvent id="done" name="Done" />
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="mailWelcome" />
+    <bpmn:sequenceFlow id="f2" sourceRef="mailWelcome" targetRef="auditStart" />
+    <bpmn:sequenceFlow id="f3" sourceRef="auditStart" targetRef="mailReminder" />
+    <bpmn:sequenceFlow id="f4" sourceRef="mailReminder" targetRef="auditMiddle" />
+    <bpmn:sequenceFlow id="f5" sourceRef="auditMiddle" targetRef="mailReceipt" />
+    <bpmn:sequenceFlow id="f6" sourceRef="mailReceipt" targetRef="archive" />
+    <bpmn:sequenceFlow id="f7" sourceRef="archive" targetRef="done" />
+  </bpmn:process>
+</bpmn:definitions>

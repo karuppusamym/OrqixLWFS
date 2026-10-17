@@ -1,0 +1,414 @@
+{
+  "schemaVersion": "0.1",
+  "workflowKey": "vendor-onboarding-check",
+  "name": "Vendor onboarding check",
+  "metadata": {
+    "description": "Check a new vendor before it is used. An AI assistant looks the vendor up in the vendor registry; high risk or a sanctions hit goes to a compliance review, everything else is approved automatically. You are told the result.",
+    "tags": [
+      "vendor",
+      "compliance",
+      "ai"
+    ]
+  },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "vendorName",
+      "country",
+      "annualSpend"
+    ],
+    "properties": {
+      "vendorName": {
+        "type": "string",
+        "title": "Vendor name",
+        "description": "The vendor's legal name, for example 'Acme Ltd'.",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "country": {
+        "type": "string",
+        "title": "Country",
+        "enum": [
+          "United States",
+          "United Kingdom",
+          "Germany",
+          "India",
+          "Singapore",
+          "Other"
+        ]
+      },
+      "annualSpend": {
+        "type": "number",
+        "title": "Expected annual spend (USD)",
+        "minimum": 0.01,
+        "maximum": 100000000,
+        "multipleOf": 0.01
+      }
+    }
+  },
+  "inputUi": {
+    "order": [
+      "vendorName",
+      "country",
+      "annualSpend"
+    ],
+    "widgets": {
+      "country": "select",
+      "annualSpend": "money"
+    },
+    "currency": "USD"
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "registryId": {
+        "type": "string",
+        "title": "Registry id"
+      },
+      "riskScore": {
+        "type": "integer",
+        "title": "Risk score"
+      }
+    }
+  },
+  "triggers": [
+    "manual",
+    "api"
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "label": "Vendor submitted",
+      "config": {}
+    },
+    {
+      "id": "assess",
+      "type": "http",
+      "label": "Assess vendor risk",
+      "config": {
+        "connectionRef": "vendor-risk-assistant",
+        "operation": "assessVendor",
+        "inputMapping": {
+          "vendorName": "/input/vendorName",
+          "country": "/input/country",
+          "annualSpend": "/input/annualSpend"
+        },
+        "resultMapping": {
+          "riskScore": "/riskScore",
+          "riskBand": "/riskBand",
+          "sanctionsHit": "/sanctionsHit",
+          "registryId": "/registryId"
+        },
+        "timeoutSeconds": 30
+      }
+    },
+    {
+      "id": "sanctionsPolicy",
+      "type": "decision",
+      "label": "Check sanctions",
+      "config": {
+        "decisionRef": "sanctions-policy"
+      }
+    },
+    {
+      "id": "sanctionsRoute",
+      "type": "branch",
+      "label": "On a sanctions list?",
+      "config": {}
+    },
+    {
+      "id": "riskPolicy",
+      "type": "decision",
+      "label": "Check risk score",
+      "config": {
+        "decisionRef": "risk-policy"
+      }
+    },
+    {
+      "id": "riskRoute",
+      "type": "branch",
+      "label": "High risk?",
+      "config": {}
+    },
+    {
+      "id": "compliance",
+      "type": "approval",
+      "label": "Compliance review",
+      "config": {
+        "candidateGroupRef": "compliance-reviewers",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 24
+      }
+    },
+    {
+      "id": "notifyAuto",
+      "type": "notification",
+      "label": "Tell requester the vendor is approved",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "The vendor risk check found low risk. The vendor is approved."
+      }
+    },
+    {
+      "id": "notifyReviewed",
+      "type": "notification",
+      "label": "Tell requester compliance approved",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "Compliance reviewed the vendor and approved it."
+      }
+    },
+    {
+      "id": "notifyRejected",
+      "type": "notification",
+      "label": "Tell requester the vendor was rejected",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "Compliance rejected the vendor. Open the request to see the reason."
+      }
+    },
+    {
+      "id": "approved",
+      "type": "end",
+      "label": "Vendor approved",
+      "config": {
+        "businessOutcome": "Approved",
+        "outcomeKind": "success"
+      }
+    },
+    {
+      "id": "rejected",
+      "type": "end",
+      "label": "Vendor rejected",
+      "config": {
+        "businessOutcome": "Rejected",
+        "outcomeKind": "rejected"
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t1",
+      "from": "start",
+      "to": "assess",
+      "on": "next"
+    },
+    {
+      "id": "t2",
+      "from": "assess",
+      "to": "sanctionsPolicy",
+      "on": "next"
+    },
+    {
+      "id": "t3",
+      "from": "sanctionsPolicy",
+      "to": "sanctionsRoute",
+      "on": "next"
+    },
+    {
+      "id": "t4",
+      "from": "sanctionsRoute",
+      "to": "compliance",
+      "on": "condition",
+      "label": "On a sanctions list",
+      "condition": {
+        "fieldRef": "/steps/sanctionsPolicy/route",
+        "operator": "eq",
+        "value": "compliance"
+      }
+    },
+    {
+      "id": "t5",
+      "from": "sanctionsRoute",
+      "to": "riskPolicy",
+      "on": "default",
+      "label": "Not on a sanctions list"
+    },
+    {
+      "id": "t6",
+      "from": "riskPolicy",
+      "to": "riskRoute",
+      "on": "next"
+    },
+    {
+      "id": "t7",
+      "from": "riskRoute",
+      "to": "compliance",
+      "on": "condition",
+      "label": "Risk score 70 or more",
+      "condition": {
+        "fieldRef": "/steps/riskPolicy/route",
+        "operator": "eq",
+        "value": "compliance"
+      }
+    },
+    {
+      "id": "t8",
+      "from": "riskRoute",
+      "to": "notifyAuto",
+      "on": "default",
+      "label": "Under 70"
+    },
+    {
+      "id": "t9",
+      "from": "compliance",
+      "to": "notifyReviewed",
+      "on": "approved"
+    },
+    {
+      "id": "t10",
+      "from": "compliance",
+      "to": "notifyRejected",
+      "on": "rejected"
+    },
+    {
+      "id": "t11",
+      "from": "notifyAuto",
+      "to": "approved",
+      "on": "next"
+    },
+    {
+      "id": "t12",
+      "from": "notifyReviewed",
+      "to": "approved",
+      "on": "next"
+    },
+    {
+      "id": "t13",
+      "from": "notifyRejected",
+      "to": "rejected",
+      "on": "next"
+    }
+  ],
+  "decisions": [
+    {
+      "key": "sanctions-policy",
+      "version": 1,
+      "hitPolicy": "UNIQUE",
+      "rows": [
+        {
+          "when": {
+            "fieldRef": "/steps/assess/sanctionsHit",
+            "operator": "eq",
+            "value": true
+          },
+          "then": {
+            "route": "compliance"
+          }
+        }
+      ],
+      "default": {
+        "route": "continue"
+      }
+    },
+    {
+      "key": "risk-policy",
+      "version": 1,
+      "hitPolicy": "UNIQUE",
+      "rows": [
+        {
+          "when": {
+            "fieldRef": "/steps/assess/riskScore",
+            "operator": "gte",
+            "value": 70
+          },
+          "then": {
+            "route": "compliance"
+          }
+        }
+      ],
+      "default": {
+        "route": "auto"
+      }
+    }
+  ],
+  "execution": {
+    "maxConcurrentRuns": 100,
+    "maxAttempts": 3,
+    "retryDelaySeconds": 30
+  },
+  "security": {
+    "selfApproval": "deny"
+  },
+  "dependencies": {
+    "connections": [
+      {
+        "key": "vendor-risk-assistant",
+        "definitionVersion": 1
+      }
+    ]
+  },
+  "outputMapping": {
+    "registryId": {
+      "fieldRef": "/steps/assess/registryId",
+      "required": false
+    },
+    "riskScore": {
+      "fieldRef": "/steps/assess/riskScore",
+      "required": false
+    }
+  },
+  "uiLayout": {
+    "positions": {
+      "start": {
+        "x": 80,
+        "y": 220
+      },
+      "assess": {
+        "x": 300,
+        "y": 220
+      },
+      "sanctionsPolicy": {
+        "x": 540,
+        "y": 220
+      },
+      "sanctionsRoute": {
+        "x": 780,
+        "y": 220
+      },
+      "riskPolicy": {
+        "x": 1000,
+        "y": 220
+      },
+      "riskRoute": {
+        "x": 1220,
+        "y": 220
+      },
+      "compliance": {
+        "x": 1440,
+        "y": 60
+      },
+      "notifyAuto": {
+        "x": 1440,
+        "y": 380
+      },
+      "notifyReviewed": {
+        "x": 1680,
+        "y": 60
+      },
+      "notifyRejected": {
+        "x": 1680,
+        "y": 200
+      },
+      "approved": {
+        "x": 1920,
+        "y": 220
+      },
+      "rejected": {
+        "x": 1920,
+        "y": 380
+      }
+    },
+    "viewport": {
+      "x": 0,
+      "y": 0,
+      "zoom": 0.6
+    }
+  }
+}

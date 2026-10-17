@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Hand-authored compatibility fixture, not a customer export. Start form is a linked file (camunda8-user-task-form.form,
+     form id expense-request); the manager task has an embedded form, a due time and an assignment. -->
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" xmlns:modeler="http://camunda.org/schema/modeler/1.0" targetNamespace="urn:orqix:migration-fixture" modeler:executionPlatform="Camunda Cloud" modeler:executionPlatformVersion="8.5.0">
+  <bpmn:process id="c8-expense" name="Camunda 8 expense request" isExecutable="true">
+    <bpmn:extensionElements>
+      <zeebe:userTaskForm id="reviewForm">{"schemaVersion":16,"type":"default","id":"review-form","components":[{"type":"checkbox","id":"r1","key":"approved","label":"Approve this expense"},{"type":"textarea","id":"r2","key":"managerComment","label":"Comment"}]}</zeebe:userTaskForm>
+    </bpmn:extensionElements>
+    <bpmn:startEvent id="start"><bpmn:extensionElements><zeebe:formDefinition formId="expense-request" /></bpmn:extensionElements></bpmn:startEvent>
+    <bpmn:userTask id="managerReview" name="Manager review">
+      <bpmn:extensionElements>
+        <zeebe:userTask />
+        <zeebe:assignmentDefinition candidateGroups="source-managers" />
+        <zeebe:taskSchedule dueDate="=now() + duration(&#34;PT48H&#34;)" followUpDate="=now() + duration(&#34;PT24H&#34;)" />
+        <zeebe:formDefinition formKey="camunda-forms:bpmn:reviewForm" />
+      </bpmn:extensionElements>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="outcome" />
+    <bpmn:endEvent id="approvedEnd" name="Approved" />
+    <bpmn:endEvent id="rejectedEnd" name="Rejected" />
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="managerReview" />
+    <bpmn:sequenceFlow id="f2" sourceRef="managerReview" targetRef="outcome" />
+    <bpmn:sequenceFlow id="f3" sourceRef="outcome" targetRef="approvedEnd"><bpmn:conditionExpression>= approved</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f4" sourceRef="outcome" targetRef="rejectedEnd"><bpmn:conditionExpression>= not(approved)</bpmn:conditionExpression></bpmn:sequenceFlow>
+  </bpmn:process>
+</bpmn:definitions>

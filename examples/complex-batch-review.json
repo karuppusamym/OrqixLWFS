@@ -1,0 +1,311 @@
+{
+  "schemaVersion": "0.1",
+  "workflowKey": "batch-review",
+  "name": "Complex batch review",
+  "metadata": {
+    "description": "Publish Simple review request first. Two reviewers act in parallel, a durable timer waits one minute, then all collection items receive a separate child review. Any rejected child routes the batch to Rejected.",
+    "tags": [
+      "complex",
+      "parallel",
+      "timer",
+      "collection"
+    ]
+  },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "title",
+      "purpose",
+      "costCenter",
+      "amount",
+      "items"
+    ],
+    "properties": {
+      "title": {
+        "type": "string",
+        "title": "What are you buying?",
+        "description": "A short name for the purchase, for example 'Replacement laptop'.",
+        "minLength": 1,
+        "maxLength": 120
+      },
+      "purpose": {
+        "type": "string",
+        "title": "Business purpose",
+        "description": "Why the purchase is needed. Approvers read this first.",
+        "minLength": 1,
+        "maxLength": 1000
+      },
+      "costCenter": {
+        "type": "string",
+        "title": "Cost center",
+        "enum": [
+          "OPS",
+          "IT",
+          "HR"
+        ]
+      },
+      "amount": {
+        "type": "number",
+        "title": "Amount (USD)",
+        "description": "Total including tax and shipping.",
+        "minimum": 0.01,
+        "maximum": 1000000,
+        "multipleOf": 0.01
+      },
+      "items": {
+        "type": "array",
+        "title": "Purchase titles",
+        "items": {
+          "type": "string",
+          "title": "Purchase title",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "minItems": 1,
+        "maxItems": 5
+      }
+    }
+  },
+  "inputUi": {
+    "order": [
+      "title",
+      "purpose",
+      "costCenter",
+      "amount"
+    ],
+    "widgets": {
+      "purpose": "textarea",
+      "costCenter": "select",
+      "amount": "money"
+    },
+    "currency": "USD"
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "outcomeItems": {
+        "type": "array",
+        "title": "outcomeItems",
+        "items": {
+          "type": "string",
+          "title": "Item result"
+        },
+        "minItems": 1,
+        "maxItems": 5
+      },
+      "referenceItems": {
+        "type": "array",
+        "title": "referenceItems",
+        "items": {
+          "type": "string",
+          "title": "Item result"
+        },
+        "minItems": 1,
+        "maxItems": 5
+      }
+    }
+  },
+  "triggers": [
+    "manual",
+    "api"
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "label": "Submitted",
+      "config": {}
+    },
+    {
+      "id": "split",
+      "type": "parallelSplit",
+      "label": "Prepare together",
+      "config": {
+        "joinRef": "join"
+      }
+    },
+    {
+      "id": "one",
+      "type": "approval",
+      "label": "Review one",
+      "config": {
+        "candidateGroupRef": "managers",
+        "rejectReasonRequired": true
+      }
+    },
+    {
+      "id": "two",
+      "type": "approval",
+      "label": "Review two",
+      "config": {
+        "candidateGroupRef": "managers",
+        "rejectReasonRequired": true
+      }
+    },
+    {
+      "id": "join",
+      "type": "parallelJoin",
+      "label": "All preparations ready",
+      "config": {}
+    },
+    {
+      "id": "wait",
+      "type": "wait",
+      "label": "Wait one minute",
+      "config": {
+        "duration": "PT1M"
+      }
+    },
+    {
+      "id": "child",
+      "type": "startWorkflow",
+      "label": "Review each purchase",
+      "config": {
+        "workflowRef": "review-request",
+        "inputMapping": {
+          "purpose": "/input/purpose",
+          "costCenter": "/input/costCenter",
+          "amount": "/input/amount"
+        },
+        "resultMapping": {},
+        "forEach": {
+          "itemsRef": "/input/items",
+          "itemInput": "title",
+          "maxItems": 5,
+          "mode": "parallel"
+        },
+        "collectionMapping": {
+          "outcomeItems": "outcome",
+          "referenceItems": "reference"
+        }
+      }
+    },
+    {
+      "id": "results",
+      "type": "branch",
+      "label": "Check all item reviews",
+      "config": {}
+    },
+    {
+      "id": "done",
+      "type": "end",
+      "label": "Accepted",
+      "config": {
+        "businessOutcome": "Accepted",
+        "outcomeKind": "success"
+      }
+    },
+    {
+      "id": "reject",
+      "type": "end",
+      "label": "Rejected",
+      "config": {
+        "businessOutcome": "Rejected",
+        "outcomeKind": "rejected"
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t1",
+      "from": "start",
+      "to": "split",
+      "on": "next"
+    },
+    {
+      "id": "t2",
+      "from": "split",
+      "to": "one",
+      "on": "next"
+    },
+    {
+      "id": "t3",
+      "from": "split",
+      "to": "two",
+      "on": "next"
+    },
+    {
+      "id": "t4",
+      "from": "one",
+      "to": "join",
+      "on": "approved"
+    },
+    {
+      "id": "t5",
+      "from": "two",
+      "to": "join",
+      "on": "approved"
+    },
+    {
+      "id": "t6",
+      "from": "one",
+      "to": "reject",
+      "on": "rejected"
+    },
+    {
+      "id": "t7",
+      "from": "two",
+      "to": "reject",
+      "on": "rejected"
+    },
+    {
+      "id": "t8",
+      "from": "join",
+      "to": "wait",
+      "on": "next"
+    },
+    {
+      "id": "t9",
+      "from": "wait",
+      "to": "child",
+      "on": "next"
+    },
+    {
+      "id": "t10",
+      "from": "child",
+      "to": "results",
+      "on": "next"
+    },
+    {
+      "id": "t11",
+      "from": "results",
+      "to": "done",
+      "on": "condition",
+      "condition": {
+        "fieldRef": "/steps/child/allSucceeded",
+        "operator": "eq",
+        "value": true
+      }
+    },
+    {
+      "id": "t12",
+      "from": "results",
+      "to": "reject",
+      "on": "default"
+    }
+  ],
+  "decisions": [],
+  "execution": {
+    "maxConcurrentRuns": 500,
+    "maxAttempts": 3,
+    "retryDelaySeconds": 30
+  },
+  "security": {
+    "selfApproval": "deny"
+  },
+  "dependencies": {
+    "connections": []
+  },
+  "outputMapping": {
+    "outcomeItems": {
+      "fieldRef": "/steps/child/outcomeItems",
+      "required": false
+    },
+    "referenceItems": {
+      "fieldRef": "/steps/child/referenceItems",
+      "required": false
+    }
+  }
+}

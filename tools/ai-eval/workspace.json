@@ -1,0 +1,11 @@
+{
+  "description": "Evaluation workspace, like the dev-seed Purchasing workspace: two task groups and the procurement connection (bound). Connection files are relative to this file.",
+  "selfApprovalAllowed": false,
+  "groups": [
+    { "key": "managers", "name": "Managers", "memberCount": 2 },
+    { "key": "finance-approvers", "name": "Finance approvers", "memberCount": 1 }
+  ],
+  "connections": [
+    { "file": "../../examples/connections/procurement.connection.json", "bound": true }
+  ]
+}

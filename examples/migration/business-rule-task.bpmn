@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC hand-authored fixture (Camunda 7), not a customer export. A business rule task calls the DMN decision
+     'reviewRoute' (examples/migration/dmn-first-hit.dmn) and a gateway reads its single-entry result variable. It converts
+     once that DMN file is uploaded as a separate migration and the task is mapped to it (decisionMappings). -->
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" targetNamespace="urn:orqix:migration-fixture">
+  <bpmn:process id="business-rule-task" name="Route by decision" isExecutable="true">
+    <bpmn:startEvent id="start" />
+    <bpmn:businessRuleTask id="routeRule" name="Decide review route" camunda:decisionRef="reviewRoute" camunda:resultVariable="route" camunda:mapDecisionResult="singleEntry" />
+    <bpmn:exclusiveGateway id="routeGateway" name="Which route?" default="toManager" />
+    <bpmn:endEvent id="directorEnd" name="Director" />
+    <bpmn:endEvent id="financeEnd" name="Finance" />
+    <bpmn:endEvent id="managerEnd" name="Manager" />
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="routeRule" />
+    <bpmn:sequenceFlow id="f2" sourceRef="routeRule" targetRef="routeGateway" />
+    <bpmn:sequenceFlow id="toDirector" sourceRef="routeGateway" targetRef="directorEnd"><bpmn:conditionExpression>${route == 'director'}</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="toFinance" sourceRef="routeGateway" targetRef="financeEnd"><bpmn:conditionExpression>${route == 'finance'}</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="toManager" sourceRef="routeGateway" targetRef="managerEnd" />
+  </bpmn:process>
+</bpmn:definitions>

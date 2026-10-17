@@ -1,0 +1,141 @@
+{
+  "outcome" : {
+    "status" : "finished",
+    "businessOutcome" : "Rejected",
+    "outcomeKind" : "rejected",
+    "endStepId" : "rejected",
+    "attention" : null,
+    "summary" : "The request would finish with the outcome \"Rejected\" (rejected)."
+  },
+  "outputs" : { },
+  "trace" : [ {
+    "seq" : 1,
+    "stepId" : "start",
+    "stepLabel" : "Request submitted",
+    "kind" : "start",
+    "kindLabel" : "Request form",
+    "summary" : "The request is submitted with the answers you entered.",
+    "details" : { },
+    "transitionId" : "t1",
+    "nextStepId" : "manager"
+  }, {
+    "seq" : 2,
+    "stepId" : "manager",
+    "stepLabel" : "Review request",
+    "kind" : "approval",
+    "kindLabel" : "Ask for approval",
+    "summary" : "\"Review request\" goes to Managers. In this test they reject it with the reason \"Not in the budget\".",
+    "details" : {
+      "group" : "managers",
+      "groupName" : "Managers",
+      "dueAfterHours" : 24,
+      "decision" : "rejected",
+      "reason" : "Not in the budget"
+    },
+    "wrote" : {
+      "decision" : "rejected",
+      "reason" : "Not in the budget",
+      "decidedBy" : "Test approver"
+    },
+    "transitionId" : "t3",
+    "nextStepId" : "notifyRejected"
+  }, {
+    "seq" : 3,
+    "stepId" : "notifyRejected",
+    "stepLabel" : "Tell requester it was rejected",
+    "kind" : "notification",
+    "kindLabel" : "Notify someone",
+    "summary" : "\"Tell requester it was rejected\": the requester would get this in-app message: \"Your purchase request was rejected. Open the request to see the reason.\"",
+    "details" : {
+      "channel" : "inApp",
+      "recipient" : "initiator",
+      "message" : "Your purchase request was rejected. Open the request to see the reason."
+    },
+    "transitionId" : "t11",
+    "nextStepId" : "rejected"
+  }, {
+    "seq" : 4,
+    "stepId" : "rejected",
+    "stepLabel" : "Rejected",
+    "kind" : "end",
+    "kindLabel" : "Finish",
+    "summary" : "The request finishes: \"Rejected\" (rejected).",
+    "details" : {
+      "businessOutcome" : "Rejected",
+      "outcomeKind" : "rejected"
+    },
+    "transitionId" : null,
+    "nextStepId" : null
+  } ],
+  "warnings" : [ ],
+  "coverage" : {
+    "steps" : {
+      "visited" : 4,
+      "total" : 10,
+      "notVisited" : [ {
+        "id" : "amountPolicy",
+        "label" : "Check purchase amount"
+      }, {
+        "id" : "route",
+        "label" : "Finance review needed?"
+      }, {
+        "id" : "finance",
+        "label" : "Finance review"
+      }, {
+        "id" : "procure",
+        "label" : "Create purchase order"
+      }, {
+        "id" : "notify",
+        "label" : "Tell requester it is ordered"
+      }, {
+        "id" : "fulfilled",
+        "label" : "Fulfilled"
+      } ]
+    },
+    "routes" : {
+      "notTaken" : [ {
+        "transitionId" : "t2",
+        "from" : "manager",
+        "to" : "amountPolicy",
+        "description" : "Review request, when approved, goes to Check purchase amount"
+      }, {
+        "transitionId" : "t5",
+        "from" : "route",
+        "to" : "finance",
+        "description" : "Finance review needed?, when USD 5,000 or more, goes to Finance review"
+      }, {
+        "transitionId" : "t6",
+        "from" : "route",
+        "to" : "procure",
+        "description" : "Finance review needed?, otherwise, goes to Create purchase order"
+      }, {
+        "transitionId" : "t7",
+        "from" : "finance",
+        "to" : "procure",
+        "description" : "Finance review, when approved, goes to Create purchase order"
+      }, {
+        "transitionId" : "t8",
+        "from" : "finance",
+        "to" : "notifyRejected",
+        "description" : "Finance review, when rejected, goes to Tell requester it was rejected"
+      } ],
+      "taken" : 1,
+      "total" : 6
+    },
+    "rules" : {
+      "notMatched" : [ {
+        "decision" : "amount-policy",
+        "row" : "Rule 1",
+        "condition" : "Amount is at least USD 5,000"
+      }, {
+        "decision" : "amount-policy",
+        "row" : "Otherwise",
+        "condition" : null
+      } ],
+      "matched" : 0,
+      "total" : 2
+    },
+    "summary" : "Tested 4 of 10 steps, 1 of 6 routes and 0 of 2 decision rules."
+  },
+  "limits" : "This is a dry run of the workflow as designed, not the workflow engine. It does not call real systems, check that connections work, that people are in the groups, or how long anything takes."
+}

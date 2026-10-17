@@ -1,0 +1,40 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: orqix
+  labels:
+    app.kubernetes.io/name: orqix
+    app.kubernetes.io/component: app
+    app.kubernetes.io/part-of: orqix
+    orqix.io/stage: app
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: orqix
+  minReplicas: 2
+  # Ceiling from the connection budget (docs/build/S5-runtime.md section 11):
+  #   pods x 15 + 5 (migration Job) + 10 (operations) <= 0.8 x max_connections
+  #   4 pods = 75 connections, which fits max_connections = 100 (80 usable). A fifth pod needs max_connections >= 120.
+  # Also respect the external API rate limits of connected systems before raising it.
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120

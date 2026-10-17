@@ -22,6 +22,7 @@ import { formatDateTime } from '@/lib/dates'
 import { downloadBlob } from '@/lib/download'
 import { describeProblem } from '@/lib/problemMessages'
 import { VersionComparison } from './VersionComparison'
+import { PinWorkflowButton } from './PinnedWorkflows'
 
 /** Workflow overview: draft status, releases, make active (rollback), export (docs/build/S7-frontend.md section 4). */
 export function WorkflowOverviewPage() {
@@ -88,6 +89,7 @@ export function WorkflowOverviewPage() {
         description={wf.description || 'No description yet.'}
         actions={
           <>
+            {can('workflow.read') ? <PinWorkflowButton id={wf.id} name={wf.name} /> : null}
             <Button asChild variant="secondary">
               <Link to={`/w/${ws}/workflows/${wf.id}/edit`}>
                 <Pencil aria-hidden="true" /> {can('workflow.edit') ? 'Edit draft' : 'View draft'}

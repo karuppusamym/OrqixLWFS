@@ -207,3 +207,7 @@ UI05 is closed: approval-ID renames preserve separation references, and Studio o
 ## Aggregate Insights downloads - 16 October 2026
 
 AN01 is closed: Insights can download an aggregate JSON report and daily throughput CSV for the selected filters. Reports retain workspace/date/workflow context, section generation times and list-limit warnings, and exclude individual requests. Complete report exports wait for all current sections and are blocked by section errors. Verification: 16 frontend tests, one mock Edge journey with actual downloads and desktop/mobile axe, frontend/E2E typechecks, scoped lint and mock build pass. [S43](build/S43-insights-reports.md) records the format and metric limits. Broader analytics remains PL02; this feature is not yet deployed to Docker.
+
+## Personal workflow pins - 17 October 2026
+
+PL03 is closed: catalog and overview controls maintain a personal shortlist of up to ten workflows per account/workspace in this browser. Pins remain available during catalog searches and use authorized item loading instead of stored workflow names. Account isolation, unavailable pins, cross-tab changes and storage failures are covered. All 25 focused frontend tests and one mock Edge journey with desktop/mobile axe pass, along with typechecks, scoped lint and mock build. [S44](build/S44-workflow-pins.md) records limits. Shared organization remains PL01; no Docker rollout is claimed.

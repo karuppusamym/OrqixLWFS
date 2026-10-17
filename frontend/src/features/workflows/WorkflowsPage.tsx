@@ -24,6 +24,7 @@ import { fieldErrorMap } from '@/lib/problemMessages'
 import { humanize, KEY_PATTERN, toKey } from '@/lib/text'
 import { useListFilters } from '@/lib/useListFilters'
 import { DescribeItChoice, DescribeItDialog } from '@/features/ai/DescribeItDialog'
+import { PinnedWorkflows, PinWorkflowButton } from './PinnedWorkflows'
 
 /** Workflow list with "New workflow" (docs/build/S7-frontend.md section 2). */
 export function WorkflowsPage() {
@@ -53,6 +54,7 @@ export function WorkflowsPage() {
           ) : null
         }
       />
+      <PinnedWorkflows />
       <form
         className="mb-4 flex flex-wrap items-end gap-2 rounded-card border border-border bg-surface p-4"
         role="search"
@@ -133,6 +135,7 @@ export function WorkflowsPage() {
                     </TD>
                     <TD>
                       <div className="flex flex-wrap justify-end gap-2">
+                        {canRead ? <PinWorkflowButton id={w.id} name={w.name} /> : null}
                         {w.canStart ? (
                           <Button asChild size="sm" variant="primary">
                             <Link to={`/w/${ws}/start/${w.id}`} aria-label={`Start ${w.name}`}>

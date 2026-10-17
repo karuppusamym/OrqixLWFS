@@ -67,6 +67,13 @@ public final class BpmnGenerator {
         Map<String, Node> nodes = new HashMap<>();
         definition.nodes().forEach(n -> nodes.put(n.id(), n));
         Map<String, String> branchDefault = new HashMap<>();
+        // Joins that wait only for the paths that started (inclusive), as opposed to every path (S51).
+        java.util.Set<String> inclusiveJoins = new java.util.HashSet<>();
+        for (Node n : definition.nodes()) {
+            if (n instanceof Node.ParallelSplit p && p.inclusive()) {
+                inclusiveJoins.add(p.joinRef());
+            }
+        }
         for (Transition t : definition.transitions()) {
             if (t.on() == Route.DEFAULT) {
                 branchDefault.putIfAbsent(t.from(), t.id());
@@ -104,7 +111,7 @@ public final class BpmnGenerator {
         x.close();
 
         for (Node n : definition.nodes()) {
-            node(x, map, definition, n, branchDefault, decisionResource, children);
+            node(x, map, definition, n, branchDefault, inclusiveJoins, decisionResource, children);
         }
         for (Transition t : definition.transitions()) {
             flow(x, map, nodes, t);
@@ -116,8 +123,8 @@ public final class BpmnGenerator {
     }
 
     private static void node(XmlOut x, SourceMap map, WorkflowDefinition d, Node n,
-                             Map<String, String> branchDefault, Map<String, String> decisionResource,
-                             Map<String, WorkflowInfo> children) {
+                             Map<String, String> branchDefault, java.util.Set<String> inclusiveJoins,
+                             Map<String, String> decisionResource, Map<String, WorkflowInfo> children) {
         map.node(n.id(), n.id());
         switch (n) {
             case Node.Start s -> x.leaf("", "startEvent", BPMN_NS).attr("id", s.id()).attr("name", s.label());
@@ -139,6 +146,17 @@ public final class BpmnGenerator {
                 if (a.calendar() != null) x.attr("calendar", a.calendar().toString());
                 if (a.escalation() != null) x.attr("escalation", a.escalation().toString());
                 x.close();
+                if (a.multiInstance()) {
+                    // One task per required approver; the step ends when all approved or at the first rejection (S51).
+                    x.open("", "multiInstanceLoopCharacteristics", BPMN_NS).attr("isSequential", "false");
+                    x.inline("", "loopCardinality", BPMN_NS, null, a.approvers().toString(), false);
+                    x.openInline("", "completionCondition", BPMN_NS)
+                            .attr("xsi", XSI_NS, "type", "tFormalExpression")
+                            .cdata("${nrOfCompletedInstances == nrOfInstances || orqixRoute.rejected(execution, '"
+                                    + a.id() + "')}")
+                            .closeInline();
+                    x.close();
+                }
                 x.close();
                 String out = a.id() + APPROVAL_OUT;
                 String gateway = a.id() + APPROVAL_ROUTE;
@@ -273,9 +291,14 @@ public final class BpmnGenerator {
                 x.close();
                 x.close();
             }
-            case Node.ParallelSplit p -> x.leaf("", "parallelGateway", BPMN_NS).attr("id", p.id())
-                    .attr("name", p.label());
-            case Node.ParallelJoin j -> x.leaf("", "parallelGateway", BPMN_NS)
+            case Node.ParallelSplit p -> {
+                x.leaf("", p.inclusive() ? "inclusiveGateway" : "parallelGateway", BPMN_NS).attr("id", p.id())
+                        .attr("name", p.label());
+                if (p.inclusive() && branchDefault.containsKey(p.id())) {
+                    x.attr("default", branchDefault.get(p.id()));
+                }
+            }
+            case Node.ParallelJoin j -> x.leaf("", inclusiveJoins.contains(j.id()) ? "inclusiveGateway" : "parallelGateway", BPMN_NS)
                     .attr("id", j.id())
                     .attr("name", j.label())
                     // Asynchronous and exclusive: branches finishing at the same time are joined one after the other,

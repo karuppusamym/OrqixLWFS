@@ -104,7 +104,7 @@ function NodeInspector({ nodeId, onDeleteNode }: { nodeId: string; onDeleteNode:
       {node.type === 'start' ? <StartInspector node={node} /> : null}
       {node.type === 'approval' ? <ApprovalInspector node={node} /> : null}
       {node.type === 'decision' ? <DecisionInspector node={node} /> : null}
-      {node.type === 'branch' ? <BranchInspector node={node} /> : null}
+      {node.type === 'branch' || (node.type === 'parallelSplit' && node.config.mode === 'inclusive') ? <BranchInspector node={node} /> : null}
       {node.type === 'generateDocument' ? <GenerateDocumentInspector node={node} /> : null}
       {node.type === 'http' ? <HttpInspector node={node} /> : null}
       {node.type === 'parallelSplit' || node.type === 'parallelJoin' ? <ParallelInspector node={node} /> : null}

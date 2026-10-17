@@ -4303,6 +4303,10 @@ export interface components {
                     start: string;
                     end: string;
                 };
+                /** @description Several different people must each approve (docs/build/S51): the step creates this many parallel tasks for its candidate group and continues as approved only when all are approved; the first rejection rejects the step and cancels the others. Not combined with a time limit, escalation or correctable fields. */
+                multiInstance?: {
+                    approvers: number;
+                };
                 /** @description Request fields the person holding this task may correct before deciding (docs/build/S42). Scalar request fields only. Publishing proves that no earlier step has used them, so a correction can never contradict work that already happened. */
                 correctable?: components["schemas"]["fieldKey"][];
                 /** @description Separation of duties (docs/build/S41): ids of earlier approval steps that every path to this step passes through. Whoever decided one of them in the same request cannot claim, decide or be assigned this step. */
@@ -4379,6 +4383,11 @@ export interface components {
             /** @description Run in parallel: every outgoing next transition starts one branch. joinRef names the parallelJoin step where all branches must meet. */
             config?: {
                 joinRef: components["schemas"]["id"];
+                /**
+                 * @description all (default): every outgoing next path runs. inclusive (docs/build/S51): every outgoing path whose condition holds runs, or the default path when none does; the join waits for the paths that started.
+                 * @enum {unknown}
+                 */
+                mode?: "all" | "inclusive";
             };
         } & components["schemas"]["nodeBase"];
         parallelJoinNode: {
@@ -4732,6 +4741,10 @@ export interface components {
                             start: string;
                             end: string;
                         };
+                        /** @description Several different people must each approve (docs/build/S51): the step creates this many parallel tasks for its candidate group and continues as approved only when all are approved; the first rejection rejects the step and cancels the others. Not combined with a time limit, escalation or correctable fields. */
+                        multiInstance?: {
+                            approvers: number;
+                        };
                         /** @description Request fields the person holding this task may correct before deciding (docs/build/S42). Scalar request fields only. Publishing proves that no earlier step has used them, so a correction can never contradict work that already happened. */
                         correctable?: components["schemas"]["fieldKey"][];
                         /** @description Separation of duties (docs/build/S41): ids of earlier approval steps that every path to this step passes through. Whoever decided one of them in the same request cannot claim, decide or be assigned this step. */
@@ -4810,6 +4823,11 @@ export interface components {
                     /** @description Run in parallel: every outgoing next transition starts one branch. joinRef names the parallelJoin step where all branches must meet. */
                     config?: {
                         joinRef: components["schemas"]["id"];
+                        /**
+                         * @description all (default): every outgoing next path runs. inclusive (docs/build/S51): every outgoing path whose condition holds runs, or the default path when none does; the join waits for the paths that started.
+                         * @enum {unknown}
+                         */
+                        mode?: "all" | "inclusive";
                     };
                 } & components["schemas"]["nodeBase"];
                 parallelJoinNode: {

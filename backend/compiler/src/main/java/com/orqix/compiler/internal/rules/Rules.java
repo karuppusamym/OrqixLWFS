@@ -23,6 +23,7 @@ public final class Rules {
         MessageRules.check(rc);
         DocumentRules.check(rc);
         ExternalRules.check(rc);
+        MultiInstanceRules.check(rc);
         TypeRules.check(rc);
         BindingRules.check(rc);
         ChildRules.check(rc);

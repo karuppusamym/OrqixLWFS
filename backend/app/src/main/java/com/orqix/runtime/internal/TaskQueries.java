@@ -176,8 +176,10 @@ public class TaskQueries {
         UUID id = Ids.newId();
         int inserted = jdbc.sql("""
                 INSERT INTO task_decision (id, workspace_id, engine_task_id, run_id, node_id, actor_subject_id, action,
-                                           reason, comment, policy_flags, decided_at)
-                VALUES (:id, :ws, :task, :run, :node, :actor, :action, :reason, :comment, CAST(:flags AS jsonb), :at)
+                                           reason, comment, policy_flags, decided_at, distinct_actor)
+                VALUES (:id, :ws, :task, :run, :node, :actor, :action, :reason, :comment, CAST(:flags AS jsonb), :at,
+                        COALESCE((SELECT t.separate_from @> to_jsonb(CAST(:node AS text)) FROM task_context t
+                                  WHERE t.workspace_id = :ws AND t.engine_task_id = :task), false))
                 ON CONFLICT (engine_task_id) DO NOTHING
                 """)
                 .param("id", id).param("ws", workspaceId).param("task", taskId).param("run", runId).param("node", nodeId)

@@ -30,10 +30,21 @@ class ProjectDmnPlanTest {
         var duplicate=ProjectAnalyzer.analyze(List.of(source("parent.bpmn",bpmn("7","approvalLevel")),source("one.dmn",dmn()),source("two.dmn",dmn())),JSON);
         assertThat(duplicate.issues()).extracting(ProjectAnalyzer.Issue::code).containsExactly("PROJECT_DUPLICATE_DECISION"); assertThat(duplicate.conversionOrder()).isEmpty();
     }
-    @Test void multiDecisionFilesRequireSeparateReviewRatherThanSelectingAnArbitraryDecision() throws Exception {
-        String xml=dmn(); String decision=xml.substring(xml.indexOf("  <decision "),xml.indexOf("  </decision>")+"  </decision>".length());
-        var plan=ProjectAnalyzer.analyze(List.of(source("multi.dmn",xml.replace("</definitions>",decision.replace("approvalLevel","otherLevel")+"</definitions>"))),JSON);
-        assertThat(plan.issues()).extracting(ProjectAnalyzer.Issue::code).contains("PROJECT_DMN_SELECTION_REQUIRED"); assertThat(plan.conversionOrder()).isEmpty();
+    @Test void multiDecisionFilesRetainEveryIdAndOrderBeforeCallersOfEitherDecision() throws Exception {
+        String xml=Files.readString(Path.of("../../examples/migration/dmn-multi-review.dmn"));
+        var plan=ProjectAnalyzer.analyze(List.of(source("first.bpmn",bpmn("7","reviewRoute")),source("multi.dmn",xml)),JSON);
+        assertThat(plan.issues()).isEmpty();
+        assertThat(plan.files().get(1).decisionIds()).containsExactly("alternateRoute","reviewRoute");
+        assertThat(plan.conversionOrder()).containsExactly("dmn:multi.dmn","bpmn:parent");
+        var alternate=ProjectAnalyzer.analyze(List.of(source("other.bpmn",bpmn("8","alternateRoute")),source("multi.dmn",xml)),JSON);
+        assertThat(alternate.issues()).isEmpty();
+        assertThat(alternate.conversionOrder()).containsExactly("dmn:multi.dmn","bpmn:parent");
+    }
+    @Test void unsupportedDecisionsInMultiDecisionFilesStillBlockTheWholeProject() throws Exception {
+        String xml=Files.readString(Path.of("../../examples/migration/dmn-multi-review.dmn"));
+        var plan=ProjectAnalyzer.analyze(List.of(source("multi.dmn",xml.replace("hitPolicy=\"FIRST\"","hitPolicy=\"COLLECT\""))),JSON);
+        assertThat(plan.issues()).extracting(ProjectAnalyzer.Issue::code).contains("PROJECT_DMN_NOT_CONVERTIBLE");
+        assertThat(plan.conversionOrder()).isEmpty();
     }
     @Test void unsupportedDmnSemanticsRemainVisibleButBlockProjectConversion() throws Exception {
         var plan=ProjectAnalyzer.analyze(List.of(source("bad.dmn",Files.readString(Path.of("../../examples/migration/dmn-unsupported.dmn")))),JSON);

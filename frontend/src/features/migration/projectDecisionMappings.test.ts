@@ -17,3 +17,8 @@ it('does not pick a duplicate, blocked or non-DMN file', () => {
 it('reads legacy project records without optional decision metadata', () => {
   expect(projectDecisionMappings(file({}), [file({})])).toEqual({})
 })
+it('maps different callers to exact decisions in one multi-decision source', () => {
+  const parent = file({ decisionDependencies: { first: 'risk', second: 'other' } })
+  const dmn = file({ fileName: 'multi.dmn', sourceFormat: 'dmn', migrationId: 'shared-job', decisionIds: ['risk', 'other'] })
+  expect(projectDecisionMappings(parent, [parent, dmn])).toEqual({ first: { migrationId: 'shared-job', decisionId: 'risk' }, second: { migrationId: 'shared-job', decisionId: 'other' } })
+})

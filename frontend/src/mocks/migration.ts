@@ -196,7 +196,7 @@ export function planProject(wsId: string, name: string, sources: ProjectSource[]
       created.push(migration.id)
       if (analysis.dynamicCalls > 0) issues.push({ fileName: source.fileName, code: 'PROJECT_DYNAMIC_CHILD_REFERENCE', detail: 'A child process reference is missing or dynamic; provide a literal dependency before project conversion.' })
       if (analysis.sourceFormat === 'dmn') {
-        if (analysis.decisionIds.length !== 1) issues.push({ fileName: source.fileName, code: 'PROJECT_DMN_SELECTION_REQUIRED', detail: `This project slice requires exactly one decision per DMN file; found ${analysis.decisionIds.length}.` })
+        if (analysis.decisionIds.length === 0) issues.push({ fileName: source.fileName, code: 'PROJECT_DMN_SELECTION_REQUIRED', detail: 'The DMN file has no decisions. Include at least one supported decision table.' })
         for (const id of analysis.decisionIds) {
           if (decisions.has(id)) issues.push({ fileName: source.fileName, code: 'PROJECT_DUPLICATE_DECISION', detail: `Decision ID '${id}' appears in more than one DMN file.` })
           else decisions.set(id, entries.length)
@@ -259,6 +259,7 @@ export interface ConvertRequest {
   childWorkflowMappings?: Record<string, { workflowRef?: string }>
   serviceTaskMappings?: Record<string, unknown>
   decisionMappings?: Record<string, { migrationId?: string; decisionId?: string }>
+  decisionId?: string
   formMappings?: Record<string, { migrationId?: string }>
   [key: string]: unknown
 }
@@ -278,6 +279,12 @@ export function convertMigration(migration: MockMigration, user: MockUser, reque
   if (migration.status === 'converted') {
     if (JSON.stringify(migration.mappings) !== JSON.stringify(request)) return { ok: false, status: 409, code: 'WORKFLOW_VERSION_CONFLICT', title: 'Conflict', detail: 'This source was already converted with different mappings.' }
     return { ok: true, workflow: db.workflows.get(migration.convertedWorkflowId!)!, migration, report: migration.report, replay: true }
+  }
+  if (migration.report.sourceSystem === 'dmn') {
+    const ids = analyzeDmn(migration.source, migration.sourceHash).decisionIds
+    if (request.decisionId ? !ids.includes(request.decisionId) : ids.length !== 1) {
+      return { ok: false, status: 422, code: 'SOURCE_INVALID', title: 'Decision selection required', detail: `Choose an existing decisionId from: ${ids.join(', ')}.` }
+    }
   }
   const required = migration.report.requiredMappings ?? {}
   const published = new Set([...db.workflows.values()].filter((w) => w.wsId === migration.wsId && w.activeReleaseId).map((w) => w.key))

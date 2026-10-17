@@ -69,14 +69,28 @@ describe('mock projects', () => {
     expect(convertMigration(parent, user('dana.designer'), { workflowKey: 'rules-parent', name: 'Rules' })).toMatchObject({ ok: false, code: 'MIGRATION_BLOCKED' })
     expect(convertMigration(parent, user('dana.designer'), { workflowKey: 'rules-parent', name: 'Rules', decisionMappings: { rule: { migrationId: project.files[1]!.migrationId! } } })).toMatchObject({ ok: true })
   })
-  it('blocks missing and duplicate decisions and multiple decisions in one file without a conversion order', () => {
+  it('blocks missing, duplicate and unsupported decisions without a conversion order', () => {
     const missing = planProject(WS, 'Missing', [source('parent.bpmn', withDecision())])
     expect(missing.issues.map(i => i.code)).toContain('PROJECT_MISSING_DECISION')
     expect(missing.conversionOrder).toEqual([])
     const duplicate = planProject(WS, 'Duplicates', [source('a.dmn', dmn()), source('b.dmn', dmn())])
     expect(duplicate.issues.map(i => i.code)).toContain('PROJECT_DUPLICATE_DECISION')
     const multiple = dmn().replace('</definitions>', '<decision id="other"/></definitions>')
-    expect(planProject(WS, 'Multiple', [source('a.dmn', multiple)]).issues.map(i => i.code)).toContain('PROJECT_DMN_SELECTION_REQUIRED')
+    expect(planProject(WS, 'Multiple', [source('a.dmn', multiple)]).issues.map(i => i.code)).toContain('PROJECT_DMN_NOT_CONVERTIBLE')
+  })
+  it('inventories supported multi-decision files and refuses omitted or unknown selections', () => {
+    const xml=dmn().replace('</definitions>',dmn('other').match(/<decision .*<\/decision>/)![0]+'</definitions>')
+    const project=planProject(WS,'Two decisions',[source('caller.bpmn',withDecision('other')),source('multi.dmn',xml)])
+    expect(project.issues).toEqual([])
+    expect(project.files[1]!.decisionIds).toEqual(['risk','other'])
+    expect(project.conversionOrder[0]).toBe(project.files[1]!.migrationId)
+    const migration=db.migrations.get(project.files[1]!.migrationId!)!
+    const request={ workflowKey:'multi-decision', name:'Multiple' }
+    expect(convertMigration(migration,user('dana.designer'),request)).toMatchObject({ok:false,code:'SOURCE_INVALID'})
+    expect(convertMigration(migration,user('dana.designer'),{...request,decisionId:'absent'})).toMatchObject({ok:false,code:'SOURCE_INVALID'})
+    expect(migration.status).toBe('analyzed')
+    expect(convertMigration(migration,user('dana.designer'),{...request,decisionId:'other'})).toMatchObject({ok:true})
+    expect(migration.mappings).toMatchObject({decisionId:'other'})
   })
   it('stores nothing when one file is rejected', () => {
     const before = db.migrations.size

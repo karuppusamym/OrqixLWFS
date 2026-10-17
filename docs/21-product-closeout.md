@@ -19,7 +19,7 @@ Verification: 281 compiler cases; 457 unique application cases (455 pass, 2 opti
 
 | ID | Item | Current scope |
 |---|---|---|
-| MIG09 | DMN files within migration projects | Complete; verified locally. Namespace detection, one convertible decision per DMN file, missing/duplicate/unsupported diagnostics, dependency order, editable mapping suggestions and legacy records. [S20](build/S20-project-dmn.md) |
+| MIG09 | DMN files within migration projects | Complete within the supported subset. Namespace detection, explicit multi-decision selection, missing/duplicate/unsupported diagnostics, dependency order, editable caller mappings and legacy records. [S20](build/S20-project-dmn.md), [S45](build/S45-multi-decision-projects.md) |
 | MIG10 | Current release's reviewed Pega migration | Closed under [ADR 0002](adr/0002-pega-migration-delivery-scope.md): archive assessment, explicit reconstruction and synthetic small/medium/complex target acceptance. 105/105 Docker checks across 10 scenarios and 14 Python tests pass. Native adapter implementation is future MIG11; genuine source qualification remains EXT01/AC01. [S39](build/S39-pega-synthetic-acceptance.md) |
 | RULE01 | Automated decision evidence | Complete; verified locally. Actual pinned DMN output plus input and every bounded candidate row, expandable history and request-data permission filtering. Metadata readers receive no matched row, outputs or evidence. [S21](build/S21-decision-evidence.md) |
 | UI04 | HTTP failure-route authoring | Closed: independent Next/When failed selectors and canvas handles, correctly styled/attached edges, add-after insertion and compensation-reference rename. 52 focused frontend tests, one mock Edge/axe journey, static checks and mock build pass. Existing HTTP runtime boundaries still apply. [S32](build/S32-known-failure-routes.md#studio-authoring-gap-closed---16-october-2026) |
@@ -71,7 +71,7 @@ These are engineering features, not infrastructure. They remain in the [full bac
 
 | Area | Remaining functionality |
 |---|---|
-| Migration breadth | Broader/dynamic form import, optional reviewed AI mapping proposals, additional native connectors, multi-decision selection inside projects, native user-task multi-instance and broader BPMN loss-aware import |
+| Migration breadth | Broader/dynamic form import, optional reviewed AI mapping proposals, additional native connectors, native user-task multi-instance and broader BPMN loss-aware import; bounded multi-decision project selection is delivered in S45 |
 | Execution and cases | Generic boundary/error/compensation/signal events beyond S32, subprocesses/CMMN, mutable task/case correction, nested collections and object-row workflow iteration, adaptive case stages, centrally administered calendars and broader escalation/dispatch policies |
 | Banking and rules | Effective-dated rule packs, additional hit policies/OR/nested decision rows and broader FEEL, cross-stage separation of duties and multi-currency rules |
 | Operations and authoring | Arbitrary incident variable/token correction beyond S30/S31, migration of requests beyond a single waiting approval/wait (parallel sections, HTTP/child steps, bulk or automatic migration), swimlanes, threaded element discussion, full application UI designer, proficiency/load-based dispatch, external-worker SDK and canary releases |

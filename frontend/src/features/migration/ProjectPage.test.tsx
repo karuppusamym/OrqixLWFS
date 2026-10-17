@@ -9,6 +9,7 @@ import { planProject } from '@/mocks/migration'
 import { bpmn } from '@/mocks/migration.fixtures'
 import { projectFileProblem } from './ProjectImportForm'
 import { downloadBlob, downloadJson } from '@/lib/download'
+import multiDmn from '../../../../examples/migration/dmn-multi-review.dmn?raw'
 
 vi.mock('@/lib/download', () => ({ downloadBlob: vi.fn(), downloadJson: vi.fn() }))
 
@@ -32,6 +33,30 @@ function publish(key: string) {
 }
 
 describe('multi-file migration project', () => {
+  it('requires a decision selection for a multi-decision file and preserves the caller\'s independent mapping', async () => {
+    signInAs('dana.designer')
+    const user=userEvent.setup()
+    const caller=bpmn('caller').replace('<endEvent','<businessRuleTask id="rule" xmlns:c="http://camunda.org/schema/1.0/bpmn" c:decisionRef="reviewRoute"/><endEvent')
+    const project=planProject(WS,'Multiple decisions',[{fileName:'caller.bpmn',content:caller},{fileName:'multi.dmn',content:multiDmn}])
+    renderApp(`/w/${WS}/migrations/projects/${project.id}`)
+    const select=await screen.findByLabelText('Decision to convert (required)')
+    expect(select).toBeRequired()
+    expect(select).toBeInvalid()
+    expect(within(select).getAllByRole('option').map(option=>option.textContent)).toEqual(['Choose a decision','reviewRoute','alternateRoute'])
+    await user.click(screen.getByRole('button',{name:'Convert next file'}))
+    expect(db.migrations.get(project.files[1]!.migrationId!)!.status).toBe('analyzed')
+    await user.selectOptions(select,'alternateRoute')
+    await user.click(screen.getByRole('checkbox',{name:/I reviewed the assumptions/}))
+    await user.click(screen.getByRole('button',{name:'Convert next file'}))
+    await screen.findByText('Converted multi.dmn')
+    expect(db.migrations.get(project.files[1]!.migrationId!)!.mappings).toMatchObject({decisionId:'alternateRoute'})
+    const mapping=await screen.findByLabelText('Decision mappings (JSON)')
+    expect(JSON.parse((mapping as HTMLTextAreaElement).value)).toEqual({rule:{migrationId:project.files[1]!.migrationId,decisionId:'reviewRoute'}})
+    await user.click(screen.getByRole('checkbox',{name:/I reviewed the assumptions/}))
+    await user.click(screen.getByRole('button',{name:'Convert next file'}))
+    await screen.findByText('Every file is converted')
+    expect(screen.getByText(/does not create a workflow for every decision/)).toBeInTheDocument()
+  })
   it('reviews all files by reason, kind and file with filters and complete exports', async () => {
     signInAs('vic.viewer')
     const user = userEvent.setup()

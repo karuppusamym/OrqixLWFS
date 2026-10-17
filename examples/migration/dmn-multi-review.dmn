@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC hand-authored multi-decision project fixture; not a customer export.
+     Both FIRST tables are supported. At exposure 5000, reviewRoute returns finance
+     while alternateRoute returns manager, making selection errors observable. -->
+<definitions xmlns="http://www.omg.org/spec/DMN/20151101/dmn.xsd" id="multi-review-definitions" name="Two review policies" namespace="urn:orqix:migration-fixture">
+  <decision id="reviewRoute" name="Review route">
+    <decisionTable id="reviewRouteTable" hitPolicy="FIRST">
+      <input id="exposureColumn" label="Exposure">
+        <inputExpression id="exposureExpression" typeRef="double"><text>exposure</text></inputExpression>
+      </input>
+      <output id="routeColumn" label="Route" name="route" typeRef="string" />
+      <rule id="ruleDirector">
+        <inputEntry id="directorExposure"><text>&gt;= 10000</text></inputEntry>
+        <outputEntry id="directorRoute"><text>"director"</text></outputEntry>
+      </rule>
+      <rule id="ruleFinance">
+        <inputEntry id="financeExposure"><text>&gt;= 5000</text></inputEntry>
+        <outputEntry id="financeRoute"><text>"finance"</text></outputEntry>
+      </rule>
+      <rule id="ruleManager">
+        <inputEntry id="managerExposure"><text>-</text></inputEntry>
+        <outputEntry id="managerRoute"><text>"manager"</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+  <decision id="alternateRoute" name="Alternate review route">
+    <decisionTable id="alternate_reviewRouteTable" hitPolicy="FIRST">
+      <input id="alternate_exposureColumn" label="Exposure">
+        <inputExpression id="alternate_exposureExpression" typeRef="double"><text>exposure</text></inputExpression>
+      </input>
+      <output id="alternate_routeColumn" label="Route" name="route" typeRef="string" />
+      <rule id="alternate_ruleDirector">
+        <inputEntry id="alternate_directorExposure"><text>&gt;= 12000</text></inputEntry>
+        <outputEntry id="alternate_directorRoute"><text>"director"</text></outputEntry>
+      </rule>
+      <rule id="alternate_ruleFinance">
+        <inputEntry id="alternate_financeExposure"><text>&gt;= 6000</text></inputEntry>
+        <outputEntry id="alternate_financeRoute"><text>"finance"</text></outputEntry>
+      </rule>
+      <rule id="alternate_ruleManager">
+        <inputEntry id="alternate_managerExposure"><text>-</text></inputEntry>
+        <outputEntry id="alternate_managerRoute"><text>"manager"</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+</definitions>

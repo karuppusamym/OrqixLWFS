@@ -43,7 +43,7 @@ export function ProjectImportForm() {
   }
   return <form aria-label="Import a project" className="my-6 space-y-4 rounded-card border border-border bg-surface p-5" onSubmit={(event) => { event.preventDefault(); void submit() }}>
     <h2>Import a multi-file project</h2>
-    <p className="text-sm text-muted-foreground">Choose the BPMN and DMN files of one application, up to {PROJECT_MAX_FILES} files. Children and decision files are converted before their callers. This project slice accepts one convertible decision per DMN file; use a standalone import to review multi-decision files. XML files are identified by their namespace.</p>
+    <p className="text-sm text-muted-foreground">Choose the BPMN and DMN files of one application, up to {PROJECT_MAX_FILES} files. Children and decision files are converted before their callers. A DMN file may contain several supported decisions; explicitly choose one for its draft workflow, then review each caller's decision mapping. XML files are identified by their namespace.</p>
     <Label htmlFor="project-name">Project name</Label>
     <Input id="project-name" required maxLength={200} value={name} onChange={(e) => setName(e.target.value)} />
     <Label htmlFor="project-files">BPMN files and DMN files (up to {PROJECT_MAX_FILES}, 1 MiB each)</Label>

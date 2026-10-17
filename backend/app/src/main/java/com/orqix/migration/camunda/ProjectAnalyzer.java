@@ -35,7 +35,7 @@ public final class ProjectAnalyzer {
                 List<String> ids=dmn.decisionNames().keySet().stream().sorted().toList();
                 File file=new File(source.fileName(),dmn.report().processId(),List.of(),null,"dmn",ids,Map.of());
                 files.add(file); plans.put(file.planKey(),file);
-                if(ids.size()!=1) issues.add(new Issue(file.fileName(),"PROJECT_DMN_SELECTION_REQUIRED","This project slice requires exactly one decision per DMN file. Split or review this file as a standalone DMN migration; found "+ids.size()+" decisions."));
+                if(ids.isEmpty()) issues.add(new Issue(file.fileName(),"PROJECT_DMN_SELECTION_REQUIRED","The DMN file has no decisions. Include at least one supported decision table."));
                 for(String id:ids) {
                     if(decisions.putIfAbsent(id,file)!=null) issues.add(new Issue(file.fileName(),"PROJECT_DUPLICATE_DECISION","Decision ID '"+id+"' appears in more than one DMN file."));
                     if(dmn.table(id)==null || !dmn.blockersOf(id).isEmpty()) issues.add(new Issue(file.fileName(),"PROJECT_DMN_NOT_CONVERTIBLE","Decision '"+id+"' cannot be converted by the bounded DMN adapter. Review the file report before rebuilding it."));

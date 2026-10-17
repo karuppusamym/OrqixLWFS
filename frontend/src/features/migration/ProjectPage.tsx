@@ -72,6 +72,7 @@ export function ProjectPage() {
     </Alert> : null}
 
     <ProjectFindingsPanel ws={ws} project={project} />
+    {files.some(file => (file.decisionIds?.length ?? 0) > 1) ? <Alert tone="info" live="off" className="mb-4">Multi-decision DMN files require an explicit decision selection for their draft workflow. Converting every file does not create a workflow for every decision. BPMN callers select their own embedded decision through reviewed mappings; all decisions remain inventoried.</Alert> : null}
     <section aria-label="Analysis" className="mb-6 space-y-3">
       <h2>Files and dependencies</h2>
       <Table aria-label="Project files">
@@ -113,6 +114,6 @@ function NextFile({ projectId, file, files, position, total, editable, onConvert
     {job.isPending ? <LoadingBlock label="Loading the compatibility report" /> : null}
     {job.isError ? <QueryError error={job.error} onRetry={() => void job.refetch()} what="the migration report" /> : null}
     {Object.keys(file.decisionDependencies ?? {}).length ? <p className="text-sm text-muted-foreground">Decision mapping suggestions below use matching project decision IDs. Review the JSON and input field reference before converting; edits are preserved while this file stays open.</p> : null}
-    {job.data ? <JobReview key={job.data.id} job={job.data} editable={editable} project={{ projectId, onConverted, suggestedDecisionMappings: projectDecisionMappings(file, files) }} /> : null}
+    {job.data ? <JobReview key={job.data.id} job={job.data} editable={editable} project={{ projectId, onConverted, decisionIds: file.decisionIds, suggestedDecisionMappings: projectDecisionMappings(file, files) }} /> : null}
   </section>
 }

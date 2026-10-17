@@ -92,6 +92,44 @@ class MigrationProjectApiTest extends RuntimeTestBase {
             assertThat(run(PURCHASING,run).path("outcome").asString()).isEqualTo(c.getValue());
         }
     }
+    @Test void multiDecisionProjectRequiresSelectionAndCallersEmbedDifferentTablesFromTheSameSource() throws Exception {
+        String s=UUID.randomUUID().toString().substring(0,8);
+        String dmn=java.nio.file.Files.readString(java.nio.file.Path.of("../../examples/migration/dmn-multi-review.dmn"));
+        String bpmn=java.nio.file.Files.readString(java.nio.file.Path.of("../../examples/migration/business-rule-task.bpmn"));
+        var project=uploaded("dana.designer",PURCHASING,List.of(file("first.bpmn",bpmn),file("second.bpmn",bpmn.replace("business-rule-task","alternate-rule-task").replace("reviewRoute","alternateRoute")),file("multi.dmn",dmn)));
+        assertThat(project.path("issues")).isEmpty();
+        String decision=migrationOf(project,"multi.dmn");
+        assertThat(project.path("conversionOrder").get(0).asString()).isEqualTo(decision);
+        var selection=mappings("prj-multi-"+s);
+        var missing=convertNext("dana.designer",PURCHASING,project,decision,selection);
+        assertThat(missing.status()).as(missing.toString()).isEqualTo(422);
+        assertThat(missing.code()).isEqualTo("SOURCE_INVALID");
+        var invalid=convertNext("dana.designer",PURCHASING,project,decision,selection.deepCopy().put("decisionId","absent"));
+        assertThat(invalid.status()).as(invalid.toString()).isEqualTo(422);
+        assertThat(project(PURCHASING,project.path("id").asString()).path("status").asString()).isEqualTo("analyzed");
+        selection.put("decisionId","alternateRoute");
+        var selected=convertNext("dana.designer",PURCHASING,project,decision,selection);
+        assertThat(selected.status()).as(selected.toString()).isEqualTo(201);
+        assertThat(selected.body().path("converted").path("workflow").path("activeRelease").isNull()).isTrue();
+        assertThat(selected.body().path("converted").path("draft").path("definition").path("decisions").get(0).path("key").asString()).isEqualTo("alternateroute");
+        for(var caller:List.of("first.bpmn","second.bpmn")) {
+            boolean alternate=caller.equals("second.bpmn");
+            var request=mappings("prj-"+(alternate?"alt-":"original-")+s);
+            request.putObject("decisionMappings").putObject("routeRule").put("migrationId",decision).put("decisionId",alternate?"alternateRoute":"reviewRoute");
+            var converted=convertNext("dana.designer",PURCHASING,project,migrationOf(project,caller),request);
+            assertThat(converted.status()).as(converted.toString()).isEqualTo(201);
+            UUID workflow=UUID.fromString(converted.body().path("converted").path("workflow").path("id").asString());
+            publish(workflow);
+            var started=api("rhea.requester").post(Map.of("workflowId",workflow,"input",Map.of("exposure",5000)),UUID.randomUUID().toString(),"/workspaces/{ws}/runs",PURCHASING);
+            assertThat(started.status()).as(started.toString()).isEqualTo(201);
+            UUID run=UUID.fromString(started.body().path("id").asString()); awaitLifecycle(PURCHASING,run,"completed","needsAttention");
+            assertThat(run(PURCHASING,run).path("outcome").asString()).isEqualTo(alternate?"Manager":"Finance");
+        }
+        assertThat(project(PURCHASING,project.path("id").asString()).path("status").asString()).isEqualTo("converted");
+        var replay=api("dana.designer").post(selection,"/workspaces/{ws}/migrations/{id}/convert",PURCHASING,decision);
+        assertThat(replay.status()).isEqualTo(201);
+        assertThat(api("dana.designer").post(selection.deepCopy().put("decisionId","reviewRoute"),"/workspaces/{ws}/migrations/{id}/convert",PURCHASING,decision).status()).isEqualTo(409);
+    }
     @Test void legacyStoredProjectFilesDeserializeWithEmptyDecisionMetadata() throws Exception {
         String s=UUID.randomUUID().toString().substring(0,8);
         var original=uploaded("dana.designer",PURCHASING,List.of(file("legacy.bpmn",bpmn("legacy-"+s))));

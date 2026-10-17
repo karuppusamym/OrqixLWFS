@@ -211,3 +211,7 @@ AN01 is closed: Insights can download an aggregate JSON report and daily through
 ## Personal workflow pins - 17 October 2026
 
 PL03 is closed: catalog and overview controls maintain a personal shortlist of up to ten workflows per account/workspace in this browser. Pins remain available during catalog searches and use authorized item loading instead of stored workflow names. Account isolation, unavailable pins, cross-tab changes and storage failures are covered. All 25 focused frontend tests and one mock Edge journey with desktop/mobile axe pass, along with typechecks, scoped lint and mock build. [S44](build/S44-workflow-pins.md) records limits. Shared organization remains PL01; no Docker rollout is claimed.
+
+## Multi-decision migration projects - 17 October 2026
+
+MIG12 is closed: a project DMN file may contain multiple supported decisions. Designers explicitly select one for its draft wrapper; BPMN callers independently embed their reviewed decision from the same source. Unsupported, missing and duplicate decisions still block. All 15 focused backend cases (PostgreSQL/Flowable plus planner), 29 frontend cases and one mock Edge browser/axe journey pass, as do typechecks, lint and mock build. [S45](build/S45-multi-decision-projects.md) records distinct execution outcomes at the same input. This does not add broader FEEL, create every decision as a workflow or certify native source-runtime equivalence. No Docker rollout is claimed.

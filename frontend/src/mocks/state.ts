@@ -205,6 +205,13 @@ export interface MockWorkflow {
   testPass?: { version: number; revision: number; passed: boolean; dependencies: string }
 }
 
+/** A canary for a workflow (PL02, docs/build/S54). */
+export interface MockCanary {
+  releaseId: string
+  percent: number
+  setAt: string
+}
+
 export interface MockFolder {
   id: string
   wsId: string
@@ -375,6 +382,8 @@ export interface MockDb {
   migrationReviews: MockMigrationReview[]
   workflows: Map<string, MockWorkflow>
   workflowFolders: Map<string, MockFolder>
+  /** Workflow id -> canary. */
+  canaries: Map<string, MockCanary>
   runs: Map<string, MockRun>
   notifications: MockNotification[]
   bindings: Map<string, MockBinding>
@@ -466,6 +475,7 @@ export function emptyDb(): MockDb {
     migrationReviews: [],
     workflows: new Map(),
     workflowFolders: new Map(),
+    canaries: new Map(),
     runs: new Map(),
     notifications: [],
     bindings: new Map(),
@@ -519,6 +529,7 @@ interface DbSnapshot {
   migrationReviews?: MockMigrationReview[]
   workflows: Array<[string, MockWorkflow]>
   workflowFolders?: Array<[string, MockFolder]>
+  canaries?: Array<[string, MockCanary]>
   runs: Array<[string, MockRun]>
   notifications: MockNotification[]
   bindings: Array<[string, MockBinding]>
@@ -537,6 +548,7 @@ export function snapshotDb(): string {
     migrationReviews: db.migrationReviews,
     workflows: [...db.workflows],
     workflowFolders: [...db.workflowFolders],
+    canaries: [...db.canaries],
     runs: [...db.runs],
     notifications: db.notifications,
     bindings: [...db.bindings],
@@ -559,6 +571,7 @@ export function restoreDb(json: string): boolean {
     next.migrationReviews = snap.migrationReviews ?? []
     next.workflows = new Map(snap.workflows)
     next.workflowFolders = new Map(snap.workflowFolders ?? [])
+    next.canaries = new Map(snap.canaries ?? [])
     next.runs = new Map(snap.runs)
     next.notifications = snap.notifications
     next.bindings = new Map(snap.bindings)

@@ -60,6 +60,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
                 if (!List.of("get", "head").contains(op.getKey())) {
                     assertThat(operation.has("x-orqix-audit") || "markNotificationRead".equals(operationId)
                             || "validateDraft".equals(operationId) || "evaluateDecision".equals(operationId)
+                            || "checkReleasePromotion".equals(operationId)
                             || "fetchExternalJobs".equals(operationId) || "extendExternalJobLock".equals(operationId))
                             .as(operationId + " declares x-orqix-audit").isTrue();
                 }
@@ -226,6 +227,9 @@ class SecurityMatrixTest extends RuntimeTestBase {
         if ("listTasks".equals(operationId)) {
             path += "?view=claimable";
         }
+        if ("clearWorkflowCanary".equals(operationId)) {
+            path += "?expectedVersion=1";
+        }
         MockHttpServletRequestBuilder builder = MockMvcRequestBuilders.request(HttpMethod.valueOf(method.toUpperCase()),
                 "/api/v1" + path).with(TestUsers.as(user)).with(com.orqix.support.IntegrationTestBase::xsrf)
                 .header("Idempotency-Key", UUID.randomUUID().toString()).header("If-Match", "\"r1\"");
@@ -269,6 +273,9 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "createWorkflowFolder" -> Map.of("name", "Foreign folder");
             case "renameWorkflowFolder" -> Map.of("name", "Foreign rename", "expectedVersion", 1);
             case "setWorkflowFolder" -> Map.of("folderId", ids.get("folderId"), "expectedFolderVersion", 1);
+            case "setWorkspaceEnvironment" -> Map.of("stage", "staging", "expectedVersion", 0);
+            case "setWorkflowCanary" -> Map.of("releaseId", ids.get("releaseId"), "percent", 10, "expectedVersion", 1);
+            case "checkReleasePromotion", "promoteRelease" -> Map.of("targetWorkspaceId", UUID.randomUUID().toString());
             case "setWorkflowOwner" -> Map.of("ownerSubjectId", UUID.randomUUID().toString(), "expectedVersion", 1);
             case "saveWorkflowTestSuite" -> Map.of("expectedVersion", 0, "cases", List.of());
             case "runWorkflowTestSuite" -> Map.of("revision", 1, "suiteVersion", 1);

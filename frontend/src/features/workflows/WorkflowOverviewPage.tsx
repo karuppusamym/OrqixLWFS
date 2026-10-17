@@ -23,6 +23,7 @@ import { downloadBlob } from '@/lib/download'
 import { describeProblem } from '@/lib/problemMessages'
 import { VersionComparison } from './VersionComparison'
 import { PinWorkflowButton } from './PinnedWorkflows'
+import { ReleaseRollout } from './ReleaseRollout'
 
 /** Workflow overview: draft status, releases, make active (rollback), export (docs/build/S7-frontend.md section 4). */
 export function WorkflowOverviewPage() {
@@ -54,7 +55,7 @@ export function WorkflowOverviewPage() {
     setError(null)
     try {
       await endpoints.setActiveRelease(ws, workflowId, target.id, wf.version)
-      await Promise.all([client.invalidateQueries({ queryKey: keys.workflow(ws, workflowId) }), client.invalidateQueries({ queryKey: ['ws', ws, 'workflows'] })])
+      await Promise.all([client.invalidateQueries({ queryKey: keys.workflow(ws, workflowId) }), client.invalidateQueries({ queryKey: ['ws', ws, 'workflows'] }), client.invalidateQueries({ queryKey: keys.rollout(ws, workflowId) })])
       const text = `Version ${target.releaseNumber} is now used for new requests. Existing requests are unchanged.`
       setNotice(text)
       announce(text)
@@ -224,6 +225,8 @@ export function WorkflowOverviewPage() {
           </>
         )}
       </section>
+
+      <ReleaseRollout workflowId={workflowId} releases={items} />
 
       <ConfirmDialog
         open={target !== null}

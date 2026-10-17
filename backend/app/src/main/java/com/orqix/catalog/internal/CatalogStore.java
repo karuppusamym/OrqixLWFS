@@ -164,6 +164,9 @@ public class CatalogStore {
 
     @Transactional(propagation = Propagation.MANDATORY)
     public boolean setActiveRelease(UUID workspaceId, UUID workflowId, UUID releaseId, int expectedVersion) {
+        // A new active release ends any canary (PL02): promoting the canary or rolling back both leave one live release.
+        jdbc.sql("DELETE FROM workflow_canary WHERE workspace_id = :ws AND workflow_id = :id")
+                .param("ws", workspaceId).param("id", workflowId).update();
         return jdbc.sql("""
                 UPDATE workflow SET active_release_id = :release, version = version + 1, updated_at = :now
                 WHERE workspace_id = :ws AND id = :id AND version = :expected

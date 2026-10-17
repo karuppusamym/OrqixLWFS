@@ -1,4 +1,4 @@
-# S46 - Workflow folders and owners
+# S48 - Workflow folders and owners
 
 PL01 delivers one bounded slice of "organization": a flat set of named **workflow folders** per workspace, an **owner filter** and **owner reassignment**, on top of the existing name/key search. Folders are labels. They never grant, narrow or inherit permissions.
 

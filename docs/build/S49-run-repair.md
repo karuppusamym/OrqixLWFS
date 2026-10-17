@@ -1,4 +1,4 @@
-# S46 - Consistency check and projection repair (EX09)
+# S49 - Consistency check and projection repair (EX09)
 
 Builds on S31 (EX03). The watchdog only classifies a request whose projection is empty and whose engine holds no work. EX09 adds an operator-run comparison of what a request shows with what the workflow engine holds, and one repair that is provably safe.
 

@@ -1,0 +1,77 @@
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react'
+import { Link, useNavigate } from 'react-router'
+import { useWorkspace } from '@/app/workspace'
+import { LoadingBlock } from '@/components/common/LoadingBlock'
+import { PageHeader } from '@/components/common/PageHeader'
+import { QueryError } from '@/components/common/QueryError'
+import { Alert } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table'
+import { createCaseDefinition, listCaseDefinitions, listCaseInstances, startCaseInstance } from './api'
+
+/** Initial CMMN case operations surface. Execution is limited to the server's validated model subset. */
+export function CasesPage() {
+  const { workspace, can } = useWorkspace()
+  const ws = workspace.id
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const definitions = useQuery({ queryKey: ['ws', ws, 'case-definitions'], queryFn: () => listCaseDefinitions(ws), enabled: can('workflow.read', 'workflow.start') })
+  const cases = useQuery({ queryKey: ['ws', ws, 'cases'], queryFn: () => listCaseInstances(ws), enabled: can('run.read', 'workflow.start', 'task.act') })
+  const [key, setKey] = useState('')
+  const [name, setName] = useState('')
+  const [file, setFile] = useState<File | null>(null)
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const create = async () => {
+    if (!file) return
+    setPending(true); setError(null)
+    try {
+      if (file.size > 65_536) throw new Error('Choose a CMMN file of at most 64 KiB.')
+      await createCaseDefinition(ws, { key: key.trim(), name: name.trim(), sourceXml: await file.text() })
+      setFile(null); setKey(''); setName('')
+      await queryClient.invalidateQueries({ queryKey: ['ws', ws, 'case-definitions'] })
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'The case definition could not be created.') }
+    finally { setPending(false) }
+  }
+
+  const start = async (definitionId: string) => {
+    setPending(true); setError(null)
+    try {
+      const instance = await startCaseInstance(ws, definitionId)
+      await queryClient.invalidateQueries({ queryKey: ['ws', ws, 'cases'] })
+      navigate(`/w/${ws}/cases/${instance.id}`)
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'The case could not be started.') }
+    finally { setPending(false) }
+  }
+
+  if (!can('workflow.read', 'workflow.start', 'run.read', 'task.act')) return <Alert tone="warning">You need case access to view this page.</Alert>
+  return <div className="space-y-6">
+    <PageHeader title="Cases" description="Start and work on adaptive cases from validated CMMN definitions." />
+    <Alert tone="info" live="off">This case workbench currently executes a validated human-task, sentry and milestone subset. Full CMMN import, discretionary planning and case data controls are still in development.</Alert>
+    {error ? <Alert tone="danger">{error}</Alert> : null}
+    {can('workflow.edit') ? <form className="space-y-3 rounded-card border border-border bg-surface p-5" onSubmit={event => { event.preventDefault(); void create() }}>
+      <h2>Create case definition</h2>
+      <p className="text-sm text-muted-foreground">Upload a CMMN 1.1 model. The server checks the executable subset before deployment.</p>
+      <div className="grid gap-3 sm:grid-cols-2"><div><Label htmlFor="case-key">Key</Label><Input id="case-key" value={key} onChange={event => setKey(event.target.value)} required /></div><div><Label htmlFor="case-name">Name</Label><Input id="case-name" value={name} onChange={event => setName(event.target.value)} required /></div></div>
+      <Label htmlFor="case-file">CMMN file (maximum 64 KiB)</Label><Input id="case-file" type="file" accept=".cmmn,.xml" onChange={event => setFile(event.target.files?.[0] ?? null)} />
+      <Button type="submit" variant="primary" loading={pending} disabled={!file || !key.trim() || !name.trim()}>Create definition</Button>
+    </form> : null}
+    {can('workflow.read', 'workflow.start') ? <section className="space-y-3" aria-label="Case definitions">
+      <h2>Definitions</h2>
+      {definitions.isPending ? <LoadingBlock label="Loading case definitions" /> : definitions.isError ? <QueryError error={definitions.error} onRetry={() => void definitions.refetch()} what="case definitions" /> : definitions.data.length ?
+        <div className="overflow-x-auto"><Table><THead><TR><TH>Name</TH><TH>Key</TH><TH>Version</TH><TH>Action</TH></TR></THead><TBody>{definitions.data.map(definition => <TR key={definition.id}><TD>{definition.name}</TD><TD>{definition.key}</TD><TD>{definition.version}</TD><TD>{can('workflow.start') ? <Button disabled={pending} onClick={() => void start(definition.id)}>Start case</Button> : null}</TD></TR>)}</TBody></Table></div>
+        : <p className="text-sm text-muted-foreground">No case definitions are available in this workspace.</p>}
+    </section> : null}
+    {can('run.read', 'workflow.start', 'task.act') ? <section className="space-y-3" aria-label="Case instances">
+      <h2>Recent cases</h2>
+      {cases.isPending ? <LoadingBlock label="Loading cases" /> : cases.isError ? <QueryError error={cases.error} onRetry={() => void cases.refetch()} what="cases" /> : cases.data.length ?
+        <div className="overflow-x-auto"><Table><THead><TR><TH>Case</TH><TH>Status</TH><TH>Open tasks</TH></TR></THead><TBody>{cases.data.map(instance => <TR key={instance.id}><TD><Link className="text-link underline" to={`/w/${ws}/cases/${instance.id}`}>{instance.id}</Link></TD><TD><Badge>{instance.status}</Badge></TD><TD>{instance.tasks.length}</TD></TR>)}</TBody></Table></div>
+        : <p className="text-sm text-muted-foreground">No cases have started in this workspace.</p>}
+    </section> : null}
+  </div>
+}

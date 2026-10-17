@@ -9,9 +9,9 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 @Configuration
 @Profile("!migrate")
 class StageMailScheduling {
-    @Bean(name="taskScheduler")
-    ThreadPoolTaskScheduler taskScheduler() {return scheduler("orqix-maintenance-",4);}
-    @Bean(name="stageMailScheduler")
+    // A scheduler also implements Executor. A non-default candidate preserves Boot's applicationTaskExecutor,
+    // which Flowable CMMN and Spring MVC require; scheduled mail explicitly selects this bean by name.
+    @Bean(name="stageMailScheduler",defaultCandidate=false)
     ThreadPoolTaskScheduler stageMailScheduler() {return scheduler("orqix-mail-",2);}
     private ThreadPoolTaskScheduler scheduler(String prefix,int size) {
         var scheduler=new ThreadPoolTaskScheduler();scheduler.setPoolSize(size);scheduler.setThreadNamePrefix(prefix);

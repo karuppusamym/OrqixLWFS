@@ -129,6 +129,23 @@ public class StageMail {
         return result;
     }
 
+    private boolean recipientEligible(RunStore.RunRow run, TaskStore.TaskRow task, JsonNode template, UUID id) {
+        var current=access(run.workspaceId(),id);
+        if (current==null) return false;
+        for (JsonNode kind:template.path("recipients")) {
+            boolean allowed=switch(kind.asString()) {
+                case "requester" -> run.initiator().equals(id);
+                case "assignee" -> task!=null && id.equals(task.assignee()) && taskService.eligibleSubject(run.workspaceId(),task,id);
+                case "candidateGroup" -> task!=null && taskService.eligibleSubject(run.workspaceId(),task,id);
+                case "supervisor" -> current.has(Permission.RUN_READ) && current.groupKeys().contains(template.path("supervisorGroupRef").asString());
+                case "operators" -> current.has(Permission.RUN_OPERATE);
+                default -> false;
+            };
+            if (allowed) return true;
+        }
+        return false;
+    }
+
     private WorkspaceAccess access(UUID ws, UUID id) {
         var s=subjects.find(id).orElse(null);
         if (s==null || s.disabled()) return null;
@@ -163,7 +180,7 @@ public class StageMail {
             if(row.task()!=null && task==null) continue;
             boolean transientTask=Set.of("assignment","overdue").contains(row.kind());
             if (transientTask && (!run.isActive() || task==null || !task.isOpen())
-                    || !recipients(run,task,row.template()).contains(row.recipient())) {
+                    || !recipientEligible(run,task,row.template(),row.recipient())) {
                 finish(id,row,"suppressed",row.attempts(),"STALE_OR_UNAUTHORIZED_RECIPIENT"); continue;
             }
             var subject=subjects.find(row.recipient()).orElseThrow();

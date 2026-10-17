@@ -31,6 +31,10 @@ export const routes: RouteObject[] = [
           { path: 'tasks/:taskId', element: <TasksPage /> },
           { path: 'runs', element: <RunsPage /> },
           { path: 'runs/:runId', element: <RunDetailPage /> },
+          { path: 'cases', lazy: async () => ({ Component: (await import('@/features/cases/CasesPage')).CasesPage }) },
+          { path: 'cases/:instanceId', lazy: async () => ({ Component: (await import('@/features/cases/CaseDetailPage')).CaseDetailPage }) },
+          { path: 'views', lazy: async () => ({ Component: (await import('@/features/views/ViewLibraryPage')).ViewLibraryPage }) },
+          { path: 'views/:viewId', lazy: async () => ({ Component: (await import('@/features/views/ViewEditorPage')).ViewEditorPage }) },
           { path: 'insights', lazy: async () => ({ Component: (await import('@/features/insights/InsightsPage')).InsightsPage }) },
           { path: 'assistant', lazy: async () => ({ Component: (await import('@/features/conversation/ConversationPage')).ConversationPage }) },
           {

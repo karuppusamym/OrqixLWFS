@@ -1,4 +1,6 @@
 import { claim, createRun, decide } from './engine'
+import { resetMockViews } from './views'
+import { resetMockCases } from './cases'
 import {
   COMPILER_VERSION,
   PURCHASE_WORKFLOW_ID,
@@ -56,6 +58,8 @@ export interface SeedOptions {
 export function seedDb(options: SeedOptions = {}): void {
   const { published = true, sampleRuns = true, demo = false } = options
   replaceDb(emptyDb())
+  resetMockViews()
+  resetMockCases()
   const designer = userByName('dana.designer')
   const publisher = userByName('paul.publisher')
   const definition = purchaseTemplate()

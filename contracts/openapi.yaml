@@ -41,8 +41,226 @@ tags:
   - name: Conversation
   - name: Insights
   - name: Attachments
+  - name: Cases
+  - name: Views
 
 paths:
+  /workspaces/{workspaceId}/cases/definitions:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [Cases]
+      operationId: listCaseDefinitions
+      summary: List executable case definitions in this workspace
+      x-orqix-permission: workflow.read
+      responses:
+        '200': { description: Case definitions, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/CaseDefinition' } } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Cases]
+      operationId: createCaseDefinition
+      summary: Deploy a reviewed bounded CMMN case model
+      description: Initial delivery accepts only the validated human-task, sentry and milestone subset. It does not imply full CMMN conformance.
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: case.definition.created
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateCaseDefinition' } } } }
+      responses:
+        '201': { description: Immutable deployed version, content: { application/json: { schema: { $ref: '#/components/schemas/CaseDefinition' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/cases/definitions/{definitionId}:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: definitionId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    get:
+      tags: [Cases]
+      operationId: getCaseDefinition
+      summary: Get a case definition and its source for an authorized designer
+      x-orqix-permission: workflow.edit
+      responses:
+        '200': { description: Definition with source, content: { application/json: { schema: { $ref: '#/components/schemas/CaseDefinitionDetail' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workspaces/{workspaceId}/cases/definitions/{definitionId}/instances:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: definitionId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [Cases]
+      operationId: startCaseInstance
+      summary: Start a case pinned to this definition version
+      x-orqix-permission: workflow.start
+      x-orqix-audit: case.instance.started
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      responses:
+        '201': { description: Started case, content: { application/json: { schema: { $ref: '#/components/schemas/CaseInstance' } } } }
+        '200': { description: Identical idempotent replay, content: { application/json: { schema: { $ref: '#/components/schemas/CaseInstance' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/cases/instances:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [Cases]
+      operationId: listCaseInstances
+      summary: List the latest workspace cases visible to the caller
+      x-orqix-permission: run.read
+      responses:
+        '200': { description: Up to 50 cases, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/CaseInstance' } } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workspaces/{workspaceId}/cases/instances/{instanceId}:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: instanceId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    get:
+      tags: [Cases]
+      operationId: getCaseInstance
+      summary: Get current case state and eligible tasks
+      x-orqix-permission: run.read
+      responses:
+        '200': { description: Case state, content: { application/json: { schema: { $ref: '#/components/schemas/CaseInstance' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workspaces/{workspaceId}/cases/instances/{instanceId}/tasks/{taskId}/complete:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: instanceId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+      - { name: taskId, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Cases]
+      operationId: completeCaseTask
+      summary: Complete an eligible case task at the expected case version
+      x-orqix-permission: task.act
+      x-orqix-audit: case.task.completed
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CompleteCaseTask' } } } }
+      responses:
+        '200': { description: Updated case, content: { application/json: { schema: { $ref: '#/components/schemas/CaseInstance' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/views:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [Views]
+      operationId: listViews
+      summary: List reusable view assets in this workspace
+      x-orqix-permission: workflow.read
+      responses:
+        '200': { description: Workspace views, content: { application/json: { schema: { $ref: '#/components/schemas/ViewList' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Views]
+      operationId: createView
+      summary: Create a reusable view draft
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: view.created
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateView' } } } }
+      responses:
+        '201': { description: Created draft, content: { application/json: { schema: { $ref: '#/components/schemas/ViewDetail' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/views/{viewId}:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: viewId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    get:
+      tags: [Views]
+      operationId: getView
+      summary: Get a reusable view draft and published version list
+      x-orqix-permission: workflow.read
+      responses:
+        '200': { description: View, content: { application/json: { schema: { $ref: '#/components/schemas/ViewDetail' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workspaces/{workspaceId}/views/{viewId}/copy:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: viewId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [Views]
+      operationId: copyView
+      summary: Copy a reusable view to a new draft
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: view.copied
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CopyView' } } } }
+      responses:
+        '201': { description: Copied draft, content: { application/json: { schema: { $ref: '#/components/schemas/ViewDetail' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/views/{viewId}/draft:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: viewId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    put:
+      tags: [Views]
+      operationId: saveViewDraft
+      summary: Save a reusable view draft with optimistic concurrency
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: view.draft.saved
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/SaveViewDraft' } } } }
+      responses:
+        '200': { description: Updated draft, content: { application/json: { schema: { $ref: '#/components/schemas/ViewDetail' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/views/{viewId}/publish:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: viewId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [Views]
+      operationId: publishView
+      summary: Publish an immutable view version
+      x-orqix-permission: workflow.publish
+      x-orqix-audit: view.published
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PublishView' } } } }
+      responses:
+        '200': { description: Updated view, content: { application/json: { schema: { $ref: '#/components/schemas/ViewDetail' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/views/{viewId}/versions/{version}:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: viewId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+      - { name: version, in: path, required: true, schema: { type: integer, minimum: 1 } }
+    get:
+      tags: [Views]
+      operationId: getViewVersion
+      summary: Get an immutable published view version
+      x-orqix-permission: workflow.read
+      responses:
+        '200': { description: Published view, content: { application/json: { schema: { $ref: '#/components/schemas/ViewVersion' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /workspaces/{workspaceId}/runs/{runId}/correct-input:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -4035,6 +4253,188 @@ components:
       content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } }
 
   schemas:
+    CreateCaseDefinition:
+      type: object
+      additionalProperties: false
+      required: [key, name, sourceXml]
+      properties:
+        key: { type: string, pattern: '^[a-z][a-z0-9-]{1,62}$' }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        sourceXml: { type: string, minLength: 1, maxLength: 65536, description: Bounded CMMN 1.1 XML source (64 KiB UTF-8) }
+    CaseDefinition:
+      type: object
+      additionalProperties: false
+      required: [id, key, name, version, createdAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        key: { type: string }
+        name: { type: string }
+        version: { type: integer, minimum: 1 }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+    CaseDefinitionDetail:
+      type: object
+      additionalProperties: false
+      required: [id, key, name, version, createdAt, sourceXml]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        key: { type: string }
+        name: { type: string }
+        version: { type: integer, minimum: 1 }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+        sourceXml: { type: string }
+    CaseTask:
+      type: object
+      additionalProperties: false
+      required: [id, name, status, candidateGroups, eligible]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        status: { type: string, enum: [available] }
+        candidateGroups: { type: array, items: { type: string } }
+        eligible: { type: boolean }
+    CaseInstance:
+      type: object
+      additionalProperties: false
+      required: [id, definitionId, definitionVersion, status, version, tasks, createdAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        definitionId: { $ref: '#/components/schemas/Uuid' }
+        definitionVersion: { type: integer, minimum: 1 }
+        status: { type: string, enum: [active, completed] }
+        version: { type: integer, minimum: 1 }
+        tasks: { type: array, items: { $ref: '#/components/schemas/CaseTask' } }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+    CompleteCaseTask:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: { type: integer, minimum: 1 }
+    ViewField:
+      type: object
+      additionalProperties: false
+      required: [id, label, type, binding]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 80 }
+        label: { type: string, minLength: 1, maxLength: 200 }
+        type: { type: string, enum: [text, number, date, choice, file, row] }
+        binding: { type: string, description: Typed request or task data binding }
+        required: { type: boolean }
+        options:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [value, label]
+            properties:
+              value: { type: string }
+              label: { type: string }
+    ViewSection:
+      type: object
+      additionalProperties: false
+      required: [id, label, columns, fields]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 80 }
+        label: { type: string, minLength: 1, maxLength: 200 }
+        columns: { type: integer, enum: [1, 2] }
+        fields: { type: array, items: { $ref: '#/components/schemas/ViewField' } }
+    ViewAction:
+      type: object
+      additionalProperties: false
+      required: [id, label, type]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 80 }
+        label: { type: string, minLength: 1, maxLength: 200 }
+        type: { type: string, enum: [submit, saveDraft, approve, reject, requestCorrection, navigate] }
+        target: { type: string, description: Same-application route for navigate action only }
+    ViewDefinition:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, kind, sections, actions]
+      properties:
+        schemaVersion: { type: integer, enum: [1] }
+        kind: { type: string, enum: [request, approval] }
+        sections: { type: array, items: { $ref: '#/components/schemas/ViewSection' } }
+        actions: { type: array, items: { $ref: '#/components/schemas/ViewAction' } }
+    ViewSummary:
+      type: object
+      additionalProperties: false
+      required: [id, name, description, kind, draftRevision, publishedVersion, createdAt, updatedAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        name: { type: string }
+        description: { type: [string, 'null'] }
+        kind: { type: string, enum: [request, approval] }
+        draftRevision: { type: integer, minimum: 1 }
+        publishedVersion: { type: [integer, 'null'], minimum: 1 }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+        updatedAt: { $ref: '#/components/schemas/Timestamp' }
+    ViewList:
+      type: object
+      additionalProperties: false
+      required: [items, viewLimit]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ViewSummary' } }
+        viewLimit: { type: integer, minimum: 1 }
+    ViewVersionSummary:
+      type: object
+      additionalProperties: false
+      required: [version, publishedAt]
+      properties:
+        version: { type: integer, minimum: 1 }
+        publishedAt: { $ref: '#/components/schemas/Timestamp' }
+    ViewDetail:
+      type: object
+      additionalProperties: false
+      required: [id, name, description, draftRevision, publishedVersion, definition, versions]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        name: { type: string }
+        description: { type: [string, 'null'] }
+        draftRevision: { type: integer, minimum: 1 }
+        publishedVersion: { type: [integer, 'null'], minimum: 1 }
+        definition: { $ref: '#/components/schemas/ViewDefinition' }
+        versions: { type: array, items: { $ref: '#/components/schemas/ViewVersionSummary' } }
+    ViewVersion:
+      type: object
+      additionalProperties: false
+      required: [viewId, version, name, description, definition, publishedAt]
+      properties:
+        viewId: { $ref: '#/components/schemas/Uuid' }
+        version: { type: integer, minimum: 1 }
+        name: { type: string }
+        description: { type: [string, 'null'] }
+        definition: { $ref: '#/components/schemas/ViewDefinition' }
+        publishedAt: { $ref: '#/components/schemas/Timestamp' }
+    CreateView:
+      type: object
+      additionalProperties: false
+      required: [name, definition]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+        description: { type: string, maxLength: 300 }
+        definition: { $ref: '#/components/schemas/ViewDefinition' }
+    CopyView:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+    SaveViewDraft:
+      type: object
+      additionalProperties: false
+      required: [expectedRevision, name, definition]
+      properties:
+        expectedRevision: { type: integer, minimum: 1 }
+        name: { type: string, minLength: 1, maxLength: 80 }
+        description: { type: string, maxLength: 300 }
+        definition: { $ref: '#/components/schemas/ViewDefinition' }
+    PublishView:
+      type: object
+      additionalProperties: false
+      required: [expectedRevision]
+      properties:
+        expectedRevision: { type: integer, minimum: 1 }
     CorrectRunInputRequest:
       type: object
       additionalProperties: false

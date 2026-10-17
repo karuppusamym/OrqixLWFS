@@ -3,7 +3,9 @@ import { getResponse } from 'msw'
 import { claim, decide, engineConfig, resumeTimers } from './engine'
 import { createAiHandlers } from '@/features/ai/mocks'
 import { createMigrationHandlers } from '@/features/migration/mocks'
-import { createHandlers, setCurrentUser } from './handlers'
+import { createHandlers, getCurrentUser, setCurrentUser } from './handlers'
+import { createViewHandlers, resetMockViews, restoreMockViews, snapshotMockViews } from './views'
+import { createCaseHandlers, resetMockCases, restoreMockCases, snapshotMockCases } from './cases'
 import { createInsightsHandlers } from './insights'
 import { createAdapterHandlers } from './adapters'
 import { createCaseFileHandlers } from './caseFiles'
@@ -17,6 +19,8 @@ import { readStorage, removeStorage, writeStorage } from '@/lib/storage'
 
 export const PERSONA_KEY = 'orqix.mock.user'
 const DB_KEY = 'orqix.mock.db.v1'
+const VIEW_DB_KEY = 'orqix.mock.views.v1'
+const CASE_DB_KEY = 'orqix.mock.cases.v1'
 
 /** Hooks for demos and Playwright (mock mode only): simulate "another person did something" and flip faults. */
 export interface MockControl {
@@ -41,12 +45,16 @@ declare global {
 
 function persist() {
   writeStorage(DB_KEY, snapshotDb())
+  writeStorage(VIEW_DB_KEY, snapshotMockViews())
+  writeStorage(CASE_DB_KEY, snapshotMockCases())
 }
 
 /** Start the in-browser API. Called once before the app renders when mock mode is on. */
 export async function startMock(): Promise<void> {
   const saved = readStorage(DB_KEY)
   if (!saved || !restoreDb(saved)) seedDb({ demo: true })
+  if (!restoreMockViews(readStorage(VIEW_DB_KEY))) resetMockViews()
+  if (!restoreMockCases(readStorage(CASE_DB_KEY))) resetMockCases()
   db.latencyMs = 150
   setCurrentUser(readStorage(PERSONA_KEY) ?? 'rhea.requester')
   engineConfig.retryDelayMs = 4000
@@ -62,7 +70,7 @@ export async function startMock(): Promise<void> {
   }, 15_000)
 
   // In-page fetch interception (no service worker): works in every browser context, including embedded previews.
-  const handlers = [...createAiHandlers(), ...createMigrationHandlers(), ...createConversationHandlers(), ...createInsightsHandlers(), ...createAdapterHandlers(), ...createCaseFileHandlers(), ...createDocumentLibraryHandlers(), ...createHandlers()]
+  const handlers = [...createAiHandlers(), ...createMigrationHandlers(), ...createConversationHandlers(), ...createInsightsHandlers(), ...createAdapterHandlers(), ...createCaseFileHandlers(), ...createDocumentLibraryHandlers(), ...createViewHandlers(getCurrentUser), ...createCaseHandlers(getCurrentUser), ...createHandlers()]
   const interceptor = new FetchInterceptor()
   interceptor.on('request', async ({ request, controller }) => {
     const response = await getResponse(handlers, request)
@@ -130,6 +138,8 @@ export async function startMock(): Promise<void> {
 /** Forget persisted mock data and the persona, then reload with the seed. */
 export function resetMockData(): void {
   removeStorage(DB_KEY)
+  removeStorage(VIEW_DB_KEY)
+  removeStorage(CASE_DB_KEY)
   removeStorage(PERSONA_KEY)
   resetConversations()
   window.location.reload()

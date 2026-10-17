@@ -1,6 +1,10 @@
 # Orqix application defaults (profile-neutral). Catalog: docs/build/S1-engineering-baseline.md section 5.
 # Profiles: dev (local Compose), test (CI/Testcontainers), migrate (Flyway + engine schema, then exit), prod (OpenShift).
 spring:
+  task:
+    scheduling:
+      pool:
+        size: 4
   application:
     name: orqix
   main:

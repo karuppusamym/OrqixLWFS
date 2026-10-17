@@ -3,10 +3,12 @@ import { createAiHandlers } from '@/features/ai/mocks'
 import { createMigrationHandlers } from '@/features/migration/mocks'
 import { createConversationHandlers } from '@/mocks/conversation'
 import { createCaseFileHandlers } from '@/mocks/caseFiles'
-import { createHandlers } from '@/mocks/handlers'
+import { createHandlers, getCurrentUser } from '@/mocks/handlers'
+import { createViewHandlers } from '@/mocks/views'
+import { createCaseHandlers } from '@/mocks/cases'
 import { createInsightsHandlers } from '@/mocks/insights'
 import { createAdapterHandlers } from '@/mocks/adapters'
 import { createDocumentLibraryHandlers } from '@/mocks/documentLibrary'
 
 /** The same handlers as browser mock mode, served to Vitest. Tests reseed with seedDb() and pick a persona. */
-export const server = setupServer(...createAiHandlers(), ...createMigrationHandlers(), ...createConversationHandlers(), ...createInsightsHandlers(), ...createAdapterHandlers(), ...createCaseFileHandlers(), ...createDocumentLibraryHandlers(), ...createHandlers())
+export const server = setupServer(...createAiHandlers(), ...createMigrationHandlers(), ...createConversationHandlers(), ...createInsightsHandlers(), ...createAdapterHandlers(), ...createCaseFileHandlers(), ...createDocumentLibraryHandlers(), ...createViewHandlers(getCurrentUser), ...createCaseHandlers(getCurrentUser), ...createHandlers())

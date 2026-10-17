@@ -510,6 +510,14 @@ paths:
           in: query
           description: Only workflows the caller may start now.
           schema: { type: boolean, default: false }
+        - name: folder
+          in: query
+          description: A folder ID, or none for unfiled workflows. Requires workflow.read; it only narrows the list.
+          schema: { type: string, maxLength: 36 }
+        - name: owner
+          in: query
+          description: A subject ID. Requires workflow.read; it only narrows the list.
+          schema: { $ref: '#/components/schemas/Uuid' }
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
       responses:
@@ -669,6 +677,171 @@ paths:
               schema: { $ref: '#/components/schemas/DecisionEvaluateResult' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/workflow-organization:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [Workflows]
+      operationId: getWorkflowOrganization
+      summary: Folders (with workflow counts), the unfiled count and workflow owners
+      description: >
+        Folders are labels only. They grant and restrict nothing; the counts describe workflows every caller with
+        workflow.read can already list.
+      x-orqix-permission: workflow.read
+      responses:
+        '200':
+          description: Workflow organization
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkflowOrganization' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/workflow-owner-candidates:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [Workflows]
+      operationId: listWorkflowOwnerCandidates
+      summary: People who may be chosen as a workflow owner (they can edit workflows in this workspace today)
+      x-orqix-permission: workflow.edit
+      responses:
+        '200':
+          description: Up to 50 people
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/SubjectRef' } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/workflow-folders:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    post:
+      tags: [Workflows]
+      operationId: createWorkflowFolder
+      summary: Create a flat folder (at most 50 per workspace; names are unique ignoring case)
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: workflow.folder.created
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkflowFolderName' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkflowFolder' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/workflow-folders/{folderId}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: folderId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Uuid' }
+    put:
+      tags: [Workflows]
+      operationId: renameWorkflowFolder
+      summary: Rename a folder (409 WORKFLOW_VERSION_CONFLICT when it changed since loaded)
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: workflow.folder.renamed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RenameWorkflowFolder' }
+      responses:
+        '200':
+          description: Renamed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkflowFolder' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    delete:
+      tags: [Workflows]
+      operationId: deleteWorkflowFolder
+      summary: Delete a folder; its workflows become unfiled and no workflow is deleted
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: workflow.folder.deleted
+      responses:
+        '204': { description: Deleted }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/workflows/{workflowId}/folder:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+    put:
+      tags: [Workflows]
+      operationId: setWorkflowFolder
+      summary: Move a workflow into a folder, or out of its folder with folderId null
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: workflow.folder.assigned
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetWorkflowFolder' }
+      responses:
+        '200':
+          description: The workflow
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Workflow' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/workflows/{workflowId}/owner:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+    put:
+      tags: [Workflows]
+      operationId: setWorkflowOwner
+      summary: Reassign the owner to a person who can edit workflows in this workspace
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: workflow.owner.changed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetWorkflowOwner' }
+      responses:
+        '200':
+          description: The workflow
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Workflow' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
 
   /workspaces/{workspaceId}/workflows/{workflowId}/test-suite:
@@ -3792,6 +3965,63 @@ components:
                 draftRevision: { type: integer, description: 'The draft revision this release was published from; the workflow has unpublished changes when draftRevision (on the workflow) is greater' }
         canStart: { type: boolean }
         updatedAt: { $ref: '#/components/schemas/Timestamp' }
+        folderId:
+          allOf: [{ $ref: '#/components/schemas/Uuid' }]
+          description: Present only for callers with workflow.read and only when the workflow is in a folder
+    WorkflowFolder:
+      type: object
+      required: [id, name, version, workflowCount, createdAt, updatedAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        name: { type: string, minLength: 1, maxLength: 80 }
+        version: { type: integer, minimum: 1 }
+        workflowCount: { type: integer, minimum: 0 }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+        updatedAt: { $ref: '#/components/schemas/Timestamp' }
+    WorkflowOrganization:
+      type: object
+      required: [folders, unfiledCount, owners, folderLimit]
+      properties:
+        folders: { type: array, items: { $ref: '#/components/schemas/WorkflowFolder' } }
+        unfiledCount: { type: integer, minimum: 0 }
+        owners:
+          type: array
+          items:
+            type: object
+            required: [id, displayName, workflowCount]
+            properties:
+              id: { $ref: '#/components/schemas/Uuid' }
+              displayName: { type: string }
+              workflowCount: { type: integer, minimum: 1 }
+        folderLimit: { type: integer }
+    WorkflowFolderName:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+    RenameWorkflowFolder:
+      type: object
+      additionalProperties: false
+      required: [name, expectedVersion]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+        expectedVersion: { type: integer, minimum: 1 }
+    SetWorkflowFolder:
+      type: object
+      additionalProperties: false
+      required: [folderId]
+      properties:
+        folderId:
+          oneOf: [{ type: 'null' }, { $ref: '#/components/schemas/Uuid' }]
+        expectedFolderVersion: { type: integer, minimum: 1, description: 'Required with a folder; omitted when folderId is null' }
+    SetWorkflowOwner:
+      type: object
+      additionalProperties: false
+      required: [ownerSubjectId, expectedVersion]
+      properties:
+        ownerSubjectId: { $ref: '#/components/schemas/Uuid' }
+        expectedVersion: { type: integer, minimum: 1, description: 'The workflow version' }
     Workflow:
       allOf:
         - $ref: '#/components/schemas/WorkflowSummary'

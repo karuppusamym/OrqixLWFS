@@ -40,7 +40,8 @@ public final class CatalogDtos {
             boolean canStart, Instant updatedAt,
             @JsonInclude(JsonInclude.Include.NON_NULL) Integer version,
             @JsonInclude(JsonInclude.Include.NON_NULL) Instant createdAt,
-            @JsonInclude(JsonInclude.Include.NON_NULL) List<String> permissions) {
+            @JsonInclude(JsonInclude.Include.NON_NULL) List<String> permissions,
+            @JsonInclude(JsonInclude.Include.NON_NULL) UUID folderId) {
     }
 
     public record WorkflowPage(List<WorkflowView> items, String nextCursor) {

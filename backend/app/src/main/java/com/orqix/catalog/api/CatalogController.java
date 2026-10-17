@@ -53,9 +53,10 @@ public class CatalogController {
 
     @GetMapping("/workflows")
     public CatalogDtos.WorkflowPage listWorkflows(@PathVariable UUID workspaceId, @RequestParam(required = false) String q,
-            @RequestParam(defaultValue = "false") boolean startable, @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "false") boolean startable, @RequestParam(required = false) String folder,
+            @RequestParam(required = false) String owner, @RequestParam(required = false) String cursor,
             @RequestParam(required = false) Integer limit) {
-        return workflows.listWorkflows(callers.current(), workspaceId, q, startable, cursor, limit);
+        return workflows.listWorkflows(callers.current(), workspaceId, q, startable, folder, owner, cursor, limit);
     }
 
     @PostMapping("/workflows")

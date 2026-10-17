@@ -57,7 +57,15 @@ export function useMe() {
 
 // Workflows --------------------------------------------------------------------------------------
 
-export function useWorkflows(ws: string, params: { q?: string; startable?: boolean } = {}, enabled = true) {
+export function useWorkflowOrganization(ws: string, enabled = true) {
+  return useQuery({ queryKey: ['ws', ws, 'workflow-organization'] as const, queryFn: () => endpoints.getWorkflowOrganization(ws), enabled })
+}
+
+export function useWorkflowOwnerCandidates(ws: string, enabled = true) {
+  return useQuery({ queryKey: ['ws', ws, 'workflow-owner-candidates'] as const, queryFn: () => endpoints.listWorkflowOwnerCandidates(ws), enabled, staleTime: 0 })
+}
+
+export function useWorkflows(ws: string, params: { q?: string; startable?: boolean; folder?: string; owner?: string } = {}, enabled = true) {
   return useInfiniteQuery({
     queryKey: keys.workflows(ws, params),
     queryFn: ({ pageParam }) => endpoints.listWorkflows(ws, { ...params, cursor: pageParam ?? undefined, limit: 25 }),

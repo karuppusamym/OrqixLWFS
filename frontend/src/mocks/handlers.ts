@@ -144,6 +144,7 @@ function activeRelease(wf: MockWorkflow) {
 
 function summary(wf: MockWorkflow, perms: Permission[]) {
   const active = activeRelease(wf)
+  const canRead = perms.includes('workflow.read')
   return {
     id: wf.id,
     key: wf.key,
@@ -154,6 +155,7 @@ function summary(wf: MockWorkflow, perms: Permission[]) {
     activeRelease: active ? { id: active.id, releaseNumber: active.releaseNumber, publishedAt: active.publishedAt, draftRevision: active.draftRevision } : null,
     canStart: !!active && perms.includes('workflow.start'),
     updatedAt: wf.updatedAt,
+    ...(wf.folderId && canRead ? { folderId: wf.folderId } : {}),
   }
 }
 
@@ -336,6 +338,12 @@ export function createHandlers(): HttpHandler[] {
       let items = workflowsOf(str(params.ws))
       if (readOnlyStart || startable) items = items.filter((w) => !!activeRelease(w) && g.perms.includes('workflow.start'))
       if (q) items = items.filter((w) => w.name.toLowerCase().includes(q) || w.key.includes(q))
+      const folder = url.searchParams.get('folder')
+      const owner = url.searchParams.get('owner')
+      if ((folder || owner) && !g.perms.includes('workflow.read')) return forbidden()
+      if (folder === 'none') items = items.filter((w) => !w.folderId)
+      else if (folder) items = items.filter((w) => w.folderId === folder)
+      if (owner) items = items.filter((w) => w.ownerId === owner)
       items.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
       const page = paginate(items, url)
       return HttpResponse.json({ items: page.items.map((w) => summary(w, g.perms)), nextCursor: page.nextCursor })
@@ -615,6 +623,111 @@ export function createHandlers(): HttpHandler[] {
     }),
 
     // Runs ---------------------------------------------------------------------------------------------------------------
+    // Folders and owners (PL01, docs/build/S46) -------------------------------------------------------------
+    http.get(`${B}/workspaces/:ws/workflow-organization`, async ({ params }) => {
+      await slow()
+      const g = guard(params.ws, 'workflow.read')
+      if (!g.ok) return g.res
+      const ws = str(params.ws)
+      const flows = workflowsOf(ws)
+      const folders = [...db.workflowFolders.values()].filter((f) => f.wsId === ws).sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()))
+        .map((f) => ({ id: f.id, name: f.name, version: f.version, workflowCount: flows.filter((w) => w.folderId === f.id).length, createdAt: f.createdAt, updatedAt: f.updatedAt }))
+      const owners = new Map<string, number>()
+      for (const w of flows) owners.set(w.ownerId, (owners.get(w.ownerId) ?? 0) + 1)
+      return HttpResponse.json({
+        folders,
+        unfiledCount: flows.filter((w) => !w.folderId).length,
+        owners: [...owners].map(([id, workflowCount]) => ({ id, displayName: userById(id)?.displayName ?? 'Unknown user', workflowCount })).sort((a, b) => a.displayName.localeCompare(b.displayName)),
+        folderLimit: 50,
+      })
+    }),
+    http.get(`${B}/workspaces/:ws/workflow-owner-candidates`, async ({ params }) => {
+      await slow()
+      const g = guard(params.ws, 'workflow.edit')
+      if (!g.ok) return g.res
+      const ws = str(params.ws)
+      return HttpResponse.json({ items: USERS.filter((u) => isMember(u, ws) && permissionsOf(u, ws).includes('workflow.edit')).map((u) => subjectRef(u)) })
+    }),
+    http.post(`${B}/workspaces/:ws/workflow-folders`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws, 'workflow.edit')
+      if (!g.ok) return g.res
+      const ws = str(params.ws)
+      const input = await body<{ name?: string }>(request)
+      const name = (input.name ?? '').trim()
+      if (!name || name.length > 80) return problem(400, 'MALFORMED_REQUEST', 'The request is malformed', { fieldErrors: [{ pointer: '/name', code: 'Size', message: 'Use 1 to 80 characters.' }] })
+      const mine = [...db.workflowFolders.values()].filter((f) => f.wsId === ws)
+      if (mine.length >= 50) return problem(422, 'VALIDATION_FAILED', 'Some values are not valid', { detail: 'A workspace can have at most 50 folders.' })
+      if (mine.some((f) => f.name.toLowerCase() === name.toLowerCase())) return problem(409, 'DUPLICATE_KEY', 'The key is already in use', { detail: 'A folder with this name already exists.' })
+      const folder = { id: newId(), wsId: ws, name, version: 1, createdAt: clock.iso(), updatedAt: clock.iso() }
+      db.workflowFolders.set(folder.id, folder)
+      return HttpResponse.json({ id: folder.id, name, version: 1, workflowCount: 0, createdAt: folder.createdAt, updatedAt: folder.updatedAt }, { status: 201 })
+    }),
+    http.put(`${B}/workspaces/:ws/workflow-folders/:id`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws, 'workflow.edit')
+      if (!g.ok) return g.res
+      const ws = str(params.ws)
+      const folder = db.workflowFolders.get(str(params.id))
+      if (!folder || folder.wsId !== ws) return notFound()
+      const input = await body<{ name?: string; expectedVersion?: number }>(request)
+      const name = (input.name ?? '').trim()
+      if (!name || name.length > 80) return problem(400, 'MALFORMED_REQUEST', 'The request is malformed', { fieldErrors: [{ pointer: '/name', code: 'Size', message: 'Use 1 to 80 characters.' }] })
+      if (input.expectedVersion !== folder.version) return problem(409, 'WORKFLOW_VERSION_CONFLICT', 'The workflow changed since you loaded it', { detail: 'The folder changed. Reload before saving.', currentVersion: folder.version })
+      if ([...db.workflowFolders.values()].some((f) => f.wsId === ws && f.id !== folder.id && f.name.toLowerCase() === name.toLowerCase())) return problem(409, 'DUPLICATE_KEY', 'The key is already in use', { detail: 'A folder with this name already exists.' })
+      folder.name = name
+      folder.version += 1
+      folder.updatedAt = clock.iso()
+      return HttpResponse.json({ id: folder.id, name, version: folder.version, workflowCount: workflowsOf(ws).filter((w) => w.folderId === folder.id).length, createdAt: folder.createdAt, updatedAt: folder.updatedAt })
+    }),
+    http.delete(`${B}/workspaces/:ws/workflow-folders/:id`, async ({ params }) => {
+      await slow()
+      const g = guard(params.ws, 'workflow.edit')
+      if (!g.ok) return g.res
+      const ws = str(params.ws)
+      const folder = db.workflowFolders.get(str(params.id))
+      if (!folder || folder.wsId !== ws) return notFound()
+      for (const w of workflowsOf(ws)) if (w.folderId === folder.id) delete w.folderId
+      db.workflowFolders.delete(folder.id)
+      return new HttpResponse(null, { status: 204 })
+    }),
+    http.put(`${B}/workspaces/:ws/workflows/:id/folder`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws, 'workflow.edit')
+      if (!g.ok) return g.res
+      const ws = str(params.ws)
+      const wf = findWorkflow(ws, str(params.id))
+      if (!wf) return notFound()
+      const input = await body<{ folderId?: string | null; expectedFolderVersion?: number }>(request)
+      if (input.folderId == null) {
+        delete wf.folderId
+      } else {
+        const folder = db.workflowFolders.get(input.folderId)
+        if (!folder || folder.wsId !== ws) return notFound()
+        if (input.expectedFolderVersion == null) return problem(422, 'VALIDATION_FAILED', 'Some values are not valid', { detail: 'expectedFolderVersion is required with a folder.' })
+        if (input.expectedFolderVersion !== folder.version) return problem(409, 'WORKFLOW_VERSION_CONFLICT', 'The workflow changed since you loaded it', { detail: 'The folder changed. Reload before moving.', currentVersion: folder.version })
+        wf.folderId = folder.id
+      }
+      return HttpResponse.json({ ...summary(wf, g.perms), version: wf.version, createdAt: wf.createdAt, permissions: g.perms })
+    }),
+    http.put(`${B}/workspaces/:ws/workflows/:id/owner`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws, 'workflow.edit')
+      if (!g.ok) return g.res
+      const ws = str(params.ws)
+      const wf = findWorkflow(ws, str(params.id))
+      if (!wf) return notFound()
+      const input = await body<{ ownerSubjectId?: string; expectedVersion?: number }>(request)
+      if (input.expectedVersion !== wf.version) return problem(409, 'WORKFLOW_VERSION_CONFLICT', 'The workflow changed since you loaded it', { detail: 'The workflow changed. Reload before changing the owner.', currentVersion: wf.version })
+      const target = input.ownerSubjectId ? userById(input.ownerSubjectId) : undefined
+      if (!target || !isMember(target, ws) || !permissionsOf(target, ws).includes('workflow.edit')) {
+        return problem(422, 'VALIDATION_FAILED', 'Some values are not valid', { detail: 'The new owner must be a person who can edit workflows in this workspace.', fieldErrors: [{ pointer: '/ownerSubjectId', code: 'eligibility', message: 'Choose someone with workflow edit access' }] })
+      }
+      wf.ownerId = target.id
+      wf.version += 1
+      wf.updatedAt = clock.iso()
+      return HttpResponse.json({ ...summary(wf, g.perms), version: wf.version, createdAt: wf.createdAt, permissions: g.perms })
+    }),
     http.get(`${B}/workspaces/:ws/workflows/:id/start-form`, async ({ params }) => {
       await slow()
       const g = guard(params.ws, 'workflow.start')

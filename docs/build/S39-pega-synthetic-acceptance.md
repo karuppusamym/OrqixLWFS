@@ -53,6 +53,6 @@ The final real Docker run passed **105/105 checks across 10 scenarios**, importi
 
 Execution log: [pega-synthetic-live-final-1016.log](../../evidence/pega-synthetic-live-final-1016.log). Evidence pack: [pega-synthetic-live-final-1016.zip](../../evidence/pega-synthetic-live-final-1016.zip). Pack SHA-256: `bfff388ec26c11da58483bb6471b89176d976ae6cb0566148d3ab1413e79a16c`.
 
-Synthetic reviewed-target acceptance is verified for this local scope. It does not establish native source parsing or source-system equivalence.
+The current release's reviewed Pega migration delivery, MIG10, is **closed** under [ADR 0002](../adr/0002-pega-migration-delivery-scope.md). Synthetic reviewed-target acceptance is verified for this local scope. Native adapter implementation is a separate future item, MIG11. This decision does not establish native source parsing or source-system equivalence.
 
 **AC01 remains open.** Customer acceptance still requires genuine source exports, a representative source-runtime baseline, review of Pega rule resolution, inheritance, circumstances, assignment and SLA semantics, connector/error behavior, and source/business owner signoff. Infrastructure, real tenant access and cutover approval remain separate prerequisites. Neither a manually authored canonical target nor successful Flowable execution substitutes for those inputs.

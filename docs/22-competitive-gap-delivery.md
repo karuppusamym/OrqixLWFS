@@ -2,7 +2,7 @@
 
 Updated 15 October 2026. The user authorized the remaining engineering gaps after the Pega/Camunda comparison. The other model's committed work was reviewed and retained. Infrastructure and customer-source acceptance retain their own gates. Closing a bounded slice does not establish universal Pega/Camunda equivalence or close its broader roadmap epic.
 
-Status: Planned, In progress, Implemented (awaiting verification), Verified locally, Needs external input. Each ticket requires backend/runtime, permission boundaries, authoring/operations UI as applicable, meaningful tests, documentation and actual execution evidence. Root coordinates shared contracts, verification and integration; independent agents implement scoped workstreams.
+Status: Planned, In progress, Implemented (awaiting verification), Verified locally, Closed (declared delivery scope complete), Needs external input. Each ticket requires backend/runtime, permission boundaries, authoring/operations UI as applicable, meaningful tests, documentation and actual execution evidence. Root coordinates shared contracts, verification and integration; independent agents implement scoped workstreams.
 
 | ID | Gap / acceptance | Status | Current owner / dependency |
 |---|---|---|---|
@@ -39,7 +39,8 @@ Status: Planned, In progress, Implemented (awaiting verification), Verified loca
 | IN04 | Approved write-capable agent tools with explicit effect/idempotency/reconciliation | Planned | Never infer recipient/send authorization from connector availability |
 | PL01 | Folders/shared assets/search/owners and authorization-safe organization | Planned | Versioned resource references and workspace policy |
 | PL02 | Git promotion/canary/environment lifecycle and broader analytics | Planned | Portable bindings and release compatibility; production infra excluded |
-| MIG10 | Synthetic Pega small/medium/complex reviewed migration and actual target execution | Verified locally | [S39](build/S39-pega-synthetic-acceptance.md); 105/105 Docker checks across 10 scenarios, 14 Python tests, exact archive/mapping/release/run evidence; no native parser or source-runtime equivalence claim |
+| MIG10 | Current release: Pega archive assessment, reviewed reconstruction and synthetic target acceptance | Closed | [ADR 0002](adr/0002-pega-migration-delivery-scope.md), [S39](build/S39-pega-synthetic-acceptance.md); 105/105 Docker checks across 10 scenarios, 14 Python tests; source/mapping/release/run evidence retained. Native conversion is MIG11; customer source qualification is AC01 |
+| MIG11 | Native Pega export adapter and explicit supported version/grammar matrix | Planned; representative exports required | Separate future engineering scope under ADR 0002; rule resolution, inheritance, circumstances, dependencies and integration semantics require source discovery. No native export version is certified |
 | AC01 | Genuine Pega/LWFS resolved exports and observed source outcomes | Needs external input | Source owner, formats, golden scenarios and sign-off; synthetic reviewed target acceptance is MIG10 and does not close this gate |
 | AC02 | Customer Microsoft/integration/scanner acceptance | Needs external input | Tenant consent, approved resources and securely provisioned credentials |
 | AC03 | Banking policies, jurisdictions, domain scenarios and owner acceptance | Needs external input | Templates remain illustrative until accepted |

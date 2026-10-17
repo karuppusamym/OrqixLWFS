@@ -37,6 +37,8 @@ For a three-day import demo, use one real customer/source BPMN file in the teste
 
 ## PEGA migration
 
+The current release delivers archive assessment and reviewed reconstruction. Its engineering delivery and synthetic target acceptance are closed as MIG10 under [ADR 0002](adr/0002-pega-migration-delivery-scope.md), supported by 105/105 Docker checks across small, medium and complex scenarios. Native export conversion is future MIG11; customer source qualification remains AC01/EXT01. No native Pega export version is certified by this evidence.
+
 Pega's own documentation describes exporting rules and data via application/product/ruleset packages for movement between Pega environments. It does not provide evidence that these are portable executable BPMN. [Pega application migration documentation](https://docs.pega.com/bundle/platform-242/page/platform/system-administration/migration-applications-systems-moving.html)
 
 Our engineering conclusion: inspect a representative, sanitized export before promising a parser or equivalence. Do not market a custom JSON sample as a native PEGA export.

@@ -17,6 +17,9 @@ import { useStore } from 'zustand'
 import { createStudioStore, isDirty } from '@/stores/studioStore'
 import { CanvasView } from './CanvasView'
 import { CheckPanel } from './CheckPanel'
+import { DiscussionPanel } from './DiscussionPanel'
+import { LanesView } from './LanesView'
+import { SourceView } from './SourceView'
 import { Inspector } from './inspector/Inspector'
 import { Palette } from './Palette'
 import { StepsView } from './StepsView'
@@ -122,7 +125,7 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
   const { workspace, can } = useWorkspace()
   const ws = workspace.id
   const { store, saver, wsId, workflowId, readOnly } = useStudioContext()
-  const [tab, setTab] = useState<'canvas' | 'steps'>('canvas')
+  const [tab, setTab] = useState<'canvas' | 'steps' | 'lanes' | 'source'>('canvas')
   const [checkOpen, setCheckOpen] = useState(false)
   const [checking, setChecking] = useState(false)
   const [checkError, setCheckError] = useState<unknown>(null)
@@ -243,11 +246,13 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
           The studio needs a screen at least 1024 px wide to edit. You can read the steps here.
         </Alert>
       ) : null}
-      <Tabs value={currentTab} onValueChange={(v) => setTab(v as 'canvas' | 'steps')} className="flex min-h-0 flex-1 flex-col">
+      <Tabs value={currentTab} onValueChange={(v) => setTab(v as 'canvas' | 'steps' | 'lanes' | 'source')} className="flex min-h-0 flex-1 flex-col">
         <div className="border-b border-border bg-surface px-4 py-2">
           <TabsList aria-label="Studio views">
             {showCanvas ? <TabsTrigger value="canvas">Canvas</TabsTrigger> : null}
             <TabsTrigger value="steps">Steps</TabsTrigger>
+            {showCanvas ? <TabsTrigger value="lanes">Lanes</TabsTrigger> : null}
+            {showCanvas ? <TabsTrigger value="source">Source</TabsTrigger> : null}
           </TabsList>
         </div>
         <div className="flex min-h-0 flex-1">
@@ -270,6 +275,12 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
                 requestDelete()
               }} onAddPath={(from) => setBranchRequest({ from, to: null })} />
             </TabsContent>
+            <TabsContent value="lanes" className="m-0 h-full overflow-y-auto">
+              <LanesView groupNames={groupNames} />
+            </TabsContent>
+            <TabsContent value="source" className="m-0 h-full overflow-y-auto">
+              <SourceView />
+            </TabsContent>
           </div>
           {desktop && testOpen ? (
             <aside className="w-[26rem] shrink-0 border-l border-border bg-surface" aria-label="Test this workflow">
@@ -284,6 +295,7 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
                 store.getState().select({ type: 'node', id })
                 requestDelete()
               }} />
+              <DiscussionPanel />
             </aside>
           ) : null}
         </div>

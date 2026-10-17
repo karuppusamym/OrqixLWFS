@@ -207,6 +207,11 @@ class SecurityMatrixTest extends RuntimeTestBase {
         }
         ids.put("folderId", api("dana.designer").post(Map.of("name", "Matrix " + UUID.randomUUID().toString().substring(0, 8)),
                 "/workspaces/{ws}/workflow-folders", PURCHASING).body().path("id").asString());
+        String stepId = api("dana.designer").get("/workspaces/{ws}/workflows/{id}/draft", PURCHASING, UUID.fromString(ids.get("workflowId")))
+                .body().path("definition").path("nodes").get(0).path("id").asString();
+        ids.put("stepId", stepId);
+        ids.put("commentId", api("dana.designer").post(Map.of("elementId", stepId, "body", "Matrix thread"),
+                "/workspaces/{ws}/workflows/{id}/discussion", PURCHASING, UUID.fromString(ids.get("workflowId"))).body().path("id").asString());
         ids.put("connectionKey", "procurement");
         ids.put("decisionKey", "amount-policy");
         ids.put("groupKey", "managers");
@@ -269,6 +274,8 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "createWorkflowFolder" -> Map.of("name", "Foreign folder");
             case "renameWorkflowFolder" -> Map.of("name", "Foreign rename", "expectedVersion", 1);
             case "setWorkflowFolder" -> Map.of("folderId", ids.get("folderId"), "expectedFolderVersion", 1);
+            case "postWorkflowComment" -> Map.of("elementId", ids.get("stepId"), "body", "Foreign comment");
+            case "resolveWorkflowThread" -> Map.of("resolved", true);
             case "setWorkflowOwner" -> Map.of("ownerSubjectId", UUID.randomUUID().toString(), "expectedVersion", 1);
             case "saveWorkflowTestSuite" -> Map.of("expectedVersion", 0, "cases", List.of());
             case "runWorkflowTestSuite" -> Map.of("revision", 1, "suiteVersion", 1);
@@ -319,7 +326,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
     private Map<String, Long> snapshot() {
         Map<String, Long> counts = new LinkedHashMap<>();
         for (String table : List.of("organization", "workspace", "subject", "role_binding", "permission_grant",
-                "workspace_group", "workspace_group_member", "migration_job", "migration_project", "migration_policy", "migration_review", "workflow", "workflow_folder", "workflow_folder_item", "workflow_draft_revision", "workflow_release",
+                "workspace_group", "workspace_group_member", "migration_job", "migration_project", "migration_policy", "migration_review", "workflow", "workflow_folder", "workflow_folder_item", "workflow_element_comment", "workflow_draft_revision", "workflow_release",
                 "release_artifact", "connection_definition", "connection_binding", "workflow_run", "task_context",
                 "run_attachment", "run_attachment_content", "run_stage", "workflow_test_suite", "workflow_test_result", "document_source",
                 "task_decision", "task_reminder", "inbound_message", "message_subscription", "document_snapshot", "adapter_config", "inbound_trigger", "inbound_event", "effect_journal", "run_event", "notification", "idempotency_record",

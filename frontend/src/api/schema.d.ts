@@ -474,6 +474,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/discussion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        /** Read threaded discussion on steps and connections (optionally one element) */
+        get: operations["listWorkflowDiscussion"];
+        put?: never;
+        /** Start a thread on a step or connection of the current draft, or reply to a thread (workflow.edit or workflow.publish) */
+        post: operations["postWorkflowComment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/discussion/{commentId}/resolution": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+                commentId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Resolve or reopen a thread (workflow.edit or workflow.publish); repeating the same state is a no-op */
+        put: operations["resolveWorkflowThread"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/workflows/{workflowId}/test-suite": {
         parameters: {
             query?: never;
@@ -2730,6 +2772,39 @@ export interface components {
             folderId: null | components["schemas"]["Uuid"];
             /** @description Required with a folder; omitted when folderId is null */
             expectedFolderVersion?: number;
+        };
+        WorkflowComment: {
+            id: components["schemas"]["Uuid"];
+            elementId: string;
+            parentId?: null | components["schemas"]["Uuid"];
+            body: string;
+            authorId: components["schemas"]["Uuid"];
+            authorName: string;
+            createdAt: components["schemas"]["Timestamp"];
+            resolved: boolean;
+            /** Format: date-time */
+            resolvedAt?: string | null;
+            resolvedByName?: string | null;
+        };
+        WorkflowDiscussionThread: {
+            root: components["schemas"]["WorkflowComment"];
+            replies: components["schemas"]["WorkflowComment"][];
+        };
+        WorkflowDiscussion: {
+            threads: components["schemas"]["WorkflowDiscussionThread"][];
+            openByElement: {
+                [key: string]: number;
+            };
+            canPost: boolean;
+        };
+        PostWorkflowComment: {
+            /** @description A step or connection ID of the current draft */
+            elementId: string;
+            body: string;
+            parentId?: components["schemas"]["Uuid"];
+        };
+        ResolveWorkflowThread: {
+            resolved: boolean;
         };
         SetWorkflowOwner: {
             ownerSubjectId: components["schemas"]["Uuid"];
@@ -6313,6 +6388,100 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listWorkflowDiscussion: {
+        parameters: {
+            query?: {
+                elementId?: string;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Threads in creation order, open-thread counts for every element, and whether the caller may post */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowDiscussion"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    postWorkflowComment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PostWorkflowComment"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowComment"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    resolveWorkflowThread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+                commentId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveWorkflowThread"];
+            };
+        };
+        responses: {
+            /** @description The thread's first comment */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowComment"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             422: components["responses"]["Unprocessable"];
         };
     };

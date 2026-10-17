@@ -72,6 +72,16 @@
                 <version>${flowable.version}</version>
             </dependency>
             <dependency>
+                <groupId>org.flowable</groupId>
+                <artifactId>flowable-spring-boot-starter-cmmn</artifactId>
+                <version>${flowable.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.flowable</groupId>
+                <artifactId>flowable-cmmn-spring-configurator</artifactId>
+                <version>${flowable.version}</version>
+            </dependency>
+            <dependency>
                 <groupId>com.networknt</groupId>
                 <artifactId>json-schema-validator</artifactId>
                 <version>${json-schema-validator.version}</version>

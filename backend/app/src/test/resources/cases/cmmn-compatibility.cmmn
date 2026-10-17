@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/CMMN/20151109/MODEL"
+             xmlns:flowable="http://flowable.org/cmmn"
+             targetNamespace="urn:orqix:cmmn:compatibility">
+  <case id="compatibilityCase" name="CMMN compatibility">
+    <casePlanModel id="plan" name="Review case">
+      <planItem id="collect" name="Collect evidence" definitionRef="collectTask"/>
+      <planItem id="review" name="Review evidence" definitionRef="reviewTask">
+        <entryCriterion id="reviewEntry" sentryRef="collected"/>
+      </planItem>
+      <planItem id="done" name="Reviewed" definitionRef="reviewedMilestone">
+        <entryCriterion id="doneEntry" sentryRef="reviewed"/>
+      </planItem>
+      <sentry id="collected">
+        <planItemOnPart id="collectCompleted" sourceRef="collect"><standardEvent>complete</standardEvent></planItemOnPart>
+      </sentry>
+      <sentry id="reviewed">
+        <planItemOnPart id="reviewCompleted" sourceRef="review"><standardEvent>complete</standardEvent></planItemOnPart>
+      </sentry>
+      <humanTask id="collectTask" name="Collect evidence" flowable:candidateGroups="case-workers"/>
+      <humanTask id="reviewTask" name="Review evidence" flowable:candidateGroups="case-workers"/>
+      <milestone id="reviewedMilestone" name="Reviewed"/>
+    </casePlanModel>
+  </case>
+</definitions>

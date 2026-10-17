@@ -4,7 +4,9 @@
 
 The normative CMMN target is OMG [Case Management Model and Notation 1.1](https://www.omg.org/spec/CMMN/1.1/About-CMMN/), including its [published machine-readable model](https://www.omg.org/spec/CMMN/20151109/CMMN11.xsd). This target should be assessed by a clause-to-implementation conformance matrix and executable model fixtures, not by a feature-name checklist alone.
 
-The existing backend pins Flowable 8.0.0 for BPMN and DMN. Flowable also provides a [CMMN 1.1 engine and Java API](https://www.flowable.com/open-source/docs/cmmn/ch06-cmmn), including a Spring Boot CMMN starter. The preferred implementation is to integrate that engine behind Orqix workspace authorization, case projections and APIs, and verify its supported semantics against the OMG model. Building a second ad hoc lifecycle engine would add avoidable semantic risk. Dependency compatibility and schema migration behavior must be demonstrated in the real PostgreSQL test stack before enabling it in the application.
+The existing backend pins Flowable 8.0.0 for BPMN and DMN. Flowable also provides a [CMMN 1.1 engine and Java API](https://www.flowable.com/open-source/docs/cmmn/ch06-cmmn), including a Spring Boot CMMN starter. The preferred implementation is to integrate that engine behind Orqix workspace authorization, case projections and APIs, and verify its supported semantics against the OMG model. Building a second ad hoc lifecycle engine would add avoidable semantic risk. Dependency compatibility and schema migration behavior are demonstrated by the real PostgreSQL compatibility test described below.
+
+The initial compatibility gate is now implemented in [S57](S57-cmmn-engine-foundation.md): the migration job creates engine tables and a PostgreSQL lifecycle test exercises human tasks, sentries, a milestone and case completion through the runtime role. It is an internal engine foundation only; the WM04 acceptance below is still open.
 
 ## WM04 — adaptive cases
 
@@ -29,6 +31,8 @@ The full target also includes case and worklist pages, reusable components, data
 Studio's request form layout now lets a designer reorder sections and reorder questions inside each section with accessible controls. The edits use the existing undoable draft model, pinned `inputUi.layout.sections` and existing compiler/runtime form renderer; no new runtime syntax is introduced. This removes an authoring gap while the two epics are scoped. It does **not** close UI02 because shared views, pinned reusable versions and action authoring are still absent.
 
 The focused `FormBehaviorEditor.test.tsx` suite passes 3/3 cases, including section/question reorder, retention of field rules and undo. Frontend TypeScript typecheck passes. This is local editor verification; no browser or real-stack run is claimed for the increment.
+
+UI02a, the request-form ordering sub-ticket, is closed within this exact editor scope by commit `1ba14d3`. UI02 remains open for the general designer target.
 
 ## Status rule
 

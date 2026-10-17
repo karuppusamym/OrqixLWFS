@@ -55,7 +55,7 @@ function StepNodeComponent({ data, selected }: NodeProps<StepFlowNode>) {
       ) : null}
       {data.kind !== 'start' ? <Handle type="target" position={Position.Left} id="in" aria-hidden="true" /> : null}
       <span className={cn('w-2 shrink-0 rounded-l-[10px]', isEnd ? (rejectedEnd ? 'bg-status-rejected-fg' : 'bg-status-success-fg') : KIND_ACCENT[data.kind])} aria-hidden="true" />
-      <div className={cn('flex min-w-0 flex-1 flex-col gap-1 px-3 py-2.5', data.kind === 'approval' && 'pr-[8.25rem]')}>
+      <div className={cn('flex min-w-0 flex-1 flex-col gap-1 px-3 py-2.5', data.kind === 'approval' && 'pr-[8.25rem]', data.kind === 'http' && 'pr-[5.25rem]')}>
         <div className="flex items-center justify-between gap-2">
           <span className={cn('inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[15px] leading-6 font-semibold', KIND_BADGE[data.kind])}>
             <Icon className="size-4" aria-hidden="true" />
@@ -106,6 +106,12 @@ function StepNodeComponent({ data, selected }: NodeProps<StepFlowNode>) {
         <>
           <Handle type="source" position={Position.Right} id="next" aria-hidden="true" />
           <Handle type="source" position={Position.Bottom} id="timedOut" aria-label="Timed out route" />
+        </>
+      ) : data.kind === 'http' ? (
+        <>
+          <Handle type="source" position={Position.Right} id="next" style={{ top: '38%' }} title="Next route" aria-hidden="true" />
+          <Handle type="source" position={Position.Right} id="failed" style={{ top: '78%' }} title="Failed route" aria-hidden="true" />
+          <span className="pointer-events-none absolute top-[78%] right-4 -translate-y-1/2 rounded-full border border-danger-border bg-danger-soft px-2.5 text-sm leading-6 font-semibold text-danger-foreground">Failed</span>
         </>
       ) : data.kind === 'branch' ? (
         <Handle type="source" position={Position.Right} id="route" aria-hidden="true" />

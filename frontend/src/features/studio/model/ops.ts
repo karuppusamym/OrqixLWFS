@@ -130,6 +130,7 @@ export function renameNodeId(def: Definition, oldId: string, newId: string): OpR
   }
   for (const n of next.nodes) {
     if (n.type === 'parallelSplit' && n.config.joinRef === oldId) n.config.joinRef = newId
+    if (n.type === 'http' && n.config.compensates === oldId) n.config.compensates = newId
   }
   if (next.stages) next.stages = next.stages.map((stage) => ({ ...stage, nodes: stage.nodes.map((id) => id === oldId ? newId : id) }))
   const positions = next.uiLayout?.positions
@@ -213,9 +214,15 @@ export function removeNode(def: Definition, id: string): Definition {
 /** Which route kind a React Flow source handle stands for. */
 export function routeForHandle(node: WorkflowNode, handle: string | null | undefined): RouteKind {
   if (node.type === 'approval') return handle === 'timedOut' ? 'timedOut' : handle === 'rejected' ? 'rejected' : 'approved'
+  if (node.type === 'http') return handle === 'failed' ? 'failed' : 'next'
   if (node.type === 'waitForMessage') return handle === 'timedOut' ? 'timedOut' : 'next'
   if (node.type === 'branch') return 'condition'
   return 'next'
+}
+
+/** The source handle used when displaying an existing route on the canvas. */
+export function sourceHandleForRoute(on: RouteKind): string {
+  return on === 'condition' || on === 'default' ? 'route' : on
 }
 
 export interface ConnectRequest {
@@ -238,6 +245,10 @@ export function canConnect(def: Definition, req: Pick<ConnectRequest, 'from' | '
   if (from.type === 'end') return { ok: false, reason: 'A Finish step ends the workflow, so it cannot lead anywhere.' }
   const others = outgoing(def, from.id).filter((t) => t.id !== req.transitionId)
   switch (from.type) {
+    case 'http':
+      if (req.on !== 'next' && req.on !== 'failed') return { ok: false, reason: 'Choose Next or Failed for a system call.' }
+      if (others.some((t) => t.on === req.on)) return { ok: false, reason: `This step already has a ${req.on === 'failed' ? 'Failed' : 'Next'} route.` }
+      break
     case 'approval':
       if (req.on !== 'approved' && req.on !== 'rejected' && !(req.on === 'timedOut' && from.config.timeoutAfter)) return { ok: false, reason: 'Choose Approved, Rejected, or a configured time limit route.' }
       if (others.some((t) => t.on === req.on)) return { ok: false, reason: `This step already has a ${req.on === 'approved' ? 'Approved' : 'Rejected'} route.` }

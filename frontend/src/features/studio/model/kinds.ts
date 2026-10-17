@@ -53,7 +53,7 @@ export const KINDS: Record<NodeKind, KindInfo> = {
     caption: 'Call a system',
     description: 'Use an approved connection to do work in another system.',
     defaultLabel: 'Call the other system',
-    routes: ['next'],
+    routes: ['next', 'failed'],
   },
   notification: {
     kind: 'notification',

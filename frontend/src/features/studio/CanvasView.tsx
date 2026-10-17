@@ -30,7 +30,7 @@ import { StepNode, type StepFlowNode, type StepNodeData } from './StepNode'
 import { countByNode } from './model/issues'
 import { nodeById } from './model/graph'
 import { computeLayout, hasPoorLayout, structureKey } from './model/layout'
-import { canConnect, routeForHandle } from './model/ops'
+import { canConnect, routeForHandle, sourceHandleForRoute } from './model/ops'
 import { nodeAriaLabel, nodeSubtitle, routeText } from './model/summary'
 import type { Definition, NodeKind, Position, RouteKind } from './model/types'
 import { KIND_VAR } from './nodeMeta'
@@ -40,7 +40,7 @@ const nodeTypes = { step: StepNode }
 const edgeTypes = { route: RouteEdge }
 
 /** Route colors come from theme tokens (src/index.css `--edge-*`), so a brand change recolors the canvas too. */
-const edgeColor = (on: RouteKind): string => `var(--edge-${on === 'timedOut' ? 'condition' : on})`
+const edgeColor = (on: RouteKind): string => `var(--edge-${on === 'timedOut' ? 'condition' : on === 'failed' ? 'rejected' : on})`
 
 export const PALETTE_MIME = 'application/x-orqix-node'
 
@@ -147,7 +147,7 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
             id: t.id,
             source: t.from,
             target: t.to,
-            sourceHandle: t.on === 'approved' ? 'approved' : t.on === 'rejected' ? 'rejected' : t.on === 'timedOut' ? 'timedOut' : t.on === 'condition' || t.on === 'default' ? 'route' : 'next',
+            sourceHandle: sourceHandleForRoute(t.on),
             targetHandle: 'in',
             type: 'route',
             data: { on: t.on, text },

@@ -260,6 +260,8 @@ export function routeSlots(def: Definition, node: WorkflowNode): RouteSlot[] {
       ]
     case 'waitForMessage':
       return [{ on: 'next', label: 'When the message arrives' }, ...(node.config.timeoutAfter ? [{ on: 'timedOut' as const, label: 'When no message arrives in time' }] : [])]
+    case 'http':
+      return [{ on: 'next', label: 'Next' }, { on: 'failed', label: 'When failed' }]
     case 'parallelSplit':
       return [...out.map((t) => ({ on: 'next' as const, transitionId: t.id, label: `After the branch to ${targetLabel(def, t.to)}` })), { on: 'next', label: 'New parallel branch' }]
     case 'branch':

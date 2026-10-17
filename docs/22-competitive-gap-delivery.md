@@ -21,6 +21,7 @@ Status: Planned, In progress, Implemented (awaiting verification), Verified loca
 | UI01 | Conditional forms and one/two-column section layouts | Verified locally | S35; reusable cross-application view assets remain UI02/PL01 |
 | UI02 | Full application UI designer and reusable views/actions | Planned | Define supported UI capabilities explicitly |
 | UI03 | Swimlanes, threaded element discussion, YAML/BPMN editing and round-trip checks | Planned | Authoring/compiler/source modes |
+| UI04 | Author HTTP failure paths through Steps/canvas and preserve explicit compensation references on rename | Closed | [S32](build/S32-known-failure-routes.md#studio-authoring-gap-closed---16-october-2026); independent Next/Failed routes, insertion, correct handle/color, 52 focused tests and one mock Edge journey with axe; static checks and mock build pass |
 | DOC06 | Workflow plain-text PDF/DOCX generation with pinned templates and authorized artifacts | Verified locally | [S29](build/S29-documents-integrations.md); bounded mapping/rendering, attachment deduplication, quotas/scanner policy; no rich template designer |
 | DOC07 | Approved direct-folder Microsoft browsing and exact version selection | Verified locally | S29; fresh document.browse plus source audience, pinned configuration and explicit requester mapping; real tenant acceptance remains AC02 |
 | DOC08 | OCR, generation template registry/versioning and attachment retention/quarantine lifecycle | Planned | Parser/storage/provider and retention contracts |

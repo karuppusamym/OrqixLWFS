@@ -16,6 +16,8 @@ import {
   renameFieldKey,
   renameHttpResult,
   renameNodeId,
+  routeForHandle,
+  sourceHandleForRoute,
   setRoute,
   syncConnectionDependencies,
 } from './ops'
@@ -102,10 +104,10 @@ describe('connection rules (isValidConnection)', () => {
     expect(canConnect(def, { from: 'notify', to: 'manager', on: 'next', transitionId: 't10' })).toMatchObject({ ok: false, reason: expect.stringContaining('loop') })
   })
 
-  it('allows one outgoing route from start, decision, call-a-system and notify', () => {
+  it('allows one Next route from start, decision, call-a-system and notify', () => {
     const def = template()
     for (const from of ['start', 'amountPolicy', 'procure', 'notify']) {
-      expect(canConnect(def, { from, to: 'rejected', on: 'next' })).toMatchObject({ ok: false, reason: expect.stringContaining('already leads') })
+      expect(canConnect(def, { from, to: 'rejected', on: 'next' })).toMatchObject({ ok: false, reason: expect.stringContaining('already') })
     }
   })
 
@@ -207,6 +209,53 @@ describe('adding, inserting and removing steps', () => {
 })
 
 describe('Steps tab route selection', () => {
+  it('keeps HTTP success and failure connections independent when adding, replacing or removing a failure route', () => {
+    const def = template()
+    const call = def.nodes.find(n => n.id === 'procure')!
+    const next = def.transitions.find(t => t.from === call.id && t.on === 'next')!
+    expect(routeForHandle(call, 'failed')).toBe('failed')
+    expect(sourceHandleForRoute('failed')).toBe('failed')
+    expect(sourceHandleForRoute('condition')).toBe('route')
+    const added = setRoute(def, call.id, 'failed', 'rejected')
+    expect(added.ok).toBe(true)
+    if (!added.ok) return
+    expect(added.def.transitions.find(t => t.id === next.id)).toEqual(next)
+    expect(canConnect(added.def, { from: call.id, to: 'fulfilled', on: 'failed' }).ok).toBe(false)
+    expect(canConnect(added.def, { from: call.id, to: 'fulfilled', on: 'next' }).ok).toBe(false)
+    expect(canConnect(def, { from: call.id, to: 'fulfilled', on: 'rejected' }).ok).toBe(false)
+    expect(canConnect(def, { from: 'amountPolicy', to: 'rejected', on: 'failed' }).ok).toBe(false)
+    const replaced = setRoute(added.def, call.id, 'failed', 'fulfilled')
+    expect(replaced.ok).toBe(true)
+    if (!replaced.ok) return
+    expect(replaced.def.transitions.find(t => t.from === call.id && t.on === 'failed')?.to).toBe('fulfilled')
+    const removed = setRoute(replaced.def, call.id, 'failed', null)
+    expect(removed.ok && removed.def.transitions).toEqual(def.transitions)
+    expect(def.transitions.some(t => t.on === 'failed')).toBe(false)
+  })
+
+  it('inserts work on the failure path while retaining success and its original failure destination', () => {
+    const initial = setRoute(template(), 'procure', 'failed', 'rejected')
+    expect(initial.ok).toBe(true)
+    if (!initial.ok) return
+    const inserted = addNodeAfter(initial.def, 'procure', 'notification', { on: 'failed' })
+    expect(inserted.ok).toBe(true)
+    if (!inserted.ok) return
+    expect(inserted.def.transitions.find(t => t.from === 'procure' && t.on === 'failed')?.to).toBe(inserted.id)
+    expect(inserted.def.transitions.find(t => t.from === inserted.id && t.on === 'next')?.to).toBe('rejected')
+    expect(inserted.def.transitions.find(t => t.from === 'procure' && t.on === 'next')).toEqual(initial.def.transitions.find(t => t.from === 'procure' && t.on === 'next'))
+  })
+
+  it('renames an explicitly compensating call reference with its source step', () => {
+    const def = template()
+    const added = addNode(def, 'http')
+    added.def.nodes.find(n => n.id === added.id)!.config.compensates = 'procure'
+    const renamed = renameNodeId(added.def, 'procure', 'placeOrder')
+    expect(renamed.ok).toBe(true)
+    if (!renamed.ok) return
+    expect(renamed.def.nodes.find(n => n.id === added.id)?.config.compensates).toBe('placeOrder')
+    expect(added.def.nodes.find(n => n.id === added.id)?.config.compensates).toBe('procure')
+  })
+
   it('re-points, connects and disconnects a route', () => {
     const def = template()
     const repoint = setRoute(def, 'manager', 'rejected', 'rejected')

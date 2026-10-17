@@ -22,6 +22,25 @@ async function openSteps(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe('studio (Steps tab, inspector, autosave, check, conflicts)', () => {
+  it('authors an optional HTTP failure route through the keyboard editor and retains it after reload', async () => {
+    signInAs('dana.designer')
+    const user = userEvent.setup()
+    const first = await renderAppReady(EDIT)
+    await openSteps(user)
+    const call = within(screen.getByTestId('step-row-procure'))
+    expect(call.getByLabelText('When failed')).toHaveValue('')
+    const next = (call.getByLabelText('Next') as HTMLSelectElement).value
+    await user.selectOptions(call.getByLabelText('When failed'), 'rejected')
+    await waitFor(() => expect(screen.getByTestId('save-state')).toHaveTextContent('Saved'))
+    await waitFor(() => expect(db.workflows.get(PURCHASE_WORKFLOW_ID)!.drafts.at(-1)!.definition.transitions).toEqual(expect.arrayContaining([expect.objectContaining({ from: 'procure', to: 'rejected', on: 'failed' })])))
+    expect(call.getByLabelText('Next')).toHaveValue(next)
+    first.unmount()
+    await renderAppReady(EDIT)
+    await user.click(await screen.findByRole('tab', { name: 'Steps' }))
+    expect(within(screen.getByTestId('step-row-procure')).getByLabelText('When failed')).toHaveValue('rejected')
+    expect(within(screen.getByTestId('step-row-procure')).getByLabelText('Next')).toHaveValue(next)
+  })
+
   it('commits and autosaves step notes before checking the exact revision', async () => {
     signInAs('dana.designer')
     const user = userEvent.setup()

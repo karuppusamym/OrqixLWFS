@@ -36,6 +36,7 @@ export function routeText(def: Definition, t: Transition, lookup?: ConnectionLoo
 export function routeSlotLabel(def: Definition, t: Transition | undefined, on: Transition['on'], lookup?: ConnectionLookup): string {
   if (on === 'approved') return 'When approved'
   if (on === 'rejected') return 'When rejected'
+  if (on === 'failed') return 'When failed'
   if (on === 'default') return 'Otherwise'
   if (on === 'condition' && t) return t.label ? `When ${t.label}` : t.condition?.fieldRef ? `When ${describeCondition(def, t.condition, lookup)}` : 'When (condition not set)'
   return ROUTE_LABEL[on]

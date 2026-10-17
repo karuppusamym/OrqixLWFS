@@ -65,6 +65,8 @@ export function StepsView({
           const slots: Array<{ on: RouteKind; transition?: Transition }> =
             node.type === 'approval'
               ? [{ on: 'approved', transition: out.find((t) => t.on === 'approved') }, { on: 'rejected', transition: out.find((t) => t.on === 'rejected') }, ...(node.config.timeoutAfter ? [{ on: 'timedOut' as const, transition: out.find((t) => t.on === 'timedOut') }] : [])]
+              : node.type === 'http'
+                ? [{ on: 'next', transition: out.find((t) => t.on === 'next') }, { on: 'failed', transition: out.find((t) => t.on === 'failed') }]
               : node.type === 'waitForMessage'
                 ? [{ on: 'next' as const, transition: out.find((t) => t.on === 'next') }, ...(node.config.timeoutAfter ? [{ on: 'timedOut' as const, transition: out.find((t) => t.on === 'timedOut') }] : [])]
               : node.type === 'parallelSplit'
@@ -122,6 +124,7 @@ export function StepsView({
                 <p className="border-t border-border px-3 py-2 text-sm text-muted-foreground">Ends the workflow.</p>
               ) : (
                 <div className="space-y-2 border-t border-border bg-surface-muted px-3 py-3">
+                  {node.type === 'http' ? <p className="text-xs text-muted-foreground">Failed is optional and handles supported, confirmed HTTP failures. Unknown outcomes and exhausted retries still need operator attention.</p> : null}
                   {slots.map((slot) => {
                     const id = `route-${node.id}-${slot.transition?.id ?? slot.on}`
                     const label = routeSlotLabel(def, slot.transition, slot.on)

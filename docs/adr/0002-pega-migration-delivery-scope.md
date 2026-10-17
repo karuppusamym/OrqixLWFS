@@ -4,7 +4,7 @@ Status: **Accepted**. Date: 16 October 2026. Closes the current release's review
 
 ## Decision
 
-17 October amendment: the user requested an automatic Pega conversion path. [S46](../build/S46-pega-xpdl.md) adds a bounded XPDL 2.0 flow-export adapter alongside this reviewed archive offering. This does not interpret arbitrary native RAP rule pages or certify a Pega release. MIG11 and AC01 retain those boundaries; MIG10's reviewed reconstruction evidence is unchanged.
+17 October amendment: the user requested an automatic Pega conversion path. [S50](../build/S50-pega-xpdl.md) adds a bounded XPDL 2.0 flow-export adapter alongside this reviewed archive offering. This does not interpret arbitrary native RAP rule pages or certify a Pega release. MIG11 and AC01 retain those boundaries; MIG10's reviewed reconstruction evidence is unchanged.
 
 The current supported offering is **Pega archive assessment and reviewed reconstruction into an Orqix workflow**. Engineering delivery and synthetic target acceptance are complete. Native Pega rule conversion is a separate future implementation item, MIG11. Customer source qualification and cutover acceptance remain AC01/EXT01.
 

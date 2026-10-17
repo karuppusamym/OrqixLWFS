@@ -1,4 +1,4 @@
-# S46 - Automatic conversion of bounded Pega XPDL flow exports
+# S50 - Automatic conversion of bounded Pega XPDL flow exports
 
 This adds an automatic flow-export path alongside the existing Pega archive assessment and reviewed reconstruction. It does **not** implement native RAP rule-page conversion or close MIG11/customer source qualification.
 
@@ -16,7 +16,7 @@ Known textual documentation/export metadata and selected diagram graphics/schema
 
 Every parsed child and attribute is checked against a context-specific allowlist. Unknown or foreign extensions, scripts/tools, subflows, arbitrary rule pages, computed performers, deadlines, data declarations, triggered events, unsupported routing and ambiguous IDs/singletons/defaults block conversion with source paths and reasons. No source code or general Pega expression is executed. Unsupported condition expressions are refused by the existing bounded parser.
 
-Source bytes and SHA-256 remain those of the original XPDL, not the intermediate BPMN. Source IDs and paths link report findings and target source maps. Adapter identity is `pega-xpdl-0.1`; source version is explicitly `XPDL 2.0`, not a claimed Pega runtime version. Draft creation audit records `pega-xpdl-import`, distinct from manual mapping imports. Workspace permissions, exact-request replay/conflict behavior, compiler gate and migration publication review remain in force. V33 adds the new stored source-format value without changing existing jobs.
+Source bytes and SHA-256 remain those of the original XPDL, not the intermediate BPMN. Source IDs and paths link report findings and target source maps. Adapter identity is `pega-xpdl-0.1`; source version is explicitly `XPDL 2.0`, not a claimed Pega runtime version. Draft creation audit records `pega-xpdl-import`, distinct from manual mapping imports. Workspace permissions, exact-request replay/conflict behavior, compiler gate and migration publication review remain in force. V48 adds the new stored source-format value without changing existing jobs.
 
 ## Acceptance boundaries
 

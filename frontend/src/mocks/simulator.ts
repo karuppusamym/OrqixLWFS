@@ -307,6 +307,7 @@ class Run {
 
   private step(node: WorkflowNode): Transition | null {
     if ((node.type as string) === 'waitForMessage') return this.waitForMessage(node)
+    if ((node.type as string) === 'externalTask') return this.externalTask(node)
     switch (node.type) {
       case 'start': {
         const t = this.next(node, 'next')
@@ -683,6 +684,22 @@ class Run {
 
   // -------------------------------------------------------------------------------------------- message wait
 
+  /** A worker is not simulated: the test settings may give its result, otherwise declared fields get sample values. */
+  private externalTask(n: WorkflowNode): Transition | null {
+    const given = ((this.scenario as { workers?: Record<string, { result?: Record<string, unknown> }> }).workers ?? {})[n.id]?.result
+    const out: Record<string, unknown> = {}
+    for (const field of (n.config.result ?? []) as Array<{ name: string; type: string }>) {
+      const supplied = given?.[field.name]
+      out[field.name] = supplied !== undefined && supplied !== null ? supplied
+        : field.type === 'number' || field.type === 'integer' ? 1 : field.type === 'boolean' ? false : field.type === 'date' ? '2026-01-15' : `sample-${field.name}`
+    }
+    const topic = String(n.config.topic ?? '')
+    const t = this.next(n, 'next')
+    this.steps.set(n.id, out)
+    this.add(n, `${quote(n.label)}: a worker for the topic ${quote(topic)} takes the job and returns its result. This test calls no worker; the result ${given ? 'comes from the test settings' : 'uses sample values'}.`, { topic, result: { ...out } as Json }, out, t)
+    return t
+  }
+
   private waitForMessage(n: WorkflowNode): Transition | null {
     let choice = this.scenario.messages?.[n.id] ?? 'arrives'
     if (choice !== 'arrives' && choice !== 'timeout') throw new ScenarioError(`messages.${n.id} must be arrives or timeout`)
@@ -1018,6 +1035,7 @@ class Run {
       ['calls', 'http'],
       ['children', 'startWorkflow'],
       ['messages', 'waitForMessage'],
+      ['workers' as keyof SimulationScenario, 'externalTask'],
     ]
     for (const [group, kind] of groups) {
       for (const id of Object.keys((this.scenario[group] as Record<string, unknown> | undefined) ?? {})) {

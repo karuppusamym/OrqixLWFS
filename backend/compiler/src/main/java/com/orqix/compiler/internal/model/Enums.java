@@ -22,6 +22,7 @@ public final class Enums {
         WAIT("wait", "Wait"),
         START_WORKFLOW("startWorkflow", "Start another workflow"),
         WAIT_FOR_MESSAGE("waitForMessage", "Wait for a message"),
+        EXTERNAL_TASK("externalTask", "Work by an external worker"),
         END("end", "Finish");
 
         private final String json;

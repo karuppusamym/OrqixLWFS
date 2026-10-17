@@ -182,6 +182,19 @@ export function validateDefinition(def: Definition, ctx: ValidationContext): Iss
         })
         break
       }
+      case 'externalTask': {
+        if (!/^[a-z][a-z0-9-]{0,62}[a-z0-9]$/.test(String(c.topic ?? '')))
+          issues.push(issue('WF_SCHEMA_INVALID', 'blocker', `"${n.label}" needs a topic such as address-check (lowercase letters and digits joined with dashes).`, nodePath(n, '/config/topic'), n.id))
+        const seen = new Set<string>()
+        ;(Array.isArray(c.result) ? (c.result as Array<{ name?: string }>) : []).forEach((f, i) => {
+          if (f.name && seen.has(f.name)) issues.push(issue('WF_EXTERNAL_RESULT', 'blocker', `"${n.label}" declares the result value "${f.name}" more than once.`, nodePath(n, `/config/result/${i}/name`), n.id))
+          if (f.name) seen.add(f.name)
+        })
+        for (const [name, ref] of Object.entries((c.inputMapping ?? {}) as Record<string, string>)) {
+          if (!ref) issues.push(issue('WF_EXTERNAL_INPUT_UNKNOWN', 'blocker', `"${n.label}" sends "${name}" to the worker but no value is chosen for it.`, nodePath(n, `/config/inputMapping/${name}`), n.id))
+        }
+        break
+      }
       case 'startWorkflow': {
         const each = c.forEach as { itemsRef?: string } | undefined
         if (each?.itemsRef?.startsWith('/input/')) {

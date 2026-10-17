@@ -22,6 +22,7 @@ public final class Rules {
         TimerRules.check(rc);
         MessageRules.check(rc);
         DocumentRules.check(rc);
+        ExternalRules.check(rc);
         TypeRules.check(rc);
         BindingRules.check(rc);
         ChildRules.check(rc);

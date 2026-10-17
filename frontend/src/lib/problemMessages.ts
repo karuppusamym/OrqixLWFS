@@ -79,6 +79,8 @@ const TABLE = {
   RUN_NOT_ACTIVE: { behavior: 'operator-message', message: 'This request already finished or was cancelled. Reload to see its current state.' },
   RUN_BUSY: { behavior: 'operator-message', message: 'The request is being processed right now. Wait a moment, then try again.', retryable: true },
   RUN_SUSPENDED: { behavior: 'operator-message', message: 'This request is suspended by an operator. It can continue after it is resumed.' },
+  JOB_LEASE_LOST: { behavior: 'message', message: 'A worker job is no longer held by that worker.' },
+  JOB_NOT_OPEN: { behavior: 'message', message: 'That worker job has already ended.' },
   RUN_NOT_MIGRATABLE: { behavior: 'operator-message', message: 'This request cannot move to that release. The reasons are listed in the dialog.' },
   RUN_NOT_SUSPENDED: { behavior: 'operator-message', message: 'This request is not suspended.' },
   RUN_NOT_SUSPENDABLE: { behavior: 'operator-message', message: 'This request cannot be suspended in its current state.' },

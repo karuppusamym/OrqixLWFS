@@ -113,6 +113,7 @@ Written in the command transaction. `metadata` is a whitelist per action — nev
 | `task.decided` | `taskId`, `nodeId`, `action`, `policyFlags` |
 | `run.cancelled`, `run.retry-requested`, `run.suspended`, `run.resumed` | `effectId` (retry) |
 | `run.migrated` | `fromRelease`, `toRelease` (version numbers) |
+| `externaljob.completed`, `externaljob.failed` | `topic`, `nodeId`, `attempt` |
 | `task.input-corrected` | `taskId`, `nodeId`, `fields` (count; values stay in permission-scoped run history) |
 | `effect.reconciled` | `effectId`, `resolution`, `remoteReference` |
 | `connection.version.created` | `key`, `version`, `definitionHash` |

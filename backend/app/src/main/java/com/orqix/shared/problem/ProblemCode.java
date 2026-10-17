@@ -29,6 +29,8 @@ public enum ProblemCode {
     RUN_NOT_SUSPENDED(409, "The run is not suspended"),
     RUN_NOT_SUSPENDABLE(409, "The run cannot be suspended in its current state"),
     RUN_NOT_MIGRATABLE(409, "The run cannot move to that release"),
+    JOB_LEASE_LOST(409, "You no longer hold this job"),
+    JOB_NOT_OPEN(409, "The job has ended"),
     EFFECT_NOT_RECONCILED(409, "The outcome of the external call must be reconciled first"),
     EFFECT_STATE_CONFLICT(409, "The external call is not in a state that allows this"),
     GROUP_REVISION_CONFLICT(409, "The group changed since you loaded it"),

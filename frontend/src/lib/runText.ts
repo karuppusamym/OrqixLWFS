@@ -40,6 +40,7 @@ export function stepOwnerText(step: CurrentStep, lifecycle?: Run['lifecycle']): 
   if (step.kind === 'wait' && step.messageName) return `Waiting for message ${step.messageName}${step.dueAt ? ` (gives up ${formatUtcDateTime(step.dueAt)})` : ''}: ${step.label}`
   if (step.kind === 'wait') return step.dueAt ? `Waiting until ${formatUtcDateTime(step.dueAt)}: ${step.label}` : `Waiting until the timer finishes: ${step.label}`
   if (step.kind === 'child') return `Waiting for the child request: ${step.label}`
+  if (step.kind === 'external') return `Waiting for an outside worker: ${step.label}`
   if (step.assignee) return `${step.assignee.displayName} is working on: ${step.label}`
   const group = step.candidateGroup ? humanize(step.candidateGroup) : 'an approver'
   return `Waiting for ${group}: ${step.label}`

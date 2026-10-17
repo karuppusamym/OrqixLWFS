@@ -86,6 +86,23 @@ public sealed interface Node {
         @Override public NodeKind kind() { return NodeKind.GENERATE_DOCUMENT; }
     }
 
+    /**
+     * Work done by an external worker (S43): {@code topic} names the kind of job, {@code inputMapping} is what the worker
+     * receives (name to field reference, sorted by name) and {@code result} declares what it must return.
+     */
+    record ExternalTask(int index, String id, String label, String topic, Map<String, String> inputMapping,
+                        java.util.List<PayloadField> result, int leaseSeconds) implements Node {
+        @Override
+        public NodeKind kind() {
+            return NodeKind.EXTERNAL_TASK;
+        }
+
+        /** @return the declared result field with this name, or null */
+        public PayloadField field(String name) {
+            return result.stream().filter(f -> f.name().equals(name)).findFirst().orElse(null);
+        }
+    }
+
     /** Notify someone. */
     record Notification(int index, String id, String label, String channel, String recipient, String message)
             implements Node {

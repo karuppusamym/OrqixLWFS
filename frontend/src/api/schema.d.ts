@@ -979,6 +979,97 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/external-jobs/fetch-and-lock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Lease available jobs of the topics a worker serves
+         * @description Returns up to `maxJobs` jobs and leases each to `workerId` for at most the step's lease time. Each lease has a `fence` that grows with every lock; present it on every later call. Jobs of suspended or ended requests are not offered. High-volume protocol call: not audited individually.
+         */
+        post: operations["fetchExternalJobs"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/external-jobs/{jobId}/extend-lock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                jobId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Keep a lease while the work continues
+         * @description 409 JOB_LEASE_LOST when the fence or worker no longer matches. High-volume protocol call, so it is not audited individually.
+         */
+        post: operations["extendExternalJobLock"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/external-jobs/{jobId}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                jobId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Report the result of a leased job
+         * @description The result must be exactly the fields the step declares, with their types (422 otherwise). The request then continues. 409 JOB_LEASE_LOST when the lease or fence is no longer the caller's; 409 JOB_NOT_OPEN when the job or request has ended; 409 RUN_SUSPENDED while the request is suspended.
+         */
+        post: operations["completeExternalJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/external-jobs/{jobId}/fail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                jobId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Report that a leased job could not be done
+         * @description A retryable failure returns the job to the queue after `retryAfterSeconds` (default: the workflow's retry delay) until the attempt limit; otherwise the request needs attention and an operator decides.
+         */
+        post: operations["failExternalJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/runs/{runId}/retry": {
         parameters: {
             query?: never;
@@ -2063,7 +2154,7 @@ export interface components {
             hasMore: false;
         };
         /** @enum {string} */
-        Permission: "workflow.read" | "workflow.edit" | "workflow.publish" | "workflow.export" | "workflow.start" | "run.read" | "run.read-data" | "run.operate" | "task.act" | "connection.read" | "connection.manage" | "workspace.manage-access" | "audit.read" | "message.send" | "document.browse";
+        Permission: "workflow.read" | "workflow.edit" | "workflow.publish" | "workflow.export" | "workflow.start" | "run.read" | "run.read-data" | "run.operate" | "task.act" | "connection.read" | "connection.manage" | "workspace.manage-access" | "audit.read" | "message.send" | "document.browse" | "job.work";
         /** @enum {string} */
         WorkspaceRole: "WORKSPACE_ADMIN" | "WORKFLOW_DESIGNER" | "PUBLISHER" | "OPERATOR" | "VIEWER" | "APPROVER";
         /** @description RFC 9457 problem details with Orqix extension members. */
@@ -2078,7 +2169,7 @@ export interface components {
             detail?: string;
             instance?: string;
             /** @enum {string} */
-            code: "MALFORMED_REQUEST" | "IDEMPOTENCY_KEY_REQUIRED" | "INVALID_CURSOR" | "UNAUTHENTICATED" | "FORBIDDEN" | "CSRF_INVALID" | "SELF_APPROVAL_DENIED" | "SEPARATION_OF_DUTIES" | "NOT_ELIGIBLE" | "NOT_FOUND" | "IDEMPOTENCY_KEY_REUSED" | "DUPLICATE_KEY" | "WORKFLOW_VERSION_CONFLICT" | "RELEASE_NOT_ACTIVE" | "TASK_VERSION_CONFLICT" | "TASK_ALREADY_CLAIMED" | "TASK_NOT_CLAIMED_BY_CALLER" | "TASK_NOT_OPEN" | "RUN_NOT_ACTIVE" | "RUN_BUSY" | "RUN_NOT_RECOVERABLE" | "RUN_SUSPENDED" | "RUN_NOT_SUSPENDED" | "RUN_NOT_SUSPENDABLE" | "RUN_NOT_MIGRATABLE" | "EFFECT_NOT_RECONCILED" | "EFFECT_STATE_CONFLICT" | "GROUP_REVISION_CONFLICT" | "STALE_REVISION" | "PAYLOAD_TOO_LARGE" | "VALIDATION_FAILED" | "WORKFLOW_INVALID" | "WARNINGS_NOT_ACKNOWLEDGED" | "NO_ACTIVE_RELEASE" | "REASON_REQUIRED" | "CONNECTION_NOT_BOUND" | "EGRESS_NOT_ALLOWED" | "OPERATION_NOT_TESTABLE" | "PRECONDITION_REQUIRED" | "QUOTA_EXCEEDED" | "RATE_LIMITED" | "DEPENDENCY_UNAVAILABLE" | "AI_NOT_CONFIGURED" | "AI_MODEL_NOT_ALLOWED" | "AI_OUTPUT_INVALID" | "AI_PROVIDER_UNAVAILABLE" | "AI_BUDGET_EXCEEDED" | "SOURCE_INVALID" | "MIGRATION_BLOCKED" | "ATTACHMENT_BLOCKED" | "ATTACHMENT_LIMIT_REACHED" | "INTERNAL_ERROR";
+            code: "MALFORMED_REQUEST" | "IDEMPOTENCY_KEY_REQUIRED" | "INVALID_CURSOR" | "UNAUTHENTICATED" | "FORBIDDEN" | "CSRF_INVALID" | "SELF_APPROVAL_DENIED" | "SEPARATION_OF_DUTIES" | "NOT_ELIGIBLE" | "NOT_FOUND" | "IDEMPOTENCY_KEY_REUSED" | "DUPLICATE_KEY" | "WORKFLOW_VERSION_CONFLICT" | "RELEASE_NOT_ACTIVE" | "TASK_VERSION_CONFLICT" | "TASK_ALREADY_CLAIMED" | "TASK_NOT_CLAIMED_BY_CALLER" | "TASK_NOT_OPEN" | "RUN_NOT_ACTIVE" | "RUN_BUSY" | "RUN_NOT_RECOVERABLE" | "RUN_SUSPENDED" | "RUN_NOT_SUSPENDED" | "RUN_NOT_SUSPENDABLE" | "RUN_NOT_MIGRATABLE" | "JOB_LEASE_LOST" | "JOB_NOT_OPEN" | "EFFECT_NOT_RECONCILED" | "EFFECT_STATE_CONFLICT" | "GROUP_REVISION_CONFLICT" | "STALE_REVISION" | "PAYLOAD_TOO_LARGE" | "VALIDATION_FAILED" | "WORKFLOW_INVALID" | "WARNINGS_NOT_ACKNOWLEDGED" | "NO_ACTIVE_RELEASE" | "REASON_REQUIRED" | "CONNECTION_NOT_BOUND" | "EGRESS_NOT_ALLOWED" | "OPERATION_NOT_TESTABLE" | "PRECONDITION_REQUIRED" | "QUOTA_EXCEEDED" | "RATE_LIMITED" | "DEPENDENCY_UNAVAILABLE" | "AI_NOT_CONFIGURED" | "AI_MODEL_NOT_ALLOWED" | "AI_OUTPUT_INVALID" | "AI_PROVIDER_UNAVAILABLE" | "AI_BUDGET_EXCEEDED" | "SOURCE_INVALID" | "MIGRATION_BLOCKED" | "ATTACHMENT_BLOCKED" | "ATTACHMENT_LIMIT_REACHED" | "INTERNAL_ERROR";
             correlationId: string;
             fieldErrors?: components["schemas"]["FieldError"][];
             issues?: components["schemas"]["ValidationIssue"][];
@@ -2507,7 +2598,7 @@ export interface components {
             nodeId: string;
             label: string;
             /** @enum {string} */
-            kind: "approval" | "http" | "wait" | "child" | "generateDocument";
+            kind: "approval" | "http" | "wait" | "child" | "generateDocument" | "external";
             /** @description Set while the step (kind wait) waits for this message (docs/build/S16). */
             messageName?: string | null;
             since: components["schemas"]["Timestamp"];
@@ -2761,7 +2852,7 @@ export interface components {
             nodeId: string;
             label: string;
             /** @enum {string} */
-            kind: "approval" | "http" | "wait" | "child" | "generateDocument";
+            kind: "approval" | "http" | "wait" | "child" | "generateDocument" | "external";
             /** @enum {string} */
             status: "waiting" | "running" | "needsAttention";
             since: components["schemas"]["Timestamp"];
@@ -2902,6 +2993,51 @@ export interface components {
         CancelRunRequest: {
             reason: string;
             expectedVersion: number;
+        };
+        ExternalJobFetchRequest: {
+            workerId: string;
+            topics: string[];
+            maxJobs?: number;
+            leaseSeconds?: number;
+        };
+        ExternalJob: {
+            id: components["schemas"]["Uuid"];
+            topic: string;
+            /** @description Only the values the step maps */
+            input: {
+                [key: string]: unknown;
+            };
+            fence: number;
+            leaseExpiresAt: components["schemas"]["Timestamp"];
+            attempt: number;
+            maxAttempts: number;
+            runReference: string;
+            nodeId: string;
+        };
+        ExternalJobBatch: {
+            items: components["schemas"]["ExternalJob"][];
+        };
+        ExternalJobExtendRequest: {
+            workerId: string;
+            fence: number;
+            leaseSeconds?: number;
+        };
+        ExternalJobExtendResult: {
+            leaseExpiresAt: components["schemas"]["Timestamp"];
+        };
+        ExternalJobCompleteRequest: {
+            workerId: string;
+            fence: number;
+            result: {
+                [key: string]: string | number | boolean;
+            };
+        };
+        ExternalJobFailRequest: {
+            workerId: string;
+            fence: number;
+            message: string;
+            retryable: boolean;
+            retryAfterSeconds?: number;
         };
         CorrectTaskInputRequest: {
             expectedVersion: number;
@@ -3166,7 +3302,7 @@ export interface components {
         PermissionGrant: {
             id: components["schemas"]["Uuid"];
             /** @enum {string} */
-            permission: "workflow.start" | "connection.manage" | "message.send" | "document.browse";
+            permission: "workflow.start" | "connection.manage" | "message.send" | "document.browse" | "job.work";
             workflowId: components["schemas"]["Uuid"] | null;
             principal: components["schemas"]["Principal"];
             createdAt: components["schemas"]["Timestamp"];
@@ -3875,6 +4011,25 @@ export interface components {
                 };
             };
         } & components["schemas"]["nodeBase"];
+        externalTaskNode: {
+            id?: unknown;
+            label?: unknown;
+            /** @constant */
+            type?: "externalTask";
+            /** @description Work done by an external worker that takes the job over the worker API (docs/build/S43). The request waits until a worker completes the job with the declared result; a worker that disappears loses its lease and the job is offered again, up to the workflow's attempt limit, then the request needs attention. */
+            config?: {
+                /** @description The kind of job. Workers ask for the topics they serve. */
+                topic: components["schemas"]["key"];
+                /** @description Request or earlier-step values sent to the worker, by name. */
+                inputMapping: {
+                    [key: string]: components["schemas"]["fieldRef"];
+                };
+                /** @description Values the worker must return. Each becomes an output of this step; a field that is not required may be missing. */
+                result: components["schemas"]["messagePayloadField"][];
+                /** @description How long a worker holds a job before it must extend the lease or lose it. */
+                leaseSeconds?: number;
+            };
+        } & components["schemas"]["nodeBase"];
         transition: {
             id: components["schemas"]["id"];
             from: components["schemas"]["id"];
@@ -3959,7 +4114,7 @@ export interface components {
             };
             outputSchema: components["schemas"]["formSchema"];
             triggers: ("manual" | "api")[];
-            nodes: (components["schemas"]["startNode"] | components["schemas"]["approvalNode"] | components["schemas"]["decisionNode"] | components["schemas"]["branchNode"] | components["schemas"]["httpNode"] | components["schemas"]["notificationNode"] | components["schemas"]["parallelSplitNode"] | components["schemas"]["parallelJoinNode"] | components["schemas"]["waitNode"] | components["schemas"]["startWorkflowNode"] | components["schemas"]["waitForMessageNode"] | components["schemas"]["endNode"] | components["schemas"]["generateDocumentNode"])[];
+            nodes: (components["schemas"]["startNode"] | components["schemas"]["approvalNode"] | components["schemas"]["decisionNode"] | components["schemas"]["branchNode"] | components["schemas"]["httpNode"] | components["schemas"]["notificationNode"] | components["schemas"]["parallelSplitNode"] | components["schemas"]["parallelJoinNode"] | components["schemas"]["waitNode"] | components["schemas"]["startWorkflowNode"] | components["schemas"]["waitForMessageNode"] | components["schemas"]["endNode"] | components["schemas"]["generateDocumentNode"] | components["schemas"]["externalTaskNode"])[];
             transitions: components["schemas"]["transition"][];
             decisions: components["schemas"]["decisionTable"][];
             /** @description maxAttempts/retryDelaySeconds apply only to external service work (http nodes), never to human decisions. */
@@ -4350,6 +4505,25 @@ export interface components {
                 } & unknown;
                 /** @description A calendar date YYYY-MM-DD. The compiler also rejects dates that do not exist (WF_FORM_INVALID). */
                 calendarDate: string;
+                externalTaskNode: {
+                    id?: unknown;
+                    label?: unknown;
+                    /** @constant */
+                    type?: "externalTask";
+                    /** @description Work done by an external worker that takes the job over the worker API (docs/build/S43). The request waits until a worker completes the job with the declared result; a worker that disappears loses its lease and the job is offered again, up to the workflow's attempt limit, then the request needs attention. */
+                    config?: {
+                        /** @description The kind of job. Workers ask for the topics they serve. */
+                        topic: components["schemas"]["key"];
+                        /** @description Request or earlier-step values sent to the worker, by name. */
+                        inputMapping: {
+                            [key: string]: components["schemas"]["fieldRef"];
+                        };
+                        /** @description Values the worker must return. Each becomes an output of this step; a field that is not required may be missing. */
+                        result: components["schemas"]["messagePayloadField"][];
+                        /** @description How long a worker holds a job before it must extend the lease or lose it. */
+                        leaseSeconds?: number;
+                    };
+                } & components["schemas"]["nodeBase"];
                 arrayFormField: {
                     /** @constant */
                     type: "array";
@@ -6527,6 +6701,131 @@ export interface operations {
             409: components["responses"]["Conflict"];
         };
     };
+    fetchExternalJobs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExternalJobFetchRequest"];
+            };
+        };
+        responses: {
+            /** @description Leased jobs (possibly none) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalJobBatch"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    extendExternalJobLock: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                jobId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExternalJobExtendRequest"];
+            };
+        };
+        responses: {
+            /** @description New lease end */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalJobExtendResult"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    completeExternalJob: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                jobId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExternalJobCompleteRequest"];
+            };
+        };
+        responses: {
+            /** @description Completed (or replay) */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    failExternalJob: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                jobId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExternalJobFailRequest"];
+            };
+        };
+        responses: {
+            /** @description Recorded (or replay) */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
     retryRun: {
         parameters: {
             query?: never;
@@ -7311,8 +7610,8 @@ export interface operations {
             content: {
                 "application/json": {
                     /** @enum {string} */
-                    permission: "workflow.start" | "connection.manage" | "message.send" | "document.browse";
-                    /** @description Restrict workflow.start to one workflow; omit for workspace-wide (connection.manage and message.send are always workspace-wide). */
+                    permission: "workflow.start" | "connection.manage" | "message.send" | "document.browse" | "job.work";
+                    /** @description Restrict workflow.start to one workflow; omit for workspace-wide (connection.manage, message.send, document.browse and job.work are always workspace-wide). */
                     workflowId?: components["schemas"]["Uuid"] | null;
                     principal: components["schemas"]["PrincipalRef"];
                 };

@@ -81,12 +81,15 @@ export function eventTone(event: Pick<RunEvent, 'type' | 'data'>): EventTone {
     case 'RUN_CANCELLED':
       return 'cancelled'
     case 'RUN_SUSPENDED':
+    case 'EXTERNAL_JOB_PUBLISHED':
+    case 'EXTERNAL_JOB_RETRY_SCHEDULED':
       return 'waiting'
     case 'EFFECT_FAILED':
     case 'EFFECT_UNKNOWN':
     case 'STAGE_OVERDUE':
     case 'RUN_NEEDS_ATTENTION':
     case 'CHILD_NEEDS_ATTENTION':
+    case 'EXTERNAL_JOB_FAILED':
       return 'danger'
     default:
       return 'neutral'
@@ -151,6 +154,18 @@ export function describeEvent(event: RunEvent, ctx: EventContext): string {
       return `Waiting for ${groupName(str(event.data.candidateGroup), ctx)}: ${label}`
     case 'TASK_TIMED_OUT':
       return `The time limit for ${label} passed; the approval was cancelled`
+    case 'EXTERNAL_JOB_PUBLISHED':
+      return `${label}: waiting for an outside worker (${str(event.data.topic) ?? 'job'})`
+    case 'EXTERNAL_JOB_COMPLETED':
+      return `An outside worker completed ${label}`
+    case 'EXTERNAL_JOB_RETRY_SCHEDULED': {
+      const message = str(event.data.message)
+      return `${label}: the worker did not finish, so the job is offered again${message ? ` (${message})` : ''}`
+    }
+    case 'EXTERNAL_JOB_FAILED': {
+      const message = str(event.data.message)
+      return `The outside worker could not complete ${label}${message ? `: ${message}` : ''}`
+    }
     case 'WAIT_STARTED': {
       const message = str(event.data.message)
       if (message) return `${label}: waiting for the message ${message}`

@@ -59,7 +59,8 @@ class SecurityMatrixTest extends RuntimeTestBase {
                 assertThat(operation.has("x-orqix-permission")).as(operationId + " declares x-orqix-permission").isTrue();
                 if (!List.of("get", "head").contains(op.getKey())) {
                     assertThat(operation.has("x-orqix-audit") || "markNotificationRead".equals(operationId)
-                            || "validateDraft".equals(operationId) || "evaluateDecision".equals(operationId))
+                            || "validateDraft".equals(operationId) || "evaluateDecision".equals(operationId)
+                            || "fetchExternalJobs".equals(operationId) || "extendExternalJobLock".equals(operationId))
                             .as(operationId + " declares x-orqix-audit").isTrue();
                 }
                 String template = path.getKey();
@@ -270,6 +271,10 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "setActiveRelease" -> Map.of("releaseId", ids.get("releaseId"), "expectedVersion", 1);
             case "startRun" -> Map.of("workflowId", ids.get("workflowId"), "input", input(BigDecimal.ONE));
             case "sendMessage" -> Map.of("name", "payment-received", "correlationKey", "SO-FOREIGN");
+            case "fetchExternalJobs" -> Map.of("workerId", "w1", "topics", List.of("any-topic"));
+            case "extendExternalJobLock" -> Map.of("workerId", "w1", "fence", 1);
+            case "completeExternalJob" -> Map.of("workerId", "w1", "fence", 1, "result", Map.of());
+            case "failExternalJob" -> Map.of("workerId", "w1", "fence", 1, "message", "Foreign attempt", "retryable", true);
             case "correctTaskInput" -> Map.of("expectedVersion", 1, "reason", "Foreign attempt", "changes", Map.of("amount", 1));
             case "migrateRun" -> Map.of("targetReleaseId", UUID.randomUUID().toString(), "reason", "Foreign attempt",
                     "expectedVersion", 1);

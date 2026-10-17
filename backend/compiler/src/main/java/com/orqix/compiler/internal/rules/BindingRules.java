@@ -158,6 +158,7 @@ final class BindingRules {
         switch (node) {
             case Node.Http h -> refs.addAll(h.inputMapping().values());
             case Node.GenerateDocument g -> refs.addAll(g.inputMapping().values());
+            case Node.ExternalTask e -> refs.addAll(e.inputMapping().values());
             case Node.StartWorkflow s -> {
                 refs.addAll(s.inputMapping().values());
                 if (s.forEach() != null) refs.add(s.forEach().itemsRef());

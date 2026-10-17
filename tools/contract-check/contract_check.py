@@ -38,7 +38,8 @@ from consistency_gates import check_consistency, fix_line_endings  # noqa: E402
 SCHEMA_FAILURE_CODES = {"WF_SCHEMA_INVALID", "WF_SCHEMA_VERSION_UNSUPPORTED"}
 HTTP_METHODS = ("get", "put", "post", "delete", "options", "head", "patch", "trace")
 AUDIT_REQUIRED_METHODS = ("post", "put", "delete")
-AUDIT_EXEMPT_OPERATIONS = {"validateDraft", "evaluateDecision", "markNotificationRead"}
+# fetchExternalJobs and extendExternalJobLock are high-volume worker protocol calls; completion and failure are audited.
+AUDIT_EXEMPT_OPERATIONS = {"validateDraft", "evaluateDecision", "markNotificationRead", "fetchExternalJobs", "extendExternalJobLock"}
 
 
 class Report:

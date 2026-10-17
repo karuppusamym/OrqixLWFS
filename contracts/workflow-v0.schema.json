@@ -187,6 +187,9 @@
           },
           {
             "$ref": "#/$defs/generateDocumentNode"
+          },
+          {
+            "$ref": "#/$defs/externalTaskNode"
           }
         ]
       }
@@ -1698,6 +1701,62 @@
       "description": "A calendar date YYYY-MM-DD. The compiler also rejects dates that do not exist (WF_FORM_INVALID).",
       "type": "string",
       "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$"
+    },
+    "externalTaskNode": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/nodeBase"
+        }
+      ],
+      "properties": {
+        "id": true,
+        "label": true,
+        "type": {
+          "const": "externalTask"
+        },
+        "config": {
+          "description": "Work done by an external worker that takes the job over the worker API (docs/build/S43). The request waits until a worker completes the job with the declared result; a worker that disappears loses its lease and the job is offered again, up to the workflow's attempt limit, then the request needs attention.",
+          "type": "object",
+          "properties": {
+            "topic": {
+              "description": "The kind of job. Workers ask for the topics they serve.",
+              "$ref": "#/$defs/key"
+            },
+            "inputMapping": {
+              "description": "Request or earlier-step values sent to the worker, by name.",
+              "type": "object",
+              "maxProperties": 10,
+              "propertyNames": {
+                "pattern": "^[A-Za-z][A-Za-z0-9_]{0,62}$"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/fieldRef"
+              }
+            },
+            "result": {
+              "description": "Values the worker must return. Each becomes an output of this step; a field that is not required may be missing.",
+              "type": "array",
+              "maxItems": 10,
+              "items": {
+                "$ref": "#/$defs/messagePayloadField"
+              }
+            },
+            "leaseSeconds": {
+              "description": "How long a worker holds a job before it must extend the lease or lose it.",
+              "type": "integer",
+              "minimum": 30,
+              "maximum": 3600
+            }
+          },
+          "required": [
+            "topic",
+            "inputMapping",
+            "result"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     },
     "arrayFormField": {
       "type": "object",

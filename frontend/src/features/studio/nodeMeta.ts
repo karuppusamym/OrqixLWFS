@@ -1,4 +1,4 @@
-import { Bell, CheckCheck, Clock, MailCheck, FileInput, GitBranch, GitFork, GitMerge, ListChecks, Plug, Workflow, UserCheck, type LucideIcon } from 'lucide-react'
+import { Bell, CheckCheck, Clock, MailCheck, FileInput, GitBranch, GitFork, GitMerge, Cpu, ListChecks, Plug, Workflow, UserCheck, type LucideIcon } from 'lucide-react'
 import type { NodeKind } from './model/types'
 
 export const KIND_ICON: Record<NodeKind, LucideIcon> = {
@@ -14,6 +14,7 @@ export const KIND_ICON: Record<NodeKind, LucideIcon> = {
   parallelJoin: GitMerge,
   wait: Clock,
   waitForMessage: MailCheck,
+  externalTask: Cpu,
   startWorkflow: Workflow,
 }
 
@@ -35,6 +36,7 @@ export const KIND_ACCENT: Record<NodeKind, string> = {
   parallelJoin: 'bg-kind-branch',
   wait: 'bg-kind-notification',
   waitForMessage: 'bg-kind-notification',
+  externalTask: 'bg-kind-http',
   startWorkflow: 'bg-kind-http',
 }
 
@@ -51,6 +53,7 @@ export const KIND_BADGE: Record<NodeKind, string> = {
   parallelJoin: 'bg-kind-branch-soft text-kind-branch',
   wait: 'bg-kind-notification-soft text-kind-notification',
   waitForMessage: 'bg-kind-notification-soft text-kind-notification',
+  externalTask: 'bg-kind-http-soft text-kind-http',
   startWorkflow: 'bg-kind-http-soft text-kind-http',
 }
 
@@ -68,5 +71,6 @@ export const KIND_VAR: Record<NodeKind, string> = {
   parallelJoin: 'var(--kind-branch)',
   wait: 'var(--kind-notification)',
   waitForMessage: 'var(--kind-notification)',
+  externalTask: 'var(--kind-http)',
   startWorkflow: 'var(--kind-http)',
 }

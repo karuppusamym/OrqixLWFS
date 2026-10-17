@@ -273,6 +273,7 @@ function finish(run: MockRun, release: MockRelease, node: WorkflowNode): void {
   for (const t of run.tasks) if (t.status === 'open') { t.status = 'cancelled'; t.version += 1 }
   run.waits = {}
   run.messageWaits = {}
+  run.externalWaits = {}
   for (const childId of Object.values(run.childWaits ?? {})) {
     const c = db.runs.get(childId)
     if (c && active(c)) cancelRun(c, userById(run.initiatorId) as MockUser, 'The request that started this one has ended.', true)
@@ -361,6 +362,9 @@ function advanceFrom(run: MockRun, nodeId: string): void {
       case 'waitForMessage':
         startMessageWait(run, node)
         return
+      case 'externalTask':
+        startExternal(run, node)
+        return
       case 'startWorkflow':
         startChild(run, node)
         return
@@ -369,6 +373,26 @@ function advanceFrom(run: MockRun, nodeId: string): void {
         return
     }
   }
+}
+
+/** A token reached a worker step: publish the job and wait. The mock has no worker API; tests complete it with completeExternalJob. */
+function startExternal(run: MockRun, node: WorkflowNode): void {
+  const topic = String(node.config.topic ?? '')
+  run.externalWaits = { ...(run.externalWaits ?? {}), [node.id]: { topic, attempt: 1 } }
+  run.lifecycle = 'waiting'
+  addEvent(run, 'EXTERNAL_JOB_PUBLISHED', { nodeId: node.id, data: { topic } })
+}
+
+/** A worker reported the declared result for the job of {@code nodeId}; the request continues (mirrors ExternalJobService.complete). */
+export function completeExternalJob(run: MockRun, nodeId: string, result: Record<string, unknown>): void {
+  const wait = run.externalWaits?.[nodeId]
+  if (!wait || !active(run) || run.suspension) return
+  delete run.externalWaits![nodeId]
+  run.steps[nodeId] = result as MockRun['steps'][string]
+  run.version += 1
+  addEvent(run, 'EXTERNAL_JOB_COMPLETED', { nodeId, data: { topic: wait.topic, attempt: wait.attempt } })
+  const next = currentRelease(run).definition.transitions.find((t) => t.from === nodeId && t.on === 'next')
+  if (next) advance(run, next.to)
 }
 
 function effectFor(run: MockRun, node: WorkflowNode): MockRun['effects'][number] {
@@ -687,6 +711,7 @@ export function cancelRun(run: MockRun, user: MockUser, reason: string, cascade 
   run.childWaits = {}
   run.waits = {}
   run.messageWaits = {}
+  run.externalWaits = {}
   const succeeded = run.effects.filter((e) => e.state === 'succeeded')
   run.lifecycle = 'cancelled'
   run.endedAt = clock.iso()
@@ -759,6 +784,9 @@ export function toRun(run: MockRun, user: MockUser): Run {
   }
   for (const [nodeId, w] of Object.entries(run.waits ?? {})) {
     steps.push({ nodeId, label: nodeById(rel.definition, nodeId)?.label ?? nodeId, kind: 'wait', since: run.updatedAt, candidateGroup: null, assignee: null, dueAt: w.dueAt })
+  }
+  for (const [nodeId, w] of Object.entries(run.externalWaits ?? {})) {
+    steps.push({ nodeId, label: nodeById(rel.definition, nodeId)?.label ?? nodeId, kind: 'external', since: run.updatedAt, candidateGroup: null, assignee: null, dueAt: null, topic: w.topic } as Run['currentSteps'][number])
   }
   for (const [nodeId, w] of Object.entries(run.messageWaits ?? {})) {
     steps.push({ nodeId, label: nodeById(rel.definition, nodeId)?.label ?? nodeId, kind: 'wait', since: run.updatedAt, candidateGroup: null, assignee: null, dueAt: w.dueAt, messageName: w.message })

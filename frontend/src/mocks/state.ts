@@ -269,6 +269,8 @@ export interface MockRun {
   childWaits?: Record<string, string>
   /** Messages this run waits for: node id -> message name, correlation key and the (shortened) time limit (S16). */
   messageWaits?: Record<string, { message: string; key: string; dueAt: string | null }>
+  /** Steps waiting for an external worker (docs/build/S43), by step id. */
+  externalWaits?: Record<string, { topic: string; attempt: number }>
   /** Case stages entered by this run (docs/build/S17). */
   stages?: Record<string, MockStageRow>
   /** Files of this run, including removed ones (metadata stays). */

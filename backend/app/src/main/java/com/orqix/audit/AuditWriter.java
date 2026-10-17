@@ -83,6 +83,8 @@ public class AuditWriter {
             Map.entry("task.decided", Set.of("taskId", "nodeId", "action", "policyFlags")),
             Map.entry("run.cancelled", Set.of()),
             Map.entry("task.input-corrected", Set.of("taskId", "nodeId", "fields")),
+            Map.entry("externaljob.completed", Set.of("topic", "nodeId", "attempt")),
+            Map.entry("externaljob.failed", Set.of("topic", "nodeId", "attempt")),
             Map.entry("run.suspended", Set.of()),
             Map.entry("run.resumed", Set.of()),
             Map.entry("run.migrated", Set.of("fromRelease", "toRelease")),

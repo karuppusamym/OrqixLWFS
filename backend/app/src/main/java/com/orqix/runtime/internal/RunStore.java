@@ -55,7 +55,7 @@ public class RunStore {
     }
 
     /** Step kinds that wait for something other than a job: a person, a timer or a child run. */
-    private static final java.util.Set<String> WAITING_KINDS = java.util.Set.of("approval", "wait", "child");
+    private static final java.util.Set<String> WAITING_KINDS = java.util.Set.of("approval", "wait", "child", "external");
 
     /** Mutable view used by {@link #mutate}. */
     public static final class Mutation {

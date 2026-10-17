@@ -59,12 +59,14 @@ public class OperatorService {
     private final ChildRuns children;
     private final RunSuspensions suspensions;
     private final RunMigrations migrations;
+    private final ExternalJobService externalJobs;
 
     public OperatorService(PolicyService policy, RunAccess runAccess, RunStore runs, TaskStore tasks, RunEvents events,
             RunService runService, RuntimeViews views, ReleaseQueries releases, ConnectionService connections,
             EffectJournal journal, EngineCommands engine, NotificationService notifications,
             IdempotencyService idempotency, AuditWriter audit, Json json, Clock clock, ChildRuns children,
-            RunSuspensions suspensions, RunMigrations migrations) {
+            RunSuspensions suspensions, RunMigrations migrations, ExternalJobService externalJobs) {
+        this.externalJobs = externalJobs;
         this.migrations = migrations;
         this.suspensions = suspensions;
         this.policy = policy;
@@ -110,6 +112,20 @@ public class OperatorService {
         if (effects.stream().anyMatch(e -> EffectJournal.UNKNOWN.equals(e.state()))) {
             throw new ApiException(ProblemCode.EFFECT_NOT_RECONCILED,
                     "Check the external system and reconcile the step before retrying.");
+        }
+        if (externalJobs.retryFailed(workspaceId, runId)) {
+            // A worker job ran out of attempts: offer it to the workers again from the first attempt.
+            runs.mutate(workspaceId, runId, m -> {
+                m.lifecycle = RunStore.RUNNING;
+                m.attention = null;
+                m.settle();
+            });
+            events.append(workspaceId, runId, "OPERATOR_RETRY", attentionNode(run), caller.subjectId(),
+                    Map.of("reason", request.reason()));
+            audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.USER, caller.subjectId(),
+                    "run.retry-requested", "run", runId.toString(), AuditWriter.Outcome.SUCCESS, new LinkedHashMap<>()));
+            idempotency.complete(claim, "run", runId.toString(), 200);
+            return new Result<>(runService.detail(runAccess.require(caller, workspaceId, runId), List.of()), false);
         }
         String jobId = engine.deadLetterJob(run.engineProcessInstanceId())
                 .orElseThrow(() -> new ApiException(ProblemCode.RUN_NOT_RECOVERABLE, "Nothing is waiting to be retried."));

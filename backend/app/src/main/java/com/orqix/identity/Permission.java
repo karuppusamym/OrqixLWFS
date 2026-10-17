@@ -20,7 +20,8 @@ public enum Permission {
     WORKSPACE_MANAGE_ACCESS("workspace.manage-access"),
     AUDIT_READ("audit.read"),
     MESSAGE_SEND("message.send"),
-    DOCUMENT_BROWSE("document.browse");
+    DOCUMENT_BROWSE("document.browse"),
+    JOB_WORK("job.work");
 
     private final String value;
 

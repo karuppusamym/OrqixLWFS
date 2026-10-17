@@ -227,6 +227,7 @@ final class SimulationRun {
                         + " document from its pinned template. This test creates no file.", detail, null, t);
                 yield t;
             }
+            case Node.ExternalTask n -> externalTask(n);
             case Node.Notification n -> notification(n);
             case Node.ParallelSplit n -> split(n);
             case Node.ParallelJoin n -> {
@@ -808,6 +809,44 @@ final class SimulationRun {
 
     // ------------------------------------------------------------------ message wait
 
+    /** A worker is not simulated: the test supplies its result in the settings, otherwise declared fields get sample values. */
+    private Transition externalTask(Node.ExternalTask n) {
+        ObjectNode inputs = F.objectNode();
+        for (var entry : new TreeMap<>(n.inputMapping()).entrySet()) {
+            Object value = resolve(entry.getValue());
+            if (value == null) {
+                stall(n, "TEST_EXTERNAL_INPUT_MISSING", "A value sent to the worker is missing from this sample request.");
+                return null;
+            }
+            inputs.set(entry.getKey(), DefaultWorkflowSimulator.json(value));
+        }
+        JsonNode given = scenario.path("workers").path(n.id()).path("result");
+        Map<String, Object> out = new LinkedHashMap<>();
+        for (Node.PayloadField field : n.result()) {
+            JsonNode supplied = given.path(field.name());
+            if (!supplied.isMissingNode() && !supplied.isNull()) {
+                out.put(field.name(), supplied.isNumber() ? supplied.decimalValue() : supplied.isBoolean() ? (Object) supplied.booleanValue()
+                        : supplied.asString());
+                continue;
+            }
+            out.put(field.name(), switch (field.type()) {
+                case NUMBER, INTEGER -> BigDecimal.ONE;
+                case BOOLEAN -> Boolean.FALSE;
+                case DATE -> "2026-01-15";
+                default -> "sample-" + field.name();
+            });
+        }
+        ObjectNode d = F.objectNode();
+        d.put("topic", n.topic());
+        d.set("input", inputs);
+        d.set("result", DefaultWorkflowSimulator.json(out));
+        Transition t = next(n, Route.NEXT);
+        add(n, Text.quote(n.label()) + ": a worker for the topic " + Text.quote(n.topic())
+                + " takes the job and returns its result. This test calls no worker; the result "
+                + (given.isObject() ? "comes from the test settings." : "uses sample values."), d, null, t);
+        return t;
+    }
+
     private Transition waitForMessage(Node.WaitForMessage n) {
         String choice = scenario.path("messages").path(n.id()).asString("arrives");
         if (!Set.of("arrives", "timeout").contains(choice)) {
@@ -1281,13 +1320,14 @@ final class SimulationRun {
     }
 
     private void scenarioWarnings() {
-        for (String group : List.of("approvals", "calls", "children", "messages")) {
+        for (String group : List.of("approvals", "calls", "children", "messages", "workers")) {
             for (String id : scenario.path(group).propertyNames()) {
                 Node n = graph.node(id);
                 boolean right = n != null && switch (group) {
                     case "approvals" -> n.kind() == NodeKind.APPROVAL;
                     case "calls" -> n.kind() == NodeKind.HTTP;
                     case "messages" -> n.kind() == NodeKind.WAIT_FOR_MESSAGE;
+                    case "workers" -> n.kind() == NodeKind.EXTERNAL_TASK;
                     default -> n.kind() == NodeKind.START_WORKFLOW;
                 };
                 if (!right) {

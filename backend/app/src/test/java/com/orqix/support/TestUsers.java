@@ -26,6 +26,7 @@ public final class TestUsers {
             Map.entry("mani.manager", List.of("orqix-purchasing-managers", "orqix-purchasing-requesters")),
             Map.entry("max.manager", List.of("orqix-purchasing-managers", "orqix-purchasing-requesters")),
             Map.entry("fin.finance", List.of("orqix-purchasing-finance")),
+            Map.entry("wally.worker", List.of("orqix-purchasing-workers")),
             Map.entry("fred.facilities", List.of("orqix-facilities-requesters")),
             Map.entry("otto.outsider", List.of()));
 

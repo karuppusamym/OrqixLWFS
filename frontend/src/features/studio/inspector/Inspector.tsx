@@ -12,6 +12,7 @@ import { BranchInspector } from './BranchInspector'
 import { DecisionInspector } from './DecisionInspector'
 import { GenerateDocumentInspector } from './GenerateDocumentInspector'
 import { HttpInspector } from './HttpInspector'
+import { ExternalTaskInspector } from './ExternalTaskInspector'
 import { MessageInspector } from './MessageInspector'
 import { ChildInspector, ParallelInspector, WaitInspector } from './PatternInspectors'
 import { ApprovalInspector, EndInspector, NotificationInspector, WorkflowInspector } from './SimpleInspectors'
@@ -109,6 +110,7 @@ function NodeInspector({ nodeId, onDeleteNode }: { nodeId: string; onDeleteNode:
       {node.type === 'parallelSplit' || node.type === 'parallelJoin' ? <ParallelInspector node={node} /> : null}
       {node.type === 'wait' ? <WaitInspector node={node} /> : null}
       {node.type === 'waitForMessage' ? <MessageInspector node={node} /> : null}
+      {node.type === 'externalTask' ? <ExternalTaskInspector node={node} /> : null}
       {node.type === 'startWorkflow' ? <ChildInspector node={node} /> : null}
       {node.type === 'notification' ? <NotificationInspector node={node} /> : null}
       {node.type === 'end' ? <EndInspector node={node} /> : null}

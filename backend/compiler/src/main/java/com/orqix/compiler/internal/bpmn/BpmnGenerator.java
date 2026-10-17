@@ -233,6 +233,33 @@ public final class BpmnGenerator {
                         x.leaf("orqix", "input", ORQIX_NS).attr("name", name).attr("fieldRef", fieldRef));
                 x.close(); x.close(); x.close();
             }
+            case Node.ExternalTask e -> {
+                // Like a child workflow, the task is async and triggerable: the delegate publishes the job and the engine
+                // waits until a worker's completion triggers it (S43).
+                x.open("", "serviceTask", BPMN_NS)
+                        .attr("id", e.id())
+                        .attr("name", e.label())
+                        .attr("flowable", FLOWABLE_NS, "async", "true")
+                        .attr("flowable", FLOWABLE_NS, "exclusive", "true")
+                        .attr("flowable", FLOWABLE_NS, "triggerable", "true")
+                        .attr("flowable", FLOWABLE_NS, "delegateExpression", "${orqixExternalTask}");
+                x.open("", "extensionElements", BPMN_NS);
+                x.inline("flowable", "failedJobRetryTimeCycle", FLOWABLE_NS, null,
+                        RetryCycle.forAttempts(d.execution().maxAttempts(), d.execution().retryDelaySeconds()), false);
+                x.open("orqix", "external", ORQIX_NS).attr("topic", e.topic())
+                        .attr("leaseSeconds", Integer.toString(e.leaseSeconds()))
+                        .attr("maxAttempts", Integer.toString(d.execution().maxAttempts()))
+                        .attr("retryDelaySeconds", Integer.toString(d.execution().retryDelaySeconds()));
+                e.inputMapping().forEach((name, fieldRef) ->
+                        x.leaf("orqix", "input", ORQIX_NS).attr("name", name).attr("fieldRef", fieldRef));
+                for (Node.PayloadField f : e.result()) {
+                    x.leaf("orqix", "field", ORQIX_NS).attr("name", f.name()).attr("type", f.type().json())
+                            .attr("required", Boolean.toString(f.required()));
+                }
+                x.close();
+                x.close();
+                x.close();
+            }
             case Node.Notification no -> {
                 x.open("", "serviceTask", BPMN_NS)
                         .attr("id", no.id())

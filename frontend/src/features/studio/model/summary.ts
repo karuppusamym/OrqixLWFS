@@ -75,6 +75,8 @@ export function nodeSubtitle(def: Definition, node: WorkflowNode, groupNames: Re
       return waitSummary(def, c)
     case 'waitForMessage':
       return messageSummary(def, c)
+    case 'externalTask':
+      return (c.topic as string) ? `Worker topic ${c.topic as string}` : 'No topic chosen'
     case 'startWorkflow':
       return (c.workflowRef as string) || 'No workflow chosen'
     case 'end':

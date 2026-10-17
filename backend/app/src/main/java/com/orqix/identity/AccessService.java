@@ -127,10 +127,11 @@ public class AccessService {
         requireManager(caller, workspaceId, "createPermissionGrant", true);
         validatePrincipal(principal);
         if (!"workflow.start".equals(permission) && !"connection.manage".equals(permission)
-                && !"message.send".equals(permission) && !"document.browse".equals(permission)) {
-            throw invalid("/permission", "enum", "Only workflow.start, connection.manage, message.send and document.browse can be granted.");
+                && !"message.send".equals(permission) && !"document.browse".equals(permission) && !"job.work".equals(permission)) {
+            throw invalid("/permission", "enum", "Only workflow.start, connection.manage, message.send, document.browse and job.work can be granted.");
         }
-        if (("connection.manage".equals(permission) || "message.send".equals(permission) || "document.browse".equals(permission)) && workflowId != null) {
+        if (("connection.manage".equals(permission) || "message.send".equals(permission) || "document.browse".equals(permission)
+                || "job.work".equals(permission)) && workflowId != null) {
             throw invalid("/workflowId", "type", permission + " is workspace-wide.");
         }
         if (workflowId != null && jdbc.sql("SELECT count(*) FROM workflow WHERE workspace_id = :ws AND id = :id")

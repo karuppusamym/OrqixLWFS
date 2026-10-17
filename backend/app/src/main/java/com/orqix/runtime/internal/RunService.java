@@ -300,6 +300,14 @@ public class RunService {
             ObjectNode metadata=json.object(); metadata.set("fields",row.data().path("fields")); metadata.set("version",row.data().path("version"));
             metadata.put("detailsRedacted",true); return metadata;
         }
+        if (!dataVisible && ("EXTERNAL_JOB_RETRY_SCHEDULED".equals(row.type()) || "EXTERNAL_JOB_FAILED".equals(row.type()))) {
+            // The worker's own words may mention request data; a reader without data access sees that it happened.
+            ObjectNode redacted = json.object();
+            redacted.set("topic", row.data().path("topic"));
+            redacted.set("attempt", row.data().path("attempt"));
+            redacted.put("detailsRedacted", true);
+            return redacted;
+        }
         if (!dataVisible && ("ATTACHMENT_ADDED".equals(row.type()) || "ATTACHMENT_REMOVED".equals(row.type()))) {
             // File names and descriptions belong to the request data; a reader without it sees only that a file changed.
             ObjectNode redacted = json.object();

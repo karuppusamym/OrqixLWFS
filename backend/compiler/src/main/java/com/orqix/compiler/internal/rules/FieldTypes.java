@@ -116,6 +116,7 @@ public final class FieldTypes {
             case Node.Http h -> httpOutput(h, key);
             case Node.StartWorkflow w -> startWorkflowOutput(w, key);
             case Node.WaitForMessage m -> messageOutput(m, key);
+            case Node.ExternalTask e -> externalOutput(e, key);
             default -> new Unknown("\"" + producer.label() + "\" (" + producer.kind().businessLabel()
                     + ") does not produce any data that can be used here.");
         };
@@ -172,6 +173,17 @@ public final class FieldTypes {
                 : col.maximum().multiply(rows);
         return new Resolved(new FieldType(col.type() == FieldKind.INTEGER ? FieldKind.INTEGER : FieldKind.NUMBER, null,
                 false, lo, hi), null, key);
+    }
+
+    /** Outputs of "Work by an external worker": the declared result fields (S43); a field that is not required may be missing. */
+    private Resolution externalOutput(Node.ExternalTask e, String key) {
+        Node.PayloadField field = e.field(key);
+        if (field == null) {
+            String declared = e.result().isEmpty() ? "no values"
+                    : String.join(", ", e.result().stream().map(Node.PayloadField::name).toList());
+            return new Unknown("\"" + e.label() + "\" does not return \"" + key + "\". It returns: " + declared + ".");
+        }
+        return new Resolved(new FieldType(field.type(), null, !field.required(), null, null), e, key);
     }
 
     /** Outputs of "Wait for a message": the declared payload fields (S16); a field that is not required may be missing. */

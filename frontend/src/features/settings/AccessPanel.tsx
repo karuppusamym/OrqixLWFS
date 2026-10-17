@@ -27,6 +27,7 @@ const PERMISSION_HELP: Record<string, string> = {
   'workflow.start': 'Can start requests',
   'connection.manage': 'Can change connection addresses and test them',
   'document.browse': 'Can browse specifically granted document folders',
+  'job.work': 'Can take and complete jobs for external workers',
 }
 
 /** Members, roles and groups, read only in R0 (changes go through the API or seed; editing is R1). */

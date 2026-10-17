@@ -1580,6 +1580,117 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
 
+  /workspaces/{workspaceId}/external-jobs/fetch-and-lock:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    post:
+      tags: [ExternalJobs]
+      operationId: fetchExternalJobs
+      summary: Lease available jobs of the topics a worker serves
+      description: >-
+        Returns up to `maxJobs` jobs and leases each to `workerId` for at most the step's lease time. Each lease has a
+        `fence` that grows with every lock; present it on every later call. Jobs of suspended or ended requests are not
+        offered. High-volume protocol call: not audited individually.
+      x-orqix-permission: job.work
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExternalJobFetchRequest' }
+      responses:
+        '200':
+          description: Leased jobs (possibly none)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExternalJobBatch' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/external-jobs/{jobId}/extend-lock:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: jobId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [ExternalJobs]
+      operationId: extendExternalJobLock
+      summary: Keep a lease while the work continues
+      description: >-
+        409 JOB_LEASE_LOST when the fence or worker no longer matches. High-volume protocol call, so it is not audited
+        individually.
+      x-orqix-permission: job.work
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExternalJobExtendRequest' }
+      responses:
+        '200':
+          description: New lease end
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExternalJobExtendResult' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /workspaces/{workspaceId}/external-jobs/{jobId}/complete:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: jobId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [ExternalJobs]
+      operationId: completeExternalJob
+      summary: Report the result of a leased job
+      description: >-
+        The result must be exactly the fields the step declares, with their types (422 otherwise). The request then
+        continues. 409 JOB_LEASE_LOST when the lease or fence is no longer the caller's; 409 JOB_NOT_OPEN when the job or
+        request has ended; 409 RUN_SUSPENDED while the request is suspended.
+      x-orqix-permission: job.work
+      x-orqix-audit: externaljob.completed
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExternalJobCompleteRequest' }
+      responses:
+        '204': { description: Completed (or replay) }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/external-jobs/{jobId}/fail:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: jobId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [ExternalJobs]
+      operationId: failExternalJob
+      summary: Report that a leased job could not be done
+      description: >-
+        A retryable failure returns the job to the queue after `retryAfterSeconds` (default: the workflow's retry delay)
+        until the attempt limit; otherwise the request needs attention and an operator decides.
+      x-orqix-permission: job.work
+      x-orqix-audit: externaljob.failed
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExternalJobFailRequest' }
+      responses:
+        '204': { description: Recorded (or replay) }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
   /workspaces/{workspaceId}/runs/{runId}/retry:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -2246,9 +2357,9 @@ paths:
               additionalProperties: false
               required: [permission, principal]
               properties:
-                permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse] }
+                permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse, job.work] }
                 workflowId:
-                  description: Restrict workflow.start to one workflow; omit for workspace-wide (connection.manage and message.send are always workspace-wide).
+                  description: Restrict workflow.start to one workflow; omit for workspace-wide (connection.manage, message.send, document.browse and job.work are always workspace-wide).
                   oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }]
                 principal: { $ref: '#/components/schemas/PrincipalRef' }
       responses:
@@ -3468,6 +3579,7 @@ components:
         - audit.read
         - message.send
         - document.browse
+        - job.work
     WorkspaceRole:
       type: string
       enum: [WORKSPACE_ADMIN, WORKFLOW_DESIGNER, PUBLISHER, OPERATOR, VIEWER, APPROVER]
@@ -3510,6 +3622,8 @@ components:
             - RUN_NOT_SUSPENDED
             - RUN_NOT_SUSPENDABLE
             - RUN_NOT_MIGRATABLE
+            - JOB_LEASE_LOST
+            - JOB_NOT_OPEN
             - EFFECT_NOT_RECONCILED
             - EFFECT_STATE_CONFLICT
             - GROUP_REVISION_CONFLICT
@@ -4063,7 +4177,7 @@ components:
       properties:
         nodeId: { type: string }
         label: { type: string }
-        kind: { type: string, enum: [approval, http, wait, child, generateDocument] }
+        kind: { type: string, enum: [approval, http, wait, child, generateDocument, external] }
         messageName: { type: [string, 'null'], description: 'Set while the step (kind wait) waits for this message (docs/build/S16).' }
         since: { $ref: '#/components/schemas/Timestamp' }
         candidateGroup: { type: [string, 'null'] }
@@ -4383,7 +4497,7 @@ components:
       properties:
         nodeId: { type: string }
         label: { type: string }
-        kind: { type: string, enum: [approval, http, wait, child, generateDocument] }
+        kind: { type: string, enum: [approval, http, wait, child, generateDocument, external] }
         status: { type: string, enum: [waiting, running, needsAttention] }
         since: { $ref: '#/components/schemas/Timestamp' }
         candidateGroup: { type: [string, 'null'] }
@@ -4542,6 +4656,67 @@ components:
       properties:
         reason: { type: string, minLength: 1, maxLength: 500 }
         expectedVersion: { type: integer, minimum: 1 }
+    ExternalJobFetchRequest:
+      type: object
+      additionalProperties: false
+      required: [workerId, topics]
+      properties:
+        workerId: { type: string, minLength: 1, maxLength: 100 }
+        topics: { type: array, minItems: 1, maxItems: 10, items: { type: string, pattern: '^[a-z][a-z0-9-]{0,62}[a-z0-9]$' } }
+        maxJobs: { type: integer, minimum: 1, maximum: 10 }
+        leaseSeconds: { type: integer, minimum: 30, maximum: 3600 }
+    ExternalJob:
+      type: object
+      additionalProperties: false
+      required: [id, topic, input, fence, leaseExpiresAt, attempt, maxAttempts, runReference, nodeId]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        topic: { type: string }
+        input: { type: object, additionalProperties: true, description: Only the values the step maps, by name. }
+        fence: { type: integer, minimum: 1 }
+        leaseExpiresAt: { $ref: '#/components/schemas/Timestamp' }
+        attempt: { type: integer, minimum: 1 }
+        maxAttempts: { type: integer, minimum: 1 }
+        runReference: { type: string }
+        nodeId: { type: string }
+    ExternalJobBatch:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ExternalJob' } }
+    ExternalJobExtendRequest:
+      type: object
+      additionalProperties: false
+      required: [workerId, fence]
+      properties:
+        workerId: { type: string, minLength: 1, maxLength: 100 }
+        fence: { type: integer, minimum: 1 }
+        leaseSeconds: { type: integer, minimum: 30, maximum: 3600 }
+    ExternalJobExtendResult:
+      type: object
+      additionalProperties: false
+      required: [leaseExpiresAt]
+      properties:
+        leaseExpiresAt: { $ref: '#/components/schemas/Timestamp' }
+    ExternalJobCompleteRequest:
+      type: object
+      additionalProperties: false
+      required: [workerId, fence, result]
+      properties:
+        workerId: { type: string, minLength: 1, maxLength: 100 }
+        fence: { type: integer, minimum: 1 }
+        result: { type: object, additionalProperties: { type: [string, number, boolean] } }
+    ExternalJobFailRequest:
+      type: object
+      additionalProperties: false
+      required: [workerId, fence, message, retryable]
+      properties:
+        workerId: { type: string, minLength: 1, maxLength: 100 }
+        fence: { type: integer, minimum: 1 }
+        message: { type: string, minLength: 1, maxLength: 500 }
+        retryable: { type: boolean }
+        retryAfterSeconds: { type: integer, minimum: 0, maximum: 86400 }
     CorrectTaskInputRequest:
       type: object
       additionalProperties: false
@@ -4886,7 +5061,7 @@ components:
       required: [id, permission, workflowId, principal, createdAt]
       properties:
         id: { $ref: '#/components/schemas/Uuid' }
-        permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse] }
+        permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse, job.work] }
         workflowId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }] }
         principal: { $ref: '#/components/schemas/Principal' }
         createdAt: { $ref: '#/components/schemas/Timestamp' }

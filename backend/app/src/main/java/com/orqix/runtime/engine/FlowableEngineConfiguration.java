@@ -24,7 +24,7 @@ public class FlowableEngineConfiguration {
 
     /** The only names an expression in generated BPMN may resolve. */
     public static final List<String> EXPRESSION_BEANS =
-            List.of("orqixRoute", "orqixDecisionTask", "orqixHttpTask", "orqixNotificationTask", "orqixChildTask", "orqixWait", "orqixGenerateDocumentTask");
+            List.of("orqixRoute", "orqixDecisionTask", "orqixHttpTask", "orqixNotificationTask", "orqixChildTask", "orqixWait", "orqixGenerateDocumentTask", "orqixExternalTask");
 
     @Bean(destroyMethod = "shutdown")
     DefaultAsyncTaskExecutor orqixJobTaskExecutor(OrqixProperties properties) {
@@ -47,6 +47,7 @@ public class FlowableEngineConfiguration {
             NotificationTaskDelegate orqixNotificationTask,
             ChildTaskDelegate orqixChildTask,
             GenerateDocumentTaskDelegate orqixGenerateDocumentTask,
+            ExternalTaskDelegate orqixExternalTask,
             RuntimeProjectionListener projectionListener,
             OrqixFailedJobCommandFactory failedJobCommandFactory,
             DefaultAsyncTaskExecutor orqixJobTaskExecutor) {
@@ -59,6 +60,7 @@ public class FlowableEngineConfiguration {
             beans.put("orqixNotificationTask", orqixNotificationTask);
             beans.put("orqixChildTask", orqixChildTask);
             beans.put("orqixGenerateDocumentTask", orqixGenerateDocumentTask);
+            beans.put("orqixExternalTask", orqixExternalTask);
             configuration.setBeans(beans);
 
             configuration.setEnableEventDispatcher(true);

@@ -219,3 +219,7 @@ MIG12 is closed: a project DMN file may contain multiple supported decisions. De
 ## Automatic Pega flow-export conversion - 17 October 2026
 
 MIG13 is closed for a bounded XPDL 2.0 flow-export grammar. The backend automatically derives target structure and simple request fields, retains original source hashes/maps and blocks unsupported behavior with reasons. Workspace group and approval mappings remain explicit; compiler validation and separate publication remain mandatory. All 30 focused backend cases, 21 frontend cases, 88 contract checks, typecheck, lint and production build pass. [S50](build/S50-pega-xpdl.md) records the exact scope and synthetic runtime evidence. Direct native RAP rule-page conversion remains MIG11; genuine source equivalence remains AC01. This feature is not yet deployed to Docker.
+
+## Minimum Pega demo scope settled - 17 October 2026
+
+[ADR 0003](adr/0003-minimum-demo-pega-scope.md) records the user-delegated decision after an independent model review: the minimum demo uses delivered automatic XPDL flow conversion (MIG13) and archive assessment/reviewed reconstruction (MIG10). MIG11 direct native RAP conversion is deferred outside that scope, not marked implemented. Genuine exports remain required for customer/source qualification, not this synthetic local demo. [The walkthrough](demo-pega-migration.md) gives fixtures, mappings, personas and expected outcomes. The merged candidate's Docker deployment and real-browser rehearsal remain pending; this scope decision claims no new runtime verification.

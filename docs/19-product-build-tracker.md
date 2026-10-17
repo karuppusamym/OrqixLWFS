@@ -275,3 +275,9 @@ Specs: [S39](build/S39-task-dispatch.md) (WM06), [S40](build/S40-decision-hit-po
 | Not run | Real Docker stack, mock or real browser suites for these tickets, refreshed image |
 
 Concurrent work: another session committed to the same branch during this batch (Pega migration documents, Studio failure-route authoring, Insights downloads, workflow pinning). Its commits and uncommitted files were left untouched; this batch staged only its own files. Verification above covers the tree as committed at the stated commits, which includes that work.
+
+## Minimum Pega demo scope decision - 17 October 2026
+
+The user explicitly delegated the MIG11 decision and permitted consulting another model. An independent read-only review confirmed that direct native archive conversion is not implemented and synthetic fixtures cannot establish its grammar. [ADR 0003](adr/0003-minimum-demo-pega-scope.md) closes the scope decision: use delivered MIG10 + MIG13 for the minimum synthetic demo; defer MIG11 native-RAP implementation. AC01/EXT01 remain customer-source qualification gates, not local-demo prerequisites.
+
+The XPDL work is now present in the current branch through `e7a9d8c` and `46ec063` (V48, S50); an earlier status summary saying it was outside the current branch is superseded. Added [a concrete presenter walkthrough](demo-pega-migration.md) and an unsupported-trigger fixture. Existing 105-check reviewed-target and 30-backend/21-frontend XPDL evidence retains its checkpoint scope. No backend or browser suite is rerun or claimed by this documentation decision. The latest merged image, running demo stack and real-browser rehearsal remain release work.

@@ -56,11 +56,11 @@ Final combined verification: 440 compiler cases and 651 application cases (647 p
 
 ## Customer and source acceptance still open
 
-These are not infrastructure-only tasks and cannot be closed using synthetic fixtures.
+These are customer/cutover gates and cannot be closed using synthetic fixtures. They are not prerequisites for a clearly labelled synthetic local demo. [ADR 0003](adr/0003-minimum-demo-pega-scope.md) closes the minimum Pega demo scope using MIG10 + MIG13 and defers MIG11 native-RAP development. The latest merged build still requires deployment and real-browser rehearsal; see [the walkthrough](demo-pega-migration.md).
 
 | ID | Required input and acceptance | Current boundary |
 |---|---|---|
-| EXT01 | Genuine Pega/LWFS exports, versions, resolved rules and owner-approved expected scenarios (D03/D04, B2/B3) | Pega inventory and reviewed reconstruction exist; universal native Pega rule conversion and source-runtime equivalence are unbuilt/unaccepted. Synthetic target evidence is explicitly labeled. |
+| EXT01 | Genuine Pega/LWFS exports, versions, resolved rules and owner-approved expected scenarios (D03/D04, B2/B3) | Customer-source qualification only; not a minimum-demo blocker. Automatic bounded XPDL conversion and reviewed archive reconstruction are delivered. Native RAP conversion is deferred, and genuine source-runtime equivalence remains unaccepted. |
 | EXT02 | Microsoft tenant app consent, resource grants, approved files/drives/download hosts and securely provisioned credentials | Scripted Graph tests establish adapter behavior, not customer access. OAuth provisioning/automatic refresh needs a defined credential contract. |
 | EXT03 | Approved procurement/banking/MCP contracts and observed outcomes (D07/D09) | Stub/provider checks are not acceptance against customer systems. |
 | EXT04 | Banking process owner, policy, jurisdiction and representative business scenarios (B1–B6) | KYC/credit/dispute examples are configurable samples; domain or regulatory approval is not inferred. |

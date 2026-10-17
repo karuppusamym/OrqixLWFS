@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC refusal fixture; not a genuine Pega export. A message-triggered start must block conversion. -->
+<Package xmlns="http://www.wfmc.org/2004/XPDL2.0alpha" Id="package-unsupported" Name="Unsupported trigger">
+  <PackageHeader><XPDLVersion>2.0</XPDLVersion><Vendor>Orqix synthetic fixture</Vendor></PackageHeader>
+  <WorkflowProcesses><WorkflowProcess Id="unsupported-flow" Name="Unsupported trigger">
+    <Activities>
+      <Activity Id="start" Name="Message start"><Event><StartEvent Trigger="Message"/></Event></Activity>
+      <Activity Id="done" Name="Done"><Event><EndEvent Result="None"/></Event></Activity>
+    </Activities>
+    <Transitions><Transition Id="next" From="start" To="done"/></Transitions>
+  </WorkflowProcess></WorkflowProcesses>
+</Package>

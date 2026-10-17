@@ -80,7 +80,7 @@ Say if asked: this is a supported subset with an honest report, not "all Camunda
 
 ## Demo 6 — Pega
 
-Blocked on a real Pega export. What exists: archive inventory and checksum-linked manual mappings on a synthetic archive (`examples/migration/pega-synthetic-archive.zip`). Show the assessment, not a conversion.
+The minimum Pega demo is not blocked on customer exports. Follow [the Pega migration walkthrough](demo-pega-migration.md): automatically convert supported synthetic XPDL 2.0 flows, publish separately, execute completion/threshold/approval/rejection cases, and show an unsupported-trigger refusal. Archive assessment and checksum-linked reviewed reconstruction remain available. [ADR 0003](adr/0003-minimum-demo-pega-scope.md) defers direct native RAP rule conversion outside this demo; it is not advertised as implemented. Build and rehearse the latest merged candidate on the real local stack before presenting.
 
 ## Demo 7 — Prompt → draft → edit → publish → execute
 

@@ -19,6 +19,12 @@ export function WorkManagementFields({ node, groups }: { node: WorkflowNode; gro
   const definition = useStudio(state => state.definition)
   // Only approvals that every path passes through before this step can be kept apart; the server checks the same rule.
   const otherApprovals = definition.nodes.filter(other => other.type === 'approval' && other.id !== node.id)
+  const correctable = cfg<string[]>(node, 'correctable') ?? []
+  const setCorrectable = (keys: string[]) => set({ correctable: keys.length ? keys : undefined })
+  // Single-value request fields only; lists, rows and files cannot be corrected.
+  const correctableCandidates = Object.entries(definition.inputSchema.properties)
+    .filter(([, field]) => ['string', 'number', 'integer', 'boolean'].includes(field.type) && field.format !== 'attachment')
+    .map(([key, field]) => ({ key, title: field.title ?? key }))
   const setSeparate = (ids: string[]) => set({ separateFrom: ids.length ? ids : undefined })
   const set = (changes: Record<string, unknown>) => store.getState().updateNodeConfig(node.id, changes)
   const calendarSet = (changes: Partial<Calendar>) => set({ calendar: { ...calendar, ...changes } })
@@ -43,6 +49,17 @@ export function WorkManagementFields({ node, groups }: { node: WorkflowNode; gro
       </label>)}
       {separateFrom.filter(id => !otherApprovals.some(other => other.id === id)).map(id => <label key={id} className="flex items-center gap-2 text-sm">
         <Checkbox checked onCheckedChange={() => setSeparate(separateFrom.filter(ref => ref !== id))} />{id} (no longer an approval step)
+      </label>)}
+    </fieldset> : null}
+    {correctableCandidates.length > 0 || correctable.length > 0 ? <fieldset disabled={readOnly} className="space-y-2">
+      <legend className="text-sm font-medium">Fields the approver may correct</legend>
+      <p className="text-xs text-muted-foreground">The person holding this task can fix these request details before deciding. Publishing is blocked if an earlier step already uses a selected field.</p>
+      {correctableCandidates.map(field => <label key={field.key} className="flex items-center gap-2 text-sm">
+        <Checkbox checked={correctable.includes(field.key)} disabled={readOnly || !correctable.includes(field.key) && correctable.length >= 10}
+          onCheckedChange={checked => setCorrectable(checked ? [...correctable, field.key] : correctable.filter(key => key !== field.key))} />{field.title}
+      </label>)}
+      {correctable.filter(key => !correctableCandidates.some(field => field.key === key)).map(key => <label key={key} className="flex items-center gap-2 text-sm">
+        <Checkbox checked onCheckedChange={() => setCorrectable(correctable.filter(ref => ref !== key))} />{key} (not a single-value request field)
       </label>)}
     </fieldset> : null}
     <FormField label="Assign new tasks" id={`dispatch-${node.id}`} description="Otherwise tasks wait in the group queue. The person can still return a task to the group, and the timeline explains each assignment.">

@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
-import { claim, decide } from '@/mocks/engine'
+import { claim, currentRelease, decide } from '@/mocks/engine'
 import { db, userByName, type MockRun, type MockTask } from '@/mocks/state'
 import { renderApp, signInAs, WS } from '@/test/utils'
 
@@ -22,6 +22,38 @@ async function openPanel(title: string, view: 'claimable' | 'assigned' = 'claima
   await screen.findByTestId('task-actions')
   return { ...app, taskId: task.id }
 }
+
+describe('task panel: correcting declared request details (WM07)', () => {
+  it('lets the task holder correct only the declared fields, with a reason, and records it', async () => {
+    signInAs('max.manager')
+    const { run, task } = taskByTitle('Replacement laptop')
+    const manager = currentRelease(run).definition.nodes.find((n) => n.id === task.nodeId)!
+    manager.config.correctable = ['amount']
+    claim(run, task, userByName('max.manager'))
+    const user = userEvent.setup()
+    renderApp(`/w/${WS}/tasks/${task.id}?view=assigned`)
+    const section = await screen.findByTestId('task-correction')
+    expect(within(section).queryByLabelText('Business purpose')).not.toBeInTheDocument()
+    const amount = within(section).getByLabelText(/Amount/)
+    await user.clear(amount)
+    await user.type(amount, '2500')
+    await user.click(within(section).getByRole('button', { name: 'Save corrections' }))
+    expect(await within(section).findByText(/Add a reason/)).toBeInTheDocument()
+    await user.type(within(section).getByLabelText(/Reason for the correction/), 'Quote was updated')
+    await user.click(within(section).getByRole('button', { name: 'Save corrections' }))
+    await waitFor(() => expect(run.input.amount).toBe(2500))
+    expect(run.events.at(-1)?.type).toBe('INPUT_CORRECTED')
+    expect((run.events.at(-1)?.data as { reason: string }).reason).toBe('Quote was updated')
+    expect(await screen.findByText('$2,500.00')).toBeInTheDocument()
+  })
+  it('shows no correction section when the step declares nothing', async () => {
+    signInAs('max.manager')
+    const { task } = taskByTitle('Replacement laptop')
+    renderApp(`/w/${WS}/tasks/${task.id}`)
+    await screen.findByTestId('task-actions')
+    expect(screen.queryByTestId('task-correction')).not.toBeInTheDocument()
+  })
+})
 
 describe('task panel: states and conflict UX (T-UI-03)', () => {
   it('opens available work when no task is assigned, while preserving an explicit tab choice', async () => {

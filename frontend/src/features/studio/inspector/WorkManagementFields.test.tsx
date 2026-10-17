@@ -40,6 +40,14 @@ describe('work management authoring',()=>{
     await user.click(screen.getByRole('checkbox',{name:'Finance review'}))
     expect(store.getState().definition.nodes.find(node=>node.id==='manager')!.config.separateFrom).toBeUndefined()
   })
+  it('declares correctable request fields from the single-value fields only',async()=>{
+    const store=setup(); const user=userEvent.setup()
+    expect(screen.getByRole('checkbox',{name:'Amount (USD)'})).toBeInTheDocument()
+    await user.click(screen.getByRole('checkbox',{name:'Amount (USD)'}))
+    expect(store.getState().definition.nodes.find(node=>node.id==='manager')!.config.correctable).toEqual(['amount'])
+    await user.click(screen.getByRole('checkbox',{name:'Amount (USD)'}))
+    expect(store.getState().definition.nodes.find(node=>node.id==='manager')!.config.correctable).toBeUndefined()
+  })
   it('authors an explicit dispatch policy and removes it again',async()=>{
     const store=setup(); const user=userEvent.setup()
     const select=screen.getByLabelText('Assign new tasks')

@@ -148,3 +148,11 @@ The import page shows the source as "Camunda 8, version 8.5.0" (from the modeler
 - **Messages.** A message catch event with a plain-text message name and a correlation key that is a variable becomes a "wait for a message" step matched on the request field of that variable (payload variables are not imported). Message start and boundary events, a computed correlation key and all signal events are blocked (`MESSAGE_EVENT_NOT_SUPPORTED`, `SIGNAL_EVENT_NOT_SUPPORTED`).
 
 These rules come from hand-authored fixtures (`examples/migration/camunda8-*`); there is no claim of general Camunda 8 compatibility. Details and the reason-code table are in [S11](build/S11-camunda-import.md) revision 0.5. Review and maker-checker are unchanged.
+
+## Synthetic Pega archive-to-execution acceptance
+
+The small, medium and complex bundle under `examples/migration/pega-synthetic/` extends local acceptance through archive inventory, checksum-linked reviewed mapping packages, ordinary canonical compilation, draft creation, separate publication and actual target execution. Its targets derive from `simple-review`, `medium-bounded-rework` and `complex-batch-review`. The imported small workflow must be published before its medium and complex callers are compiled with explicit dependency mappings.
+
+All source XML in this bundle is descriptive and synthetic. It is not a genuine Pega export grammar, and the target definitions are manually reviewed reconstructions. Every archive entry has a disposition; excluded property, routing, SLA, activity and provenance descriptors remain visible. Successful target execution must be compared with curated synthetic expectations, not presented as a live Pega source baseline.
+
+[S39](build/S39-pega-synthetic-acceptance.md) defines the fixture layout, runner and evidence requirements, including approval/rejection, bounded repetition, parallel joins, timers, ordered children, cancellation and security refusals. Execution counts are pending until the runner reports actual results. **AC01 remains open:** genuine source exports, rule-resolution/inheritance/circumstance review, actual SLA and connector behavior, and source-owner signoff are still required for customer equivalence and cutover.

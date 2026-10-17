@@ -105,3 +105,11 @@ Maintain a fixture bundle containing original source, expected converted represe
 That converter targets Camunda 7 → Camunda 8. It is not adopted as a Flowable converter and provides no PEGA/LWFS compatibility guarantee. No external converter code is selected.
 
 Use the case-classification questions in [the product specification](01-product-spec.md) before flattening PEGA stages into a process. Owner: migration lead with source-system/business owners. Existing E16 milestones and source-sample dependencies remain.
+
+## Synthetic Pega acceptance boundary
+
+The local small/medium/complex acceptance bundle tests the full authorized Orqix path: synthetic archive inventory → exact checksum-linked, manually reviewed mapping package → normal compiler → draft → separate publication → actual target execution. Medium and complex callers resolve the imported small child through explicit dependency mappings and published release pins. Targets derive from the existing `simple-review`, `medium-bounded-rework` and `complex-batch-review` examples.
+
+The XML is descriptive Pega-like test data, not genuine exported Pega grammar. An archive checksum proves which source bytes accompany the reviewed reconstruction; it does not prove that the reconstruction preserves native Pega behavior. Curated expectations must be identified as synthetic when comparing approval/rejection, repetition exhaustion, joins, timers, ordered child results and cancellation. The evidence pack retains source, mappings, targets, dependency/release provenance and individual expected-versus-observed results. Actual execution counts remain pending until the runner completes. See [S39](build/S39-pega-synthetic-acceptance.md).
+
+**AC01 is not closed by synthetic acceptance.** Genuine source definitions and source-runtime observations, Pega inheritance/rule-resolution/circumstance review, business calendars and SLA semantics, connector/failure behavior and source/business owner signoff remain external acceptance requirements.

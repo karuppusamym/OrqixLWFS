@@ -66,11 +66,14 @@ public class RuntimeProjectionListener implements FlowableEventListener {
     private final MessageWaits messageWaits;
     private final Clock clock;
     private final com.orqix.runtime.internal.RunStages stages;
+    private final com.orqix.runtime.internal.TaskDispatcher dispatcher;
 
     public RuntimeProjectionListener(Json json, RunStore runs, TaskStore tasks, RunEvents events,
             ReleaseQueries releases, RuntimeMetrics metrics, @org.springframework.context.annotation.Lazy ChildRuns children,
             @org.springframework.context.annotation.Lazy MessageWaits messageWaits, Clock clock,
-            @org.springframework.context.annotation.Lazy com.orqix.runtime.internal.RunStages stages) {
+            @org.springframework.context.annotation.Lazy com.orqix.runtime.internal.RunStages stages,
+            @org.springframework.context.annotation.Lazy com.orqix.runtime.internal.TaskDispatcher dispatcher) {
+        this.dispatcher = dispatcher;
         this.stages = stages;
         this.json = json;
         this.runs = runs;
@@ -191,6 +194,28 @@ public class RuntimeProjectionListener implements FlowableEventListener {
         data.put("candidateGroup", group);
         data.put("dueAt", dueAt == null ? null : dueAt.toString());
         events.append(workspaceId, runId, "TASK_CREATED", element.getId(), null, data);
+        dispatch(task, element.getId(), workspaceId, runId);
+    }
+
+    /** Optional routing of the new task to one eligible person when the approval step declares a dispatch policy (S39). */
+    private void dispatch(TaskEntity task, String nodeId, UUID workspaceId, UUID runId) {
+        var run = runs.find(workspaceId, runId).orElse(null);
+        if (run == null) {
+            return;
+        }
+        var node = releases.require(workspaceId, run.releaseId()).node(nodeId);
+        String policy = node == null ? null : node.path("config").path("dispatch").path("policy").asString(null);
+        if (policy == null) {
+            return;
+        }
+        dispatcher.choose(workspaceId, task.getId(), policy).ifPresent(choice -> {
+            if (dispatcher.assign(workspaceId, task.getId(), choice)) {
+                task.setAssignee(choice.subjectId().toString());
+                runs.mutate(workspaceId, runId, m -> m.updateStep(nodeId,
+                        step -> step.put("assigneeId", choice.subjectId().toString())));
+                events.append(workspaceId, runId, "TASK_DISPATCHED", nodeId, null, choice.eventData());
+            }
+        });
     }
 
     private void onJobCreated(JobEntity job) {

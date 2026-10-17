@@ -1,5 +1,6 @@
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
+import { Select } from '@/components/ui/input'
 import { FormField } from '@/components/common/FormField'
 import { useStudioContext } from '../StudioContext'
 import { cfg, type WorkflowNode } from '../model/types'
@@ -13,6 +14,7 @@ export function WorkManagementFields({ node, groups }: { node: WorkflowNode; gro
   const skills = cfg<string[]>(node, 'requiredSkills') ?? []
   const calendar = cfg<Calendar>(node, 'calendar')
   const escalation = cfg<Escalation>(node, 'escalation')
+  const dispatch = cfg<{ policy: string }>(node, 'dispatch')
   const set = (changes: Record<string, unknown>) => store.getState().updateNodeConfig(node.id, changes)
   const calendarSet = (changes: Partial<Calendar>) => set({ calendar: { ...calendar, ...changes } })
   return <InspectorSection title="Work queues and deadlines">
@@ -27,6 +29,14 @@ export function WorkManagementFields({ node, groups }: { node: WorkflowNode; gro
         <Checkbox checked onCheckedChange={() => set({ requiredSkills: skills.filter(skill => skill !== key) })} />{key} (not found in this workspace)
       </label>)}
     </fieldset>
+    <FormField label="Assign new tasks" id={`dispatch-${node.id}`} description="Otherwise tasks wait in the group queue. The person can still return a task to the group, and the timeline explains each assignment.">
+      {ids => <Select id={ids.input} value={dispatch?.policy ?? ''} disabled={readOnly}
+        onChange={e => set({ dispatch: e.target.value ? { policy: e.target.value } : undefined })}>
+        <option value="">Leave in the group queue</option>
+        <option value="leastLoaded">To the person with the fewest open tasks</option>
+        <option value="roundRobin">To each eligible person in turn</option>
+      </Select>}
+    </FormField>
     <div className="flex items-center gap-2"><Checkbox id={`calendar-${node.id}`} checked={!!calendar} disabled={readOnly}
       onCheckedChange={checked => set({ calendar: checked ? { zone: 'UTC', weekdays: [1,2,3,4,5], start: '09:00', end: '17:00', holidays: [] } : undefined,
         ...(checked && !cfg<number>(node, 'dueAfterHours') ? { dueAfterHours: 8 } : {}) })} />

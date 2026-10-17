@@ -180,6 +180,8 @@ export function describeEvent(event: RunEvent, ctx: EventContext): string {
       return `${str(event.data.childReference) ?? 'A child request'} needs attention`
     case 'TASK_CLAIMED':
       return `${actorName(event, ctx)} picked up ${label}`
+    case 'TASK_DISPATCHED':
+      return `${str(event.data.assignee) ?? 'Someone'} was assigned ${label}${str(event.data.rule) ? `: ${str(event.data.rule)}` : ''}`
     case 'TASK_RELEASED':
       return `${actorName(event, ctx)} returned ${label} to ${groupName(str(event.data.candidateGroup), ctx)}`
     case 'TASK_REASSIGNED': {

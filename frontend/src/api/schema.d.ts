@@ -3656,6 +3656,11 @@ export interface components {
                     start: string;
                     end: string;
                 };
+                /** @description Optional routing of each new task to one eligible person instead of leaving it in the group queue (docs/build/S39). leastLoaded: fewest open assigned tasks; roundRobin: the person assigned longest ago. The person can still return the task to the group. Nobody eligible: the task stays in the queue. */
+                dispatch?: {
+                    /** @enum {unknown} */
+                    policy: "leastLoaded" | "roundRobin";
+                };
                 /** @description Recurring in-app overdue notices for the current eligible assignee; no automatic reassignment. */
                 escalation?: {
                     intervalHours: number;
@@ -4048,6 +4053,11 @@ export interface components {
                             holidays?: string[];
                             start: string;
                             end: string;
+                        };
+                        /** @description Optional routing of each new task to one eligible person instead of leaving it in the group queue (docs/build/S39). leastLoaded: fewest open assigned tasks; roundRobin: the person assigned longest ago. The person can still return the task to the group. Nobody eligible: the task stays in the queue. */
+                        dispatch?: {
+                            /** @enum {unknown} */
+                            policy: "leastLoaded" | "roundRobin";
                         };
                         /** @description Recurring in-app overdue notices for the current eligible assignee; no automatic reassignment. */
                         escalation?: {

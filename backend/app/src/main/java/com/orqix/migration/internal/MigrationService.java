@@ -17,6 +17,7 @@ import com.orqix.migration.dmn.DmnConverter;
 import com.orqix.migration.dmn.DmnTable;
 import com.orqix.migration.pega.PegaSource;
 import com.orqix.migration.pega.PegaXpdl;
+import com.orqix.migration.cmmn.CmmnInventory;
 import com.orqix.shared.Ids;
 import com.orqix.shared.json.Json;
 import com.orqix.shared.problem.*;
@@ -62,6 +63,8 @@ public class MigrationService {
                 report=FormImport.report(form,Json.sha256Hex(bytes),form.platformVersion(),form.formId());
             } else if (format.equals("dmn")) {
                 report=DmnAnalyzer.analyze(content,Limits.DEFAULT,json).report();
+            } else if (format.equals("cmmn")) {
+                report=CmmnInventory.analyze(content);
             } else if (format.equals("bpmn")) {
                 var analysis=Analyzer.analyze(content,Limits.DEFAULT); format=analysis.sourceSystem();
                 report=Converter.report(analysis,analysis.items().stream().map(Analysis.Item::issue).toList());
@@ -93,6 +96,9 @@ public class MigrationService {
             ObjectNode definition; Report.CompatibilityReport report; Object sourceMap;
             if (job.format.equals("camundaForm")) throw new ApiException(ProblemCode.MIGRATION_BLOCKED,
                     "A Camunda form has no target of its own. Import the BPMN file it belongs to and attach this form under formMappings.")
+                    .with("openItems",job.view.report().issues().stream().filter(i -> Report.OPEN.equals(i.resolutionStatus())).toList());
+            if (job.format.equals("cmmn")) throw new ApiException(ProblemCode.MIGRATION_BLOCKED,
+                    "CMMN source inventory is available, but workspace case conversion and publication are not yet implemented.")
                     .with("openItems",job.view.report().issues().stream().filter(i -> Report.OPEN.equals(i.resolutionStatus())).toList());
             if (job.format.equals("pegaArchive")) throw new ApiException(ProblemCode.MIGRATION_BLOCKED,
                     "Native Pega archives are inventory-only. Upload a checksum-linked manual mapping package to create a draft.")

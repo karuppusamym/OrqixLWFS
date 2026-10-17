@@ -16,6 +16,27 @@ const report = (): components['schemas']['CompatibilityReport'] => ({ sourceSyst
 const job = (): components['schemas']['MigrationJob'] => ({ id, fileName: 'approval.bpmn', status: 'analyzed', report: report(), createdAt: '2026-10-09T00:00:00Z' })
 
 describe('migration workbench', () => {
+  it('shows a CMMN inventory and no misleading conversion action', async () => {
+    signInAs('dana.designer')
+    const saved = job(); saved.fileName = 'review.cmmn'; saved.report.sourceSystem = 'cmmn'; saved.report.sourceVersion = '1.1'
+    saved.report.adapterVersion = 'cmmn-inventory-0.1'; saved.report.issues = [{ sourceElementId: 'task', sourceKind: 'humanTask',
+      sourcePath: 'definitions[#1]/case[review]/humanTask[task]', severity: 'blocker', reasonCode: 'CMMN_RUNTIME_NOT_EXPOSED',
+      explanation: 'Case execution is unavailable.', resolutionStatus: 'open' }]
+    saved.report.requiredMappings = { groups: [], approvalTasks: [], serviceTasks: [] }
+    server.use(http.post('*/api/v1/workspaces/:ws/migrations', async ({ request }) => {
+      expect(await request.json()).toMatchObject({ sourceFormat: 'cmmn', fileName: 'review.cmmn' })
+      return HttpResponse.json(saved, { status: 201 })
+    }), http.get('*/api/v1/workspaces/:ws/migrations/:id', () => HttpResponse.json(saved)))
+    const user = userEvent.setup(); await renderAppReady(`/w/${WS}/migrations`)
+    await user.selectOptions(await screen.findByLabelText('Source format'), 'cmmn')
+    const file = new File(['<definitions />'], 'review.cmmn', { type: 'application/xml' })
+    Object.defineProperty(file, 'text', { value: async () => '<definitions />' })
+    await user.upload(screen.getByLabelText(/Source file/), file)
+    await user.click(screen.getByRole('button', { name: 'Analyze source' }))
+    expect(await screen.findByText('CMMN source inventoried')).toBeInTheDocument()
+    expect(screen.getByText('Case execution is unavailable.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Convert to draft' })).not.toBeInTheDocument()
+  })
   it('uploads an automatic Pega XPDL flow and uses the ordinary review form without a canonical mapping package', async () => {
     signInAs('dana.designer')
     let saved=job(); saved.fileName='review.xpdl'; saved.report.sourceSystem='pega'; saved.report.adapterVersion='pega-xpdl-0.1'

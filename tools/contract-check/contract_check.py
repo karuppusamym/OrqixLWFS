@@ -10,7 +10,7 @@ Checks, in order:
      (Semantic-layer codes are the compiler's job and are not evaluated here.)
   4. contracts/openapi.yaml structure: every $ref resolves (including external files), operationIds are
      unique, path parameters match the path templates, every operation has x-orqix-permission and every
-     POST/PUT/DELETE has x-orqix-audit (except validateDraft, evaluateDecision, markNotificationRead).
+     POST/PUT/DELETE has x-orqix-audit unless explicitly exempted by AUDIT_EXEMPT_OPERATIONS.
   5. Consistency gates (consistency_gates.py): security-matrix coverage, permission vocabulary, ProblemCode
      enum <-> contract <-> frontend messages, audit actions in code/contract vs the AuditWriter whitelist,
      schema.d.ts drift, no CRLF line endings.
@@ -38,8 +38,8 @@ from consistency_gates import check_consistency, fix_line_endings  # noqa: E402
 SCHEMA_FAILURE_CODES = {"WF_SCHEMA_INVALID", "WF_SCHEMA_VERSION_UNSUPPORTED"}
 HTTP_METHODS = ("get", "put", "post", "delete", "options", "head", "patch", "trace")
 AUDIT_REQUIRED_METHODS = ("post", "put", "delete")
-# fetchExternalJobs and extendExternalJobLock are high-volume worker protocol calls; completion and failure are audited.
-AUDIT_EXEMPT_OPERATIONS = {"validateDraft", "evaluateDecision", "markNotificationRead", "fetchExternalJobs", "extendExternalJobLock"}
+# Worker polls/lock extensions are high-volume protocol calls; promotion-check and validation POSTs are read-only.
+AUDIT_EXEMPT_OPERATIONS = {"validateDraft", "evaluateDecision", "markNotificationRead", "fetchExternalJobs", "extendExternalJobLock", "checkReleasePromotion"}
 
 
 class Report:

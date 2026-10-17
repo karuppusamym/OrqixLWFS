@@ -59,6 +59,13 @@ const LABELS: Record<string, string> = {
   TASK_TYPE_NOT_SUPPORTED: 'This kind of task cannot be imported',
   SUBPROCESS_NOT_SUPPORTED: 'Sub-processes cannot be imported',
   LISTENER_DROPPED: 'Listener code not imported',
+  CMMN_RUNTIME_NOT_EXPOSED: 'Case element inventoried; execution is not available yet',
+  CMMN_ELEMENT_UNRECOGNIZED: 'Case element needs explicit review',
+  CMMN_EXTENSION_REVIEW_REQUIRED: 'Extension element needs explicit review',
+  CMMN_EXTENSION_ATTRIBUTE_REVIEW_REQUIRED: 'Extension settings need explicit review',
+  CMMN_REFERENCE_MISSING: 'Case model refers to a missing element',
+  CMMN_DUPLICATE_ID: 'Case model reuses an identifier',
+  CMMN_CASE_ID_MISSING: 'Case has no identifier',
 }
 
 export function reasonLabel(code: string): string | null {
@@ -67,7 +74,7 @@ export function reasonLabel(code: string): string | null {
 
 /** "Camunda 8, version 8.5.0" for the import page header; plain wording for other sources. */
 export function sourceLabel(report: Pick<Report, 'sourceSystem' | 'sourceVersion'>): string {
-  const name: Record<string, string> = { camunda7: 'Camunda 7', camunda8: 'Camunda 8', bpmn: 'Plain BPMN 2.0', dmn: 'Camunda DMN', camundaForm: 'Camunda form', pega: 'Pega' }
+  const name: Record<string, string> = { camunda7: 'Camunda 7', camunda8: 'Camunda 8', bpmn: 'Plain BPMN 2.0', dmn: 'Camunda DMN', camundaForm: 'Camunda form', pega: 'Pega', cmmn: 'CMMN 1.1 case model' }
   const base = name[report.sourceSystem] ?? report.sourceSystem
   return report.sourceVersion ? `${base}, version ${report.sourceVersion}` : base
 }

@@ -4493,7 +4493,7 @@ export interface components {
         };
         CompatibilityReport: {
             /** @enum {string} */
-            sourceSystem: "camunda7" | "camunda8" | "bpmn" | "dmn" | "camundaForm" | "pega";
+            sourceSystem: "camunda7" | "camunda8" | "bpmn" | "dmn" | "camundaForm" | "pega" | "cmmn";
             sourceVersion?: string | null;
             adapterVersion: string;
             sourceHash: string;
@@ -10151,14 +10151,14 @@ export interface operations {
             content: {
                 "application/json": {
                     fileName: string;
-                    /** @description BPMN or DMN XML, or mapping JSON text; base64 for Pega archives. Decoded sources are limited to 1 MiB. */
+                    /** @description BPMN, DMN, CMMN or XPDL XML, form or mapping JSON text; base64 for Pega archives. Decoded sources are limited to 1 MiB. */
                     content: string;
                     /**
-                     * @description bpmn is Camunda 7/8 BPMN 2.0; dmn is a Camunda DMN 1.1-1.4 file with decision tables; camundaForm is a Camunda Forms .form JSON file attached through formMappings. pegaXpdl is a bounded XPDL 2.0 flow export; it does not resolve native RAP rule pages.
+                     * @description bpmn is Camunda 7/8 BPMN 2.0; dmn is a Camunda DMN 1.1-1.4 file with decision tables; camundaForm is a Camunda Forms .form JSON file attached through formMappings. pegaXpdl is a bounded XPDL 2.0 flow export; it does not resolve native RAP rule pages. cmmn inventories a CMMN 1.1 file but cannot convert or deploy it.
                      * @default bpmn
                      * @enum {string}
                      */
-                    sourceFormat?: "bpmn" | "dmn" | "camundaForm" | "pegaArchive" | "pegaMapping" | "pegaXpdl";
+                    sourceFormat?: "bpmn" | "dmn" | "camundaForm" | "pegaArchive" | "pegaMapping" | "pegaXpdl" | "cmmn";
                 };
             };
         };

@@ -3570,8 +3570,8 @@ paths:
               required: [fileName, content]
               properties:
                 fileName: { type: string, minLength: 1, maxLength: 200 }
-                content: { type: string, minLength: 1, maxLength: 1398104, description: 'BPMN or DMN XML, or mapping JSON text; base64 for Pega archives. Decoded sources are limited to 1 MiB.' }
-                sourceFormat: { type: string, enum: [bpmn, dmn, camundaForm, pegaArchive, pegaMapping, pegaXpdl], default: bpmn, description: 'bpmn is Camunda 7/8 BPMN 2.0; dmn is a Camunda DMN 1.1-1.4 file with decision tables; camundaForm is a Camunda Forms .form JSON file attached through formMappings. pegaXpdl is a bounded XPDL 2.0 flow export; it does not resolve native RAP rule pages.' }
+                content: { type: string, minLength: 1, maxLength: 1398104, description: 'BPMN, DMN, CMMN or XPDL XML, form or mapping JSON text; base64 for Pega archives. Decoded sources are limited to 1 MiB.' }
+                sourceFormat: { type: string, enum: [bpmn, dmn, camundaForm, pegaArchive, pegaMapping, pegaXpdl, cmmn], default: bpmn, description: 'bpmn is Camunda 7/8 BPMN 2.0; dmn is a Camunda DMN 1.1-1.4 file with decision tables; camundaForm is a Camunda Forms .form JSON file attached through formMappings. pegaXpdl is a bounded XPDL 2.0 flow export; it does not resolve native RAP rule pages. cmmn inventories a CMMN 1.1 file but cannot convert or deploy it.' }
       responses:
         '201':
           description: Job created with its compatibility report
@@ -6668,7 +6668,7 @@ components:
       type: object
       required: [sourceSystem, adapterVersion, sourceHash, elementCounts, issues, assumptions, publishable]
       properties:
-        sourceSystem: { type: string, enum: [camunda7, camunda8, bpmn, dmn, camundaForm, pega] }
+        sourceSystem: { type: string, enum: [camunda7, camunda8, bpmn, dmn, camundaForm, pega, cmmn] }
         sourceVersion: { type: [string, 'null'] }
         adapterVersion: { type: string }
         sourceHash: { type: string }

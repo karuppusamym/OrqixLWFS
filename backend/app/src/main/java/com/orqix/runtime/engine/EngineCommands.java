@@ -199,6 +199,32 @@ public class EngineCommands {
         return instance != null && instance.isSuspended();
     }
 
+    /** What the engine itself holds for an instance, read-only; used to compare against the Orqix projection (EX09). */
+    public record Snapshot(boolean exists, boolean suspended, List<String> activeActivityIds,
+            Map<String, String> taskIdsByActivity, long eventSubscriptions, long jobs, long deadLetterJobs,
+            long suspendedJobs) {
+        public boolean hasDrivingWork() {
+            return !taskIdsByActivity.isEmpty() || eventSubscriptions > 0 || jobs > 0 || deadLetterJobs > 0
+                    || suspendedJobs > 0;
+        }
+    }
+
+    public Snapshot snapshot(String processInstanceId) {
+        if (!processExists(processInstanceId)) {
+            return new Snapshot(false, false, List.of(), Map.of(), 0, 0, 0, 0);
+        }
+        var tasks = new java.util.TreeMap<String, String>();
+        taskService.createTaskQuery().processInstanceId(processInstanceId).list()
+                .forEach(t -> tasks.put(t.getTaskDefinitionKey(), t.getId()));
+        long jobs = managementService.createJobQuery().processInstanceId(processInstanceId).count()
+                + managementService.createTimerJobQuery().processInstanceId(processInstanceId).count();
+        return new Snapshot(true, isSuspended(processInstanceId),
+                List.copyOf(new java.util.TreeSet<>(runtimeService.getActiveActivityIds(processInstanceId))), tasks,
+                runtimeService.createEventSubscriptionQuery().processInstanceId(processInstanceId).count(), jobs,
+                managementService.createDeadLetterJobQuery().processInstanceId(processInstanceId).count(),
+                managementService.createSuspendedJobQuery().processInstanceId(processInstanceId).count());
+    }
+
     public boolean processExists(String processInstanceId) {
         return processInstanceId != null
                 && runtimeService.createProcessInstanceQuery().processInstanceId(processInstanceId).count() > 0;

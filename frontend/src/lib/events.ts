@@ -269,6 +269,10 @@ export function describeEvent(event: RunEvent, ctx: EventContext): string {
       const reason = str(event.data.reason)
       return `${actorName(event, ctx)} moved the request from version ${String(event.data.fromReleaseNumber ?? '?')} to version ${String(event.data.toReleaseNumber ?? '?')}${reason ? `: ${reason}` : ''}`
     }
+    case 'RUN_PROJECTION_REPAIRED': {
+      const reason = str(event.data.reason)
+      return `${actorName(event, ctx)} rebuilt the open approval steps from the workflow engine${reason ? `: ${reason}` : ''}`
+    }
     case 'RUN_RESUMED': {
       const reason = str(event.data.reason)
       return `${actorName(event, ctx)} resumed the request${reason ? `: ${reason}` : ''}`

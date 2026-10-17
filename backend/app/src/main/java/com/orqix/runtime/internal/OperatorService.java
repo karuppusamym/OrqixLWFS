@@ -60,12 +60,14 @@ public class OperatorService {
     private final RunSuspensions suspensions;
     private final RunMigrations migrations;
     private final ExternalJobService externalJobs;
+    private final RunRepair repairs;
 
     public OperatorService(PolicyService policy, RunAccess runAccess, RunStore runs, TaskStore tasks, RunEvents events,
             RunService runService, RuntimeViews views, ReleaseQueries releases, ConnectionService connections,
             EffectJournal journal, EngineCommands engine, NotificationService notifications,
             IdempotencyService idempotency, AuditWriter audit, Json json, Clock clock, ChildRuns children,
-            RunSuspensions suspensions, RunMigrations migrations, ExternalJobService externalJobs) {
+            RunSuspensions suspensions, RunMigrations migrations, ExternalJobService externalJobs, RunRepair repairs) {
+        this.repairs = repairs;
         this.externalJobs = externalJobs;
         this.migrations = migrations;
         this.suspensions = suspensions;
@@ -421,6 +423,56 @@ public class OperatorService {
         notifyInitiator(run, "resumed", "Your request was resumed by an operator.");
         audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.USER, caller.subjectId(), "run.resumed",
                 "run", runId.toString(), AuditWriter.Outcome.SUCCESS, Map.of()));
+        idempotency.complete(claim, "run", runId.toString(), 200);
+        return new Result<>(runService.detail(runAccess.require(caller, workspaceId, runId), List.of()), false);
+    }
+
+    // ---------------------------------------------------------------- consistency check and repair (docs/build/S46)
+
+    @Transactional
+    public RuntimeDtos.RunDiagnosis diagnosis(Caller caller, UUID workspaceId, UUID runId) {
+        RunAccess.Visible visible = runAccess.require(caller, workspaceId, runId);
+        policy.require(visible.access(), Permission.RUN_OPERATE, "getRunDiagnosis", true);
+        return repairs.diagnose(visible.run()).diagnosis();
+    }
+
+    /**
+     * Rebuilds the open approval steps of a request from live engine tasks. The decision is re-made under the run
+     * lock, so a request that progressed meanwhile is refused instead of overwritten; the engine is never touched.
+     */
+    @Transactional
+    public Result<RuntimeDtos.RunDetail> repair(Caller caller, UUID workspaceId, UUID runId, String idempotencyKey,
+            RuntimeDtos.RepairRunRequest request) {
+        String key = IdempotencyService.requireKey(idempotencyKey);
+        RunAccess.Visible visible = runAccess.require(caller, workspaceId, runId);
+        policy.require(visible.access(), Permission.RUN_OPERATE, "repairRun", true);
+        String hash = idempotency.requestHash("repairRun", Map.of("workspaceId", workspaceId.toString(),
+                "runId", runId.toString()), request);
+        IdempotencyService.Claim claim = idempotency.claim(workspaceId, caller.subjectId(), "repairRun", key, hash);
+        if (claim.isReplay()) {
+            return new Result<>(detailWithEffects(caller, workspaceId, runId), true);
+        }
+        RunStore.RunRow run = runs.lock(workspaceId, runId).orElseThrow(ApiException::notFound);
+        if (!run.isActive()) {
+            throw new ApiException(ProblemCode.RUN_NOT_ACTIVE, "The run has already ended.")
+                    .with("currentVersion", run.version());
+        }
+        requireVersion(run, request.expectedVersion());
+        var verdict = repairs.diagnose(run);
+        if (!verdict.diagnosis().repairable()) {
+            throw new ApiException(ProblemCode.RUN_NOT_REPAIRABLE, verdict.diagnosis().message())
+                    .with("currentVersion", run.version()).with("state", verdict.diagnosis().state());
+        }
+        runs.mutate(workspaceId, runId, m -> repairs.rebuild(m, verdict.rebuild()));
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("reason", request.reason());
+        data.put("before", verdict.diagnosis().projectedNodeIds());
+        data.put("after", verdict.diagnosis().engineNodeIds());
+        events.append(workspaceId, runId, "RUN_PROJECTION_REPAIRED", null, caller.subjectId(), data);
+        audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.USER, caller.subjectId(),
+                "run.projection-repaired", "run", runId.toString(), AuditWriter.Outcome.SUCCESS,
+                Map.of("restored", verdict.diagnosis().engineNodeIds().size(),
+                        "removed", verdict.diagnosis().projectedNodeIds().size())));
         idempotency.complete(claim, "run", runId.toString(), 200);
         return new Result<>(runService.detail(runAccess.require(caller, workspaceId, runId), List.of()), false);
     }

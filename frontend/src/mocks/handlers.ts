@@ -800,6 +800,14 @@ export function createHandlers(): HttpHandler[] {
         return { status: 200, body: toRunDetail(run, g.user) }
       })
     }),
+    http.get(`${B}/workspaces/:ws/runs/:id/diagnosis`, async ({ params }) => {
+      await slow()
+      const g = guard(params.ws, 'run.operate')
+      if (!g.ok) return g.res
+      const run = db.runs.get(str(params.id))
+      if (!run || run.wsId !== str(params.ws)) return notFound()
+      return HttpResponse.json({ state: 'inSync', repairable: false, message: 'The projection matches the engine.', projectedNodeIds: [], engineNodeIds: [], version: run.version })
+    }),
     http.get(`${B}/workspaces/:ws/runs/:id/migration-options`, async ({ params }) => {
       await slow()
       const g = guard(params.ws, 'run.operate')

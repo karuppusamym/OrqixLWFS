@@ -26,6 +26,7 @@ const REASONS: Record<string, string> = {
   RUN_SUSPENDED: 'This request is suspended. Resume it first.',
   RUN_NOT_MIGRATABLE: 'This request cannot move to that release.',
   RUN_NOT_SUSPENDED: 'This request is not suspended.',
+  RUN_NOT_REPAIRABLE: 'There is nothing here that can be repaired safely.',
   RUN_NOT_SUSPENDABLE: 'Requests that need attention, child requests and requests with running child requests cannot be suspended.',
   NOTHING_TO_RECONCILE: 'No step needs reconciling.',
   NOT_NEEDS_ATTENTION: 'This request does not need attention.',

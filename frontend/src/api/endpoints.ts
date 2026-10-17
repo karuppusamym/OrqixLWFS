@@ -162,6 +162,17 @@ export const suspendRun = (ws: string, runId: string, body: S['SuspendRunRequest
     }),
   )
 
+export const getRunDiagnosis = (ws: string, runId: string) =>
+  call(api.GET('/workspaces/{workspaceId}/runs/{runId}/diagnosis', { params: { path: { workspaceId: ws, runId } } }))
+
+export const repairRun = (ws: string, runId: string, body: S['RepairRunRequest'], idempotencyKey: string) =>
+  call(
+    api.POST('/workspaces/{workspaceId}/runs/{runId}/repair', {
+      params: { path: { workspaceId: ws, runId }, header: { 'Idempotency-Key': idempotencyKey } },
+      body,
+    }),
+  )
+
 export const resumeRun = (ws: string, runId: string, body: S['ResumeRunRequest'], idempotencyKey: string) =>
   call(
     api.POST('/workspaces/{workspaceId}/runs/{runId}/resume', {

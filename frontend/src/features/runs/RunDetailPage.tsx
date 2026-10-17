@@ -23,7 +23,7 @@ import { humanize } from '@/lib/text'
 import { isTerminal } from '@/lib/status'
 import { readStorage, writeStorage } from '@/lib/storage'
 import { RunProgressPanel, type RunView } from './RunProgressPanel'
-import { CancelDialog, MigrateDialog, ReassignDialog, ReconcileDialog, ResumeDialog, RetryDialog, SuspendDialog } from './OperatorDialogs'
+import { CancelDialog, MigrateDialog, ReassignDialog, RepairDialog, ReconcileDialog, ResumeDialog, RetryDialog, SuspendDialog } from './OperatorDialogs'
 import { RunCommentsPanel } from './RunCommentsPanel'
 import { RunFiles } from './RunFiles'
 import { StageProgress } from './StageProgress'
@@ -42,7 +42,7 @@ const TONE_DOT: Record<EventTone, string> = {
   danger: 'bg-danger',
 }
 
-type DialogName = 'retry' | 'reconcile' | 'cancel' | 'reassign' | 'suspend' | 'resume' | 'migrate' | null
+type DialogName = 'retry' | 'reconcile' | 'cancel' | 'reassign' | 'suspend' | 'resume' | 'migrate' | 'repair' | null
 
 /**
  * Run detail for requesters, approvers and operators (docs/build/S7-frontend.md section 4).
@@ -228,6 +228,11 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
                 Move to another version
               </Button>
             ) : null}
+            {!run.suspension ? (
+              <Button variant="secondary" onClick={() => setDialog('repair')} title="Compare this request with the workflow engine and rebuild missing approval steps">
+                Check consistency
+              </Button>
+            ) : null}
             <Button variant="danger" onClick={() => setDialog('cancel')} disabled={!allowed.cancel.allowed} title="Stop this request. Work already done in other systems is not undone.">
               <Ban aria-hidden="true" /> Cancel request
             </Button>
@@ -376,6 +381,7 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
       {dialog === 'retry' ? <RetryDialog open run={run} onClose={() => setDialog(null)} onNeedReconcile={() => { setDialog('reconcile') }} /> : null}
       {dialog === 'reconcile' ? <ReconcileDialog open run={run} onClose={() => setDialog(null)} initialEffectId={reconcileId ?? reconcileCandidates[0]?.id} /> : null}
       {dialog === 'cancel' ? <CancelDialog open run={run} onClose={() => setDialog(null)} /> : null}
+      {dialog === 'repair' ? <RepairDialog open run={run} onClose={() => setDialog(null)} onCancelRequest={() => setDialog('cancel')} /> : null}
       {dialog === 'suspend' ? <SuspendDialog open run={run} onClose={() => setDialog(null)} /> : null}
       {dialog === 'resume' ? <ResumeDialog open run={run} onClose={() => setDialog(null)} /> : null}
       {dialog === 'migrate' ? <MigrateDialog open run={run} onClose={() => setDialog(null)} /> : null}

@@ -53,6 +53,15 @@ public final class RuntimeDtos {
             @NotNull @Min(1) Integer expectedVersion) {
     }
 
+    public record RepairRunRequest(@NotNull @Size(min = 1, max = 500) String reason,
+            @NotNull @Min(1) Integer expectedVersion) {
+    }
+
+    /** What the engine holds compared with what the request shows; {@code repairable} only for rebuildable approvals. */
+    public record RunDiagnosis(String state, boolean repairable, String message, List<String> projectedNodeIds,
+            List<String> engineNodeIds, int version) {
+    }
+
     public record MigrateRunRequest(@NotNull UUID targetReleaseId, @NotNull @Size(min = 1, max = 500) String reason,
             @NotNull @Min(1) Integer expectedVersion) {
     }

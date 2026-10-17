@@ -4,7 +4,7 @@ import { useState, type ReactNode } from 'react'
 import * as endpoints from '@/api/endpoints'
 import { fingerprintOf, useIdempotencyKey } from '@/api/idempotency'
 import { type ProblemError } from '@/api/problem'
-import { keys, useConnection, useGroups, useRelease, useRunMigrationOptions } from '@/api/queries'
+import { keys, useConnection, useGroups, useRelease, useRunDiagnosis, useRunMigrationOptions } from '@/api/queries'
 import type { Effect, RunDetail, TaskSummary } from '@/api/types'
 import { useWorkspace } from '@/app/workspace'
 import { useAnnounce } from '@/components/common/Announcer'
@@ -301,6 +301,97 @@ export function SuspendDialog(props: DialogProps) {
 
 export function ResumeDialog(props: DialogProps) {
   return <SuspendResumeDialog {...props} mode="resume" />
+}
+
+// Consistency check and repair (EX09) --------------------------------------------------------------
+const DIAGNOSIS_TITLE: Record<string, string> = {
+  inSync: 'Everything matches',
+  projectionDrift: 'Open approvals are missing from this request',
+  strandedToken: 'A step is stuck and nothing can move it',
+  emptyRequest: 'The engine holds no work for this request',
+  engineMissing: 'The workflow engine has no record of this request',
+  unsupported: 'The difference cannot be repaired automatically',
+  protected: 'The request is suspended',
+  ended: 'The request has ended',
+}
+
+export function RepairDialog({ open, run, onClose, onCancelRequest }: DialogProps & { onCancelRequest: () => void }) {
+  const { workspace } = useWorkspace()
+  const ws = workspace.id
+  const diagnosis = useRunDiagnosis(ws, run.id, open)
+  const refresh = useRefresh(run.id)
+  const announce = useAnnounce()
+  const key = useIdempotencyKey()
+  const [reason, setReason] = useState('')
+  const [reasonError, setReasonError] = useState<string>()
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState<ProblemError | null>(null)
+  const found = diagnosis.data
+  const cancelOnly = found && (found.state === 'strandedToken' || found.state === 'engineMissing' || found.state === 'emptyRequest')
+
+  const submit = async () => {
+    if (!found) return
+    if (!reason.trim()) return setReasonError('Add a reason. It is recorded in the audit log.')
+    setReasonError(undefined)
+    setPending(true)
+    setError(null)
+    try {
+      const idem = key.keyFor(fingerprintOf(run.id, 'repair', reason.trim(), found.version))
+      await endpoints.repairRun(ws, run.id, { reason: reason.trim(), expectedVersion: found.version }, idem)
+      await refresh()
+      announce('The open approval steps were rebuilt.')
+      onClose()
+    } catch (cause) {
+      setError(toProblem(cause))
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title="Check this request"
+      dismissible={!pending}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={pending}>
+            Close
+          </Button>
+          {cancelOnly ? (
+            <Button variant="danger" onClick={onCancelRequest}>
+              <Ban aria-hidden="true" /> Cancel request
+            </Button>
+          ) : null}
+          {found?.repairable ? (
+            <Button variant="primary" onClick={() => void submit()} loading={pending}>
+              Rebuild approval steps
+            </Button>
+          ) : null}
+        </>
+      }
+    >
+      <div className="space-y-4">
+        {diagnosis.isLoading ? <LoadingBlock label="Comparing with the workflow engine" /> : null}
+        {diagnosis.isError ? <DialogError error={toProblem(diagnosis.error)} /> : null}
+        {found ? (
+          <Alert tone={found.state === 'inSync' ? 'info' : found.repairable ? 'warning' : 'danger'} title={DIAGNOSIS_TITLE[found.state] ?? found.state}>
+            {found.message}
+          </Alert>
+        ) : null}
+        {found?.repairable ? (
+          <>
+            <p className="text-sm text-muted-foreground">
+              Rebuilding only rewrites what this page shows, from approvals the engine still holds. The engine is not triggered, so nothing runs twice and no outcome is invented.
+            </p>
+            <ReasonField id="repair-reason" value={reason} onChange={setReason} error={reasonError} />
+          </>
+        ) : null}
+        <DialogError error={error} />
+      </div>
+    </Dialog>
+  )
 }
 
 // Move to another release -------------------------------------------------------------------------

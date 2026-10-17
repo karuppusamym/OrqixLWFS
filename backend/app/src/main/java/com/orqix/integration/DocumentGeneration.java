@@ -38,6 +38,30 @@ public final class DocumentGeneration {
         } catch (IOException e) { throw new IllegalStateException("Document generation failed.", e); }
     }
 
+    /**
+     * The distinct placeholders of a template, in order of first use. Applies the same syntax and character rules as
+     * {@link #render}, so a registry template that is accepted here is accepted by the generator's compiler checks.
+     */
+    public static java.util.List<String> placeholders(String template) {
+        if (template == null || template.isBlank() || template.length() > MAX_TEMPLATE_CHARS)
+            throw invalid("A bounded template is required.");
+        if (template.codePoints().anyMatch(c -> (c < 32 && c != '\n' && c != '\r' && c != '\t') || c == 0xFFFE || c == 0xFFFF))
+            throw invalid("The template contains unsupported control characters.");
+        java.util.LinkedHashSet<String> names = new java.util.LinkedHashSet<>();
+        Matcher matcher = VARIABLE.matcher(template);
+        int end = 0;
+        while (matcher.find()) {
+            String literal = template.substring(end, matcher.start());
+            if (literal.contains("{{") || literal.contains("}}")) throw invalid("The template contains an invalid placeholder.");
+            names.add(matcher.group(1));
+            end = matcher.end();
+        }
+        String tail = template.substring(end);
+        if (tail.contains("{{") || tail.contains("}}")) throw invalid("The template contains an invalid placeholder.");
+        if (names.size() > 50) throw invalid("A template can use at most 50 placeholders.");
+        return java.util.List.copyOf(names);
+    }
+
     public String render(String template, JsonNode data) {
         if (template == null || template.isBlank() || template.length() > MAX_TEMPLATE_CHARS || data == null || !data.isObject())
             throw invalid("A bounded template and object input are required.");

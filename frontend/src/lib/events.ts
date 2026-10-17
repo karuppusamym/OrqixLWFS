@@ -246,6 +246,16 @@ export function describeEvent(event: RunEvent, ctx: EventContext): string {
       const name = str(event.data.name)
       return name ? `${actorName(event, ctx)} removed the file ${name}` : `${actorName(event, ctx)} removed a file`
     }
+    case 'ATTACHMENT_QUARANTINED': {
+      const name = str(event.data.name)
+      return `${actorName(event, ctx)} quarantined ${name ? `the file ${name}` : 'a file'} for review`
+    }
+    case 'ATTACHMENT_RELEASED': {
+      const name = str(event.data.name)
+      return `${actorName(event, ctx)} released ${name ? `the file ${name}` : 'a file'} from quarantine`
+    }
+    case 'ATTACHMENT_PURGED':
+      return 'A file was removed automatically at the end of its retention period'
     case 'STAGE_ENTERED': {
       const index = num(event.data.index)
       const total = num(event.data.total)

@@ -7,6 +7,7 @@ import { createHandlers, setCurrentUser } from './handlers'
 import { createInsightsHandlers } from './insights'
 import { createAdapterHandlers } from './adapters'
 import { createCaseFileHandlers } from './caseFiles'
+import { createDocumentLibraryHandlers } from './documentLibrary'
 import { detectOverdueStages, expireStage } from './stages'
 import { createConversationHandlers, resetConversations } from './conversation'
 import { seedDb } from './seed'
@@ -61,7 +62,7 @@ export async function startMock(): Promise<void> {
   }, 15_000)
 
   // In-page fetch interception (no service worker): works in every browser context, including embedded previews.
-  const handlers = [...createAiHandlers(), ...createMigrationHandlers(), ...createConversationHandlers(), ...createInsightsHandlers(), ...createAdapterHandlers(), ...createCaseFileHandlers(), ...createHandlers()]
+  const handlers = [...createAiHandlers(), ...createMigrationHandlers(), ...createConversationHandlers(), ...createInsightsHandlers(), ...createAdapterHandlers(), ...createCaseFileHandlers(), ...createDocumentLibraryHandlers(), ...createHandlers()]
   const interceptor = new FetchInterceptor()
   interceptor.on('request', async ({ request, controller }) => {
     const response = await getResponse(handlers, request)

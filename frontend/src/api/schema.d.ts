@@ -434,6 +434,89 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/document-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** The workspace library of document templates (latest version of each) */
+        get: operations["listDocumentTemplates"];
+        put?: never;
+        /** Create a template with its first version (at most 200 per workspace; names unique ignoring case) */
+        post: operations["createDocumentTemplate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/document-templates/{templateId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                templateId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        /** A template with every version, newest first */
+        get: operations["getDocumentTemplate"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/document-templates/{templateId}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                templateId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add an immutable version (409 WORKFLOW_VERSION_CONFLICT when the latest version is not the one the caller saw)
+         * @description A version identical to the latest and a version of an archived template are refused. A published workflow keeps the text it was published with.
+         */
+        post: operations["addDocumentTemplateVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/document-templates/{templateId}/archived": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                templateId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Archive a template (hidden from the picker, history kept) or restore it */
+        put: operations["setDocumentTemplateArchived"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/workflows/{workflowId}/folder": {
         parameters: {
             query?: never;
@@ -869,6 +952,101 @@ export interface paths {
          */
         get: operations["downloadRunAttachment"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/runs/{runId}/attachments/{attachmentId}/quarantine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+                attachmentId: components["parameters"]["AttachmentId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Quarantine a file - download and text extraction are refused while the bytes are kept for review
+         * @description Needs run.operate. Quarantining a quarantined file succeeds without change. Quarantined files are never removed by retention.
+         */
+        post: operations["quarantineAttachment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/runs/{runId}/attachments/{attachmentId}/release": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+                attachmentId: components["parameters"]["AttachmentId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Release a quarantined file so it can be downloaded again (a file blocked by the virus scan stays blocked) */
+        post: operations["releaseAttachment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/runs/{runId}/attachments/{attachmentId}/ocr": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+                attachmentId: components["parameters"]["AttachmentId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * The stored text extraction of a file (404 until one was requested)
+         * @description Visible like the request data. The text is deleted with the file and when the file is quarantined.
+         */
+        get: operations["getAttachmentOcr"];
+        put?: never;
+        /**
+         * Extract text from a file with the configured OCR provider
+         * @description Needs run.operate and request-data visibility. The shipped provider is a local stub that reads text and CSV
+         *     files and reports every other type as `unsupported`; no external OCR service is called. Quarantined, blocked
+         *     and removed files are refused. A new request replaces the earlier result.
+         */
+        post: operations["requestAttachmentOcr"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/attachment-retention": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** The workspace file retention setting and how many files the next sweep would remove */
+        get: operations["getAttachmentRetention"];
+        /** Set (1 to 3650 days) or clear the number of days after a request ends that its files are kept */
+        put: operations["setAttachmentRetention"];
         post?: never;
         delete?: never;
         options?: never;
@@ -3223,8 +3401,10 @@ export interface components {
             removedAt?: components["schemas"]["Timestamp"] | null;
             removedBy?: components["schemas"]["SubjectRef"] | null;
             canRemove: boolean;
-            /** @description False for removed files and files blocked by the scan */
+            /** @description False for removed files */
             downloadable: boolean;
+            quarantinedAt?: components["schemas"]["Timestamp"] | null;
+            quarantineReason?: string | null;
         };
         AttachmentLimits: {
             maxFileBytes: number;
@@ -3238,6 +3418,82 @@ export interface components {
             items: components["schemas"]["Attachment"][];
             limits: components["schemas"]["AttachmentLimits"];
             canAdd: boolean;
+        };
+        QuarantineAttachment: {
+            reason: string;
+        };
+        AttachmentOcr: {
+            attachmentId: components["schemas"]["Uuid"];
+            /** @description The provider that produced the result, for example local-stub */
+            provider: string;
+            /** @enum {string} */
+            status: "extracted" | "unsupported";
+            /** @description Present only when status is extracted */
+            text?: string | null;
+            extractedAt: components["schemas"]["Timestamp"];
+        };
+        AttachmentRetention: {
+            retentionDays?: number | null;
+            /** @description 0 until a setting is saved */
+            version: number;
+            /** @description Files the next sweep would remove under this setting */
+            eligibleNow: number;
+            updatedAt?: components["schemas"]["Timestamp"] | null;
+        };
+        SetAttachmentRetention: {
+            retentionDays?: number | null;
+            expectedVersion: number;
+        };
+        /** @enum {string} */
+        DocumentFormat: "pdf" | "docx";
+        DocumentTemplateSummary: {
+            id: components["schemas"]["Uuid"];
+            name: string;
+            description?: string | null;
+            latestVersion: number;
+            format: components["schemas"]["DocumentFormat"];
+            placeholderCount: number;
+            archived: boolean;
+            createdAt: components["schemas"]["Timestamp"];
+            updatedAt: components["schemas"]["Timestamp"];
+        };
+        DocumentTemplatePage: {
+            items: components["schemas"]["DocumentTemplateSummary"][];
+            templateLimit: number;
+        };
+        DocumentTemplateVersion: {
+            version: number;
+            format: components["schemas"]["DocumentFormat"];
+            body: string;
+            placeholders: string[];
+            sha256: string;
+            changeNote?: string | null;
+            createdBy: components["schemas"]["SubjectRef"];
+            createdAt: components["schemas"]["Timestamp"];
+        };
+        DocumentTemplate: {
+            id: components["schemas"]["Uuid"];
+            name: string;
+            description?: string | null;
+            latestVersion: number;
+            archived: boolean;
+            createdAt: components["schemas"]["Timestamp"];
+            updatedAt: components["schemas"]["Timestamp"];
+            versions: components["schemas"]["DocumentTemplateVersion"][];
+        };
+        CreateDocumentTemplate: {
+            name: string;
+            description?: string | null;
+            format: components["schemas"]["DocumentFormat"];
+            /** @description Plain text with {{field}} placeholders, as in the Generate a document step */
+            body: string;
+            changeNote?: string | null;
+        };
+        AddDocumentTemplateVersion: {
+            expectedVersion: number;
+            format: components["schemas"]["DocumentFormat"];
+            body: string;
+            changeNote?: string | null;
         };
         RunComment: {
             id: components["schemas"]["Uuid"];
@@ -6250,6 +6506,157 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    listDocumentTemplates: {
+        parameters: {
+            query?: {
+                includeArchived?: boolean;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Templates ordered by name */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentTemplatePage"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createDocumentTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateDocumentTemplate"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentTemplate"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    getDocumentTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                templateId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The template */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentTemplate"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    addDocumentTemplateVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                templateId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddDocumentTemplateVersion"];
+            };
+        };
+        responses: {
+            /** @description Version added */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentTemplate"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    setDocumentTemplateArchived: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                templateId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    archived: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentTemplate"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     setWorkflowFolder: {
         parameters: {
             query?: never;
@@ -7067,6 +7474,177 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    quarantineAttachment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+                attachmentId: components["parameters"]["AttachmentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuarantineAttachment"];
+            };
+        };
+        responses: {
+            /** @description Quarantined */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    releaseAttachment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+                attachmentId: components["parameters"]["AttachmentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Released */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getAttachmentOcr: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+                attachmentId: components["parameters"]["AttachmentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The extraction result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttachmentOcr"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    requestAttachmentOcr: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+                attachmentId: components["parameters"]["AttachmentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The extraction result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttachmentOcr"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    getAttachmentRetention: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The setting (retentionDays null means files are kept until removed) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttachmentRetention"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    setAttachmentRetention: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetAttachmentRetention"];
+            };
+        };
+        responses: {
+            /** @description Saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttachmentRetention"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     listRunEvents: {

@@ -33,6 +33,7 @@ MATRIX_EXEMPT_OPERATIONS = {
 PERMISSION_QUALIFIERS = {
     "authenticated", "platform.admin", "workspace.member", "initiator", "taskParticipant", "taskEligible",
     "currentAssignee", "assignee", "candidate", "recipient", "conversation.author",
+    "inboundSignature",  # IN02: HMAC over the body with a per-trigger secret; no session or token
 }
 # Free-text fragments allowed inside an x-orqix-permission value.
 PERMISSION_PHRASES = ("underlying action permission",)

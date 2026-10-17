@@ -36,7 +36,7 @@ Status: Planned, In progress, Implemented (awaiting verification), Verified loca
 | EX08 | General error/compensation/signal events and automatic compensation lifecycle | Planned | EX05's HTTP boundary and checked compensates annotation do not implement these semantics |
 | EX09 | Arbitrary stranded-token repair and process-state reconstruction | Planned | EX03 classifies proven empty requests and retains controlled cancellation |
 | IN01 | Bounded approved OpenAPI connection import | Verified locally | [S36](build/S36-openapi-import.md); local JSON/YAML, exclusions, explicit selection/effect review, separate registration and normal binding/egress rules |
-| IN02 | Email/Teams/JDBC/Kafka adapters and inbound triggers | Planned | Local stubs first; approved remote sends/contracts needed for live acceptance |
+| IN02 | Email/Teams/JDBC/Kafka adapters and inbound triggers | Verified locally (bounded) | [S47](build/S47-adapters-inbound-triggers.md); closed-allowlist adapter definitions with local-stub delivery only, signed (HMAC) deduplicated inbound triggers whose events are started by an authorized person. No live transport, workflow step, relay or event-list UI; live acceptance remains external |
 | IN03 | OAuth lifecycle, asynchronous agent callbacks, additional LLM protocols and A2A | Planned | Secure credential/callback contracts; external provisioning |
 | IN04 | Approved write-capable agent tools with explicit effect/idempotency/reconciliation | Planned | Never infer recipient/send authorization from connector availability |
 | PL01 | Folders/shared assets/search/owners and authorization-safe organization | Planned | Versioned resource references and workspace policy |

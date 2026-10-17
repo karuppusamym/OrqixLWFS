@@ -111,6 +111,11 @@ public class AuditWriter {
             Map.entry("run.input-corrected", Set.of("fields", "version")),
             Map.entry("document.source.updated", Set.of("revision", "audienceCount", "enabled")),
             Map.entry("connection.openapi-reviewed", Set.of("operations", "selected")),
+            Map.entry("adapter.created", Set.of("kind", "key")),
+            Map.entry("adapter.test-sent", Set.of("kind", "key", "outcome")),
+            Map.entry("inbound.trigger-created", Set.of("source", "key", "workflowId")),
+            Map.entry("inbound.received", Set.of("source", "key", "sizeBytes")),
+            Map.entry("inbound.event-started", Set.of("runId")),
             Map.entry("agent.call", Set.of("key", "operation", "profile", "model", "outcome", "toolCalls", "inputTokens",
                     "outputTokens", "costUsd", "durationMs", "effectId")));
 

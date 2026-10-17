@@ -34,6 +34,7 @@ tags:
   - name: Tasks
   - name: Notifications
   - name: Connections
+  - name: Adapters
   - name: Access
   - name: AI
   - name: Migration
@@ -2134,6 +2135,203 @@ paths:
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
         '422': { $ref: '#/components/responses/Unprocessable' }
 
+  /workspaces/{workspaceId}/adapters:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [Adapters]
+      operationId: listAdapters
+      summary: Outbound adapter definitions (email, Teams, JDBC read, Kafka produce); never secrets
+      x-orqix-permission: connection.read
+      responses:
+        '200':
+          description: Adapters
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdapterList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Adapters]
+      operationId: createAdapter
+      summary: Define an adapter with exact allowlists and a secret reference
+      description: Closed configuration per kind; unknown fields (including anything resembling a secret) are refused. Teams base URLs pass the egress policy. Only the local stub transport exists in this build.
+      x-orqix-permission: connection.manage
+      x-orqix-audit: adapter.created
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdapterCreateRequest' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Adapter' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/adapters/{adapterKey}/test-send:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: adapterKey
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[a-z][a-z0-9-]{0,62}[a-z0-9]$' }
+    post:
+      tags: [Adapters]
+      operationId: testAdapterSend
+      summary: Validate a request against the adapter rules and deliver it to the local stub only
+      description: No remote system is contacted; the outcome is always stubbed. Live acceptance is an external gate.
+      x-orqix-permission: connection.manage
+      x-orqix-audit: adapter.test-sent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdapterSendRequest' }
+      responses:
+        '200':
+          description: Stub outcome
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdapterSendResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/inbound-triggers:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [Adapters]
+      operationId: listInboundTriggers
+      summary: Inbound triggers; the secret reference and receive path are shown to managers only
+      x-orqix-permission: connection.read
+      responses:
+        '200':
+          description: Triggers
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InboundTriggerList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Adapters]
+      operationId: createInboundTrigger
+      summary: Define a signed inbound trigger that maps payload values into a workflow's start input
+      description: A received event never starts a run by itself; a person with workflow.start starts it.
+      x-orqix-permission: connection.manage
+      x-orqix-audit: inbound.trigger-created
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InboundTriggerCreateRequest' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InboundTrigger' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/inbound/{triggerId}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: triggerId
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [Adapters]
+      operationId: receiveInboundEvent
+      summary: Receive one signed event (no session or token)
+      description: |
+        Authenticated by `X-Orqix-Signature: sha256=<hex HMAC-SHA256(secret, timestamp + "." + rawBody)>` with
+        `X-Orqix-Timestamp` (epoch seconds, within 5 minutes) and a unique `X-Orqix-Event-Id` per trigger. Bodies are
+        limited to 64 KiB. Only mapped scalar values are stored; a repeated event id is acknowledged as a duplicate.
+      x-orqix-permission: inboundSignature
+      x-orqix-audit: inbound.received
+      parameters:
+        - { name: X-Orqix-Event-Id, in: header, required: true, schema: { type: string, maxLength: 100 } }
+        - { name: X-Orqix-Timestamp, in: header, required: true, schema: { type: string } }
+        - { name: X-Orqix-Signature, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '202':
+          description: Accepted (or acknowledged duplicate)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InboundAccepted' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /workspaces/{workspaceId}/inbound-events:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [Adapters]
+      operationId: listInboundEvents
+      summary: Received events for workflows the caller may start, newest first
+      description: Mapped values are request data, so only people who can start the target workflow see the event.
+      x-orqix-permission: workflow.start
+      responses:
+        '200':
+          description: Events
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InboundEventList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/inbound-events/{eventId}/start:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: eventId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Adapters]
+      operationId: startInboundEvent
+      summary: Start a run from a received event as the signed-in person
+      description: Uses the caller's own workflow.start rights. The event is locked, so it starts at most one run; a repeat returns that run.
+      x-orqix-permission: workflow.start
+      x-orqix-audit: inbound.event-started
+      responses:
+        '200':
+          description: Started (or already started)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InboundStarted' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
   /workspaces/{workspaceId}/connections:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
     get:
@@ -3333,6 +3531,120 @@ components:
     OutcomeKind:
       type: string
       enum: [success, rejected, failed]
+    Adapter:
+      type: object
+      additionalProperties: false
+      required: [id, key, kind, name, config, enabled, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        key: { type: string }
+        kind: { type: string, enum: [email, teams, jdbc, kafka] }
+        name: { type: string }
+        secretRef: { type: [string, 'null'], description: Shown to connection.manage only }
+        config: { type: object, additionalProperties: true }
+        enabled: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    AdapterList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Adapter' } }
+    AdapterCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [key, kind, name, secretRef, config]
+      properties:
+        key: { type: string, pattern: '^[a-z][a-z0-9-]{0,62}[a-z0-9]$' }
+        kind: { type: string, enum: [email, teams, jdbc, kafka] }
+        name: { type: string, minLength: 1, maxLength: 100 }
+        secretRef: { type: string, pattern: '^[a-z0-9][a-z0-9-]{0,62}$' }
+        config: { type: object, additionalProperties: true }
+    AdapterSendRequest:
+      type: object
+      additionalProperties: false
+      required: [payload]
+      properties:
+        payload: { type: object, additionalProperties: true }
+    AdapterSendResult:
+      type: object
+      additionalProperties: false
+      required: [adapter, kind, outcome, detail]
+      properties:
+        adapter: { type: string }
+        kind: { type: string, enum: [email, teams, jdbc, kafka] }
+        outcome: { type: string, enum: [stubbed] }
+        detail: { type: object, additionalProperties: true }
+    InboundTrigger:
+      type: object
+      additionalProperties: false
+      required: [id, key, source, name, workflowId, filter, mapping, enabled, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        key: { type: string }
+        source: { type: string, enum: [email, teams, jdbc, kafka] }
+        name: { type: string }
+        workflowId: { type: string, format: uuid }
+        secretRef: { type: [string, 'null'] }
+        filter: { type: object, additionalProperties: true }
+        mapping: { type: object, additionalProperties: { type: string } }
+        enabled: { type: boolean }
+        receivePath: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+    InboundTriggerList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/InboundTrigger' } }
+    InboundTriggerCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [key, source, name, workflowId, secretRef, mapping]
+      properties:
+        key: { type: string, pattern: '^[a-z][a-z0-9-]{0,62}[a-z0-9]$' }
+        source: { type: string, enum: [email, teams, jdbc, kafka] }
+        name: { type: string, minLength: 1, maxLength: 100 }
+        workflowId: { type: string, format: uuid }
+        secretRef: { type: string, pattern: '^[a-z0-9][a-z0-9-]{0,62}$' }
+        filter: { type: object, additionalProperties: true }
+        mapping: { type: object, additionalProperties: { type: string } }
+    InboundAccepted:
+      type: object
+      additionalProperties: false
+      required: [eventId, status, duplicate]
+      properties:
+        eventId: { type: string, format: uuid }
+        status: { type: string, enum: [received, started] }
+        duplicate: { type: boolean }
+    InboundEvent:
+      type: object
+      additionalProperties: false
+      required: [id, triggerId, triggerKey, workflowId, eventId, status, input, receivedAt]
+      properties:
+        id: { type: string, format: uuid }
+        triggerId: { type: string, format: uuid }
+        triggerKey: { type: string }
+        workflowId: { type: string, format: uuid }
+        eventId: { type: string }
+        status: { type: string, enum: [received, started] }
+        input: { type: object, additionalProperties: true }
+        runId: { type: [string, 'null'], format: uuid }
+        receivedAt: { type: string, format: date-time }
+    InboundEventList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/InboundEvent' } }
+    InboundStarted:
+      type: object
+      additionalProperties: false
+      required: [eventId, runId, alreadyStarted]
+      properties:
+        eventId: { type: string, format: uuid }
+        runId: { type: string, format: uuid }
+        alreadyStarted: { type: boolean }
     OpenApiReviewRequest:
       type: object
       additionalProperties: false

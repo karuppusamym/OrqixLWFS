@@ -51,6 +51,26 @@ public class SecurityConfiguration {
         return header != null && header.regionMatches(true, 0, "Bearer ", 0, 7);
     };
 
+    private static final java.util.regex.Pattern INBOUND = java.util.regex.Pattern
+            .compile("^/api/v1/workspaces/[^/]+/inbound/[^/]+$");
+
+    /**
+     * Signed inbound events (S47): the only API route that needs neither a session nor a token. The controller verifies
+     * an HMAC over the body with a per-trigger secret; CSRF does not apply because there is no ambient credential.
+     */
+    @Bean
+    @Order(0)
+    SecurityFilterChain inboundChain(HttpSecurity http) throws Exception {
+        http.securityMatcher(request -> "POST".equals(request.getMethod())
+                        && INBOUND.matcher(request.getRequestURI()).matches())
+                .authorizeHttpRequests(a -> a.anyRequest().permitAll())
+                .csrf(c -> c.disable())
+                .requestCache(c -> c.disable())
+                .securityContext(c -> c.disable())
+                .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
+        return http.build();
+    }
+
     @Bean
     @Order(1)
     SecurityFilterChain managementChain(HttpSecurity http) throws Exception {

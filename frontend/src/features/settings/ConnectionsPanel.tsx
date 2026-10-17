@@ -26,6 +26,7 @@ import { AGENT_USES_AI, AiAgentBadge } from './AgentSpecView'
 import { DocumentFolderPicker } from './DocumentFolderPicker'
 import { DocumentVersionPicker, type DocumentOperation } from './DocumentVersionPicker'
 import { OpenApiImport } from './OpenApiImport'
+import { AdaptersPanel } from './AdaptersPanel'
 
 export function ConnectionsPanel() {
   const { workspace } = useWorkspace()
@@ -35,6 +36,7 @@ export function ConnectionsPanel() {
   return (
     <div className="space-y-8">
       <OpenApiImport />
+      <AdaptersPanel />
       {query.data.items.length === 0 ? <p>No connections are registered in this workspace.</p> : null}
       <div className="rounded-card border border-border bg-surface-muted p-5">
         <h2>Connect a workflow to another system</h2>

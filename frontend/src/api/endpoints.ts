@@ -140,6 +140,19 @@ export const setActiveRelease = (ws: string, workflowId: string, releaseId: stri
     }),
   )
 
+// Canary and release analytics (PL02)
+export const getWorkflowRollout = (ws: string, workflowId: string) =>
+  call(api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/rollout', { params: { path: { workspaceId: ws, workflowId } } }))
+
+export const setWorkflowCanary = (ws: string, workflowId: string, body: S['SetWorkflowCanary']) =>
+  call(api.PUT('/workspaces/{workspaceId}/workflows/{workflowId}/canary', { params: { path: { workspaceId: ws, workflowId } }, body }))
+
+export const clearWorkflowCanary = (ws: string, workflowId: string, expectedVersion: number) =>
+  call(api.DELETE('/workspaces/{workspaceId}/workflows/{workflowId}/canary', { params: { path: { workspaceId: ws, workflowId }, query: { expectedVersion } } }))
+
+export const getReleaseAnalytics = (ws: string, workflowId: string, days = 30) =>
+  call(api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/release-analytics', { params: { path: { workspaceId: ws, workflowId }, query: { days } } }))
+
 // Runs
 export const getStartForm = (ws: string, workflowId: string) =>
   call(api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/start-form', { params: { path: { workspaceId: ws, workflowId } } }))

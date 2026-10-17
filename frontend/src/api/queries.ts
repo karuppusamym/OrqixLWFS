@@ -17,6 +17,8 @@ export const keys = {
   me: ['me'] as const,
   workflows: (ws: string, params?: unknown) => ['ws', ws, 'workflows', params ?? {}] as const,
   workflow: (ws: string, id: string) => ['ws', ws, 'workflow', id] as const,
+  rollout: (ws: string, id: string) => ['ws', ws, 'workflow', id, 'rollout'] as const,
+  releaseAnalytics: (ws: string, id: string, days: number) => ['ws', ws, 'workflow', id, 'release-analytics', days] as const,
   releases: (ws: string, id: string) => ['ws', ws, 'workflow', id, 'releases'] as const,
   release: (ws: string, id: string, releaseId: string) => ['ws', ws, 'workflow', id, 'release', releaseId] as const,
   draft: (ws: string, id: string) => ['ws', ws, 'workflow', id, 'draft'] as const,
@@ -88,6 +90,14 @@ export function useReleases(ws: string, id: string, enabled = true) {
     getNextPageParam: (last) => last.nextCursor ?? undefined,
     enabled,
   })
+}
+
+export function useWorkflowRollout(ws: string, id: string, enabled = true) {
+  return useQuery({ queryKey: keys.rollout(ws, id), queryFn: () => endpoints.getWorkflowRollout(ws, id), enabled })
+}
+
+export function useReleaseAnalytics(ws: string, id: string, days: number, enabled = true) {
+  return useQuery({ queryKey: keys.releaseAnalytics(ws, id, days), queryFn: () => endpoints.getReleaseAnalytics(ws, id, days), enabled })
 }
 
 export function useRelease(ws: string, id: string, releaseId: string | null | undefined) {

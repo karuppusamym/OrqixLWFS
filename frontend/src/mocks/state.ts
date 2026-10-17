@@ -218,6 +218,13 @@ export interface MockComment {
   resolvedById: string | null
 }
 
+/** A canary for a workflow (PL02, docs/build/S54). */
+export interface MockCanary {
+  releaseId: string
+  percent: number
+  setAt: string
+}
+
 export interface MockFolder {
   id: string
   wsId: string
@@ -388,6 +395,8 @@ export interface MockDb {
   migrationReviews: MockMigrationReview[]
   workflows: Map<string, MockWorkflow>
   workflowFolders: Map<string, MockFolder>
+  /** Workflow id -> canary. */
+  canaries: Map<string, MockCanary>
   workflowComments: MockComment[]
   runs: Map<string, MockRun>
   notifications: MockNotification[]
@@ -479,6 +488,7 @@ export function emptyDb(): MockDb {
     migrationPolicies: new Map(),
     migrationReviews: [],
     workflows: new Map(),
+    canaries: new Map(),
     workflowFolders: new Map(),
     workflowComments: [],
     runs: new Map(),
@@ -532,6 +542,7 @@ interface DbSnapshot {
   migrationProjects?: Array<[string, MockMigrationProject]>
   migrationPolicies?: Array<[string, MockMigrationPolicy]>
   migrationReviews?: MockMigrationReview[]
+  canaries?: Array<[string, MockCanary]>
   workflows: Array<[string, MockWorkflow]>
   workflowFolders?: Array<[string, MockFolder]>
   workflowComments?: MockComment[]
@@ -550,6 +561,7 @@ export function snapshotDb(): string {
     migrations: [...db.migrations],
     migrationProjects: [...db.migrationProjects],
     migrationPolicies: [...db.migrationPolicies],
+    canaries: [...db.canaries],
     migrationReviews: db.migrationReviews,
     workflows: [...db.workflows],
     workflowFolders: [...db.workflowFolders],
@@ -572,6 +584,7 @@ export function restoreDb(json: string): boolean {
     next.messageBuffer = snap.messageBuffer ?? []
     next.migrations = new Map(snap.migrations ?? [])
     next.migrationProjects = new Map(snap.migrationProjects ?? [])
+    next.canaries = new Map(snap.canaries ?? [])
     next.migrationPolicies = new Map(snap.migrationPolicies ?? [])
     next.migrationReviews = snap.migrationReviews ?? []
     next.workflows = new Map(snap.workflows)

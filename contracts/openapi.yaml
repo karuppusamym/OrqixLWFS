@@ -1053,6 +1053,228 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Unprocessable' }
 
+  /workspaces/{workspaceId}/environment:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [Releases]
+      operationId: getWorkspaceEnvironment
+      summary: The lifecycle stage of this workspace (test or production when none was set explicitly)
+      x-orqix-permission: workspace.member
+      responses:
+        '200':
+          description: Stage
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceEnvironment' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Releases]
+      operationId: setWorkspaceEnvironment
+      summary: Set the lifecycle stage (development, test, staging, production)
+      x-orqix-permission: workspace.manage-access
+      x-orqix-audit: workspace.environment.changed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetWorkspaceEnvironment' }
+      responses:
+        '200':
+          description: Stage
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceEnvironment' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/workflows/{workflowId}/rollout:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+    get:
+      tags: [Releases]
+      operationId: getWorkflowRollout
+      summary: The workflow version and its canary, if any
+      x-orqix-permission: workflow.read
+      responses:
+        '200':
+          description: Rollout
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkflowRollout' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/workflows/{workflowId}/canary:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+    put:
+      tags: [Releases]
+      operationId: setWorkflowCanary
+      summary: Send 1 to 50 percent of new starts to another release with the same request form
+      description: |
+        The release must differ from the active release and have identical request fields and form layout (422
+        otherwise). Setting it changes the workflow version. Selecting another active release clears the canary.
+        Existing runs never move.
+      x-orqix-permission: workflow.publish
+      x-orqix-audit: workflow.canary.set
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetWorkflowCanary' }
+      responses:
+        '200':
+          description: Rollout
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkflowRollout' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    delete:
+      tags: [Releases]
+      operationId: clearWorkflowCanary
+      summary: Stop the canary; all new starts use the active release
+      x-orqix-permission: workflow.publish
+      x-orqix-audit: workflow.canary.cleared
+      parameters:
+        - name: expectedVersion
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: Rollout
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkflowRollout' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /workspaces/{workspaceId}/workflows/{workflowId}/release-analytics:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+    get:
+      tags: [Releases]
+      operationId: getReleaseAnalytics
+      summary: Runs started on each of the newest 20 releases in a window, with outcomes and average completion time
+      description: Counts only; no request data. The window is the last `days` days (default 30, at most 365).
+      x-orqix-permission: run.read
+      parameters:
+        - name: days
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 365 }
+      responses:
+        '200':
+          description: Per-release figures
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReleaseAnalytics' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/workflows/{workflowId}/releases/{releaseId}/promotion-check:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+      - $ref: '#/components/parameters/ReleaseId'
+    post:
+      tags: [Releases]
+      operationId: checkReleasePromotion
+      summary: Check whether a release can move to a workspace at a later stage, against the target's own bindings
+      description: Read-only. Needs workflow.export here and workflow.edit in the target (same organization, later stage).
+      x-orqix-permission: workflow.export
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PromoteRelease' }
+      responses:
+        '200':
+          description: Compatibility report
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PromotionReport' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/workflows/{workflowId}/releases/{releaseId}/promote:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+      - $ref: '#/components/parameters/ReleaseId'
+    post:
+      tags: [Releases]
+      operationId: promoteRelease
+      summary: Save the release definition as a draft in a later-stage workspace (never publishes, never copies bindings)
+      description: |
+        Refused with 422 WORKFLOW_INVALID when the compatibility check has blockers. When the target already has the
+        workflow, expectedDraftRevision is required (412 STALE_REVISION when stale). The target publishes through its
+        normal gates.
+      x-orqix-permission: workflow.export
+      x-orqix-audit: release.promoted
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PromoteRelease' }
+      responses:
+        '201':
+          description: Draft created in the target
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReleasePromotion' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/workflows/{workflowId}/promotions:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+    get:
+      tags: [Releases]
+      operationId: listWorkflowPromotions
+      summary: Promotions into this workflow, and out of it to workspaces the caller can also see (newest 50)
+      x-orqix-permission: workflow.read
+      responses:
+        '200':
+          description: Promotions
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/PromotionRecord' } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /workspaces/{workspaceId}/workflows/{workflowId}/test-suite:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -4766,6 +4988,142 @@ components:
       properties:
         ownerSubjectId: { $ref: '#/components/schemas/Uuid' }
         expectedVersion: { type: integer, minimum: 1, description: 'The workflow version' }
+    WorkspaceEnvironment:
+      type: object
+      required: [workspaceId, stage, explicit, version]
+      properties:
+        workspaceId: { $ref: '#/components/schemas/Uuid' }
+        stage: { type: string, enum: [development, test, staging, production] }
+        explicit: { type: boolean, description: 'False when derived from the workspace test flag' }
+        version: { type: integer, minimum: 0 }
+    SetWorkspaceEnvironment:
+      type: object
+      additionalProperties: false
+      required: [stage, expectedVersion]
+      properties:
+        stage: { type: string, enum: [development, test, staging, production] }
+        expectedVersion: { type: integer, minimum: 0 }
+    WorkflowRollout:
+      type: object
+      required: [version, activeReleaseNumber, canary]
+      properties:
+        version: { type: integer, minimum: 1 }
+        activeReleaseNumber: { type: [integer, 'null'] }
+        canary:
+          oneOf:
+            - { type: 'null' }
+            - type: object
+              required: [releaseId, releaseNumber, percent, setAt]
+              properties:
+                releaseId: { $ref: '#/components/schemas/Uuid' }
+                releaseNumber: { type: integer }
+                percent: { type: integer, minimum: 1, maximum: 50 }
+                setAt: { $ref: '#/components/schemas/Timestamp' }
+    SetWorkflowCanary:
+      type: object
+      additionalProperties: false
+      required: [releaseId, percent, expectedVersion]
+      properties:
+        releaseId: { $ref: '#/components/schemas/Uuid' }
+        percent: { type: integer, minimum: 1, maximum: 50 }
+        expectedVersion: { type: integer, minimum: 1, description: 'The workflow version' }
+    ReleaseAnalytics:
+      type: object
+      required: [days, from, to, releases]
+      properties:
+        days: { type: integer }
+        from: { $ref: '#/components/schemas/Timestamp' }
+        to: { $ref: '#/components/schemas/Timestamp' }
+        releases:
+          type: array
+          items:
+            type: object
+            required: [releaseId, releaseNumber, active, canary, started, open, needsAttention, succeeded, rejected, cancelled, averageCompletionSeconds, successShare]
+            properties:
+              releaseId: { $ref: '#/components/schemas/Uuid' }
+              releaseNumber: { type: integer }
+              active: { type: boolean }
+              canary: { type: boolean }
+              started: { type: integer, minimum: 0 }
+              open: { type: integer, minimum: 0 }
+              needsAttention: { type: integer, minimum: 0 }
+              succeeded: { type: integer, minimum: 0 }
+              rejected: { type: integer, minimum: 0 }
+              cancelled: { type: integer, minimum: 0 }
+              averageCompletionSeconds: { type: [number, 'null'], description: 'Completed requests only' }
+              successShare: { type: [number, 'null'], description: 'succeeded / (succeeded + rejected + cancelled); null until one has finished' }
+    PromoteRelease:
+      type: object
+      additionalProperties: false
+      required: [targetWorkspaceId]
+      properties:
+        targetWorkspaceId: { $ref: '#/components/schemas/Uuid' }
+        expectedDraftRevision: { type: [integer, 'null'], minimum: 1, description: 'Required when the target already has the workflow' }
+    PromotionReport:
+      type: object
+      required: [compatible, sourceStage, targetStage, targetWorkflow, connections, groups, workflows, issues]
+      properties:
+        compatible: { type: boolean, description: 'True when the target compiles the definition without blockers' }
+        sourceStage: { type: string }
+        targetStage: { type: string }
+        targetWorkflow:
+          type: object
+          required: [exists, id, draftRevision]
+          properties:
+            exists: { type: boolean }
+            id: { oneOf: [{ type: 'null' }, { $ref: '#/components/schemas/Uuid' }] }
+            draftRevision: { type: [integer, 'null'] }
+        connections:
+          type: array
+          items:
+            type: object
+            required: [key, definitionVersion, status]
+            properties:
+              key: { type: string }
+              definitionVersion: { type: integer }
+              status: { type: string, enum: [ready, bindingMissing, definitionMissing, definitionDiffers] }
+        groups:
+          type: array
+          items:
+            type: object
+            required: [key, exists, memberCount]
+            properties:
+              key: { type: string }
+              exists: { type: boolean }
+              memberCount: { type: integer, minimum: 0 }
+        workflows:
+          type: array
+          items:
+            type: object
+            required: [workflowKey, publishedInTarget]
+            properties:
+              workflowKey: { type: string }
+              publishedInTarget: { type: boolean }
+        issues: { type: array, items: { $ref: '#/components/schemas/ValidationIssue' } }
+    ReleasePromotion:
+      type: object
+      required: [id, targetWorkspaceId, targetWorkflowId, draftRevision, createdWorkflow, report]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        targetWorkspaceId: { $ref: '#/components/schemas/Uuid' }
+        targetWorkflowId: { $ref: '#/components/schemas/Uuid' }
+        draftRevision: { type: integer, minimum: 1 }
+        createdWorkflow: { type: boolean }
+        report: { $ref: '#/components/schemas/PromotionReport' }
+    PromotionRecord:
+      type: object
+      required: [id, direction, sourceWorkspaceKey, targetWorkspaceKey, workflowKey, releaseNumber, targetDraftRevision, createdWorkflow, promotedAt, promotedBy]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        direction: { type: string, enum: [incoming, outgoing] }
+        sourceWorkspaceKey: { type: string }
+        targetWorkspaceKey: { type: string }
+        workflowKey: { type: string }
+        releaseNumber: { type: integer }
+        targetDraftRevision: { type: integer }
+        createdWorkflow: { type: boolean }
+        promotedAt: { $ref: '#/components/schemas/Timestamp' }
+        promotedBy: { type: string }
     Workflow:
       allOf:
         - $ref: '#/components/schemas/WorkflowSummary'

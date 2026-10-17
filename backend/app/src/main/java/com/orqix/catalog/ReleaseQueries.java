@@ -154,6 +154,22 @@ public class ReleaseQueries {
                 .optional();
     }
 
+    /** The canary release of a workflow and its share of new starts, if one is set (PL02). */
+    public record Canary(UUID releaseId, int percent) {
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<Canary> canary(UUID workspaceId, UUID workflowId) {
+        return jdbc.sql("SELECT release_id, percent FROM workflow_canary WHERE workspace_id = :ws AND workflow_id = :wf")
+                .param("ws", workspaceId).param("wf", workflowId)
+                .query((rs, n) -> new Canary(Sql.uuid(rs, "release_id"), rs.getInt("percent"))).optional();
+    }
+
+    /** Whether a new run uses the canary: a stable function of the run id, about {@code percent} of 100. */
+    public static boolean inCanaryShare(UUID runId, int percent) {
+        return Math.floorMod(Long.hashCode(runId.getLeastSignificantBits() ^ runId.getMostSignificantBits()), 100) < percent;
+    }
+
     /** Releases of one workflow, newest first. */
     @Transactional(readOnly = true)
     public java.util.List<UUID> releaseIds(UUID workspaceId, UUID workflowId, int limit) {

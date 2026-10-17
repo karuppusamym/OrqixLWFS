@@ -234,6 +234,17 @@ function validationContext(wsId: string): ValidationContext {
   }
 }
 
+function rolloutOf(wf: MockWorkflow) {
+  const canary = db.canaries.get(wf.id)
+  const active = wf.releases.find((r) => r.id === wf.activeReleaseId)
+  const release = canary ? wf.releases.find((r) => r.id === canary.releaseId) : undefined
+  return {
+    version: wf.version,
+    activeReleaseNumber: active?.releaseNumber ?? null,
+    canary: canary && release ? { releaseId: canary.releaseId, releaseNumber: release.releaseNumber, percent: canary.percent, setAt: canary.setAt } : null,
+  }
+}
+
 function findWorkflow(wsId: string, id: string): MockWorkflow | undefined {
   const wf = db.workflows.get(id)
   return wf && wf.wsId === wsId ? wf : undefined
@@ -675,6 +686,80 @@ export function createHandlers(): HttpHandler[] {
       if (input.resolved && !comment.resolvedAt) { comment.resolvedAt = clock.iso(); comment.resolvedById = g.user.id }
       if (input.resolved === false) { comment.resolvedAt = null; comment.resolvedById = null }
       return HttpResponse.json({ id: comment.id, elementId: comment.elementId, parentId: null, body: comment.body, authorId: comment.authorId, authorName: userById(comment.authorId)?.displayName ?? 'Unknown user', createdAt: comment.createdAt, resolved: comment.resolvedAt !== null, resolvedAt: comment.resolvedAt, resolvedByName: comment.resolvedById ? (userById(comment.resolvedById)?.displayName ?? 'Unknown user') : null })
+    }),
+
+    // Canary and release analytics (PL02, docs/build/S54) --------------------------------------------------------------
+    http.get(`${B}/workspaces/:ws/workflows/:id/rollout`, async ({ params }) => {
+      await slow()
+      const g = guard(params.ws, 'workflow.read')
+      if (!g.ok) return g.res
+      const wf = findWorkflow(str(params.ws), str(params.id))
+      if (!wf) return notFound()
+      return HttpResponse.json(rolloutOf(wf))
+    }),
+    http.put(`${B}/workspaces/:ws/workflows/:id/canary`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws, 'workflow.publish')
+      if (!g.ok) return g.res
+      const wf = findWorkflow(str(params.ws), str(params.id))
+      if (!wf) return notFound()
+      const input = await body<{ releaseId: string; percent: number; expectedVersion: number }>(request)
+      if (input.expectedVersion !== wf.version) return problem(409, 'WORKFLOW_VERSION_CONFLICT', 'The workflow changed', { currentVersion: wf.version })
+      const release = wf.releases.find((r) => r.id === input.releaseId)
+      if (!release) return notFound()
+      if (release.id === wf.activeReleaseId) return problem(422, 'VALIDATION_FAILED', 'The canary must be a different release from the active one.')
+      if (!(input.percent >= 1 && input.percent <= 50)) return problem(422, 'VALIDATION_FAILED', 'The share must be 1 to 50 percent.')
+      db.canaries.set(wf.id, { releaseId: release.id, percent: input.percent, setAt: clock.iso() })
+      wf.version += 1
+      return HttpResponse.json(rolloutOf(wf))
+    }),
+    http.delete(`${B}/workspaces/:ws/workflows/:id/canary`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws, 'workflow.publish')
+      if (!g.ok) return g.res
+      const wf = findWorkflow(str(params.ws), str(params.id))
+      if (!wf) return notFound()
+      const expected = Number(new URL(request.url).searchParams.get('expectedVersion'))
+      if (expected !== wf.version) return problem(409, 'WORKFLOW_VERSION_CONFLICT', 'The workflow changed', { currentVersion: wf.version })
+      if (db.canaries.delete(wf.id)) wf.version += 1
+      return HttpResponse.json(rolloutOf(wf))
+    }),
+    http.get(`${B}/workspaces/:ws/workflows/:id/release-analytics`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws, 'run.read')
+      if (!g.ok) return g.res
+      const wf = findWorkflow(str(params.ws), str(params.id))
+      if (!wf) return notFound()
+      const days = Number(new URL(request.url).searchParams.get('days') ?? 30)
+      if (!(days >= 1 && days <= 365)) return problem(400, 'MALFORMED_REQUEST', 'days must be between 1 and 365.')
+      const canary = db.canaries.get(wf.id)
+      const runs = [...db.runs.values()].filter((r) => r.workflowId === wf.id)
+      const releases = [...wf.releases]
+        .sort((a, b) => b.releaseNumber - a.releaseNumber)
+        .slice(0, 20)
+        .map((r) => {
+          const mine = runs.filter((run) => run.releaseId === r.id)
+          const count = (f: (run: (typeof mine)[number]) => boolean) => mine.filter(f).length
+          const succeeded = count((x) => x.lifecycle === 'completed' && x.outcomeKind === 'success')
+          const rejected = count((x) => x.lifecycle === 'completed' && x.outcomeKind === 'rejected')
+          const cancelled = count((x) => x.lifecycle === 'cancelled')
+          const finished = succeeded + rejected + cancelled
+          return {
+            releaseId: r.id,
+            releaseNumber: r.releaseNumber,
+            active: r.id === wf.activeReleaseId,
+            canary: r.id === canary?.releaseId,
+            started: mine.length,
+            open: count((x) => x.lifecycle === 'running' || x.lifecycle === 'waiting'),
+            needsAttention: count((x) => x.lifecycle === 'needsAttention'),
+            succeeded,
+            rejected,
+            cancelled,
+            averageCompletionSeconds: null,
+            successShare: finished === 0 ? null : succeeded / finished,
+          }
+        })
+      return HttpResponse.json({ days, from: clock.iso(), to: clock.iso(), releases })
     }),
 
     // Runs ---------------------------------------------------------------------------------------------------------------

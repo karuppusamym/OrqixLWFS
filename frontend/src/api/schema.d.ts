@@ -599,6 +599,165 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/environment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** The lifecycle stage of this workspace (test or production when none was set explicitly) */
+        get: operations["getWorkspaceEnvironment"];
+        /** Set the lifecycle stage (development, test, staging, production) */
+        put: operations["setWorkspaceEnvironment"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/rollout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        /** The workflow version and its canary, if any */
+        get: operations["getWorkflowRollout"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/canary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Send 1 to 50 percent of new starts to another release with the same request form
+         * @description The release must differ from the active release and have identical request fields and form layout (422
+         *     otherwise). Setting it changes the workflow version. Selecting another active release clears the canary.
+         *     Existing runs never move.
+         */
+        put: operations["setWorkflowCanary"];
+        post?: never;
+        /** Stop the canary; all new starts use the active release */
+        delete: operations["clearWorkflowCanary"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/release-analytics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Runs started on each of the newest 20 releases in a window, with outcomes and average completion time
+         * @description Counts only; no request data. The window is the last `days` days (default 30, at most 365).
+         */
+        get: operations["getReleaseAnalytics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/releases/{releaseId}/promotion-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+                releaseId: components["parameters"]["ReleaseId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check whether a release can move to a workspace at a later stage, against the target's own bindings
+         * @description Read-only. Needs workflow.export here and workflow.edit in the target (same organization, later stage).
+         */
+        post: operations["checkReleasePromotion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/releases/{releaseId}/promote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+                releaseId: components["parameters"]["ReleaseId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save the release definition as a draft in a later-stage workspace (never publishes, never copies bindings)
+         * @description Refused with 422 WORKFLOW_INVALID when the compatibility check has blockers. When the target already has the
+         *     workflow, expectedDraftRevision is required (412 STALE_REVISION when stale). The target publishes through its
+         *     normal gates.
+         */
+        post: operations["promoteRelease"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/promotions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        /** Promotions into this workflow, and out of it to workspaces the caller can also see (newest 50) */
+        get: operations["listWorkflowPromotions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/workflows/{workflowId}/test-suite": {
         parameters: {
             query?: never;
@@ -2988,6 +3147,109 @@ export interface components {
             ownerSubjectId: components["schemas"]["Uuid"];
             /** @description The workflow version */
             expectedVersion: number;
+        };
+        WorkspaceEnvironment: {
+            workspaceId: components["schemas"]["Uuid"];
+            /** @enum {string} */
+            stage: "development" | "test" | "staging" | "production";
+            /** @description False when derived from the workspace test flag */
+            explicit: boolean;
+            version: number;
+        };
+        SetWorkspaceEnvironment: {
+            /** @enum {string} */
+            stage: "development" | "test" | "staging" | "production";
+            expectedVersion: number;
+        };
+        WorkflowRollout: {
+            version: number;
+            activeReleaseNumber: number | null;
+            canary: null | {
+                releaseId: components["schemas"]["Uuid"];
+                releaseNumber: number;
+                percent: number;
+                setAt: components["schemas"]["Timestamp"];
+            };
+        };
+        SetWorkflowCanary: {
+            releaseId: components["schemas"]["Uuid"];
+            percent: number;
+            /** @description The workflow version */
+            expectedVersion: number;
+        };
+        ReleaseAnalytics: {
+            days: number;
+            from: components["schemas"]["Timestamp"];
+            to: components["schemas"]["Timestamp"];
+            releases: {
+                releaseId: components["schemas"]["Uuid"];
+                releaseNumber: number;
+                active: boolean;
+                canary: boolean;
+                started: number;
+                open: number;
+                needsAttention: number;
+                succeeded: number;
+                rejected: number;
+                cancelled: number;
+                /** @description Completed requests only */
+                averageCompletionSeconds: number | null;
+                /** @description succeeded / (succeeded + rejected + cancelled); null until one has finished */
+                successShare: number | null;
+            }[];
+        };
+        PromoteRelease: {
+            targetWorkspaceId: components["schemas"]["Uuid"];
+            /** @description Required when the target already has the workflow */
+            expectedDraftRevision?: number | null;
+        };
+        PromotionReport: {
+            /** @description True when the target compiles the definition without blockers */
+            compatible: boolean;
+            sourceStage: string;
+            targetStage: string;
+            targetWorkflow: {
+                exists: boolean;
+                id: null | components["schemas"]["Uuid"];
+                draftRevision: number | null;
+            };
+            connections: {
+                key: string;
+                definitionVersion: number;
+                /** @enum {string} */
+                status: "ready" | "bindingMissing" | "definitionMissing" | "definitionDiffers";
+            }[];
+            groups: {
+                key: string;
+                exists: boolean;
+                memberCount: number;
+            }[];
+            workflows: {
+                workflowKey: string;
+                publishedInTarget: boolean;
+            }[];
+            issues: components["schemas"]["ValidationIssue"][];
+        };
+        ReleasePromotion: {
+            id: components["schemas"]["Uuid"];
+            targetWorkspaceId: components["schemas"]["Uuid"];
+            targetWorkflowId: components["schemas"]["Uuid"];
+            draftRevision: number;
+            createdWorkflow: boolean;
+            report: components["schemas"]["PromotionReport"];
+        };
+        PromotionRecord: {
+            id: components["schemas"]["Uuid"];
+            /** @enum {string} */
+            direction: "incoming" | "outgoing";
+            sourceWorkspaceKey: string;
+            targetWorkspaceKey: string;
+            workflowKey: string;
+            releaseNumber: number;
+            targetDraftRevision: number;
+            createdWorkflow: boolean;
+            promotedAt: components["schemas"]["Timestamp"];
+            promotedBy: string;
         };
         Workflow: components["schemas"]["WorkflowSummary"] & {
             /** @description Concurrency token for active-release changes */
@@ -6908,6 +7170,276 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["Unprocessable"];
+        };
+    };
+    getWorkspaceEnvironment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Stage */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceEnvironment"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    setWorkspaceEnvironment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetWorkspaceEnvironment"];
+            };
+        };
+        responses: {
+            /** @description Stage */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceEnvironment"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    getWorkflowRollout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Rollout */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowRollout"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    setWorkflowCanary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetWorkflowCanary"];
+            };
+        };
+        responses: {
+            /** @description Rollout */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowRollout"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    clearWorkflowCanary: {
+        parameters: {
+            query: {
+                expectedVersion: number;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Rollout */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowRollout"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    getReleaseAnalytics: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Per-release figures */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReleaseAnalytics"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    checkReleasePromotion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+                releaseId: components["parameters"]["ReleaseId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PromoteRelease"];
+            };
+        };
+        responses: {
+            /** @description Compatibility report */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromotionReport"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    promoteRelease: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+                releaseId: components["parameters"]["ReleaseId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PromoteRelease"];
+            };
+        };
+        responses: {
+            /** @description Draft created in the target */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReleasePromotion"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listWorkflowPromotions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Promotions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["PromotionRecord"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     getWorkflowTestSuite: {

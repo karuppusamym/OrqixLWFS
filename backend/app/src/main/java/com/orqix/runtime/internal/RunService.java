@@ -127,7 +127,12 @@ public class RunService {
         if (request.expectedReleaseId() != null && !request.expectedReleaseId().equals(workflow.activeReleaseId())) {
             throw new ApiException(ProblemCode.RELEASE_NOT_ACTIVE, "A newer release of this workflow is active; reload the form.");
         }
-        ReleaseQueries.ReleaseView release = releases.require(workspaceId, workflow.activeReleaseId());
+        // A canary (PL02) takes its share of new starts; the run id is chosen first so the choice is stable and recorded.
+        UUID runId = Ids.newId();
+        UUID chosen = releases.canary(workspaceId, workflow.id())
+                .filter(c -> ReleaseQueries.inCanaryShare(runId, c.percent()))
+                .map(ReleaseQueries.Canary::releaseId).orElse(workflow.activeReleaseId());
+        ReleaseQueries.ReleaseView release = releases.require(workspaceId, chosen);
         // Child workflows start on behalf of the requester, who therefore needs the right to start them (S12 section 4).
         for (JsonNode pin : release.manifest().path("workflows")) {
             ReleaseQueries.ReleaseView child = releases.require(workspaceId, UUID.fromString(pin.path("releaseId").asString()));
@@ -155,7 +160,6 @@ public class RunService {
                     .withHeader("Retry-After", "60");
         }
 
-        UUID runId = Ids.newId();
         runs.insert(runId, workspaceId, workflow.id(), release.id(), request.businessKey(), caller.subjectId(),
                 request.input());
         Map<String, Object> started = new LinkedHashMap<>();

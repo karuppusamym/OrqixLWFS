@@ -282,6 +282,14 @@ public class RunStore {
                 .param("release", releaseId).param("ws", workspaceId).param("id", runId).update();
     }
 
+    /** Corrects the request data of a running or waiting request (an approver's correction, docs/build/S42). */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public int correctInputWhileActive(UUID workspaceId, UUID runId, int version, JsonNode input) {
+        return jdbc.sql("UPDATE workflow_run SET input=CAST(:input AS jsonb),version=version+1,updated_at=:now WHERE workspace_id=:ws AND id=:run AND version=:version AND lifecycle IN ('running','waiting') RETURNING version")
+                .param("input", json.write(input)).param("now", Sql.ts(clock.instant())).param("ws", workspaceId).param("run", runId).param("version", version)
+                .query(Integer.class).optional().orElseThrow(() -> new IllegalStateException("Locked correction version changed"));
+    }
+
     /** Locks the run, applies {@code change} and writes the projection columns back with {@code version + 1}. */
     @Transactional(propagation = Propagation.MANDATORY)
     public RunRow mutate(UUID workspaceId, UUID runId, Consumer<Mutation> change) {

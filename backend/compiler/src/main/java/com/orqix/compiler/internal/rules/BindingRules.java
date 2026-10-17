@@ -89,8 +89,105 @@ final class BindingRules {
                 if (why != null) rc.issues().blocker("WF_SEPARATION_INVALID", n.configPath("separateFrom"), n.id(), null,
                         n.label() + " separates duties from " + q(ref) + ", which " + why + ".");
             }
+            correctable(rc, n, a);
             if (a.escalation() != null && a.dueAfterHours() == null) rc.issues().blocker("WF_ESCALATION_DUE_REQUIRED",
                     n.configPath("escalation"), n.id(), null, "Recurring overdue notices require a due date.");
+        }
+    }
+
+    /**
+     * Fields an approver may correct (S42). Each must be a scalar request field that no step before this approval has
+     * used, and the approval must not sit inside an open parallel section where another branch could be using it.
+     */
+    private static void correctable(RuleContext rc, Node n, Node.Approval a) {
+        if (a.correctable().isEmpty()) {
+            return;
+        }
+        String path = n.configPath("correctable");
+        var form = rc.definition().inputSchema();
+        java.util.Set<String> before = new java.util.LinkedHashSet<>();
+        java.util.ArrayDeque<Node> queue = new java.util.ArrayDeque<>();
+        queue.add(n);
+        while (!queue.isEmpty()) {
+            for (com.orqix.compiler.internal.model.WorkflowDefinition.Transition t : rc.graph().incoming(queue.poll())) {
+                Node from = rc.graph().node(t.from());
+                if (from != null && before.add(from.id())) {
+                    queue.add(from);
+                }
+            }
+        }
+        for (String id : before) {
+            Node earlier = rc.graph().node(id);
+            if (earlier instanceof Node.ParallelSplit split && !before.contains(split.joinRef())) {
+                rc.issues().blocker("WF_CORRECTION_INVALID", path, n.id(), null, n.label()
+                        + " is inside a parallel section, where another branch could be using the request while it is corrected.");
+                return;
+            }
+        }
+        for (String key : a.correctable()) {
+            var field = form.properties().get(key);
+            if (field == null) {
+                rc.issues().blocker("WF_CORRECTION_INVALID", path, n.id(), null, n.label() + " lets the approver correct "
+                        + q(key) + ", which is not a request field.");
+                continue;
+            }
+            boolean scalar = switch (field.type()) {
+                case STRING, NUMBER, INTEGER, BOOLEAN, DATE -> true;
+                case ARRAY, OBJECT, ATTACHMENT -> false;
+            };
+            if (!scalar) {
+                rc.issues().blocker("WF_CORRECTION_INVALID", path, n.id(), null, n.label() + " cannot let the approver correct "
+                        + q(key) + ": only single-value fields (not lists, rows or files) can be corrected.");
+                continue;
+            }
+            String ref = "/input/" + key;
+            for (String id : before) {
+                Node earlier = rc.graph().node(id);
+                if (earlier != null && references(rc, earlier).contains(ref)) {
+                    rc.issues().blocker("WF_CORRECTION_INVALID", path, n.id(), null, n.label() + " lets the approver correct "
+                            + q(key) + ", but the earlier step " + q(earlier) + " already uses it.");
+                    break;
+                }
+            }
+        }
+    }
+
+    /** Request field references a step reads when it runs, including the conditions on the routes leaving it. */
+    private static java.util.Set<String> references(RuleContext rc, Node node) {
+        java.util.Set<String> refs = new java.util.HashSet<>();
+        switch (node) {
+            case Node.Http h -> refs.addAll(h.inputMapping().values());
+            case Node.GenerateDocument g -> refs.addAll(g.inputMapping().values());
+            case Node.StartWorkflow s -> {
+                refs.addAll(s.inputMapping().values());
+                if (s.forEach() != null) refs.add(s.forEach().itemsRef());
+            }
+            case Node.Wait w -> {
+                if (w.untilField() != null) refs.add(w.untilField());
+            }
+            case Node.WaitForMessage m -> refs.add(m.correlationField());
+            case Node.Decision d -> {
+                var table = rc.types().table(d.decisionRef());
+                if (table != null) {
+                    table.rows().forEach(row -> conditionRefs(row.when(), refs));
+                }
+            }
+            default -> {
+            }
+        }
+        for (com.orqix.compiler.internal.model.WorkflowDefinition.Transition t : rc.leaving(node)) {
+            if (t.condition() != null) {
+                conditionRefs(t.condition(), refs);
+            }
+        }
+        return refs;
+    }
+
+    private static void conditionRefs(com.orqix.compiler.internal.model.WorkflowDefinition.Condition c, java.util.Set<String> refs) {
+        if (c.compound()) {
+            c.terms().forEach(t -> conditionRefs(t, refs));
+        } else if (c.fieldRef() != null) {
+            refs.add(c.fieldRef());
         }
     }
 

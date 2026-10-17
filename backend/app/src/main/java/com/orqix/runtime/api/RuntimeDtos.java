@@ -195,7 +195,15 @@ public final class RuntimeDtos {
             @JsonInclude(JsonInclude.Include.NON_NULL) JsonNode inputUi) {
     }
 
-    public record TaskForm(boolean rejectReasonRequired) {
+    /** {@code correctableFields} lists the request fields this caller may correct on this task now (S42); empty otherwise. */
+    public record TaskForm(boolean rejectReasonRequired, java.util.List<String> correctableFields) {
+        public TaskForm(boolean rejectReasonRequired) {
+            this(rejectReasonRequired, java.util.List.of());
+        }
+    }
+
+    public record CorrectTaskInputRequest(@NotNull @Min(1) Integer expectedVersion,
+            @NotNull @Size(min = 1, max = 500) String reason, @NotNull Map<String, JsonNode> changes) {
     }
 
     public record AllowedTaskActions(ActionAvailability claim, ActionAvailability release, ActionAvailability decide,

@@ -242,6 +242,12 @@ function isOpenTaskVisible(user: MockUser, task: MockTask, run: MockRun): boolea
   return task.assigneeId === user.id || task.completedById === user.id || inGroup(user, task.candidateGroup) && hasTaskSkills(run,task,user) || run.initiatorId === user.id
 }
 
+/** Request fields the step declares correctable by whoever holds its task (docs/build/S42). */
+function correctableOf(run: MockRun, task: MockTask): string[] {
+  const declared = nodeById(currentRelease(run).definition, task.nodeId)?.config.correctable
+  return Array.isArray(declared) ? declared.filter((f): f is string => typeof f === 'string') : []
+}
+
 function taskDetail(user: MockUser, perms: Permission[], run: MockRun, task: MockTask): TaskDetail {
   const rel = currentRelease(run)
   const summaryValue = toTaskSummary(run, task)
@@ -255,7 +261,7 @@ function taskDetail(user: MockUser, perms: Permission[], run: MockRun, task: Moc
     ...summaryValue,
     request: { input: run.input, inputSchema: rel.definition.inputSchema as never, inputUi: (rel.definition.inputUi ?? {}) as never },
     history: run.tasks.filter((t) => t.decision).map((t) => t.decision!).sort((a, b) => a.decidedAt.localeCompare(b.decidedAt)),
-    form: { rejectReasonRequired: true },
+    form: { rejectReasonRequired: true, correctableFields: open && !run.suspension && (isAssignee && eligibleGroup || perms.includes('run.operate') && perms.includes('run.read-data')) ? correctableOf(run, task) : [] },
     completedBy: task.completedById ? subjectRef(userById(task.completedById)) : null,
     allowedActions: {
       claim: claimAllowed ? { allowed: true } : { allowed: false, reasonCode: !open ? 'TASK_NOT_OPEN' : task.assigneeId ? 'TASK_ALREADY_CLAIMED' : own ? 'SELF_APPROVAL_DENIED' : separated ? 'SEPARATION_OF_DUTIES' : 'NOT_ELIGIBLE' },
@@ -1028,6 +1034,37 @@ export function createHandlers(): HttpHandler[] {
         && permissionsOf(user, run.wsId).includes('task.act') && inGroup(user, task.candidateGroup) && hasTaskSkills(run,task,user)
         && (user.id !== run.initiatorId || selfApprovalAllowed(run, currentRelease(run))))
       return HttpResponse.json(candidates.slice(0, 100).map((user) => ({ id: user.id, displayName: user.displayName })))
+    }),
+    http.post(`${B}/workspaces/:ws/tasks/:id/correct-input`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws, 'task.act')
+      if (!g.ok) return g.res
+      const found = findTask(str(params.ws), str(params.id))
+      if (!found) return notFound()
+      const { run, task } = found
+      const input = await body<{ expectedVersion: number; reason: string; changes: Record<string, Literal> }>(request)
+      return idempotent(request, g.user, 'correctTaskInput', input, () => {
+        if (task.assigneeId !== g.user.id) return problem(403, 'FORBIDDEN', 'Only the person holding the task can correct it')
+        if (task.status !== 'open') return problem(409, 'TASK_NOT_OPEN', 'The task is no longer open', { currentVersion: task.version })
+        if (run.suspension) return problem(409, 'RUN_SUSPENDED', 'The request is suspended; resume it first')
+        if (input.expectedVersion !== task.version) return problem(409, 'TASK_VERSION_CONFLICT', 'The task changed', { currentVersion: task.version })
+        const allowed = correctableOf(run, task)
+        const changes = Object.entries(input.changes ?? {})
+        const bad = changes.filter(([k, v]) => !allowed.includes(k) || v === null || typeof v === 'object')
+        if (changes.length === 0 || bad.length > 0) return problem(422, 'VALIDATION_FAILED', 'Some values are not valid', { fieldErrors: bad.map(([k]) => ({ pointer: `/changes/${k}`, code: 'enum', message: 'Not a field this step lets you correct' })) })
+        const rel = currentRelease(run)
+        const corrected = { ...run.input, ...Object.fromEntries(changes) }
+        const schema = parseFormSchema(rel.definition.inputSchema)
+        const issues = validateJsonForm(schema, parseFormUi(rel.definition.inputUi), corrected)
+        if (issues.length > 0) return problem(422, 'VALIDATION_FAILED', 'The corrected request does not match its form', { fieldErrors: issues.map((i) => ({ pointer: `/changes${i.pointer}`, code: i.keyword, message: `${i.pointer.slice(1)} is not valid (${i.keyword}).` })) })
+        if (!input.reason?.trim()) return problem(422, 'REASON_REQUIRED', 'A reason is required', { fieldErrors: [{ pointer: '/reason', code: 'required', message: 'Add a reason.' }] })
+        const before = Object.fromEntries(changes.map(([k]) => [k, run.input[k]]))
+        run.input = corrected as typeof run.input
+        run.version += 1
+        task.version += 1
+        addEvent(run, 'INPUT_CORRECTED', { actorId: g.user.id, nodeId: task.nodeId, data: { before, after: Object.fromEntries(changes), reason: input.reason.trim(), fields: changes.length, version: run.version } })
+        return { status: 200, body: taskDetail(g.user, g.perms, run, task) }
+      })
     }),
     http.post(`${B}/workspaces/:ws/tasks/:id/delegate`, async ({ params, request }) => {
       await slow()

@@ -239,6 +239,14 @@ export const decideTask = (ws: string, taskId: string, body: S['DecisionRequest'
     }),
   )
 
+export const correctTaskInput = (ws: string, taskId: string, body: S['CorrectTaskInputRequest'], idempotencyKey: string) =>
+  call(
+    api.POST('/workspaces/{workspaceId}/tasks/{taskId}/correct-input', {
+      params: { path: { workspaceId: ws, taskId }, header: { 'Idempotency-Key': idempotencyKey } },
+      body,
+    }),
+  )
+
 export const reassignTask = (ws: string, taskId: string, body: S['ReassignRequest']) =>
   call(
     api.POST('/workspaces/{workspaceId}/tasks/{taskId}/reassign', {

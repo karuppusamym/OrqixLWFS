@@ -1,3 +1,4 @@
+import { TaskCorrection } from './TaskCorrection'
 import { useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, ShieldAlert, Undo2, UserCheck, XCircle } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -256,6 +257,8 @@ export function TaskPanel({ taskId, onClaimed }: { taskId: string; onClaimed?: (
             ))}
           </dl>
         </section>
+
+        <TaskCorrection ws={ws} task={task} fields={fields} onDone={refreshAll} />
 
         <RunFiles ws={ws} runId={task.runId} readOnly />
 

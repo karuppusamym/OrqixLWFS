@@ -1797,6 +1797,39 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
 
+  /workspaces/{workspaceId}/tasks/{taskId}/correct-input:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/TaskId'
+    post:
+      tags: [Tasks]
+      operationId: correctTaskInput
+      summary: Correct request fields the workflow lets the task holder correct
+      description: >-
+        Only the fields listed in the step's `correctable` setting, as single values, while the task is open and the
+        request is not suspended. Records before and after values with the reason. A decision prepared on the old data
+        is refused with 409 TASK_VERSION_CONFLICT.
+      x-orqix-permission: task.act + assignee | run.operate + run.read-data
+      x-orqix-audit: task.input-corrected
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CorrectTaskInputRequest' }
+      responses:
+        '200':
+          description: Corrected (or replay)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskDetail' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
   /workspaces/{workspaceId}/tasks/{taskId}/release:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -4509,6 +4542,19 @@ components:
       properties:
         reason: { type: string, minLength: 1, maxLength: 500 }
         expectedVersion: { type: integer, minimum: 1 }
+    CorrectTaskInputRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, reason, changes]
+      properties:
+        expectedVersion: { type: integer, minimum: 1 }
+        reason: { type: string, minLength: 1, maxLength: 500 }
+        changes:
+          type: object
+          minProperties: 1
+          maxProperties: 10
+          description: Field key to its new single value.
+          additionalProperties: { type: [string, number, boolean] }
     SuspendRunRequest:
       type: object
       additionalProperties: false
@@ -4662,6 +4708,10 @@ components:
               required: [rejectReasonRequired]
               properties:
                 rejectReasonRequired: { type: boolean }
+                correctableFields:
+                  description: Request fields the caller may correct on this task now (holder or operator, task open, not suspended); empty otherwise.
+                  type: array
+                  items: { type: string }
             allowedActions:
               type: object
               required: [claim, release, decide, reassign, priority]

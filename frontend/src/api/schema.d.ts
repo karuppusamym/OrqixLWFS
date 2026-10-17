@@ -1144,6 +1144,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/tasks/{taskId}/correct-input": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                /** @description Engine task identifier; always resolved through the workspace's task projection first. */
+                taskId: components["parameters"]["TaskId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Correct request fields the workflow lets the task holder correct
+         * @description Only the fields listed in the step's `correctable` setting, as single values, while the task is open and the request is not suspended. Records before and after values with the reason. A decision prepared on the old data is refused with 409 TASK_VERSION_CONFLICT.
+         */
+        post: operations["correctTaskInput"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/tasks/{taskId}/release": {
         parameters: {
             query?: never;
@@ -2879,6 +2903,14 @@ export interface components {
             reason: string;
             expectedVersion: number;
         };
+        CorrectTaskInputRequest: {
+            expectedVersion: number;
+            reason: string;
+            /** @description Field key to its new single value. */
+            changes: {
+                [key: string]: string | number | boolean;
+            };
+        };
         SuspendRunRequest: {
             reason: string;
             expectedVersion: number;
@@ -2992,6 +3024,8 @@ export interface components {
             history: components["schemas"]["TaskDecision"][];
             form: {
                 rejectReasonRequired: boolean;
+                /** @description Request fields the caller may correct on this task now (holder or operator, task open, not suspended); empty otherwise. */
+                correctableFields?: string[];
             };
             allowedActions: {
                 claim: components["schemas"]["ActionAvailability"];
@@ -3658,6 +3692,8 @@ export interface components {
                     start: string;
                     end: string;
                 };
+                /** @description Request fields the person holding this task may correct before deciding (docs/build/S42). Scalar request fields only. Publishing proves that no earlier step has used them, so a correction can never contradict work that already happened. */
+                correctable?: components["schemas"]["fieldKey"][];
                 /** @description Separation of duties (docs/build/S41): ids of earlier approval steps that every path to this step passes through. Whoever decided one of them in the same request cannot claim, decide or be assigned this step. */
                 separateFrom?: components["schemas"]["id"][];
                 /** @description Optional routing of each new task to one eligible person instead of leaving it in the group queue (docs/build/S39). leastLoaded: fewest open assigned tasks; roundRobin: the person assigned longest ago. The person can still return the task to the group. Nobody eligible: the task stays in the queue. */
@@ -4066,6 +4102,8 @@ export interface components {
                             start: string;
                             end: string;
                         };
+                        /** @description Request fields the person holding this task may correct before deciding (docs/build/S42). Scalar request fields only. Publishing proves that no earlier step has used them, so a correction can never contradict work that already happened. */
+                        correctable?: components["schemas"]["fieldKey"][];
                         /** @description Separation of duties (docs/build/S41): ids of earlier approval steps that every path to this step passes through. Whoever decided one of them in the same request cannot claim, decide or be assigned this step. */
                         separateFrom?: components["schemas"]["id"][];
                         /** @description Optional routing of each new task to one eligible person instead of leaving it in the group queue (docs/build/S39). leastLoaded: fewest open assigned tasks; roundRobin: the person assigned longest ago. The person can still return the task to the group. Nobody eligible: the task stays in the queue. */
@@ -6743,6 +6781,42 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    correctTaskInput: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                /** @description Engine task identifier; always resolved through the workspace's task projection first. */
+                taskId: components["parameters"]["TaskId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CorrectTaskInputRequest"];
+            };
+        };
+        responses: {
+            /** @description Corrected (or replay) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskDetail"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     releaseTask: {

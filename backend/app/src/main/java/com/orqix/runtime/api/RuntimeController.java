@@ -215,6 +215,13 @@ public class RuntimeController {
         return tasks.reassign(callers.current(), workspaceId, taskId(taskId), request);
     }
 
+    @PostMapping("/tasks/{taskId}/correct-input")
+    public RuntimeDtos.TaskDetail correctTaskInput(@PathVariable UUID workspaceId, @PathVariable String taskId,
+            @RequestHeader(name = IdempotencyService.HEADER, required = false) String idempotencyKey,
+            @Valid @RequestBody RuntimeDtos.CorrectTaskInputRequest request) {
+        return tasks.correctInput(callers.current(), workspaceId, taskId(taskId), idempotencyKey, request);
+    }
+
     @GetMapping("/tasks/{taskId}/delegates")
     public java.util.List<com.orqix.identity.SubjectService.SubjectRef> listTaskDelegates(@PathVariable UUID workspaceId,
             @PathVariable String taskId) {

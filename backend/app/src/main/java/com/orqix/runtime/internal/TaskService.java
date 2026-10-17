@@ -55,11 +55,13 @@ public class TaskService {
     private final Json json;
     private final Clock clock;
     private final RunSuspensions suspensions;
+    private final com.orqix.compiler.FormValidator formValidator;
 
     public TaskService(PolicyService policy, SubjectService subjects, TaskStore tasks, TaskQueries taskQueries,
             RunStore runs, RunEvents events, RuntimeViews views, ReleaseQueries releases, EngineCommands engine,
             IdempotencyService idempotency, AuditWriter audit, RuntimeMetrics metrics, CursorCodec cursors, Json json,
-            Clock clock, RunSuspensions suspensions) {
+            Clock clock, RunSuspensions suspensions, com.orqix.compiler.FormValidator formValidator) {
+        this.formValidator = formValidator;
         this.suspensions = suspensions;
         this.policy = policy;
         this.subjects = subjects;
@@ -481,9 +483,117 @@ public class TaskService {
                 summary.decision(),
                 new RuntimeDtos.TaskRequest(input, release.inputSchema(),
                         release.inputUi().isMissingNode() ? null : release.inputUi()),
-                historyViews, new RuntimeDtos.TaskForm(reasonRequired),
+                historyViews, new RuntimeDtos.TaskForm(reasonRequired, correctableFor(access, task, node, run)),
                 allowed(access, task, suspensions.isSuspended(task.workspaceId(), task.runId())),
                 own == null ? null : views.ref(own.actor(), names));
+    }
+
+    /** The request fields the caller may correct on this open task now: the holder of the task, or an operator who can see the data. */
+    private List<String> correctableFor(WorkspaceAccess access, TaskStore.TaskRow task, JsonNode node, RunStore.RunRow run) {
+        if (node == null || !task.isOpen() || suspensions.isSuspended(task.workspaceId(), task.runId())) {
+            return List.of();
+        }
+        boolean holder = access.subjectId().equals(task.assignee()) && access.has(Permission.TASK_ACT);
+        boolean operator = access.has(Permission.RUN_OPERATE) && access.has(Permission.RUN_READ_DATA);
+        if (!holder && !operator) {
+            return List.of();
+        }
+        List<String> fields = new ArrayList<>();
+        node.path("config").path("correctable").forEach(f -> fields.add(f.asString()));
+        return fields;
+    }
+
+    // ---------------------------------------------------------------- correction by the task holder (S42)
+
+    /**
+     * Corrects declared request fields while the task is open. The workflow author named the fields and publishing proved
+     * that no earlier step has used them; this adds the runtime guards (holder or operator, open task, not suspended,
+     * current version) and records before/after values with the reason.
+     */
+    @Transactional
+    public RuntimeDtos.TaskDetail correctInput(Caller caller, UUID workspaceId, String taskId, String idempotencyKey,
+            RuntimeDtos.CorrectTaskInputRequest request) {
+        String key = IdempotencyService.requireKey(idempotencyKey);
+        VisibleTask visible = visibleLocked(caller, workspaceId, taskId);
+        TaskStore.TaskRow task = visible.task();
+        WorkspaceAccess access = visible.access();
+        boolean holder = caller.subjectId().equals(task.assignee());
+        boolean operator = access.has(Permission.RUN_OPERATE) && access.has(Permission.RUN_READ_DATA);
+        if (!holder && !operator) {
+            throw ApiException.forbidden();
+        }
+        if (holder) {
+            requireEligible(access, task, "correctTaskInput");
+        }
+        String hash = idempotency.requestHash("correctTaskInput",
+                Map.of("workspaceId", workspaceId.toString(), "taskId", taskId), request);
+        IdempotencyService.Claim claim = idempotency.claim(workspaceId, caller.subjectId(), "correctTaskInput", key, hash);
+        if (claim.isReplay()) {
+            return detail(visible(caller, workspaceId, taskId));
+        }
+        if (!task.isOpen()) {
+            throw new ApiException(ProblemCode.TASK_NOT_OPEN, "This task is no longer open.");
+        }
+        suspensions.requireNotSuspended(workspaceId, task.runId());
+        requireVersion(task, request.expectedVersion());
+        RunStore.RunRow run = runs.lock(workspaceId, task.runId()).orElseThrow(ApiException::notFound);
+        ReleaseQueries.ReleaseView release = releases.require(workspaceId, run.releaseId());
+        JsonNode node = release.node(task.nodeId());
+        List<String> allowed = new ArrayList<>();
+        if (node != null) {
+            node.path("config").path("correctable").forEach(f -> allowed.add(f.asString()));
+        }
+        if (request.changes().isEmpty() || request.changes().size() > 10) {
+            throw ApiException.malformed("changes must contain 1..10 request fields.");
+        }
+        tools.jackson.databind.node.ObjectNode corrected = (tools.jackson.databind.node.ObjectNode) run.input().deepCopy();
+        tools.jackson.databind.node.ObjectNode before = json.object();
+        tools.jackson.databind.node.ObjectNode after = json.object();
+        for (var change : request.changes().entrySet()) {
+            JsonNode value = change.getValue();
+            if (!allowed.contains(change.getKey()) || value == null || !value.isValueNode() || value.isNull()) {
+                throw new ApiException(ProblemCode.VALIDATION_FAILED,
+                        "Only the fields this step lets you correct can change, and only to a single value.")
+                        .withFieldErrors(List.of(new ApiException.FieldError("/changes/" + change.getKey(), "enum",
+                                "Not a field this step lets you correct")));
+            }
+            before.set(change.getKey(), corrected.path(change.getKey()));
+            after.set(change.getKey(), value);
+            corrected.set(change.getKey(), value);
+        }
+        if (corrected.equals(run.input())) {
+            throw new ApiException(ProblemCode.VALIDATION_FAILED, "Change at least one value.");
+        }
+        var errors = formValidator.validate(json.write(release.inputSchema()), json.write(corrected),
+                json.write(release.inputUi()));
+        if (!errors.isEmpty()) {
+            throw new ApiException(ProblemCode.VALIDATION_FAILED, "The corrected request does not match its form.")
+                    .withFieldErrors(errors.stream()
+                            .map(e -> new ApiException.FieldError("/changes" + e.pointer(), e.code(), e.message())).toList());
+        }
+        try {
+            engine.correctInput(run.engineProcessInstanceId(), json.write(corrected), caller.subjectId());
+        } catch (EngineCommands.EngineConflictException e) {
+            throw new ApiException(ProblemCode.RUN_BUSY, "The request is busy; try again shortly.");
+        }
+        int version = runs.correctInputWhileActive(workspaceId, run.id(), run.version(), corrected);
+        // A decision loaded before the correction must not go through on the old data.
+        tasks.bumpVersion(workspaceId, taskId, task.version());
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("before", before);
+        data.put("after", after);
+        data.put("reason", request.reason().trim());
+        data.put("fields", request.changes().size());
+        data.put("version", version);
+        events.append(workspaceId, run.id(), "INPUT_CORRECTED", task.nodeId(), caller.subjectId(), data);
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("taskId", taskId);
+        metadata.put("nodeId", task.nodeId());
+        metadata.put("fields", request.changes().size());
+        audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.USER, caller.subjectId(),
+                "task.input-corrected", "task", taskId, AuditWriter.Outcome.SUCCESS, metadata));
+        idempotency.complete(claim, "taskInputCorrection", Integer.toString(version), 200);
+        return detail(visible(caller, workspaceId, taskId));
     }
 
     private static String nodeLabel(ReleaseQueries.ReleaseView release, String nodeId) {

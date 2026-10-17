@@ -110,6 +110,8 @@ public final class ModelReader {
                     c.has("requiredSkills") ? java.util.stream.StreamSupport.stream(c.get("requiredSkills").spliterator(),false)
                             .map(JsonNode::stringValue).toList() : List.of(), c.get("calendar"), c.get("escalation"),
                     c.has("separateFrom") ? java.util.stream.StreamSupport.stream(c.get("separateFrom").spliterator(),false)
+                            .map(JsonNode::stringValue).toList() : List.of(),
+                    c.has("correctable") ? java.util.stream.StreamSupport.stream(c.get("correctable").spliterator(),false)
                             .map(JsonNode::stringValue).toList() : List.of());
             case DECISION -> new Node.Decision(index, id, label, c.get("decisionRef").stringValue());
             case BRANCH -> new Node.Branch(index, id, label);

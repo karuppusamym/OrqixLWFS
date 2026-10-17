@@ -37,10 +37,10 @@ public sealed interface Node {
     record Approval(int index, String id, String label, String candidateGroupRef, boolean rejectReasonRequired,
                     Integer dueAfterHours, String timeoutAfter, java.util.List<String> requiredSkills,
                     tools.jackson.databind.JsonNode calendar, tools.jackson.databind.JsonNode escalation,
-                    java.util.List<String> separateFrom) implements Node {
+                    java.util.List<String> separateFrom, java.util.List<String> correctable) implements Node {
         public Approval(int index, String id, String label, String candidateGroupRef, boolean rejectReasonRequired,
                 Integer dueAfterHours, String timeoutAfter) {
-            this(index,id,label,candidateGroupRef,rejectReasonRequired,dueAfterHours,timeoutAfter,java.util.List.of(),null,null,java.util.List.of());
+            this(index,id,label,candidateGroupRef,rejectReasonRequired,dueAfterHours,timeoutAfter,java.util.List.of(),null,null,java.util.List.of(),java.util.List.of());
         }
         @Override
         public NodeKind kind() {

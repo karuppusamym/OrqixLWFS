@@ -78,6 +78,19 @@ export function ApprovalInspector({ node }: { node: WorkflowNode }) {
             />
           )}
         </FormField>
+        <FormField label="Number of approvers" optionalText id={`approval-approvers-${node.id}`} description="Leave empty for one person. With 2 to 5, that many different people from the group must each approve; the first rejection rejects the step. Not combined with a time limit, reminders or corrections.">
+          {(ids) => (
+            <CommitNumber
+              id={ids.input}
+              data-field="config.multiInstance"
+              integer
+              value={cfg<{ approvers: number }>(node, 'multiInstance')?.approvers}
+              disabled={readOnly}
+              aria-describedby={ids.describedBy}
+              onCommit={(v) => store.getState().updateNodeConfig(node.id, { multiInstance: v === undefined || v < 2 ? undefined : { approvers: Math.min(5, v) } })}
+            />
+          )}
+        </FormField>
         <div className="flex items-start gap-3">
           <Checkbox id={`approval-reason-${node.id}`} checked disabled aria-describedby={`approval-reason-${node.id}-help`} />
           <div>

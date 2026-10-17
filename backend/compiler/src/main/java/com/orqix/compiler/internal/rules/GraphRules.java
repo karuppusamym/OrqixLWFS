@@ -102,6 +102,8 @@ final class GraphRules {
                 case APPROVAL -> timeout ? Set.of(Route.APPROVED, Route.REJECTED, Route.TIMED_OUT)
                         : Set.of(Route.APPROVED, Route.REJECTED);
                 case BRANCH -> Set.of(Route.CONDITION, Route.DEFAULT);
+                case PARALLEL_SPLIT -> ((Node.ParallelSplit) n).inclusive()
+                        ? Set.of(Route.CONDITION, Route.DEFAULT) : Set.of(Route.NEXT);
                 case WAIT_FOR_MESSAGE -> ((Node.WaitForMessage) n).timeoutAfter() != null
                         ? Set.of(Route.NEXT, Route.TIMED_OUT) : Set.of(Route.NEXT);
                 case HTTP, START_WORKFLOW -> Set.of(Route.NEXT, Route.FAILED);
@@ -143,6 +145,19 @@ final class GraphRules {
                 }
                 case PARALLEL_SPLIT -> {
                     // The number of branches is checked with the other parallel rules (ParallelRules).
+                    if (((Node.ParallelSplit) n).inclusive()) {
+                        int defaults = counts.getOrDefault(Route.DEFAULT, 0);
+                        if (defaults != 1) {
+                            rc.issues().blocker("WF_INCLUSIVE_DEFAULT", n.path(), n.id(), null, n.label()
+                                    + (defaults == 0 ? " needs a default path for when no condition applies."
+                                    : " can have only one default path."));
+                        }
+                        if (counts.getOrDefault(Route.CONDITION, 0) == 0) {
+                            rc.issues().blocker("WF_INCLUSIVE_NO_CONDITION", n.path(), n.id(), null, n.label()
+                                    + " needs at least one path with a condition, or use \"Run in parallel\""
+                                    + " without conditions.");
+                        }
+                    }
                 }
                 case WAIT_FOR_MESSAGE -> {
                     int next = counts.getOrDefault(Route.NEXT, 0);

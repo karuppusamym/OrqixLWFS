@@ -102,8 +102,26 @@ public class RunStore {
         }
 
         public void addStep(ObjectNode step) {
-            if (!hasStep(step.path("nodeId").asString())) {
-                steps.add(step);
+            // A step with several approvers (S51) has one open task, and so one entry, per approver.
+            String taskId = step.path("taskId").asString(null);
+            for (JsonNode existing : steps) {
+                if (step.path("nodeId").asString().equals(existing.path("nodeId").asString(null))
+                        && (taskId == null || taskId.equals(existing.path("taskId").asString(null)))) {
+                    return;
+                }
+            }
+            steps.add(step);
+        }
+
+        /** Removes the entry of one task of a step; entries without a task id (older rows) go with the step. */
+        public void removeStepOfTask(String nodeId, String taskId) {
+            Iterator<JsonNode> it = steps.iterator();
+            while (it.hasNext()) {
+                JsonNode step = it.next();
+                String entryTask = step.path("taskId").asString(null);
+                if (nodeId.equals(step.path("nodeId").asString(null)) && (entryTask == null || entryTask.equals(taskId))) {
+                    it.remove();
+                }
             }
         }
 

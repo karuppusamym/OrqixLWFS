@@ -46,6 +46,11 @@ public final class ReleaseCompatibility {
             findings.add(new Finding("STEP_KIND", "A request waiting at a '" + kind
                     + "' step cannot be moved; only approvals and waits can.", active));
         }
+        if (!sourceNode.path("config").path("multiInstance").isMissingNode()
+                && !sourceNode.path("config").path("multiInstance").isNull()) {
+            findings.add(new Finding("MULTI_INSTANCE", "The step '" + label(sourceNode)
+                    + "' asks several people to approve; a request waiting at it cannot be moved.", active));
+        }
         if (targetNode == null) {
             findings.add(new Finding("STEP_MISSING", "The target release no longer has the step '"
                     + label(sourceNode) + "' where the request is waiting.", active));

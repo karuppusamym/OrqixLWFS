@@ -287,6 +287,11 @@ final class SimulationRun {
         Map<String, Object> out = new LinkedHashMap<>();
         Transition t;
         String sentence = Text.quote(n.label()) + " goes to " + groupName + ".";
+        if (n.multiInstance()) {
+            d.put("approvers", n.approvers());
+            sentence = Text.quote(n.label()) + " goes to " + n.approvers() + " different people in " + groupName
+                    + ", and all of them must approve.";
+        }
         String note = null;
         if ("timeout".equals(choice) && next(n, Route.TIMED_OUT) == null) {
             note = "This step has no time limit, so the test treats it as approved.";
@@ -300,7 +305,8 @@ final class SimulationRun {
                     out.put("reason", reason);
                 }
                 t = next(n, Route.REJECTED);
-                sentence += " In this test they reject it" + (reason == null ? "." : " with the reason "
+                sentence += (n.multiInstance() ? " In this test the first approver rejects it, so the others are"
+                        + " cancelled" : " In this test they reject it") + (reason == null ? "." : " with the reason "
                         + Text.quote(reason) + ".");
             }
             case "timeout" -> {
@@ -314,7 +320,8 @@ final class SimulationRun {
             default -> {
                 out.put("decision", "approved");
                 t = next(n, Route.APPROVED);
-                sentence += " In this test they approve.";
+                sentence += n.multiInstance() ? " In this test all " + n.approvers() + " approve."
+                        : " In this test they approve.";
             }
         }
         if (!"timedOut".equals(out.get("decision"))) {
@@ -905,8 +912,15 @@ final class SimulationRun {
         ObjectNode d = F.objectNode();
         d.put("joinRef", n.joinRef());
         d.put("branches", branches.size());
-        add(n, Text.quote(n.label()) + ": starts " + (branches.size() == 1 ? "1 branch" : branches.size()
-                + " branches") + " at the same time.", d, null, null);
+        if (n.inclusive()) {
+            branches = inclusiveSelection(n, d, branches);
+            if (branches == null) {
+                return null;
+            }
+        } else {
+            add(n, Text.quote(n.label()) + ": starts " + (branches.size() == 1 ? "1 branch" : branches.size()
+                    + " branches") + " at the same time.", d, null, null);
+        }
         String saved = lane;
         boolean ended = false;
         boolean stalled = false;
@@ -936,9 +950,71 @@ final class SimulationRun {
         }
         visited.add(join.id());
         Transition t = next(join, Route.NEXT);
-        add(join, Text.quote(join.label()) + ": all " + branches.size() + " branches have finished, so the request"
-                + " continues.", F.objectNode(), null, t);
+        add(join, Text.quote(join.label()) + ": all " + branches.size() + (n.inclusive() ? " started" : "")
+                + " branches have finished, so the request continues.", F.objectNode(), null, t);
         return t;
+    }
+
+    /**
+     * Inclusive split (S51): every path whose condition holds starts, in canonical order; the default path starts only
+     * when none does. Records the evaluation like a choice does.
+     *
+     * @return the paths that start, or null when the test stalled here
+     */
+    private List<Transition> inclusiveSelection(Node.ParallelSplit n, ObjectNode d, List<Transition> all) {
+        ArrayNode routes = d.putArray("routes");
+        List<Transition> started = new ArrayList<>();
+        String error = null;
+        for (Transition t : all) {
+            if (t.on() != Route.CONDITION || t.condition() == null) {
+                continue;
+            }
+            ObjectNode r = routes.addObject();
+            r.put("transitionId", t.id());
+            r.put("label", routeName(t));
+            r.put("condition", conditionText(t.condition(), false, null));
+            try {
+                ArrayNode terms = F.arrayNode();
+                boolean matched = evaluate(t.condition(), terms);
+                r.put("matched", matched);
+                if (t.condition().compound()) {
+                    r.set("terms", terms);
+                }
+                if (matched) {
+                    started.add(t);
+                }
+            } catch (IllegalArgumentException e) {
+                r.putNull("matched");
+                error = e.getMessage();
+                break;
+            }
+        }
+        if (error != null) {
+            String message = Text.quote(n.label()) + " cannot choose its paths: " + error;
+            stallWith(n, message, d, "INTERNAL_ERROR", message);
+            return null;
+        }
+        String sentence;
+        if (started.isEmpty()) {
+            Transition fallback = next(n, Route.DEFAULT);
+            if (fallback == null) {
+                String message = Text.quote(n.label()) + " has no default path for this case.";
+                stallWith(n, message, d, "INTERNAL_ERROR", message);
+                return null;
+            }
+            started.add(fallback);
+            sentence = Text.quote(n.label()) + ": no condition applies, so only the default path "
+                    + Text.quote(routeName(fallback)) + " starts.";
+        } else {
+            sentence = Text.quote(n.label()) + ": starts " + started.size() + " of " + all.size() + " paths ("
+                    + String.join(", ", started.stream().map(t -> Text.quote(routeName(t))).toList())
+                    + "), because their conditions apply.";
+        }
+        ArrayNode chosen = d.putArray("startedPaths");
+        started.forEach(t -> chosen.add(t.id()));
+        d.put("started", started.size());
+        add(n, sentence, d, null, null);
+        return started;
     }
 
     // ------------------------------------------------------------------ child workflows
@@ -1358,7 +1434,7 @@ final class SimulationRun {
         ArrayNode notTaken = routes.putArray("notTaken");
         for (Transition t : graph.resolvedTransitions()) {
             Node from = graph.node(t.from());
-            if (graph.outgoing(from).size() < 2 || from.kind() == NodeKind.PARALLEL_SPLIT) {
+            if (graph.outgoing(from).size() < 2 || (from instanceof Node.ParallelSplit ps && !ps.inclusive())) {
                 continue;
             }
             total++;

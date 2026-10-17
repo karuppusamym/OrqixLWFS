@@ -58,6 +58,10 @@ public class TaskStore {
                            WHERE n->>'id'=:node),'[]'::jsonb),
                        COALESCE((SELECT n->'config'->'separateFrom' FROM jsonb_array_elements(rel.definition->'nodes') n
                            WHERE n->>'id'=:node),'[]'::jsonb)
+                       -- Several approvers (S51) are kept apart from each other: whoever decided one task of this
+                       -- step cannot claim or decide another, through the same separation machinery.
+                       || COALESCE((SELECT jsonb_build_array(n->>'id') FROM jsonb_array_elements(rel.definition->'nodes') n
+                           WHERE n->>'id'=:node AND n->'config'->'multiInstance' IS NOT NULL),'[]'::jsonb)
                 FROM workflow_run run
                 JOIN workflow_release rel ON rel.workspace_id = run.workspace_id AND rel.id = run.release_id
                 JOIN workspace ws ON ws.id = run.workspace_id

@@ -809,6 +809,21 @@
                 }
               }
             },
+            "multiInstance": {
+              "description": "Several different people must each approve (docs/build/S51): the step creates this many parallel tasks for its candidate group and continues as approved only when all are approved; the first rejection rejects the step and cancels the others. Not combined with a time limit, escalation or correctable fields.",
+              "type": "object",
+              "properties": {
+                "approvers": {
+                  "type": "integer",
+                  "minimum": 2,
+                  "maximum": 5
+                }
+              },
+              "required": [
+                "approvers"
+              ],
+              "additionalProperties": false
+            },
             "correctable": {
               "description": "Request fields the person holding this task may correct before deciding (docs/build/S42). Scalar request fields only. Publishing proves that no earlier step has used them, so a correction can never contradict work that already happened.",
               "type": "array",
@@ -1053,6 +1068,13 @@
           "properties": {
             "joinRef": {
               "$ref": "#/$defs/id"
+            },
+            "mode": {
+              "description": "all (default): every outgoing next path runs. inclusive (docs/build/S51): every outgoing path whose condition holds runs, or the default path when none does; the join waits for the paths that started.",
+              "enum": [
+                "all",
+                "inclusive"
+              ]
             }
           },
           "required": [

@@ -239,9 +239,17 @@ public class TaskService {
         Instant now = clock.instant();
         boolean selfApproval = task.initiator().equals(caller.subjectId()) && task.selfApprovalAllowed();
         List<String> flags = selfApproval ? List.of("selfApprovalAllowed") : List.of();
-        UUID decisionId = taskQueries.insertDecision(workspaceId, taskId, task.runId(), task.nodeId(),
-                caller.subjectId(), request.action(), blankToNull(request.reason()), blankToNull(request.comment()),
-                flags, now);
+        UUID decisionId;
+        try {
+            decisionId = taskQueries.insertDecision(workspaceId, taskId, task.runId(), task.nodeId(),
+                    caller.subjectId(), request.action(), blankToNull(request.reason()), blankToNull(request.comment()),
+                    flags, now);
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            // Two approvals of one step decided by the same person at once (S51): the database keeps them apart.
+            throw policy.deny(workspaceId, caller.subjectId(), "task.act", "decideTask", false,
+                    new ApiException(ProblemCode.SEPARATION_OF_DUTIES,
+                            "You already decided this step, so another person must decide this one."));
+        }
         if (decisionId == null) {
             throw new ApiException(ProblemCode.TASK_NOT_OPEN, "This task was already decided.");
         }
@@ -257,8 +265,14 @@ public class TaskService {
         output.put("decidedAt", now.toString());
 
         tasks.end(workspaceId, taskId, "completed", now);
+        // A rejection ends a step with several approvers at once: the other approvers' open tasks are cancelled (S51).
+        int cancelledSiblings = reject ? tasks.cancelOpenForNode(workspaceId, task.runId(), task.nodeId(), now) : 0;
         runs.mutate(workspaceId, task.runId(), m -> {
-            m.removeStep(task.nodeId());
+            if (reject) {
+                m.removeStep(task.nodeId());
+            } else {
+                m.removeStepOfTask(task.nodeId(), taskId);
+            }
             m.settle();
         });
         Map<String, Object> decided = new LinkedHashMap<>();
@@ -266,6 +280,9 @@ public class TaskService {
         decided.put("hasReason", !blank(request.reason()));
         decided.put("hasComment", !blank(request.comment()));
         decided.put("policyFlags", flags);
+        if (cancelledSiblings > 0) {
+            decided.put("otherApproversCancelled", cancelledSiblings);
+        }
         events.append(workspaceId, task.runId(), "TASK_DECIDED", task.nodeId(), caller.subjectId(), decided);
         try {
             engine.complete(taskId, Map.of(ProcessData.stepVariable(task.nodeId()), json.write(output)),

@@ -112,7 +112,8 @@ public final class ModelReader {
                     c.has("separateFrom") ? java.util.stream.StreamSupport.stream(c.get("separateFrom").spliterator(),false)
                             .map(JsonNode::stringValue).toList() : List.of(),
                     c.has("correctable") ? java.util.stream.StreamSupport.stream(c.get("correctable").spliterator(),false)
-                            .map(JsonNode::stringValue).toList() : List.of());
+                            .map(JsonNode::stringValue).toList() : List.of(),
+                    c.has("multiInstance") ? c.get("multiInstance").get("approvers").intValue() : null);
             case DECISION -> new Node.Decision(index, id, label, c.get("decisionRef").stringValue());
             case BRANCH -> new Node.Branch(index, id, label);
             case HTTP -> new Node.Http(index, id, label, c.get("connectionRef").stringValue(),
@@ -126,7 +127,8 @@ public final class ModelReader {
                     c.has("leaseSeconds") ? c.get("leaseSeconds").intValue() : 120);
             case NOTIFICATION -> new Node.Notification(index, id, label, c.get("channel").stringValue(),
                     c.get("recipient").stringValue(), c.get("message").stringValue());
-            case PARALLEL_SPLIT -> new Node.ParallelSplit(index, id, label, c.get("joinRef").stringValue());
+            case PARALLEL_SPLIT -> new Node.ParallelSplit(index, id, label, c.get("joinRef").stringValue(),
+                    "inclusive".equals(c.path("mode").asString("all")));
             case PARALLEL_JOIN -> new Node.ParallelJoin(index, id, label);
             case WAIT -> new Node.Wait(index, id, label, c.has("duration") ? c.get("duration").stringValue() : null,
                     c.has("untilField") ? c.get("untilField").stringValue() : null,

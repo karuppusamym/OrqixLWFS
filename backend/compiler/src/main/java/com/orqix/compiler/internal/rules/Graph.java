@@ -105,7 +105,7 @@ public final class Graph {
                 }
                 // A parallel join waits for every branch, so whatever is guaranteed in any branch is guaranteed after
                 // it (union); every other node with several incoming paths is a simple merge (intersection).
-                boolean allBranches = nodes.get(i).kind() == NodeKind.PARALLEL_JOIN;
+                boolean allBranches = nodes.get(i).kind() == NodeKind.PARALLEL_JOIN && !inclusiveJoin(i);
                 BitSet next = null;
                 for (Transition t : incoming.get(i)) {
                     int p = byId.get(t.from()).index();
@@ -131,6 +131,17 @@ public final class Graph {
             }
         }
         return dom;
+    }
+
+    /** An inclusive join waits only for the paths that started, so a skipped path guarantees nothing (S51). */
+    private boolean inclusiveJoin(int joinIndex) {
+        String id = nodes.get(joinIndex).id();
+        for (Node n : nodes) {
+            if (n instanceof Node.ParallelSplit split && split.inclusive() && split.joinRef().equals(id)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public List<Node> nodes() {

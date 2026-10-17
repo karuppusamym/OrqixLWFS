@@ -261,6 +261,12 @@ export function canConnect(def: Definition, req: Pick<ConnectRequest, 'from' | '
       if (others.some((t) => t.on === req.on)) return { ok: false, reason: `This step already has a ${req.on === 'next' ? 'Next' : 'Timed out'} route.` }
       break
     case 'parallelSplit':
+      if (from.config.mode === 'inclusive') {
+        if (req.on !== 'condition' && req.on !== 'default') return { ok: false, reason: 'Paths of an inclusive split are conditions or Otherwise.' }
+        if (req.on === 'default' && others.some((t) => t.on === 'default')) return { ok: false, reason: 'An inclusive split has exactly one Otherwise route.' }
+        if (others.some((t) => t.to === to.id)) return { ok: false, reason: 'There is already a path to that step.' }
+        break
+      }
       if (req.on !== 'next') return { ok: false, reason: 'Parallel branches use Next routes.' }
       if (others.some((t) => t.to === to.id)) return { ok: false, reason: 'There is already a branch to that step.' }
       break
@@ -636,6 +642,39 @@ export function setDefaultRoute(def: Definition, branchId: string, transitionId:
     } else if (t.on === 'default') {
       t.on = 'condition'
       t.condition = { fieldRef: siblingField, operator: 'eq', value: '' }
+    }
+  }
+  return next
+}
+
+/**
+ * Switch a Run in parallel step between running every path and running the paths whose condition applies (S51). Its
+ * existing paths are kept: going inclusive makes the last one Otherwise and the others conditions to fill in; going back
+ * makes every path a plain Next path and drops the conditions.
+ */
+export function setSplitMode(def: Definition, splitId: string, mode: 'all' | 'inclusive', fallbackFieldRef = ''): Definition {
+  const split = def.nodes.find((n) => n.id === splitId)
+  if (!split || split.type !== 'parallelSplit') return def
+  if ((split.config.mode === 'inclusive') === (mode === 'inclusive')) return def
+  const next = clone(def)
+  const target = next.nodes.find((n) => n.id === splitId)!
+  const paths = next.transitions.filter((t) => t.from === splitId)
+  if (mode === 'inclusive') {
+    target.config.mode = 'inclusive'
+    paths.forEach((t, i) => {
+      if (i === paths.length - 1) {
+        t.on = 'default'
+        delete t.condition
+      } else {
+        t.on = 'condition'
+        t.condition = { fieldRef: fallbackFieldRef, operator: 'eq', value: '' }
+      }
+    })
+  } else {
+    delete target.config.mode
+    for (const t of paths) {
+      t.on = 'next'
+      delete t.condition
     }
   }
   return next

@@ -37,10 +37,16 @@ public sealed interface Node {
     record Approval(int index, String id, String label, String candidateGroupRef, boolean rejectReasonRequired,
                     Integer dueAfterHours, String timeoutAfter, java.util.List<String> requiredSkills,
                     tools.jackson.databind.JsonNode calendar, tools.jackson.databind.JsonNode escalation,
-                    java.util.List<String> separateFrom, java.util.List<String> correctable) implements Node {
+                    java.util.List<String> separateFrom, java.util.List<String> correctable,
+                    Integer approvers) implements Node {
         public Approval(int index, String id, String label, String candidateGroupRef, boolean rejectReasonRequired,
                 Integer dueAfterHours, String timeoutAfter) {
-            this(index,id,label,candidateGroupRef,rejectReasonRequired,dueAfterHours,timeoutAfter,java.util.List.of(),null,null,java.util.List.of(),java.util.List.of());
+            this(index,id,label,candidateGroupRef,rejectReasonRequired,dueAfterHours,timeoutAfter,java.util.List.of(),null,null,java.util.List.of(),java.util.List.of(),null);
+        }
+
+        /** @return true when several different people must each approve (S51); null {@code approvers} means one */
+        public boolean multiInstance() {
+            return approvers != null && approvers > 1;
         }
         @Override
         public NodeKind kind() {
@@ -112,8 +118,14 @@ public sealed interface Node {
         }
     }
 
-    /** Run in parallel: starts one branch per outgoing path; {@code joinRef} names the matching join. */
-    record ParallelSplit(int index, String id, String label, String joinRef) implements Node {
+    /**
+     * Run in parallel: starts one branch per outgoing path; {@code joinRef} names the matching join. An
+     * {@code inclusive} split (S51) starts every path whose condition holds, or its default path when none does.
+     */
+    record ParallelSplit(int index, String id, String label, String joinRef, boolean inclusive) implements Node {
+        public ParallelSplit(int index, String id, String label, String joinRef) {
+            this(index, id, label, joinRef, false);
+        }
         @Override
         public NodeKind kind() {
             return NodeKind.PARALLEL_SPLIT;

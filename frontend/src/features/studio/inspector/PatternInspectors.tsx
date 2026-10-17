@@ -9,15 +9,35 @@ import { Label } from '@/components/ui/label'
 import { useStudio, useStudioContext } from '../StudioContext'
 import { availableFields, chipLabel } from '../model/fieldRefs'
 import { DEFAULT_WAIT_TIME, WAIT_HORIZON_DAYS, dateWaitPreview } from '../model/summary'
+import { setSplitMode } from '../model/ops'
 import { cfg, normalizeDefinition, type WorkflowNode } from '../model/types'
 import { Advanced, CommitInput, DurationPreview, InspectorSection } from './controls'
 import { StepIdField } from './SimpleInspectors'
 
 
 export function ParallelInspector({ node }: { node: WorkflowNode }) {
-  const { store, readOnly } = useStudioContext()
+  const { store, readOnly, connections } = useStudioContext()
   const def = useStudio((s) => s.definition)
+  const inclusive = node.type === 'parallelSplit' && cfg<string>(node, 'mode') === 'inclusive'
   return <>
+    {node.type === 'parallelSplit' ? <fieldset className="space-y-2">
+      <legend className="text-sm font-semibold">Which paths run?</legend>
+      <RadioGroup value={inclusive ? 'inclusive' : 'all'} disabled={readOnly} aria-label="Which paths run?" onValueChange={(mode) => {
+        const fields = availableFields(def, node.id, connections)
+        const first = fields.find((f) => f.type === 'number') ?? fields[0]
+        store.getState().apply((d) => setSplitMode(d, node.id, mode === 'inclusive' ? 'inclusive' : 'all', first?.ref ?? ''))
+      }}>
+        <div className="flex items-center gap-3">
+          <RadioGroupItem value="all" id={`split-mode-all-${node.id}`} />
+          <Label htmlFor={`split-mode-all-${node.id}`} className="font-medium">Every path</Label>
+        </div>
+        <div className="flex items-center gap-3">
+          <RadioGroupItem value="inclusive" id={`split-mode-inclusive-${node.id}`} />
+          <Label htmlFor={`split-mode-inclusive-${node.id}`} className="font-medium">Every path whose condition applies</Label>
+        </div>
+      </RadioGroup>
+      {inclusive ? <p className="text-sm text-muted-foreground">Several conditions can apply at once. When none does, the Otherwise path runs. The Wait for all step waits only for the paths that started.</p> : null}
+    </fieldset> : null}
     {node.type === 'parallelSplit' ? <FormField label="Wait for all at" required id={`parallel-join-${node.id}`} description="Every branch must reach this step before the workflow continues.">
       {(ids) => <Select id={ids.input} value={cfg<string>(node, 'joinRef') ?? ''} disabled={readOnly} onChange={(e) => store.getState().updateNodeConfig(node.id, { joinRef: e.target.value })}>
         <option value="">Choose a Wait for all step</option>

@@ -55,13 +55,22 @@ public record WorkflowDefinition(
     public record Condition(String fieldRef, Operator operator, Literal value, String group, List<Condition> terms) {
         public Condition(String fieldRef, Operator operator, Literal value) { this(fieldRef, operator, value, null, List.of()); }
         public boolean compound() { return group != null; }
+        /** A group whose terms are alternatives (OR). Conjunctions are {@code group == "all"}. */
+        public boolean isAny() { return "any".equals(group); }
     }
 
     /** @param defaultOutput sorted by key */
-    public record DecisionTable(int index, String key, int version, List<Row> rows,
+    public record DecisionTable(int index, String key, int version, String hitPolicy, List<Row> rows,
                                 Map<String, Literal> defaultOutput) {
+        public static final String UNIQUE = "UNIQUE";
+        public static final String FIRST = "FIRST";
+
         public String path() {
             return "/decisions/" + index;
+        }
+
+        public boolean first() {
+            return FIRST.equals(hitPolicy);
         }
 
         /** @param then sorted by key */

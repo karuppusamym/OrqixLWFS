@@ -69,6 +69,25 @@ public final class DmnGenerator {
         return x.finish();
     }
 
+    /** One DMN rule per alternative of an OR row, so a row of k alternatives occupies k consecutive rules. */
+    static int ruleCount(DecisionTable.Row row) {
+        return row.when().isAny() ? row.when().terms().size() : 1;
+    }
+
+    /**
+     * Maps each generated DMN rule (1-based position) to the index of the canonical row it came from; the trailing
+     * catch-all default rule is not included. Runtime evidence uses it to name the matched row.
+     */
+    public static java.util.List<Integer> ruleOwners(DecisionTable table) {
+        java.util.List<Integer> owners = new java.util.ArrayList<>();
+        for (DecisionTable.Row row : table.rows()) {
+            for (int i = 0; i < ruleCount(row); i++) {
+                owners.add(row.index());
+            }
+        }
+        return owners;
+    }
+
     public static java.util.List<String> inputFields(DecisionTable table) {
         return table.rows().stream().flatMap(r -> (r.when().compound()?r.when().terms():java.util.List.of(r.when())).stream())
             .map(Condition::fieldRef).distinct().sorted().toList();
@@ -90,16 +109,22 @@ public final class DmnGenerator {
         }
         table.defaultOutput().forEach((name,literal)->x.leaf("","output",DMN_NS).attr("id",key+"__out_"+name).attr("name",name).attr("typeRef",literal.typeName()));
         for(DecisionTable.Row row:table.rows()) {
-            String rule=key+"__r"+(row.index()+1);
-            x.open("","rule",DMN_NS).attr("id",rule);
             var terms=row.when().compound()?row.when().terms():java.util.List.of(row.when());
-            for(int i=0;i<fields.size();i++) {
-                String field=fields.get(i);
-                String entry=terms.stream().filter(t->t.fieldRef().equals(field)).findFirst().map(DmnGenerator::inputEntry).orElse("-");
-                x.inline("","inputEntry",DMN_NS,"text",entry,true,"id",rule+"_in"+(i+1));
+            int rules=ruleCount(row);
+            for(int k=0;k<rules;k++) {
+                String rule=key+"__r"+(row.index()+1)+(rules>1?"_"+(k+1):"");
+                x.open("","rule",DMN_NS).attr("id",rule);
+                for(int i=0;i<fields.size();i++) {
+                    String field=fields.get(i);
+                    // A conjunction fills one entry per field; each alternative of an OR row fills only its own field.
+                    String entry=row.when().isAny()
+                        ? (terms.get(k).fieldRef().equals(field)?inputEntry(terms.get(k)):"-")
+                        : terms.stream().filter(t->t.fieldRef().equals(field)).findFirst().map(DmnGenerator::inputEntry).orElse("-");
+                    x.inline("","inputEntry",DMN_NS,"text",entry,true,"id",rule+"_in"+(i+1));
+                }
+                table.defaultOutput().keySet().forEach(name->x.inline("","outputEntry",DMN_NS,"text",outputEntry(row.then().get(name)),true,"id",rule+"_"+name));
+                x.close();
             }
-            table.defaultOutput().keySet().forEach(name->x.inline("","outputEntry",DMN_NS,"text",outputEntry(row.then().get(name)),true,"id",rule+"_"+name));
-            x.close();
         }
         String rule=key+"__default";
         x.open("","rule",DMN_NS).attr("id",rule);

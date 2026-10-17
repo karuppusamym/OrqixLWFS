@@ -3601,6 +3601,8 @@ export interface components {
         };
         decisionCondition: components["schemas"]["atomicCondition"] | {
             all: components["schemas"]["atomicCondition"][];
+        } | {
+            any: components["schemas"]["atomicCondition"][];
         };
         decisionOutput: {
             [key: string]: components["schemas"]["literal"];
@@ -3849,8 +3851,11 @@ export interface components {
         decisionTable: {
             key: components["schemas"]["key"];
             version: number;
-            /** @constant */
-            hitPolicy: "UNIQUE";
+            /**
+             * @description UNIQUE: at most one row can match, proven at publish time. FIRST: rows are tried in order and the first match wins, so rows may overlap (docs/build/S40).
+             * @enum {unknown}
+             */
+            hitPolicy: "UNIQUE" | "FIRST";
             rows: {
                 when: components["schemas"]["decisionCondition"];
                 then: components["schemas"]["decisionOutput"];
@@ -4239,13 +4244,18 @@ export interface components {
                 };
                 decisionCondition: components["schemas"]["atomicCondition"] | {
                     all: components["schemas"]["atomicCondition"][];
+                } | {
+                    any: components["schemas"]["atomicCondition"][];
                 };
                 /** @description Authoring semantics: at most one row matches (UNIQUE); the default applies only when no row matches. Scalar rows test the same field; conjunctive All rows support 2 to 8 distinct fields. Rows must be pairwise disjoint (WF_DECISION_OVERLAP). Compiled to DMN as FIRST with a trailing catch-all row. */
                 decisionTable: {
                     key: components["schemas"]["key"];
                     version: number;
-                    /** @constant */
-                    hitPolicy: "UNIQUE";
+                    /**
+                     * @description UNIQUE: at most one row can match, proven at publish time. FIRST: rows are tried in order and the first match wins, so rows may overlap (docs/build/S40).
+                     * @enum {unknown}
+                     */
+                    hitPolicy: "UNIQUE" | "FIRST";
                     rows: {
                         when: components["schemas"]["decisionCondition"];
                         then: components["schemas"]["decisionOutput"];

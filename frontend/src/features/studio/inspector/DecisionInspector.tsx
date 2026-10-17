@@ -1,4 +1,4 @@
-import { FlaskConical, Plus, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, FlaskConical, Plus, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import * as endpoints from '@/api/endpoints'
 import type { ProblemError } from '@/api/problem'
@@ -73,12 +73,18 @@ export function DecisionInspector({ node }: { node: WorkflowNode }) {
   }
 
   const setRowWhen = (index: number, when: Condition) => {
-    if (!isAtomicCondition(when) && !('all' in when)) throw new Error('Decision rows support All comparisons only.')
     save({ ...table, rows: table.rows.map((r, i) => (i === index ? { ...r, when } : r)) })
   }
   const setRowOutput = (index: number, key: string, value: Literal) => save({ ...table, rows: table.rows.map((r, i) => (i === index ? { ...r, then: { ...r.then, [key]: value } } : r)) })
   const setDefaultOutput = (key: string, value: Literal) => save({ ...table, default: { ...table.default, [key]: value } })
   const removeRow = (index: number) => save({ ...table, rows: table.rows.filter((_, i) => i !== index) })
+  const moveRow = (index: number, by: -1 | 1) => {
+    const target = index + by
+    if (target < 0 || target >= table.rows.length) return
+    const rows = [...table.rows]
+    ;[rows[index], rows[target]] = [rows[target] as (typeof rows)[number], rows[index] as (typeof rows)[number]]
+    save({ ...table, rows })
+  }
 
   const addResultKey = () => {
     const key = newKey.trim()
@@ -107,7 +113,16 @@ export function DecisionInspector({ node }: { node: WorkflowNode }) {
               </option>
             ))}
           </Select>
-          <p className="text-xs text-muted-foreground">Scalar rows use this field. Choose All comparisons for multiple distinct inputs; rows must not overlap.</p>
+          <p className="text-xs text-muted-foreground">Single-comparison rows use this field. Choose All (AND) or Any (OR) comparisons to test several inputs in one row.</p>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor={`dec-policy-${node.id}`}>Which row applies</Label>
+          <Select id={`dec-policy-${node.id}`} data-field="hitPolicy" value={table.hitPolicy} disabled={readOnly} onChange={(e) => save({ ...table, hitPolicy: e.target.value as DecisionTable['hitPolicy'] })}>
+            <option value="UNIQUE">Exactly one: rows must not overlap (checked when you publish)</option>
+            <option value="FIRST">The first matching row, top to bottom</option>
+          </Select>
+          <p className="text-xs text-muted-foreground">{table.hitPolicy === 'FIRST' ? 'Rows may overlap. Put the most specific rows first; use the arrows to reorder.' : 'Each case must match at most one row, otherwise publishing is blocked.'}</p>
         </div>
 
         <ol className="space-y-3" aria-label="Rule rows">
@@ -116,12 +131,24 @@ export function DecisionInspector({ node }: { node: WorkflowNode }) {
               <div className="flex items-center justify-between">
                 <h4 className="text-sm font-semibold">Row {i + 1}: when</h4>
                 {!readOnly ? (
-                  <Button size="icon" variant="ghost" className="size-8" onClick={() => removeRow(i)} aria-label={`Delete row ${i + 1}`}>
-                    <Trash2 aria-hidden="true" />
-                  </Button>
+                  <div className="flex items-center">
+                    {table.hitPolicy === 'FIRST' ? (
+                      <>
+                        <Button size="icon" variant="ghost" className="size-8" onClick={() => moveRow(i, -1)} disabled={i === 0} aria-label={`Move row ${i + 1} up`}>
+                          <ArrowUp aria-hidden="true" />
+                        </Button>
+                        <Button size="icon" variant="ghost" className="size-8" onClick={() => moveRow(i, 1)} disabled={i === table.rows.length - 1} aria-label={`Move row ${i + 1} down`}>
+                          <ArrowDown aria-hidden="true" />
+                        </Button>
+                      </>
+                    ) : null}
+                    <Button size="icon" variant="ghost" className="size-8" onClick={() => removeRow(i)} aria-label={`Delete row ${i + 1}`}>
+                      <Trash2 aria-hidden="true" />
+                    </Button>
+                  </div>
                 ) : null}
               </div>
-              <ConditionEditor idBase={`dec-${node.id}-r${i}`} dataFieldBase={`rows.${i}.when`} condition={row.when} fields={fields} conjunctionOnly disabled={readOnly} onChange={(c) => setRowWhen(i, c)} />
+              <ConditionEditor idBase={`dec-${node.id}-r${i}`} dataFieldBase={`rows.${i}.when`} condition={row.when} fields={fields} disabled={readOnly} onChange={(c) => setRowWhen(i, c)} />
               <div className="space-y-2 border-t border-border pt-3">
                 <p className="text-xs font-semibold text-muted-foreground uppercase">Then</p>
                 {keys.map((k) => (

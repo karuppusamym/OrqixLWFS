@@ -1419,6 +1419,24 @@
             "all"
           ],
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "description": "Alternatives (OR): the row applies when at least one of 2 to 8 comparisons holds. Fields may repeat. Under UNIQUE the alternatives of all rows must still be pairwise exclusive.",
+          "properties": {
+            "any": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 8,
+              "items": {
+                "$ref": "#/$defs/atomicCondition"
+              }
+            }
+          },
+          "required": [
+            "any"
+          ],
+          "additionalProperties": false
         }
       ]
     },
@@ -1434,7 +1452,11 @@
           "minimum": 1
         },
         "hitPolicy": {
-          "const": "UNIQUE"
+          "description": "UNIQUE: at most one row can match, proven at publish time. FIRST: rows are tried in order and the first match wins, so rows may overlap (docs/build/S40).",
+          "enum": [
+            "UNIQUE",
+            "FIRST"
+          ]
         },
         "rows": {
           "type": "array",

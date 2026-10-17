@@ -50,8 +50,9 @@ function interval(c: Condition): { lo: number; loOpen: boolean; hi: number; hiOp
 
 function overlaps(a: Condition, b: Condition): boolean {
   if (!isAtomicCondition(a) || !isAtomicCondition(b)) {
-    const termsA = conditionTerms(a), termsB = conditionTerms(b)
-    return !termsA.some(x => termsB.some(y => x.fieldRef === y.fieldRef && !overlaps(x, y)))
+    // Disjunctive normal form: an OR group is several conjunctions, an AND group or one comparison is one.
+    const conjunctions = (c: Condition) => ('any' in c ? conditionTerms(c).map(t => [t]) : [conditionTerms(c)])
+    return conjunctions(a).some(ca => conjunctions(b).some(cb => !ca.some(x => cb.some(y => x.fieldRef === y.fieldRef && !overlaps(x, y)))))
   }
   if (a.fieldRef !== b.fieldRef) return false
   const ia = interval(a)
@@ -280,7 +281,8 @@ export function validateDefinition(def: Definition, ctx: ValidationContext): Iss
       if (node) checkCondition(def, node, r.when, `/decisions/${di}/rows/${ri}/when`, issues)
       for (const [k, v] of Object.entries(r.then)) if (typeof v === 'string' && !/^[A-Za-z0-9 _.,:/-]{0,100}$/.test(v)) issues.push(issue('WF_LITERAL_UNSAFE', 'blocker', `The value "${k}" contains characters that are not allowed.`, `/decisions/${di}/rows/${ri}/then/${k}`, node?.id))
     })
-    for (let a = 0; a < d.rows.length; a++) {
+    // FIRST is ordered on purpose: the first match wins, so overlapping rows are allowed (S40).
+    for (let a = 0; a < d.rows.length && d.hitPolicy !== 'FIRST'; a++) {
       for (let b = a + 1; b < d.rows.length; b++) {
         if (overlaps((d.rows[a] as { when: Condition }).when, (d.rows[b] as { when: Condition }).when)) issues.push(issue('WF_DECISION_OVERLAP', 'blocker', `Rows ${a + 1} and ${b + 1} of "${d.key}" can both match. Make them exclusive.`, `/decisions/${di}/rows/${b}`, node?.id))
       }

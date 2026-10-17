@@ -91,7 +91,9 @@ export function evaluateTable(
   values: Record<string, Literal | undefined>,
 ): { matchedRow: number | null; usedDefault: boolean; output: Record<string, Literal> } {
   for (const [i, row] of table.rows.entries()) {
-    if (conditionTerms(row.when).every(term => evaluateCondition(term, values[term.fieldRef]))) return { matchedRow: i, usedDefault: false, output: row.then }
+    const terms = conditionTerms(row.when)
+    const hit = 'any' in row.when ? terms.some(term => evaluateCondition(term, values[term.fieldRef])) : terms.every(term => evaluateCondition(term, values[term.fieldRef]))
+    if (hit) return { matchedRow: i, usedDefault: false, output: row.then }
   }
   return { matchedRow: null, usedDefault: true, output: table.default }
 }

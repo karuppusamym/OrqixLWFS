@@ -184,8 +184,11 @@ public final class ModelReader {
             require(row.isObject(), "decision row must be an object");
             rowList.add(new DecisionTable.Row(r, readCondition(row.get("when")), outputMap(row.get("then"))));
         }
-        return new DecisionTable(index, key.stringValue(), version.intValue(), List.copyOf(rowList),
-                outputMap(def));
+        JsonNode policy = t.get("hitPolicy");
+        require(policy == null || (policy.isString() && (DecisionTable.UNIQUE.equals(policy.stringValue())
+                || DecisionTable.FIRST.equals(policy.stringValue()))), "decision table hitPolicy must be UNIQUE or FIRST");
+        return new DecisionTable(index, key.stringValue(), version.intValue(),
+                policy == null ? DecisionTable.UNIQUE : policy.stringValue(), List.copyOf(rowList), outputMap(def));
     }
 
     /**

@@ -40,13 +40,16 @@ public final class DefaultDecisionEvaluator implements DecisionEvaluator {
         }
         Map<String, Object> input = values == null ? Map.of() : values;
         for (DecisionTable.Row row : table.rows()) {
-            boolean matches=true;
+            boolean any = row.when().isAny();
+            boolean matches = !any;
+            // Every referenced field must have a value, whether the row is a conjunction or a set of alternatives.
             for(var condition:row.when().compound()?row.when().terms():java.util.List.of(row.when())) {
             String fieldRef = condition.fieldRef();
             if (!input.containsKey(fieldRef) || input.get(fieldRef) == null) {
                 throw new IllegalArgumentException("No value for " + fieldRef);
             }
-            matches &= ConditionMatcher.matches(condition.operator().json(), input.get(fieldRef), condition.value().value());
+            boolean term = ConditionMatcher.matches(condition.operator().json(), input.get(fieldRef), condition.value().value());
+            matches = any ? matches | term : matches & term;
             }
             if (matches) {
                 return new Result(row.index(), false, output(row.then()));

@@ -68,6 +68,7 @@ public class DecisionTaskDelegate implements JavaDelegate {
         for(JsonNode row:table.path("rows")) {
             JsonNode condition=row.path("when");
             if(condition.has("all")) for(JsonNode term:condition.path("all")) referenced.add(term.path("fieldRef").asString());
+            else if(condition.has("any")) for(JsonNode term:condition.path("any")) referenced.add(term.path("fieldRef").asString());
             else referenced.add(condition.path("fieldRef").asString());
         }
         var fields=List.copyOf(referenced);
@@ -75,7 +76,7 @@ public class DecisionTaskDelegate implements JavaDelegate {
             Object value=ProcessData.requireScalar(execution,json,fields.get(i));
             values.put(fields.get(i),value); variables.put("in"+(i+1),value);
         }
-        Result result=evaluatePinnedVariables(execution.getProcessDefinitionId(),execution.getTenantId(),decisionKey,variables,table.path("rows").size());
+        Result result=evaluatePinnedVariables(execution.getProcessDefinitionId(),execution.getTenantId(),decisionKey,variables,ruleOwners(table));
         execution.setVariable(ProcessData.stepVariable(element.getId()), json.write(result.outputs()));
 
         Map<String, Object> data = new LinkedHashMap<>();
@@ -103,6 +104,26 @@ public class DecisionTaskDelegate implements JavaDelegate {
 
     public Result evaluatePinnedVariables(String processDefinitionId, String tenantId, String decisionKey,
             Map<String,Object> values, int rowCount) {
+        return evaluatePinnedVariables(processDefinitionId, tenantId, decisionKey, values,
+                java.util.stream.IntStream.range(0, rowCount).boxed().toList());
+    }
+
+    /**
+     * The canonical row behind each generated DMN rule: an OR row ({@code any}) occupies one rule per alternative, every
+     * other row exactly one (mirrors the compiler's DMN generation).
+     */
+    static List<Integer> ruleOwners(JsonNode table) {
+        List<Integer> owners = new java.util.ArrayList<>();
+        JsonNode rows = table.path("rows");
+        for (int i = 0; i < rows.size(); i++) {
+            int rules = rows.get(i).path("when").has("any") ? rows.get(i).path("when").path("any").size() : 1;
+            for (int k = 0; k < rules; k++) owners.add(i);
+        }
+        return owners;
+    }
+
+    public Result evaluatePinnedVariables(String processDefinitionId, String tenantId, String decisionKey,
+            Map<String,Object> values, List<Integer> owners) {
         String deploymentId = ProcessDefinitionUtil.getProcessDefinition(processDefinitionId).getDeploymentId();
         long pinned = CommandContextUtil.getDmnRepositoryService().createDecisionQuery()
                 .decisionKey(decisionKey).parentDeploymentId(deploymentId).decisionTenantId(tenantId).count();
@@ -126,7 +147,7 @@ public class DecisionTaskDelegate implements JavaDelegate {
                 .filter(r -> Boolean.TRUE.equals(r.isValid()))
                 .mapToInt(RuleExecutionAuditContainer::getRuleNumber).min()
                 .orElseThrow(() -> new IllegalStateException("No rule matched in " + decisionKey));
-        String matched = matchedRule > rowCount ? "default" : "r" + matchedRule;
+        String matched = matchedRule > owners.size() ? "default" : "r" + (owners.get(matchedRule - 1) + 1);
         ObjectNode outputs = json.object();
         results.get(0).forEach((k, v) -> outputs.set(k, json.fromScalar(normalize(v))));
         return new Result(matched, outputs);
@@ -149,12 +170,14 @@ public class DecisionTaskDelegate implements JavaDelegate {
         String expected = "default";
         for (int i = 0; i < rows.size(); i++) {
             JsonNode condition = rows.get(i).path("when");
-            var terms=condition.has("all")?condition.path("all"):json.object().putArray("terms").add(condition);
-            boolean matched=true;
+            boolean any=condition.has("any");
+            var terms=condition.has("all")?condition.path("all"):any?condition.path("any"):json.object().putArray("terms").add(condition);
+            boolean matched=!any;
             for(JsonNode term:terms) {
                 String ref=term.path("fieldRef").asString();
                 if(!values.containsKey(ref)) throw new IllegalStateException("Decision evidence input missing");
-                matched &= ConditionMatcher.matches(term.path("operator").asString(),values.get(ref),Json.scalar(term.path("value")));
+                boolean hit=ConditionMatcher.matches(term.path("operator").asString(),values.get(ref),Json.scalar(term.path("value")));
+                matched = any ? matched | hit : matched & hit;
             }
             String id = "r" + (i + 1);
             if (matched && "default".equals(expected)) expected = id;

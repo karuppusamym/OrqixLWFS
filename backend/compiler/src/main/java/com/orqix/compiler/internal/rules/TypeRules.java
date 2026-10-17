@@ -113,7 +113,7 @@ final class TypeRules {
                 continue;
             }
             List<Condition> terms=row.when().compound()?row.when().terms():List.of(row.when());
-            if(terms.stream().map(Condition::fieldRef).distinct().count()!=terms.size()) {
+            if(!row.when().isAny() && terms.stream().map(Condition::fieldRef).distinct().count()!=terms.size()) {
                 rc.issues().blocker("WF_DECISION_DUPLICATE_INPUT",base,null,null,"Each field may appear once in a conjunctive decision row.");
                 continue;
             }
@@ -122,7 +122,8 @@ final class TypeRules {
             for(Node user:users) for(Condition term:terms) Conditions.availability(rc,term.fieldRef(),user,base+"/fieldRef",null);
         }
         if(typed.size()!=table.rows().size()) return;
-        for(int i=0;i<table.rows().size();i++) for(int j=i+1;j<table.rows().size();j++) {
+        // FIRST is ordered on purpose: the first matching row wins, so overlapping rows are allowed (S40).
+        if(!table.first()) for(int i=0;i<table.rows().size();i++) for(int j=i+1;j<table.rows().size();j++) {
             var x=table.rows().get(i); var y=table.rows().get(j);
             if(LogicalConditions.overlap(x.when(),typed.get(x),y.when(),typed.get(y)))
                 rc.issues().blocker("WF_DECISION_OVERLAP",table.path()+"/rows/"+j+"/when",null,null,"Rules "+(i+1)+" and "+(j+1)+" can both apply. Make their conditions exclusive.");

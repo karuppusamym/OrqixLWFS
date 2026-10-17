@@ -42,7 +42,7 @@ export interface DecisionRow {
 export interface DecisionTable {
   key: string
   version: number
-  hitPolicy: 'UNIQUE'
+  hitPolicy: 'UNIQUE' | 'FIRST'
   rows: DecisionRow[]
   default: Record<string, Literal>
 }

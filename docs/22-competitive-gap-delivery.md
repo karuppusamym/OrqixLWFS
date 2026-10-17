@@ -17,7 +17,7 @@ Status: Planned, In progress, Implemented (awaiting verification), Verified loca
 | RL01 | Server-shared immutable workflow test suites; exact-draft/dependency publication gate | Verified locally | [S28](build/S28-rules-authoring.md); designer-only samples, CAS, count-only attestations and author/publisher mock journeys |
 | RL02 | Flat multi-input AND decision rows and deterministic evidence | Verified locally | S28; 2–8 distinct inputs, disjoint UNIQUE rows, FIRST plus explicit default |
 | RL03 | Effective-dated rule packs, currency semantics and separation of duties across stages | Planned | Policy dates/currency/version contracts; domain acceptance external |
-| RL04 | Additional hit policies, OR/nested decision rows and broader FEEL | Planned | Not implied by bounded RL02 conjunction support |
+| RL04 | Additional hit policies, OR/nested decision rows and broader FEEL | Verified locally (bounded) | [S40](build/S40-decision-hit-policies.md); FIRST hit policy and OR (`any`) rows with matching evaluator, simulator, DMN, runtime evidence and Studio. No nested groups, COLLECT/PRIORITY/RULE ORDER, new operators or arbitrary FEEL |
 | UI01 | Conditional forms and one/two-column section layouts | Verified locally | S35; reusable cross-application view assets remain UI02/PL01 |
 | UI02 | Full application UI designer and reusable views/actions | Planned | Define supported UI capabilities explicitly |
 | UI03 | Swimlanes, threaded element discussion, YAML/BPMN editing and round-trip checks | Planned | Authoring/compiler/source modes |

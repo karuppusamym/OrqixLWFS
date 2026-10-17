@@ -3,7 +3,7 @@ import type { components } from '@/api/schema'
 import type { Permission, ProblemCode, TaskDetail, ValidationIssue } from '@/api/types'
 import { nodeById } from '@/features/studio/model/graph'
 import { sendMessage, validMessageName } from './messages'
-import { migrateRunTo, suspendBlocker, suspendRun, resumeRun, addEvent, canSeeRunData, hasTaskSkills, isRunParticipant, evaluateTable, requestTitleOf, claim, createRun, decide, cancelRun, currentRelease, reconcileRun, retryRun, release as releaseTask, selfApprovalAllowed, toRun, toRunDetail, toTaskSummary } from './engine'
+import { migrateRunTo, suspendBlocker, suspendRun, resumeRun, addEvent, canSeeRunData, hasTaskSkills, isRunParticipant, isSeparatedFrom, evaluateTable, requestTitleOf, claim, createRun, decide, cancelRun, currentRelease, reconcileRun, retryRun, release as releaseTask, selfApprovalAllowed, toRun, toRunDetail, toTaskSummary } from './engine'
 import { makeRelease } from './seed'
 import { attachStartFiles, planStartFiles } from './caseFiles'
 import { evaluate, migrationOptions } from './releaseMigration'
@@ -249,7 +249,8 @@ function taskDetail(user: MockUser, perms: Permission[], run: MockRun, task: Moc
   const open = task.status === 'open'
   const eligibleGroup = inGroup(user, task.candidateGroup) && hasTaskSkills(run,task,user) && perms.includes('task.act')
   const own = run.initiatorId === user.id && !selfApprovalAllowed(run, rel)
-  const claimAllowed = open && !task.assigneeId && eligibleGroup && !own
+  const separated = isSeparatedFrom(run, task, user)
+  const claimAllowed = open && !task.assigneeId && eligibleGroup && !own && !separated
   return {
     ...summaryValue,
     request: { input: run.input, inputSchema: rel.definition.inputSchema as never, inputUi: (rel.definition.inputUi ?? {}) as never },
@@ -257,7 +258,7 @@ function taskDetail(user: MockUser, perms: Permission[], run: MockRun, task: Moc
     form: { rejectReasonRequired: true },
     completedBy: task.completedById ? subjectRef(userById(task.completedById)) : null,
     allowedActions: {
-      claim: claimAllowed ? { allowed: true } : { allowed: false, reasonCode: !open ? 'TASK_NOT_OPEN' : task.assigneeId ? 'TASK_ALREADY_CLAIMED' : own ? 'SELF_APPROVAL_DENIED' : 'NOT_ELIGIBLE' },
+      claim: claimAllowed ? { allowed: true } : { allowed: false, reasonCode: !open ? 'TASK_NOT_OPEN' : task.assigneeId ? 'TASK_ALREADY_CLAIMED' : own ? 'SELF_APPROVAL_DENIED' : separated ? 'SEPARATION_OF_DUTIES' : 'NOT_ELIGIBLE' },
       release: open && isAssignee ? { allowed: true } : { allowed: false, reasonCode: 'TASK_NOT_CLAIMED_BY_CALLER' },
       decide: open && isAssignee && eligibleGroup && !own ? { allowed: true } : { allowed: false, reasonCode: !open ? 'TASK_NOT_OPEN' : 'TASK_NOT_CLAIMED_BY_CALLER' },
       priority: open && (perms.includes("run.operate") || isAssignee && eligibleGroup && !own) ? { allowed: true } : { allowed: false, reasonCode: !open ? "TASK_NOT_OPEN" : "FORBIDDEN" },
@@ -430,7 +431,9 @@ export function createHandlers(): HttpHandler[] {
       const draft = wf.drafts.find((d) => d.revision === input.revision)
       const table = draft?.definition.decisions.find((d) => d.key === str(params.key))
       if (!draft || !table) return notFound()
-      const result = evaluateTable(table, input.values ?? {})
+      const { ['$asOf']: given, ...values } = (input.values ?? {}) as Record<string, Literal>
+      const asOf = typeof given === 'string' ? given : clock.now().toISOString().slice(0, 10)
+      const result = evaluateTable(table, values, asOf)
       return HttpResponse.json(result)
     }),
 
@@ -968,6 +971,7 @@ export function createHandlers(): HttpHandler[] {
       const input = await body<{ expectedVersion: number }>(request)
       if (!inGroup(g.user, task.candidateGroup) || !hasTaskSkills(run,task,g.user)) return problem(403, 'NOT_ELIGIBLE', 'Not eligible')
       if (run.initiatorId === g.user.id && !selfApprovalAllowed(run, currentRelease(run))) return problem(403, 'SELF_APPROVAL_DENIED', 'You cannot act on your own request')
+      if (isSeparatedFrom(run, task, g.user)) return problem(403, 'SEPARATION_OF_DUTIES', 'You decided an earlier step of this request')
       if (task.status !== 'open') return problem(409, 'TASK_NOT_OPEN', 'The task is no longer open', { currentVersion: task.version })
       if (run.suspension) return problem(409, 'RUN_SUSPENDED', 'The request is suspended; resume it first')
       if (task.assigneeId) return problem(409, 'TASK_ALREADY_CLAIMED', 'The task is already claimed', { currentVersion: task.version })
@@ -1000,6 +1004,7 @@ export function createHandlers(): HttpHandler[] {
       const input = await body<{ expectedVersion: number; action: 'approve' | 'reject'; reason?: string; comment?: string }>(request)
       return idempotent(request, g.user, 'decideTask', input, () => {
         if (run.initiatorId === g.user.id && !selfApprovalAllowed(run, currentRelease(run))) return problem(403, 'SELF_APPROVAL_DENIED', 'You cannot act on your own request')
+        if (isSeparatedFrom(run, task, g.user)) return problem(403, 'SEPARATION_OF_DUTIES', 'You decided an earlier step of this request')
         if (task.status !== 'open') return problem(409, 'TASK_NOT_OPEN', 'The task is no longer open', { currentVersion: task.version })
         if (run.suspension) return problem(409, 'RUN_SUSPENDED', 'The request is suspended; resume it first')
         if (input.expectedVersion !== task.version) return problem(409, 'TASK_VERSION_CONFLICT', 'The task changed', { currentVersion: task.version })

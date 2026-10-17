@@ -50,11 +50,13 @@ public class TaskStore {
             Instant dueAt, Instant createdAt) {
         int inserted = jdbc.sql("""
                 INSERT INTO task_context (engine_task_id, workspace_id, run_id, node_id, label, candidate_group_key,
-                                          initiator_subject_id, self_approval_allowed, status, version, due_at, created_at, required_skills)
+                                          initiator_subject_id, self_approval_allowed, status, version, due_at, created_at, required_skills, separate_from)
                 SELECT :task, run.workspace_id, run.id, :node, :label, :grp, run.initiator_subject_id,
                        (rel.definition -> 'security' ->> 'selfApproval' = 'allow' AND ws.allow_self_approval_workflows),
                        'open', 1, :due, :created,
                        COALESCE((SELECT n->'config'->'requiredSkills' FROM jsonb_array_elements(rel.definition->'nodes') n
+                           WHERE n->>'id'=:node),'[]'::jsonb),
+                       COALESCE((SELECT n->'config'->'separateFrom' FROM jsonb_array_elements(rel.definition->'nodes') n
                            WHERE n->>'id'=:node),'[]'::jsonb)
                 FROM workflow_run run
                 JOIN workflow_release rel ON rel.workspace_id = run.workspace_id AND rel.id = run.release_id
@@ -79,6 +81,18 @@ public class TaskStore {
                 .param("ws",workspaceId).param("task",taskId)
                 .param("deadline",Sql.ts(dueAt)).param("run",runId).param("node",nodeId)
                 .param("due",Sql.ts(createdAt.plus(reminders.after()))).update();
+    }
+
+    /** True when {@code subject} decided one of the earlier steps this task must be kept apart from (S41). */
+    @Transactional(readOnly = true)
+    public boolean separatedFrom(UUID workspaceId, String taskId, UUID subject) {
+        return Boolean.TRUE.equals(jdbc.sql("""
+                SELECT EXISTS (SELECT 1 FROM task_context t JOIN task_decision d
+                       ON d.workspace_id = t.workspace_id AND d.run_id = t.run_id AND d.actor_subject_id = :subject
+                      AND d.node_id IN (SELECT jsonb_array_elements_text(t.separate_from))
+                WHERE t.workspace_id = :ws AND t.engine_task_id = :task)
+                """)
+                .param("ws", workspaceId).param("task", taskId).param("subject", subject).query(Boolean.class).single());
     }
 
     @Transactional(readOnly = true)

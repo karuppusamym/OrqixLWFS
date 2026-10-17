@@ -95,7 +95,7 @@ public final class DmnGenerator {
 
     /** Flat conjunctions become one DMN input column per distinct canonical field. */
     public static String generate(DecisionTable table, Map<String,FieldKind> kinds) {
-        if(table.rows().stream().noneMatch(r->r.when().compound())) return generate(table,kinds.get(table.rows().get(0).when().fieldRef()));
+        if(table.rows().stream().noneMatch(r->r.when().compound()) && !table.dated()) return generate(table,kinds.get(table.rows().get(0).when().fieldRef()));
         var fields=inputFields(table);
         String key=table.key();
         XmlOut x=new XmlOut();
@@ -106,6 +106,14 @@ public final class DmnGenerator {
             x.open("","input",DMN_NS).attr("id",key+"__in"+(i+1)).attr("label",fields.get(i));
             x.inline("","inputExpression",DMN_NS,"text","in"+(i+1),false,"id",key+"__inexpr"+(i+1),"typeRef",typeRef(kinds.get(fields.get(i))));
             x.close();
+        }
+        if(table.dated()) {
+            // The effective window is two ordinary comparisons of the same number, the submission date as yyyymmdd.
+            for(String edge:new String[] {"From","To"}) {
+                x.open("","input",DMN_NS).attr("id",key+"__in"+edge).attr("label","effective"+edge);
+                x.inline("","inputExpression",DMN_NS,"text","asOf",false,"id",key+"__inexpr"+edge,"typeRef","number");
+                x.close();
+            }
         }
         table.defaultOutput().forEach((name,literal)->x.leaf("","output",DMN_NS).attr("id",key+"__out_"+name).attr("name",name).attr("typeRef",literal.typeName()));
         for(DecisionTable.Row row:table.rows()) {
@@ -122,6 +130,13 @@ public final class DmnGenerator {
                         : terms.stream().filter(t->t.fieldRef().equals(field)).findFirst().map(DmnGenerator::inputEntry).orElse("-");
                     x.inline("","inputEntry",DMN_NS,"text",entry,true,"id",rule+"_in"+(i+1));
                 }
+                if(table.dated()) {
+                    var window=row.effective();
+                    Integer from=window==null?null:DecisionTable.Window.number(window.from());
+                    Integer to=window==null?null:DecisionTable.Window.number(window.to());
+                    x.inline("","inputEntry",DMN_NS,"text",from==null?"-":">= "+from,from!=null,"id",rule+"_inFrom");
+                    x.inline("","inputEntry",DMN_NS,"text",to==null?"-":"<= "+to,to!=null,"id",rule+"_inTo");
+                }
                 table.defaultOutput().keySet().forEach(name->x.inline("","outputEntry",DMN_NS,"text",outputEntry(row.then().get(name)),true,"id",rule+"_"+name));
                 x.close();
             }
@@ -129,6 +144,10 @@ public final class DmnGenerator {
         String rule=key+"__default";
         x.open("","rule",DMN_NS).attr("id",rule);
         for(int i=0;i<fields.size();i++) x.inline("","inputEntry",DMN_NS,"text","-",false,"id",rule+"_in"+(i+1));
+        if(table.dated()) {
+            x.inline("","inputEntry",DMN_NS,"text","-",false,"id",rule+"_inFrom");
+            x.inline("","inputEntry",DMN_NS,"text","-",false,"id",rule+"_inTo");
+        }
         table.defaultOutput().forEach((name,literal)->x.inline("","outputEntry",DMN_NS,"text",outputEntry(literal),true,"id",rule+"_"+name));
         x.close(); x.close(); x.close(); x.close();
         return x.finish();

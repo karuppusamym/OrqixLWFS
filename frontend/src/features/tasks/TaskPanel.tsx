@@ -42,6 +42,8 @@ export function whyNotText(task: TaskDetail): string | null {
   switch (claim.reasonCode) {
     case 'SELF_APPROVAL_DENIED':
       return "You can't approve your own request."
+    case 'SEPARATION_OF_DUTIES':
+      return 'You decided an earlier step of this request, so another person must decide this one.'
     case 'NOT_ELIGIBLE':
       return `This task requires the ${task.candidateGroup.name} group and every configured skill group.`
     case 'TASK_ALREADY_CLAIMED':
@@ -130,7 +132,7 @@ export function TaskPanel({ taskId, onClaimed }: { taskId: string; onClaimed?: (
       commentRef.current?.focus()
       return
     }
-    if (problem.code === 'SELF_APPROVAL_DENIED') {
+    if (problem.code === 'SELF_APPROVAL_DENIED' || problem.code === 'SEPARATION_OF_DUTIES') {
       setBanner({ tone: 'warning', text: ui.message })
       await refreshAll()
       return

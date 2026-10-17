@@ -36,10 +36,11 @@ public sealed interface Node {
     /** Ask for approval. {@code dueAfterHours} and {@code timeoutAfter} (ISO-8601 duration) may be null. */
     record Approval(int index, String id, String label, String candidateGroupRef, boolean rejectReasonRequired,
                     Integer dueAfterHours, String timeoutAfter, java.util.List<String> requiredSkills,
-                    tools.jackson.databind.JsonNode calendar, tools.jackson.databind.JsonNode escalation) implements Node {
+                    tools.jackson.databind.JsonNode calendar, tools.jackson.databind.JsonNode escalation,
+                    java.util.List<String> separateFrom) implements Node {
         public Approval(int index, String id, String label, String candidateGroupRef, boolean rejectReasonRequired,
                 Integer dueAfterHours, String timeoutAfter) {
-            this(index,id,label,candidateGroupRef,rejectReasonRequired,dueAfterHours,timeoutAfter,java.util.List.of(),null,null);
+            this(index,id,label,candidateGroupRef,rejectReasonRequired,dueAfterHours,timeoutAfter,java.util.List.of(),null,null,java.util.List.of());
         }
         @Override
         public NodeKind kind() {

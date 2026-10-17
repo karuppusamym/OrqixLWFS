@@ -419,6 +419,11 @@ public class TaskService {
             throw policy.deny(access.workspaceId(), access.subjectId(), "task.act", operationId, false,
                     new ApiException(ProblemCode.SELF_APPROVAL_DENIED, "You cannot approve your own request."));
         }
+        if (tasks.separatedFrom(task.workspaceId(), task.taskId(), access.subjectId())) {
+            throw policy.deny(access.workspaceId(), access.subjectId(), "task.act", operationId, false,
+                    new ApiException(ProblemCode.SEPARATION_OF_DUTIES,
+                            "You decided an earlier step of this request, so another person must decide this one."));
+        }
     }
 
     private static void requireVersion(TaskStore.TaskRow task, int expected) {
@@ -431,6 +436,9 @@ public class TaskService {
     /** Eligibility of another subject, using its stored IdP groups from the latest login (V4). */
     boolean eligibleSubject(UUID workspaceId, TaskStore.TaskRow task, UUID subjectId) {
         if (!task.selfApprovalAllowed() && task.initiator().equals(subjectId)) {
+            return false;
+        }
+        if (tasks.separatedFrom(task.workspaceId(), task.taskId(), subjectId)) {
             return false;
         }
         SubjectService.Subject subject = subjects.find(subjectId).orElse(null);
@@ -505,7 +513,8 @@ public class TaskService {
         }
         String eligibility = !access.has(Permission.TASK_ACT) ? "FORBIDDEN"
                 : !access.groupKeys().contains(task.candidateGroupKey()) || !hasSkills(access,task) ? "NOT_ELIGIBLE"
-                : (!task.selfApprovalAllowed() && task.initiator().equals(me)) ? "SELF_APPROVAL_DENIED" : null;
+                : (!task.selfApprovalAllowed() && task.initiator().equals(me)) ? "SELF_APPROVAL_DENIED"
+                : tasks.separatedFrom(task.workspaceId(), task.taskId(), me) ? "SEPARATION_OF_DUTIES" : null;
         RuntimeDtos.ActionAvailability claim = eligibility != null ? new RuntimeDtos.ActionAvailability(false, eligibility)
                 : task.assignee() != null ? new RuntimeDtos.ActionAvailability(false, "TASK_ALREADY_CLAIMED")
                 : new RuntimeDtos.ActionAvailability(true, null);

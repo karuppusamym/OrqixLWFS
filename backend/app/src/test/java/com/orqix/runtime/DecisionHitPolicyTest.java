@@ -52,6 +52,37 @@ class DecisionHitPolicyTest extends RuntimeTestBase {
                 .param("id", run).query(String.class).list().stream().map(json::parse).toList();
     }
 
+    /** UNIQUE table whose three rows share one condition and differ only in their effective window. */
+    private UUID publishDated() throws Exception {
+        return publishPurchase(PURCHASING, d -> {
+            ObjectNode table = (ObjectNode) d.path("decisions").get(0);
+            ObjectNode current = (ObjectNode) table.path("rows").get(0).deepCopy();
+            ObjectNode expired = current.deepCopy();
+            ObjectNode future = current.deepCopy();
+            expired.putObject("effective").put("to", "2000-01-01");
+            expired.putObject("then").put("route", "standard");
+            current.putObject("effective").put("from", "2000-01-02").put("to", "2999-12-31");
+            future.putObject("effective").put("from", "3000-01-01");
+            future.putObject("then").put("route", "standard");
+            table.putArray("rows").add(expired).add(current).add(future);
+        });
+    }
+
+    @Test
+    void datedRowsAreJudgedBySubmissionDateInThePinnedDmnAndNamedInTheEvidence() throws Exception {
+        UUID workflow = publishDated();
+        JsonNode decision = decisionOf(workflow, "IT", "6000");
+        assertThat(decision.path("matched").asString()).isEqualTo("r2");
+        assertThat(decision.path("outputs").path("route").asString()).isEqualTo("financeReview");
+        JsonNode evidence = decision.path("evidence");
+        assertThat(java.time.LocalDate.parse(evidence.path("asOf").asString())).isNotNull();
+        assertThat(evidence.path("rows").get(0).path("inWindow").asBoolean()).isFalse();
+        assertThat(evidence.path("rows").get(1).path("inWindow").asBoolean()).isTrue();
+        assertThat(evidence.path("rows").get(2).path("inWindow").asBoolean()).isFalse();
+        // Below the amount threshold no row matches, so the default applies even though one row is in force.
+        assertThat(decisionOf(workflow, "IT", "10").path("matched").asString()).isEqualTo("default");
+    }
+
     @Test
     void pinnedDmnPicksTheFirstMatchingRowAndNamesTheCanonicalRowForOrAlternatives() throws Exception {
         UUID workflow = publishFirstWithOrRow();

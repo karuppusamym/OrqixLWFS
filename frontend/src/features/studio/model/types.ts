@@ -34,9 +34,16 @@ export interface Transition {
   condition?: Condition
 }
 
+/** Inclusive UTC date window (YYYY-MM-DD) in which a row applies, judged by the request's submission date (S41). */
+export interface EffectiveWindow {
+  from?: string
+  to?: string
+}
+
 export interface DecisionRow {
   when: Condition
   then: Record<string, Literal>
+  effective?: EffectiveWindow
 }
 
 export interface DecisionTable {

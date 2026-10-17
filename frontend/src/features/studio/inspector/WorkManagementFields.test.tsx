@@ -33,6 +33,13 @@ describe('work management authoring',()=>{
     await user.click(screen.getByRole('checkbox',{name:'Count working hours for the due date'}))
     expect(store.getState().definition.nodes.find(node=>node.id==='manager')!.config.calendar).toBeUndefined()
   })
+  it('keeps an approval apart from earlier approvals and removes the setting again',async()=>{
+    const store=setup(); const user=userEvent.setup()
+    await user.click(screen.getByRole('checkbox',{name:'Finance review'}))
+    expect(store.getState().definition.nodes.find(node=>node.id==='manager')!.config.separateFrom).toEqual(['finance'])
+    await user.click(screen.getByRole('checkbox',{name:'Finance review'}))
+    expect(store.getState().definition.nodes.find(node=>node.id==='manager')!.config.separateFrom).toBeUndefined()
+  })
   it('authors an explicit dispatch policy and removes it again',async()=>{
     const store=setup(); const user=userEvent.setup()
     const select=screen.getByLabelText('Assign new tasks')

@@ -79,6 +79,16 @@ final class BindingRules {
                 if (a.dueAfterHours() == null) rc.issues().blocker("WF_CALENDAR_DUE_REQUIRED", n.configPath("dueAfterHours"),
                         n.id(), null, "Set working hours for the calendar deadline.");
             }
+            for (String ref : a.separateFrom()) {
+                Node other = rc.graph().node(ref);
+                String why = other == null ? "does not exist"
+                        : !(other instanceof Node.Approval) ? "is not an approval step"
+                        : other.id().equals(n.id()) ? "is this step itself"
+                        : !rc.graph().dominates(other, n) ? "is not decided on every path to this step"
+                        : null;
+                if (why != null) rc.issues().blocker("WF_SEPARATION_INVALID", n.configPath("separateFrom"), n.id(), null,
+                        n.label() + " separates duties from " + q(ref) + ", which " + why + ".");
+            }
             if (a.escalation() != null && a.dueAfterHours() == null) rc.issues().blocker("WF_ESCALATION_DUE_REQUIRED",
                     n.configPath("escalation"), n.id(), null, "Recurring overdue notices require a due date.");
         }

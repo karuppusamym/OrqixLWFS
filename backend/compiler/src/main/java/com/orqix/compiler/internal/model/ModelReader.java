@@ -108,7 +108,9 @@ public final class ModelReader {
                     c.has("dueAfterHours") ? c.get("dueAfterHours").intValue() : null,
                     c.has("timeoutAfter") ? c.get("timeoutAfter").stringValue() : null,
                     c.has("requiredSkills") ? java.util.stream.StreamSupport.stream(c.get("requiredSkills").spliterator(),false)
-                            .map(JsonNode::stringValue).toList() : List.of(), c.get("calendar"), c.get("escalation"));
+                            .map(JsonNode::stringValue).toList() : List.of(), c.get("calendar"), c.get("escalation"),
+                    c.has("separateFrom") ? java.util.stream.StreamSupport.stream(c.get("separateFrom").spliterator(),false)
+                            .map(JsonNode::stringValue).toList() : List.of());
             case DECISION -> new Node.Decision(index, id, label, c.get("decisionRef").stringValue());
             case BRANCH -> new Node.Branch(index, id, label);
             case HTTP -> new Node.Http(index, id, label, c.get("connectionRef").stringValue(),
@@ -182,7 +184,8 @@ public final class ModelReader {
         for (int r = 0; r < rows.size(); r++) {
             JsonNode row = rows.get(r);
             require(row.isObject(), "decision row must be an object");
-            rowList.add(new DecisionTable.Row(r, readCondition(row.get("when")), outputMap(row.get("then"))));
+            rowList.add(new DecisionTable.Row(r, readCondition(row.get("when")), outputMap(row.get("then")),
+                    readWindow(row.get("effective"))));
         }
         JsonNode policy = t.get("hitPolicy");
         require(policy == null || (policy.isString() && (DecisionTable.UNIQUE.equals(policy.stringValue())
@@ -216,6 +219,22 @@ public final class ModelReader {
         require(value != null && (value.isString() || value.isNumber() || value.isBoolean()),
                 "condition value must be a string, number or boolean");
         return new Condition(fieldRef.stringValue(), Operator.fromJson(operator.stringValue()), Literal.of(value));
+    }
+
+    private static DecisionTable.Window readWindow(JsonNode w) {
+        if (w == null || w.isNull()) {
+            return null;
+        }
+        require(w.isObject(), "effective must be an object");
+        try {
+            java.time.LocalDate from = w.has("from") ? java.time.LocalDate.parse(w.get("from").stringValue()) : null;
+            java.time.LocalDate to = w.has("to") ? java.time.LocalDate.parse(w.get("to").stringValue()) : null;
+            require(from != null || to != null, "effective needs a from or a to date");
+            require(from == null || to == null || !from.isAfter(to), "effective.from must not be after effective.to");
+            return new DecisionTable.Window(from, to);
+        } catch (java.time.format.DateTimeParseException e) {
+            throw new IllegalArgumentException("effective dates must be real calendar dates (YYYY-MM-DD)");
+        }
     }
 
     private static Map<String, Literal> outputMap(JsonNode o) {

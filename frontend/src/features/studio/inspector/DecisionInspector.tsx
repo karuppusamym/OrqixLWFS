@@ -77,6 +77,16 @@ export function DecisionInspector({ node }: { node: WorkflowNode }) {
   }
   const setRowOutput = (index: number, key: string, value: Literal) => save({ ...table, rows: table.rows.map((r, i) => (i === index ? { ...r, then: { ...r.then, [key]: value } } : r)) })
   const setDefaultOutput = (key: string, value: Literal) => save({ ...table, default: { ...table.default, [key]: value } })
+  /** Sets one edge of a row's date window; clearing both removes the window. */
+  const setRowWindow = (index: number, change: { from?: string; to?: string }) => {
+    save({ ...table, rows: table.rows.map((r, i) => {
+      if (i !== index) return r
+      const next = { ...r.effective, ...change }
+      const clean = Object.fromEntries(Object.entries(next).filter(([, v]) => v))
+      const { effective: _old, ...rest } = r
+      return Object.keys(clean).length ? { ...rest, effective: clean } : rest
+    }) })
+  }
   const removeRow = (index: number) => save({ ...table, rows: table.rows.filter((_, i) => i !== index) })
   const moveRow = (index: number, by: -1 | 1) => {
     const target = index + by
@@ -149,6 +159,17 @@ export function DecisionInspector({ node }: { node: WorkflowNode }) {
                 ) : null}
               </div>
               <ConditionEditor idBase={`dec-${node.id}-r${i}`} dataFieldBase={`rows.${i}.when`} condition={row.when} fields={fields} disabled={readOnly} onChange={(c) => setRowWhen(i, c)} />
+              <fieldset disabled={readOnly} className="grid grid-cols-2 gap-3 border-t border-border pt-3">
+                <legend className="mb-1 text-xs font-semibold text-muted-foreground uppercase">Applies to requests submitted</legend>
+                <div className="space-y-1.5">
+                  <Label htmlFor={`dec-${node.id}-r${i}-from`}>From (optional)</Label>
+                  <Input id={`dec-${node.id}-r${i}-from`} type="date" value={row.effective?.from ?? ''} onChange={(e) => setRowWindow(i, { from: e.target.value })} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor={`dec-${node.id}-r${i}-to`}>Until, including (optional)</Label>
+                  <Input id={`dec-${node.id}-r${i}-to`} type="date" value={row.effective?.to ?? ''} onChange={(e) => setRowWindow(i, { to: e.target.value })} />
+                </div>
+              </fieldset>
               <div className="space-y-2 border-t border-border pt-3">
                 <p className="text-xs font-semibold text-muted-foreground uppercase">Then</p>
                 {keys.map((k) => (
@@ -177,7 +198,7 @@ export function DecisionInspector({ node }: { node: WorkflowNode }) {
           ))}
         </div>
 
-        <TestRule key={`${table.key}-${fieldRef}`} fieldRef={fieldRef} info={info} inputs={[...new Set(table.rows.flatMap(r => conditionTerms(r.when).map(t => t.fieldRef)))].map(ref => ({ ref, info: fields.find(f => f.ref === ref) }))} tableKey={table.key} wsId={wsId} workflowId={workflowId} flush={() => saver.flush()} revision={() => store.getState().revision} />
+        <TestRule dated={table.rows.some(r => r.effective)} key={`${table.key}-${fieldRef}`} fieldRef={fieldRef} info={info} inputs={[...new Set(table.rows.flatMap(r => conditionTerms(r.when).map(t => t.fieldRef)))].map(ref => ({ ref, info: fields.find(f => f.ref === ref) }))} tableKey={table.key} wsId={wsId} workflowId={workflowId} flush={() => saver.flush()} revision={() => store.getState().revision} />
       </InspectorSection>
 
       <Advanced>
@@ -230,6 +251,7 @@ export function DecisionInspector({ node }: { node: WorkflowNode }) {
 }
 
 function TestRule({
+  dated,
   fieldRef,
   info,
   inputs,
@@ -239,6 +261,7 @@ function TestRule({
   flush,
   revision,
 }: {
+  dated: boolean
   inputs: Array<{ ref: string; info: Pick<FieldInfo, 'type' | 'enumValues'> | undefined }>
   fieldRef: string
   info: { type: 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'date'; enumValues?: string[] } | undefined
@@ -253,6 +276,7 @@ function TestRule({
   const [result, setResult] = useState<DecisionEvaluateResult | null>(null)
   const [error, setError] = useState<ProblemError | null>(null)
   const [pending, setPending] = useState(false)
+  const [asOf, setAsOf] = useState(() => new Date().toISOString().slice(0, 10))
 
   const run = async () => {
     setPending(true)
@@ -262,7 +286,7 @@ function TestRule({
       // The server evaluates the saved draft, so save first.
       const saved = await flush()
       if (!saved) throw new Error('save')
-      setResult(await endpoints.evaluateDecision(wsId, workflowId, tableKey, { revision: revision(), values: Object.fromEntries(inputs.map(input => [input.ref, input.ref === fieldRef ? sample : samples[input.ref] ?? defaultLiteral(input.info?.type, input.info?.enumValues)])) }))
+      setResult(await endpoints.evaluateDecision(wsId, workflowId, tableKey, { revision: revision(), values: { ...Object.fromEntries(inputs.map(input => [input.ref, input.ref === fieldRef ? sample : samples[input.ref] ?? defaultLiteral(input.info?.type, input.info?.enumValues)])), ...(dated ? { $asOf: asOf } : {}) } }))
     } catch (cause) {
       setError(toProblem(cause))
     } finally {
@@ -280,6 +304,7 @@ function TestRule({
         <Label htmlFor={`test-${tableKey}`}>Sample value</Label>
         <LiteralInput id={`test-${tableKey}`} info={info} value={sample} label="Sample value" onCommit={setSample} />
       </div>
+      {dated ? <div className="space-y-1.5"><Label htmlFor={`test-${tableKey}-asof`}>Request submitted on</Label><Input id={`test-${tableKey}-asof`} type="date" value={asOf} onChange={e => setAsOf(e.target.value)} /></div> : null}
       <Button variant="secondary" onClick={() => void run()} loading={pending} disabled={!fieldRef}>
         Test this rule
       </Button>

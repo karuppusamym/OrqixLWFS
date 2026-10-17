@@ -2,7 +2,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/input'
 import { FormField } from '@/components/common/FormField'
-import { useStudioContext } from '../StudioContext'
+import { useStudio, useStudioContext } from '../StudioContext'
 import { cfg, type WorkflowNode } from '../model/types'
 import { CommitInput, CommitNumber, CommitTextarea, InspectorSection } from './controls'
 
@@ -15,6 +15,11 @@ export function WorkManagementFields({ node, groups }: { node: WorkflowNode; gro
   const calendar = cfg<Calendar>(node, 'calendar')
   const escalation = cfg<Escalation>(node, 'escalation')
   const dispatch = cfg<{ policy: string }>(node, 'dispatch')
+  const separateFrom = cfg<string[]>(node, 'separateFrom') ?? []
+  const definition = useStudio(state => state.definition)
+  // Only approvals that every path passes through before this step can be kept apart; the server checks the same rule.
+  const otherApprovals = definition.nodes.filter(other => other.type === 'approval' && other.id !== node.id)
+  const setSeparate = (ids: string[]) => set({ separateFrom: ids.length ? ids : undefined })
   const set = (changes: Record<string, unknown>) => store.getState().updateNodeConfig(node.id, changes)
   const calendarSet = (changes: Partial<Calendar>) => set({ calendar: { ...calendar, ...changes } })
   return <InspectorSection title="Work queues and deadlines">
@@ -29,6 +34,17 @@ export function WorkManagementFields({ node, groups }: { node: WorkflowNode; gro
         <Checkbox checked onCheckedChange={() => set({ requiredSkills: skills.filter(skill => skill !== key) })} />{key} (not found in this workspace)
       </label>)}
     </fieldset>
+    {otherApprovals.length > 0 || separateFrom.length > 0 ? <fieldset disabled={readOnly} className="space-y-2">
+      <legend className="text-sm font-medium">Keep apart from earlier approvals</legend>
+      <p className="text-xs text-muted-foreground">Whoever decided a selected step in the same request cannot claim, decide or be assigned this one. Publishing checks that the step is always decided first.</p>
+      {otherApprovals.map(other => <label key={other.id} className="flex items-center gap-2 text-sm">
+        <Checkbox checked={separateFrom.includes(other.id)} disabled={readOnly || !separateFrom.includes(other.id) && separateFrom.length >= 5}
+          onCheckedChange={checked => setSeparate(checked ? [...separateFrom, other.id] : separateFrom.filter(id => id !== other.id))} />{other.label}
+      </label>)}
+      {separateFrom.filter(id => !otherApprovals.some(other => other.id === id)).map(id => <label key={id} className="flex items-center gap-2 text-sm">
+        <Checkbox checked onCheckedChange={() => setSeparate(separateFrom.filter(ref => ref !== id))} />{id} (no longer an approval step)
+      </label>)}
+    </fieldset> : null}
     <FormField label="Assign new tasks" id={`dispatch-${node.id}`} description="Otherwise tasks wait in the group queue. The person can still return a task to the group, and the timeline explains each assignment.">
       {ids => <Select id={ids.input} value={dispatch?.policy ?? ''} disabled={readOnly}
         onChange={e => set({ dispatch: e.target.value ? { policy: e.target.value } : undefined })}>

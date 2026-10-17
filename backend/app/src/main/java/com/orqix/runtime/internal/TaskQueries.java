@@ -65,7 +65,7 @@ public class TaskQueries {
             case "oldest" -> "t.created_at ASC,t.engine_task_id ASC";
             default -> "t.created_at DESC,t.engine_task_id DESC";
         };
-        String ownership = assigned ? "t.assignee_subject_id=:subject" : "t.assignee_subject_id IS NULL AND t.candidate_group_key IN (:groups) AND t.required_skills <@ CAST(:skills AS jsonb) AND (t.self_approval_allowed OR t.initiator_subject_id<>:subject)";
+        String ownership = assigned ? "t.assignee_subject_id=:subject" : "t.assignee_subject_id IS NULL AND t.candidate_group_key IN (:groups) AND t.required_skills <@ CAST(:skills AS jsonb) AND (t.self_approval_allowed OR t.initiator_subject_id<>:subject) AND NOT EXISTS (SELECT 1 FROM task_decision d WHERE d.workspace_id=t.workspace_id AND d.run_id=t.run_id AND d.actor_subject_id=:subject AND d.node_id IN (SELECT jsonb_array_elements_text(t.separate_from)))";
         var query = jdbc.sql("SELECT " + T_COLUMNS + " FROM task_context t WHERE t.workspace_id=:ws AND t.status='open' AND " + ownership
                 + " AND t.priority>=:minPriority AND (CAST(:afterAt AS timestamptz) IS NULL OR " + comparison + ") ORDER BY " + order + " LIMIT :limit")
                 .param("ws",workspaceId).param("subject",subject).param("minPriority",minPriority)
@@ -103,10 +103,12 @@ public class TaskQueries {
             return 0;
         }
         return jdbc.sql("""
-                SELECT count(*) FROM task_context
-                WHERE workspace_id = :ws AND status = 'open' AND assignee_subject_id IS NULL
-                  AND candidate_group_key IN (:groups) AND (self_approval_allowed OR initiator_subject_id <> :s)
-                  AND required_skills <@ CAST(:skills AS jsonb)
+                SELECT count(*) FROM task_context t
+                WHERE t.workspace_id = :ws AND t.status = 'open' AND t.assignee_subject_id IS NULL
+                  AND t.candidate_group_key IN (:groups) AND (t.self_approval_allowed OR t.initiator_subject_id <> :s)
+                  AND t.required_skills <@ CAST(:skills AS jsonb)
+                  AND NOT EXISTS (SELECT 1 FROM task_decision d WHERE d.workspace_id = t.workspace_id AND d.run_id = t.run_id
+                        AND d.actor_subject_id = :s AND d.node_id IN (SELECT jsonb_array_elements_text(t.separate_from)))
                 """)
                 .param("ws", workspaceId).param("s", subject).param("groups", List.copyOf(groups)).param("skills",json.write(groups))
                 .query(Integer.class).single();

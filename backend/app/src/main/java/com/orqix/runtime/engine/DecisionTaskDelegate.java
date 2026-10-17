@@ -71,6 +71,10 @@ public class DecisionTaskDelegate implements JavaDelegate {
             else if(condition.has("any")) for(JsonNode term:condition.path("any")) referenced.add(term.path("fieldRef").asString());
             else referenced.add(condition.path("fieldRef").asString());
         }
+        // Dated rows are judged by the day the request was submitted, so a replay or a migration never changes the answer.
+        java.time.LocalDate asOf = null;
+        for(JsonNode row:table.path("rows")) if(row.has("effective")) asOf = run.createdAt().atZone(java.time.ZoneOffset.UTC).toLocalDate();
+        if(asOf!=null) variables.put("asOf", asOf.getYear()*10000+asOf.getMonthValue()*100+asOf.getDayOfMonth());
         var fields=List.copyOf(referenced);
         for(int i=0;i<fields.size();i++) {
             Object value=ProcessData.requireScalar(execution,json,fields.get(i));
@@ -84,7 +88,7 @@ public class DecisionTaskDelegate implements JavaDelegate {
         data.put("version", Integer.valueOf(version));
         data.put("matched", result.matched());
         data.put("outputs", result.outputs());
-        data.put("evidence", evidenceValues(table, values, result.matched()));
+        data.put("evidence", evidenceValues(table, values, result.matched(), asOf));
         events.append(workspaceId, runId, "DECISION_EVALUATED", element.getId(), null, data);
     }
 
@@ -160,10 +164,15 @@ public class DecisionTaskDelegate implements JavaDelegate {
     }
 
     ObjectNode evidenceValues(JsonNode table, Map<String,Object> values, String selected) {
+        return evidenceValues(table, values, selected, null);
+    }
+
+    ObjectNode evidenceValues(JsonNode table, Map<String,Object> values, String selected, java.time.LocalDate asOf) {
         JsonNode rows = table.path("rows");
         if (!rows.isArray() || rows.size() < 1 || rows.size() > 50)
             throw new IllegalStateException("Decision evidence requires 1..50 canonical rows");
         ObjectNode evidence = json.object();
+        if (asOf != null) evidence.put("asOf", asOf.toString());
         var inputs=evidence.putArray("inputs");
         values.forEach((field,value)->inputs.add(json.objectOf(Map.of("fieldRef",field,"value",value))));
         var candidates = evidence.putArray("rows");
@@ -180,9 +189,21 @@ public class DecisionTaskDelegate implements JavaDelegate {
                 matched = any ? matched | hit : matched & hit;
             }
             String id = "r" + (i + 1);
+            JsonNode window = rows.get(i).path("effective");
+            boolean inWindow = true;
+            if (window.isObject()) {
+                if (asOf == null) throw new IllegalStateException("Decision evidence for a dated row needs the submission date");
+                inWindow = (!window.has("from") || !asOf.isBefore(java.time.LocalDate.parse(window.path("from").asString())))
+                        && (!window.has("to") || !asOf.isAfter(java.time.LocalDate.parse(window.path("to").asString())));
+                matched &= inWindow;
+            }
             if (matched && "default".equals(expected)) expected = id;
             ObjectNode row = json.object();
             row.put("rowId", id).put("matched", matched).put("selected", id.equals(selected));
+            if (window.isObject()) {
+                row.put("inWindow", inWindow);
+                row.set("effective", window.deepCopy());
+            }
             row.set("condition", condition.deepCopy());
             candidates.add(row);
         }

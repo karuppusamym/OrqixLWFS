@@ -11,6 +11,7 @@ public enum ProblemCode {
     FORBIDDEN(403, "You are not allowed to do this"),
     CSRF_INVALID(403, "The request could not be verified"),
     SELF_APPROVAL_DENIED(403, "You cannot approve your own request"),
+    SEPARATION_OF_DUTIES(403, "You already decided an earlier step of this request"),
     NOT_ELIGIBLE(403, "You are not eligible for this task"),
     NOT_FOUND(404, "Not found"),
     IDEMPOTENCY_KEY_REUSED(409, "The Idempotency-Key was used for a different request"),

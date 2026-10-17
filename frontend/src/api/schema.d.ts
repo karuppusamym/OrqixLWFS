@@ -2054,7 +2054,7 @@ export interface components {
             detail?: string;
             instance?: string;
             /** @enum {string} */
-            code: "MALFORMED_REQUEST" | "IDEMPOTENCY_KEY_REQUIRED" | "INVALID_CURSOR" | "UNAUTHENTICATED" | "FORBIDDEN" | "CSRF_INVALID" | "SELF_APPROVAL_DENIED" | "NOT_ELIGIBLE" | "NOT_FOUND" | "IDEMPOTENCY_KEY_REUSED" | "DUPLICATE_KEY" | "WORKFLOW_VERSION_CONFLICT" | "RELEASE_NOT_ACTIVE" | "TASK_VERSION_CONFLICT" | "TASK_ALREADY_CLAIMED" | "TASK_NOT_CLAIMED_BY_CALLER" | "TASK_NOT_OPEN" | "RUN_NOT_ACTIVE" | "RUN_BUSY" | "RUN_NOT_RECOVERABLE" | "RUN_SUSPENDED" | "RUN_NOT_SUSPENDED" | "RUN_NOT_SUSPENDABLE" | "RUN_NOT_MIGRATABLE" | "EFFECT_NOT_RECONCILED" | "EFFECT_STATE_CONFLICT" | "GROUP_REVISION_CONFLICT" | "STALE_REVISION" | "PAYLOAD_TOO_LARGE" | "VALIDATION_FAILED" | "WORKFLOW_INVALID" | "WARNINGS_NOT_ACKNOWLEDGED" | "NO_ACTIVE_RELEASE" | "REASON_REQUIRED" | "CONNECTION_NOT_BOUND" | "EGRESS_NOT_ALLOWED" | "OPERATION_NOT_TESTABLE" | "PRECONDITION_REQUIRED" | "QUOTA_EXCEEDED" | "RATE_LIMITED" | "DEPENDENCY_UNAVAILABLE" | "AI_NOT_CONFIGURED" | "AI_MODEL_NOT_ALLOWED" | "AI_OUTPUT_INVALID" | "AI_PROVIDER_UNAVAILABLE" | "AI_BUDGET_EXCEEDED" | "SOURCE_INVALID" | "MIGRATION_BLOCKED" | "ATTACHMENT_BLOCKED" | "ATTACHMENT_LIMIT_REACHED" | "INTERNAL_ERROR";
+            code: "MALFORMED_REQUEST" | "IDEMPOTENCY_KEY_REQUIRED" | "INVALID_CURSOR" | "UNAUTHENTICATED" | "FORBIDDEN" | "CSRF_INVALID" | "SELF_APPROVAL_DENIED" | "SEPARATION_OF_DUTIES" | "NOT_ELIGIBLE" | "NOT_FOUND" | "IDEMPOTENCY_KEY_REUSED" | "DUPLICATE_KEY" | "WORKFLOW_VERSION_CONFLICT" | "RELEASE_NOT_ACTIVE" | "TASK_VERSION_CONFLICT" | "TASK_ALREADY_CLAIMED" | "TASK_NOT_CLAIMED_BY_CALLER" | "TASK_NOT_OPEN" | "RUN_NOT_ACTIVE" | "RUN_BUSY" | "RUN_NOT_RECOVERABLE" | "RUN_SUSPENDED" | "RUN_NOT_SUSPENDED" | "RUN_NOT_SUSPENDABLE" | "RUN_NOT_MIGRATABLE" | "EFFECT_NOT_RECONCILED" | "EFFECT_STATE_CONFLICT" | "GROUP_REVISION_CONFLICT" | "STALE_REVISION" | "PAYLOAD_TOO_LARGE" | "VALIDATION_FAILED" | "WORKFLOW_INVALID" | "WARNINGS_NOT_ACKNOWLEDGED" | "NO_ACTIVE_RELEASE" | "REASON_REQUIRED" | "CONNECTION_NOT_BOUND" | "EGRESS_NOT_ALLOWED" | "OPERATION_NOT_TESTABLE" | "PRECONDITION_REQUIRED" | "QUOTA_EXCEEDED" | "RATE_LIMITED" | "DEPENDENCY_UNAVAILABLE" | "AI_NOT_CONFIGURED" | "AI_MODEL_NOT_ALLOWED" | "AI_OUTPUT_INVALID" | "AI_PROVIDER_UNAVAILABLE" | "AI_BUDGET_EXCEEDED" | "SOURCE_INVALID" | "MIGRATION_BLOCKED" | "ATTACHMENT_BLOCKED" | "ATTACHMENT_LIMIT_REACHED" | "INTERNAL_ERROR";
             correlationId: string;
             fieldErrors?: components["schemas"]["FieldError"][];
             issues?: components["schemas"]["ValidationIssue"][];
@@ -3658,6 +3658,8 @@ export interface components {
                     start: string;
                     end: string;
                 };
+                /** @description Separation of duties (docs/build/S41): ids of earlier approval steps that every path to this step passes through. Whoever decided one of them in the same request cannot claim, decide or be assigned this step. */
+                separateFrom?: components["schemas"]["id"][];
                 /** @description Optional routing of each new task to one eligible person instead of leaving it in the group queue (docs/build/S39). leastLoaded: fewest open assigned tasks; roundRobin: the person assigned longest ago. The person can still return the task to the group. Nobody eligible: the task stays in the queue. */
                 dispatch?: {
                     /** @enum {unknown} */
@@ -3859,6 +3861,11 @@ export interface components {
             rows: {
                 when: components["schemas"]["decisionCondition"];
                 then: components["schemas"]["decisionOutput"];
+                /** @description Optional inclusive UTC date window in which the row applies, judged by the date the request was submitted (docs/build/S41). Rows in disjoint windows may have overlapping conditions even under UNIQUE, so a rate or threshold can change on a date. */
+                effective?: {
+                    from?: components["schemas"]["calendarDate"];
+                    to?: components["schemas"]["calendarDate"];
+                };
             }[];
             default: components["schemas"]["decisionOutput"];
         };
@@ -4059,6 +4066,8 @@ export interface components {
                             start: string;
                             end: string;
                         };
+                        /** @description Separation of duties (docs/build/S41): ids of earlier approval steps that every path to this step passes through. Whoever decided one of them in the same request cannot claim, decide or be assigned this step. */
+                        separateFrom?: components["schemas"]["id"][];
                         /** @description Optional routing of each new task to one eligible person instead of leaving it in the group queue (docs/build/S39). leastLoaded: fewest open assigned tasks; roundRobin: the person assigned longest ago. The person can still return the task to the group. Nobody eligible: the task stays in the queue. */
                         dispatch?: {
                             /** @enum {unknown} */
@@ -4259,6 +4268,11 @@ export interface components {
                     rows: {
                         when: components["schemas"]["decisionCondition"];
                         then: components["schemas"]["decisionOutput"];
+                        /** @description Optional inclusive UTC date window in which the row applies, judged by the date the request was submitted (docs/build/S41). Rows in disjoint windows may have overlapping conditions even under UNIQUE, so a rate or threshold can change on a date. */
+                        effective?: {
+                            from?: components["schemas"]["calendarDate"];
+                            to?: components["schemas"]["calendarDate"];
+                        };
                     }[];
                     default: components["schemas"]["decisionOutput"];
                 };

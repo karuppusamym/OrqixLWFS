@@ -20,6 +20,10 @@ import tools.jackson.databind.JsonNode;
  */
 public final class DefaultDecisionEvaluator implements DecisionEvaluator {
 
+    /** Reserved value key: the date the rows' effective windows are checked against (a {@code LocalDate} or ISO date text). */
+    public static final String AS_OF = "$asOf";
+
+
     @Override
     public Result evaluate(String definitionJson, String decisionKey, Map<String, Object> values) {
         JsonNode root = StrictJson.parse(definitionJson);
@@ -39,7 +43,18 @@ public final class DefaultDecisionEvaluator implements DecisionEvaluator {
             throw new IllegalArgumentException("Unknown decision table: " + decisionKey);
         }
         Map<String, Object> input = values == null ? Map.of() : values;
+        java.time.LocalDate asOf = null;
+        if (table.dated()) {
+            Object given = input.get(AS_OF);
+            if (given == null) {
+                throw new IllegalArgumentException("No value for " + AS_OF);
+            }
+            asOf = given instanceof java.time.LocalDate d ? d : java.time.LocalDate.parse(given.toString());
+        }
         for (DecisionTable.Row row : table.rows()) {
+            if (asOf != null && !row.appliesOn(asOf)) {
+                continue;
+            }
             boolean any = row.when().isAny();
             boolean matches = !any;
             // Every referenced field must have a value, whether the row is a conjunction or a set of alternatives.

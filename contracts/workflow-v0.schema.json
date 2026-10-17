@@ -806,6 +806,15 @@
                 }
               }
             },
+            "separateFrom": {
+              "description": "Separation of duties (docs/build/S41): ids of earlier approval steps that every path to this step passes through. Whoever decided one of them in the same request cannot claim, decide or be assigned this step.",
+              "type": "array",
+              "maxItems": 5,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/id"
+              }
+            },
             "dispatch": {
               "description": "Optional routing of each new task to one eligible person instead of leaving it in the group queue (docs/build/S39). leastLoaded: fewest open assigned tasks; roundRobin: the person assigned longest ago. The person can still return the task to the group. Nobody eligible: the task stays in the queue.",
               "type": "object",
@@ -1470,6 +1479,20 @@
               },
               "then": {
                 "$ref": "#/$defs/decisionOutput"
+              },
+              "effective": {
+                "description": "Optional inclusive UTC date window in which the row applies, judged by the date the request was submitted (docs/build/S41). Rows in disjoint windows may have overlapping conditions even under UNIQUE, so a rate or threshold can change on a date.",
+                "type": "object",
+                "minProperties": 1,
+                "properties": {
+                  "from": {
+                    "$ref": "#/$defs/calendarDate"
+                  },
+                  "to": {
+                    "$ref": "#/$defs/calendarDate"
+                  }
+                },
+                "additionalProperties": false
               }
             },
             "required": [

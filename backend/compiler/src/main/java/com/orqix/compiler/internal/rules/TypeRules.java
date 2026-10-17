@@ -125,6 +125,8 @@ final class TypeRules {
         // FIRST is ordered on purpose: the first matching row wins, so overlapping rows are allowed (S40).
         if(!table.first()) for(int i=0;i<table.rows().size();i++) for(int j=i+1;j<table.rows().size();j++) {
             var x=table.rows().get(i); var y=table.rows().get(j);
+            // Rows in disjoint effective windows never apply on the same day, so they cannot both match (S41).
+            if(x.effective()!=null && y.effective()!=null && !x.effective().overlaps(y.effective())) continue;
             if(LogicalConditions.overlap(x.when(),typed.get(x),y.when(),typed.get(y)))
                 rc.issues().blocker("WF_DECISION_OVERLAP",table.path()+"/rows/"+j+"/when",null,null,"Rules "+(i+1)+" and "+(j+1)+" can both apply. Make their conditions exclusive.");
         }

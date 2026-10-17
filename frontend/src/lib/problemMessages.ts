@@ -65,6 +65,7 @@ const TABLE = {
   FORBIDDEN: { behavior: 'forbidden', message: (c) => `You don't have permission to ${c.action ?? 'do this'}.` },
   CSRF_INVALID: { behavior: 'message', message: 'Your session security token expired. Reload the page and try again.' },
   SELF_APPROVAL_DENIED: { behavior: 'message', message: "You can't approve your own request." },
+  SEPARATION_OF_DUTIES: { behavior: 'message', message: 'You decided an earlier step of this request, so another person must decide this one.' },
   NOT_ELIGIBLE: { behavior: 'forbidden', message: "You're not eligible to act on this task." },
   NOT_FOUND: { behavior: 'not-found', message: "This doesn't exist or you don't have access to it." },
   IDEMPOTENCY_KEY_REUSED: { behavior: 'message', message: 'This request was already sent with different details. Reload the page and start again.' },

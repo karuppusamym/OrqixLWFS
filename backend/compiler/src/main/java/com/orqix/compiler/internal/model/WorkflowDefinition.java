@@ -73,8 +73,42 @@ public record WorkflowDefinition(
             return FIRST.equals(hitPolicy);
         }
 
-        /** @param then sorted by key */
-        public record Row(int index, Condition when, Map<String, Literal> then) {
+        /**
+         * @param then sorted by key
+         * @param effective null when the row always applies (docs/build/S41)
+         */
+        public record Row(int index, Condition when, Map<String, Literal> then, Window effective) {
+            public Row(int index, Condition when, Map<String, Literal> then) {
+                this(index, when, then, null);
+            }
+
+            /** True when the row applies on {@code asOf}. */
+            public boolean appliesOn(java.time.LocalDate asOf) {
+                return effective == null || effective.contains(asOf);
+            }
+        }
+
+        /** Inclusive UTC date window of a row; a null bound is open. */
+        public record Window(java.time.LocalDate from, java.time.LocalDate to) {
+            public boolean contains(java.time.LocalDate day) {
+                return (from == null || !day.isBefore(from)) && (to == null || !day.isAfter(to));
+            }
+
+            public boolean overlaps(Window other) {
+                if (other == null) return true;
+                boolean beforeOther = to != null && other.from != null && to.isBefore(other.from);
+                boolean afterOther = from != null && other.to != null && from.isAfter(other.to);
+                return !beforeOther && !afterOther;
+            }
+
+            /** Days as yyyymmdd, the number the compiled DMN compares; null for an open bound. */
+            public static Integer number(java.time.LocalDate day) {
+                return day == null ? null : day.getYear() * 10000 + day.getMonthValue() * 100 + day.getDayOfMonth();
+            }
+        }
+
+        public boolean dated() {
+            return rows.stream().anyMatch(r -> r.effective() != null);
         }
     }
 

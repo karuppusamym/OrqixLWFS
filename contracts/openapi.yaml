@@ -3459,6 +3459,7 @@ components:
             - FORBIDDEN
             - CSRF_INVALID
             - SELF_APPROVAL_DENIED
+            - SEPARATION_OF_DUTIES
             - NOT_ELIGIBLE
             - NOT_FOUND
             - IDEMPOTENCY_KEY_REUSED

@@ -86,14 +86,26 @@ function evaluateRunCondition(run: MockRun, c: Condition): boolean {
   return false
 }
 
+/** True when the row applies on {@code asOf} (YYYY-MM-DD); a row without a window always applies. */
+export function inWindow(row: Definition['decisions'][number]['rows'][number], asOf: string | undefined): boolean {
+  const w = row.effective
+  if (!w || !asOf) return true
+  return (!w.from || asOf >= w.from) && (!w.to || asOf <= w.to)
+}
+
+export function rowMatches(row: Definition['decisions'][number]['rows'][number], values: Record<string, Literal | undefined>, asOf?: string): boolean {
+  const terms = conditionTerms(row.when)
+  const hit = 'any' in row.when ? terms.some(term => evaluateCondition(term, values[term.fieldRef])) : terms.every(term => evaluateCondition(term, values[term.fieldRef]))
+  return hit && inWindow(row, asOf)
+}
+
 export function evaluateTable(
   table: Definition['decisions'][number],
   values: Record<string, Literal | undefined>,
+  asOf?: string,
 ): { matchedRow: number | null; usedDefault: boolean; output: Record<string, Literal> } {
   for (const [i, row] of table.rows.entries()) {
-    const terms = conditionTerms(row.when)
-    const hit = 'any' in row.when ? terms.some(term => evaluateCondition(term, values[term.fieldRef])) : terms.every(term => evaluateCondition(term, values[term.fieldRef]))
-    if (hit) return { matchedRow: i, usedDefault: false, output: row.then }
+    if (rowMatches(row, values, asOf)) return { matchedRow: i, usedDefault: false, output: row.then }
   }
   return { matchedRow: null, usedDefault: true, output: table.default }
 }
@@ -297,13 +309,16 @@ function advanceFrom(run: MockRun, nodeId: string): void {
         if (!table) return
         const values: Record<string, Literal | undefined> = {}
         for (const row of table.rows) for (const term of conditionTerms(row.when)) values[term.fieldRef] = resolveRef(run, term.fieldRef)
-        const result = evaluateTable(table, values)
+        // Dated rows are judged by the day the request was submitted (S41).
+        const asOf = table.rows.some(row => row.effective) ? run.createdAt.slice(0, 10) : undefined
+        const result = evaluateTable(table, values, asOf)
         run.steps[node.id] = result.output
         addEvent(run, 'DECISION_EVALUATED', {
           nodeId: node.id,
           data: { label: node.label, decisionKey: table.key, version: table.version, matched: result.usedDefault ? 'default' : `r${(result.matchedRow ?? 0) + 1}`, outputs: result.output, evidence: {
+            ...(asOf ? { asOf } : {}),
             inputs: Object.entries(values).map(([fieldRef,value]) => ({fieldRef,value})),
-            rows: table.rows.map((row,index) => ({rowId:`r${index+1}`,condition:row.when,matched:conditionTerms(row.when).every(term => evaluateCondition(term,values[term.fieldRef])),selected:index===result.matchedRow})),
+            rows: table.rows.map((row,index) => ({rowId:`r${index+1}`,condition:row.when,matched:rowMatches(row,values,asOf),selected:index===result.matchedRow,...(row.effective ? { inWindow: inWindow(row,asOf), effective: row.effective } : {})})),
             defaultSelected:result.usedDefault,
           } },
         })
@@ -708,6 +723,12 @@ export function requestTitleOf(run: MockRun): string | null {
 export function hasTaskSkills(run: MockRun, task: MockTask, user: MockUser): boolean {
   const required = nodeById(currentRelease(run).definition, task.nodeId)?.config.requiredSkills
   return !Array.isArray(required) || required.every(skill => typeof skill === 'string' && inGroup(user,skill))
+}
+
+/** Separation of duties (docs/build/S41): the user decided one of the earlier steps this task must be kept apart from. */
+export function isSeparatedFrom(run: MockRun, task: MockTask, user: MockUser): boolean {
+  const apart = nodeById(currentRelease(run).definition, task.nodeId)?.config.separateFrom
+  return Array.isArray(apart) && run.tasks.some(t => t.decision?.actor.id === user.id && apart.includes(t.nodeId))
 }
 
 export function isRunParticipant(run: MockRun, user: MockUser): boolean {

@@ -350,6 +350,11 @@ final class SimulationRun {
         d.put("decisionKey", table.key());
         d.put("version", table.version());
         Map<String, Object> values = new LinkedHashMap<>();
+        // Dated rows are judged by the day the simulated request is submitted.
+        java.time.LocalDate asOf = table.dated() ? context.today() : null;
+        if (asOf != null) {
+            d.put("asOf", asOf.toString());
+        }
         ArrayNode inputs = d.putArray("inputs");
         for (DecisionTable.Row row : table.rows()) {
             for(Condition term:row.when().compound()?row.when().terms():List.of(row.when())) {
@@ -367,7 +372,11 @@ final class SimulationRun {
         }
         DecisionEvaluator.Result result;
         try {
-            result = Compilers.decisionEvaluator().evaluate(definitionJson, table.key(), values);
+            Map<String, Object> evaluated = new LinkedHashMap<>(values);
+            if (asOf != null) {
+                evaluated.put(com.orqix.compiler.internal.eval.DefaultDecisionEvaluator.AS_OF, asOf);
+            }
+            result = Compilers.decisionEvaluator().evaluate(definitionJson, table.key(), evaluated);
         } catch (IllegalArgumentException e) {
             String missing = firstMissing(values);
             String message = Text.quote(n.label()) + " needs " + (missing == null ? "a value it does not have"
@@ -379,12 +388,20 @@ final class SimulationRun {
         Integer firstMatch = null;
         for (DecisionTable.Row row : table.rows()) {
             Boolean matched = row.when().compound()?evaluate(row.when(),F.arrayNode()):matches(row.when(), values.get(row.when().fieldRef()));
+            if (asOf != null && !row.appliesOn(asOf)) {
+                matched = Boolean.FALSE; // outside its effective window the row never applies
+            }
             if (Boolean.TRUE.equals(matched) && firstMatch == null) {
                 firstMatch = row.index();
             }
             ObjectNode r = rows.addObject();
             r.put("row", row.index() + 1);
             r.put("condition", conditionText(row.when(), false, null));
+            if (row.effective() != null) {
+                r.put("effective", (row.effective().from() == null ? "until " : "from " + row.effective().from()
+                        + (row.effective().to() == null ? "" : " to ")) + (row.effective().to() == null ? ""
+                        : row.effective().to().toString()));
+            }
             if (matched == null) {
                 r.putNull("matched");
             } else {

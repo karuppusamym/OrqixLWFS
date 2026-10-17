@@ -2,7 +2,7 @@ import type { ValidationIssue } from '@/api/types'
 import { isCalendarDate } from '@/lib/dates'
 import { allFields, availableFields, parseRef } from '@/features/studio/model/fieldRefs'
 import { hasCycle, incoming, nodeById, outgoing, reachableFrom, startNode } from '@/features/studio/model/graph'
-import { conditionTerms, isAtomicCondition, type Condition, type Definition, type Literal, type WorkflowNode } from '@/features/studio/model/types'
+import { conditionTerms, isAtomicCondition, type Condition, type Definition, type DecisionTable, type Literal, type WorkflowNode } from '@/features/studio/model/types'
 
 /**
  * A faithful-enough subset of the compiler rule catalog (docs/build/S4-workflow-compiler.md section 5)
@@ -282,9 +282,21 @@ export function validateDefinition(def: Definition, ctx: ValidationContext): Iss
       for (const [k, v] of Object.entries(r.then)) if (typeof v === 'string' && !/^[A-Za-z0-9 _.,:/-]{0,100}$/.test(v)) issues.push(issue('WF_LITERAL_UNSAFE', 'blocker', `The value "${k}" contains characters that are not allowed.`, `/decisions/${di}/rows/${ri}/then/${k}`, node?.id))
     })
     // FIRST is ordered on purpose: the first match wins, so overlapping rows are allowed (S40).
+    d.rows.forEach((r, ri) => {
+      const w = r.effective
+      if (w && !w.from && !w.to) issues.push(issue('WF_DECISION_WINDOW_INVALID', 'blocker', `Row ${ri + 1} of "${d.key}" needs a from or a to date.`, `/decisions/${di}/rows/${ri}/effective`, node?.id))
+      if (w?.from && w.to && w.from > w.to) issues.push(issue('WF_DECISION_WINDOW_INVALID', 'blocker', `Row ${ri + 1} of "${d.key}" ends before it starts.`, `/decisions/${di}/rows/${ri}/effective`, node?.id))
+    })
+    // Rows in disjoint effective windows never apply on the same day, so they cannot both match (S41).
+    const windowsOverlap = (a: DecisionTable['rows'][number], b: DecisionTable['rows'][number]) => {
+      if (!a.effective || !b.effective) return true
+      const beforeOther = !!a.effective.to && !!b.effective.from && a.effective.to < b.effective.from
+      const afterOther = !!a.effective.from && !!b.effective.to && a.effective.from > b.effective.to
+      return !beforeOther && !afterOther
+    }
     for (let a = 0; a < d.rows.length && d.hitPolicy !== 'FIRST'; a++) {
       for (let b = a + 1; b < d.rows.length; b++) {
-        if (overlaps((d.rows[a] as { when: Condition }).when, (d.rows[b] as { when: Condition }).when)) issues.push(issue('WF_DECISION_OVERLAP', 'blocker', `Rows ${a + 1} and ${b + 1} of "${d.key}" can both match. Make them exclusive.`, `/decisions/${di}/rows/${b}`, node?.id))
+        if (windowsOverlap(d.rows[a] as DecisionTable['rows'][number], d.rows[b] as DecisionTable['rows'][number]) && overlaps((d.rows[a] as { when: Condition }).when, (d.rows[b] as { when: Condition }).when)) issues.push(issue('WF_DECISION_OVERLAP', 'blocker', `Rows ${a + 1} and ${b + 1} of "${d.key}" can both match. Make them exclusive.`, `/decisions/${di}/rows/${b}`, node?.id))
       }
     }
   })

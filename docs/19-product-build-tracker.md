@@ -203,3 +203,20 @@ Specs: [S37](build/S37-suspend-resume.md), [S38](build/S38-release-migration.md)
 Defect found by the tests: the first compatibility rule compared node settings only, so a request that had passed a decision could move to a release with a different decision table. The rule now compares the decision table and connection version each travelled step references (`HISTORY_CHANGED`). Engine behavior confirmed by execution: Flowable migrates a suspended instance directly, keeping its task, timers and variables.
 
 Limits: due dates, stage deadlines and overdue notices keep running while suspended; timers fire after resume if they fell due; only a request waiting at exactly one approval, timer wait or message wait can move; a request with running child requests cannot be suspended.
+
+## Synthetic Pega reviewed migration acceptance - 16 October 2026
+
+MIG10 is verified for explicitly synthetic small, medium and complex targets. The user confirmed that genuine Pega exports are unavailable and requested generated fixtures. The archives contain descriptive Pega-like XML; their canonical definitions are manually authored from existing examples. This tests the existing reviewed mapping path, not an automatic native Pega parser.
+
+| Check | Observed result |
+|---|---|
+| Fixtures | Three deterministic archives, canonical definitions and complete per-file dispositions; schema, dependency, checksum, target provenance and separate-process regeneration checks pass |
+| Python tooling | 14/14 tests pass, including the four earlier equivalence tests plus ten synthetic acceptance safety tests. [Log](../evidence/pega-tools-tests-1016.log) |
+| Live migration/execution | 105/105 checks across ten scenarios pass through real development OIDC and the migration/workflow/task APIs on the healthy `orqix/orqix:validated-1015` stack at http://localhost:18080. All three workflows are separately imported and published. [Log](../evidence/pega-synthetic-live-final-1016.log) |
+| Small | Approval, rejection and invalid input |
+| Medium | Reject-then-approve child rework, three-review exhaustion, bounded child count and imported release pins |
+| Complex | Parallel approvals/join, actual one-minute timer waits, parallel child reviews, reversed completion with input-ordered results, mixed outcomes, early rejection, cancellation propagation and collection bounds |
+| Negative cases | Requester upload/conversion denial, outsider inventory concealment, bad checksum refusal, unresolved dispositions and compiler-invalid mapping refusal, explicit acknowledgement, conversion replay and no implicit publication |
+| Evidence integrity | 79 ZIP entries, including 19 run snapshots and 19 event timelines; every manifest byte count and SHA-256 verified. [Pack](../evidence/pega-synthetic-live-final-1016.zip), SHA-256 `bfff388ec26c11da58483bb6471b89176d976ae6cb0566148d3ab1413e79a16c` |
+
+[S39](build/S39-pega-synthetic-acceptance.md) records scope and rerun commands are in [the harness guide](../tools/migration-equivalence/README.md). Evidence always records `nativePegaConversionVerified: false` and `sourceRuntimeEquivalenceEstablished: false`. AC01 remains open for genuine exports, independently observed source scenarios and owner acceptance. These tooling results do not certify concurrent changes to unrelated compiler/runtime features.

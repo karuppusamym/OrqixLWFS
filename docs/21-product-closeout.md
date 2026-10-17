@@ -20,6 +20,7 @@ Verification: 281 compiler cases; 457 unique application cases (455 pass, 2 opti
 | ID | Item | Current scope |
 |---|---|---|
 | MIG09 | DMN files within migration projects | Complete; verified locally. Namespace detection, one convertible decision per DMN file, missing/duplicate/unsupported diagnostics, dependency order, editable mapping suggestions and legacy records. [S20](build/S20-project-dmn.md) |
+| MIG10 | Synthetic Pega small/medium/complex migration acceptance | Complete for synthetic reviewed targets: 105/105 actual Docker checks across 10 scenarios and 14 Python tests. Includes checksum-linked mapping, ordinary compilation/publication, bounded rework, parallel/timer/child behavior and evidence packs. Native Pega parsing and genuine source equivalence remain EXT01/AC01. [S39](build/S39-pega-synthetic-acceptance.md) |
 | RULE01 | Automated decision evidence | Complete; verified locally. Actual pinned DMN output plus input and every bounded candidate row, expandable history and request-data permission filtering. Metadata readers receive no matched row, outputs or evidence. [S21](build/S21-decision-evidence.md) |
 | DOC05 | Approved document reference authoring | Complete; verified locally. Studio creates exact required request choices and field mappings for a known historical version or retained snapshot. Administrator-only lookups/capture preserve existing authorization. [S22](build/S22-document-authoring.md) |
 

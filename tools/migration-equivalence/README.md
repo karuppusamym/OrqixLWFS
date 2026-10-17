@@ -32,3 +32,36 @@ The ZIP contains the exact source bytes, scenario suite, observations, per-field
 Archive ordering, timestamps, permissions and JSON ordering are fixed: identical input evidence creates identical ZIP bytes. Separate live executions contain different workflow/run IDs, so their packs naturally differ. Packs contain request and run data; handle them under the workspace's data-access policy.
 
 Exit status is zero only when every declared check matches and no unexpected scenario is present. A green synthetic run is target acceptance against that fixture, not customer migration approval.
+
+## Synthetic Pega: small, medium and complex
+
+`pega_acceptance.py` exercises the existing reviewed Pega migration path using the deterministic fixtures in
+`examples/migration/pega-synthetic/`. Install the API client and JSON-schema dependencies from
+`tools/api-e2e/requirements.txt` and `tools/contract-check/requirements.txt` if needed.
+
+```powershell
+python examples/migration/pega-synthetic/generate.py --check
+python tools/migration-equivalence/pega_acceptance.py
+python tools/migration-equivalence/pega_acceptance.py --live --base-url http://localhost:18080 --out evidence/pega-synthetic-live.zip
+python -m unittest discover -s tools/migration-equivalence -p "test_*.py"
+```
+
+Without `--live`, only fixture validation runs. Live mode uses actual development OIDC sessions and the normal
+workspace APIs to inventory archives, upload checksum-linked reviewed mapping packages, compile drafts, publish
+and run them. Workflow keys are unique per invocation, and child references are rewritten to the imported small
+workflow. All fixtures forbid external connection dependencies. The runner accepts only a localhost HTTP base URL.
+The three complex requests wait on their actual one-minute timers concurrently; expect roughly two minutes overall.
+It creates fixture workflows, migration jobs and requests and preserves their history. Failed active requests created
+by this invocation receive a best-effort operator cancellation; unrelated requests and bindings are not touched.
+
+Ten scenarios cover small approval/rejection/invalid input; medium rework success/exhaustion; and complex acceptance,
+mixed child outcomes, cancellation, early rejection and an oversized collection. Checks also cover upload/conversion
+permissions, workspace concealment, archive checksums, required dispositions/acknowledgements, compiler blockers,
+conversion replay, separate publication and pinned child releases. Reversed child completion verifies ordered outputs.
+
+Evidence includes exact source archives and fixture hashes, assembled mapping packages, reports, drafts, published
+releases, progress snapshots, parent/child final states and event timelines, and strict expected/actual comparisons.
+Every packaged file has a checksum and byte count. Identical evidence produces identical ZIP bytes; new live runs
+contain different IDs and timestamps. `results.json` always records `nativePegaConversionVerified: false` and
+`sourceRuntimeEquivalenceEstablished: false`. The synthetic XML is descriptive fixture data and the canonical targets
+are manually authored; no native Pega parser or independent Pega execution is implied.

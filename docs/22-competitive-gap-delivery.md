@@ -39,7 +39,8 @@ Status: Planned, In progress, Implemented (awaiting verification), Verified loca
 | IN04 | Approved write-capable agent tools with explicit effect/idempotency/reconciliation | Planned | Never infer recipient/send authorization from connector availability |
 | PL01 | Folders/shared assets/search/owners and authorization-safe organization | Planned | Versioned resource references and workspace policy |
 | PL02 | Git promotion/canary/environment lifecycle and broader analytics | Planned | Portable bindings and release compatibility; production infra excluded |
-| AC01 | Genuine Pega/LWFS resolved exports and observed source outcomes | Needs external input | Source owner, formats, golden scenarios and sign-off |
+| MIG10 | Synthetic Pega small/medium/complex reviewed migration and actual target execution | Verified locally | [S39](build/S39-pega-synthetic-acceptance.md); 105/105 Docker checks across 10 scenarios, 14 Python tests, exact archive/mapping/release/run evidence; no native parser or source-runtime equivalence claim |
+| AC01 | Genuine Pega/LWFS resolved exports and observed source outcomes | Needs external input | Source owner, formats, golden scenarios and sign-off; synthetic reviewed target acceptance is MIG10 and does not close this gate |
 | AC02 | Customer Microsoft/integration/scanner acceptance | Needs external input | Tenant consent, approved resources and securely provisioned credentials |
 | AC03 | Banking policies, jurisdictions, domain scenarios and owner acceptance | Needs external input | Templates remain illustrative until accepted |
 | OPS05 | Production HA/restore/capacity/enterprise identity/CI deployment | Needs external input | Previously excluded infrastructure stream |

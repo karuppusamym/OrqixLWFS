@@ -34,6 +34,7 @@ export const keys = {
   myRequests: (ws: string, filter?: unknown) => ['ws', ws, 'requests', filter ?? {}] as const,
   run: (ws: string, id: string) => ['ws', ws, 'run', id] as const,
   runEvents: (ws: string, id: string) => ['ws', ws, 'run', id, 'events'] as const,
+  consistencyFindings: (ws: string) => ['ws', ws, 'consistency-findings'] as const,
   runDiagnosis: (ws: string, id: string) => ['ws', ws, 'run', id, 'diagnosis'] as const,
   runMigrationOptions: (ws: string, id: string) => ['ws', ws, 'run', id, 'migration-options'] as const,
   notifications: (ws: string) => ['ws', ws, 'notifications'] as const,
@@ -214,6 +215,11 @@ export function useRun(ws: string, runId: string) {
 
 export function useRunDiagnosis(ws: string, runId: string, enabled: boolean) {
   return useQuery({ queryKey: keys.runDiagnosis(ws, runId), queryFn: () => endpoints.getRunDiagnosis(ws, runId), enabled, retry: false, gcTime: 0 })
+}
+
+/** Findings of the periodic consistency scan (EX09, S67); read-only and only for operators. */
+export function useConsistencyFindings(ws: string, enabled: boolean) {
+  return useQuery({ queryKey: keys.consistencyFindings(ws), queryFn: () => endpoints.listConsistencyFindings(ws, 50), enabled, retry: false, refetchInterval: 60_000 })
 }
 
 export function useRunMigrationOptions(ws: string, runId: string, enabled: boolean) {

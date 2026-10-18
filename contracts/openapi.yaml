@@ -2813,7 +2813,8 @@ paths:
       operationId: getRunDiagnosis
       summary: Compare what the request shows with what the engine holds
       description: >-
-        Read-only. Reports inSync, projectionDrift (open approvals the engine holds are missing from the request; repairable),
+        Read-only. Reports inSync, projectionDrift (open approvals, date or message waits, or external-worker steps the engine
+        holds are missing from the request; repairable only when the engine state fully determines every step),
         strandedToken (the engine has a token that nothing can move; cancel only), emptyRequest, engineMissing,
         unsupported, protected (suspended) or ended.
       x-orqix-permission: run.operate
@@ -2827,6 +2828,29 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /workspaces/{workspaceId}/consistency-findings:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [Runs]
+      operationId: listConsistencyFindings
+      summary: Drifted requests found by the periodic consistency scan
+      description: >-
+        Read-only report of the opt-in periodic scan (EX09). The scan never repairs; open the request and use the
+        consistency check to rebuild or cancel. `enabled` is false when the scan is switched off.
+      x-orqix-permission: run.operate
+      parameters:
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100 } }
+      responses:
+        '200':
+          description: Findings
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConsistencyFindings' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /workspaces/{workspaceId}/runs/{runId}/repair:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -2834,9 +2858,9 @@ paths:
     post:
       tags: [Runs]
       operationId: repairRun
-      summary: Rebuild the open approval steps of a request from the engine
+      summary: Rebuild the open steps of a request from the engine
       description: >-
-        Only for projectionDrift on a running or waiting request that is not suspended. The decision is re-made under
+        Rebuilds approvals, date and message waits and external-worker steps. Only for projectionDrift on a running or waiting request that is not suspended. The decision is re-made under
         the request lock; the engine is never triggered, skipped or modified. Refused with 409 RUN_NOT_REPAIRABLE
         otherwise, including stranded tokens, which can only be cancelled.
       x-orqix-permission: run.operate
@@ -7236,6 +7260,29 @@ components:
         projectedNodeIds: { type: array, items: { type: string } }
         engineNodeIds: { type: array, items: { type: string } }
         version: { type: integer }
+    ConsistencyFinding:
+      type: object
+      additionalProperties: false
+      required: [runId, reference, state, repairable, message, version, firstSeenAt, checkedAt]
+      properties:
+        runId: { $ref: '#/components/schemas/Uuid' }
+        reference: { type: string }
+        state: { type: string, enum: [projectionDrift, strandedToken, emptyRequest, engineMissing, unsupported] }
+        repairable: { type: boolean }
+        message: { type: string }
+        version: { type: integer }
+        firstSeenAt: { type: string, format: date-time }
+        checkedAt: { type: string, format: date-time }
+    ConsistencyFindings:
+      type: object
+      additionalProperties: false
+      required: [enabled, scannedRuns, lastCheckedAt, total, items]
+      properties:
+        enabled: { type: boolean }
+        scannedRuns: { type: integer }
+        lastCheckedAt: { type: [string, 'null'], format: date-time }
+        total: { type: integer }
+        items: { type: array, items: { $ref: '#/components/schemas/ConsistencyFinding' } }
     MigrateRunRequest:
       type: object
       additionalProperties: false

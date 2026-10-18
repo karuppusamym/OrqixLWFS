@@ -61,13 +61,18 @@ public class OperatorService {
     private final RunMigrations migrations;
     private final ExternalJobService externalJobs;
     private final RunRepair repairs;
+    private final ConsistencyFindings consistency;
+    private final RunConsistencyScan scan;
 
     public OperatorService(PolicyService policy, RunAccess runAccess, RunStore runs, TaskStore tasks, RunEvents events,
             RunService runService, RuntimeViews views, ReleaseQueries releases, ConnectionService connections,
             EffectJournal journal, EngineCommands engine, NotificationService notifications,
             IdempotencyService idempotency, AuditWriter audit, Json json, Clock clock, ChildRuns children,
-            RunSuspensions suspensions, RunMigrations migrations, ExternalJobService externalJobs, RunRepair repairs) {
+            RunSuspensions suspensions, RunMigrations migrations, ExternalJobService externalJobs, RunRepair repairs,
+            ConsistencyFindings consistency, java.util.Optional<RunConsistencyScan> scan) {
         this.repairs = repairs;
+        this.consistency = consistency;
+        this.scan = scan.orElse(null);
         this.externalJobs = externalJobs;
         this.migrations = migrations;
         this.suspensions = suspensions;
@@ -493,8 +498,17 @@ public class OperatorService {
         return repairs.diagnose(visible.run()).diagnosis();
     }
 
+    /** Open findings of the periodic scan (docs/build/S67): run.operate in the workspace; read-only. */
+    @Transactional(readOnly = true)
+    public RuntimeDtos.ConsistencyFindings consistencyFindings(Caller caller, UUID workspaceId, Integer limit) {
+        var access = policy.freshAccess(caller, workspaceId).filter(a -> a.visible()).orElseThrow(ApiException::notFound);
+        policy.require(access, Permission.RUN_OPERATE, "listConsistencyFindings", true);
+        int bounded = limit == null ? 50 : Math.max(1, Math.min(limit, 100));
+        return consistency.list(workspaceId, scan != null && scan.enabled(), bounded);
+    }
+
     /**
-     * Rebuilds the open approval steps of a request from live engine tasks. The decision is re-made under the run
+     * Rebuilds the open steps of a request (approvals, date and message waits, external-worker steps) from what the engine holds. The decision is re-made under the run
      * lock, so a request that progressed meanwhile is refused instead of overwritten; the engine is never touched.
      */
     @Transactional
@@ -521,6 +535,7 @@ public class OperatorService {
                     .with("currentVersion", run.version()).with("state", verdict.diagnosis().state());
         }
         runs.mutate(workspaceId, runId, m -> repairs.rebuild(m, verdict.rebuild()));
+        consistency.forget(workspaceId, runId);
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("reason", request.reason());
         data.put("before", verdict.diagnosis().projectedNodeIds());

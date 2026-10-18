@@ -1120,6 +1120,12 @@ export function createHandlers(): HttpHandler[] {
       if (!run || run.wsId !== str(params.ws)) return notFound()
       return HttpResponse.json({ state: 'inSync', repairable: false, message: 'The projection matches the engine.', projectedNodeIds: [], engineNodeIds: [], version: run.version })
     }),
+    http.get(`${B}/workspaces/:ws/consistency-findings`, async ({ params }) => {
+      await slow()
+      const g = guard(params.ws, 'run.operate')
+      if (!g.ok) return g.res
+      return HttpResponse.json({ enabled: false, scannedRuns: 0, lastCheckedAt: null, total: 0, items: [] })
+    }),
     http.get(`${B}/workspaces/:ws/runs/:id/migration-options`, async ({ params }) => {
       await slow()
       const g = guard(params.ws, 'run.operate')

@@ -133,6 +133,12 @@ public class RuntimeController {
         return operator.diagnosis(callers.current(), workspaceId, runId);
     }
 
+    @GetMapping("/consistency-findings")
+    public RuntimeDtos.ConsistencyFindings listConsistencyFindings(@PathVariable UUID workspaceId,
+            @RequestParam(required = false) Integer limit) {
+        return operator.consistencyFindings(callers.current(), workspaceId, limit);
+    }
+
     @PostMapping("/runs/{runId}/repair")
     public ResponseEntity<RuntimeDtos.RunDetail> repairRun(@PathVariable UUID workspaceId, @PathVariable UUID runId,
             @RequestHeader(name = IdempotencyService.HEADER, required = false) String idempotencyKey,

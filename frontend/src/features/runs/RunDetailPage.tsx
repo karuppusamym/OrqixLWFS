@@ -2,7 +2,7 @@ import { AlertTriangle, Ban, CheckCircle2, Clock, Pause, Play, RefreshCw, Wrench
 import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { asRecord, type Effect, type RunDetail, type RunEvent } from '@/api/types'
-import { useMe, useRelease, useRun, useRunEvents } from '@/api/queries'
+import { useConsistencyFindings, useMe, useRelease, useRun, useRunEvents } from '@/api/queries'
 import { useWorkspace } from '@/app/workspace'
 import { LoadingBlock } from '@/components/common/LoadingBlock'
 import { PageHeader } from '@/components/common/PageHeader'
@@ -76,6 +76,7 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
   }
   const operator = can('run.operate') || run.effects !== undefined
   const needsAttention = run.lifecycle === 'needsAttention'
+  const scanFinding = useConsistencyFindings(ws, can('run.operate')).data?.items.find((f) => f.runId === run.id)
 
   const fields = useMemo<FieldDef[]>(
     () => (releaseDefinition ? buildFields(parseFormSchema(releaseDefinition.inputSchema), parseFormUi(releaseDefinition.inputUi)) : []),
@@ -205,6 +206,11 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
           <h2 id="operator-heading" className="mb-3 flex items-center gap-2 text-base">
             <Wrench className="size-4" aria-hidden="true" /> Operator actions
           </h2>
+          {scanFinding ? (
+            <Alert tone="warning" title="The periodic scan found a mismatch with the workflow engine" className="mb-3">
+              {scanFinding.message} {scanFinding.repairable ? 'Use Check consistency to rebuild it.' : 'Use Check consistency to see the options.'}
+            </Alert>
+          ) : null}
           {nextAction ? <p className="mb-3 text-sm text-muted-foreground">Recommended next step: {nextAction === 'reconcile' ? 'review what happened in the connected system before retrying.' : nextAction === 'retry' ? 'review the failed step and retry it when the connection is ready.' : 'review task ownership and reassign if needed.'}</p> : null}
           <div className="flex flex-wrap gap-3">
             <Button variant={nextAction === 'retry' ? 'primary' : 'secondary'} onClick={() => setDialog('retry')} disabled={!allowed.retry.allowed} title="Run the failed step again">
@@ -231,7 +237,7 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
               </Button>
             ) : null}
             {!run.suspension ? (
-              <Button variant="secondary" onClick={() => setDialog('repair')} title="Compare this request with the workflow engine and rebuild missing approval steps">
+              <Button variant="secondary" onClick={() => setDialog('repair')} title="Compare this request with the workflow engine and rebuild missing steps">
                 Check consistency
               </Button>
             ) : null}

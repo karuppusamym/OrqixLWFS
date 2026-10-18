@@ -33,9 +33,11 @@ public class RunWatchdog {
     private final NotificationService notifications;
     private final Json json;
     private final Clock clock;
+    private final RunConsistencyScan scan;
 
     public RunWatchdog(JdbcClient jdbc, TransactionTemplate transactions, RunStore runs, RunEvents events,
-            EngineCommands engine, NotificationService notifications, Json json, Clock clock) {
+            EngineCommands engine, NotificationService notifications, Json json, Clock clock, RunConsistencyScan scan) {
+        this.scan = scan;
         this.jdbc = jdbc;
         this.transactions = transactions;
         this.runs = runs;
@@ -50,6 +52,8 @@ public class RunWatchdog {
     public void sweep() {
         try { inspect(); }
         catch (RuntimeException e) { LOG.warn("Run watchdog will retry ({})", e.getClass().getSimpleName()); }
+        // Opt-in, bounded, rate-limited and report-only (docs/build/S67); a failure here never affects the pass above.
+        scan.sweep();
     }
 
     /** Bounded pass; competing sweepers skip locked rows. Existing waits, jobs and suspended runs are retained. */

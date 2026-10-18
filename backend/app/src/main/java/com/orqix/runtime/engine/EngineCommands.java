@@ -11,6 +11,7 @@ import org.flowable.common.engine.api.FlowableOptimisticLockingException;
 import org.flowable.common.engine.impl.identity.Authentication;
 import org.flowable.engine.ManagementService;
 import org.flowable.engine.ProcessMigrationService;
+import org.flowable.engine.RepositoryService;
 import org.flowable.engine.RuntimeService;
 import org.flowable.engine.TaskService;
 import org.flowable.engine.runtime.ProcessInstance;
@@ -37,9 +38,11 @@ public class EngineCommands {
     private final TaskService taskService;
     private final ManagementService managementService;
     private final ProcessMigrationService migrationService;
+    private final RepositoryService repositoryService;
 
     public EngineCommands(RuntimeService runtimeService, TaskService taskService, ManagementService managementService,
-            ProcessMigrationService migrationService) {
+            ProcessMigrationService migrationService, RepositoryService repositoryService) {
+        this.repositoryService = repositoryService;
         this.migrationService = migrationService;
         this.runtimeService = runtimeService;
         this.taskService = taskService;
@@ -264,6 +267,93 @@ public class EngineCommands {
                 runtimeService.createEventSubscriptionQuery().processInstanceId(processInstanceId).count(), jobs,
                 managementService.createDeadLetterJobQuery().processInstanceId(processInstanceId).count(),
                 managementService.createSuspendedJobQuery().processInstanceId(processInstanceId).count());
+    }
+
+    /**
+     * One non-approval step the engine itself determines (EX09): a timer wait, a message wait or an external-worker
+     * step. {@code executionId} is set for message waits only; {@code dueAt} is the engine timer's due date.
+     */
+    public record WaitStep(String kind, String nodeId, String label, String message, String topic, String executionId,
+            java.time.Instant since, java.time.Instant dueAt) {
+    }
+
+    /**
+     * Read-only interpretation of the engine's timers, subscriptions and waiting service tasks. {@code unexplained}
+     * lists anything this check cannot interpret (it must then refuse); {@code explainedActivities} lists the engine
+     * activity ids that are accounted for by {@code steps} or by an approval's own time limit.
+     */
+    public record WaitFacts(List<WaitStep> steps, java.util.Set<String> explainedActivities, List<String> unexplained,
+            long executableJobs) {
+    }
+
+    public WaitFacts waitFacts(String processInstanceId, java.util.Set<String> approvalActivities) {
+        var steps = new java.util.ArrayList<WaitStep>();
+        var explained = new java.util.TreeSet<String>();
+        var unexplained = new java.util.ArrayList<String>();
+        var instance = runtimeService.createProcessInstanceQuery().processInstanceId(processInstanceId).singleResult();
+        if (instance == null) {
+            return new WaitFacts(List.of(), explained, unexplained, 0);
+        }
+        var model = repositoryService.getBpmnModel(instance.getProcessDefinitionId());
+        java.util.Map<String, java.time.Instant> limits = new java.util.HashMap<>();
+        for (Job timer : managementService.createTimerJobQuery().processInstanceId(processInstanceId).list()) {
+            var element = timer.getElementId() == null ? null : model.getFlowElement(timer.getElementId());
+            if (element == null) {
+                unexplained.add("a timer that is not part of the workflow");
+            } else if (OrqixModel.extension(element, "wait").isPresent()) {
+                steps.add(new WaitStep("wait", element.getId(), element.getName() == null ? element.getId() : element.getName(),
+                        null, null, null, timer.getCreateTime() == null ? null : timer.getCreateTime().toInstant(),
+                        timer.getDuedate() == null ? null : timer.getDuedate().toInstant()));
+                explained.add(element.getId());
+            } else if (element instanceof org.flowable.bpmn.model.BoundaryEvent boundary
+                    && OrqixModel.extension(element, "timeout").isPresent()
+                    && approvalActivities.contains(boundary.getAttachedToRefId())) {
+                explained.add(element.getId());
+            } else if (OrqixModel.extension(element, "messageTimeout").isPresent()) {
+                limits.put(OrqixModel.attribute(OrqixModel.extension(element, "messageTimeout").get(), "node"),
+                        timer.getDuedate() == null ? null : timer.getDuedate().toInstant());
+                explained.add(element.getId());
+            } else {
+                unexplained.add("a timer at " + element.getId());
+            }
+        }
+        for (var subscription : runtimeService.createEventSubscriptionQuery().processInstanceId(processInstanceId).list()) {
+            var element = subscription.getActivityId() == null ? null : model.getFlowElement(subscription.getActivityId());
+            var message = element == null || !"message".equals(subscription.getEventType()) ? null
+                    : OrqixModel.extension(element, "message").orElse(null);
+            if (message == null) {
+                unexplained.add("a " + subscription.getEventType() + " subscription at " + subscription.getActivityId());
+                continue;
+            }
+            String node = OrqixModel.attribute(message, "node");
+            var nodeElement = model.getFlowElement(node);
+            String timeoutId = node + "__timeout";
+            boolean limited = model.getFlowElement(timeoutId) != null;
+            if (limited && limits.get(node) == null) {
+                unexplained.add("the time limit of the message wait " + node);
+                continue;
+            }
+            steps.add(new WaitStep("wait", node, nodeElement == null || nodeElement.getName() == null ? node
+                    : nodeElement.getName(), OrqixModel.attribute(message, "name"), null, subscription.getExecutionId(),
+                    null, limited ? limits.get(node) : null));
+            explained.add(subscription.getActivityId());
+            explained.add(node);
+            explained.add(timeoutId);
+        }
+        for (String activity : runtimeService.getActiveActivityIds(processInstanceId)) {
+            if (explained.contains(activity) || approvalActivities.contains(activity)) {
+                continue;
+            }
+            var element = model.getFlowElement(activity);
+            var external = element == null ? null : OrqixModel.extension(element, "external").orElse(null);
+            if (external != null) {
+                steps.add(new WaitStep("external", activity, element.getName() == null ? activity : element.getName(),
+                        null, OrqixModel.attribute(external, "topic"), null, null, null));
+                explained.add(activity);
+            }
+        }
+        return new WaitFacts(steps, explained, unexplained,
+                managementService.createJobQuery().processInstanceId(processInstanceId).count());
     }
 
     public boolean processExists(String processInstanceId) {

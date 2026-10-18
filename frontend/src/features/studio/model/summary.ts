@@ -75,6 +75,16 @@ export function nodeSubtitle(def: Definition, node: WorkflowNode, groupNames: Re
       return waitSummary(def, c)
     case 'waitForMessage':
       return messageSummary(def, c)
+    case 'raiseError':
+      return `Raises ${String(c.errorCode ?? 'an error')}`
+    case 'sendSignal':
+      return `Sends ${String(c.signal ?? 'a signal')}`
+    case 'waitForSignal':
+      return `Waits for ${String(c.signal ?? 'a signal')}`
+    case 'compensate': {
+      const count = def.nodes.filter((n) => n.type === 'http' && n.config.compensation === 'automatic').length
+      return count === 1 ? '1 automatic undo call' : `${count} automatic undo calls`
+    }
     case 'externalTask':
       return (c.topic as string) ? `Worker topic ${c.topic as string}` : 'No topic chosen'
     case 'startWorkflow':

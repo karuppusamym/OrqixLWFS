@@ -136,6 +136,12 @@ export function renameNodeId(def: Definition, oldId: string, newId: string): OpR
     }
   }
   if (next.stages) next.stages = next.stages.map((stage) => ({ ...stage, nodes: stage.nodes.map((id) => id === oldId ? newId : id) }))
+  if (next.subprocesses) next.subprocesses = next.subprocesses.map((scope) => ({
+    ...scope,
+    nodes: scope.nodes.map((id) => id === oldId ? newId : id),
+    ...(scope.onTimeout === oldId ? { onTimeout: newId } : {}),
+    ...(scope.onError?.to === oldId ? { onError: { ...scope.onError, to: newId } } : {}),
+  }))
   const positions = next.uiLayout?.positions
   const notes = next.metadata.stepNotes
   if (notes && oldId in notes) {
@@ -194,6 +200,12 @@ export function removeNode(def: Definition, id: string): Definition {
   const next = clone(def)
   next.nodes = next.nodes.filter((n) => n.id !== id)
   if (next.stages) next.stages = next.stages.map((stage) => ({ ...stage, nodes: stage.nodes.filter((nodeId) => nodeId !== id) }))
+  if (next.subprocesses) next.subprocesses = next.subprocesses.map((scope) => {
+    const kept = { ...scope, nodes: scope.nodes.filter((nodeId) => nodeId !== id) }
+    if (kept.onTimeout === id) { delete kept.onTimeout; delete kept.timeoutAfter }
+    if (kept.onError?.to === id) delete kept.onError
+    return kept
+  })
   next.transitions = next.transitions.filter((t) => t.from !== id && t.to !== id)
   if (next.uiLayout) delete next.uiLayout.positions[id]
   if (next.metadata.stepNotes) {
@@ -246,6 +258,10 @@ export function canConnect(def: Definition, req: Pick<ConnectRequest, 'from' | '
   if (from.id === to.id) return { ok: false, reason: 'A step cannot lead to itself.' }
   if (to.type === 'start') return { ok: false, reason: 'Nothing can lead back to the request form.' }
   if (from.type === 'end') return { ok: false, reason: 'A Finish step ends the workflow, so it cannot lead anywhere.' }
+  if (from.type === 'raiseError') return { ok: false, reason: 'A raised error ends its path; the section or handler that catches it decides what comes next.' }
+  if ((from.type === 'http' && from.config.compensation === 'automatic') || (to.type === 'http' && to.config.compensation === 'automatic')) {
+    return { ok: false, reason: 'An automatic undo call has no paths; an "Undo completed calls" step runs it.' }
+  }
   const others = outgoing(def, from.id).filter((t) => t.id !== req.transitionId)
   switch (from.type) {
     case 'http':
@@ -354,6 +370,7 @@ export function addNodeAfter(def: Definition, afterId: string, kind: NodeKind, s
   const source = nodeById(def, afterId)
   if (!source) return { ok: false, reason: 'That step does not exist.' }
   if (source.type === 'end') return { ok: false, reason: 'A Finish step ends the workflow, so nothing can come after it.' }
+  if (source.type === 'raiseError') return { ok: false, reason: 'A raised error ends its path, so nothing can come after it.' }
   const added = addNode(def, kind, { ...(opts.label ? { label: opts.label } : {}), anchorId: afterId })
   let next = added.def
   const origin = def.uiLayout?.positions[afterId]

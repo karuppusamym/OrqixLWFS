@@ -2227,6 +2227,40 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
 
+  /workspaces/{workspaceId}/runs/{runId}/signals:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+    post:
+      tags: [Runs]
+      operationId: sendRunSignal
+      summary: Send a signal to one request
+      description: >-
+        docs/build/S55. Delivers the named signal to the steps ("Wait for a signal") and handlers of this request that
+        are waiting for it now, oldest first. A signal never reaches another request. Refused with 409
+        SIGNAL_NOT_AWAITED when nothing in the request waits for it, RUN_SUSPENDED while suspended and RUN_NOT_ACTIVE
+        when the request ended or changed since it was loaded.
+      x-orqix-permission: run.operate
+      x-orqix-audit: run.signal-sent
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SendRunSignalRequest' }
+      responses:
+        '200':
+          description: Delivered (or replay)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RunDetail' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
   /workspaces/{workspaceId}/runs/{runId}/diagnosis:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -4719,6 +4753,7 @@ components:
             - RUN_NOT_SUSPENDABLE
             - RUN_NOT_REPAIRABLE
             - RUN_NOT_MIGRATABLE
+            - SIGNAL_NOT_AWAITED
             - JOB_LEASE_LOST
             - JOB_NOT_OPEN
             - EFFECT_NOT_RECONCILED
@@ -5509,7 +5544,7 @@ components:
       properties:
         nodeId: { type: string }
         label: { type: string }
-        kind: { type: string, enum: [approval, http, wait, child, generateDocument, external] }
+        kind: { type: string, enum: [approval, http, wait, child, generateDocument, external, waitForSignal, compensate] }
         messageName: { type: [string, 'null'], description: 'Set while the step (kind wait) waits for this message (docs/build/S16).' }
         since: { $ref: '#/components/schemas/Timestamp' }
         candidateGroup: { type: [string, 'null'] }
@@ -5911,7 +5946,7 @@ components:
         id: { type: string }
         from: { type: string }
         to: { type: string }
-        on: { type: string, enum: [next, approved, rejected, timedOut, failed, condition, default] }
+        on: { type: string, enum: [next, approved, rejected, timedOut, failed, condition, default, error], description: 'error only on a section error route (S55).' }
         label: { type: [string, 'null'], description: The designer's route label. Conditions are never included. }
     PathVisit:
       type: object
@@ -5923,7 +5958,7 @@ components:
         leftAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
         outcome:
           oneOf:
-            - { type: string, enum: [approved, rejected, timedOut, failed, completed, cancelled] }
+            - { type: string, enum: [approved, rejected, timedOut, failed, completed, cancelled, raised, interrupted] }
             - { type: 'null' }
           description: Null while the request is still at the step.
     PathCurrent:
@@ -5932,7 +5967,7 @@ components:
       properties:
         nodeId: { type: string }
         label: { type: string }
-        kind: { type: string, enum: [approval, http, wait, child, generateDocument, external] }
+        kind: { type: string, enum: [approval, http, wait, child, generateDocument, external, waitForSignal, compensate] }
         status: { type: string, enum: [waiting, running, needsAttention] }
         since: { $ref: '#/components/schemas/Timestamp' }
         candidateGroup: { type: [string, 'null'] }
@@ -5950,10 +5985,31 @@ components:
           properties:
             nodes: { type: array, items: { $ref: '#/components/schemas/PathNode' } }
             transitions: { type: array, items: { $ref: '#/components/schemas/PathTransition' } }
+            scopes: { type: array, items: { $ref: '#/components/schemas/PathScope' }, description: 'Sections and handlers (S55).' }
         visited: { type: array, items: { $ref: '#/components/schemas/PathVisit' } }
         current: { type: array, items: { $ref: '#/components/schemas/PathCurrent' } }
         taken: { type: array, items: { type: string }, description: Ids of the routes the request has used. }
         historyTruncated: { type: boolean, description: History exceeded the diagram limit; only current steps are reliable. }
+        scopeVisits: { type: array, items: { $ref: '#/components/schemas/PathScopeVisit' }, description: 'Each time a section was entered or a handler started (S55).' }
+    PathScope:
+      type: object
+      required: [id, label, type, nodes, routes]
+      properties:
+        id: { type: string }
+        label: { type: string }
+        type: { type: string, enum: [embedded, event] }
+        nodes: { type: array, items: { type: string } }
+        trigger: { type: [string, 'null'], enum: [error, signal, timer, null] }
+        interrupting: { type: [boolean, 'null'] }
+        routes: { type: array, items: { $ref: '#/components/schemas/PathTransition' }, description: 'A section''s time-limit and error routes; from is the section id.' }
+    PathScopeVisit:
+      type: object
+      required: [scopeId, startedAt, endedAt, how]
+      properties:
+        scopeId: { type: string }
+        startedAt: { $ref: '#/components/schemas/Timestamp' }
+        endedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+        how: { type: [string, 'null'], enum: [completed, timedOut, error, signal, timer, null] }
     InsightsRange:
       type: object
       required: [from, to, days, generatedAt]
@@ -6165,6 +6221,14 @@ components:
           maxProperties: 10
           description: Field key to its new single value.
           additionalProperties: { type: [string, number, boolean] }
+    SendRunSignalRequest:
+      type: object
+      additionalProperties: false
+      required: [signal, reason, expectedVersion]
+      properties:
+        signal: { type: string, minLength: 2, maxLength: 64, pattern: '^[a-z][a-zA-Z0-9]*(-[a-z0-9][a-zA-Z0-9]*)*$' }
+        reason: { type: string, minLength: 1, maxLength: 500 }
+        expectedVersion: { type: integer, minimum: 1 }
     SuspendRunRequest:
       type: object
       additionalProperties: false
@@ -6203,7 +6267,7 @@ components:
       additionalProperties: false
       required: [code, message]
       properties:
-        code: { type: string, enum: [STEP_COUNT, STEP_UNKNOWN, STEP_KIND, STEP_MISSING, STEP_CHANGED, HISTORY_CHANGED, PARALLEL_REGION, STAGES_CHANGED, INPUT_INVALID] }
+        code: { type: string, enum: [STEP_COUNT, STEP_UNKNOWN, STEP_KIND, MULTI_INSTANCE, STEP_MISSING, STEP_CHANGED, HISTORY_CHANGED, PARALLEL_REGION, STAGES_CHANGED, SUBPROCESSES, INPUT_INVALID] }
         message: { type: string }
         nodeId: { type: [string, 'null'] }
     MigrationOption:

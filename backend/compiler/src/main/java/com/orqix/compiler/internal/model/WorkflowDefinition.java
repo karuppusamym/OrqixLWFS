@@ -31,7 +31,27 @@ public record WorkflowDefinition(
         List<Dependency> dependencies,
         Map<String, OutputEntry> outputMapping,
         Layout uiLayout,
-        List<Stage> stages) {
+        List<Stage> stages,
+        List<Subprocess> subprocesses) {
+
+    /**
+     * A scope over existing steps (S55). An embedded subprocess is a section entered through one entry step and left
+     * by the ordinary paths of its members, with an optional time limit ({@code timeoutAfter} to {@code onTimeout}) and
+     * error route ({@code errorTo}, catching {@code errorCode}, or any code when null). An event subprocess is a handler
+     * started by {@code triggerType} (error, signal or timer) and is {@code interrupting} or not.
+     */
+    public record Subprocess(int index, String id, String label, boolean event, List<String> nodes,
+                             String timeoutAfter, String onTimeout, String errorTo, String errorCode,
+                             String triggerType, String triggerErrorCode, String signal, String after,
+                             boolean interrupting) {
+        public String path() {
+            return "/subprocesses/" + index;
+        }
+
+        public boolean embedded() {
+            return !event;
+        }
+    }
 
     /**
      * A named group of steps used to show progress and monitor a time limit (S17). It adds no behavior to the

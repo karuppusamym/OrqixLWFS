@@ -1,4 +1,4 @@
-import { Bell, CheckCheck, Clock, MailCheck, FileInput, GitBranch, GitFork, GitMerge, Cpu, ListChecks, Plug, Workflow, UserCheck, type LucideIcon } from 'lucide-react'
+import { AlertOctagon, Radio, RadioReceiver, Undo2, Bell, CheckCheck, Clock, MailCheck, FileInput, GitBranch, GitFork, GitMerge, Cpu, ListChecks, Plug, Workflow, UserCheck, type LucideIcon } from 'lucide-react'
 import type { NodeKind } from './model/types'
 
 export const KIND_ICON: Record<NodeKind, LucideIcon> = {
@@ -16,6 +16,10 @@ export const KIND_ICON: Record<NodeKind, LucideIcon> = {
   waitForMessage: MailCheck,
   externalTask: Cpu,
   startWorkflow: Workflow,
+  raiseError: AlertOctagon,
+  sendSignal: Radio,
+  waitForSignal: RadioReceiver,
+  compensate: Undo2,
 }
 
 /**
@@ -38,6 +42,10 @@ export const KIND_ACCENT: Record<NodeKind, string> = {
   waitForMessage: 'bg-kind-notification',
   externalTask: 'bg-kind-http',
   startWorkflow: 'bg-kind-http',
+  raiseError: 'bg-kind-end',
+  sendSignal: 'bg-kind-notification',
+  waitForSignal: 'bg-kind-notification',
+  compensate: 'bg-kind-http',
 }
 
 export const KIND_BADGE: Record<NodeKind, string> = {
@@ -55,6 +63,10 @@ export const KIND_BADGE: Record<NodeKind, string> = {
   waitForMessage: 'bg-kind-notification-soft text-kind-notification',
   externalTask: 'bg-kind-http-soft text-kind-http',
   startWorkflow: 'bg-kind-http-soft text-kind-http',
+  raiseError: 'bg-kind-end-soft text-kind-end',
+  sendSignal: 'bg-kind-notification-soft text-kind-notification',
+  waitForSignal: 'bg-kind-notification-soft text-kind-notification',
+  compensate: 'bg-kind-http-soft text-kind-http',
 }
 
 /** CSS variable per kind, for SVG (the minimap) where utility classes do not reach. */
@@ -73,4 +85,8 @@ export const KIND_VAR: Record<NodeKind, string> = {
   waitForMessage: 'var(--kind-notification)',
   externalTask: 'var(--kind-http)',
   startWorkflow: 'var(--kind-http)',
+  raiseError: 'var(--kind-end)',
+  sendSignal: 'var(--kind-notification)',
+  waitForSignal: 'var(--kind-notification)',
+  compensate: 'var(--kind-http)',
 }

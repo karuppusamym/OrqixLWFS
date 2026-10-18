@@ -193,13 +193,15 @@ function DiagramInner({ ws, run, operator, path }: Props & { path: RunPath }) {
   const derivedEdges = useMemo<RunFlowEdge[]>(
     () =>
       path.diagram.transitions.map((t) => {
+        // Section routes ("error") live in diagram.scopes, never in transitions.
+        const on = t.on as RouteKind
         const used = taken.has(t.id)
-        const color = used ? routeColor(t.on) : 'var(--border)'
+        const color = used ? routeColor(on) : 'var(--border)'
         return {
           id: t.id,
           source: t.from,
           target: t.to,
-          sourceHandle: handleFor(t.on),
+          sourceHandle: handleFor(on),
           targetHandle: 'in',
           type: 'runRoute',
           data: { taken: used, text: t.label ?? '' },
@@ -327,6 +329,8 @@ function DiagramInner({ ws, run, operator, path }: Props & { path: RunPath }) {
         )}
       </div>
 
+      <ScopeList path={path} />
+
       <section aria-labelledby="step-details-heading" aria-live="polite" className="rounded-card border border-border bg-surface p-4" data-testid="step-details">
         <h3 id="step-details-heading" className="text-base">
           Step details
@@ -440,5 +444,40 @@ function StepDetails({ ws, view, run, operator }: { ws: string; view: StepView; 
         </div>
       ) : null}
     </div>
+  )
+}
+
+const SCOPE_HOW: Record<string, string> = {
+  completed: 'finished',
+  timedOut: 'left because its time limit passed',
+  error: 'left because a step raised an error',
+  signal: 'stopped by a signal handler',
+  timer: 'stopped by a timed handler',
+}
+
+/** Sections and handlers of the release and what happened to them in this request (docs/build/S55). */
+export function ScopeList({ path }: { path: RunPath }) {
+  const scopes = path.diagram.scopes ?? []
+  if (!scopes.length) return null
+  const label = (id: string) => path.diagram.nodes.find((n) => n.id === id)?.label ?? id
+  return (
+    <section aria-labelledby="run-scopes-heading" className="rounded-card border border-border bg-surface p-4" data-testid="run-scopes">
+      <h3 id="run-scopes-heading" className="text-sm font-semibold">Sections and handlers</h3>
+      <ul className="mt-2 space-y-2 text-sm">
+        {scopes.map((s) => {
+          const visits = (path.scopeVisits ?? []).filter((v) => v.scopeId === s.id)
+          const last = visits[visits.length - 1]
+          const state = !last ? (s.type === 'event' ? 'not started' : 'not entered') : last.how ? (SCOPE_HOW[last.how] ?? last.how) : 'in progress'
+          const routes = s.routes.filter((r) => path.taken.includes(r.id)).map((r) => `continued at ${label(r.to)}`)
+          return (
+            <li key={s.id}>
+              <span className="font-semibold">{s.type === 'event' ? 'Handler' : 'Section'} {s.label}</span>
+              {s.type === 'event' ? ` (starts on ${s.trigger ?? 'a trigger'}${s.interrupting ? ', stops the rest of the request' : ', runs alongside'})` : ''}: {state}
+              {routes.length ? `, ${routes.join(', ')}` : ''}. Steps: {s.nodes.map(label).join(', ') || 'none'}.
+            </li>
+          )
+        })}
+      </ul>
+    </section>
   )
 }

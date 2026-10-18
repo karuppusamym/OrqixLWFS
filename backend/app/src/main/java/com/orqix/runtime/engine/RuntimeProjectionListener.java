@@ -13,6 +13,10 @@ import org.flowable.bpmn.model.BoundaryEvent;
 import org.flowable.bpmn.model.EndEvent;
 import org.flowable.bpmn.model.ExtensionElement;
 import org.flowable.bpmn.model.FlowElement;
+import org.flowable.bpmn.model.IntermediateCatchEvent;
+import org.flowable.bpmn.model.ServiceTask;
+import org.flowable.bpmn.model.SubProcess;
+import org.flowable.bpmn.model.ThrowEvent;
 import org.flowable.bpmn.model.UserTask;
 import org.flowable.common.engine.api.delegate.event.FlowableEngineEventType;
 import org.flowable.common.engine.api.delegate.event.FlowableEntityEvent;
@@ -21,7 +25,9 @@ import org.flowable.common.engine.api.delegate.event.FlowableEventListener;
 import org.flowable.common.engine.api.delegate.event.FlowableEventType;
 import org.flowable.common.engine.impl.context.Context;
 import org.flowable.common.engine.impl.interceptor.CommandContext;
+import org.flowable.engine.delegate.event.FlowableActivityCancelledEvent;
 import org.flowable.engine.delegate.event.FlowableActivityEvent;
+import org.flowable.engine.delegate.event.FlowableErrorEvent;
 import org.flowable.engine.impl.persistence.entity.ExecutionEntity;
 import org.flowable.engine.impl.util.CommandContextUtil;
 import org.flowable.eventsubscription.service.impl.persistence.entity.EventSubscriptionEntity;
@@ -90,7 +96,9 @@ public class RuntimeProjectionListener implements FlowableEventListener {
     public Set<? extends FlowableEventType> getTypes() {
         return Set.of(FlowableEngineEventType.TASK_CREATED, FlowableEngineEventType.ENTITY_CREATED,
                 FlowableEngineEventType.ACTIVITY_STARTED, FlowableEngineEventType.PROCESS_COMPLETED,
-                FlowableEngineEventType.PROCESS_COMPLETED_WITH_TERMINATE_END_EVENT, FlowableEngineEventType.TIMER_FIRED);
+                FlowableEngineEventType.PROCESS_COMPLETED_WITH_TERMINATE_END_EVENT, FlowableEngineEventType.TIMER_FIRED,
+                FlowableEngineEventType.ACTIVITY_COMPLETED, FlowableEngineEventType.ACTIVITY_CANCELLED,
+                FlowableEngineEventType.ACTIVITY_ERROR_RECEIVED);
     }
 
     @Override
@@ -98,7 +106,10 @@ public class RuntimeProjectionListener implements FlowableEventListener {
         if (!(event.getType() instanceof FlowableEngineEventType type)) {
             return;
         }
-        if (!isOrqixProcess(event)) {
+        boolean selfChecked = type == FlowableEngineEventType.ACTIVITY_COMPLETED
+                || type == FlowableEngineEventType.ACTIVITY_CANCELLED || type == FlowableEngineEventType.ACTIVITY_ERROR_RECEIVED;
+        // The S55 handlers filter on the element first and check the run themselves (they fire for every activity).
+        if (!selfChecked && !isOrqixProcess(event)) {
             // Every process deployed by Orqix carries orqix_runId; anything else (engine spikes) is not projected.
             return;
         }
@@ -127,6 +138,21 @@ public class RuntimeProjectionListener implements FlowableEventListener {
             case ACTIVITY_STARTED -> {
                 if (event instanceof FlowableActivityEvent activityEvent) {
                     onActivityStarted(activityEvent);
+                }
+            }
+            case ACTIVITY_COMPLETED -> {
+                if (event instanceof FlowableActivityEvent activityEvent) {
+                    onActivityCompleted(activityEvent);
+                }
+            }
+            case ACTIVITY_CANCELLED -> {
+                if (event instanceof FlowableActivityCancelledEvent cancelled) {
+                    onActivityCancelled(cancelled);
+                }
+            }
+            case ACTIVITY_ERROR_RECEIVED -> {
+                if (event instanceof FlowableErrorEvent error) {
+                    onErrorReceived(error);
                 }
             }
             case PROCESS_COMPLETED, PROCESS_COMPLETED_WITH_TERMINATE_END_EVENT -> {
@@ -223,7 +249,8 @@ public class RuntimeProjectionListener implements FlowableEventListener {
             return;
         }
         FlowElement element = OrqixModel.flowElement(job.getProcessDefinitionId(), job.getElementId());
-        if (OrqixModel.extension(element, "http").isEmpty() && OrqixModel.extension(element, "generateDocument").isEmpty()) {
+        if (OrqixModel.extension(element, "http").isEmpty() && OrqixModel.extension(element, "generateDocument").isEmpty()
+                && OrqixModel.extension(element, "compensation").isEmpty()) {
             return;
         }
         ExecutionEntity execution = CommandContextUtil.getExecutionEntityManager().findById(job.getExecutionId());
@@ -238,7 +265,8 @@ public class RuntimeProjectionListener implements FlowableEventListener {
             ObjectNode step = json.object();
             step.put("nodeId", element.getId());
             step.put("label", label);
-            step.put("kind", OrqixModel.extension(element, "generateDocument").isPresent() ? "generateDocument" : "http");
+            step.put("kind", OrqixModel.extension(element, "generateDocument").isPresent() ? "generateDocument"
+                    : OrqixModel.extension(element, "compensation").isPresent() ? "compensate" : "http");
             step.put("since", now.toString());
             step.putNull("candidateGroup");
             step.putNull("assigneeId");
@@ -248,10 +276,240 @@ public class RuntimeProjectionListener implements FlowableEventListener {
         });
     }
 
+    // ---------------------------------------------------------------- sections, handlers, errors, signals (S55)
+
+    /** Command attribute: the handler started by an error in this process instance (its interruption has no cause). */
+    private static final String ERROR_HANDLER_ATTRIBUTE = "orqix.errorHandler.";
+    /** Command attribute: a step already shown as interrupted in this command. */
+    private static final String INTERRUPTED_ATTRIBUTE = "orqix.interrupted.";
+
+    private static String label(FlowElement element) {
+        return element.getName() == null ? element.getId() : element.getName();
+    }
+
+    /** A section is entered, or a signal is sent. */
+    private void scopeStarted(FlowableActivityEvent event, FlowElement element) {
+        ExtensionElement scope = OrqixModel.extension(element, "scope").orElse(null);
+        ExtensionElement signal = OrqixModel.extension(element, "signal").orElse(null);
+        boolean section = scope != null && "embedded".equals(OrqixModel.attribute(scope, "kind"));
+        boolean send = signal != null && "send".equals(OrqixModel.attribute(signal, "action"));
+        if (!section && !send) {
+            return;
+        }
+        ExecutionEntity execution = CommandContextUtil.getExecutionEntityManager().findById(event.getExecutionId());
+        if (execution == null || execution.getVariable(ProcessData.RUN_ID) == null) {
+            return;
+        }
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("label", label(element));
+        if (section) {
+            events.append(ProcessData.workspaceId(execution), ProcessData.runId(execution), "SECTION_ENTERED",
+                    element.getId(), null, data);
+        } else {
+            data.put("signal", OrqixModel.attribute(signal, "name"));
+            events.append(ProcessData.workspaceId(execution), ProcessData.runId(execution), "SIGNAL_SENT",
+                    element.getId(), null, data);
+        }
+    }
+
+    /** A handler started (its start event was left), a signal wait ended or a section finished normally. */
+    private void onActivityCompleted(FlowableActivityEvent event) {
+        if (event.getProcessDefinitionId() == null || event.getActivityId() == null) {
+            return;
+        }
+        FlowElement element = OrqixModel.model(event.getProcessDefinitionId()).getFlowElement(event.getActivityId());
+        if (element == null) {
+            return;
+        }
+        ExtensionElement handler = OrqixModel.extension(element, "scopeEvent").orElse(null);
+        ExtensionElement signal = OrqixModel.extension(element, "signal").orElse(null);
+        ExtensionElement scope = OrqixModel.extension(element, "scope").orElse(null);
+        boolean waited = signal != null && "wait".equals(OrqixModel.attribute(signal, "action"));
+        if (handler == null && !waited && scope == null) {
+            return;
+        }
+        ExecutionEntity process = CommandContextUtil.getExecutionEntityManager().findById(event.getProcessInstanceId());
+        if (process == null || process.getVariable(ProcessData.RUN_ID) == null) {
+            return;
+        }
+        UUID workspaceId = ProcessData.workspaceId(process);
+        UUID runId = ProcessData.runId(process);
+        Map<String, Object> data = new LinkedHashMap<>();
+        if (handler != null) {
+            String scopeId = OrqixModel.attribute(handler, "scope");
+            FlowElement subprocess = OrqixModel.flowElement(event.getProcessDefinitionId(), scopeId);
+            data.put("label", label(subprocess));
+            data.put("trigger", OrqixModel.attribute(handler, "trigger"));
+            data.put("interrupting", Boolean.parseBoolean(OrqixModel.attribute(handler, "interrupting")));
+            events.append(workspaceId, runId, "HANDLER_STARTED", scopeId, null, data);
+        } else if (waited) {
+            runs.mutate(workspaceId, runId, m -> {
+                m.removeStep(element.getId());
+                m.settle();
+            });
+            data.put("label", label(element));
+            data.put("signal", OrqixModel.attribute(signal, "name"));
+            events.append(workspaceId, runId, "SIGNAL_RECEIVED", element.getId(), null, data);
+        } else if ("embedded".equals(OrqixModel.attribute(scope, "kind"))) {
+            data.put("label", label(element));
+            data.put("how", "completed");
+            Object exit = process.getVariable(OrqixRoute.EXIT_VARIABLE + element.getId());
+            if (exit != null) {
+                data.put("exit", exit.toString());
+            }
+            events.append(workspaceId, runId, "SECTION_LEFT", element.getId(), null, data);
+        }
+    }
+
+    /** An error was caught: remember an error handler, whose interruption carries no cause of its own. */
+    private void onErrorReceived(FlowableErrorEvent event) {
+        if (event.getProcessDefinitionId() == null || event.getActivityId() == null) {
+            return;
+        }
+        FlowElement element = OrqixModel.model(event.getProcessDefinitionId()).getFlowElement(event.getActivityId());
+        ExtensionElement handler = OrqixModel.extension(element, "scopeEvent").orElse(null);
+        ExtensionElement section = OrqixModel.extension(element, "scopeError").orElse(null);
+        if (handler == null && section == null) {
+            return;
+        }
+        String scopeId = OrqixModel.attribute(handler != null ? handler : section, "scope");
+        if (handler != null) {
+            Context.getCommandContext().addAttribute(ERROR_HANDLER_ATTRIBUTE + event.getProcessInstanceId(), scopeId);
+        }
+        ExecutionEntity process = CommandContextUtil.getExecutionEntityManager().findById(event.getProcessInstanceId());
+        if (process == null || process.getVariable(ProcessData.RUN_ID) == null) {
+            return;
+        }
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("label", label(OrqixModel.flowElement(event.getProcessDefinitionId(), scopeId)));
+        data.put("errorCode", event.getErrorCode());
+        events.append(ProcessData.workspaceId(process), ProcessData.runId(process), "ERROR_CAUGHT", scopeId, null, data);
+    }
+
+    /**
+     * Work cancelled because a section's time limit passed or an error left it, or because a handler interrupted the
+     * request (S55): its task is cancelled and it no longer shows as a current step. Other cancellations (a decision
+     * time limit, a failure route, a rejection that ends the request, an operator) keep their own handling.
+     */
+    private void onActivityCancelled(FlowableActivityCancelledEvent event) {
+        if (event.getProcessDefinitionId() == null || event.getActivityId() == null) {
+            return;
+        }
+        String scopeId = null;
+        String reason = null;
+        if (event.getCause() instanceof FlowElement cause) {
+            ExtensionElement timeout = OrqixModel.extension(cause, "scopeTimeout").orElse(null);
+            ExtensionElement error = OrqixModel.extension(cause, "scopeError").orElse(null);
+            ExtensionElement handler = OrqixModel.extension(cause, "scopeEvent").orElse(null);
+            if (timeout != null) {
+                scopeId = OrqixModel.attribute(timeout, "scope");
+                reason = "timedOut";
+            } else if (error != null) {
+                scopeId = OrqixModel.attribute(error, "scope");
+                reason = "error";
+            } else if (handler != null) {
+                scopeId = OrqixModel.attribute(handler, "scope");
+                reason = OrqixModel.attribute(handler, "trigger");
+            }
+        }
+        if (scopeId == null) {
+            Object handler = Context.getCommandContext().getAttribute(ERROR_HANDLER_ATTRIBUTE + event.getProcessInstanceId());
+            if (handler instanceof String id) {
+                scopeId = id;
+                reason = "error";
+            }
+        }
+        if (scopeId == null) {
+            return;
+        }
+        FlowElement element = OrqixModel.model(event.getProcessDefinitionId()).getFlowElement(event.getActivityId());
+        if (element == null) {
+            return;
+        }
+        ExecutionEntity process = CommandContextUtil.getExecutionEntityManager().findById(event.getProcessInstanceId());
+        if (process == null || process.getVariable(ProcessData.RUN_ID) == null) {
+            return;
+        }
+        UUID workspaceId = ProcessData.workspaceId(process);
+        UUID runId = ProcessData.runId(process);
+        CommandContext context = Context.getCommandContext();
+        String key = INTERRUPTED_ATTRIBUTE + event.getProcessInstanceId() + "." + element.getId();
+        if (context.getAttribute(key) != null) {
+            return; // the other approvers of a several-approver step
+        }
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("label", label(element));
+        data.put("by", scopeId);
+        data.put("reason", reason);
+        ExtensionElement scope = OrqixModel.extension(element, "scope").orElse(null);
+        if (element instanceof SubProcess && scope != null) {
+            if ("embedded".equals(OrqixModel.attribute(scope, "kind"))) {
+                context.addAttribute(key, true);
+                data.put("how", reason);
+                events.append(workspaceId, runId, "SECTION_LEFT", element.getId(), null, data);
+            }
+            return;
+        }
+        // Only steps of the workflow (generated helpers carry a double underscore) that can be open work.
+        if (element.getId().contains("__") || !(element instanceof UserTask || element instanceof ServiceTask
+                || element instanceof IntermediateCatchEvent)) {
+            return;
+        }
+        context.addAttribute(key, true);
+        Instant now = clock.instant();
+        tasks.cancelOpenForNode(workspaceId, runId, element.getId(), now);
+        runs.mutate(workspaceId, runId, m -> {
+            m.removeStep(element.getId());
+            m.settle();
+        });
+        events.append(workspaceId, runId, "STEP_INTERRUPTED", element.getId(), null, data);
+    }
+
     // ---------------------------------------------------------------- messages (S16)
+
+    /** A token reached a "Wait for a signal" step (S55); handler start subscriptions are not waiting steps. */
+    private void onSignalWait(EventSubscriptionEntity subscription) {
+        if (subscription.getProcessDefinitionId() == null || subscription.getActivityId() == null
+                || subscription.getExecutionId() == null) {
+            return;
+        }
+        FlowElement element = OrqixModel.flowElement(subscription.getProcessDefinitionId(), subscription.getActivityId());
+        ExtensionElement signal = OrqixModel.extension(element, "signal").orElse(null);
+        if (signal == null || !"wait".equals(OrqixModel.attribute(signal, "action"))) {
+            return;
+        }
+        ExecutionEntity execution = CommandContextUtil.getExecutionEntityManager().findById(subscription.getExecutionId());
+        if (execution == null || execution.getVariable(ProcessData.RUN_ID) == null) {
+            return;
+        }
+        UUID workspaceId = ProcessData.workspaceId(execution);
+        UUID runId = ProcessData.runId(execution);
+        String label = label(element);
+        Instant now = clock.instant();
+        runs.mutate(workspaceId, runId, m -> {
+            ObjectNode step = json.object();
+            step.put("nodeId", element.getId());
+            step.put("label", label);
+            step.put("kind", "waitForSignal");
+            step.put("since", now.toString());
+            step.putNull("candidateGroup");
+            step.putNull("assigneeId");
+            step.putNull("dueAt");
+            m.addStep(step);
+            m.settle();
+        });
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("label", label);
+        data.put("signal", OrqixModel.attribute(signal, "name"));
+        events.append(workspaceId, runId, "SIGNAL_WAIT_STARTED", element.getId(), null, data);
+    }
 
     /** A token reached a message catch event: the engine now waits for the message. */
     private void onSubscriptionCreated(EventSubscriptionEntity subscription) {
+        if ("signal".equals(subscription.getEventType())) {
+            onSignalWait(subscription);
+            return;
+        }
         if (!"message".equals(subscription.getEventType()) || subscription.getProcessDefinitionId() == null
                 || subscription.getActivityId() == null || subscription.getExecutionId() == null) {
             return;
@@ -404,10 +662,26 @@ public class RuntimeProjectionListener implements FlowableEventListener {
             return;
         }
         FlowElement element = OrqixModel.flowElement(event.getProcessDefinitionId(), event.getActivityId());
+        if (element instanceof SubProcess || element instanceof ThrowEvent) {
+            scopeStarted(event, element);
+            return;
+        }
         if (!(element instanceof EndEvent)) {
             return;
         }
-        ExtensionElement outcome = OrqixModel.requireExtension(element, "outcome");
+        ExtensionElement outcome = OrqixModel.extension(element, "outcome").orElse(null);
+        if (outcome == null) {
+            // A raised error or the generated end of a section or handler (S55): the request does not finish here.
+            OrqixModel.extension(element, "raise").ifPresent(raise -> {
+                ExecutionEntity raising = CommandContextUtil.getExecutionEntityManager().findById(event.getExecutionId());
+                Map<String, Object> data = new LinkedHashMap<>();
+                data.put("label", label(element));
+                data.put("errorCode", OrqixModel.attribute(raise, "errorCode"));
+                events.append(ProcessData.workspaceId(raising), ProcessData.runId(raising), "ERROR_RAISED",
+                        element.getId(), null, data);
+            });
+            return;
+        }
         ExecutionEntity execution = CommandContextUtil.getExecutionEntityManager().findById(event.getExecutionId());
         UUID workspaceId = ProcessData.workspaceId(execution);
         UUID runId = ProcessData.runId(execution);

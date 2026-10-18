@@ -79,7 +79,36 @@ public final class ModelReader {
                 List.copyOf(dependencies),
                 Collections.unmodifiableMap(outputMapping),
                 readLayout(root.get("uiLayout")),
-                readStages(root.get("stages")));
+                readStages(root.get("stages")),
+                readSubprocesses(root.get("subprocesses")));
+    }
+
+    private static List<WorkflowDefinition.Subprocess> readSubprocesses(JsonNode array) {
+        List<WorkflowDefinition.Subprocess> list = new ArrayList<>();
+        if (array != null) {
+            for (int i = 0; i < array.size(); i++) {
+                JsonNode s = array.get(i);
+                List<String> nodes = new ArrayList<>();
+                s.get("nodes").forEach(n -> nodes.add(n.stringValue()));
+                JsonNode onError = s.get("onError");
+                JsonNode trigger = s.get("trigger");
+                list.add(new WorkflowDefinition.Subprocess(i, s.get("id").stringValue(), s.get("label").stringValue(),
+                        "event".equals(s.get("type").stringValue()), List.copyOf(nodes),
+                        text(s, "timeoutAfter"), text(s, "onTimeout"), onError == null ? null : text(onError, "to"),
+                        onError == null ? null : text(onError, "errorCode"),
+                        trigger == null ? null : text(trigger, "type"),
+                        trigger == null ? null : text(trigger, "errorCode"),
+                        trigger == null ? null : text(trigger, "signal"),
+                        trigger == null ? null : text(trigger, "after"),
+                        s.path("interrupting").asBoolean(false)));
+            }
+        }
+        return List.copyOf(list);
+    }
+
+    private static String text(JsonNode object, String member) {
+        JsonNode v = object.get(member);
+        return v == null || v.isNull() ? null : v.stringValue();
     }
 
     private static List<WorkflowDefinition.Stage> readStages(JsonNode stages) {
@@ -119,7 +148,8 @@ public final class ModelReader {
             case HTTP -> new Node.Http(index, id, label, c.get("connectionRef").stringValue(),
                     c.get("operation").stringValue(), stringMap(c.get("inputMapping")),
                     stringMap(c.get("resultMapping")), c.get("timeoutSeconds").intValue(),
-                    c.has("compensates") ? c.get("compensates").stringValue() : null);
+                    c.has("compensates") ? c.get("compensates").stringValue() : null,
+                    "automatic".equals(c.path("compensation").asString("manual")));
             case GENERATE_DOCUMENT -> new Node.GenerateDocument(index, id, label, c.get("format").stringValue(),
                     c.get("fileName").stringValue(), c.get("template").stringValue(), stringMap(c.get("inputMapping")));
             case EXTERNAL_TASK -> new Node.ExternalTask(index, id, label, c.get("topic").stringValue(),
@@ -146,6 +176,10 @@ public final class ModelReader {
                     c.has("timeoutAfter") ? c.get("timeoutAfter").stringValue() : null, payloadFields(c.get("payload")));
             case END -> new Node.End(index, id, label, c.get("businessOutcome").stringValue(),
                     c.get("outcomeKind").stringValue());
+            case RAISE_ERROR -> new Node.RaiseError(index, id, label, c.get("errorCode").stringValue());
+            case SEND_SIGNAL -> new Node.SendSignal(index, id, label, c.get("signal").stringValue());
+            case WAIT_FOR_SIGNAL -> new Node.WaitForSignal(index, id, label, c.get("signal").stringValue());
+            case COMPENSATE -> new Node.Compensate(index, id, label);
         };
     }
 

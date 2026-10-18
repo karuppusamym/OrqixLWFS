@@ -1410,6 +1410,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/runs/{runId}/signals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send a signal to one request
+         * @description docs/build/S55. Delivers the named signal to the steps ("Wait for a signal") and handlers of this request that are waiting for it now, oldest first. A signal never reaches another request. Refused with 409 SIGNAL_NOT_AWAITED when nothing in the request waits for it, RUN_SUSPENDED while suspended and RUN_NOT_ACTIVE when the request ended or changed since it was loaded.
+         */
+        post: operations["sendRunSignal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/runs/{runId}/diagnosis": {
         parameters: {
             query?: never;
@@ -2973,7 +2996,7 @@ export interface components {
             detail?: string;
             instance?: string;
             /** @enum {string} */
-            code: "MALFORMED_REQUEST" | "IDEMPOTENCY_KEY_REQUIRED" | "INVALID_CURSOR" | "UNAUTHENTICATED" | "FORBIDDEN" | "CSRF_INVALID" | "SELF_APPROVAL_DENIED" | "SEPARATION_OF_DUTIES" | "NOT_ELIGIBLE" | "NOT_FOUND" | "IDEMPOTENCY_KEY_REUSED" | "DUPLICATE_KEY" | "WORKFLOW_VERSION_CONFLICT" | "RELEASE_NOT_ACTIVE" | "TASK_VERSION_CONFLICT" | "TASK_ALREADY_CLAIMED" | "TASK_NOT_CLAIMED_BY_CALLER" | "TASK_NOT_OPEN" | "RUN_NOT_ACTIVE" | "RUN_BUSY" | "RUN_NOT_RECOVERABLE" | "RUN_SUSPENDED" | "RUN_NOT_SUSPENDED" | "RUN_NOT_SUSPENDABLE" | "RUN_NOT_REPAIRABLE" | "RUN_NOT_MIGRATABLE" | "JOB_LEASE_LOST" | "JOB_NOT_OPEN" | "EFFECT_NOT_RECONCILED" | "EFFECT_STATE_CONFLICT" | "GROUP_REVISION_CONFLICT" | "STALE_REVISION" | "PAYLOAD_TOO_LARGE" | "VALIDATION_FAILED" | "WORKFLOW_INVALID" | "WARNINGS_NOT_ACKNOWLEDGED" | "NO_ACTIVE_RELEASE" | "REASON_REQUIRED" | "CONNECTION_NOT_BOUND" | "EGRESS_NOT_ALLOWED" | "OPERATION_NOT_TESTABLE" | "PRECONDITION_REQUIRED" | "QUOTA_EXCEEDED" | "RATE_LIMITED" | "DEPENDENCY_UNAVAILABLE" | "AI_NOT_CONFIGURED" | "AI_MODEL_NOT_ALLOWED" | "AI_OUTPUT_INVALID" | "AI_PROVIDER_UNAVAILABLE" | "AI_BUDGET_EXCEEDED" | "SOURCE_INVALID" | "MIGRATION_BLOCKED" | "ATTACHMENT_BLOCKED" | "ATTACHMENT_LIMIT_REACHED" | "INTERNAL_ERROR";
+            code: "MALFORMED_REQUEST" | "IDEMPOTENCY_KEY_REQUIRED" | "INVALID_CURSOR" | "UNAUTHENTICATED" | "FORBIDDEN" | "CSRF_INVALID" | "SELF_APPROVAL_DENIED" | "SEPARATION_OF_DUTIES" | "NOT_ELIGIBLE" | "NOT_FOUND" | "IDEMPOTENCY_KEY_REUSED" | "DUPLICATE_KEY" | "WORKFLOW_VERSION_CONFLICT" | "RELEASE_NOT_ACTIVE" | "TASK_VERSION_CONFLICT" | "TASK_ALREADY_CLAIMED" | "TASK_NOT_CLAIMED_BY_CALLER" | "TASK_NOT_OPEN" | "RUN_NOT_ACTIVE" | "RUN_BUSY" | "RUN_NOT_RECOVERABLE" | "RUN_SUSPENDED" | "RUN_NOT_SUSPENDED" | "RUN_NOT_SUSPENDABLE" | "RUN_NOT_REPAIRABLE" | "RUN_NOT_MIGRATABLE" | "SIGNAL_NOT_AWAITED" | "JOB_LEASE_LOST" | "JOB_NOT_OPEN" | "EFFECT_NOT_RECONCILED" | "EFFECT_STATE_CONFLICT" | "GROUP_REVISION_CONFLICT" | "STALE_REVISION" | "PAYLOAD_TOO_LARGE" | "VALIDATION_FAILED" | "WORKFLOW_INVALID" | "WARNINGS_NOT_ACKNOWLEDGED" | "NO_ACTIVE_RELEASE" | "REASON_REQUIRED" | "CONNECTION_NOT_BOUND" | "EGRESS_NOT_ALLOWED" | "OPERATION_NOT_TESTABLE" | "PRECONDITION_REQUIRED" | "QUOTA_EXCEEDED" | "RATE_LIMITED" | "DEPENDENCY_UNAVAILABLE" | "AI_NOT_CONFIGURED" | "AI_MODEL_NOT_ALLOWED" | "AI_OUTPUT_INVALID" | "AI_PROVIDER_UNAVAILABLE" | "AI_BUDGET_EXCEEDED" | "SOURCE_INVALID" | "MIGRATION_BLOCKED" | "ATTACHMENT_BLOCKED" | "ATTACHMENT_LIMIT_REACHED" | "INTERNAL_ERROR";
             correlationId: string;
             fieldErrors?: components["schemas"]["FieldError"][];
             issues?: components["schemas"]["ValidationIssue"][];
@@ -3575,7 +3598,7 @@ export interface components {
             nodeId: string;
             label: string;
             /** @enum {string} */
-            kind: "approval" | "http" | "wait" | "child" | "generateDocument" | "external";
+            kind: "approval" | "http" | "wait" | "child" | "generateDocument" | "external" | "waitForSignal" | "compensate";
             /** @description Set while the step (kind wait) waits for this message (docs/build/S16). */
             messageName?: string | null;
             since: components["schemas"]["Timestamp"];
@@ -3889,8 +3912,11 @@ export interface components {
             id: string;
             from: string;
             to: string;
-            /** @enum {string} */
-            on: "next" | "approved" | "rejected" | "timedOut" | "failed" | "condition" | "default";
+            /**
+             * @description error only on a section error route (S55).
+             * @enum {string}
+             */
+            on: "next" | "approved" | "rejected" | "timedOut" | "failed" | "condition" | "default" | "error";
             /** @description The designer's route label. Conditions are never included. */
             label?: string | null;
         };
@@ -3901,13 +3927,13 @@ export interface components {
             enteredAt: components["schemas"]["Timestamp"];
             leftAt: components["schemas"]["Timestamp"] | null;
             /** @description Null while the request is still at the step. */
-            outcome: ("approved" | "rejected" | "timedOut" | "failed" | "completed" | "cancelled") | null;
+            outcome: ("approved" | "rejected" | "timedOut" | "failed" | "completed" | "cancelled" | "raised" | "interrupted") | null;
         };
         PathCurrent: {
             nodeId: string;
             label: string;
             /** @enum {string} */
-            kind: "approval" | "http" | "wait" | "child" | "generateDocument" | "external";
+            kind: "approval" | "http" | "wait" | "child" | "generateDocument" | "external" | "waitForSignal" | "compensate";
             /** @enum {string} */
             status: "waiting" | "running" | "needsAttention";
             since: components["schemas"]["Timestamp"];
@@ -3921,6 +3947,8 @@ export interface components {
             diagram: {
                 nodes: components["schemas"]["PathNode"][];
                 transitions: components["schemas"]["PathTransition"][];
+                /** @description Sections and handlers (S55). */
+                scopes?: components["schemas"]["PathScope"][];
             };
             visited: components["schemas"]["PathVisit"][];
             current: components["schemas"]["PathCurrent"][];
@@ -3928,6 +3956,27 @@ export interface components {
             taken: string[];
             /** @description History exceeded the diagram limit; only current steps are reliable. */
             historyTruncated?: boolean;
+            /** @description Each time a section was entered or a handler started (S55). */
+            scopeVisits?: components["schemas"]["PathScopeVisit"][];
+        };
+        PathScope: {
+            id: string;
+            label: string;
+            /** @enum {string} */
+            type: "embedded" | "event";
+            nodes: string[];
+            /** @enum {string|null} */
+            trigger?: "error" | "signal" | "timer" | null;
+            interrupting?: boolean | null;
+            /** @description A section's time-limit and error routes; from is the section id. */
+            routes: components["schemas"]["PathTransition"][];
+        };
+        PathScopeVisit: {
+            scopeId: string;
+            startedAt: components["schemas"]["Timestamp"];
+            endedAt: components["schemas"]["Timestamp"] | null;
+            /** @enum {string|null} */
+            how: "completed" | "timedOut" | "error" | "signal" | "timer" | null;
         };
         InsightsRange: {
             /** Format: date */
@@ -4102,6 +4151,11 @@ export interface components {
                 [key: string]: string | number | boolean;
             };
         };
+        SendRunSignalRequest: {
+            signal: string;
+            reason: string;
+            expectedVersion: number;
+        };
         SuspendRunRequest: {
             reason: string;
             expectedVersion: number;
@@ -4126,7 +4180,7 @@ export interface components {
         };
         MigrationFinding: {
             /** @enum {string} */
-            code: "STEP_COUNT" | "STEP_UNKNOWN" | "STEP_KIND" | "STEP_MISSING" | "STEP_CHANGED" | "HISTORY_CHANGED" | "PARALLEL_REGION" | "STAGES_CHANGED" | "INPUT_INVALID";
+            code: "STEP_COUNT" | "STEP_UNKNOWN" | "STEP_KIND" | "MULTI_INSTANCE" | "STEP_MISSING" | "STEP_CHANGED" | "HISTORY_CHANGED" | "PARALLEL_REGION" | "STAGES_CHANGED" | "SUBPROCESSES" | "INPUT_INVALID";
             message: string;
             nodeId?: string | null;
         };
@@ -4845,6 +4899,10 @@ export interface components {
         decisionOutput: {
             [key: string]: components["schemas"]["literal"];
         };
+        /** @description Business error code raised by a 'Raise an error' step and caught by a subprocess error route or an error event subprocess (docs/build/S55). Codes starting with ORQIX_ are reserved. */
+        errorCode: string;
+        /** @description Signal name (docs/build/S55): lowercase letters and digits in kebab-case or camelCase. A signal never leaves the request it is sent in. */
+        signalName: string;
         /** @description Approved JSON Schema keyword subset for request/output forms. No pattern, $ref, format other than date, nested objects, arrays or remote schemas in v0. */
         formSchema: {
             /** @constant */
@@ -4951,8 +5009,13 @@ export interface components {
                     [key: string]: string;
                 };
                 timeoutSeconds: number;
-                /** @description Documentation and validation only (S32): this step is the designer's undo of the named earlier step, which must be a call to a system that can change something. Orqix never infers or runs undo operations by itself. */
+                /** @description This step is the designer's undo of the named earlier step, which must be a call to a system that can change something (S32). With compensation manual (the default) it is an ordinary step on an authored path and documentation only. With compensation automatic (docs/build/S55) it has no paths of its own and an 'Undo completed calls' step runs it, once, only when the named step completed successfully in this request. */
                 compensates?: components["schemas"]["id"];
+                /**
+                 * @description manual (default) or automatic; automatic requires compensates (docs/build/S55).
+                 * @enum {unknown}
+                 */
+                compensation?: "manual" | "automatic";
             };
         } & components["schemas"]["nodeBase"];
         notificationNode: {
@@ -5107,6 +5170,44 @@ export interface components {
                 leaseSeconds?: number;
             };
         } & components["schemas"]["nodeBase"];
+        raiseErrorNode: {
+            id?: unknown;
+            label?: unknown;
+            /** @constant */
+            type?: "raiseError";
+            /** @description Raise a business error: ends the current section or request path and is caught by the section's error route or an error event subprocess (docs/build/S55). Has no outgoing paths. */
+            config?: {
+                errorCode: components["schemas"]["errorCode"];
+            };
+        } & components["schemas"]["nodeBase"];
+        sendSignalNode: {
+            id?: unknown;
+            label?: unknown;
+            /** @constant */
+            type?: "sendSignal";
+            /** @description Send a signal to the steps of this same request that wait for it (docs/build/S55). */
+            config?: {
+                signal: components["schemas"]["signalName"];
+            };
+        } & components["schemas"]["nodeBase"];
+        waitForSignalNode: {
+            id?: unknown;
+            label?: unknown;
+            /** @constant */
+            type?: "waitForSignal";
+            /** @description Wait until the named signal is sent in this request, by a 'Send a signal' step or by an operator (docs/build/S55). */
+            config?: {
+                signal: components["schemas"]["signalName"];
+            };
+        } & components["schemas"]["nodeBase"];
+        compensateNode: {
+            id?: unknown;
+            label?: unknown;
+            /** @constant */
+            type?: "compensate";
+            /** @description Undo completed calls (docs/build/S55): runs the automatic undo call of every call that completed successfully in this request, most recent first, then continues. */
+            config?: Record<string, never>;
+        } & components["schemas"]["nodeBase"];
         transition: {
             id: components["schemas"]["id"];
             from: components["schemas"]["id"];
@@ -5136,6 +5237,36 @@ export interface components {
                 };
             }[];
             default: components["schemas"]["decisionOutput"];
+        };
+        subprocess: {
+            id: components["schemas"]["id"];
+            label: components["schemas"]["label"];
+            /**
+             * @description embedded: a section entered through its single entry step. event: a handler started by its trigger.
+             * @enum {unknown}
+             */
+            type: "embedded" | "event";
+            nodes: components["schemas"]["id"][];
+            /** @description embedded only: time limit for the whole section, from entering it. Requires onTimeout. */
+            timeoutAfter?: components["schemas"]["duration"];
+            /** @description embedded only: step outside the section to continue at when the time limit passes; the open work inside is cancelled. */
+            onTimeout?: components["schemas"]["id"];
+            /** @description embedded only: step outside the section to continue at when a step inside raises an error (any code, or errorCode only); the open work inside is cancelled. */
+            onError?: {
+                to: components["schemas"]["id"];
+                errorCode?: components["schemas"]["errorCode"];
+            };
+            /** @description event only: what starts the handler. */
+            trigger?: {
+                /** @enum {unknown} */
+                type: "error" | "signal" | "timer";
+                errorCode?: components["schemas"]["errorCode"];
+                signal?: components["schemas"]["signalName"];
+                /** @description timer: time from the start of the request. */
+                after?: components["schemas"]["duration"];
+            };
+            /** @description event only: true stops the rest of the request when the handler starts (its steps must end at a Finish step); false runs the handler alongside it (its last steps simply end). */
+            interrupting?: boolean;
         };
         stage: {
             id: components["schemas"]["key"];
@@ -5191,7 +5322,7 @@ export interface components {
             };
             outputSchema: components["schemas"]["formSchema"];
             triggers: ("manual" | "api")[];
-            nodes: (components["schemas"]["startNode"] | components["schemas"]["approvalNode"] | components["schemas"]["decisionNode"] | components["schemas"]["branchNode"] | components["schemas"]["httpNode"] | components["schemas"]["notificationNode"] | components["schemas"]["parallelSplitNode"] | components["schemas"]["parallelJoinNode"] | components["schemas"]["waitNode"] | components["schemas"]["startWorkflowNode"] | components["schemas"]["waitForMessageNode"] | components["schemas"]["endNode"] | components["schemas"]["generateDocumentNode"] | components["schemas"]["externalTaskNode"])[];
+            nodes: (components["schemas"]["startNode"] | components["schemas"]["approvalNode"] | components["schemas"]["decisionNode"] | components["schemas"]["branchNode"] | components["schemas"]["httpNode"] | components["schemas"]["notificationNode"] | components["schemas"]["parallelSplitNode"] | components["schemas"]["parallelJoinNode"] | components["schemas"]["waitNode"] | components["schemas"]["startWorkflowNode"] | components["schemas"]["waitForMessageNode"] | components["schemas"]["endNode"] | components["schemas"]["generateDocumentNode"] | components["schemas"]["externalTaskNode"] | components["schemas"]["raiseErrorNode"] | components["schemas"]["sendSignalNode"] | components["schemas"]["waitForSignalNode"] | components["schemas"]["compensateNode"])[];
             transitions: components["schemas"]["transition"][];
             decisions: components["schemas"]["decisionTable"][];
             /** @description maxAttempts/retryDelaySeconds apply only to external service work (http nodes), never to human decisions. */
@@ -5214,6 +5345,8 @@ export interface components {
                     definitionVersion: number;
                 }[];
             };
+            /** @description Optional scopes (docs/build/S55): an embedded subprocess (a section of steps entered through one step and left by its ordinary paths, with an optional time limit and error route) or an event subprocess (a handler started by an error, a signal or a timer). Member steps stay in nodes/transitions; a step belongs to at most one subprocess. The compiler enforces the structure (WF_SUBPROCESS_*). */
+            subprocesses?: components["schemas"]["subprocess"][];
             /** @description Optional case stages (docs/build/S17): a presentation and monitoring layer that groups steps to show progress and to watch an optional time limit (sla). Adds no behavior to the generated process. */
             stages?: components["schemas"]["stage"][];
             outputMapping: {
@@ -5389,8 +5522,13 @@ export interface components {
                             [key: string]: string;
                         };
                         timeoutSeconds: number;
-                        /** @description Documentation and validation only (S32): this step is the designer's undo of the named earlier step, which must be a call to a system that can change something. Orqix never infers or runs undo operations by itself. */
+                        /** @description This step is the designer's undo of the named earlier step, which must be a call to a system that can change something (S32). With compensation manual (the default) it is an ordinary step on an authored path and documentation only. With compensation automatic (docs/build/S55) it has no paths of its own and an 'Undo completed calls' step runs it, once, only when the named step completed successfully in this request. */
                         compensates?: components["schemas"]["id"];
+                        /**
+                         * @description manual (default) or automatic; automatic requires compensates (docs/build/S55).
+                         * @enum {unknown}
+                         */
+                        compensation?: "manual" | "automatic";
                     };
                 } & components["schemas"]["nodeBase"];
                 notificationNode: {
@@ -5635,6 +5773,78 @@ export interface components {
                     operator: "eq" | "ne" | "gte" | "gt" | "lt" | "lte";
                     value: components["schemas"]["literal"];
                 };
+                /** @description Business error code raised by a 'Raise an error' step and caught by a subprocess error route or an error event subprocess (docs/build/S55). Codes starting with ORQIX_ are reserved. */
+                errorCode: string;
+                /** @description Signal name (docs/build/S55): lowercase letters and digits in kebab-case or camelCase. A signal never leaves the request it is sent in. */
+                signalName: string;
+                subprocess: {
+                    id: components["schemas"]["id"];
+                    label: components["schemas"]["label"];
+                    /**
+                     * @description embedded: a section entered through its single entry step. event: a handler started by its trigger.
+                     * @enum {unknown}
+                     */
+                    type: "embedded" | "event";
+                    nodes: components["schemas"]["id"][];
+                    /** @description embedded only: time limit for the whole section, from entering it. Requires onTimeout. */
+                    timeoutAfter?: components["schemas"]["duration"];
+                    /** @description embedded only: step outside the section to continue at when the time limit passes; the open work inside is cancelled. */
+                    onTimeout?: components["schemas"]["id"];
+                    /** @description embedded only: step outside the section to continue at when a step inside raises an error (any code, or errorCode only); the open work inside is cancelled. */
+                    onError?: {
+                        to: components["schemas"]["id"];
+                        errorCode?: components["schemas"]["errorCode"];
+                    };
+                    /** @description event only: what starts the handler. */
+                    trigger?: {
+                        /** @enum {unknown} */
+                        type: "error" | "signal" | "timer";
+                        errorCode?: components["schemas"]["errorCode"];
+                        signal?: components["schemas"]["signalName"];
+                        /** @description timer: time from the start of the request. */
+                        after?: components["schemas"]["duration"];
+                    };
+                    /** @description event only: true stops the rest of the request when the handler starts (its steps must end at a Finish step); false runs the handler alongside it (its last steps simply end). */
+                    interrupting?: boolean;
+                };
+                raiseErrorNode: {
+                    id?: unknown;
+                    label?: unknown;
+                    /** @constant */
+                    type?: "raiseError";
+                    /** @description Raise a business error: ends the current section or request path and is caught by the section's error route or an error event subprocess (docs/build/S55). Has no outgoing paths. */
+                    config?: {
+                        errorCode: components["schemas"]["errorCode"];
+                    };
+                } & components["schemas"]["nodeBase"];
+                sendSignalNode: {
+                    id?: unknown;
+                    label?: unknown;
+                    /** @constant */
+                    type?: "sendSignal";
+                    /** @description Send a signal to the steps of this same request that wait for it (docs/build/S55). */
+                    config?: {
+                        signal: components["schemas"]["signalName"];
+                    };
+                } & components["schemas"]["nodeBase"];
+                waitForSignalNode: {
+                    id?: unknown;
+                    label?: unknown;
+                    /** @constant */
+                    type?: "waitForSignal";
+                    /** @description Wait until the named signal is sent in this request, by a 'Send a signal' step or by an operator (docs/build/S55). */
+                    config?: {
+                        signal: components["schemas"]["signalName"];
+                    };
+                } & components["schemas"]["nodeBase"];
+                compensateNode: {
+                    id?: unknown;
+                    label?: unknown;
+                    /** @constant */
+                    type?: "compensate";
+                    /** @description Undo completed calls (docs/build/S55): runs the automatic undo call of every call that completed successfully in this request, most recent first, then continues. */
+                    config?: Record<string, never>;
+                } & components["schemas"]["nodeBase"];
                 generateDocumentNode: {
                     id?: unknown;
                     label?: unknown;
@@ -8588,6 +8798,41 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    sendRunSignal: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SendRunSignalRequest"];
+            };
+        };
+        responses: {
+            /** @description Delivered (or replay) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunDetail"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     getRunDiagnosis: {

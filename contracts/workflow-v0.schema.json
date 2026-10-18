@@ -190,6 +190,18 @@
           },
           {
             "$ref": "#/$defs/externalTaskNode"
+          },
+          {
+            "$ref": "#/$defs/raiseErrorNode"
+          },
+          {
+            "$ref": "#/$defs/sendSignalNode"
+          },
+          {
+            "$ref": "#/$defs/waitForSignalNode"
+          },
+          {
+            "$ref": "#/$defs/compensateNode"
           }
         ]
       }
@@ -282,6 +294,14 @@
         "connections"
       ],
       "additionalProperties": false
+    },
+    "subprocesses": {
+      "description": "Optional scopes (docs/build/S55): an embedded subprocess (a section of steps entered through one step and left by its ordinary paths, with an optional time limit and error route) or an event subprocess (a handler started by an error, a signal or a timer). Member steps stay in nodes/transitions; a step belongs to at most one subprocess. The compiler enforces the structure (WF_SUBPROCESS_*).",
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "$ref": "#/$defs/subprocess"
+      }
     },
     "stages": {
       "description": "Optional case stages (docs/build/S17): a presentation and monitoring layer that groups steps to show progress and to watch an optional time limit (sla). Adds no behavior to the generated process.",
@@ -991,8 +1011,15 @@
               "maximum": 30
             },
             "compensates": {
-              "description": "Documentation and validation only (S32): this step is the designer's undo of the named earlier step, which must be a call to a system that can change something. Orqix never infers or runs undo operations by itself.",
+              "description": "This step is the designer's undo of the named earlier step, which must be a call to a system that can change something (S32). With compensation manual (the default) it is an ordinary step on an authored path and documentation only. With compensation automatic (docs/build/S55) it has no paths of its own and an 'Undo completed calls' step runs it, once, only when the named step completed successfully in this request.",
               "$ref": "#/$defs/id"
+            },
+            "compensation": {
+              "description": "manual (default) or automatic; automatic requires compensates (docs/build/S55).",
+              "enum": [
+                "manual",
+                "automatic"
+              ]
             }
           },
           "required": [
@@ -1883,6 +1910,210 @@
         "operator",
         "value"
       ],
+      "additionalProperties": false
+    },
+    "errorCode": {
+      "description": "Business error code raised by a 'Raise an error' step and caught by a subprocess error route or an error event subprocess (docs/build/S55). Codes starting with ORQIX_ are reserved.",
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]{1,39}$"
+    },
+    "signalName": {
+      "description": "Signal name (docs/build/S55): lowercase letters and digits in kebab-case or camelCase. A signal never leaves the request it is sent in.",
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-zA-Z0-9]*(-[a-z0-9][a-zA-Z0-9]*)*$"
+    },
+    "subprocess": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "label": {
+          "$ref": "#/$defs/label"
+        },
+        "type": {
+          "description": "embedded: a section entered through its single entry step. event: a handler started by its trigger.",
+          "enum": [
+            "embedded",
+            "event"
+          ]
+        },
+        "nodes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "timeoutAfter": {
+          "description": "embedded only: time limit for the whole section, from entering it. Requires onTimeout.",
+          "$ref": "#/$defs/duration"
+        },
+        "onTimeout": {
+          "description": "embedded only: step outside the section to continue at when the time limit passes; the open work inside is cancelled.",
+          "$ref": "#/$defs/id"
+        },
+        "onError": {
+          "description": "embedded only: step outside the section to continue at when a step inside raises an error (any code, or errorCode only); the open work inside is cancelled.",
+          "type": "object",
+          "properties": {
+            "to": {
+              "$ref": "#/$defs/id"
+            },
+            "errorCode": {
+              "$ref": "#/$defs/errorCode"
+            }
+          },
+          "required": [
+            "to"
+          ],
+          "additionalProperties": false
+        },
+        "trigger": {
+          "description": "event only: what starts the handler.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "enum": [
+                "error",
+                "signal",
+                "timer"
+              ]
+            },
+            "errorCode": {
+              "$ref": "#/$defs/errorCode"
+            },
+            "signal": {
+              "$ref": "#/$defs/signalName"
+            },
+            "after": {
+              "description": "timer: time from the start of the request.",
+              "$ref": "#/$defs/duration"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        },
+        "interrupting": {
+          "description": "event only: true stops the rest of the request when the handler starts (its steps must end at a Finish step); false runs the handler alongside it (its last steps simply end).",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "type",
+        "nodes"
+      ],
+      "additionalProperties": false
+    },
+    "raiseErrorNode": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/nodeBase"
+        }
+      ],
+      "properties": {
+        "id": true,
+        "label": true,
+        "type": {
+          "const": "raiseError"
+        },
+        "config": {
+          "type": "object",
+          "description": "Raise a business error: ends the current section or request path and is caught by the section's error route or an error event subprocess (docs/build/S55). Has no outgoing paths.",
+          "properties": {
+            "errorCode": {
+              "$ref": "#/$defs/errorCode"
+            }
+          },
+          "required": [
+            "errorCode"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "sendSignalNode": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/nodeBase"
+        }
+      ],
+      "properties": {
+        "id": true,
+        "label": true,
+        "type": {
+          "const": "sendSignal"
+        },
+        "config": {
+          "type": "object",
+          "description": "Send a signal to the steps of this same request that wait for it (docs/build/S55).",
+          "properties": {
+            "signal": {
+              "$ref": "#/$defs/signalName"
+            }
+          },
+          "required": [
+            "signal"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "waitForSignalNode": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/nodeBase"
+        }
+      ],
+      "properties": {
+        "id": true,
+        "label": true,
+        "type": {
+          "const": "waitForSignal"
+        },
+        "config": {
+          "type": "object",
+          "description": "Wait until the named signal is sent in this request, by a 'Send a signal' step or by an operator (docs/build/S55).",
+          "properties": {
+            "signal": {
+              "$ref": "#/$defs/signalName"
+            }
+          },
+          "required": [
+            "signal"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "compensateNode": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/nodeBase"
+        }
+      ],
+      "properties": {
+        "id": true,
+        "label": true,
+        "type": {
+          "const": "compensate"
+        },
+        "config": {
+          "type": "object",
+          "description": "Undo completed calls (docs/build/S55): runs the automatic undo call of every call that completed successfully in this request, most recent first, then continues.",
+          "additionalProperties": false
+        }
+      },
       "additionalProperties": false
     },
     "generateDocumentNode": {

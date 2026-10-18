@@ -76,10 +76,22 @@ public sealed interface Node {
      */
     record Http(int index, String id, String label, String connectionRef, String operation,
                 Map<String, String> inputMapping, Map<String, String> resultMapping, int timeoutSeconds,
-                String compensates) implements Node {
+                String compensates, boolean automaticUndo) implements Node {
         public Http(int index, String id, String label, String connectionRef, String operation,
                 Map<String, String> inputMapping, Map<String, String> resultMapping, int timeoutSeconds) {
-            this(index, id, label, connectionRef, operation, inputMapping, resultMapping, timeoutSeconds, null);
+            this(index, id, label, connectionRef, operation, inputMapping, resultMapping, timeoutSeconds, null, false);
+        }
+
+        public Http(int index, String id, String label, String connectionRef, String operation,
+                Map<String, String> inputMapping, Map<String, String> resultMapping, int timeoutSeconds,
+                String compensates) {
+            this(index, id, label, connectionRef, operation, inputMapping, resultMapping, timeoutSeconds, compensates,
+                    false);
+        }
+
+        /** @return true for an automatic undo handler (S55): it has no paths and runs only from an Undo step */
+        public boolean undoHandler() {
+            return automaticUndo && compensates != null;
         }
         @Override
         public NodeKind kind() {
@@ -200,6 +212,38 @@ public sealed interface Node {
 
     /** A value a message may carry: {@code type} is a scalar kind (string, number, integer, boolean or date). */
     record PayloadField(String name, Enums.FieldKind type, String title, boolean required) { }
+
+    /** Raise a business error (S55): a terminal step whose error is caught by a section or an error handler. */
+    record RaiseError(int index, String id, String label, String errorCode) implements Node {
+        @Override
+        public NodeKind kind() {
+            return NodeKind.RAISE_ERROR;
+        }
+    }
+
+    /** Send a signal to the steps of the same request that wait for it (S55). */
+    record SendSignal(int index, String id, String label, String signal) implements Node {
+        @Override
+        public NodeKind kind() {
+            return NodeKind.SEND_SIGNAL;
+        }
+    }
+
+    /** Wait until a signal is sent in the same request (S55). */
+    record WaitForSignal(int index, String id, String label, String signal) implements Node {
+        @Override
+        public NodeKind kind() {
+            return NodeKind.WAIT_FOR_SIGNAL;
+        }
+    }
+
+    /** Run the automatic undo call of every call that completed in this request, most recent first (S55). */
+    record Compensate(int index, String id, String label) implements Node {
+        @Override
+        public NodeKind kind() {
+            return NodeKind.COMPENSATE;
+        }
+    }
 
     /** Finish. */
     record End(int index, String id, String label, String businessOutcome, String outcomeKind) implements Node {

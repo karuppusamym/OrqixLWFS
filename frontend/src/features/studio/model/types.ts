@@ -2,7 +2,7 @@
  * Canonical workflow v0.1 document as the studio edits it (contracts/workflow-v0.schema.json).
  * Drafts may be incomplete, so every container is normalized on load and every accessor is defensive.
  */
-export type NodeKind = 'start' | 'approval' | 'decision' | 'branch' | 'http' | 'generateDocument' | 'notification' | 'parallelSplit' | 'parallelJoin' | 'wait' | 'waitForMessage' | 'externalTask' | 'startWorkflow' | 'end'
+export type NodeKind = 'start' | 'approval' | 'decision' | 'branch' | 'http' | 'generateDocument' | 'notification' | 'parallelSplit' | 'parallelJoin' | 'wait' | 'waitForMessage' | 'externalTask' | 'startWorkflow' | 'raiseError' | 'sendSignal' | 'waitForSignal' | 'compensate' | 'end'
 export type Operator = 'eq' | 'ne' | 'gte' | 'gt' | 'lt' | 'lte'
 export type RouteKind = 'next' | 'approved' | 'rejected' | 'timedOut' | 'failed' | 'condition' | 'default'
 export type Literal = string | number | boolean
@@ -120,6 +120,21 @@ export interface Definition {
   uiLayout?: { positions: Record<string, Position>; viewport?: { x: number; y: number; zoom: number } }
   /** Case stages (docs/build/S17): a presentation and monitoring layer over the steps; adds no behavior. */
   stages?: StageDef[]
+  /** Sections and handlers (docs/build/S55): scopes over existing steps. */
+  subprocesses?: SubprocessDef[]
+}
+
+/** docs/build/S55: an embedded subprocess (section) or an event subprocess (handler). */
+export interface SubprocessDef {
+  id: string
+  label: string
+  type: 'embedded' | 'event'
+  nodes: string[]
+  timeoutAfter?: string
+  onTimeout?: string
+  onError?: { to: string; errorCode?: string }
+  trigger?: { type: 'error' | 'signal' | 'timer'; errorCode?: string; signal?: string; after?: string }
+  interrupting?: boolean
 }
 
 export interface StageDef {

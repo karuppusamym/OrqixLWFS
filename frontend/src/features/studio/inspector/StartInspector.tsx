@@ -13,6 +13,7 @@ import { addField, applyFields, fieldsFromDefinition, FIELD_KIND_LABELS, renameF
 import type { WorkflowNode } from '../model/types'
 import { Advanced, CommitInput, CommitNumber, CommitTextarea, InspectorSection } from './controls'
 import { StagesInspector } from './StagesInspector'
+import { SubprocessesInspector } from './ScopeInspectors'
 import { RowColumnsEditor } from './RowColumnsEditor'
 import { FieldConditionsEditor, FormLayoutEditor } from './FormBehaviorEditor'
 
@@ -80,6 +81,7 @@ export function StartInspector({ node }: { node: WorkflowNode }) {
         ) : null}
       </InspectorSection>
       <StagesInspector />
+      <SubprocessesInspector />
       <FormLayoutEditor />
       <Advanced>
         <FormField label="Step name" id={`start-label-${node.id}`}>

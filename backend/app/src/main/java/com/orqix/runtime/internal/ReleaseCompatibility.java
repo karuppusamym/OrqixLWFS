@@ -105,6 +105,12 @@ public final class ReleaseCompatibility {
                         "The request is inside a parallel section; requests in a parallel section cannot be moved.", id));
             }
         }
+        if (!source.path("subprocesses").isMissingNode() || !target.path("subprocesses").isMissingNode()) {
+            // Sections and handlers hold engine scopes (subprocess executions, boundary timers, start subscriptions)
+            // that a move between releases does not carry over (S55).
+            findings.add(new Finding("SUBPROCESSES",
+                    "One of the releases has sections or handlers; requests of such workflows cannot be moved.", null));
+        }
         if (!source.path("stages").equals(target.path("stages"))) {
             findings.add(new Finding("STAGES_CHANGED",
                     "The case stages differ between the releases, so stage progress could not be carried over.", null));

@@ -28,6 +28,7 @@ public final class Rules {
         BindingRules.check(rc);
         ChildRules.check(rc);
         FailureRules.check(rc);
+        ScopeRules.check(rc);
         StageRules.check(rc);
         return rc;
     }

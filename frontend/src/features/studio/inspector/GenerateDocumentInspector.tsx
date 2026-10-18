@@ -3,9 +3,11 @@ import { useState } from 'react'
 import * as endpoints from '@/api/endpoints'
 import { useWorkspace } from '@/app/workspace'
 import { FormField } from '@/components/common/FormField'
+import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/input'
 import { useStudio, useStudioContext } from '../StudioContext'
 import { availableFields, chipLabel } from '../model/fieldRefs'
+import { assetRef, linkAsset, unlinkAsset, updateNodeConfig } from '../model/ops'
 import { cfg, type WorkflowNode } from '../model/types'
 import { CommitInput, CommitTextarea, InspectorSection } from './controls'
 
@@ -14,37 +16,72 @@ export function documentPlaceholders(template: string): string[] {
 }
 
 /**
- * Copies the latest version of a registry template (DOC08) into the step. The step then holds its own text: later
- * registry changes never alter this workflow, and the published release keeps exactly what is here.
+ * Copies the latest version of a registry template (DOC08) into the step and links the step to that version (PL01,
+ * docs/build/S57). The step keeps its own text: a later registry change never alters this workflow. Validation and
+ * publish compare the step with the linked version, report a newer version and block an archived or missing template.
  */
 function TemplatePicker({ node, mapping, disabled }: { node: WorkflowNode; mapping: Record<string, string>; disabled: boolean }) {
   const { workspace, can } = useWorkspace()
   const { store } = useStudioContext()
+  const def = useStudio((s) => s.definition)
   const ws = workspace.id
   const allowed = can('workflow.read')
-  const list = useQuery({ queryKey: ['ws', ws, 'document-templates', false], queryFn: () => endpoints.listDocumentTemplates(ws), enabled: allowed })
+  const linked = assetRef(def, 'documentTemplate', node.id)
+  const list = useQuery({ queryKey: ['ws', ws, 'document-templates', !!linked], queryFn: () => endpoints.listDocumentTemplates(ws, !!linked), enabled: allowed })
+  const linkedSummary = linked ? list.data?.items.find((t) => t.key === linked.key) : undefined
+  const detail = useQuery({ queryKey: ['ws', ws, 'document-template', linkedSummary?.id], queryFn: () => endpoints.getDocumentTemplate(ws, linkedSummary!.id), enabled: allowed && !!linkedSummary })
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
-  if (!allowed || !list.data || list.data.items.length === 0) return null
+  if (!allowed || !list.data) return null
+  const copy = (template: { key: string; name: string }, version: { version: number; format: 'pdf' | 'docx'; body: string }) => {
+    store.getState().apply((d) => linkAsset(updateNodeConfig(d, node.id, {
+      format: version.format,
+      template: version.body,
+      inputMapping: Object.fromEntries(documentPlaceholders(version.body).map((name) => [name, mapping[name] ?? ''])),
+    }), { kind: 'documentTemplate', key: template.key, version: version.version, target: node.id }))
+    setCopied(`Copied version ${version.version} of ${template.name} and linked this step to it. Choose a value for each field below.`)
+  }
   const use = async (id: string) => {
     setError(null)
     setCopied(null)
     if (!id) return
     try {
       const template = await endpoints.getDocumentTemplate(ws, id)
-      const latest = template.versions[0]!
-      store.getState().updateNodeConfig(node.id, {
-        format: latest.format,
-        template: latest.body,
-        inputMapping: Object.fromEntries(documentPlaceholders(latest.body).map((name) => [name, mapping[name] ?? ''])),
-      })
-      setCopied(`Copied version ${latest.version} of ${template.name}. Choose a value for each field below.`)
+      copy(template, template.versions[0]!)
     } catch {
       setError('The template could not be loaded. Try again.')
     }
   }
+  if (linked) {
+    const template = detail.data
+    const pinned = template?.versions.find((v) => v.version === linked.version)
+    const latest = template?.versions[0]
+    const differs = !!pinned && (pinned.body !== cfg<string>(node, 'template') || pinned.format !== (cfg<string>(node, 'format') ?? 'pdf'))
+    return (
+      <div className="space-y-2 rounded-card border border-border p-3" data-testid="template-link">
+        <p className="text-sm">Linked to saved template <strong>{template?.name ?? linked.key}</strong> ({linked.key}), version {linked.version}.</p>
+        {!linkedSummary ? <p role="alert" className="text-sm text-danger">The saved template was not found. Validation reports it before publishing.</p> : null}
+        {template?.archived ? <p role="alert" className="text-sm text-danger">This saved template is archived. Publishing is blocked until it is restored or you unlink this step.</p> : null}
+        {differs ? <p role="alert" className="text-sm text-danger">The text or format here no longer matches version {linked.version}. Publishing is blocked until you use a saved version or unlink.</p> : null}
+        {latest && latest.version > linked.version && !differs ? <p className="text-sm text-warning-foreground">Version {latest.version} is available. This workflow keeps version {linked.version} until you choose to update.</p> : null}
+        {!disabled ? (
+          <div className="flex flex-wrap gap-2">
+            {template && latest && (latest.version > linked.version || differs) ? (
+              <Button type="button" variant="secondary" onClick={() => copy(template, latest)}>Use version {latest.version}</Button>
+            ) : null}
+            <Button type="button" variant="ghost" onClick={() => {
+              store.getState().apply((d) => unlinkAsset(d, 'documentTemplate', node.id))
+              setCopied('Unlinked. This step keeps its text and is no longer checked against the saved template.')
+            }}>Unlink</Button>
+          </div>
+        ) : null}
+        {copied ? <p role="status" className="text-sm text-muted-foreground">{copied}</p> : null}
+      </div>
+    )
+  }
+  if (list.data.items.length === 0) return null
   return (
-    <FormField label="Start from a saved template" id={`document-saved-${node.id}`} description="Copies the latest version into this step. Later changes to the saved template do not change this workflow.">
+    <FormField label="Start from a saved template" id={`document-saved-${node.id}`} description="Copies the latest version into this step and links the step to it. Later changes to the saved template do not change this workflow; validation tells you when a newer version exists.">
       {(ids) => (
         <>
           <Select id={ids.input} value="" disabled={disabled} onChange={(e) => void use(e.target.value)}>

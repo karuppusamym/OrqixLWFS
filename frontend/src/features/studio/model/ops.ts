@@ -3,7 +3,7 @@ import { rewriteRefs } from './fieldRefs'
 import { nodeById, outgoing, wouldCreateCycle } from './graph'
 import { defaultConfig, KINDS } from './kinds'
 import { collides, findFreePosition, GAP_X, GAP_Y, nodeSize, placementFor } from './layout'
-import type { Condition, Definition, DecisionTable, Literal, NodeKind, Position, RouteKind, Transition, WorkflowNode } from './types'
+import type { AssetRef, Condition, Definition, DecisionTable, Literal, NodeKind, Position, RouteKind, Transition, WorkflowNode } from './types'
 
 /**
  * Pure document operations used by the studio store, the Steps tab and the tests.
@@ -136,6 +136,9 @@ export function renameNodeId(def: Definition, oldId: string, newId: string): OpR
     }
   }
   if (next.stages) next.stages = next.stages.map((stage) => ({ ...stage, nodes: stage.nodes.map((id) => id === oldId ? newId : id) }))
+  if (next.dependencies.assets) {
+    next.dependencies.assets = next.dependencies.assets.map((a) => (a.kind === 'documentTemplate' && a.target === oldId ? { ...a, target: newId } : a))
+  }
   const positions = next.uiLayout?.positions
   const notes = next.metadata.stepNotes
   if (notes && oldId in notes) {
@@ -201,6 +204,10 @@ export function removeNode(def: Definition, id: string): Definition {
     if (Object.keys(next.metadata.stepNotes).length === 0) delete next.metadata.stepNotes
   }
   next.decisions = next.decisions.filter((d) => !plan.decisions.includes(d.key))
+  if (next.dependencies.assets) {
+    next.dependencies.assets = next.dependencies.assets.filter((a) => (a.kind === 'decision' ? !plan.decisions.includes(a.target) : a.target !== id))
+    if (next.dependencies.assets.length === 0) delete next.dependencies.assets
+  }
   const prefix = `/steps/${id}/`
   for (const [k, m] of Object.entries(next.outputMapping)) if (m.fieldRef.startsWith(prefix)) delete next.outputMapping[k]
   if (plan.node.type === 'http') {
@@ -405,7 +412,41 @@ export function renameDecisionKey(def: Definition, oldKey: string, newKey: strin
   if (!table) return { ok: false, reason: 'That rule table does not exist.' }
   table.key = newKey
   for (const n of next.nodes) if (n.type === 'decision' && n.config.decisionRef === oldKey) n.config.decisionRef = newKey
+  if (next.dependencies.assets) {
+    next.dependencies.assets = next.dependencies.assets.map((a) => (a.kind === 'decision' && a.target === oldKey ? { ...a, target: newKey } : a))
+  }
   return { ok: true, def: next }
+}
+
+// Shared assets (PL01, docs/build/S57) -------------------------------------------------------------------------
+
+export function assetRef(def: Definition, kind: AssetRef['kind'], target: string): AssetRef | undefined {
+  return def.dependencies.assets?.find((a) => a.kind === kind && a.target === target)
+}
+
+/** Sets (or replaces) the versioned reference for one element; other references are unchanged. */
+export function linkAsset(def: Definition, ref: AssetRef): Definition {
+  const next = clone(def)
+  const others = (next.dependencies.assets ?? []).filter((a) => !(a.kind === ref.kind && a.target === ref.target))
+  next.dependencies.assets = [...others, { ...ref }]
+  return next
+}
+
+/** Removes the reference; the element keeps its own copy, which no longer follows or is checked against the asset. */
+export function unlinkAsset(def: Definition, kind: AssetRef['kind'], target: string): Definition {
+  if (!assetRef(def, kind, target)) return def
+  const next = clone(def)
+  next.dependencies.assets = (next.dependencies.assets ?? []).filter((a) => !(a.kind === kind && a.target === target))
+  if (next.dependencies.assets.length === 0) delete next.dependencies.assets
+  return next
+}
+
+/** Copies one version of a shared decision into the table and pins it; the table keeps its key and version. */
+export function applySharedDecision(def: Definition, tableKey: string, content: Pick<DecisionTable, 'hitPolicy' | 'rows' | 'default'>, assetKey: string, version: number): Definition {
+  const table = def.decisions.find((d) => d.key === tableKey)
+  if (!table) return def
+  const copied = upsertDecision(def, { ...table, hitPolicy: content.hitPolicy, rows: structuredClone(content.rows), default: structuredClone(content.default) })
+  return linkAsset(copied, { kind: 'decision', key: assetKey, version, target: tableKey })
 }
 
 export function literalOf(text: string, type: 'string' | 'number' | 'integer' | 'boolean'): Literal | undefined {

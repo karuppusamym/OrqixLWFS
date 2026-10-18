@@ -1,3 +1,4 @@
+import { QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
@@ -6,6 +7,7 @@ import { createStudioStore } from '@/stores/studioStore'
 import purchase from '../../../../../examples/purchase-approval.json'
 import { StudioProvider, useStudio } from '../StudioContext'
 import { normalizeDefinition } from '../model/types'
+import { testQueryClient } from '@/test/utils'
 import { DecisionInspector } from './DecisionInspector'
 
 describe('conjunctive decision authoring', () => {
@@ -16,7 +18,7 @@ describe('conjunctive decision authoring', () => {
       const node = useStudio(s => s.definition.nodes.find(n => n.type === 'decision')!)
       return <DecisionInspector node={node} />
     }
-    render(<StudioProvider value={{ store, saver: {} as DraftSaver, wsId: 'workspace', workflowId: 'workflow', readOnly: false, connections: { responseType: () => undefined } }}><Inspector /></StudioProvider>)
+    render(<QueryClientProvider client={testQueryClient()}><StudioProvider value={{ store, saver: {} as DraftSaver, wsId: 'workspace', workflowId: 'workflow', readOnly: false, connections: { responseType: () => undefined } }}><Inspector /></StudioProvider></QueryClientProvider>)
     const user = userEvent.setup()
     expect(screen.getByRole('option', { name: 'Any comparison (OR)' })).toBeInTheDocument()
     await user.selectOptions(screen.getByLabelText('Condition group'), 'all')
@@ -33,7 +35,7 @@ describe('conjunctive decision authoring', () => {
       const node = useStudio(s => s.definition.nodes.find(n => n.type === 'decision')!)
       return <DecisionInspector node={node} />
     }
-    render(<StudioProvider value={{ store, saver: {} as DraftSaver, wsId: 'workspace', workflowId: 'workflow', readOnly: false, connections: { responseType: () => undefined } }}><Inspector /></StudioProvider>)
+    render(<QueryClientProvider client={testQueryClient()}><StudioProvider value={{ store, saver: {} as DraftSaver, wsId: 'workspace', workflowId: 'workflow', readOnly: false, connections: { responseType: () => undefined } }}><Inspector /></StudioProvider></QueryClientProvider>)
     return store
   }
 

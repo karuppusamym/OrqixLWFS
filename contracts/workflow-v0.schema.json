@@ -276,6 +276,39 @@
             ],
             "additionalProperties": false
           }
+        },
+        "assets": {
+          "description": "Versioned references to shared workspace assets (docs/build/S57). Each names the element of this workflow that holds a pinned copy of the asset version: target is the key of a table in decisions (kind decision) or the id of a generateDocument step (kind documentTemplate). The server checks every reference at validation and publish: a missing, archived or differing asset blocks, a newer version is a warning. A reference grants no access to the asset.",
+          "type": "array",
+          "maxItems": 40,
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "decision",
+                  "documentTemplate"
+                ]
+              },
+              "key": {
+                "$ref": "#/$defs/key"
+              },
+              "version": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "target": {
+                "$ref": "#/$defs/id"
+              }
+            },
+            "required": [
+              "kind",
+              "key",
+              "version",
+              "target"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [

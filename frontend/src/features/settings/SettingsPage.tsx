@@ -6,6 +6,7 @@ import { DocumentSourcesPanel } from './DocumentSourcesPanel'
 import { AccessPanel } from './AccessPanel'
 import { AttachmentRetentionPanel } from './AttachmentRetentionPanel'
 import { DocumentTemplatesPanel } from './DocumentTemplatesPanel'
+import { SharedAssetsPanel } from './SharedAssetsPanel'
 import { ConnectionsPanel } from './ConnectionsPanel'
 import { MigrationPolicyPanel } from './MigrationPolicyPanel'
 import { EmptyState } from '@/components/common/EmptyState'
@@ -20,6 +21,7 @@ export function SettingsPage() {
   const showAccess = can('workspace.manage-access')
   const showConnections = can('connection.read')
   const showTemplates = can('workflow.read')
+  const showAssets = showTemplates || showConnections
   const aiConfigured = useShowAiSettings()
   const showAi = aiConfigured && can('workspace.manage-access', 'workflow.edit')
 
@@ -61,10 +63,12 @@ export function SettingsPage() {
           ) : null}
           {showAccess ? <TabsTrigger value="documents">Approved documents</TabsTrigger> : null}
           {showTemplates ? <TabsTrigger value="templates">Document templates</TabsTrigger> : null}
+          {showAssets ? <TabsTrigger value="assets">Shared assets</TabsTrigger> : null}
           {showAccess ? <TabsTrigger value="retention">File retention</TabsTrigger> : null}
         </TabsList>
         {showAccess ? <TabsContent value="documents"><DocumentSourcesPanel /></TabsContent> : null}
         {showTemplates ? <TabsContent value="templates"><DocumentTemplatesPanel /></TabsContent> : null}
+        {showAssets ? <TabsContent value="assets"><SharedAssetsPanel /></TabsContent> : null}
         {showAccess ? <TabsContent value="retention"><AttachmentRetentionPanel /></TabsContent> : null}
         {showAccess ? (
           <TabsContent value="access">

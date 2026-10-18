@@ -46,6 +46,18 @@ export interface DecisionRow {
   effective?: EffectiveWindow
 }
 
+/**
+ * A versioned reference to a shared workspace asset (PL01, docs/build/S57). `target` is the element of this workflow that
+ * holds the pinned copy: a decision table key, or the id of a Generate a document step. The server checks the copy
+ * against the pinned version at validation and publish; a newer version is never used silently.
+ */
+export interface AssetRef {
+  kind: 'decision' | 'documentTemplate'
+  key: string
+  version: number
+  target: string
+}
+
 export interface DecisionTable {
   key: string
   version: number
@@ -115,7 +127,7 @@ export interface Definition {
   decisions: DecisionTable[]
   execution: { maxConcurrentRuns: number; maxAttempts: number; retryDelaySeconds: number }
   security: { selfApproval: 'deny' | 'allow' }
-  dependencies: { connections: Array<{ key: string; definitionVersion: number }> }
+  dependencies: { connections: Array<{ key: string; definitionVersion: number }>; assets?: AssetRef[] }
   outputMapping: Record<string, { fieldRef: string; required: boolean }>
   uiLayout?: { positions: Record<string, Position>; viewport?: { x: number; y: number; zoom: number } }
   /** Case stages (docs/build/S17): a presentation and monitoring layer over the steps; adds no behavior. */

@@ -15,6 +15,7 @@ import { renameDecisionKey, upsertDecision } from '../model/ops'
 import { outputsInWords } from '@/lib/events'
 import { conditionTerms, isAtomicCondition, type Condition, type DecisionTable, type Literal, type WorkflowNode } from '../model/types'
 import { Advanced, CommitInput, CommitNumber, InspectorSection } from './controls'
+import { SharedDecisionSection } from './SharedDecisionSection'
 import { ConditionEditor, defaultLiteral, LiteralInput } from './ConditionEditor'
 
 /** Decision step: rule table editor and "Test this rule" (docs/build/S7-frontend.md section 5). */
@@ -200,6 +201,8 @@ export function DecisionInspector({ node }: { node: WorkflowNode }) {
 
         <TestRule dated={table.rows.some(r => r.effective)} key={`${table.key}-${fieldRef}`} fieldRef={fieldRef} info={info} inputs={[...new Set(table.rows.flatMap(r => conditionTerms(r.when).map(t => t.fieldRef)))].map(ref => ({ ref, info: fields.find(f => f.ref === ref) }))} tableKey={table.key} wsId={wsId} workflowId={workflowId} flush={() => saver.flush()} revision={() => store.getState().revision} />
       </InspectorSection>
+
+      <SharedDecisionSection table={table} />
 
       <Advanced>
         <FormField label="Table key" id={`dec-key-${node.id}`} error={keyError} description="Used in exports and in the compiled rule.">

@@ -62,7 +62,7 @@ Final architecture/case/revocation/hackathon API recheck before dependency patch
 - On the corrected source and patched dependencies, final `verify` passed **30/30 focused tests**, packaging and the compiler coverage gate, reusing the full baseline coverage data (`evidence/hackathon-final-verification.log`). This is full-baseline-plus-corrections evidence, not a claim that the entire application suite was rerun after the patches. The separate patch compatibility run passed 18 tests; the attachment suite passed all 21 tests including the new lock regression.
 - The security-patched image passed both real Edge acceptance scenarios (`evidence/hackathon-browser-patched.log`). Frontend lint and E2E TypeScript checks passed.
 - The rescan confirms all eight fixable Tomcat/Jackson advisories are absent. **36 base-image advisories across 15 packages remain** (`evidence/hackathon/runtime-cves-patched.sarif`). The security/compliance release gate remains open.
-- Full load qualification is running against `orqix/orqix:hackathon-security`; preparation is excluded from measurement. No pass is claimed before its result is recorded.
+- Full load qualification against `orqix/orqix:hackathon-security` completed successfully; preparation and authentication were excluded from measurement. Final results follow.
 
 ## Long-run fixture corrections
 
@@ -73,3 +73,26 @@ The dedicated local stack retained seven subject rows from an earlier unpinned K
 Five offline tool tests pass, including disjoint/exhaustive case ownership and explicit unique realm identities. The refreshed-session smoke and reused-fixture smoke both passed with zero unexpected errors. The latter resumed 48 stored cases into a 60-case dataset; read p95 was 14 ms and mutation p95 137 ms (`evidence/hackathon/load-smoke-reused.json`). Full qualification resumes the existing 50-user fixture; these smoke results do not substitute for its declared warm-up and measurement periods.
 
 The local evidence pack also contains 657 collected dependency notice/license text files and the base image's distributed license files (`evidence/hackathon/third-party-notices.txt`, `evidence/hackathon/base-image-licenses/`). Collection does not establish license compatibility or organizational approval. The prepared source artifact and sidecar reconcile the committed sample and SHA-256 values; independent business review and publication remain required.
+
+## Completed local load qualification
+
+**Pass, 18 October 2026.** Runtime source checkpoint `0017aee667a1d3103402524518a5b074af6cd9d7`; qualification harness `9bdceba`. Image `orqix/orqix:hackathon-security`, digest `sha256:992bbf5607d2a87cd19201a66aca8754b8e5758e8ead4c8a21a0478fb62c0c69`.
+
+| Measurement | Observed | Local target |
+|---|---:|---:|
+| Concurrent virtual users | 50 | 50 |
+| Initial fixture cases / workflows | 10,000 / 10 | 10,000 cases |
+| Ready tasks at warm-up start | 8,600 | Enough to avoid starvation |
+| Warm-up / measured duration | 5 / 15 minutes | 5 / 15 minutes |
+| Measured HTTP requests | 28,888 | Declared mixed workload |
+| Read p95 | 15.96 ms | Under 500 ms |
+| Mutation p95 | 154.83 ms | Under 1,000 ms |
+| Unexpected errors | 0 (0%) | Under 1% |
+
+Actual measured mix: 11,550 reads, 5,779 starts, 8,670 decisions and 2,889 reassignment/closure operations, approximately 40/20/30/10 percent. No task-pool starvation or authentication errors occurred. The fixture resumed 4,960 cases and created the remainder through the application API. All virtual-user session sets authenticated again before warm-up.
+
+Environment: local Windows 11, Intel Core i7-1195G7, eight logical processors and approximately 32 GB host RAM; Docker had eight CPUs and approximately 15.5 GiB memory. The real local stack used PostgreSQL, Flowable, Keycloak and SMTP capture, with paid model access disabled. Four seeded role personas supplied the independent session sets; this does not qualify fifty distinct enterprise identities. Prior synthetic cases remained in the database, beyond the 10,000-case target cohort.
+
+A mail-queue sample during measurement showed 62 queued messages with the oldest approximately one second old; accepted and suppressed statuses were recorded separately. This is a sample, not a claim that every message's end-to-end latency was independently measured. SMTP acceptance does not establish external mailbox delivery.
+
+Evidence: `evidence/hackathon/load.json`, `load.fixture.json`, `candidate.json`, `mail-load-snapshot.txt` and `evidence/hackathon-load-final.log`. The candidate receipt records the source/image identifiers, hardware, artifact hashes and final cohort counts. The security scan's 36 open base-image advisories and HC01?HC07 remain unresolved owner gates. Passing this local test does not establish production capacity, availability, genuine Pega equivalence or enterprise compliance.

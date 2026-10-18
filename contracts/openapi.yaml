@@ -873,6 +873,105 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /workspaces/{workspaceId}/workflows/{workflowId}/draft/bpmn:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+    get:
+      tags: [Workflows]
+      operationId: getDraftBpmn
+      summary: Compiled BPMN of a draft revision with its round-trip check (UI03, docs/build/S56)
+      description: |
+        The BPMN is exactly what publishing would deploy. It carries the workflow name, the steps, the connections
+        and (when every step has a canvas position) the diagram; keptFromDraft lists the sections BPMN does not carry.
+        roundTrip says whether the draft converts to BPMN and back without any difference; only then can edited BPMN
+        be applied. A draft with blockers has no BPMN (available false, blockers listed). Read-only for anyone who
+        can read the draft, like the YAML source view.
+      x-orqix-permission: workflow.read
+      parameters:
+        - name: revision
+          in: query
+          required: false
+          description: Draft revision; the latest when omitted.
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: BPMN source of the draft revision
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DraftBpmn' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Workflows]
+      operationId: applyDraftBpmn
+      summary: Save edited BPMN as the next draft revision, only when the document can represent it exactly
+      description: |
+        Runs the same check as checkDraftBpmn against the latest draft revision named by If-Match and refuses with
+        422 VALIDATION_FAILED (one fieldError per problem; code is the problem kind) unless it passes. On success the
+        draft name, steps, connections and (with a diagram) canvas positions are replaced and every other section is
+        kept; the result is saved like saveDraft (same limits, 412 on a stale revision, audit workflow.draft.saved with
+        source bpmn). Nothing is validated away: Check workflow and the publish gates still apply.
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: workflow.draft.saved
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BpmnApplyRequest' }
+      responses:
+        '200':
+          description: Saved; body is the new revision
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkflowDraft' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '428': { $ref: '#/components/responses/PreconditionRequired' }
+
+  /workspaces/{workspaceId}/workflows/{workflowId}/draft/bpmn/check:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+    post:
+      tags: [Workflows]
+      operationId: checkDraftBpmn
+      summary: Check edited BPMN against a draft revision without saving (UI03, docs/build/S56)
+      description: |
+        Applicable only when the draft itself round-trips exactly, the text is safe XML in the compiled dialect with
+        nothing unsupported (comments, lanes, pools, sub-processes, foreign extensions and free expressions are listed
+        as problems, never dropped), the process id equals the workflow key, the resulting draft compiles without
+        blockers, regenerating BPMN reproduces every element, attribute and text of the submitted BPMN, and the result
+        reads back to the same document. Values computed from the document or the workspace (hashes, child release
+        pins, diagram lines) are recomputed and listed as notes. changes lists what applying would add, remove or change.
+      x-orqix-permission: workflow.edit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BpmnCheckRequest' }
+      responses:
+        '200':
+          description: Check result (problems are data, not an error status)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BpmnCheck' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
   /workspaces/{workspaceId}/workflows/{workflowId}/decisions/{decisionKey}/evaluate:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -5685,6 +5784,78 @@ components:
         publishable: { type: boolean, description: 'True when there are no blockers' }
         semanticHash: { type: [string, 'null'] }
         issues: { type: array, items: { $ref: '#/components/schemas/ValidationIssue' } }
+    DraftBpmn:
+      type: object
+      additionalProperties: false
+      required: [revision, compilerVersion, available, bpmn, diagram, roundTrip, keptFromDraft, blockers]
+      properties:
+        revision: { type: integer, minimum: 1 }
+        compilerVersion: { type: string }
+        available: { type: boolean, description: 'False when the draft has blockers (it has no BPMN form yet)' }
+        bpmn: { type: [string, 'null'], description: 'process.bpmn20.xml exactly as publishing would generate it' }
+        diagram: { type: boolean, description: 'The BPMN contains a diagram, so canvas positions are carried' }
+        roundTrip:
+          type: object
+          additionalProperties: false
+          required: [identical, differences]
+          properties:
+            identical: { type: boolean, description: 'Draft to BPMN to draft gives the same name, steps, connections and positions' }
+            differences:
+              type: array
+              maxItems: 50
+              items:
+                type: object
+                additionalProperties: false
+                required: [path, message]
+                properties:
+                  path: { type: string, description: 'JSON Pointer into the draft' }
+                  message: { type: string }
+        keptFromDraft:
+          type: array
+          description: Sections BPMN does not carry; applying BPMN keeps them from the draft unchanged
+          items: { type: string }
+        blockers: { type: array, items: { $ref: '#/components/schemas/ValidationIssue' } }
+    BpmnCheckRequest:
+      type: object
+      additionalProperties: false
+      required: [revision, bpmn]
+      properties:
+        revision: { type: integer, minimum: 1, description: 'Draft revision the BPMN was exported from' }
+        bpmn: { type: string, minLength: 1, maxLength: 1048576 }
+    BpmnApplyRequest:
+      type: object
+      additionalProperties: false
+      required: [bpmn]
+      properties:
+        bpmn: { type: string, minLength: 1, maxLength: 1048576 }
+    BpmnCheck:
+      type: object
+      additionalProperties: false
+      required: [revision, applicable, problems, notes, changes]
+      properties:
+        revision: { type: integer, minimum: 1 }
+        applicable: { type: boolean }
+        problems:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [kind, elementId, message]
+            properties:
+              kind: { type: string, enum: [xml, unsupported, identity, blocker, notRepresentable, otherSection, roundTrip, draftRoundTrip] }
+              elementId: { type: [string, 'null'], description: 'BPMN element id when the problem has one' }
+              message: { type: string }
+        notes: { type: array, description: 'Values that are recomputed rather than read (hashes, release pins, diagram lines)', items: { type: string } }
+        changes:
+          type: array
+          maxItems: 30
+          items:
+            type: object
+            additionalProperties: false
+            required: [kind, what]
+            properties:
+              kind: { type: string, enum: [added, removed, changed] }
+              what: { type: string }
     DecisionEvaluateRequest:
       type: object
       additionalProperties: false

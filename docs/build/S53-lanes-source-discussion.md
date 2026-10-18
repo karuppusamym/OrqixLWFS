@@ -29,7 +29,7 @@ Migration `V60__element_discussion.sql` adds `workflow_element_comment` (composi
 
 ## Not included
 
-- **BPMN source editing and BPMN round-trip checks.** There is no BPMN view, export of the canonical document as editable BPMN, or import from edited BPMN inside the studio. The existing Camunda/BPMN migration importer is unchanged and remains one-way (import). The "round trip" delivered is canonical document -> YAML -> canonical document.
+- **BPMN source editing and BPMN round-trip checks** (delivered later in [S56](S56-bpmn-source.md)). There is no BPMN view, export of the canonical document as editable BPMN, or import from edited BPMN inside the studio. The existing Camunda/BPMN migration importer is unchanged and remains one-way (import). The "round trip" delivered is canonical document -> YAML -> canonical document.
 - Stored or editable lanes (assigning a step to a lane other than by its approval group), drawing lanes on the canvas, pools, drag between lanes, nested or group-per-person lanes.
 - Mentions, notifications, email, edit or delete of a comment, reactions, attachments, rich text, comment history across published releases, discussion on decisions, form fields or the workflow as a whole.
 - Merge/diff UI between YAML and the draft beyond the change list; line-level YAML validation against the JSON schema (the server check remains the authority); YAML comments are not preserved (the text is regenerated from the document); concurrent-edit conflicts follow the existing draft revision conflict flow.

@@ -81,7 +81,7 @@ public class AuditWriter {
             Map.entry("view.copied", Set.of("revision")),
             Map.entry("view.draft.saved", Set.of("revision")),
             Map.entry("view.published", Set.of("version")),
-            Map.entry("workflow.draft.saved", Set.of("revision")),
+            Map.entry("workflow.draft.saved", Set.of("revision", "source")),
             Map.entry("workflow.published", Set.of("releaseNumber", "draftRevision", "semanticHash", "warningsAcknowledged")),
             Map.entry("workflow.active-release.changed", Set.of("fromReleaseNumber", "toReleaseNumber")),
             Map.entry("workflow.exported", Set.of("releaseNumber")),

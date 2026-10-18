@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.orqix.catalog.internal.BpmnSourceService;
 import com.orqix.catalog.internal.ReleaseService;
 import com.orqix.catalog.internal.SimulationService;
 import com.orqix.catalog.internal.WorkflowService;
@@ -37,10 +38,12 @@ public class CatalogController {
     private final WorkflowService workflows;
     private final ReleaseService releases;
     private final SimulationService simulations;
+    private final BpmnSourceService bpmn;
 
     public CatalogController(CallerResolver callers, WorkflowService workflows, ReleaseService releases,
-            SimulationService simulations) {
+            SimulationService simulations, BpmnSourceService bpmn) {
         this.simulations = simulations;
+        this.bpmn = bpmn;
         this.callers = callers;
         this.workflows = workflows;
         this.releases = releases;
@@ -84,6 +87,26 @@ public class CatalogController {
             @PathVariable UUID workflowId, @RequestHeader(name = HttpHeaders.IF_MATCH, required = false) String ifMatch,
             @Valid @RequestBody CatalogDtos.SaveDraftRequest request) {
         CatalogDtos.WorkflowDraft draft = workflows.saveDraft(callers.current(), workspaceId, workflowId, ifMatch, request);
+        return ResponseEntity.ok().eTag(WorkflowService.etag(draft.revision())).body(draft);
+    }
+
+    @GetMapping("/workflows/{workflowId}/draft/bpmn")
+    public CatalogDtos.DraftBpmn getDraftBpmn(@PathVariable UUID workspaceId, @PathVariable UUID workflowId,
+            @RequestParam(required = false) Integer revision) {
+        return bpmn.getDraftBpmn(callers.current(), workspaceId, workflowId, revision);
+    }
+
+    @PostMapping("/workflows/{workflowId}/draft/bpmn/check")
+    public CatalogDtos.BpmnCheck checkDraftBpmn(@PathVariable UUID workspaceId, @PathVariable UUID workflowId,
+            @Valid @RequestBody CatalogDtos.BpmnCheckRequest request) {
+        return bpmn.checkDraftBpmn(callers.current(), workspaceId, workflowId, request);
+    }
+
+    @PutMapping("/workflows/{workflowId}/draft/bpmn")
+    public ResponseEntity<CatalogDtos.WorkflowDraft> applyDraftBpmn(@PathVariable UUID workspaceId,
+            @PathVariable UUID workflowId, @RequestHeader(name = HttpHeaders.IF_MATCH, required = false) String ifMatch,
+            @Valid @RequestBody CatalogDtos.BpmnApplyRequest request) {
+        CatalogDtos.WorkflowDraft draft = bpmn.applyDraftBpmn(callers.current(), workspaceId, workflowId, ifMatch, request);
         return ResponseEntity.ok().eTag(WorkflowService.etag(draft.revision())).body(draft);
     }
 

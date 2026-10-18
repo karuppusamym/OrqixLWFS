@@ -3,15 +3,30 @@ import { useAnnounce } from '@/components/common/Announcer'
 import { Alert } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/input'
+import { BpmnSourceView } from './BpmnSourceView'
 import { useStudio, useStudioContext } from './StudioContext'
 import { checkSource, definitionToYaml, MAX_SOURCE_CHARS, roundTrip } from './model/source'
 
 /**
- * Source tab (UI03, docs/build/S53): the whole workflow document as YAML. Nothing reaches the draft until the text
- * parses, keeps the workflow key, and survives a serialize/parse round trip; then Apply replaces the draft (one undo
- * step) and the normal autosave and "Check workflow" validation take over. BPMN source editing is not offered.
+ * Source tab (UI03): the workflow document as YAML (docs/build/S53) or as its compiled BPMN (docs/build/S56). YAML:
+ * nothing reaches the draft until the text parses, keeps the workflow key, and survives a serialize/parse round trip;
+ * then Apply replaces the draft (one undo step) and the normal autosave and "Check workflow" validation take over.
+ * BPMN: see BpmnSourceView.
  */
 export function SourceView() {
+  const [format, setFormat] = useState<'yaml' | 'bpmn'>('yaml')
+  return (
+    <div className="mx-auto max-w-4xl space-y-3 p-4" data-testid="source-view">
+      <div role="group" aria-label="Source format" className="flex gap-2">
+        <Button variant={format === 'yaml' ? 'primary' : 'secondary'} aria-pressed={format === 'yaml'} onClick={() => setFormat('yaml')}>YAML</Button>
+        <Button variant={format === 'bpmn' ? 'primary' : 'secondary'} aria-pressed={format === 'bpmn'} onClick={() => setFormat('bpmn')}>BPMN</Button>
+      </div>
+      {format === 'yaml' ? <YamlSource /> : <BpmnSourceView />}
+    </div>
+  )
+}
+
+function YamlSource() {
   const def = useStudio((s) => s.definition)
   const { store, readOnly } = useStudioContext()
   const announce = useAnnounce()
@@ -37,7 +52,7 @@ export function SourceView() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-3 p-4" data-testid="source-view">
+    <div className="space-y-3" data-testid="yaml-source">
       <p className="text-sm text-muted">
         The workflow as YAML. {readOnly ? 'You can read it but not change it.' : 'Edit it, check it, then apply it to the draft. The same checks as the studio run on Check workflow afterwards.'}
       </p>

@@ -186,8 +186,18 @@ public class WorkflowService {
     @Transactional
     public CatalogDtos.WorkflowDraft saveDraft(Caller caller, UUID workspaceId, UUID workflowId, String ifMatch,
             CatalogDtos.SaveDraftRequest request) {
-        Visible visible = visible(caller, workspaceId, workflowId, "saveDraft");
-        policy.require(visible.access(), Permission.WORKFLOW_EDIT, "saveDraft", false);
+        return saveDraft(caller, workspaceId, workflowId, ifMatch, request, "saveDraft", null);
+    }
+
+    /**
+     * Saves a new draft revision. {@code source} (for example {@code bpmn}) is recorded in the audit metadata when the
+     * document was produced by another editor than the studio.
+     */
+    @Transactional
+    public CatalogDtos.WorkflowDraft saveDraft(Caller caller, UUID workspaceId, UUID workflowId, String ifMatch,
+            CatalogDtos.SaveDraftRequest request, String operationId, String source) {
+        Visible visible = visible(caller, workspaceId, workflowId, operationId);
+        policy.require(visible.access(), Permission.WORKFLOW_EDIT, operationId, false);
         JsonNode definition = request.definition();
         if (definition == null || !definition.isObject()) {
             throw ApiException.malformed("definition must be a JSON object.");
@@ -221,7 +231,7 @@ public class WorkflowService {
         store.insertDraft(workspaceId, workflowId, revision, definitionJson, "0.1", caller.subjectId());
         audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.USER, caller.subjectId(),
                 "workflow.draft.saved", "workflow", workflowId.toString(), AuditWriter.Outcome.SUCCESS,
-                Map.of("revision", revision)));
+                source == null ? Map.of("revision", revision) : Map.of("revision", revision, "source", source)));
         return draftView(store.draft(workspaceId, workflowId, revision).orElseThrow());
     }
 

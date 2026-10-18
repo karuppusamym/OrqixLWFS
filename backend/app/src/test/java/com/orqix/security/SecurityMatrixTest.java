@@ -61,6 +61,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
                     assertThat(operation.has("x-orqix-audit") || "markNotificationRead".equals(operationId)
                             || "validateDraft".equals(operationId) || "evaluateDecision".equals(operationId)
                             || "checkReleasePromotion".equals(operationId)
+                            || "checkDraftBpmn".equals(operationId)
                             || "fetchExternalJobs".equals(operationId) || "extendExternalJobLock".equals(operationId))
                             .as(operationId + " declares x-orqix-audit").isTrue();
                 }
@@ -276,6 +277,8 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "approveMigrationReview" -> Map.of("draftRevision", 1, "expectedVersion", 0, "reason", "Foreign attempt");
             case "saveDraft" -> Map.of("definition", Map.of("schemaVersion", "0.1"));
             case "validateDraft" -> Map.of("revision", 1);
+            case "checkDraftBpmn" -> Map.of("revision", 1, "bpmn", "<definitions/>");
+            case "applyDraftBpmn" -> Map.of("bpmn", "<definitions/>");
             case "evaluateDecision" -> Map.of("revision", 1, "values", Map.of("/input/amount", 1));
             case "simulateWorkflow" -> Map.of("revision", 1, "input", Map.of("amount", 1));
             case "createDocumentTemplate" -> Map.of("name", "Foreign template", "format", "pdf", "body", "Hello {{name}}");

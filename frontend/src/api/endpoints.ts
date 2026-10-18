@@ -416,3 +416,28 @@ export const getStageMail = (ws: string, runId: string) =>
 
 export const exportCaseEvidence = (ws: string, runId: string, format: 'json' | 'csv') =>
   call(api.GET('/workspaces/{workspaceId}/runs/{runId}/evidence', { params: { path: { workspaceId: ws, runId }, query: { format } }, parseAs: 'blob' }))
+// Shared assets (PL01, docs/build/S57): search, detail, where-used, shared decisions, owners and archive
+type AssetKind = S['SharedAssetKind']
+export const listSharedAssets = (ws: string, query: { q?: string; kind?: AssetKind; owner?: string; includeArchived?: boolean } = {}) =>
+  call(api.GET('/workspaces/{workspaceId}/shared-assets', { params: { path: { workspaceId: ws }, query } }))
+
+export const getSharedAsset = (ws: string, assetKind: AssetKind, assetKey: string) =>
+  call(api.GET('/workspaces/{workspaceId}/shared-assets/{assetKind}/{assetKey}', { params: { path: { workspaceId: ws, assetKind, assetKey } } }))
+
+export const getSharedAssetUsage = (ws: string, assetKind: AssetKind, assetKey: string) =>
+  call(api.GET('/workspaces/{workspaceId}/shared-assets/{assetKind}/{assetKey}/usage', { params: { path: { workspaceId: ws, assetKind, assetKey } } }))
+
+export const listSharedAssetOwnerCandidates = (ws: string, kind: AssetKind) =>
+  call(api.GET('/workspaces/{workspaceId}/shared-asset-owner-candidates', { params: { path: { workspaceId: ws }, query: { kind } } }))
+
+export const createDecisionAsset = (ws: string, body: S['CreateDecisionAsset']) =>
+  call(api.POST('/workspaces/{workspaceId}/shared-assets/decision', { params: { path: { workspaceId: ws } }, body }))
+
+export const addDecisionAssetVersion = (ws: string, assetKey: string, body: S['AddDecisionAssetVersion']) =>
+  call(api.POST('/workspaces/{workspaceId}/shared-assets/decision/{assetKey}/versions', { params: { path: { workspaceId: ws, assetKey } }, body }))
+
+export const setSharedAssetOwner = (ws: string, assetKind: AssetKind, assetKey: string, ownerSubjectId: string, expectedRevision: number) =>
+  call(api.PUT('/workspaces/{workspaceId}/shared-assets/{assetKind}/{assetKey}/owner', { params: { path: { workspaceId: ws, assetKind, assetKey } }, body: { ownerSubjectId, expectedRevision } }))
+
+export const setSharedAssetArchived = (ws: string, assetKind: AssetKind, assetKey: string, archived: boolean, expectedRevision: number) =>
+  call(api.PUT('/workspaces/{workspaceId}/shared-assets/{assetKind}/{assetKey}/archived', { params: { path: { workspaceId: ws, assetKind, assetKey } }, body: { archived, expectedRevision } }))

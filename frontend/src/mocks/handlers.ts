@@ -14,6 +14,7 @@ import { validateJsonForm } from '@/lib/form/validate'
 import { waitHorizonErrors } from './dateWait'
 import { validateDefinition, type ValidationContext } from './validate'
 import { mockCheckBpmn, mockDraftBpmn } from './bpmnSource'
+import { assetIssues } from './sharedAssets'
 import { ScenarioError, simulateDefinition, type SimConnection, type SimContext, type SimulationScenario } from './simulator'
 import {
   GROUPS,
@@ -444,7 +445,7 @@ export function createHandlers(): HttpHandler[] {
       const { revision } = await body<{ revision: number }>(request)
       const draft = wf.drafts.find((d) => d.revision === revision)
       if (!draft) return notFound()
-      const issues = validateDefinition(draft.definition, validationContext(wf.wsId))
+      const issues = [...validateDefinition(draft.definition, validationContext(wf.wsId)), ...assetIssues(wf.wsId, draft.definition)]
       return HttpResponse.json({ revision, compilerVersion: '0.1.0-mock', publishable: !issues.some((i) => i.severity === 'blocker'), semanticHash: null, issues })
     }),
     // BPMN source (UI03, docs/build/S56): a simplified double, see ./bpmnSource.ts ---------------------------------

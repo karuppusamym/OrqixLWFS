@@ -1,7 +1,7 @@
 import { delay, http, HttpResponse, type HttpHandler } from 'msw'
 import type { AttachmentRetention, DocumentTemplate } from '@/api/types'
 import { getCurrentUser } from './handlers'
-import { WORKSPACES, clock, db, isMember, newId, permissionsOf, userById } from './state'
+import { WORKSPACES, clock, db, isMember, newId, permissionsOf, userById, userByName } from './state'
 
 /**
  * Document template registry and file retention in mock mode (DOC08, docs/build/S52): the same rules and answers as
@@ -11,6 +11,21 @@ import { WORKSPACES, clock, db, isMember, newId, permissionsOf, userById } from 
 const B = '/api/v1'
 const PLACEHOLDER = /\{\{([A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)*)}}/g
 const templates = new Map<string, DocumentTemplate & { wsId: string }>()
+
+/** Templates of one workspace, for the shared asset index (PL01, docs/build/S57). Rows are live: edits apply. */
+export function documentTemplatesOf(wsId: string): Array<DocumentTemplate & { wsId: string }> {
+  seed()
+  return [...templates.values()].filter((t) => t.wsId === wsId)
+}
+
+function keyFor(wsId: string, name: string): string {
+  let base = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+  if (!/^[a-z]/.test(base)) base = `template-${base}`.replace(/-+$/, '')
+  base = base.slice(0, 56).replace(/-+$/, '')
+  const taken = new Set(documentTemplatesOf(wsId).map((t) => t.key))
+  if (!taken.has(base)) return base
+  for (let n = 2; ; n++) if (!taken.has(`${base}-${n}`)) return `${base}-${n}`
+}
 const retention = new Map<string, { days: number | null; version: number; updatedAt: string | null }>()
 
 function problem(status: number, code: string, title: string, extra: Record<string, unknown> = {}): Response {
@@ -30,7 +45,7 @@ const invalid = (message: string) => problem(422, 'VALIDATION_FAILED', 'Some val
 
 function summary(t: DocumentTemplate & { wsId: string }) {
   const latest = t.versions[0]!
-  return { id: t.id, name: t.name, description: t.description ?? null, latestVersion: t.latestVersion, format: latest.format, placeholderCount: latest.placeholders.length, archived: t.archived, createdAt: t.createdAt, updatedAt: t.updatedAt }
+  return { id: t.id, key: t.key, name: t.name, description: t.description ?? null, latestVersion: t.latestVersion, format: latest.format, placeholderCount: latest.placeholders.length, archived: t.archived, createdAt: t.createdAt, updatedAt: t.updatedAt, owner: t.owner, revision: t.revision }
 }
 
 function strip(t: DocumentTemplate & { wsId: string }): DocumentTemplate {
@@ -45,7 +60,8 @@ function seed(): void {
   const wsId = WORKSPACES[0]!.id
   const id = newId()
   templates.set(id, {
-    wsId, id, name: 'Order confirmation letter', description: 'Sent when an order is approved.', latestVersion: 1, archived: false, createdAt: now, updatedAt: now,
+    wsId, id, key: 'order-confirmation-letter', name: 'Order confirmation letter', description: 'Sent when an order is approved.', latestVersion: 1, archived: false, createdAt: now, updatedAt: now,
+    owner: { id: userByName('dana.designer').id, displayName: 'Dana Designer' }, revision: 1,
     versions: [{ version: 1, format: 'pdf', body, placeholders: ['customer', 'amount'], sha256: 'a'.repeat(64), changeNote: 'First version', createdBy: { id: 'seed', displayName: 'Dana Designer' }, createdAt: now }],
   })
 }
@@ -80,14 +96,15 @@ export function createDocumentLibraryHandlers(): HttpHandler[] {
       const user = member(wsId)
       if (!user) return notFound()
       if (!permissionsOf(user, wsId).includes('workflow.edit')) return forbidden()
-      const body = (await request.json()) as { name: string; description?: string | null; format: 'pdf' | 'docx'; body: string; changeNote?: string | null }
+      const body = (await request.json()) as { name: string; description?: string | null; format: 'pdf' | 'docx'; body: string; changeNote?: string | null; key?: string }
       const names = placeholders(body.body)
       if (typeof names === 'string') return invalid(names)
-      if ([...templates.values()].some((t) => t.wsId === wsId && t.name.toLowerCase() === body.name.trim().toLowerCase())) return problem(409, 'DUPLICATE_KEY', 'The key is already in use', { detail: 'A template with this name already exists.' })
+      if ([...templates.values()].some((t) => t.wsId === wsId && (t.name.toLowerCase() === body.name.trim().toLowerCase() || t.key === body.key))) return problem(409, 'DUPLICATE_KEY', 'The key is already in use', { detail: 'A template with this name or key already exists.' })
       const now = clock.iso()
       const id = newId()
       const row = {
-        wsId, id, name: body.name.trim(), description: body.description?.trim() || null, latestVersion: 1, archived: false, createdAt: now, updatedAt: now,
+        wsId, id, key: body.key ?? keyFor(wsId, body.name.trim()), name: body.name.trim(), description: body.description?.trim() || null, latestVersion: 1, archived: false, createdAt: now, updatedAt: now,
+        owner: { id: user.id, displayName: userById(user.id)?.displayName ?? user.displayName }, revision: 1,
         versions: [{ version: 1, format: body.format, body: body.body, placeholders: names, sha256: newId().replace(/-/g, '').padEnd(64, '0'), changeNote: body.changeNote?.trim() || null, createdBy: { id: user.id, displayName: userById(user.id)?.displayName ?? user.displayName }, createdAt: now }],
       }
       templates.set(id, row)
@@ -133,7 +150,9 @@ export function createDocumentLibraryHandlers(): HttpHandler[] {
       if (!permissionsOf(user, wsId).includes('workflow.edit')) return forbidden()
       const row = templates.get(String(params.id))
       if (!row || row.wsId !== wsId) return notFound()
-      row.archived = ((await request.json()) as { archived: boolean }).archived
+      const archived = ((await request.json()) as { archived: boolean }).archived
+      if (archived !== row.archived) row.revision += 1
+      row.archived = archived
       row.updatedAt = clock.iso()
       return HttpResponse.json(strip(row))
     }),

@@ -359,8 +359,13 @@ public final class DraftRules {
             versions.add(connection.key() + "|" + connection.version());
         }
         JsonNode existing = definition.path("dependencies").path("connections");
+        JsonNode assets = definition.path("dependencies").path("assets");
         ObjectNode dependencies = definition.putObject("dependencies");
         ArrayNode connections = dependencies.putArray("connections");
+        if (assets.isArray()) {
+            // Shared asset references (S57) are kept as they are; the server checks them at validation and publish.
+            dependencies.set("assets", assets.deepCopy());
+        }
         Set<String> seen = new HashSet<>();
         for (JsonNode dependency : existing) {
             String key = dependency.path("key").asString(null);

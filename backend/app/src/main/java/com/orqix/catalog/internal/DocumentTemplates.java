@@ -49,12 +49,12 @@ public class DocumentTemplates {
             String changeNote, SubjectRef createdBy, Instant createdAt) {
     }
 
-    public record Summary(UUID id, String name, String description, int latestVersion, String format,
-            int placeholderCount, boolean archived, Instant createdAt, Instant updatedAt) {
+    public record Summary(UUID id, String key, String name, String description, int latestVersion, String format,
+            int placeholderCount, boolean archived, Instant createdAt, Instant updatedAt, SubjectRef owner, int revision) {
     }
 
-    public record Detail(UUID id, String name, String description, int latestVersion, boolean archived,
-            Instant createdAt, Instant updatedAt, List<Version> versions) {
+    public record Detail(UUID id, String key, String name, String description, int latestVersion, boolean archived,
+            Instant createdAt, Instant updatedAt, List<Version> versions, SubjectRef owner, int revision) {
     }
 
     public record Page(List<Summary> items, int templateLimit) {
@@ -62,7 +62,8 @@ public class DocumentTemplates {
 
     public record CreateRequest(@NotBlank @Size(max = 80) String name, @Size(max = 300) String description,
             @NotBlank @Pattern(regexp = "pdf|docx") String format, @NotBlank @Size(max = 16000) String body,
-            @Size(max = 300) String changeNote) {
+            @Size(max = 300) String changeNote,
+            @Pattern(regexp = "^[a-z][a-z0-9-]{0,62}[a-z0-9]$") String key) {
     }
 
     public record VersionRequest(@Min(1) int expectedVersion, @NotBlank @Pattern(regexp = "pdf|docx") String format,
@@ -93,16 +94,24 @@ public class DocumentTemplates {
     }
 
     private static final String SUMMARY = """
-            SELECT t.id, t.name, t.description, t.latest_version, t.archived_at, t.created_at, t.updated_at,
-                   v.format, cardinality(v.placeholders) AS placeholder_count
+            SELECT t.id, t.key, t.name, t.description, t.latest_version, t.archived_at, t.created_at, t.updated_at,
+                   t.owner_subject_id, t.revision, v.format, cardinality(v.placeholders) AS placeholder_count
             FROM document_template t
             JOIN document_template_version v ON v.template_id = t.id AND v.version = t.latest_version
             """;
 
     private static Summary summary(ResultSet rs, int n) throws SQLException {
-        return new Summary(Sql.uuid(rs, "id"), rs.getString("name"), rs.getString("description"),
+        return new Summary(Sql.uuid(rs, "id"), rs.getString("key"), rs.getString("name"), rs.getString("description"),
                 rs.getInt("latest_version"), rs.getString("format"), rs.getInt("placeholder_count"),
-                rs.getTimestamp("archived_at") != null, Sql.instant(rs, "created_at"), Sql.instant(rs, "updated_at"));
+                rs.getTimestamp("archived_at") != null, Sql.instant(rs, "created_at"), Sql.instant(rs, "updated_at"),
+                new SubjectRef(Sql.uuid(rs, "owner_subject_id"), null), rs.getInt("revision"));
+    }
+
+    private List<Summary> named(List<Summary> items) {
+        Map<UUID, String> names = subjects.displayNames(items.stream().map(s -> s.owner().id()).distinct().toList());
+        return items.stream().map(s -> new Summary(s.id(), s.key(), s.name(), s.description(), s.latestVersion(),
+                s.format(), s.placeholderCount(), s.archived(), s.createdAt(), s.updatedAt(),
+                subjects.ref(s.owner().id(), names), s.revision())).toList();
     }
 
     @Transactional(readOnly = true)
@@ -111,7 +120,7 @@ public class DocumentTemplates {
         List<Summary> items = jdbc.sql(SUMMARY + " WHERE t.workspace_id = :ws"
                 + (includeArchived ? "" : " AND t.archived_at IS NULL") + " ORDER BY lower(t.name), t.id")
                 .param("ws", ws).query(DocumentTemplates::summary).list();
-        return new Page(items, MAX_TEMPLATES);
+        return new Page(named(items), MAX_TEMPLATES);
     }
 
     @Transactional(readOnly = true)
@@ -136,13 +145,16 @@ public class DocumentTemplates {
                     "A workspace can have at most " + MAX_TEMPLATES + " document templates.");
         }
         UUID id = Ids.newId();
+        // The key identifies the template in versioned workflow references (S57). It is derived from the name when not
+        // given; an explicit key that is taken is a conflict, a derived one gets a number.
+        String key = request.key() != null ? request.key() : freeKey(ws, name);
         int inserted = jdbc.sql("""
-                INSERT INTO document_template (id, workspace_id, name, description, created_by)
-                VALUES (:id, :ws, :name, :description, :by) ON CONFLICT DO NOTHING
-                """).param("id", id).param("ws", ws).param("name", name)
+                INSERT INTO document_template (id, workspace_id, key, name, description, owner_subject_id, created_by)
+                VALUES (:id, :ws, :key, :name, :description, :by, :by) ON CONFLICT DO NOTHING
+                """).param("id", id).param("ws", ws).param("key", key).param("name", name)
                 .param("description", blankToNull(request.description())).param("by", caller.subjectId()).update();
         if (inserted != 1) {
-            throw new ApiException(ProblemCode.DUPLICATE_KEY, "A template with this name already exists.");
+            throw new ApiException(ProblemCode.DUPLICATE_KEY, "A template with this name or key already exists.");
         }
         insertVersion(ws, id, 1, request.format(), request.body(), placeholders, request.changeNote(), caller.subjectId());
         audit(caller, ws, "document.template.created", id, Map.of("version", 1, "placeholders", placeholders.size()));
@@ -183,7 +195,7 @@ public class DocumentTemplates {
         editor(caller, ws, "setDocumentTemplateArchived");
         Locked row = lock(ws, id);
         if (row.archived() != request.archived()) {
-            jdbc.sql("UPDATE document_template SET archived_at = :at, updated_at = now() WHERE id = :id")
+            jdbc.sql("UPDATE document_template SET archived_at = :at, revision = revision + 1, updated_at = now() WHERE id = :id")
                     .param("at", request.archived() ? Sql.ts(Instant.now()) : null).param("id", id).update();
             audit(caller, ws, request.archived() ? "document.template.archived" : "document.template.restored", id, Map.of());
         }
@@ -216,14 +228,16 @@ public class DocumentTemplates {
                         rs.getString("body"), List.of((String[]) rs.getArray("placeholders").getArray()),
                         rs.getString("sha256"), rs.getString("change_note"), Sql.uuid(rs, "created_by"),
                         Sql.instant(rs, "created_at"))).list();
-        Map<UUID, String> names = subjects.displayNames(rows.stream().map(Row::by).distinct().toList());
+        List<UUID> people = new ArrayList<>(rows.stream().map(Row::by).distinct().toList());
+        people.add(s.owner().id());
+        Map<UUID, String> names = subjects.displayNames(people);
         List<Version> versions = new ArrayList<>();
         for (Row r : rows) {
             versions.add(new Version(r.version(), r.format(), r.body(), r.placeholders(), r.sha(), r.note(),
                     subjects.ref(r.by(), names), r.at()));
         }
-        return new Detail(s.id(), s.name(), s.description(), s.latestVersion(), s.archived(), s.createdAt(),
-                s.updatedAt(), versions);
+        return new Detail(s.id(), s.key(), s.name(), s.description(), s.latestVersion(), s.archived(), s.createdAt(),
+                s.updatedAt(), versions, subjects.ref(s.owner().id(), names), s.revision());
     }
 
     private void insertVersion(UUID ws, UUID id, int version, String format, String body, List<String> placeholders,
@@ -248,6 +262,28 @@ public class DocumentTemplates {
     private void audit(Caller caller, UUID ws, String action, UUID id, Map<String, Object> metadata) {
         audit.write(new AuditWriter.Entry(ws, AuditWriter.ActorType.USER, caller.subjectId(), action,
                 "documentTemplate", id.toString(), AuditWriter.Outcome.SUCCESS, metadata));
+    }
+
+    /** A key derived from the name: lower-case letters, digits and dashes, numbered when already taken. */
+    private String freeKey(UUID ws, String name) {
+        String base = name.toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9]+", "-").replaceAll("^-+|-+$", "");
+        if (base.isEmpty() || !Character.isLetter(base.charAt(0))) {
+            base = ("template-" + base).replaceAll("-+$", "");
+        }
+        if (base.length() > 56) {
+            base = base.substring(0, 56).replaceAll("-+$", "");
+        }
+        List<String> taken = jdbc.sql("SELECT key FROM document_template WHERE workspace_id = :ws AND key LIKE :prefix")
+                .param("ws", ws).param("prefix", base + "%").query(String.class).list();
+        if (!taken.contains(base)) {
+            return base;
+        }
+        for (int n = 2; ; n++) {
+            String candidate = base + "-" + n;
+            if (!taken.contains(candidate)) {
+                return candidate;
+            }
+        }
     }
 
     private static String blankToNull(String value) {

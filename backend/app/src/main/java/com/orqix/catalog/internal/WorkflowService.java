@@ -50,6 +50,7 @@ public class WorkflowService {
     private final DecisionEvaluator evaluator;
     private final CompileContextFactory contexts;
     private final AgentAvailabilityCheck agentCheck;
+    private final AssetReferenceCheck assetCheck;
     private final AuditWriter audit;
     private final CursorCodec cursors;
     private final OrqixProperties properties;
@@ -57,8 +58,10 @@ public class WorkflowService {
 
     public WorkflowService(CatalogStore store, PolicyService policy, SubjectService subjects, TemplateCatalog templates,
             WorkflowCompiler compiler, DecisionEvaluator evaluator, CompileContextFactory contexts, AuditWriter audit,
-            CursorCodec cursors, OrqixProperties properties, Json json, AgentAvailabilityCheck agentCheck) {
+            CursorCodec cursors, OrqixProperties properties, Json json, AgentAvailabilityCheck agentCheck,
+            AssetReferenceCheck assetCheck) {
         this.agentCheck = agentCheck;
+        this.assetCheck = assetCheck;
         this.store = store;
         this.policy = policy;
         this.subjects = subjects;
@@ -244,8 +247,11 @@ public class WorkflowService {
         ValidationReport report = compiler.validate(draft.definitionJson(), context);
         List<ValidationIssue> all = new java.util.ArrayList<>(report.issues());
         all.addAll(agentCheck.warnings(draft.definitionJson(), context));
-        return new CatalogDtos.ValidationReport(revision, report.compilerVersion(), report.publishable(),
-                report.semanticHash(), issues(all));
+        // Shared asset references (S57) are checked against the workspace's current assets, never resolved silently.
+        List<ValidationIssue> assetIssues = assetCheck.issues(workspaceId, draft.definitionJson());
+        all.addAll(assetIssues);
+        return new CatalogDtos.ValidationReport(revision, report.compilerVersion(),
+                report.publishable() && !AssetReferenceCheck.hasBlocker(assetIssues), report.semanticHash(), issues(all));
     }
 
     @Transactional(readOnly = true)

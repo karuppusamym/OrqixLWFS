@@ -1236,6 +1236,232 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /workspaces/{workspaceId}/shared-assets:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [Workflows]
+      operationId: listSharedAssets
+      summary: Search shared assets (decisions, document templates, connections) by name, key or owner
+      description: |
+        Only the kinds the caller may read are searched (decisions and document templates need workflow.read, connections
+        need connection.read); searchedKinds lists them, and a caller who may read none gets 403. q matches the name, the
+        key or the owner's display name (case-insensitive substring). At most 300 results, ordered by name; truncated
+        tells when there were more. Archived assets are hidden unless includeArchived is true (docs/build/S57).
+      x-orqix-permission: workflow.read
+      parameters:
+        - { name: q, in: query, required: false, schema: { type: string, maxLength: 100 } }
+        - { name: kind, in: query, required: false, schema: { $ref: '#/components/schemas/SharedAssetKind' } }
+        - { name: owner, in: query, required: false, schema: { type: string } }
+        - { name: includeArchived, in: query, required: false, schema: { type: boolean, default: false } }
+      responses:
+        '200':
+          description: Matching assets
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SharedAssetPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/shared-asset-owner-candidates:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [Workflows]
+      operationId: listSharedAssetOwnerCandidates
+      summary: People who may own an asset of this kind (they hold its manage permission today)
+      description: workflow.edit for decisions and document templates, connection.manage for connections. Up to 50 people.
+      x-orqix-permission: workflow.edit
+      parameters:
+        - { name: kind, in: query, required: true, schema: { $ref: '#/components/schemas/SharedAssetKind' } }
+      responses:
+        '200':
+          description: Up to 50 people
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/SubjectRef' } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/shared-assets/decision:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    post:
+      tags: [Workflows]
+      operationId: createDecisionAsset
+      summary: Create a shared decision table with its first version (at most 200 per workspace)
+      description: |
+        content holds hitPolicy, rows and default exactly as in a workflow decision table, without its key and version.
+        Only the structure is checked here; the compiler checks each copy in full in the workflow that uses it, because
+        conditions name that workflow's fields. Keys and names are unique in the workspace. The caller becomes the owner.
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: shared.decision.created
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateDecisionAsset' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SharedAsset' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/shared-assets/decision/{assetKey}/versions:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: assetKey, in: path, required: true, schema: { $ref: '#/components/schemas/Key' } }
+    post:
+      tags: [Workflows]
+      operationId: addDecisionAssetVersion
+      summary: Add an immutable version of a shared decision (409 WORKFLOW_VERSION_CONFLICT when the latest version is not the one the caller saw)
+      description: A version identical to the latest and a version of an archived asset are refused (422). Workflows keep the version they pinned until a designer updates them.
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: shared.decision.versioned
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddDecisionAssetVersion' }
+      responses:
+        '201':
+          description: Version added
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SharedAsset' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/shared-assets/{assetKind}/{assetKey}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: assetKind, in: path, required: true, schema: { $ref: '#/components/schemas/SharedAssetKind' } }
+      - { name: assetKey, in: path, required: true, schema: { $ref: '#/components/schemas/Key' } }
+    get:
+      tags: [Workflows]
+      operationId: getSharedAsset
+      summary: One shared asset with every version, newest first (decision versions include their content)
+      description: workflow.read for decisions and document templates, connection.read for connections.
+      x-orqix-permission: workflow.read
+      responses:
+        '200':
+          description: The asset
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SharedAsset' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/shared-assets/{assetKind}/{assetKey}/usage:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: assetKind, in: path, required: true, schema: { $ref: '#/components/schemas/SharedAssetKind' } }
+      - { name: assetKey, in: path, required: true, schema: { $ref: '#/components/schemas/Key' } }
+    get:
+      tags: [Workflows]
+      operationId: getSharedAssetUsage
+      summary: Where-used - workflows whose current draft or active release references the asset, with the pinned versions
+      description: Needs the read permission of the asset kind and workflow.read. Archived workflows are not listed.
+      x-orqix-permission: workflow.read
+      responses:
+        '200':
+          description: Referencing workflows ordered by name
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SharedAssetUsage' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/shared-assets/{assetKind}/{assetKey}/owner:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: assetKind, in: path, required: true, schema: { $ref: '#/components/schemas/SharedAssetKind' } }
+      - { name: assetKey, in: path, required: true, schema: { $ref: '#/components/schemas/Key' } }
+    put:
+      tags: [Workflows]
+      operationId: setSharedAssetOwner
+      summary: Change the owner of a shared asset (versioned by revision; the owner gains no access)
+      description: Needs the manage permission of the kind (workflow.edit, or connection.manage for connections). The new owner must be an enabled person who holds that permission now (422 otherwise). A stale expectedRevision is 409 WORKFLOW_VERSION_CONFLICT.
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: shared.asset.owner.changed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [ownerSubjectId, expectedRevision]
+              properties:
+                ownerSubjectId: { $ref: '#/components/schemas/Uuid' }
+                expectedRevision: { type: integer, minimum: 0 }
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SharedAsset' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/shared-assets/{assetKind}/{assetKey}/archived:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: assetKind, in: path, required: true, schema: { $ref: '#/components/schemas/SharedAssetKind' } }
+      - { name: assetKey, in: path, required: true, schema: { $ref: '#/components/schemas/Key' } }
+    put:
+      tags: [Workflows]
+      operationId: setSharedAssetArchived
+      summary: Archive or restore a shared asset (versioned by revision)
+      description: Archiving keeps every version and never changes a published release or a connection binding. Workflows that still reference the asset are blocked at validation and publish until it is restored or the link is removed. Needs the manage permission of the kind.
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: shared.asset.archived
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [archived, expectedRevision]
+              properties:
+                archived: { type: boolean }
+                expectedRevision: { type: integer, minimum: 0 }
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SharedAsset' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
   /workspaces/{workspaceId}/workflows/{workflowId}/folder:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -6126,6 +6352,17 @@ components:
               definitionVersion: { type: integer }
               definitionHash: { type: string }
         groups: { type: array, items: { $ref: '#/components/schemas/Key' } }
+        assets:
+          type: array
+          description: Shared asset versions the release's copies were published from (docs/build/S57)
+          items:
+            type: object
+            required: [kind, key, version, target]
+            properties:
+              kind: { type: string }
+              key: { $ref: '#/components/schemas/Key' }
+              version: { type: integer }
+              target: { type: string }
 
     StartForm:
       type: object
@@ -6451,9 +6688,12 @@ components:
     DocumentTemplateSummary:
       type: object
       additionalProperties: false
-      required: [id, name, latestVersion, format, placeholderCount, archived, createdAt, updatedAt]
+      required: [id, key, name, latestVersion, format, placeholderCount, archived, createdAt, updatedAt, owner, revision]
       properties:
         id: { $ref: '#/components/schemas/Uuid' }
+        key: { $ref: '#/components/schemas/Key' }
+        owner: { $ref: '#/components/schemas/SubjectRef' }
+        revision: { type: integer, minimum: 1 }
         name: { type: string, minLength: 1, maxLength: 80 }
         description: { type: [string, 'null'], maxLength: 300 }
         latestVersion: { type: integer, minimum: 1 }
@@ -6485,9 +6725,12 @@ components:
     DocumentTemplate:
       type: object
       additionalProperties: false
-      required: [id, name, latestVersion, archived, createdAt, updatedAt, versions]
+      required: [id, key, name, latestVersion, archived, createdAt, updatedAt, versions, owner, revision]
       properties:
         id: { $ref: '#/components/schemas/Uuid' }
+        key: { $ref: '#/components/schemas/Key' }
+        owner: { $ref: '#/components/schemas/SubjectRef' }
+        revision: { type: integer, minimum: 1 }
         name: { type: string }
         description: { type: [string, 'null'] }
         latestVersion: { type: integer, minimum: 1 }
@@ -6505,6 +6748,9 @@ components:
         format: { $ref: '#/components/schemas/DocumentFormat' }
         body: { type: string, minLength: 1, maxLength: 16000, description: 'Plain text with {{field}} placeholders, as in the Generate a document step' }
         changeNote: { type: [string, 'null'], maxLength: 300 }
+        key:
+          description: Stable key used by versioned workflow references (docs/build/S57); derived from the name when omitted
+          $ref: '#/components/schemas/Key'
     AddDocumentTemplateVersion:
       type: object
       additionalProperties: false
@@ -6513,6 +6759,103 @@ components:
         expectedVersion: { type: integer, minimum: 1 }
         format: { $ref: '#/components/schemas/DocumentFormat' }
         body: { type: string, minLength: 1, maxLength: 16000 }
+        changeNote: { type: [string, 'null'], maxLength: 300 }
+    SharedAssetKind:
+      type: string
+      enum: [decision, documentTemplate, connection]
+    SharedAssetSummary:
+      type: object
+      additionalProperties: false
+      required: [kind, key, name, owner, latestVersion, archived, revision, updatedAt]
+      properties:
+        kind: { $ref: '#/components/schemas/SharedAssetKind' }
+        key: { $ref: '#/components/schemas/Key' }
+        name: { type: string, minLength: 1 }
+        description: { type: [string, 'null'] }
+        owner: { $ref: '#/components/schemas/SubjectRef' }
+        latestVersion: { type: integer, minimum: 1 }
+        archived: { type: boolean }
+        revision: { type: integer, minimum: 0, description: 'Compare-and-set counter for owner and archive changes (0 for a connection never changed)' }
+        updatedAt: { $ref: '#/components/schemas/Timestamp' }
+        id: { type: [string, 'null'], format: uuid, description: 'Decision or template id; null for connections (identified by key)' }
+    SharedAssetPage:
+      type: object
+      additionalProperties: false
+      required: [items, searchedKinds, truncated]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/SharedAssetSummary' } }
+        searchedKinds: { type: array, items: { $ref: '#/components/schemas/SharedAssetKind' } }
+        truncated: { type: boolean }
+    SharedAssetVersion:
+      type: object
+      additionalProperties: false
+      required: [version, sha256, createdBy, createdAt]
+      properties:
+        version: { type: integer, minimum: 1 }
+        sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        changeNote: { type: [string, 'null'] }
+        createdBy: { $ref: '#/components/schemas/SubjectRef' }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+        content:
+          description: The decision table content of this version (decisions only)
+          oneOf:
+            - { $ref: '#/components/schemas/DecisionAssetContent' }
+            - { type: 'null' }
+    SharedAsset:
+      type: object
+      additionalProperties: false
+      required: [asset, versions]
+      properties:
+        asset: { $ref: '#/components/schemas/SharedAssetSummary' }
+        versions: { type: array, items: { $ref: '#/components/schemas/SharedAssetVersion' } }
+    SharedAssetUsage:
+      type: object
+      additionalProperties: false
+      required: [kind, key, latestVersion, items]
+      properties:
+        kind: { $ref: '#/components/schemas/SharedAssetKind' }
+        key: { $ref: '#/components/schemas/Key' }
+        latestVersion: { type: integer, minimum: 1 }
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [workflowId, workflowKey, workflowName, stale]
+            properties:
+              workflowId: { $ref: '#/components/schemas/Uuid' }
+              workflowKey: { type: string }
+              workflowName: { type: string }
+              draftVersion: { type: [integer, 'null'], description: 'Version pinned by the current draft, null when the draft does not reference the asset' }
+              activeReleaseNumber: { type: [integer, 'null'] }
+              activeReleaseVersion: { type: [integer, 'null'], description: 'Version the active release was published with' }
+              stale: { type: boolean, description: 'The draft or the active release pins an older version than the latest' }
+    DecisionAssetContent:
+      type: object
+      additionalProperties: false
+      required: [hitPolicy, rows, default]
+      description: The shareable part of a workflow decision table (contracts/workflow-v0.schema.json decisionTable without key and version)
+      properties:
+        hitPolicy: { type: string, enum: [UNIQUE, FIRST] }
+        rows: { type: array, minItems: 1, maxItems: 50, items: { type: object, additionalProperties: true } }
+        default: { type: object, additionalProperties: true }
+    CreateDecisionAsset:
+      type: object
+      additionalProperties: false
+      required: [key, name, content]
+      properties:
+        key: { $ref: '#/components/schemas/Key' }
+        name: { type: string, minLength: 1, maxLength: 80 }
+        description: { type: [string, 'null'], maxLength: 300 }
+        content: { $ref: '#/components/schemas/DecisionAssetContent' }
+        changeNote: { type: [string, 'null'], maxLength: 300 }
+    AddDecisionAssetVersion:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, content]
+      properties:
+        expectedVersion: { type: integer, minimum: 1 }
+        content: { $ref: '#/components/schemas/DecisionAssetContent' }
         changeNote: { type: [string, 'null'], maxLength: 300 }
     RunComment:
       type: object

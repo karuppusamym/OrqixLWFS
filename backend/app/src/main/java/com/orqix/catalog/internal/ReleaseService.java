@@ -66,6 +66,7 @@ public class ReleaseService {
     private final WorkflowCompiler compiler;
     private final CompileContextFactory contexts;
     private final AgentAvailabilityCheck agentCheck;
+    private final AssetReferenceCheck assetCheck;
     private final MigrationGovernance migrationGovernance;
     private final TestSuiteService tests;
     private final EngineDeployer deployer;
@@ -80,7 +81,8 @@ public class ReleaseService {
             WorkflowCompiler compiler, CompileContextFactory contexts, EngineDeployer deployer,
             IdempotencyService idempotency, ConnectionService connections, AuditWriter audit, CursorCodec cursors,
             Json json, Clock clock, AgentAvailabilityCheck agentCheck, MigrationGovernance migrationGovernance,
-            TestSuiteService tests) {
+            TestSuiteService tests, AssetReferenceCheck assetCheck) {
+        this.assetCheck = assetCheck;
         this.tests = tests;
         this.migrationGovernance = migrationGovernance;
         this.agentCheck = agentCheck;
@@ -137,8 +139,18 @@ public class ReleaseService {
             throw new ApiException(ProblemCode.WORKFLOW_INVALID, "Fix the blocking issues before publishing.")
                     .with("issues", WorkflowService.issues(report.issues()));
         }
+        // Shared asset references (S57): a missing, archived or differing asset blocks; a newer version must be
+        // acknowledged like any other warning. The release keeps the pinned copy, never the latest asset.
+        List<ValidationIssue> assetIssues = assetCheck.issues(workspaceId, draft.definitionJson());
+        if (AssetReferenceCheck.hasBlocker(assetIssues)) {
+            List<ValidationIssue> blocking = new ArrayList<>(report.issues());
+            blocking.addAll(assetIssues);
+            throw new ApiException(ProblemCode.WORKFLOW_INVALID, "Fix the blocking issues before publishing.")
+                    .with("issues", WorkflowService.issues(blocking));
+        }
         boolean acknowledged = Boolean.TRUE.equals(request.acknowledgeWarnings());
-        List<ValidationIssue> agentWarnings = agentCheck.warnings(draft.definitionJson(), context);
+        List<ValidationIssue> agentWarnings = new ArrayList<>(agentCheck.warnings(draft.definitionJson(), context));
+        agentWarnings.addAll(assetIssues);
         List<ValidationIssue> allWarnings = new ArrayList<>(report.warnings());
         allWarnings.addAll(agentWarnings);
         if (!allWarnings.isEmpty() && !acknowledged) {
@@ -169,6 +181,11 @@ public class ReleaseService {
         manifest.put("reviewedAt", now.toString());
         if (definition.has("provenance")) manifest.set("provenance", definition.path("provenance"));
         if (definition.has("acceptanceProfile")) manifest.put("acceptanceProfile", definition.path("acceptanceProfile").asString());
+        // Provenance of shared asset copies (S57): which asset version each element was published from.
+        manifest.set("assets", json.parse(draft.definitionJson()).path("dependencies").path("assets").deepCopy());
+        if (!manifest.path("assets").isArray()) {
+            manifest.putArray("assets");
+        }
         store.insertRelease(new CatalogStore.ReleaseRow(releaseId, workspaceId, workflowId, number, draft.revision(),
                 draft.definitionJson(), "0.1", compiled.sourceHash(), compiled.semanticHash(), compiled.compilerVersion(),
                 json.write(manifest), compiled.sourceMapJson(),

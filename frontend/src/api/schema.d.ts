@@ -824,6 +824,196 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/shared-assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Search shared assets (decisions, document templates, connections) by name, key or owner
+         * @description Only the kinds the caller may read are searched (decisions and document templates need workflow.read, connections
+         *     need connection.read); searchedKinds lists them, and a caller who may read none gets 403. q matches the name, the
+         *     key or the owner's display name (case-insensitive substring). At most 300 results, ordered by name; truncated
+         *     tells when there were more. Archived assets are hidden unless includeArchived is true (docs/build/S57).
+         */
+        get: operations["listSharedAssets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/shared-asset-owner-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * People who may own an asset of this kind (they hold its manage permission today)
+         * @description workflow.edit for decisions and document templates, connection.manage for connections. Up to 50 people.
+         */
+        get: operations["listSharedAssetOwnerCandidates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/shared-assets/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a shared decision table with its first version (at most 200 per workspace)
+         * @description content holds hitPolicy, rows and default exactly as in a workflow decision table, without its key and version.
+         *     Only the structure is checked here; the compiler checks each copy in full in the workflow that uses it, because
+         *     conditions name that workflow's fields. Keys and names are unique in the workspace. The caller becomes the owner.
+         */
+        post: operations["createDecisionAsset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/shared-assets/decision/{assetKey}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                assetKey: components["schemas"]["Key"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add an immutable version of a shared decision (409 WORKFLOW_VERSION_CONFLICT when the latest version is not the one the caller saw)
+         * @description A version identical to the latest and a version of an archived asset are refused (422). Workflows keep the version they pinned until a designer updates them.
+         */
+        post: operations["addDecisionAssetVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/shared-assets/{assetKind}/{assetKey}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                assetKind: components["schemas"]["SharedAssetKind"];
+                assetKey: components["schemas"]["Key"];
+            };
+            cookie?: never;
+        };
+        /**
+         * One shared asset with every version, newest first (decision versions include their content)
+         * @description workflow.read for decisions and document templates, connection.read for connections.
+         */
+        get: operations["getSharedAsset"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/shared-assets/{assetKind}/{assetKey}/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                assetKind: components["schemas"]["SharedAssetKind"];
+                assetKey: components["schemas"]["Key"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Where-used - workflows whose current draft or active release references the asset, with the pinned versions
+         * @description Needs the read permission of the asset kind and workflow.read. Archived workflows are not listed.
+         */
+        get: operations["getSharedAssetUsage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/shared-assets/{assetKind}/{assetKey}/owner": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                assetKind: components["schemas"]["SharedAssetKind"];
+                assetKey: components["schemas"]["Key"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Change the owner of a shared asset (versioned by revision; the owner gains no access)
+         * @description Needs the manage permission of the kind (workflow.edit, or connection.manage for connections). The new owner must be an enabled person who holds that permission now (422 otherwise). A stale expectedRevision is 409 WORKFLOW_VERSION_CONFLICT.
+         */
+        put: operations["setSharedAssetOwner"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/shared-assets/{assetKind}/{assetKey}/archived": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                assetKind: components["schemas"]["SharedAssetKind"];
+                assetKey: components["schemas"]["Key"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Archive or restore a shared asset (versioned by revision)
+         * @description Archiving keeps every version and never changes a published release or a connection binding. Workflows that still reference the asset are blocked at validation and publish until it is restored or the link is removed. Needs the manage permission of the kind.
+         */
+        put: operations["setSharedAssetArchived"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/workflows/{workflowId}/folder": {
         parameters: {
             query?: never;
@@ -4052,6 +4242,13 @@ export interface components {
                 definitionHash: string;
             }[];
             groups: components["schemas"]["Key"][];
+            /** @description Shared asset versions the release's copies were published from (docs/build/S57) */
+            assets?: {
+                kind: string;
+                key: components["schemas"]["Key"];
+                version: number;
+                target: string;
+            }[];
         };
         StartForm: {
             workflowId: components["schemas"]["Uuid"];
@@ -4311,6 +4508,9 @@ export interface components {
         DocumentFormat: "pdf" | "docx";
         DocumentTemplateSummary: {
             id: components["schemas"]["Uuid"];
+            key: components["schemas"]["Key"];
+            owner: components["schemas"]["SubjectRef"];
+            revision: number;
             name: string;
             description?: string | null;
             latestVersion: number;
@@ -4336,6 +4536,9 @@ export interface components {
         };
         DocumentTemplate: {
             id: components["schemas"]["Uuid"];
+            key: components["schemas"]["Key"];
+            owner: components["schemas"]["SubjectRef"];
+            revision: number;
             name: string;
             description?: string | null;
             latestVersion: number;
@@ -4351,11 +4554,90 @@ export interface components {
             /** @description Plain text with {{field}} placeholders, as in the Generate a document step */
             body: string;
             changeNote?: string | null;
+            /** @description Stable key used by versioned workflow references (docs/build/S57); derived from the name when omitted */
+            key?: components["schemas"]["Key"];
         };
         AddDocumentTemplateVersion: {
             expectedVersion: number;
             format: components["schemas"]["DocumentFormat"];
             body: string;
+            changeNote?: string | null;
+        };
+        /** @enum {string} */
+        SharedAssetKind: "decision" | "documentTemplate" | "connection";
+        SharedAssetSummary: {
+            kind: components["schemas"]["SharedAssetKind"];
+            key: components["schemas"]["Key"];
+            name: string;
+            description?: string | null;
+            owner: components["schemas"]["SubjectRef"];
+            latestVersion: number;
+            archived: boolean;
+            /** @description Compare-and-set counter for owner and archive changes (0 for a connection never changed) */
+            revision: number;
+            updatedAt: components["schemas"]["Timestamp"];
+            /**
+             * Format: uuid
+             * @description Decision or template id; null for connections (identified by key)
+             */
+            id?: string | null;
+        };
+        SharedAssetPage: {
+            items: components["schemas"]["SharedAssetSummary"][];
+            searchedKinds: components["schemas"]["SharedAssetKind"][];
+            truncated: boolean;
+        };
+        SharedAssetVersion: {
+            version: number;
+            sha256: string;
+            changeNote?: string | null;
+            createdBy: components["schemas"]["SubjectRef"];
+            createdAt: components["schemas"]["Timestamp"];
+            /** @description The decision table content of this version (decisions only) */
+            content?: components["schemas"]["DecisionAssetContent"] | null;
+        };
+        SharedAsset: {
+            asset: components["schemas"]["SharedAssetSummary"];
+            versions: components["schemas"]["SharedAssetVersion"][];
+        };
+        SharedAssetUsage: {
+            kind: components["schemas"]["SharedAssetKind"];
+            key: components["schemas"]["Key"];
+            latestVersion: number;
+            items: {
+                workflowId: components["schemas"]["Uuid"];
+                workflowKey: string;
+                workflowName: string;
+                /** @description Version pinned by the current draft, null when the draft does not reference the asset */
+                draftVersion?: number | null;
+                activeReleaseNumber?: number | null;
+                /** @description Version the active release was published with */
+                activeReleaseVersion?: number | null;
+                /** @description The draft or the active release pins an older version than the latest */
+                stale: boolean;
+            }[];
+        };
+        /** @description The shareable part of a workflow decision table (contracts/workflow-v0.schema.json decisionTable without key and version) */
+        DecisionAssetContent: {
+            /** @enum {string} */
+            hitPolicy: "UNIQUE" | "FIRST";
+            rows: {
+                [key: string]: unknown;
+            }[];
+            default: {
+                [key: string]: unknown;
+            };
+        };
+        CreateDecisionAsset: {
+            key: components["schemas"]["Key"];
+            name: string;
+            description?: string | null;
+            content: components["schemas"]["DecisionAssetContent"];
+            changeNote?: string | null;
+        };
+        AddDecisionAssetVersion: {
+            expectedVersion: number;
+            content: components["schemas"]["DecisionAssetContent"];
             changeNote?: string | null;
         };
         RunComment: {
@@ -5759,6 +6041,14 @@ export interface components {
                 connections: {
                     key: components["schemas"]["key"];
                     definitionVersion: number;
+                }[];
+                /** @description Versioned references to shared workspace assets (docs/build/S57). Each names the element of this workflow that holds a pinned copy of the asset version: target is the key of a table in decisions (kind decision) or the id of a generateDocument step (kind documentTemplate). The server checks every reference at validation and publish: a missing, archived or differing asset blocks, a newer version is a warning. A reference grants no access to the asset. */
+                assets?: {
+                    /** @enum {unknown} */
+                    kind: "decision" | "documentTemplate";
+                    key: components["schemas"]["key"];
+                    version: number;
+                    target: components["schemas"]["id"];
                 }[];
             };
             /** @description Optional case stages (docs/build/S17): a presentation and monitoring layer that groups steps to show progress and to watch an optional time limit (sla). Adds no behavior to the generated process. */
@@ -8118,6 +8408,260 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    listSharedAssets: {
+        parameters: {
+            query?: {
+                q?: string;
+                kind?: components["schemas"]["SharedAssetKind"];
+                owner?: string;
+                includeArchived?: boolean;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Matching assets */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SharedAssetPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listSharedAssetOwnerCandidates: {
+        parameters: {
+            query: {
+                kind: components["schemas"]["SharedAssetKind"];
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Up to 50 people */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["SubjectRef"][];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createDecisionAsset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateDecisionAsset"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SharedAsset"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    addDecisionAssetVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                assetKey: components["schemas"]["Key"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddDecisionAssetVersion"];
+            };
+        };
+        responses: {
+            /** @description Version added */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SharedAsset"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    getSharedAsset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                assetKind: components["schemas"]["SharedAssetKind"];
+                assetKey: components["schemas"]["Key"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The asset */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SharedAsset"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getSharedAssetUsage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                assetKind: components["schemas"]["SharedAssetKind"];
+                assetKey: components["schemas"]["Key"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Referencing workflows ordered by name */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SharedAssetUsage"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    setSharedAssetOwner: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                assetKind: components["schemas"]["SharedAssetKind"];
+                assetKey: components["schemas"]["Key"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    ownerSubjectId: components["schemas"]["Uuid"];
+                    expectedRevision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SharedAsset"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    setSharedAssetArchived: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                assetKind: components["schemas"]["SharedAssetKind"];
+                assetKey: components["schemas"]["Key"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    archived: boolean;
+                    expectedRevision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SharedAsset"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     setWorkflowFolder: {

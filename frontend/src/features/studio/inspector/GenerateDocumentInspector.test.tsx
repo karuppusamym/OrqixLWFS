@@ -38,5 +38,8 @@ describe('generate document authoring', () => {
     await user.selectOptions(picker, within(picker).getByRole('option', { name: 'Order confirmation letter (version 1)' }))
     expect(await screen.findByText(/Copied version 1 of Order confirmation letter/)).toBeInTheDocument()
     await waitFor(() => expect(draft().nodes.find((n) => n.id === 'manager')!.config).toMatchObject({ format: 'pdf', template: expect.stringContaining('Dear {{customer}}'), inputMapping: { customer: '', amount: '/input/amount' } }), { timeout: 15000 })
+    // PL01: the step is linked to the copied version, so validation can report newer or archived versions.
+    await waitFor(() => expect(draft().dependencies.assets).toEqual([{ kind: 'documentTemplate', key: 'order-confirmation-letter', version: 1, target: 'manager' }]), { timeout: 15000 })
+    expect(await screen.findByTestId('template-link')).toHaveTextContent('Linked to saved template Order confirmation letter (order-confirmation-letter), version 1.')
   })
 })

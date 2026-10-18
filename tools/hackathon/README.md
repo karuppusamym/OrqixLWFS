@@ -49,3 +49,13 @@ python tools/hackathon/load.py
 `load.py` defaults to 50 virtual users, 10,000 actual stored cases, five minutes of warm-up and fifteen minutes of measured traffic. Preparation is additional time. Each virtual user owns its cases and authenticated sessions; the measured HTTP mix is 40% reads, 20% starts, 30% decisions and 10% reassignment/closure. Run without competing builds or test suites before interpreting latency. A smaller smoke run verifies the harness only. The tool writes observed p95 latency, errors and workload counts and exits nonzero if the local targets fail. Fixtures remain in the isolated development database for inspection.
 
 Both scripts accept only localhost targets, use explicitly synthetic source provenance, and never qualify genuine source equivalence, enterprise SMTP, compliance or production capacity. Evidence is written under the ignored `evidence/hackathon/` directory. See the [acceptance record](../../docs/hackathon-acceptance.md) for the dated outcomes and remaining owner gates.
+
+Interrupted preparation can be resumed using the fixture manifest written before cases are created:
+
+```powershell
+python tools/hackathon/load.py --reuse-fixture evidence/hackathon/load.fixture.json
+```
+
+Keep the same target URL and virtual-user count and choose `--cases` at least as large as the existing fixture. The tool validates the synthetic workflow namespace, takes a fixed census, assigns every existing case to exactly one virtual user and creates only missing cases. A reused task whose assignee no longer matches the current dev personas is reassigned through the audited operator API during preparation. All users authenticate again after preparation, before either timing clock starts. Preparation, identity refresh and repair requests are excluded from measured traffic. Four seeded role personas supply the independent virtual-user session sets; this does not test fifty distinct enterprise directory identities.
+
+The development realm pins explicit user IDs so recreating its container preserves OIDC subject mappings. An older database paired with a recreated, unpinned realm may contain retired subject IDs; the local directory must mark those identities disabled before automatic dispatch is used. Preserve their audit history. This is a fixture lifecycle concern, not a substitute for enterprise identity lifecycle integration.

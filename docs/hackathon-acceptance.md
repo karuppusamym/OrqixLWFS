@@ -63,3 +63,13 @@ Final architecture/case/revocation/hackathon API recheck before dependency patch
 - The security-patched image passed both real Edge acceptance scenarios (`evidence/hackathon-browser-patched.log`). Frontend lint and E2E TypeScript checks passed.
 - The rescan confirms all eight fixable Tomcat/Jackson advisories are absent. **36 base-image advisories across 15 packages remain** (`evidence/hackathon/runtime-cves-patched.sarif`). The security/compliance release gate remains open.
 - Full load qualification is running against `orqix/orqix:hackathon-security`; preparation is excluded from measurement. No pass is claimed before its result is recorded.
+
+## Long-run fixture corrections
+
+The load harness now writes a resumable workflow manifest, partitions an existing case census without shared ownership, restores eligible task ownership through the operator API when a fixture identity was retired, and authenticates all virtual-user session sets again after preparation. Identity repair and authentication are excluded from measured HTTP traffic. The workload uses independent session sets for four seeded role personas; it does not qualify fifty distinct enterprise directory identities.
+
+The dedicated local stack retained seven subject rows from an earlier unpinned Keycloak realm incarnation. Those retired identities were marked disabled without deleting their business or audit history. The development realm now pins all twelve user IDs. An actual Keycloak container recreation preserved all twelve IDs (`evidence/hackathon/identity-recreation.json`), preventing that fixture mismatch from recurring. Enterprise identity lifecycle integration remains HC03.
+
+Five offline tool tests pass, including disjoint/exhaustive case ownership and explicit unique realm identities. The refreshed-session smoke and reused-fixture smoke both passed with zero unexpected errors. The latter resumed 48 stored cases into a 60-case dataset; read p95 was 14 ms and mutation p95 137 ms (`evidence/hackathon/load-smoke-reused.json`). Full qualification resumes the existing 50-user fixture; these smoke results do not substitute for its declared warm-up and measurement periods.
+
+The local evidence pack also contains 657 collected dependency notice/license text files and the base image's distributed license files (`evidence/hackathon/third-party-notices.txt`, `evidence/hackathon/base-image-licenses/`). Collection does not establish license compatibility or organizational approval. The prepared source artifact and sidecar reconcile the committed sample and SHA-256 values; independent business review and publication remain required.

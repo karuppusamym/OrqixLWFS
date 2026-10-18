@@ -29,6 +29,13 @@ def percentile(values, fraction):
     return values[min(len(values) - 1, int((len(values) - 1) * fraction))] if values else None
 
 
+def assigned_cases(census, workflows, users, index):
+    """Partition a fixed census so concurrent users never mutate the same case."""
+    wf = workflows[index % len(workflows)]
+    owners = [i for i in range(users) if workflows[i % len(workflows)] == wf]
+    return census[wf][owners.index(index)::len(owners)]
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--users", type=int, default=50)
@@ -36,6 +43,7 @@ def main():
     p.add_argument("--warmup-minutes", type=float, default=5)
     p.add_argument("--minutes", type=float, default=15)
     p.add_argument("--out", default=str(ROOT / "evidence/hackathon/load.json"))
+    p.add_argument("--reuse-fixture", type=Path, help="Resume this local fixture's preparation without discarding existing cases")
     args = p.parse_args()
     if urlparse(os.environ.get("ORQIX_BASE_URL", "http://localhost:8080")).hostname not in {"localhost", "127.0.0.1"}:
         p.error("This synthetic fixture is restricted to a local development stack.")
@@ -47,8 +55,20 @@ def main():
     # Populate directory snapshots before tasks are dispatched.
     mani, maximum = Client("mani.manager"), Client("max.manager")
     manager_ids = [require(c.get("/me"), 200)["subject"]["id"] for c in [mani, maximum]]
+    base_url = os.environ.get("ORQIX_BASE_URL", "http://localhost:8080").rstrip("/")
     workflows = []
-    for i in range(min(10, args.users)):
+    if args.reuse_fixture:
+        fixture = json.loads(args.reuse_fixture.read_text(encoding="utf-8"))
+        if fixture.get("baseUrl") != base_url or fixture.get("users") != args.users:
+            p.error("A reused fixture must match the local target and virtual-user count.")
+        workflows = [str(uuid.UUID(id)) for id in fixture["workflows"]]
+        if not 1 <= len(workflows) <= min(10, args.users) or len(set(workflows)) != len(workflows):
+            p.error("Invalid fixture workflow list.")
+        for wf in workflows:
+            info = require(designer.get(prefix + f"/workflows/{wf}"), 200)
+            if not info["key"].startswith("tier1-load-"):
+                p.error("Only synthetic tier1-load-* workflows may be reused.")
+    for i in range(0 if workflows else min(10, args.users)):
         d = json.loads((ROOT / "examples/hackathon/tier1-approval.json").read_text(encoding="utf-8"))
         key = "tier1-load-" + uuid.uuid4().hex[:10]
         d["workflowKey"] = key
@@ -62,20 +82,59 @@ def main():
         require(designer.put(prefix + f"/workflows/{wf}/draft", {"definition": d}, if_match='"r1"'), 200)
         require(publisher.post(prefix + f"/workflows/{wf}/publish", {"draftRevision": 2, "acknowledgeWarnings": True}, idem=True), 201)
         workflows.append(wf)
-    print(f"Preparing {args.cases} real cases across {len(workflows)} workflows ...", flush=True)
-    clients = []
-    for _ in range(args.users):
-        clients.append(None)
+    target = Path(args.out)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fixture_path = target.with_suffix(".fixture.json")
+    fixture_path.write_bytes((json.dumps({"baseUrl": base_url, "users": args.users, "workflows": workflows}, indent=2) + "\n").encode())
+    # Take one stable census before parallel preparation; each case belongs to exactly one virtual user.
+    census = {}
+    census_client = Client("olga.operator")
+    for wf in workflows:
+        existing, cursor = [], None
+        while True:
+            page = require(census_client.get(prefix + "/runs", workflowId=wf, limit=100, cursor=cursor), 200)
+            existing.extend(row["id"] for row in page["items"])
+            cursor = page.get("nextCursor")
+            if not cursor:
+                break
+        census[wf] = sorted(existing)
+    existing_count = sum(map(len, census.values()))
+    if existing_count > args.cases:
+        p.error("Fixture already contains more cases than --cases; select a matching dataset size or a fresh fixture.")
+    print(f"Preparing {args.cases} real cases across {len(workflows)} workflows ({existing_count} already stored) ...", flush=True)
+    clients = [None] * args.users
+    prepared, preparation_lock = 0, threading.Lock()
 
     def session(index):
+        nonlocal prepared
         requester, a, b, operator = [Client(n) for n in ["rhea.requester", "mani.manager", "max.manager", "olga.operator"]]
         wf = workflows[index % len(workflows)]
         pool = collections.deque()
         count = args.cases // args.users + (index < args.cases % args.users)
+        assigned = assigned_cases(census, workflows, args.users, index)
+        if len(assigned) > count:
+            raise AssertionError("Existing fixture cannot be evenly assigned to the requested user/case counts")
         for j in range(count):
-            run = require(requester.post(prefix + "/runs", {"workflowId": wf, "input": {"title": "Synthetic capacity case", "amount": 10}}, idem=True), 201)
+            if j < len(assigned):
+                run = {"id": assigned[j]}
+            else:
+                run = require(requester.post(prefix + "/runs", {"workflowId": wf, "input": {"title": "Synthetic capacity case", "amount": 10}}, idem=True), 201)
             detail = require(operator.get(prefix + f"/runs/{run['id']}"), 200)
-            task = next(t for t in detail["tasks"] if t["status"] == "open")
+            with preparation_lock:
+                prepared += 1
+                if prepared % 1000 == 0:
+                    print(f"Prepared {prepared}/{args.cases} cases", flush=True)
+            task = next((t for t in detail["tasks"] if t["status"] == "open"), None)
+            if task is None:
+                continue
+            if task["assignee"]["id"] not in manager_ids:
+                # A reused local fixture may contain tasks owned by a retired dev-realm subject.
+                # Restore current eligible ownership through the normal audited operator API.
+                require(operator.post(prefix + f"/tasks/{task['id']}/reassign", {
+                    "expectedVersion": task["version"], "assigneeSubjectId": manager_ids[index % len(manager_ids)],
+                    "reason": "Restore synthetic fixture ownership after development realm recreation"}), 200)
+                detail = require(operator.get(prefix + f"/runs/{run['id']}"), 200)
+                task = next(t for t in detail["tasks"] if t["status"] == "open")
             item = {"run": run["id"], "runVersion": detail["version"], "task": task["id"], "version": task["version"], "assignee": task["assignee"]["id"]}
             if j < max(1, count // 10):
                 require(operator.post(prefix + f"/runs/{run['id']}/cancel", {"expectedVersion": detail["version"], "reason": "Synthetic load headroom"}, idem=True), 200)
@@ -85,7 +144,16 @@ def main():
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=min(10, args.users)) as executor:
         list(executor.map(session, range(args.users)))
-    print("Preparation complete; warm-up starts. The recorded phase excludes preparation and warm-up.", flush=True)
+    # The earliest preparation sessions may have idled while later cohorts were seeded.
+    # Reauthenticate all users before starting either clock; login calls are never measured traffic.
+    def refresh(index):
+        _, _, _, wf, pool = clients[index]
+        requester, a, b, operator = [Client(n) for n in ["rhea.requester", "mani.manager", "max.manager", "olga.operator"]]
+        clients[index] = (requester, {manager_ids[0]: a, manager_ids[1]: b}, operator, wf, pool)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(10, args.users)) as executor:
+        list(executor.map(refresh, range(args.users)))
+    initial_ready = sum(len(item[4]) for item in clients)
+    print(f"Preparation complete; {initial_ready} ready tasks, sessions refreshed; warm-up starts. Preparation and authentication are excluded.", flush=True)
     lock = threading.Lock()
     samples, failures, counts = [], [], collections.Counter()
     start = time.monotonic()
@@ -158,6 +226,8 @@ def main():
     reads = [latency for category, latency, _ in samples if category == "read"]
     mutations = [latency for category, latency, _ in samples if category != "read"]
     result = {"users": args.users, "initialStoredCases": args.cases, "workflows": len(workflows),
+              "initialReadyTasks": initial_ready, "fixture": str(fixture_path), "reusedCases": existing_count,
+              "identityModel": "50 or fewer independent virtual-user session sets sharing four seeded role personas",
               "warmupMinutes": args.warmup_minutes, "measurementMinutes": args.minutes, "measuredHttpCounts": dict(counts),
               "readP95Ms": percentile(reads, .95), "mutationP95Ms": percentile(mutations, .95),
               "unexpectedErrorRate": len(failures) / max(1, len(samples)), "errors": failures[:100],

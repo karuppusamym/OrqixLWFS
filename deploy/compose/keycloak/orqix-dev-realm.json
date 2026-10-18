@@ -76,7 +76,8 @@
           "value": "Dev!pat.platform",
           "temporary": false
         }
-      ]
+      ],
+      "id": "0998ba6e-2a24-499d-945f-bd108c46b191"
     },
     {
       "username": "wade.admin",
@@ -95,7 +96,8 @@
           "value": "Dev!wade.admin",
           "temporary": false
         }
-      ]
+      ],
+      "id": "3a4900cf-ab2d-40ff-9636-05a2f9f7a7f1"
     },
     {
       "username": "dana.designer",
@@ -114,7 +116,8 @@
           "value": "Dev!dana.designer",
           "temporary": false
         }
-      ]
+      ],
+      "id": "ed422b2d-064c-4ac2-8ada-699e28310908"
     },
     {
       "username": "paul.publisher",
@@ -133,7 +136,8 @@
           "value": "Dev!paul.publisher",
           "temporary": false
         }
-      ]
+      ],
+      "id": "7b06404a-fdfc-4289-8275-1cfe72d0bd07"
     },
     {
       "username": "olga.operator",
@@ -152,7 +156,8 @@
           "value": "Dev!olga.operator",
           "temporary": false
         }
-      ]
+      ],
+      "id": "b657f90e-8f15-46f6-84b2-2459ca7e3f0f"
     },
     {
       "username": "vic.viewer",
@@ -171,7 +176,8 @@
           "value": "Dev!vic.viewer",
           "temporary": false
         }
-      ]
+      ],
+      "id": "53a7e8a8-3326-447a-8683-61af939f38e1"
     },
     {
       "username": "rhea.requester",
@@ -190,7 +196,8 @@
           "value": "Dev!rhea.requester",
           "temporary": false
         }
-      ]
+      ],
+      "id": "edf974d3-11cd-4058-bfec-4d75ea58f86c"
     },
     {
       "username": "mani.manager",
@@ -210,7 +217,8 @@
           "value": "Dev!mani.manager",
           "temporary": false
         }
-      ]
+      ],
+      "id": "1f5f3b95-e73f-4520-a713-44411eb4dca5"
     },
     {
       "username": "max.manager",
@@ -230,7 +238,8 @@
           "value": "Dev!max.manager",
           "temporary": false
         }
-      ]
+      ],
+      "id": "b8cf4ee0-ec8c-47ea-98a5-0d1c3b692bc0"
     },
     {
       "username": "fin.finance",
@@ -249,7 +258,8 @@
           "value": "Dev!fin.finance",
           "temporary": false
         }
-      ]
+      ],
+      "id": "cac2c29e-6929-49ef-aee5-86aff80c0734"
     },
     {
       "username": "fred.facilities",
@@ -268,7 +278,8 @@
           "value": "Dev!fred.facilities",
           "temporary": false
         }
-      ]
+      ],
+      "id": "aff50176-9b95-4956-aa34-62e6d935a591"
     },
     {
       "username": "otto.outsider",
@@ -285,7 +296,8 @@
           "value": "Dev!otto.outsider",
           "temporary": false
         }
-      ]
+      ],
+      "id": "53a82cd5-7057-4309-9b0b-274dd11a40b1"
     }
   ],
   "clients": [

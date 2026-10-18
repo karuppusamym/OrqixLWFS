@@ -271,6 +271,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
     private Object sampleBody(String operationId, Map<String, String> ids) throws Exception {
         Map<String, Object> principal = Map.of("type", "idpGroup", "value", "orqix-foreign");
         return switch (operationId) {
+            case "terminateCaseInstance" -> Map.of("expectedVersion", 1, "reason", "Foreign attempt");
             case "createCaseDefinition" -> {
                 try (var source = getClass().getResourceAsStream("/cases/cmmn-compatibility.cmmn")) {
                     yield Map.of("key", "foreign-case", "name", "Foreign case", "sourceXml",

@@ -228,7 +228,7 @@ export function StartRequestPage() {
                 Back to edit
               </Button>
               <Button variant="primary" size="lg" onClick={() => void submit()} loading={submitting}>
-                {submitting ? 'Submitting' : 'Submit request'}
+                {submitting ? 'Submitting' : ui.submitLabel ?? 'Submit request'}
               </Button>
             </div>
           </CardContent>

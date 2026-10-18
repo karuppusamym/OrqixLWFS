@@ -60,4 +60,14 @@ public class CaseController {
         if(result.replayed()) response.header(IdempotencyService.REPLAYED_HEADER,"true");
         return response.body(result.value());
     }
+
+    @PostMapping("/instances/{instanceId}/terminate")
+    public ResponseEntity<CaseService.Instance> terminate(@PathVariable UUID workspaceId, @PathVariable UUID instanceId,
+            @RequestHeader(name=IdempotencyService.HEADER,required=false) String key,
+            @RequestBody CaseService.TerminateCase request) {
+        var result = service.terminate(callers.current(), workspaceId, instanceId, key, request);
+        var response = ResponseEntity.ok();
+        if (result.replayed()) response.header(IdempotencyService.REPLAYED_HEADER, "true");
+        return response.body(result.value());
+    }
 }

@@ -56,6 +56,16 @@
       "type": "object",
       "description": "Presentation hints for the request form. Never affects validation or execution.",
       "properties": {
+        "viewRef": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "version"],
+          "properties": {
+            "id": { "type": "string", "format": "uuid" },
+            "version": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "submitLabel": { "type": "string", "minLength": 1, "maxLength": 80 },
         "order": {
           "type": "array",
           "items": {

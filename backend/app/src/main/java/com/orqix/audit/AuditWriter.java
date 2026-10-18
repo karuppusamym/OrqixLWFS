@@ -77,6 +77,7 @@ public class AuditWriter {
             Map.entry("case.definition.created", Set.of("version")),
             Map.entry("case.instance.started", Set.of("definitionId", "version")),
             Map.entry("case.task.completed", Set.of("taskId", "version")),
+            Map.entry("case.instance.terminated", Set.of("version")),
             Map.entry("view.created", Set.of("revision")),
             Map.entry("view.copied", Set.of("revision")),
             Map.entry("view.draft.saved", Set.of("revision")),

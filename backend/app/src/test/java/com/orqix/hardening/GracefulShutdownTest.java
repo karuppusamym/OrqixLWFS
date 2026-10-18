@@ -15,6 +15,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import org.springframework.test.context.TestPropertySource;
 
 import com.orqix.resilience.Flows;
 import com.orqix.resilience.JobExecutionRecorder;
@@ -46,10 +47,26 @@ class GracefulShutdownTest {
     private Node a;
     private Node b;
 
+    // This scenario tests draining an in-flight call, not forced lease expiry. The generic resilience fixtures use
+    // a 10-second lease to speed recovery tests; an 8-second call plus database/CI scheduling can exceed that lease.
+    // Use the production lease/reset values here so a concurrent expiry reset cannot invalidate a healthy drain.
+    @TestPropertySource(properties = {"orqix.runtime.lock-owner=node-a", "orqix.runtime.async-job-lock-time=60s",
+            "orqix.runtime.reset-expired-jobs-interval=15s"})
+    public static class DrainNodeA extends Nodes.Base { }
+
+    @TestPropertySource(properties = {"orqix.runtime.lock-owner=node-b", "orqix.runtime.async-job-lock-time=60s",
+            "orqix.runtime.reset-expired-jobs-interval=15s"})
+    public static class DrainNodeB extends Nodes.Base { }
+
     @BeforeAll
     void startBothInstances() {
-        a = Node.start(Nodes.NodeA.class);
-        b = Node.start(Nodes.NodeB.class);
+        a = Node.start(DrainNodeA.class);
+        b = Node.start(DrainNodeB.class);
+        assertThat(a.bean(com.orqix.shared.config.OrqixProperties.class).runtime().asyncJobLockTime())
+                .as("graceful drain uses the production lease, independently of accelerated recovery tests")
+                .isEqualTo(Duration.ofSeconds(60));
+        assertThat(b.bean(com.orqix.shared.config.OrqixProperties.class).runtime().asyncJobLockTime())
+                .isEqualTo(Duration.ofSeconds(60));
         Flows.bindStub(a, PURCHASING, Stub.baseUrl());
     }
 
@@ -58,10 +75,10 @@ class GracefulShutdownTest {
         Stub.reset();
         JobExecutionRecorder.clear();
         if (!a.running()) {
-            a = Node.start(Nodes.NodeA.class);
+            a = Node.start(DrainNodeA.class);
         }
         if (!b.running()) {
-            b = Node.start(Nodes.NodeB.class);
+            b = Node.start(DrainNodeB.class);
         }
     }
 

@@ -43,11 +43,13 @@ public class AssetReferenceCheck {
     private final JdbcClient jdbc;
     private final SharedAssets assets;
     private final Json json;
+    private final RequestViewCheck requestViews;
 
-    public AssetReferenceCheck(JdbcClient jdbc, SharedAssets assets, Json json) {
+    public AssetReferenceCheck(JdbcClient jdbc, SharedAssets assets, Json json, RequestViewCheck requestViews) {
         this.jdbc = jdbc;
         this.assets = assets;
         this.json = json;
+        this.requestViews = requestViews;
     }
 
     private record Asset(int latest, boolean archived, Map<Integer, String> hashes) {
@@ -111,6 +113,7 @@ public class AssetReferenceCheck {
             }
         }
         connectionIssues(ws, root, issues);
+        issues.addAll(requestViews.issues(ws, root));
         return issues;
     }
 

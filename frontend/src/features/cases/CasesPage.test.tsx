@@ -14,6 +14,27 @@ const active = { id: instanceId, definitionId, definitionVersion: 1, status: 'ac
   tasks: [{ id: 'task-1', name: 'Collect evidence', status: 'available', candidateGroups: ['case-workers'], eligible: true }], createdAt: '2026-10-17T12:00:00Z' }
 
 describe('case workbench', () => {
+  it('requires an operator confirmation and reason before terminating case work', async () => {
+    signInAs('olga.operator')
+    let body: unknown
+    server.use(
+      http.get('*/api/v1/workspaces/:ws/cases/instances/:id', () => HttpResponse.json(active)),
+      http.post('*/api/v1/workspaces/:ws/cases/instances/:id/terminate', async ({ request }) => {
+        expect(request.headers.get('Idempotency-Key')).toBeTruthy()
+        body = await request.json()
+        return HttpResponse.json({ ...active, status: 'terminated', version: 2, tasks: [] })
+      }),
+    )
+    const user = userEvent.setup(); await renderAppReady(`/w/${ws}/cases/${instanceId}`)
+    await user.click(await screen.findByRole('button', { name: 'Terminate case' }))
+    expect(screen.getByRole('button', { name: 'Confirm termination' })).toBeDisabled()
+    expect(body).toBeUndefined()
+    await user.type(screen.getByLabelText('Reason'), 'Duplicate request')
+    await user.click(screen.getByRole('button', { name: 'Confirm termination' }))
+    await waitFor(() => expect(body).toEqual({ expectedVersion: 1, reason: 'Duplicate request' }))
+    expect(await screen.findByText('terminated')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Terminate case' })).not.toBeInTheDocument()
+  })
   it('uploads a reviewed model and starts a case from the returned definition', async () => {
     signInAs('dana.designer')
     let submitted: unknown

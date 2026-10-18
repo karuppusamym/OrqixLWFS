@@ -12,6 +12,7 @@ const DEMO_INSTANCE = '77777777-7777-4777-8777-777777777702'
 let definitions: Array<Definition & { ws: string }> = []
 let instances: Row[] = []
 const replays = new Map<string, Instance>()
+const terminations = new Map<string, { request: string; value: Instance }>()
 
 const task = (step: number): Instance['tasks'][number] => step === 0
   ? { id: 'demo-collect', name: 'Collect evidence', status: 'available', candidateGroups: ['managers'], eligible: false }
@@ -23,6 +24,7 @@ export function resetMockCases(): void {
     value: { id: DEMO_INSTANCE, definitionId: DEMO_DEFINITION.id, definitionVersion: 1, status: 'active', version: 1,
       tasks: [task(0)], createdAt: clock.iso() } }]
   replays.clear()
+  terminations.clear()
 }
 
 export function snapshotMockCases(): string { return JSON.stringify({ definitions, instances }) }
@@ -51,6 +53,26 @@ function project(row: Row, user: MockUser): Instance {
 export function createCaseHandlers(getUser: () => MockUser): HttpHandler[] {
   const member = (ws: string, user: MockUser) => isMember(user, ws)
   return [
+    http.post(`${B}/workspaces/:ws/cases/instances/:id/terminate`, async ({ params, request }) => {
+      const ws = String(params.ws), user = getUser(), perms = permissionsOf(user, ws)
+      if (!member(ws, user)) return failure(404, 'NOT_FOUND', 'Workspace not found.')
+      if (!perms.includes('run.operate')) return failure(403, 'FORBIDDEN', 'Case termination is not allowed.')
+      const row = instances.find(value => value.value.id === String(params.id) && definitions.some(def => def.ws === ws && def.id === value.value.definitionId))
+      if (!row) return failure(404, 'NOT_FOUND', 'Case not found.')
+      const key = request.headers.get('Idempotency-Key')
+      if (!key) return failure(400, 'MALFORMED_REQUEST', 'Idempotency-Key is required.')
+      const body = await request.json() as { expectedVersion: number; reason: string }
+      if (!Number.isInteger(body.expectedVersion) || body.expectedVersion < 1 || typeof body.reason !== 'string' || !body.reason.trim() || body.reason.length > 1000) return failure(422, 'VALIDATION_FAILED', 'Supply a current version and reason.')
+      const replayKey = `${ws}:${user.id}:${key}`, fingerprint = JSON.stringify({ id: row.value.id, ...body })
+      const replay = terminations.get(replayKey)
+      if (replay) return replay.request === fingerprint ? HttpResponse.json(replay.value, { headers: { 'Idempotent-Replayed': 'true' } }) : failure(409, 'IDEMPOTENCY_KEY_REUSED', 'The command changed.')
+      if (row.value.version !== body.expectedVersion) return failure(409, 'TASK_VERSION_CONFLICT', 'Refresh the case.')
+      if (row.value.status !== 'active') return failure(409, 'TASK_NOT_OPEN', 'The case has ended.')
+      row.value = { ...row.value, status: 'terminated', version: row.value.version + 1, tasks: [] }
+      const value = project(row, user)
+      terminations.set(replayKey, { request: fingerprint, value })
+      return HttpResponse.json(value)
+    }),
     http.get(`${B}/workspaces/:ws/cases/definitions`, ({ params }) => {
       const ws = String(params.ws), user = getUser(), perms = permissionsOf(user, ws)
       if (!member(ws, user)) return failure(404, 'NOT_FOUND', 'Workspace not found.')

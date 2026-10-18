@@ -9,6 +9,17 @@ import { renderApp, signInAs, WS } from '@/test/utils'
 
 const START = `/w/${WS}/start/${PURCHASE_WORKFLOW_ID}`
 
+it('uses the submit label copied into the published request form', async () => {
+  signInAs('rhea.requester')
+  const workflow = db.workflows.get(PURCHASE_WORKFLOW_ID)!
+  workflow.releases[0]!.definition.inputUi = { ...workflow.releases[0]!.definition.inputUi, submitLabel: 'Send for review' }
+  const user = userEvent.setup()
+  renderApp(START)
+  await fill(user, { title: 'Shared view', purpose: 'Pinned form', costCenter: 'OPS', amount: '100' })
+  await user.click(screen.getByRole('button', { name: 'Review request' }))
+  expect(await screen.findByRole('button', { name: 'Send for review' })).toBeInTheDocument()
+})
+
 async function fill(user: ReturnType<typeof userEvent.setup>, values: { title?: string; purpose?: string; costCenter?: string; amount?: string }) {
   if (values.title !== undefined) await user.type(await screen.findByLabelText(/What are you buying\?/), values.title)
   if (values.purpose !== undefined) await user.type(screen.getByLabelText(/Business purpose/), values.purpose)

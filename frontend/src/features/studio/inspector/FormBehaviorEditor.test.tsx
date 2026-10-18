@@ -8,6 +8,7 @@ import { StudioProvider, useStudio } from '../StudioContext'
 import { normalizeDefinition } from '../model/types'
 import { buildFields, parseFormSchema, parseFormUi } from '@/lib/form/schema'
 import { StartInspector } from './StartInspector'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 function setup() {
   const store = createStudioStore()
@@ -18,7 +19,7 @@ function setup() {
     const node = useStudio(s => s.definition.nodes.find(n => n.type === 'start')!)
     return <StartInspector node={node} />
   }
-  render(<StudioProvider value={{ store, saver: {} as DraftSaver, wsId: 'workspace', workflowId: 'workflow', readOnly: false, connections: { responseType: () => undefined } }}><Inspector /></StudioProvider>)
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><StudioProvider value={{ store, saver: {} as DraftSaver, wsId: 'workspace', workflowId: 'workflow', readOnly: false, connections: { responseType: () => undefined } }}><Inspector /></StudioProvider></QueryClientProvider>)
   return store
 }
 

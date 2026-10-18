@@ -100,6 +100,8 @@ export interface FormSchemaDoc {
 }
 
 export interface InputUiDoc {
+  viewRef?: { id: string; version: number }
+  submitLabel?: string
   order?: string[]
   widgets?: Record<string, string>
   currency?: 'USD'

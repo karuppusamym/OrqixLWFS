@@ -16,6 +16,7 @@ import { StagesInspector } from './StagesInspector'
 import { SubprocessesInspector } from './ScopeInspectors'
 import { RowColumnsEditor } from './RowColumnsEditor'
 import { FieldConditionsEditor, FormLayoutEditor } from './FormBehaviorEditor'
+import { RequestViewPicker } from './RequestViewPicker'
 
 const KIND_ORDER: FieldKind[] = ['text', 'longText', 'number', 'money', 'integer', 'date', 'yesNo', 'choice', 'collection', 'file']
 
@@ -83,6 +84,7 @@ export function StartInspector({ node }: { node: WorkflowNode }) {
       <StagesInspector />
       <SubprocessesInspector />
       <FormLayoutEditor />
+      <RequestViewPicker />
       <Advanced>
         <FormField label="Step name" id={`start-label-${node.id}`}>
           {(ids) => <CommitInput id={ids.input} value={node.label} disabled={readOnly} onCommit={(v) => store.getState().updateNodeLabel(node.id, v)} />}

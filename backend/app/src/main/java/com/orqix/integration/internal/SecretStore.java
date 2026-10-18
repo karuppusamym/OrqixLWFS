@@ -21,10 +21,20 @@ public class SecretStore {
     private static final Pattern REF = Pattern.compile("^[a-z0-9][a-z0-9-]{0,62}$");
 
     private final OrqixProperties properties;
+    private final com.orqix.integration.OAuthTokenClient oauth;
 
-    public SecretStore(OrqixProperties properties) {
+    public SecretStore(OrqixProperties properties, com.orqix.integration.OAuthTokenClient oauth) {
         this.properties = properties;
+        this.oauth = oauth;
     }
+
+    public Optional<String> credential(String authType, String reference, java.util.UUID workspace) {
+        var value = read(reference);
+        return "oauth2ClientCredentials".equals(authType)
+                ? value.flatMap(config -> oauth.resolve(workspace, reference, config)) : value;
+    }
+
+    public void invalidateOAuth(java.util.UUID workspace, String reference) { oauth.invalidate(workspace, reference); }
 
     /** @return the secret value, or empty when the file is missing or unreadable (CONNECTION_UNAVAILABLE) */
     public Optional<String> read(String secretRef) {

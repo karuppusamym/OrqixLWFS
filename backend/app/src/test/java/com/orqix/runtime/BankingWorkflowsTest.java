@@ -201,10 +201,18 @@ class BankingWorkflowsTest extends RuntimeTestBase {
     /** Moves the run's timers forward (without touching a timer that a later step creates) until the task opens. */
     private void awaitOpenTaskAfterTimeout(UUID run, String nodeId) {
         until(() -> {
+            // Snapshot timers before checking the target task. Otherwise the engine can open that task between
+            // the check and fastForward(), and the helper immediately expires the newly-created task as well.
+            String pid = processInstance(PURCHASING, run);
+            var timers = pid == null ? List.<org.flowable.job.api.Job>of()
+                    : managementService.createTimerJobQuery().processInstanceId(pid).list();
             if (taskOpen(run, nodeId)) {
                 return true;
             }
-            fastForward(PURCHASING, run);
+            for (var timer : timers) {
+                try { managementService.moveTimerToExecutableJob(timer.getId()); }
+                catch (RuntimeException ignored) { /* Already picked up by the engine. */ }
+            }
             return false;
         });
     }

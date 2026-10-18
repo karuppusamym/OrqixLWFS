@@ -153,6 +153,26 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/cases/instances/{instanceId}/terminate:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: instanceId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [Cases]
+      operationId: terminateCaseInstance
+      summary: Terminate an active case and its open work with an operator reason
+      x-orqix-permission: run.operate
+      x-orqix-audit: case.instance.terminated
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/TerminateCase' } } } }
+      responses:
+        '200': { description: Terminated case or identical replay, content: { application/json: { schema: { $ref: '#/components/schemas/CaseInstance' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
   /workspaces/{workspaceId}/views:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
     get:
@@ -4659,10 +4679,17 @@ components:
         id: { $ref: '#/components/schemas/Uuid' }
         definitionId: { $ref: '#/components/schemas/Uuid' }
         definitionVersion: { type: integer, minimum: 1 }
-        status: { type: string, enum: [active, completed] }
+        status: { type: string, enum: [active, completed, terminated] }
         version: { type: integer, minimum: 1 }
         tasks: { type: array, items: { $ref: '#/components/schemas/CaseTask' } }
         createdAt: { $ref: '#/components/schemas/Timestamp' }
+    TerminateCase:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, reason]
+      properties:
+        expectedVersion: { type: integer, minimum: 1 }
+        reason: { type: string, minLength: 1, maxLength: 1000 }
     CompleteCaseTask:
       type: object
       additionalProperties: false
@@ -7508,7 +7535,7 @@ components:
       additionalProperties: false
       required: [type]
       properties:
-        type: { type: string, enum: [none, bearerToken, apiKeyHeader] }
+        type: { type: string, enum: [none, bearerToken, apiKeyHeader, oauth2ClientCredentials] }
         headerName: { type: string, pattern: '^[A-Za-z][A-Za-z0-9-]{0,63}$' }
         secretRef: { type: string, pattern: '^[a-z0-9][a-z0-9-]{0,62}$', description: 'Name of a mounted secret, never the secret value' }
     PutConnectionBindingRequest:

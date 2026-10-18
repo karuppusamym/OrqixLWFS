@@ -95,3 +95,5 @@ docker compose --profile app up -d --build      # then open http://localhost:808
 Open items are listed in [feature status](docs/feature-status.md#open-r0-items): the database restore exercise, the real procurement endpoint (D07), PingFederate (D05), OpenShift access (D06), a CI host (D15) and the production gates.
 
 The 11 October reviewed checkpoint closes the scoped Camunda 8 import, message-event, diagram/Insights, workflow-test, attachment and case-stage work. Latest verification and remaining scope are in the [build tracker](docs/19-product-build-tracker.md) and [product closeout](docs/21-product-closeout.md); the new image has not replaced the existing deployment.
+
+The 18 October engineering follow-up adds operator case termination, explicitly pinned reusable request-form layouts and OAuth client-credentials renewal for service connections. [S65](docs/build/S65-engineering-closeout-increments.md) records implementation and limits; the full CMMN, general designer and integration/agent epics remain open in the [delivery register](docs/22-competitive-gap-delivery.md).

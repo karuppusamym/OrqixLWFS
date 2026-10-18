@@ -118,7 +118,7 @@ function ConnectionCard({ connection: c }: { connection: ConnectionSummary }) {
   )
 }
 
-const AUTH_LABELS = { none: 'No sign-in', bearerToken: 'Bearer token', apiKeyHeader: 'API key in a header' } as const
+const AUTH_LABELS = { none: 'No sign-in', bearerToken: 'Bearer token', apiKeyHeader: 'API key in a header', oauth2ClientCredentials: 'OAuth client credentials' } as const
 
 function ManageConnection({ connection }: { connection: ConnectionSummary }) {
   const { workspace } = useWorkspace()
@@ -218,7 +218,7 @@ function BindingForm({ connectionKey, binding, graph }: { connectionKey: string;
       <div className="space-y-1.5">
         <Label htmlFor={`bind-auth-${connectionKey}`}>Sign-in method</Label>
         <Select id={`bind-auth-${connectionKey}`} value={authType} onChange={(e) => setAuthType(e.target.value as keyof typeof AUTH_LABELS)}>
-          {Object.entries(AUTH_LABELS).filter(([value]) => !graph || value === 'bearerToken').map(([value, label]) => (
+          {Object.entries(AUTH_LABELS).filter(([value]) => !graph || value === 'bearerToken' || value === 'oauth2ClientCredentials').map(([value, label]) => (
             <option key={value} value={value}>
               {label}
             </option>

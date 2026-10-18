@@ -35,5 +35,11 @@ class CaseApiTest extends IntegrationTestBase {
         assertThat(completed.status()).isEqualTo(200);
         assertThat(completed.body().path("version").asInt()).isEqualTo(2);
         assertThat(completed.body().path("tasks").get(0).path("name").asString()).isEqualTo("Review evidence");
+        var terminated = api("olga.operator").post(Map.of("expectedVersion", 2, "reason", "No longer needed"),
+                "terminate-api-" + key, base + "/instances/" + instanceId + "/terminate");
+        assertThat(terminated.status()).isEqualTo(200);
+        assertThat(terminated.body().path("status").asString()).isEqualTo("terminated");
+        assertThat(terminated.body().path("tasks")).isEmpty();
+        assertThat(terminated.body().toString()).doesNotContain("No longer needed");
     }
 }

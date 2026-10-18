@@ -172,3 +172,9 @@ A **File** question lets you choose a file before starting the request. Its allo
 Designers can select the request-form step in Studio and open **Case stages** to name stages, assign steps and set optional time limits. The request and task pages show progress and deadlines. An overdue stage records an in-app notice; it does not automatically reroute or cancel the request. Put any escalation route explicitly into the workflow.
 
 File questions currently use the normal request form. The Assistant does not offer a file upload control; start workflows requiring files from their form. Approved SharePoint/OneDrive reference choices remain usable as ordinary guided text/choice questions.
+
+## Reusable request views and case termination — 18 October 2026
+
+In Studio, select Start, then **Choose reusable view**. Choose a published request view and an explicit version, then **Apply selected version**. Every question must have a matching binding, type and required flag. The selected layout and optional submit label are copied into the draft. Save and publish the workflow normally. A later library edit does not update an existing pin. **Detach view and keep form** keeps the copied layout editable; normal undo is available. Publication blocks incompatible edits while the pin remains. This supports request forms; approval and case/worklist runtime views remain future work.
+
+On case detail, operators can choose **Terminate case**, enter a reason and confirm. This ends open case tasks and records the case as terminated. A stale version is rejected and refreshed. Termination is distinct from successfully completing the case; ordinary case responses do not expose the reason. Full CMMN lifecycle support remains open.

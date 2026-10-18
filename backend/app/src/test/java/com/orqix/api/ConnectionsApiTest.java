@@ -48,6 +48,29 @@ class ConnectionsApiTest extends IntegrationTestBase {
     }
 
     @Test
+    void serviceOAuthBindingPersistsOnlyAReferenceAndRejectsAHeaderOverride() throws Exception {
+        String reference = "oauth-" + java.util.UUID.randomUUID();
+        try {
+            var saved = api("wade.admin").put(binding(Stub.baseUrl(), "oauth2ClientCredentials", reference), etag(),
+                    "/workspaces/{ws}/connections/{key}/binding", SANDBOX, "procurement");
+            assertThat(saved.status()).as(saved.toString()).isEqualTo(200);
+            assertThat(saved.body().path("auth").path("type").asString()).isEqualTo("oauth2ClientCredentials");
+            assertThat(saved.body().path("auth").path("secretRef").asString()).isEqualTo(reference);
+            var tested = api("wade.admin").post(Map.of("version", 1, "operation", "health"),
+                    "/workspaces/{ws}/connections/{key}/test", SANDBOX, "procurement");
+            assertThat(tested.status()).isEqualTo(200);
+            assertThat(tested.body().path("errorCode").asString()).isEqualTo("CONNECTION_UNAVAILABLE");
+            var invalid = Map.of("baseUrl", Stub.baseUrl(), "enabled", true,
+                    "auth", Map.of("type", "oauth2ClientCredentials", "secretRef", reference, "headerName", "X-Token"));
+            assertThat(api("wade.admin").put(invalid, etag(), "/workspaces/{ws}/connections/{key}/binding",
+                    SANDBOX, "procurement").status()).isEqualTo(422);
+        } finally {
+            assertThat(api("wade.admin").put(binding(Stub.baseUrl(), "none", null), etag(),
+                    "/workspaces/{ws}/connections/{key}/binding", SANDBOX, "procurement").status()).isEqualTo(200);
+        }
+    }
+
+    @Test
     void listAndDetailNeverExposeSecretsAndHideBindingFromReaders() throws Exception {
         Response list = api("dana.designer").get("/workspaces/{ws}/connections", PURCHASING);
         assertThat(list.status()).isEqualTo(200);

@@ -44,6 +44,7 @@ export interface FormSchema {
 }
 
 export interface FormUi {
+  submitLabel?: string
   order?: string[]
   widgets?: Record<string, Widget>
   currency?: 'USD'
@@ -117,6 +118,7 @@ export function parseFormSchema(raw: unknown): FormSchema {
 export function parseFormUi(raw: unknown): FormUi {
   if (!isRecord(raw)) return {}
   const ui: FormUi = {}
+  if (typeof raw.submitLabel === 'string' && raw.submitLabel.trim() && raw.submitLabel.length <= 80) ui.submitLabel = raw.submitLabel
   if (Array.isArray(raw.order)) ui.order = raw.order.filter((v): v is string => typeof v === 'string')
   if (isRecord(raw.widgets)) {
     const widgets: Record<string, Widget> = {}

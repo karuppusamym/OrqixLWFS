@@ -36,7 +36,7 @@ export default defineConfig({
   webServer: mock
     ? {
         // Build once (fast) and serve with the production CSP header.
-        command: 'npm --prefix ../../frontend run build:mock && npm --prefix ../../frontend run preview:mock',
+        command: `npm --prefix ../../frontend run build:mock && npm --prefix ../../frontend run preview:mock -- --port ${new URL(baseURL).port || '4173'}`,
         url: baseURL,
         reuseExistingServer: true,
         timeout: 240_000,

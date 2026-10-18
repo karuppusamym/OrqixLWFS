@@ -151,3 +151,7 @@ PostgreSQL: include it in the database sizing and backup plan. Removing a file d
 - Audit records (sign-ins, access changes, publishes, decisions, operator actions, connection changes) are append-only for the application role.
 - The management port must stay unrouted; only health and Prometheus are exposed on it.
 - Production-readiness gates still open for R0 are listed in [doc 06](06-delivery-plan.md#production-release-gates) and the feature status page.
+
+## OAuth service connections — 18 October 2026
+
+Bindings can use `oauth2ClientCredentials` with a mounted secret containing the approved token endpoint, client ID, client secret and optional scope. Both the service and token endpoint need approved egress. [S65](build/S65-engineering-closeout-increments.md#oauth-client-credentials-in03a) documents the format, renewal/rotation, limits and deployment migrations. Credentials are provisioned through platform secret management; settings accepts only their reference. Delegated consent/refresh tokens and enterprise provider acceptance remain open.

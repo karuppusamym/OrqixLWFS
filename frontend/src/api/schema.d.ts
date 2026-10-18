@@ -127,6 +127,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/cases/instances/{instanceId}/terminate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Terminate an active case and its open work with an operator reason */
+        post: operations["terminateCaseInstance"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/views": {
         parameters: {
             query?: never;
@@ -3169,10 +3189,14 @@ export interface components {
             definitionId: components["schemas"]["Uuid"];
             definitionVersion: number;
             /** @enum {string} */
-            status: "active" | "completed";
+            status: "active" | "completed" | "terminated";
             version: number;
             tasks: components["schemas"]["CaseTask"][];
             createdAt: components["schemas"]["Timestamp"];
+        };
+        TerminateCase: {
+            expectedVersion: number;
+            reason: string;
         };
         CompleteCaseTask: {
             expectedVersion: number;
@@ -5188,7 +5212,7 @@ export interface components {
         };
         ConnectionAuth: {
             /** @enum {string} */
-            type: "none" | "bearerToken" | "apiKeyHeader";
+            type: "none" | "bearerToken" | "apiKeyHeader" | "oauth2ClientCredentials";
             headerName?: string;
             /** @description Name of a mounted secret, never the secret value */
             secretRef?: string;
@@ -6125,6 +6149,12 @@ export interface components {
             inputSchema: components["schemas"]["formSchema"];
             /** @description Presentation hints for the request form. Never affects validation or execution. */
             inputUi?: {
+                viewRef?: {
+                    /** Format: uuid */
+                    id: string;
+                    version: number;
+                };
+                submitLabel?: string;
                 order?: components["schemas"]["fieldKey"][];
                 widgets?: {
                     [key: string]: "text" | "textarea" | "number" | "money" | "select" | "radio" | "checkbox";
@@ -7280,6 +7310,42 @@ export interface operations {
         };
         responses: {
             /** @description Updated case */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseInstance"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    terminateCaseInstance: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TerminateCase"];
+            };
+        };
+        responses: {
+            /** @description Terminated case or identical replay */
             200: {
                 headers: {
                     [name: string]: unknown;

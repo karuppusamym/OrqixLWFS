@@ -367,7 +367,7 @@ public final class OpenApiConverter {
                         }
                     }
                     case "oauth2" -> schemes.put(entry.getKey(), new Scheme(name, "OAuth 2.0", false,
-                            "Needs a platform decision: bindings cannot obtain or refresh OAuth 2.0 tokens yet. A pre-issued "
+                            "Needs an explicit grant review: service bindings support oauth2ClientCredentials through a mounted credential. Delegated authorization and refresh-token rotation are not supported. A pre-issued "
                                     + "long-lived token could be used as a bearer token only if the system owner agrees."));
                     case "openidconnect" -> schemes.put(entry.getKey(), new Scheme(name, "OpenID Connect", false,
                             "Needs a platform decision: bindings do not support OpenID Connect sign-in."));

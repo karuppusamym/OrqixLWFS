@@ -39,6 +39,7 @@ public class CaseService {
     public record Result<T>(T value, boolean replayed) {}
     public record CreateDefinition(String key, String name, String sourceXml) {}
     public record CompleteTask(int expectedVersion) {}
+    public record TerminateCase(int expectedVersion, String reason) {}
 
     private record DefinitionRow(UUID id, UUID workspaceId, String key, String name, int version,
             Instant createdAt, String sourceXml, String engineDefinitionId) {
@@ -283,6 +284,34 @@ public class CaseService {
                 """).param("ws",claim.workspaceId()).param("actor",claim.principalId())
                 .param("operation",claim.operation()).param("key",claim.key()).param("caseId",caseId)
                 .param("groups",json.write(candidateGroups)).param("response",json.write(response)).update();
+    }
+
+    /** Termination is distinct from successful completion and is serialized with task decisions. */
+    @Transactional
+    public Result<Instance> terminate(Caller caller, UUID ws, UUID id, String key, TerminateCase request) {
+        var access = access(caller, ws, Permission.RUN_OPERATE, "terminateCaseInstance");
+        if (request == null || request.expectedVersion() < 1 || request.reason() == null
+                || request.reason().isBlank() || request.reason().length() > 1000)
+            throw new ApiException(ProblemCode.VALIDATION_FAILED, "Supply the current case version and a reason of 1 to 1000 characters.");
+        var row = instanceRow(ws, id, true);
+        String operation = "terminateCaseInstance";
+        var claim = idempotency.claim(ws, caller.subjectId(), operation, IdempotencyService.requireKey(key),
+                idempotency.requestHash(operation, Map.of("caseId", id.toString()), request));
+        if (claim.isReplay()) return new Result<>(replayed(claim, access), true);
+        if (row.version() != request.expectedVersion()) throw new ApiException(ProblemCode.TASK_VERSION_CONFLICT);
+        if (!row.status().equals("active")) throw new ApiException(ProblemCode.TASK_NOT_OPEN);
+        runtime.terminateCaseInstance(row.engineInstanceId());
+        jdbc.sql("UPDATE case_instance SET version=version+1,status='terminated',completed_at=now() WHERE workspace_id=:ws AND id=:id")
+                .param("ws", ws).param("id", id).update();
+        // The reason is retained separately under run-read-data authorization, never in audit metadata.
+        jdbc.sql("INSERT INTO case_termination(workspace_id,case_id,reason,terminated_by) VALUES(:ws,:id,:reason,:actor)")
+                .param("ws", ws).param("id", id).param("reason", request.reason().strip()).param("actor", caller.subjectId()).update();
+        audit.write(new AuditWriter.Entry(ws, AuditWriter.ActorType.USER, caller.subjectId(), "case.instance.terminated",
+                "caseInstance", id.toString(), AuditWriter.Outcome.SUCCESS, Map.of("version", row.version() + 1)));
+        Instance response = instance(ws, id, access);
+        saveResponse(claim, id, List.of(), response);
+        idempotency.complete(claim, "caseInstance", id.toString(), 200);
+        return new Result<>(response, false);
     }
 
     private Instance replayed(IdempotencyService.Claim claim, WorkspaceAccess access) {

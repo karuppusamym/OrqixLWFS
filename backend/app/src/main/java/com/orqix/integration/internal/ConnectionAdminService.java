@@ -192,7 +192,7 @@ public class ConnectionAdminService {
         ConnectionDtos.Auth auth = request.auth();
         List<ApiException.FieldError> errors = new ArrayList<>();
         if (connections.definitions(workspaceId, key).stream().anyMatch(d -> d.definition().isMicrosoftGraph())
-                && !"bearerToken".equals(auth.type())) {
+                && !"bearerToken".equals(auth.type()) && !"oauth2ClientCredentials".equals(auth.type())) {
             errors.add(new ApiException.FieldError("/auth/type", "enum",
                     "A Microsoft Graph document connection requires bearerToken authentication"));
         }
@@ -203,7 +203,7 @@ public class ConnectionAdminService {
                             "No secretRef or headerName for auth type none"));
                 }
             }
-            case "bearerToken" -> {
+            case "bearerToken", "oauth2ClientCredentials" -> {
                 if (auth.secretRef() == null || auth.headerName() != null) {
                     errors.add(new ApiException.FieldError("/auth/secretRef", "required", "secretRef is required"));
                 }
@@ -214,7 +214,7 @@ public class ConnectionAdminService {
                 }
                 if (connections.definitions(workspaceId, key).stream().anyMatch(d -> d.definition().isAgent())) {
                     errors.add(new ApiException.FieldError("/auth/type", "enum",
-                            "An agent connection supports the auth types none and bearerToken"));
+                            "An agent connection supports none, bearerToken and oauth2ClientCredentials"));
                 }
             }
             default -> errors.add(new ApiException.FieldError("/auth/type", "enum", "Unknown auth type"));
@@ -330,7 +330,7 @@ public class ConnectionAdminService {
             egress.check(binding.baseUrl());
             String secret = null;
             if (!"none".equals(binding.authType())) {
-                secret = secrets.read(binding.secretRef()).orElse(null);
+                secret = secrets.credential(binding.authType(), binding.secretRef(), binding.workspaceId()).orElse(null);
             }
             if (!"none".equals(binding.authType()) && secret == null) {
                 result = new ConnectionDtos.TestResult("failed", null, elapsed(started), "CONNECTION_UNAVAILABLE",
@@ -375,7 +375,7 @@ public class ConnectionAdminService {
         }
         String secret = null;
         if (!"none".equals(binding.authType())) {
-            secret = secrets.read(binding.secretRef()).orElse(null);
+            secret = secrets.credential(binding.authType(), binding.secretRef(), binding.workspaceId()).orElse(null);
             if (secret == null) {
                 return new ConnectionDtos.TestResult("failed", null, elapsed(started), "CONNECTION_UNAVAILABLE",
                         "The credential is not available.");

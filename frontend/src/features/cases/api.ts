@@ -29,3 +29,9 @@ export const completeCaseTask = (ws: string, instanceId: string, taskId: string,
     params: { path: { workspaceId: ws, instanceId, taskId }, header: { 'Idempotency-Key': uuid() } },
     body: { expectedVersion },
   }))
+
+export const terminateCaseInstance = (ws: string, instanceId: string, expectedVersion: number, reason: string) =>
+  call(api.POST('/workspaces/{workspaceId}/cases/instances/{instanceId}/terminate', {
+    params: { path: { workspaceId: ws, instanceId }, header: { 'Idempotency-Key': uuid() } },
+    body: { expectedVersion, reason },
+  }))

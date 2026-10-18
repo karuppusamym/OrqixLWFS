@@ -97,4 +97,31 @@ class CaseServiceTest extends IntegrationTestBase {
                 "unsafe", "Unsafe", "<!DOCTYPE definitions [<!ENTITY x SYSTEM 'file:///etc/passwd'>]>"+source)))
                 .isInstanceOf(ApiException.class);
     }
+
+    @Test void operatorTerminationCancelsEngineTasksAndCannotBeReplayedWithDifferentIntent() throws Exception {
+        var designer = caller("orqix-purchasing-designers");
+        var operator = caller("orqix-purchasing-operators");
+        var manager = caller("orqix-purchasing-managers");
+        var definition = publish(designer);
+        var active = cases.start(designer, SANDBOX, definition.id(), "start-" + definition.id()).value();
+        var request = new CaseService.TerminateCase(active.version(), "Duplicate request");
+        String key = "terminate-" + active.id();
+        assertThatThrownBy(() -> cases.terminate(manager, SANDBOX, active.id(), key, request)).isInstanceOf(ApiException.class);
+        assertThatThrownBy(() -> cases.terminate(operator, PURCHASING, active.id(), key, request)).isInstanceOf(ApiException.class);
+        assertThatThrownBy(() -> cases.terminate(operator, SANDBOX, active.id(), key, new CaseService.TerminateCase(2, "Stale")))
+                .isInstanceOf(ApiException.class);
+        var result = cases.terminate(operator, SANDBOX, active.id(), key, request);
+        assertThat(result.value().status()).isEqualTo("terminated");
+        assertThat(result.value().version()).isEqualTo(2);
+        assertThat(result.value().tasks()).isEmpty();
+        assertThat(cases.terminate(operator, SANDBOX, active.id(), key, request).replayed()).isTrue();
+        assertThatThrownBy(() -> cases.terminate(operator, SANDBOX, active.id(), key, new CaseService.TerminateCase(1, "Changed")))
+                .isInstanceOf(ApiException.class);
+        assertThatThrownBy(() -> cases.complete(manager, SANDBOX, active.id(), active.tasks().getFirst().id(),
+                "late-" + active.id(), new CaseService.CompleteTask(2))).isInstanceOf(ApiException.class);
+        assertThat(jdbc.sql("SELECT count(*) FROM flowable.act_ru_task WHERE scope_id_=(SELECT engine_instance_id FROM case_instance WHERE id=:id)")
+                .param("id", active.id()).query(Long.class).single()).isZero();
+        assertThat(jdbc.sql("SELECT count(*) FROM case_termination WHERE workspace_id=:ws AND case_id=:id")
+                .param("ws", SANDBOX).param("id", active.id()).query(Long.class).single()).isEqualTo(1);
+    }
 }

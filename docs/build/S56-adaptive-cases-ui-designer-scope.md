@@ -37,3 +37,7 @@ UI02a, the request-form ordering sub-ticket, is closed within this exact editor 
 ## Status rule
 
 Mark WM04 or UI02 Closed only after the chosen supported model, API, designer, runtime, permission checks and end-to-end acceptance above are delivered. A bounded subset receives its own sub-ticket with a precise name and evidence. This prevents a synthetic demo or a form layout improvement from being reported as full CMMN or full UI designer delivery.
+
+## 18 October engineering follow-up
+
+[S65](S65-engineering-closeout-increments.md) records operator case termination and version-pinned request-view reuse. The existing case API and view library supersede the earlier foundation-only descriptions above. These increments do not close the full WM04/UI02 acceptance in this specification.

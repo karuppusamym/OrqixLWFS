@@ -1,6 +1,8 @@
 # Feature implementation status (R0)
 Updated 15 October 2026 · status vocabulary from [doc 09](09-master-plan.md#definition-of-a-build-ticket)
 
+The Tier-1 hackathon implementation and its separate qualification limits are recorded in the [hackathon acceptance record](hackathon-acceptance.md). Historical product totals below do not qualify this candidate.
+
 **Verified** = automated tests pass against real PostgreSQL/Flowable (and, where stated, the Docker stack with real Keycloak and the procurement stub). **Implemented** = code exists; integration or acceptance verification is pending or limited as stated in the row. Nothing is marked Verified on mocks alone.
 
 ## Current verified checkpoint - 15 October 2026

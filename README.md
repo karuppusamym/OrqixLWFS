@@ -1,6 +1,8 @@
 # Orqix LWFS — product planning and build specification
 Revision 0.5 · 9 October 2026 · R0 implemented and verified end to end on the local Docker stack; production gates not yet passed.
 
+The Tier-1 hackathon implementation and its separate qualification limits are recorded in the [hackathon acceptance record](docs/hackathon-acceptance.md). Historical product totals below do not qualify this candidate.
+
 **Engineers start with the [build specification](docs/build/README.md).** It contains the machine-readable contracts, the 24 build decisions, the ticket breakdown with acceptance criteria, and the test plan for R0.
 **Sponsors and product owners start with the [master implementation plan](docs/09-master-plan.md)** and the R0 capacity finding in [S8 §1](docs/build/S8-r0-tickets.md#1-capacity-finding-read-first), which needs a schedule decision (D01) before kickoff.
 

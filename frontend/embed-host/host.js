@@ -1,6 +1,10 @@
 const query = new URLSearchParams(location.search)
 const mode = query.get('component') === 'tasks' ? 'tasks' : 'authoring'
 const element = document.getElementById('component')
+const stylesheet = document.createElement('link')
+stylesheet.rel = 'stylesheet'
+stylesheet.href = `/components/${mode}/orqix.css`
+document.head.appendChild(stylesheet)
 try {
   const component = await import(`/components/${mode}/orqix-${mode}.js`)
   component.mount(element, { apiVersion: 'v1', workspaceId: query.get('workspace') ?? '', workflowId: query.get('workflow') || undefined })

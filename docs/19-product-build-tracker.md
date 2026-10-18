@@ -1,5 +1,7 @@
 # Product build tracker
 
+
+The Tier-1 hackathon implementation and its separate qualification limits are recorded in the [hackathon acceptance record](hackathon-acceptance.md). Historical product totals below do not qualify this candidate.
 Updated 15 October 2026. This is the active tracker for the current build. The authoritative remaining-item register is [product closeout](21-product-closeout.md), with the authorized competitive gaps in [doc 22](22-competitive-gap-delivery.md). The latest checkpoint is [the current competitive verification](#competitive-batch-verification--15-october-2026); older green counts below describe their historical trees. The broad backlog is not a completion claim.
 
 Statuses: **In progress** means implementation is underway; **Implemented** means code exists but final checks remain; **Verified** means the listed checks pass; **Needs external input** identifies acceptance that cannot be established with local fixtures.

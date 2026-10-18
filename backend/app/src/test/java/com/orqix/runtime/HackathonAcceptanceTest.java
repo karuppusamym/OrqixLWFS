@@ -109,14 +109,20 @@ class HackathonAcceptanceTest extends RuntimeTestBase {
         assertThat(jdbc.sql("SELECT event_kind FROM stage_mail WHERE run_id=:run").param("run",run).query(String.class).list()).contains("rejection","terminal");
         assertThat(api("olga.operator").get("/workspaces/{ws}/runs/{run}/evidence",PURCHASING,run).status()).isEqualTo(403);
         UUID actor=UUID.fromString(api("olga.operator").get("/me").body().path("subject").path("id").asString());
-        UUID grant=UUID.randomUUID();jdbc.sql("INSERT INTO permission_grant(id,workspace_id,permission,principal_type,principal_value) VALUES(:id,:ws,'audit.read','subject',:subject)")
-                .param("id",grant).param("ws",PURCHASING).param("subject",actor.toString()).update();
+        var granted=api("wade.admin").post(Map.of("permission","audit.read",
+                "principal",Map.of("type","subject","value",actor.toString())),
+                "/workspaces/{ws}/access/grants",PURCHASING);
+        assertThat(granted.status()).as(granted.toString()).isEqualTo(201);
+        UUID grant=UUID.fromString(granted.body().path("id").asString());
         try {
             var response=api("olga.operator").get("/workspaces/{ws}/runs/{run}/evidence",PURCHASING,run);
             assertThat(response.status()).as(response.toString()).isEqualTo(200);
             assertThat(response.body().path("manifest").path("eventCount").asInt()).isEqualTo(response.body().path("events").size());
             assertThat(new String(response.bytes(),java.nio.charset.StandardCharsets.UTF_8)).doesNotContain("Private title excluded from evidence","emailPassword");
             assertThat(api("olga.operator").get("/workspaces/{ws}/runs/{run}/evidence?format=csv",PURCHASING,run).header("Content-Type")).startsWith("text/csv");
-        } finally {jdbc.sql("DELETE FROM permission_grant WHERE id=:id").param("id",grant).update();}
+        } finally {
+            assertThat(api("wade.admin").delete("/workspaces/{ws}/access/grants/{id}",PURCHASING,grant).status()).isEqualTo(204);
+        }
+        assertThat(api("olga.operator").get("/workspaces/{ws}/runs/{run}/evidence",PURCHASING,run).status()).isEqualTo(403);
     }
 }

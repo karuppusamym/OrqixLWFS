@@ -306,6 +306,7 @@
       "frontchannelLogout": true,
       "redirectUris": [
         "http://localhost:8080/login/oauth2/code/orqix",
+        "http://localhost:18080/login/oauth2/code/orqix",
         "http://localhost:5173/login/oauth2/code/orqix"
       ],
       "webOrigins": [

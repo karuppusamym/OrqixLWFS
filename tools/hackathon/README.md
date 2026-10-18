@@ -31,3 +31,21 @@ npm run build:tasks
 ```
 
 The application Docker build runs `npm run build:embedded`, packaging the two artifacts and the sample host with the normal application. See [embedding contract](../../docs/hackathon-embedding.md).
+
+## Real local acceptance and load
+
+Use the seeded development realm and an isolated Compose project. The realm permits the normal application port 8080 and the qualification port 18080; existing Keycloak volumes retain their imported client settings and must be updated explicitly when changing ports. Do not weaken production redirect rules.
+
+```powershell
+$env:ORQIX_BASE_URL = 'http://localhost:18080'
+$env:MAIL_CAPTURE_URL = 'http://localhost:11080'
+python tools/hackathon/demo.py --restart-container orqix-hackathon-verified-orqix-1
+python tools/hackathon/load.py --users 2 --cases 40 --warmup-minutes 0 --minutes 0.5 --out evidence/hackathon/load-smoke.json
+python tools/hackathon/load.py
+```
+
+`demo.py` checks independent publication, exact/changed idempotency replay, a real one-minute SLA, durable restart recovery, cancellation, SMTP capture and permission-scoped evidence. It temporarily grants `audit.read` through the public API and removes the grant in a `finally` block. Restart is restricted to explicitly named containers belonging to a dedicated `orqix-hackathon-*` project. Run browser checks separately from this restart exercise.
+
+`load.py` defaults to 50 virtual users, 10,000 actual stored cases, five minutes of warm-up and fifteen minutes of measured traffic. Preparation is additional time. Each virtual user owns its cases and authenticated sessions; the measured HTTP mix is 40% reads, 20% starts, 30% decisions and 10% reassignment/closure. Run without competing builds or test suites before interpreting latency. A smaller smoke run verifies the harness only. The tool writes observed p95 latency, errors and workload counts and exits nonzero if the local targets fail. Fixtures remain in the isolated development database for inspection.
+
+Both scripts accept only localhost targets, use explicitly synthetic source provenance, and never qualify genuine source equivalence, enterprise SMTP, compliance or production capacity. Evidence is written under the ignored `evidence/hackathon/` directory. See the [acceptance record](../../docs/hackathon-acceptance.md) for the dated outcomes and remaining owner gates.

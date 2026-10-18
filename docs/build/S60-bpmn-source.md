@@ -1,4 +1,4 @@
-# S56 - BPMN source view, exact BPMN edit/apply and BPMN round-trip check (UI03 remainder)
+# S60 - BPMN source view, exact BPMN edit/apply and BPMN round-trip check (UI03 remainder)
 
 S53 delivered the Lanes tab, the YAML source tab and threaded discussion, and left out BPMN source editing and a BPMN round trip. This slice adds them. It does not change the compiler output (no compiler version bump, golden files unchanged), the canonical document schema or the runtime. No migration was needed.
 

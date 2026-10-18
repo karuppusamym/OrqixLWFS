@@ -1,4 +1,4 @@
-# S58 - Browser and Docker-stack verification of the batch-3/4 features
+# S62 - Browser and Docker-stack verification of the batch-3/4 features
 
 Date: 17 October 2026. Branch `build/verify-e2e`, cut from `46ec063`. Scope: EX07, PL01, EX09, IN02, EX06, DOC08, UI03, PL02 and Pega XPDL import. No migration was added. Logs are under the git-ignored `evidence/` directory of the worktree.
 

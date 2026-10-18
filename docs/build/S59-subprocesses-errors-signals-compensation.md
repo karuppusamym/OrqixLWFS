@@ -1,4 +1,4 @@
-# S55 - Sections, handlers, errors, signals and automatic undo (EX06 remainder, EX08; bounded)
+# S59 - Sections, handlers, errors, signals and automatic undo (EX06 remainder, EX08; bounded)
 
 EX06 still lacked embedded and event subprocesses after S51; EX08 asked for error and signal events and an automatic compensation lifecycle on top of EX05's HTTP failure route and the checked `compensates` annotation. This slice delivers bounded but executable versions of all of them, on the existing flat workflow model.
 

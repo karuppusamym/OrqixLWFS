@@ -1,4 +1,4 @@
-# S57 - Shared assets: decisions, document templates and connections with owners, versioned references, where-used and search
+# S61 - Shared assets: decisions, document templates and connections with owners, versioned references, where-used and search
 
 PL01 remainder after S48 (folders/owners). One minimal model covers three kinds of reusable workspace asset. Each asset is identified by **kind and key inside one workspace**, has immutable numbered versions, an **owner** (a label) and an **archived** flag:
 

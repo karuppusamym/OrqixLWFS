@@ -332,6 +332,69 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/draft/bpmn": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Compiled BPMN of a draft revision with its round-trip check (UI03, docs/build/S56)
+         * @description The BPMN is exactly what publishing would deploy. It carries the workflow name, the steps, the connections
+         *     and (when every step has a canvas position) the diagram; keptFromDraft lists the sections BPMN does not carry.
+         *     roundTrip says whether the draft converts to BPMN and back without any difference; only then can edited BPMN
+         *     be applied. A draft with blockers has no BPMN (available false, blockers listed). Read-only for anyone who
+         *     can read the draft, like the YAML source view.
+         */
+        get: operations["getDraftBpmn"];
+        /**
+         * Save edited BPMN as the next draft revision, only when the document can represent it exactly
+         * @description Runs the same check as checkDraftBpmn against the latest draft revision named by If-Match and refuses with
+         *     422 VALIDATION_FAILED (one fieldError per problem; code is the problem kind) unless it passes. On success the
+         *     draft name, steps, connections and (with a diagram) canvas positions are replaced and every other section is
+         *     kept; the result is saved like saveDraft (same limits, 412 on a stale revision, audit workflow.draft.saved with
+         *     source bpmn). Nothing is validated away: Check workflow and the publish gates still apply.
+         */
+        put: operations["applyDraftBpmn"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/draft/bpmn/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check edited BPMN against a draft revision without saving (UI03, docs/build/S56)
+         * @description Applicable only when the draft itself round-trips exactly, the text is safe XML in the compiled dialect with
+         *     nothing unsupported (comments, lanes, pools, sub-processes, foreign extensions and free expressions are listed
+         *     as problems, never dropped), the process id equals the workflow key, the resulting draft compiles without
+         *     blockers, regenerating BPMN reproduces every element, attribute and text of the submitted BPMN, and the result
+         *     reads back to the same document. Values computed from the document or the workspace (hashes, child release
+         *     pins, diagram lines) are recomputed and listed as notes. changes lists what applying would add, remove or change.
+         */
+        post: operations["checkDraftBpmn"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/workflows/{workflowId}/decisions/{decisionKey}/evaluate": {
         parameters: {
             query?: never;
@@ -3292,6 +3355,54 @@ export interface components {
             publishable: boolean;
             semanticHash?: string | null;
             issues: components["schemas"]["ValidationIssue"][];
+        };
+        DraftBpmn: {
+            revision: number;
+            compilerVersion: string;
+            /** @description False when the draft has blockers (it has no BPMN form yet) */
+            available: boolean;
+            /** @description process.bpmn20.xml exactly as publishing would generate it */
+            bpmn: string | null;
+            /** @description The BPMN contains a diagram, so canvas positions are carried */
+            diagram: boolean;
+            roundTrip: {
+                /** @description Draft to BPMN to draft gives the same name, steps, connections and positions */
+                identical: boolean;
+                differences: {
+                    /** @description JSON Pointer into the draft */
+                    path: string;
+                    message: string;
+                }[];
+            };
+            /** @description Sections BPMN does not carry; applying BPMN keeps them from the draft unchanged */
+            keptFromDraft: string[];
+            blockers: components["schemas"]["ValidationIssue"][];
+        };
+        BpmnCheckRequest: {
+            /** @description Draft revision the BPMN was exported from */
+            revision: number;
+            bpmn: string;
+        };
+        BpmnApplyRequest: {
+            bpmn: string;
+        };
+        BpmnCheck: {
+            revision: number;
+            applicable: boolean;
+            problems: {
+                /** @enum {string} */
+                kind: "xml" | "unsupported" | "identity" | "blocker" | "notRepresentable" | "otherSection" | "roundTrip" | "draftRoundTrip";
+                /** @description BPMN element id when the problem has one */
+                elementId: string | null;
+                message: string;
+            }[];
+            /** @description Values that are recomputed rather than read (hashes, release pins, diagram lines) */
+            notes: string[];
+            changes: {
+                /** @enum {string} */
+                kind: "added" | "removed" | "changed";
+                what: string;
+            }[];
         };
         DecisionEvaluateRequest: {
             revision: number;
@@ -6687,6 +6798,106 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    getDraftBpmn: {
+        parameters: {
+            query?: {
+                /** @description Draft revision; the latest when omitted. */
+                revision?: number;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description BPMN source of the draft revision */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftBpmn"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    applyDraftBpmn: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description ETag of the revision being replaced. */
+                "If-Match": components["parameters"]["IfMatch"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BpmnApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Saved; body is the new revision */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowDraft"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
+            428: components["responses"]["PreconditionRequired"];
+        };
+    };
+    checkDraftBpmn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BpmnCheckRequest"];
+            };
+        };
+        responses: {
+            /** @description Check result (problems are data, not an error status) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BpmnCheck"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     evaluateDecision: {

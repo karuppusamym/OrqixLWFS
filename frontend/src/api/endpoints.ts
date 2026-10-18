@@ -72,6 +72,23 @@ export async function saveDraft(ws: string, workflowId: string, definition: obje
   return { draft: data, etag: etagOf(response) ?? revisionEtag(data.revision) }
 }
 
+// BPMN source of a draft (UI03, docs/build/S56)
+export const getDraftBpmn = (ws: string, workflowId: string, revision?: number) =>
+  call(api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/draft/bpmn', { params: { path: { workspaceId: ws, workflowId }, query: revision ? { revision } : {} } }))
+
+export const checkDraftBpmn = (ws: string, workflowId: string, revision: number, bpmn: string) =>
+  call(api.POST('/workspaces/{workspaceId}/workflows/{workflowId}/draft/bpmn/check', { params: { path: { workspaceId: ws, workflowId } }, body: { revision, bpmn } }))
+
+export async function applyDraftBpmn(ws: string, workflowId: string, revision: number, bpmn: string) {
+  const { data, response } = await callWithResponse(
+    api.PUT('/workspaces/{workspaceId}/workflows/{workflowId}/draft/bpmn', {
+      params: { path: { workspaceId: ws, workflowId }, header: { 'If-Match': revisionEtag(revision) } },
+      body: { bpmn },
+    }),
+  )
+  return { draft: data, etag: etagOf(response) ?? revisionEtag(data.revision) }
+}
+
 export const validateDraft = (ws: string, workflowId: string, revision: number) =>
   call(
     api.POST('/workspaces/{workspaceId}/workflows/{workflowId}/validate', {

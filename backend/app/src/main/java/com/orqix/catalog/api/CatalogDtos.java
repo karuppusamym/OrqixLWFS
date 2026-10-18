@@ -63,6 +63,36 @@ public final class CatalogDtos {
     public record ValidateRequest(@NotNull @Min(1) Integer revision) {
     }
 
+    /** UI03 BPMN source (docs/build/S56): one difference of the draft's own BPMN round trip. */
+    public record BpmnDifference(String path, String message) {
+    }
+
+    /** Round trip of the draft through its compiled BPMN. */
+    public record BpmnRoundTrip(boolean identical, List<BpmnDifference> differences) {
+    }
+
+    /** The compiled BPMN of a draft revision; {@code bpmn} is null when the draft has blockers. */
+    public record DraftBpmn(int revision, String compilerVersion, boolean available, String bpmn, boolean diagram,
+            BpmnRoundTrip roundTrip, List<String> keptFromDraft, List<Issue> blockers) {
+    }
+
+    public record BpmnCheckRequest(@NotNull @Min(1) Integer revision, @NotNull @Size(min = 1, max = 1_048_576) String bpmn) {
+    }
+
+    public record BpmnApplyRequest(@NotNull @Size(min = 1, max = 1_048_576) String bpmn) {
+    }
+
+    public record BpmnProblem(String kind, String elementId, String message) {
+    }
+
+    public record BpmnChange(String kind, String what) {
+    }
+
+    /** Result of checking edited BPMN against a draft revision; nothing is saved. */
+    public record BpmnCheck(int revision, boolean applicable, List<BpmnProblem> problems, List<String> notes,
+            List<BpmnChange> changes) {
+    }
+
     public record Issue(String code, String severity, String message, String path, String nodeId, String transitionId) {
     }
 

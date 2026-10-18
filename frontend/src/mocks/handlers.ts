@@ -13,6 +13,7 @@ import { buildFields, parseFormSchema, parseFormUi } from '@/lib/form/schema'
 import { validateJsonForm } from '@/lib/form/validate'
 import { waitHorizonErrors } from './dateWait'
 import { validateDefinition, type ValidationContext } from './validate'
+import { mockCheckBpmn, mockDraftBpmn } from './bpmnSource'
 import { ScenarioError, simulateDefinition, type SimConnection, type SimContext, type SimulationScenario } from './simulator'
 import {
   GROUPS,
@@ -445,6 +446,63 @@ export function createHandlers(): HttpHandler[] {
       if (!draft) return notFound()
       const issues = validateDefinition(draft.definition, validationContext(wf.wsId))
       return HttpResponse.json({ revision, compilerVersion: '0.1.0-mock', publishable: !issues.some((i) => i.severity === 'blocker'), semanticHash: null, issues })
+    }),
+    // BPMN source (UI03, docs/build/S56): a simplified double, see ./bpmnSource.ts ---------------------------------
+    http.get(`${B}/workspaces/:ws/workflows/:id/draft/bpmn`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws, 'workflow.read')
+      if (!g.ok) return g.res
+      const wf = findWorkflow(str(params.ws), str(params.id))
+      if (!wf) return notFound()
+      const asked = Number(new URL(request.url).searchParams.get('revision') ?? '0')
+      const draft = asked ? wf.drafts.find((d) => d.revision === asked) : wf.drafts.at(-1)
+      if (!draft) return notFound()
+      const blockers = validateDefinition(draft.definition, validationContext(wf.wsId)).filter((i) => i.severity === 'blocker')
+      const kept = Object.keys(draft.definition).filter((k) => !['workflowKey', 'name', 'nodes', 'transitions', 'uiLayout'].includes(k))
+      return HttpResponse.json({
+        revision: draft.revision, compilerVersion: '0.1.0-mock', available: blockers.length === 0,
+        bpmn: blockers.length === 0 ? mockDraftBpmn(draft.definition) : null, diagram: false,
+        roundTrip: { identical: blockers.length === 0, differences: [] }, keptFromDraft: [...kept, 'uiLayout.positions'], blockers,
+      })
+    }),
+    http.post(`${B}/workspaces/:ws/workflows/:id/draft/bpmn/check`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws, 'workflow.edit')
+      if (!g.ok) return g.res
+      const wf = findWorkflow(str(params.ws), str(params.id))
+      if (!wf) return notFound()
+      const input = await body<{ revision: number; bpmn: string }>(request)
+      const draft = wf.drafts.find((d) => d.revision === input.revision)
+      if (!draft) return notFound()
+      const result = mockCheckBpmn(draft.definition, input.bpmn ?? '')
+      return HttpResponse.json({ revision: input.revision, applicable: result.applicable, problems: result.problems, notes: result.notes, changes: result.changes })
+    }),
+    http.put(`${B}/workspaces/:ws/workflows/:id/draft/bpmn`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws, 'workflow.edit')
+      if (!g.ok) return g.res
+      const wf = findWorkflow(str(params.ws), str(params.id))
+      if (!wf) return notFound()
+      const ifMatch = request.headers.get('If-Match')
+      if (!ifMatch) return problem(428, 'PRECONDITION_REQUIRED', 'If-Match header required')
+      const latest = wf.drafts.at(-1)!
+      if (ifMatch !== `"r${latest.revision}"`) return problem(412, 'STALE_REVISION', 'The draft changed', { currentRevision: latest.revision })
+      const input = await body<{ bpmn: string }>(request)
+      const result = mockCheckBpmn(latest.definition, input.bpmn ?? '')
+      if (!result.applicable || !result.definition) {
+        return problem(422, 'VALIDATION_FAILED', 'Some values are not valid', {
+          detail: `The BPMN cannot be applied: ${result.problems[0]?.message ?? ''}`,
+          fieldErrors: result.problems.map((p) => ({ pointer: '/bpmn', code: p.kind, message: `${p.elementId ? `${p.elementId}: ` : ''}${p.message}` })),
+        })
+      }
+      const next = { revision: latest.revision + 1, savedAt: clock.iso(), savedById: g.user.id, definition: normalizeDefinition(result.definition) }
+      wf.drafts.push(next)
+      wf.updatedAt = next.savedAt
+      wf.name = next.definition.name || wf.name
+      return HttpResponse.json(
+        { workflowId: wf.id, revision: next.revision, savedAt: next.savedAt, savedBy: subjectRef(g.user), definition: next.definition },
+        { headers: { ETag: `"r${next.revision}"` } },
+      )
     }),
     http.post(`${B}/workspaces/:ws/workflows/:id/decisions/:key/evaluate`, async ({ params, request }) => {
       await slow()

@@ -70,7 +70,7 @@ public class AuditWriter {
             Map.entry("access.grant.deleted", Set.of("permission", "workflowId", "principalType", "principalValue")),
             Map.entry("access.group.updated", Set.of("groupKey", "memberCount", "revision")),
             Map.entry("workflow.created", Set.of("key", "templateId", "source")),
-            Map.entry("workflow.draft.saved", Set.of("revision")),
+            Map.entry("workflow.draft.saved", Set.of("revision", "source")),
             Map.entry("workflow.published", Set.of("releaseNumber", "draftRevision", "semanticHash", "warningsAcknowledged")),
             Map.entry("workflow.active-release.changed", Set.of("fromReleaseNumber", "toReleaseNumber")),
             Map.entry("workflow.exported", Set.of("releaseNumber")),

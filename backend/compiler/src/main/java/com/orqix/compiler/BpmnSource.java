@@ -10,6 +10,7 @@ import java.util.TreeSet;
 import java.util.function.Function;
 
 import com.orqix.compiler.internal.bpmn.BpmnCompare;
+import com.orqix.compiler.internal.bpmn.BpmnDefaults;
 import com.orqix.compiler.internal.bpmn.BpmnReader;
 import com.orqix.compiler.internal.bpmn.BpmnXml;
 import com.orqix.compiler.internal.json.StrictJson;
@@ -86,6 +87,7 @@ public final class BpmnSource {
         if (!diagram && def.path("uiLayout").has("positions")) {
             kept.add("uiLayout.positions");
         }
+        kept.addAll(BpmnDefaults.keptTitles(def));
         return List.copyOf(kept);
     }
 
@@ -99,6 +101,8 @@ public final class BpmnSource {
         boolean diagram = read.graph() != null && read.graph().get("positions") != null
                 && !read.graph().get("positions").isNull();
         if (read.graph() != null) {
+            // Written defaults and field titles are not in the BPMN: compare with the draft's own spelling (S65).
+            BpmnDefaults.adopt(def.get("nodes"), read.graph().get("nodes"));
             differences.addAll(diff(project(def, diagram), read.graph()));
         }
         return new Export(compiled.bpmnXml(), differences.isEmpty(),
@@ -150,6 +154,8 @@ public final class BpmnSource {
         if (!problems.isEmpty()) {
             return refused(problems);
         }
+        // Unchanged defaults keep the draft's spelling and field titles are kept from the draft (S65).
+        BpmnDefaults.adopt(base.get("nodes"), read.graph().get("nodes"));
         ObjectNode candidate = merge(base, read.graph());
         String candidateJson = write(candidate);
         CompiledWorkflow compiled;
@@ -169,6 +175,7 @@ public final class BpmnSource {
         BpmnReader.Result again = BpmnReader.read(regenerated);
         again.findings().forEach(f -> problems.add(new Problem("roundTrip", f.elementId(), f.message())));
         if (again.graph() != null) {
+            BpmnDefaults.adopt(candidate.get("nodes"), again.graph().get("nodes"));
             boolean diagram = again.graph().get("positions") != null && !again.graph().get("positions").isNull();
             diff(project(candidate, diagram), again.graph())
                     .forEach(d -> problems.add(new Problem("roundTrip", null, d.message())));

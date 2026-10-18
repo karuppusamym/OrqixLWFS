@@ -145,6 +145,26 @@ class BpmnSourceApiTest extends com.orqix.support.RuntimeTestBase {
                 .isEqualTo(404);
     }
 
+    /** S65: defaults written out in the draft equal omission; applying BPMN keeps the draft's spelling of them. */
+    @Test
+    void writtenDefaultsDoNotStopBpmnEditing() throws Exception {
+        UUID wf = workflow();
+        ObjectNode written = (ObjectNode) draft(wf).path("definition").deepCopy();
+        ((ObjectNode) node(written, "manager").path("config")).putArray("requiredSkills");
+        ((ObjectNode) node(written, "procure").path("config")).put("compensation", "manual");
+        assertThat(api("dana.designer").put(Map.of("definition", written), "\"r1\"", DRAFT, PURCHASING, wf).status())
+                .isEqualTo(200);
+        var view = api("vic.viewer").get(BPMN, PURCHASING, wf).body();
+        assertThat(view.path("roundTrip").path("identical").asBoolean()).as(view.toString()).isTrue();
+        String edited = view.path("bpmn").asString().replace("name=\"Review request\"", "name=\"Manager review\"");
+        var applied = api("dana.designer").put(Map.of("bpmn", edited), "\"r2\"", BPMN, PURCHASING, wf);
+        assertThat(applied.status()).as(applied.toString()).isEqualTo(200);
+        JsonNode saved = draft(wf).path("definition");
+        assertThat(node(saved, "manager").path("label").asString()).isEqualTo("Manager review");
+        assertThat(node(saved, "manager").path("config").path("requiredSkills").isArray()).isTrue();
+        assertThat(node(saved, "procure").path("config").path("compensation").asString()).isEqualTo("manual");
+    }
+
     @Test
     void outsidersAndStartOnlyRequestersSeeNothing() throws Exception {
         UUID wf = workflow();

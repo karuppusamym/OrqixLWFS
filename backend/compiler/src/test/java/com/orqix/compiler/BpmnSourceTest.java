@@ -146,14 +146,183 @@ class BpmnSourceTest {
         }
         assertThat(compiled).isGreaterThanOrEqualTo(20);
         assertThat(identical).contains("purchase-approval.json", "new-hire-onboarding.json",
-                "banking-kyc-onboarding.json", "vendor-onboarding-check.json", "document-review.json", "case:valid-base");
-        // Settings the compiled BPMN does not carry: each is reported with its exact place in the document.
+                "banking-kyc-onboarding.json", "vendor-onboarding-check.json", "document-review.json", "case:valid-base",
+                // S65: a written default (atTime 09:00) equals omission; payload titles are kept from the draft.
+                "start-date-onboarding.json", "order-payment-wait.json");
+        // Behaviour the compiled BPMN does not carry: each is reported with its exact place in the document.
         assertThat(differing).containsEntry("banking-card-claim.json",
                 List.of("/nodes/1/config/collectionMapping", "/nodes/1/config/forEach"));
         assertThat(differing).containsEntry("banking-credit-approval.json", List.of("/nodes/3/config/repeat"));
-        assertThat(differing).containsEntry("order-payment-wait.json",
-                List.of("/nodes/1/config/payload/0/title", "/nodes/1/config/payload/1/title"));
-        assertThat(differing).containsEntry("start-date-onboarding.json", List.of("/nodes/2/config/atTime"));
+        assertThat(differing).containsEntry("medium-bounded-rework.json", List.of("/nodes/1/config/repeat"));
+        assertThat(differing).containsEntry("complex-batch-review.json",
+                List.of("/nodes/6/config/collectionMapping", "/nodes/6/config/forEach"));
+        assertThat(differing).hasSize(4);
+    }
+
+    // ---------------------------------------------------------------- written defaults and field titles (S65)
+
+    @Test
+    void theDefaultsAreExactlyTheDocumentedOnes() {
+        assertThat(com.orqix.compiler.internal.bpmn.BpmnDefaults.describe()).containsExactly(
+                "approval.requiredSkills = []",
+                "externalTask.leaseSeconds = 120",
+                "externalTask.result[].required = false",
+                "http.compensation = \"manual\"",
+                "parallelSplit.mode = \"all\"",
+                "startWorkflow.collectionMapping = {}",
+                "wait.atTime = \"09:00\"",
+                "waitForMessage.payload = []",
+                "waitForMessage.payload[].required = false");
+    }
+
+    /** Documents with defaults written out (index 0) and the same documents with them left out (index 1). */
+    private static Map<String, String[]> withAndWithoutDefaults() throws Exception {
+        Map<String, String[]> out = new TreeMap<>();
+        // Purchase approval with an external worker step: requiredSkills [], compensation manual, leaseSeconds 120,
+        // a result field with required false and a title.
+        ObjectNode purchase = TestSupport.purchase();
+        ((ArrayNode) purchase.get("nodes")).add(StrictJson.parse("{\"id\":\"check\",\"type\":\"externalTask\","
+                + "\"label\":\"Check the address\",\"config\":{\"topic\":\"address-check\","
+                + "\"inputMapping\":{\"purpose\":\"/input/purpose\"},"
+                + "\"result\":[{\"name\":\"score\",\"type\":\"number\",\"required\":true},"
+                + "{\"name\":\"note\",\"type\":\"string\",\"title\":\"Worker note\"}]}}"));
+        for (JsonNode t : (ArrayNode) purchase.get("transitions")) {
+            if ("start".equals(t.path("from").asString()) && "manager".equals(t.path("to").asString())) {
+                ((ObjectNode) t).put("to", "check");
+            }
+        }
+        ((ArrayNode) purchase.get("transitions")).add(StrictJson.parse(
+                "{\"id\":\"x1\",\"from\":\"check\",\"to\":\"manager\",\"on\":\"next\"}"));
+        ((ObjectNode) purchase.get("uiLayout").get("positions")).putObject("check").put("x", 100).put("y", 400);
+        ObjectNode purchaseDefaults = purchase.deepCopy();
+        ObjectNode check = (ObjectNode) node(purchaseDefaults, "check").get("config");
+        check.put("leaseSeconds", 120);
+        ((ObjectNode) check.get("result").get(1)).put("required", false);
+        ((ObjectNode) node(purchaseDefaults, "manager").get("config")).putArray("requiredSkills");
+        ((ObjectNode) node(purchaseDefaults, "procure").get("config")).put("compensation", "manual");
+        out.put("purchase+worker", new String[] {TestSupport.text(purchaseDefaults), TestSupport.text(purchase)});
+
+        ObjectNode onboarding = TestSupport.onboarding();
+        ObjectNode onboardingDefaults = onboarding.deepCopy();
+        ((ObjectNode) node(onboardingDefaults, "setup").get("config")).put("mode", "all");
+        ((ObjectNode) node(onboardingDefaults, "orderEquipment").get("config")).putObject("collectionMapping");
+        out.put("onboarding", new String[] {TestSupport.text(onboardingDefaults), TestSupport.text(onboarding)});
+
+        ObjectNode startDate = (ObjectNode) TestSupport.json("examples/start-date-onboarding.json");
+        ObjectNode startDateOmitted = startDate.deepCopy();
+        ((ObjectNode) node(startDateOmitted, "untilStart").get("config")).remove("atTime");
+        out.put("start-date", new String[] {TestSupport.text(startDate), TestSupport.text(startDateOmitted)});
+
+        ObjectNode payment = (ObjectNode) TestSupport.json("examples/order-payment-wait.json");
+        ObjectNode paymentDefaults = payment.deepCopy();
+        ((ObjectNode) node(paymentDefaults, "waitPayment").get("config").get("payload").get(1)).put("required", false);
+        out.put("order-payment", new String[] {TestSupport.text(paymentDefaults), TestSupport.text(payment)});
+        return out;
+    }
+
+    @Test
+    void writtenDefaultsEqualOmissionAndKeepTheDraftsSpelling() throws Exception {
+        for (Map.Entry<String, String[]> e : withAndWithoutDefaults().entrySet()) {
+            String written = e.getValue()[0];
+            String omitted = e.getValue()[1];
+            // The compiled process is the same whether the defaults are written or not (only document hashes differ).
+            assertThat(withoutHashes(compile(written).bpmnXml())).as(e.getKey())
+                    .isEqualTo(withoutHashes(compile(omitted).bpmnXml()));
+            for (String doc : List.of(written, omitted)) {
+                BpmnSource.Export export = BpmnSource.export(doc, compile(doc));
+                assertThat(export.identical()).as(e.getKey() + " " + export.differences()).isTrue();
+                BpmnSource.Check again = check(export.bpmnXml(), doc);
+                assertThat(again.applicable()).as(e.getKey() + "\n" + messages(again)).isTrue();
+                assertThat(again.changes()).as(e.getKey()).isEmpty();
+                // Applying the unchanged BPMN keeps the draft exactly as it was written, defaults included.
+                assertThat(CanonicalJson.canonicalize(again.definitionJson())).as(e.getKey())
+                        .isEqualTo(CanonicalJson.canonicalize(doc));
+                assertThat(compile(again.definitionJson()).bpmnXml()).isEqualTo(export.bpmnXml());
+            }
+        }
+    }
+
+    @Test
+    void aValueOtherThanTheDefaultIsStillAnEdit() throws Exception {
+        String startDate = TestSupport.read("examples/start-date-onboarding.json");
+        String xml = compile(startDate).bpmnXml();
+        BpmnSource.Check later = check(xml.replace("atTime=\"09:00\"", "atTime=\"10:30\""), startDate);
+        assertThat(later.applicable()).as(messages(later)).isTrue();
+        assertThat(later.changes()).extracting(BpmnSource.Change::what)
+                .containsExactly("Step 'untilStart' (Wait until the start date)");
+        ObjectNode applied = (ObjectNode) StrictJson.parse(later.definitionJson());
+        assertThat(node(applied, "untilStart").get("config").get("atTime").stringValue()).isEqualTo("10:30");
+        // Back to 09:00 from a draft that says 10:30: the draft's value was not the default, so the omitted form is used.
+        String laterJson = later.definitionJson();
+        BpmnSource.Check back = check(compile(laterJson).bpmnXml().replace("atTime=\"10:30\"", "atTime=\"09:00\""),
+                laterJson);
+        assertThat(back.applicable()).as(messages(back)).isTrue();
+        assertThat(back.changes()).extracting(BpmnSource.Change::what)
+                .containsExactly("Step 'untilStart' (Wait until the start date)");
+        assertThat(node((ObjectNode) StrictJson.parse(back.definitionJson()), "untilStart").get("config").toString())
+                .isEqualTo("{\"untilField\":\"/input/startDate\"}");
+        // A leaseSeconds other than 120 is carried, never replaced by the draft's written default.
+        String worker = withAndWithoutDefaults().get("purchase+worker")[0];
+        BpmnSource.Check lease = check(compile(worker).bpmnXml().replace("leaseSeconds=\"120\"", "leaseSeconds=\"300\""),
+                worker);
+        assertThat(lease.applicable()).as(messages(lease)).isTrue();
+        assertThat(node((ObjectNode) StrictJson.parse(lease.definitionJson()), "check").get("config")
+                .get("leaseSeconds").intValue()).isEqualTo(300);
+    }
+
+    @Test
+    void aWrittenDefaultIsNotKeptOnAStepThatNoLongerUsesIt() throws Exception {
+        String startDate = TestSupport.read("examples/start-date-onboarding.json");
+        String xml = compile(startDate).bpmnXml()
+                .replace("<orqix:wait untilField=\"/input/startDate\" atTime=\"09:00\"/>", "<orqix:wait duration=\"PT2H\"/>")
+                .replace("<timeDate><![CDATA[${orqixWait.until(execution, 'untilStart')}]]></timeDate>",
+                        "<timeDuration>PT2H</timeDuration>");
+        BpmnSource.Check c = check(xml, startDate);
+        assertThat(c.applicable()).as(messages(c)).isTrue();
+        assertThat(node((ObjectNode) StrictJson.parse(c.definitionJson()), "untilStart").get("config").toString())
+                .isEqualTo("{\"duration\":\"PT2H\"}");
+    }
+
+    @Test
+    void fieldTitlesAreKeptFromTheDraftByStepAndFieldName() throws Exception {
+        String payment = TestSupport.read("examples/order-payment-wait.json");
+        BpmnSource.Export export = BpmnSource.export(payment, compile(payment));
+        assertThat(export.keptFromDraft()).contains("field titles of step 'waitPayment'");
+        String xml = export.bpmnXml();
+        BpmnSource.Check renamed = check(xml.replace("name=\"Wait for the payment", "name=\"Wait for payment"), payment);
+        assertThat(renamed.applicable()).as(messages(renamed)).isTrue();
+        JsonNode payload = node((ObjectNode) StrictJson.parse(renamed.definitionJson()), "waitPayment")
+                .get("config").get("payload");
+        assertThat(payload.get(0).get("title").stringValue()).isEqualTo("Payment reference");
+        assertThat(payload.get(1).get("title").stringValue()).isEqualTo("Amount paid");
+        // A field renamed in BPMN is a different field: the old title is not carried over, and the step is listed.
+        BpmnSource.Check field = check(xml.replace("name=\"amountPaid\"", "name=\"amountReceived\""), payment);
+        assertThat(field.applicable()).as(messages(field)).isTrue();
+        assertThat(field.changes()).extracting(BpmnSource.Change::what)
+                .containsExactly("Step 'waitPayment' (Wait for the payment)");
+        JsonNode changed = node((ObjectNode) StrictJson.parse(field.definitionJson()), "waitPayment")
+                .get("config").get("payload");
+        assertThat(changed.get(0).get("title").stringValue()).isEqualTo("Payment reference");
+        assertThat(changed.get(1).toString()).isEqualTo("{\"name\":\"amountReceived\",\"type\":\"number\"}");
+    }
+
+    @Test
+    void dueAfterMinutesIsReadBack() throws Exception {
+        ObjectNode doc = TestSupport.purchase();
+        ObjectNode manager = (ObjectNode) node(doc, "manager").get("config");
+        manager.remove("dueAfterHours");
+        manager.put("dueAfterMinutes", 90);
+        String json = TestSupport.text(doc);
+        BpmnSource.Export export = BpmnSource.export(json, compile(json));
+        assertThat(export.identical()).as(export.differences().toString()).isTrue();
+        BpmnSource.Check c = check(export.bpmnXml().replace("dueAfterMinutes=\"90\"", "dueAfterMinutes=\"45\""), json);
+        assertThat(c.applicable()).as(messages(c)).isTrue();
+        assertThat(node((ObjectNode) StrictJson.parse(c.definitionJson()), "manager").get("config")
+                .get("dueAfterMinutes").intValue()).isEqualTo(45);
+    }
+
+    private static String withoutHashes(String xml) {
+        return xml.replaceAll("semanticHash=\"[0-9a-f]+\"", "semanticHash=\"-\"");
     }
 
     @Test

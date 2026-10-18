@@ -7,10 +7,10 @@ import { server } from '@/test/server'
 import { resetAdapterMocks } from '@/mocks/adapters'
 import { AdaptersPanel, buildAdapterConfig, parseMapping, type AdapterFields } from './AdaptersPanel'
 
-const permission = vi.hoisted(() => ({ manage: true }))
-vi.mock('@/app/workspace', () => ({ useWorkspace: () => ({ workspace: { id: 'workspace' }, can: () => permission.manage }) }))
+const permission = vi.hoisted(() => ({ manage: true, read: true, enabledArgs: [] as unknown[] }))
+vi.mock('@/app/workspace', () => ({ useWorkspace: () => ({ workspace: { id: 'workspace' }, can: (p: string) => (p === 'workflow.read' ? permission.read : permission.manage) }) }))
 vi.mock('@/api/queries', () => ({
-  useWorkflows: () => ({ data: { pages: [{ items: [{ id: '00000000-0000-7000-8000-0000000000aa', name: 'Purchase approval' }] }] } }),
+  useWorkflows: (_ws: string, _f: unknown, enabled: unknown) => (permission.enabledArgs.push(enabled), { data: { pages: [{ items: [{ id: '00000000-0000-7000-8000-0000000000aa', name: 'Purchase approval' }] }] } }),
 }))
 
 const empty: AdapterFields = { from: '', domains: '', baseUrl: '', statement: '', parameters: '', maxRows: '', topics: '' }
@@ -35,7 +35,7 @@ describe('adapter configuration builders', () => {
 })
 
 describe('adapters and inbound triggers panel', () => {
-  beforeEach(() => { permission.manage = true; resetAdapterMocks() })
+  beforeEach(() => { permission.manage = true; permission.read = true; permission.enabledArgs = []; resetAdapterMocks() })
 
   it('saves an adapter with a secret reference only and sends a test message to the local stub', async () => {
     const user = userEvent.setup(); const created: Record<string, unknown>[] = []; const sent: Record<string, unknown>[] = []
@@ -116,5 +116,12 @@ describe('adapters and inbound triggers panel', () => {
     expect(screen.queryByRole('button', { name: 'Save adapter' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Prepare test message/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Save trigger' })).not.toBeInTheDocument()
+  })
+
+  it('does not request the workflow list when a connection manager cannot read workflows', async () => {
+    permission.read = false
+    mount()
+    expect(await screen.findByText(/need permission to read workflows/)).toBeVisible()
+    expect(permission.enabledArgs.every((value) => value === false)).toBe(true)
   })
 })

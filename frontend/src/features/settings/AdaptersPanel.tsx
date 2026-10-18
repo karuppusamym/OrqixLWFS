@@ -56,7 +56,8 @@ const SECRET = /^[a-z0-9][a-z0-9-]{0,62}$/
 export function AdaptersPanel() {
   const { workspace, can } = useWorkspace()
   const manage = can('connection.manage')
-  const workflowQuery = useWorkflows(workspace.id, {}, manage)
+  // The target workflow list needs workflow.read; a connection manager without it must not trigger a refused request.
+  const workflowQuery = useWorkflows(workspace.id, {}, manage && can('workflow.read'))
   const workflows = workflowQuery.data?.pages.flatMap(page => page.items) ?? []
   const [error, setError] = useState<ProblemError | null>(null)
   const [notice, setNotice] = useState('')
@@ -177,7 +178,8 @@ export function AdaptersPanel() {
       <div><Label htmlFor="trigger-key">Trigger key</Label><Input id="trigger-key" value={tKey} maxLength={64} onChange={event => setTKey(event.target.value)} /></div>
       <div><Label htmlFor="trigger-name">Trigger name</Label><Input id="trigger-name" value={tName} maxLength={100} onChange={event => setTName(event.target.value)} /></div>
       <div><Label htmlFor="trigger-workflow">Workflow to start</Label><Select id="trigger-workflow" value={tWorkflow} onChange={event => setTWorkflow(event.target.value)}>
-        <option value="">Choose a workflow</option>{workflows.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}</Select></div>
+        <option value="">Choose a workflow</option>{workflows.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}</Select>
+        {!can('workflow.read') ? <p className="text-xs text-muted-foreground">You need permission to read workflows to choose the workflow a trigger starts.</p> : null}</div>
       <div><Label htmlFor="trigger-secret">Signing secret reference name</Label><Input id="trigger-secret" value={tSecret} maxLength={63} onChange={event => setTSecret(event.target.value)} /></div>
       {tSource === 'email' || tSource === 'kafka' ? <div><Label htmlFor="trigger-filter">{tSource === 'email' ? 'Approved sender domains' : 'Approved topics to receive from'}</Label><Input id="trigger-filter" value={tFilter} onChange={event => setTFilter(event.target.value)} /></div> : null}
       <div><Label htmlFor="trigger-mapping">Start form fields, one per line as field=/path/in/event</Label><Textarea id="trigger-mapping" value={tMapping} onChange={event => setTMapping(event.target.value)} /></div>

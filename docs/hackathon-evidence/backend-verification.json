@@ -1,0 +1,1413 @@
+{
+  "sourceCommit": "57ca2aefbe478cc9133e3fe7a78da97216c9a356",
+  "backendTree": "9e99b36db14d2d14bfe55a351b733ac858fe59c8",
+  "verifiedAtUtc": "2026-10-18T16:14:50.523549+00:00",
+  "command": "./mvnw.cmd -o -Dorqix.buildDirectory=target-final-review -Dlogging.level.root=WARN clean verify",
+  "javaVersion": "21.0.12.1+1",
+  "result": "passed",
+  "modules": {
+    "compiler": {
+      "totals": {
+        "tests": 495,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "suites": [
+        {
+          "name": "com.orqix.compiler.BoundedIterationTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "322e00ccded6e9187e685ffce2b5fd29d4259b8963128263d5ff67fa506a49c9",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.compiler.BpmnSourceTest",
+          "tests": 14,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "43b173612fea0933d33f90bfe773187e24fc6421a5b6bf6118626e37599adceb",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.compiler.BusinessCalendarTest",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "6971d46a14363c0bc3061b58f7cbf4bdd7e0ed1e34b4d6faf22c50e77a7cd775",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.compiler.CanonicalJsonTest",
+          "tests": 30,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "b3bc01800e9df0e675949a033f9c728720055e76280563c18a65a943e3742bb7",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.compiler.CompilerCasesTest",
+          "tests": 28,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "d16b62fe9c4799583eb8e3abc87f1ab7d9d88092166a5c090f99f90ba978aab1",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.compiler.ConditionalFormSafetyTest",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "f6b03a97297ae4c1345667040c00cdb2320bebc31c949ff7bb6bd29d29cf8480",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.compiler.ConditionalInputValidationTest",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "71962a5b94665c08e5542f2b3c15670fc99476f2d23379aeba9be5c378ffef0f",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.compiler.ConjunctiveDecisionTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "af5a766b62756c2a24cc7bb75442663f98c64be5a94a8c247cd037338ffc08b4",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.compiler.DecisionEvaluatorTest",
+          "tests": 24,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "8af2449d55740579e5ad7328a55aa1bf3001c27a1992bdeb664f49e21b64405d",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.compiler.DeterminismTest",
+          "tests": 27,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "a1b287976b29750e92e46f6a85837dc30b7e028f90ab5dcb5f98f5de2e5a9a86",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.compiler.DocumentAuthoringTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "3834d661726d78416fc739c1b4c2337fd5ed63e2d0b9afcd77a06784debb04bb",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.compiler.EffectiveDatedRowsTest",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "71364bbc2745edd9563a028ea3a93014284b1251dc347524351a149eb636ebab",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.compiler.ExternalTaskRulesTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "accdc1711e2356debdf45c9f031723fc37bd717631d7bc79444fc846d68c06d6",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.compiler.FailureRoutesCompilerTest",
+          "tests": 23,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "4ca8d34b4fe10763bcb5d844e9d127bb17860ff8b7ba958b6825b6e489983c28",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.compiler.FirstAndAnyDecisionTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "e7f11bebe970a4b185f486d870f0cca53580650c13d0ee7d9c618e8c54d85bcd",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.compiler.FormValidatorTest",
+          "tests": 12,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "27dcabb0d87cc36cafbcbe3e95a592b567f4917526b7b167030667e3565fd6ac",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.compiler.GenerateDocumentTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "29bb8a978bf4cb19ea5ad03f6da81bfce144f315d8d8daf15204296c03be1582",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.compiler.GeneratedXmlTest",
+          "tests": 11,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "429781a3ab467cc355df3e77a258cb46815a83d9ce28c2d202c0632dcab6b681",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.compiler.GoldenFilesTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "445e98c48e16616973c26640c1548722cfa24702a7ad663935426682f681139d",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.compiler.InclusiveAndMultiInstanceTest",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "453f0f947fb3cbd7553b169b31b705c32f61d97c495729b7fd7af5c33b2b84f8",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.compiler.InputValuesTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "6044d0f1a08335db313d42e91118c0aab97652c4b69debe27af774495fa11978",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.compiler.internal.InternalsTest",
+          "tests": 16,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "76a21458d7bde4b055d80cedc9a3e2c1aac94ff83f99a13cb135d317e055aa9f",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.compiler.MessageEventsTest",
+          "tests": 20,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "a6425e9356380086a49d95cb92f8c5d2a43ccce4c9efce6d16696f684bf6ce84",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.compiler.ParseAndSchemaTest",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "d2d5adcee73b89e2cae57ccb6394e62f041eae29e397a8565d2a43da108c4fff",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.compiler.RowInputValidationTest",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "a2e0796a18ab3c176c2dc7d785dff9a8ffb5e19785b0842fc3889a426a810ecb",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.compiler.RowsAndUiRulesTest",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "861d7d1f98c814b637d869b3a60ff308f75d6c58030402b9a2b068f09a2c39c6",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.compiler.RuleCatalogTest",
+          "tests": 51,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "e1e1ec2b83b7f936705d57efd7d20af529389e01653bf51ab0889650d156017a",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.compiler.ScopesAndEventsTest",
+          "tests": 11,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "f022beecfebc8718a87fd42ffc8648c7852a35b5887b182729e8e355367803e6",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.compiler.SeparationRulesTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "5a3122e0e11056668d555ec3bbd6f54bd439d7a5c816ad8b0d1cf2a323348146",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.compiler.StagesAndFilesTest",
+          "tests": 23,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "b2904d6a5c0219e46451f96589888979cd1c086e21907846ff8dc45b05884e97",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.compiler.Tier1AcceptanceTest",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "3a1ddabb5e25365c3d9037bdd0fd2af642238c9004b97da7d6fdb085daeb1e9b",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.compiler.WaitUntilDateTest",
+          "tests": 12,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "7745f342c88207d1919d401a9dd0e25bfc2e290715a39c3308e046c6611dbc83",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.compiler.WorkflowPatternsGoldenTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "61e80fe3b6a8da9ab8bacf2a8124bc6d1941ab04b84825a51ef1c96da97467fa",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.compiler.WorkflowPatternsRulesTest",
+          "tests": 54,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "7f4e040f861061b688d8c88fcb48c906c8fc46249a42789348c4375e32fd1e59",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.compiler.WorkflowSimulatorGoldenTest",
+          "tests": 23,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "738236bffda813a86672861e86cd241ad46787f650ea822e7cbe502968bb5f09",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.compiler.WorkflowSimulatorTest",
+          "tests": 31,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "414e7e93cc7b81982c7e76617f523aa7fe702686badc4a752f28c42c3a924059",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.compiler.WorkManagementRulesTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "c1fd2b716e1d728ec86ba917cd5c708ffe2da3b6eb0b2cefc2ba3dc80ff1bd7d",
+          "skippedTests": []
+        }
+      ]
+    },
+    "app": {
+      "totals": {
+        "tests": 793,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 4
+      },
+      "suites": [
+        {
+          "name": "com.orqix.ai.AgentLiveTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 1,
+          "reportSha256": "db7d5a2ff082ab8e0a774d0b26857bf9994648a2993c86fce59d1839d1c9c98f",
+          "skippedTests": [
+            "theEconomyModelCallsTheAllowListedToolAndAnswersInTheResultSchema"
+          ]
+        },
+        {
+          "name": "com.orqix.ai.AiApiTest",
+          "tests": 21,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "ddcfa8c5fd507bca016ec5614c94b747583a6f1d62f584f1fc1a6b4293b99dc2",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.ai.AiDisabledTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "33740edbf691c5be93d0b915b32261c8126bd4833de180a53dc518cce759c1ee",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.ai.AiLiveTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 1,
+          "reportSha256": "e4003f4e9f86d96c45f07ac1b346f96101f1532f50378782903fde1e9d38359f",
+          "skippedTests": [
+            "economyProfileDraftsAValidatedPurchaseWorkflow"
+          ]
+        },
+        {
+          "name": "com.orqix.ai.DraftRulesTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "94a079bc47d61fc311bafcfef3e76c21b1735e02363837b62b4df629b52af30f",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.ai.ModelPolicyTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "93b9123e35e3e6e201ac37ec7979e7d1eba5b0e9ebc3d9b3190eb5b19ace147c",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.api.AccessApiTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "0d29607f5469f61fd828e82121bc2ed4b46505c0e634c9d965c4b43fe8814113",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.api.AdapterInboundApiTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "b9a021414672b379dbc7f649c4ceeb5e31bf0db9f4efd5e6ea9edddc7b24842d",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.api.ApplicationViewsApiTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "3d9e7e9b2ff7c5f38417d4a4964b4b8671e2066578ad3962c8b23d5afe4a0d6b",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.api.BpmnSourceApiTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "ad6646352775c4a79e0e5c066a5998c6211ae1180833680029bef72ecbf12178",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.api.CatalogApiTest",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "b4c19f4381875f09e9f7ecb6d2120985b0b45d4629f260ba2ce8b258902c3572",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.api.ConnectionsApiTest",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "163e6bf9843e3a8c088dd4e05881cb154e7564f2fa88bbd999b84c223bf9a4c8",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.api.ConversationApiTest",
+          "tests": 12,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "ef4dd5fc9e41aefe70225c522727a3a6c262cbba570261a578bfa0e994bae149",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.api.DocumentSourcesApiTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "1c091fc10b21376b1556221e1d0327b5bcdeab41a447cad1e3986b7b08c87077",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.api.IdentityApiTest",
+          "tests": 10,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "cca5f85eaf5016a946d63f91791f3339752bfedd32aec8e70f16e5b80020fdb4",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.api.OpenApiConnectionReviewApiTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "6d36e4b3fe381cb63e660517f50868f81d34e809eb57f8ad57fdf55fc4336715",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.api.SharedAssetsApiTest",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "eb5eb9514ac255218c797b7069cccbb08249df7631300ef728e0f880e97f16cb",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.api.SimulationApiTest",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "593f798a805c937587bb1c023f4d74927f1f1b73c00a0857b802e830ab6f20d7",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.api.WorkflowDiscussionApiTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "6761fe369fab231ecad3866e3a626fa3f6e69e088a1260d54d07e49bb308f4a5",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.api.WorkflowOrganizationApiTest",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "e3649c6162db326f146225cc2a316dc4e8880fabd9d27dd40c10eee984dd65a8",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.api.WorkflowTestSuiteApiTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "111d02c501de6530679df1dd389f61a901438a81ccd0eba8483bfda87e4b0fe4",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.architecture.ArchitectureTest",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "1ec207711c2ec19bdb582667e40834fdbb74a4fbeb7c5b62548d1cc3c4623783",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.cases.CaseApiTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "35ad132103e4b2ab8e806b1f3796251b044a153cb7d0238c18edd4786961f0b1",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.cases.CaseServiceTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "82d246a4e29d31e2a827f8d9c07b793484d96c26626a0ba6484b6c902b22810b",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.catalog.SimulationLimiterTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "4f208e757193230919384e6b376dd772a0ccbd6d3d1b7424eed998f4c8b14f66",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.db.DatabaseTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "6cf56aaa26b846bb4fad690f573b537228c2943f854fa69da0b77979825b8fd8",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.hardening.DatabaseOutageResponseTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "3ed33c78fdd8790db3bc1f8ab504f0f42f63a7ea1d0e402af379b49d79936cb1",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.hardening.GracefulShutdownTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "bb904962f65c6ecd8a7add6094ec35b04f0e911a28c4c89f55889bd2f75e4dbb",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.hardening.PermissionRevocationTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "4d2f373d1b95ffc3811718b6aaa445894292058d03b79f3496b4190896ef67b0",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.hardening.ReconcileResumeTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "8261c9e148f782facb51b829cfa5fdc71bb686a25acdecd6e7ff8fdea9c91364",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.hardening.RollbackPinningTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "abf5819d89dce9c25106ddf100c86cd6031adc03a6ab56e9fb730be108a474ed",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.hardening.SecretLeakScenariosTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "789aebf2552434a9824154817de9d46f2d2928a07db9555b68ca06fd0fe67362",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.insights.InsightsApiTest",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "5120f21e7d0f8af6a03371e0fbd7b11b1e190693bd48652f943e25abbd90651d",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.insights.internal.InsightsServiceTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "5a45d42d50e401dce28e1d876dd8d3fb2ac5f5add7f27b461cf58a34977f976d",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.integration.adapters.AdapterRulesTest",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "6b66e7d426131940a21280e3a6e7f55b268fb3ed7f94b6e6e44e0834059ad6d2",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.integration.AgentExecutorTest",
+          "tests": 24,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "55e6f99ea4396c8e8b0a30d8096fb174b6d51e2dde7e959a2b2a0dca77612b2c",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.integration.DocumentExtractionTest",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "9014a0e7ef707e0ea922d6ff0f7bf37575f77357c3bf2047734f4acbb97a1201",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.integration.DocumentGenerationTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "c3fad9c3ef702b4119c015ad49fba517dec598bc9dbc89e03cfda99edacd2185",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.integration.McpClientTest",
+          "tests": 12,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "17915c78bac48719aab5eebe7ec53bad7a9e76d872d223548ea0286b0bcbf173",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.integration.MicrosoftGraphDocumentsTest",
+          "tests": 16,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "5e4848442ace3eab9dcedfc54c90bfe4db60364fb1fb9957e99b7a7f91b2f602",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.integration.MicrosoftGraphLinksTest",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "c4a84fe8a90e5908588d9dc78378d1c3632169395facd4e8edc3ffb955bd8937",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.integration.openapi.OpenApiConverterTest",
+          "tests": 12,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "c9ef564567fe8c38162585f454806fbe20c934372251404a670c93ae09fb4f3f",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.integration.openapi.SpecReaderTest",
+          "tests": 20,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "13858a532433ae4a80f1aa9a5dad4561e377b26d7dd896939cc704ff3fb896f0",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.migration.camunda.ExpressionsTest",
+          "tests": 70,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "8c44ea7a7eb10d1a5a958a82a863203a87aa81e718f53c0a508c1c172c8de353",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.migration.camunda.IdentifiersTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "c5d830718a7d18e4b2f74c9a17661d048860c9e0fe6f52057e45abe9fdfa6696",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.migration.camunda.ProjectDmnPlanTest",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "853c3a6df498cb33f79036f5f95aa91c055f55dcd1cf0d2ca553a3e23b08b655",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.migration.Camunda8ImportTest",
+          "tests": 25,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "372b85342b892e7b42c933f96d703b22f69b6e8c04a6abf88a2d165edf30746f",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.migration.Camunda8MigrationApiTest",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "09e0f0191a44c8e9dcc88a6cfeaa6bb547126c4ca3a0cfce26e0ccd3bc6022c9",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.migration.CmmnInventoryApiTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "040ebff1d14afc03d89a3f217c97d48f9e0dc04248f8430685f5ca44f246d187",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.migration.CmmnInventoryTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "674126b5ad59ab40e3d2eea0ddcf826c0c5f0ae5bd4909cecea9e350a63e8249",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.migration.ConverterExpansionTest",
+          "tests": 18,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "d060c2c32c31aabeff29a8542973352f5968bbf52fdacecf829ec56edc3d11e7",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.migration.dmn.DmnImportTest",
+          "tests": 52,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "57617cbefc52f9c58ae88387820d3a82c90331573092af12be9c830f16592de7",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.migration.FixtureDispositionTest",
+          "tests": 20,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "45b11bd86e40bc447e5442428f6230ac285fe78c9e3b154e1b5a28838e875dc3",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.migration.MigrationApiTest",
+          "tests": 14,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "e537cf2fcd9a3b6c6aaa2c7e44dd3a006f4ff6f94c98ebcff7e46cea50f4e1de",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.migration.MigrationGovernanceApiTest",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "41a6743397784960c200342c50e8f97e3fec4d97cb8d6eb2454b8d0b99e830bf",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.migration.MigrationProjectApiTest",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "7056b529e6a2220a973b02d8a439b656b0a98ffe475712d5ad81cca672c0dea9",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.migration.MigrationSafetyTest",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "185caeac2b277101a017de35eedfa79b238c5d229a8dab28e77ee4c147b5533a",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.migration.pega.PegaDecisionSnapshotTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "1a1155ee73718aed84e652e03c719826a8d8abda0b681cfa5297bd6413df123f",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.migration.pega.PegaXpdlTest",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "ed3d8f27f7d99a927329e4f802068ccdc965f18782e24bcabfb2b7e022165d89",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.migration.PegaXpdlApiTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "58fde3f3ac63f2975f12f07905b4e10934752ad2dbca6560fe698b2e973b6adc",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.resilience.RestartTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "d42c46ab60bfa067c5207ffcaa20bfe7ddd9a7ae02afa8943129229256f13f65",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.resilience.TwoExecutorsTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "7c687fb9571b1caf1187494e83eb8574d78fad166f5a544cab0ef5d598a88f7c",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.AgentDisabledTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "4db2dac51bd7d918cfebaa8e47233166c0405fc746ced3cc3686d514612e20dc",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.AgentFlowsTest",
+          "tests": 10,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "13247ecdc49029f20e6a6a6b65462ac88f1b7f082bf004c7f0c46650067a1088",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.AgentWorkflowTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "66d6f789b36b20c7f4b300be5825679a4f6b3e7d09aaa8859afbd46b94216dbc",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.ApproverCorrectionTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "ce42f3c4774ebac075cff26547be157a14fd6343c0b91f210be2704f7e56dd76",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.AttachmentsApiTest",
+          "tests": 21,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "ed5ef8c4bc0ad6ad9ed53138600db017cab19d6d02dea5a951873a456b3b8586",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.BankingWorkflowsTest",
+          "tests": 42,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "c8c0d983cd82d3b57ef075160bb28990c9d232c84922c03821b00c03d6f379fa",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.CaseStagesTest",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "8ca545c857b5db9dba731c8f6ce42449d485fa9930bfe977df763ef91524daf8",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.ClamAvScannerTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "8410d08980070f2905fd0c9e4822f6b5945ccc69e848fc7ddb719d8cac81cb20",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.CmmnEngineCompatibilityTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "27334b828cb5e0c549e611543ae8ea9d5f5f76d3f6c42354725e6be6b1ee146d",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.ConditionalFormsTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "b2afcc24da7f9251894b3edd26b3a162cb2a704880a2766af86dbe1fcc8de9c7",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.ConversationIntentServiceTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "efbaedd751bdba586597d036585e68c9211526dfde7ca25b3da22ccc2d389267",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.DecisionEvidenceTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "cca893b98ad8195a0968b8f6669e42fdac1395621de8fedb76e4b717e7159dd2",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.DecisionHitPolicyTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "86876d54496028346e8c2c62588a2ca896cf3a094abc6f0827102cb115119b31",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.DocumentLifecycleTest",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "d4e3e340db94a48c2b381e0fe185b4511724da29fe181bac602567dc5bdd374f",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.DocumentLinkWorkflowTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "7b006d779ba6e0df57e61c0add2946f84c45c8595e0892a303704c1c3b844c9e",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.DocumentSnapshotWorkflowTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "8269cd495c0f83f48239699f59b52e92d30665ef0b3a987d6838b10d1292c584",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.DocumentWorkflowTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "06c34b6f65d501380e536fae96fe21774c887cad55cbec1932abaf4b2e7c68aa",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.EffectsTest",
+          "tests": 10,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "cca553ff4dc6c1ef2aeb5d44db4ba505bb620e9842d505bfd754c4ca8a3aebe2",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.Ex04SpikeTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 2,
+          "reportSha256": "d48512e6da15133f09f1fca6333cedbe52057a1d27c26df485a4511289fb4a64",
+          "skippedTests": [
+            "approvalWithTimeoutAndWaitAndParallel",
+            "parallelAndMessageShapes"
+          ]
+        },
+        {
+          "name": "com.orqix.runtime.ExternalWorkerTest",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "06f7ba85316901f6c28b1f4986749f14fa8a042f83b96d9b9b6aa63478ec47a5",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.FailureRoutesRuntimeTest",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "9cd7fd6e27e98dc46370922bc2edaae47f4ebe01bc2d70672e5920c378bf9fd4",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.GeneratedDocumentsTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "bfcdc4fa9638362796184a49497bc8fcd6407e461295760d42fc9471426541ec",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.HackathonAcceptanceTest",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "a88985cfbaf663b3e6d550bdebea811a74574b7fa721202cde7c67e7d960d3e3",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.IncidentCorrectionTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "f3abc31049e6d7564f19839ff806c6b3ecd90c8f2625d16fbcb2fcf857ed75a6",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.InclusiveAndMultiInstanceTest",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "42fd046f00ad66f4b1c9360a49353063743d0218dede5ac732765ebabf49d8b1",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.InputAggregatesRuntimeTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "7564bd2760cebb54cd30ba24e55f182f5981ffd9bdc8f12d52791a89d8c90b15",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.internal.ClamAvScannerTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "443fffaff701c62a79a972fcb987083f5f87f6981683b80c770735f8e838f5aa",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.internal.RequestTitleTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "5631b0de467235b181ab08b5217f0c89240e27305555defe1440724eb5f1bebd",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.MessageEventsTest",
+          "tests": 18,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "934abb4c150304d936b941d675f9e74b0c7a10d3fdfe00dc39751d0ecfd69db3",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.PurchaseScenariosTest",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "9828d43b5c53e222d92c6c684bb7a62747e3985f229f10b428a77bb564ffabb7",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.ReleaseCompatibilityTest",
+          "tests": 9,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "1121c29fc67926c6133d4144db20985fd3f7cb4ea5648837ee49640fc3d013f4",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.ReleasePromotionTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "d378904acc740c2d8e64f46ec8c847683bcd3e0292682e18c7ef0931ce3fe1e0",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.ReleaseRolloutTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "fb1655b490ac2440c56a0a642725c379e5122e34ed6047e1c78253680c49a48b",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.RunCommentsTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "0f2c75fff0ab539e556e7fc3c2d8bbe02c957462baae5e05fcfb5741f613b5f3",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.RunMigrationTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "f48272fe167d38c07ffe22cdd2bf06e899757e5780e604ede911a089a11d1212",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.RunPathApiTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "ba2e9acfccf828c877fd82a1b67e539bbc14da35d4cba50b10eded9d890b3cf5",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.RunPathBuilderTest",
+          "tests": 10,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "8ec85603b097451341e760896ba1829a3c6939c576ffdb42dde7813b5aba76b6",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.RunRepairTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "faa1cf3bae27632e07778539f8adce748957b4027c37e98a320ca98aac00cd2f",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.RunsAndTasksTest",
+          "tests": 17,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "fc9f23d30a14b4b638432cc77cb29d64d4ef19107ff4dcf0f8a3e6b6000eb65b",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.RunSuspensionTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "d33afd0f7b6d4328775453bd1e89e1158e1f441d523753cd28cf0e90809351e8",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.RunWatchdogTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "4e90b321d04706a4c527a2465614a9a3111a39c2d7e9c7df43712952984b1346",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.ScopesAndEventsRuntimeTest",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "ff967814a8b96b908b98874bdabf5d7c0aff9f98154a84ec761bd8c47b4b48a5",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.SecretIsolationTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "5453cb4a77b4d82c93c94b4d69f74f192a7931d47ef69f69da8b2e20c4603108",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.SeparationOfDutiesTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "69476f22f8b04781c8ce684ec0b498ed92d9c5b06158e9689c826fecb26db84d",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.spike.EngineSpikeTest",
+          "tests": 9,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "2026f51a1516e4804ac6fad0ba298811b181f3e00c1bbe2b46116bbdc878bdb9",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.StageMailTransportTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "046975ba001839eb94a0b9f2fc8f4fac04bccff0153edfb2159c446bddb3d0c8",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.TaskCollaborationTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "2eb261512b39b0eabc79990d94a2963c4124fbbe549b40ab6ae420af0e2f5914",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.TaskDispatchTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "86104cfeba5da20b02ac7123eb977bb12333014b10f7670f31cb5bbf62ae7edf",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.TaskPriorityTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "175786913fd8fec9ec9ba56ef52f964bbaf819a86a6ec1e3c883ea4477a2ad8f",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.WaitUntilDateTest",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "433583c0b04d14d1b670353d507044ba6d4473cd1e3ebf1d3ac02d4f447fe01a",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.WorkflowPatternsTest",
+          "tests": 14,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "2c1cb73723df0a47fb6420cf4f0d6c833b17b345308f76a04bb39df266072a4c",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.runtime.WorkManagementTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "49abfde090340572416ac7a6605285d71980a33fc2f50e9c7232bf3c0e67e1a3",
+          "skippedTests": []
+        },
+        {
+          "name": "com.orqix.security.SecurityMatrixTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "reportSha256": "df50204f81194281cb3d795abe22eb92360c24d2d015f70422b63c72419893eb",
+          "skippedTests": []
+        }
+      ]
+    }
+  },
+  "log": {
+    "path": "evidence/hackathon-backend-complete-review.log",
+    "sha256": "dbcbaf6ed37a535fd16141d46d6747398025289b56fafae3666819e7bc783010"
+  },
+  "limits": [
+    "Backend source matches the recorded Git tree; this run does not rebuild or requalify the historical load-test image.",
+    "Four intentional skipped tests are listed by suite. Security and HC01-HC07 owner gates remain open."
+  ]
+}

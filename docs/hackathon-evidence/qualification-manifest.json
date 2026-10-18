@@ -1,0 +1,77 @@
+{
+  "sourceCommit": "0017aee667a1d3103402524518a5b074af6cd9d7",
+  "qualificationHarnessCommit": "9bdceba632d46e58e019d625bf45807276937e38",
+  "image": "orqix/orqix:hackathon-security",
+  "imageId": "sha256:992bbf5607d2a87cd19201a66aca8754b8e5758e8ead4c8a21a0478fb62c0c69",
+  "sourceSha256": {
+    "backend/pom.xml": "b18d03a4dc97fff9cfae8c45c54db682659837fa470f51b862bf819381eeebb5",
+    "backend/app/src/main/java/com/orqix/runtime/internal/RunAttachments.java": "45caca79237b15cfcf1d3f5dc091d5631339d02210c79e4428dc211b325d82c5",
+    "backend/app/src/main/java/com/orqix/cases/api/CaseController.java": "c16c04aeabdd2fabf71f1bd272abdff1fd0957bb92a719a79d41b88cffd516bc",
+    "frontend/src/features/tasks/TasksPage.tsx": "f14429c0d4ba58cfd3f53b8edabfa7700349a690161dfbfbf0c2f6f9a09e802f",
+    "frontend/vite.embed.config.ts": "be3729b464d51f21857f856d29b9afe246624eeb507966bf9626c3f103aa318c",
+    "frontend/embed-host/host.js": "da918853b1b5f00d5739a8625986ec4d6bd8c89e93210d6573fad41d37e48347"
+  },
+  "checks": {
+    "frontendTests": 877,
+    "realBrowserScenarios": 2,
+    "compilerBaselineTests": 495,
+    "applicationBaselineTests": 791,
+    "finalRepairTests": 30,
+    "securityPatchCompatibilityTests": 18,
+    "applicationBaselineMethod": "full baseline with three corrected failures; focused repairs and compiler coverage/packaging passed",
+    "baseImageAdvisoriesOpen": 36,
+    "offlineToolTests": 5,
+    "identityRecreationUsersVerified": 12
+  },
+  "hostHardware": {
+    "cpuModel": "11th Gen Intel(R) Core(TM) i7-1195G7 @ 2.90GHz",
+    "physicalMemoryBytes": 34047016960,
+    "docker": {
+      "cpus": 8,
+      "memoryBytes": 16615964672
+    }
+  },
+  "completedAtUtc": "2026-10-18T07:45:19.147986+00:00",
+  "artifactSha256": {
+    "frontend-audit.json": "f57d11eb03a0e38bfdf5b068209784c0b135f3e4ab3c8028f9ab1666868dc5db",
+    "frontend-sbom.json": "173993327c64d68151444d332ef42e31acfe6b43576ac2213aa5940230a97c03",
+    "load.json": "b29a4eac179f758db3f5257d6d9320d5894b5216e051a6feb036cd04c93f516a",
+    "prepared.json": "7fdcec92f882a5e84e28e9114cc120209d3eaa84e3175010b8cb7bc4572ee261",
+    "prepared.manifest.json": "9571d5f4fccdb51c715fcecad62b7f9c255d5d34f3efe52e9555a3c3cf06f61c",
+    "runtime-cves-patched.sarif": "fc1d7a4e7e56bf777e179b40209d875bf5e7e9e3474b84a9397b0dbec2ee6e6f",
+    "runtime-sbom-patched.json": "f93f6318f7191f8ec2648b31b3cbee3bf8a072c5c5e8c2135a62427898957cc8",
+    "third-party-notices.txt": "e2712c4fd37351211fa0e079a876d7eabda769fccf7ce8351f57d6bcaa1e6f28"
+  },
+  "limits": [
+    "Historical local synthetic qualification; packaging does not rerun tests.",
+    "Fifty sessions share four seeded personas; enterprise identity is unqualified.",
+    "Security release gate remains open; scanner findings are not risk acceptance.",
+    "HC01-HC07 require owner evidence and approval."
+  ],
+  "load": {
+    "users": 50,
+    "initialStoredCases": 10000,
+    "workflows": 10,
+    "initialReadyTasks": 8600,
+    "reusedCases": 4960,
+    "identityModel": "50 or fewer independent virtual-user session sets sharing four seeded role personas",
+    "warmupMinutes": 5,
+    "measurementMinutes": 15,
+    "measuredHttpCounts": {
+      "read": 11550,
+      "start": 5779,
+      "decision": 8670,
+      "operate": 2889
+    },
+    "readP95Ms": 15.956599992932752,
+    "mutationP95Ms": 154.82509999128524,
+    "unexpectedErrorRate": 0.0,
+    "errors": [],
+    "host": {
+      "platform": "Windows-11-10.0.26200-SP0",
+      "logicalProcessors": 8
+    },
+    "measurement": "client-side API latency; real local OIDC/PostgreSQL/Flowable/SMTP capture; no external business integrations",
+    "passed": true
+  }
+}

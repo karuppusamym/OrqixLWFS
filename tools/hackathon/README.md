@@ -59,3 +59,15 @@ python tools/hackathon/load.py --reuse-fixture evidence/hackathon/load.fixture.j
 Keep the same target URL and virtual-user count and choose `--cases` at least as large as the existing fixture. The tool validates the synthetic workflow namespace, takes a fixed census, assigns every existing case to exactly one virtual user and creates only missing cases. A reused task whose assignee no longer matches the current dev personas is reassigned through the audited operator API during preparation. All users authenticate again after preparation, before either timing clock starts. Preparation, identity refresh and repair requests are excluded from measured traffic. Four seeded role personas supply the independent virtual-user session sets; this does not test fifty distinct enterprise directory identities.
 
 The development realm pins explicit user IDs so recreating its container preserves OIDC subject mappings. An older database paired with a recreated, unpinned realm may contain retired subject IDs; the local directory must mark those identities disabled before automatic dispatch is used. Preserve their audit history. This is a fixture lifecycle concern, not a substitute for enterprise identity lifecycle integration.
+
+## Qualification evidence handoff
+
+After collecting and reviewing a candidate receipt and its artifacts:
+
+```powershell
+python tools/hackathon/package_evidence.py --source evidence/hackathon --output evidence/hackathon-review-package.zip --reports-dir docs/hackathon-evidence
+```
+
+The command verifies the receipt's SHA-256 values for all seven supported artifacts and the load result before writing anything. Missing or changed evidence fails the command. Choose a new output name if a ZIP already exists. Identical inputs produce identical ZIP bytes; the package retains the original tested source/image instead of substituting the current Git HEAD. The optional reports directory receives the manifest, dependency inventories and security findings suitable for review and check-in. No recursive collection is performed.
+
+This is packaging, not a test runner or a new security scan. Raw reports and the prepared synthetic definition must be reviewed before sharing. The [evidence index](../../docs/hackathon-evidence/README.md) documents included and excluded records, and the [owner register](../../docs/hackathon-owner-gates.md) tracks pending external decisions.

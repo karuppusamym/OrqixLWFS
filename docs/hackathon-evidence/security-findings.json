@@ -1,0 +1,366 @@
+{
+  "sourceSha256": "fc1d7a4e7e56bf777e179b40209d875bf5e7e9e3474b84a9397b0dbec2ee6e6f",
+  "gate": "open",
+  "findings": [
+    {
+      "advisory": "CVE-2026-40356",
+      "packages": [
+        "pkg:rpm/redhat/krb5@1.21.1-10.el9_8?os_name=redhatlinux&os_version=9"
+      ],
+      "severity": "HIGH",
+      "fixedVersion": "not fixed",
+      "reference": "https://scout.docker.com/v/CVE-2026-40356?s=redhat&n=krb5&ns=redhat&t=rpm&osn=redhatlinux&osv=9&vr=%3E%3D0",
+      "disposition": "open"
+    },
+    {
+      "advisory": "CVE-2026-4519",
+      "packages": [
+        "pkg:rpm/redhat/python3.9@3.9.25-7.el9_8.3?os_name=redhatlinux&os_version=9"
+      ],
+      "severity": "HIGH",
+      "fixedVersion": "not fixed",
+      "reference": "https://scout.docker.com/v/CVE-2026-4519?s=redhat&n=python3.9&ns=redhat&t=rpm&osn=redhatlinux&osv=9&vr=%3E%3D0",
+      "disposition": "open"
+    },
+    {
+      "advisory": "CVE-2026-54369",
+      "packages": [
+        "pkg:rpm/redhat/acl@2.4.0-1.el9_8?os_name=redhatlinux&os_version=9"
+      ],
+      "severity": "HIGH",
+      "fixedVersion": "not fixed",
+      "reference": "https://scout.docker.com/v/CVE-2026-54369?s=redhat&n=acl&ns=redhat&t=rpm&osn=redhatlinux&osv=9&vr=%3E%3D0",
+      "disposition": "open"
+    },
+    {
+      "advisory": "CVE-2026-54371",
+      "packages": [
+        "pkg:rpm/redhat/attr@2.6.0-1.el9_8?os_name=redhatlinux&os_version=9"
+      ],
+      "severity": "HIGH",
+      "fixedVersion": "not fixed",
+      "reference": "https://scout.docker.com/v/CVE-2026-54371?s=redhat&n=attr&ns=redhat&t=rpm&osn=redhatlinux&osv=9&vr=%3E%3D0",
+      "disposition": "open"
+    },
+    {
+      "advisory": "CVE-2026-4786",
+      "packages": [
+        "pkg:rpm/redhat/python3.9@3.9.25-7.el9_8.3?os_name=redhatlinux&os_version=9"
+      ],
+      "severity": "HIGH",
+      "fixedVersion": "not fixed",
+      "reference": "https://scout.docker.com/v/CVE-2026-4786?s=redhat&n=python3.9&ns=redhat&t=rpm&osn=redhatlinux&osv=9&vr=%3E%3D0",
+      "disposition": "open"
+    },
+    {
+      "advisory": "CVE-2026-19553",
+      "packages": [
+        "pkg:rpm/redhat/python3.9@3.9.25-7.el9_8.3?os_name=redhatlinux&os_version=9"
+      ],
+      "severity": "HIGH",
+      "fixedVersion": "not fixed",
+      "reference": "https://scout.docker.com/v/CVE-2026-19553?s=redhat&n=python3.9&ns=redhat&t=rpm&osn=redhatlinux&osv=9&vr=%3E%3D0",
+      "disposition": "open"
+    },
+    {
+      "advisory": "CVE-2026-84782",
+      "packages": [
+        "pkg:rpm/redhat/openssl@1%3A3.5.8-2.el9_8?os_name=redhatlinux&os_version=9"
+      ],
+      "severity": "HIGH",
+      "fixedVersion": "not fixed",
+      "reference": "https://scout.docker.com/v/CVE-2026-84782?s=redhat&n=openssl&ns=redhat&t=rpm&osn=redhatlinux&osv=9&vr=%3E%3D0",
+      "disposition": "open"
+    },
+    {
+      "advisory": "CVE-2026-88647",
+      "packages": [
+        "pkg:rpm/redhat/gnutls@3.8.10-9.el9_8?os_name=redhatlinux&os_version=9"
+      ],
+      "severity": "HIGH",
+      "fixedVersion": "not fixed",
+      "reference": "https://scout.docker.com/v/CVE-2026-88647?s=redhat&n=gnutls&ns=redhat&t=rpm&osn=redhatlinux&osv=9&vr=%3E%3D0",
+      "disposition": "open"
+    },
+    {
+      "advisory": "CVE-2026-88648",
+      "packages": [
+        "pkg:rpm/redhat/gnutls@3.8.10-9.el9_8?os_name=redhatlinux&os_version=9"
+      ],
+      "severity": "HIGH",
+      "fixedVersion": "not fixed",
+      "reference": "https://scout.docker.com/v/CVE-2026-88648?s=redhat&n=gnutls&ns=redhat&t=rpm&osn=redhatlinux&osv=9&vr=%3E%3D0",
+      "disposition": "open"
+    },
+    {
+      "advisory": "CVE-2026-89161",
+      "packages": [
+        "pkg:rpm/redhat/pcre2@10.40-6.el9?os_name=redhatlinux&os_version=9"
+      ],
+      "severity": "HIGH",
+      "fixedVersion": "not fixed",
+      "reference": "https://scout.docker.com/v/CVE-2026-89161?s=redhat&n=pcre2&ns=redhat&t=rpm&osn=redhatlinux&osv=9&vr=%3E%3D0",
+      "disposition": "open"
+    },
+    {
+      "advisory": "CVE-2026-15308",
+      "packages": [
+        "pkg:rpm/redhat/python3.9@3.9.25-7.el9_8.3?os_name=redhatlinux&os_version=9"
+      ],
+      "severity": "HIGH",
+      "fixedVersion": "not fixed",
+      "reference": "https://scout.docker.com/v/CVE-2026-15308?s=redhat&n=python3.9&ns=redhat&t=rpm&osn=redhatlinux&osv=9&vr=%3E%3D0",
+      "disposition": "open"
+    },
+    {
+      "advisory": "CVE-2026-27135",
+      "packages": [
+        "pkg:rpm/redhat/nghttp2@1.43.0-6.el9_8.2?os_name=redhatlinux&os_version=9"
+      ],
+      "severity": "HIGH",
+      "fixedVersion": "not fixed",
+      "reference": "https://scout.docker.com/v/CVE-2026-27135?s=redhat&n=nghttp2&ns=redhat&t=rpm&osn=redhatlinux&osv=9&vr=%3E%3D0",
+      "disposition": "open"
+    },
+    {
+      "advisory": "CVE-2026-33845",
+      "packages": [
+        "pkg:rpm/redhat/gnutls@3.8.10-9.el9_8?os_name=redhatlinux&os_version=9"
+      ],
+      "severity": "HIGH",
+      "fixedVersion": "not fixed",
+      "reference": "https://scout.docker.com/v/CVE-2026-33845?s=redhat&n=gnutls&ns=redhat&t=rpm&osn=redhatlinux&osv=9&vr=%3E%3D0",
+      "disposition": "open"
+    },
+    {
+      "advisory": "CVE-2026-33846",
+      "packages": [
+        "pkg:rpm/redhat/gnutls@3.8.10-9.el9_8?os_name=redhatlinux&os_version=9"
+      ],
+      "severity": "HIGH",
+      "fixedVersion": "not fixed",
+      "reference": "https://scout.docker.com/v/CVE-2026-33846?s=redhat&n=gnutls&ns=redhat&t=rpm&osn=redhatlinux&osv=9&vr=%3E%3D0",
+      "disposition": "open"
+    },
+    {
+      "advisory": "CVE-2026-4046",
+      "packages": [
+        "pkg:rpm/redhat/glibc@2.34-283.el9_8?os_name=redhatlinux&os_version=9"
+      ],
+      "severity": "HIGH",
+      "fixedVersion": "not fixed",
+      "reference": "https://scout.docker.com/v/CVE-2026-4046?s=redhat&n=glibc&ns=redhat&t=rpm&osn=redhatlinux&osv=9&vr=%3E%3D0",
+      "disposition": "open"
+    },
+    {
+      "advisory": "CVE-2026-4424",
+      "packages": [
+        "pkg:rpm/redhat/libarchive@3.5.3-11.el9_8?os_name=redhatlinux&os_version=9"
+      ],
+      "severity": "HIGH",
+      "fixedVersion": "not fixed",
+      "reference": "https://scout.docker.com/v/CVE-2026-4424?s=redhat&n=libarchive&ns=redhat&t=rpm&osn=redhatlinux&osv=9&vr=%3E%3D0",
+      "disposition": "open"
+    },
+    {
+      "advisory": "CVE-2026-59873",
+      "packages": [
+        "pkg:rpm/redhat/tar@2%3A1.34-13.el9_8?os_name=redhatlinux&os_version=9"
+      ],
+      "severity": "HIGH",
+      "fixedVersion": "not fixed",
+      "reference": "https://scout.docker.com/v/CVE-2026-59873?s=redhat&n=tar&ns=redhat&t=rpm&osn=redhatlinux&osv=9&vr=%3E%3D0",
+      "disposition": "open"
+    },
+    {
+      "advisory": "CVE-2026-59874",
+      "packages": [
+        "pkg:rpm/redhat/tar@2%3A1.34-13.el9_8?os_name=redhatlinux&os_version=9"
+      ],
+      "severity": "HIGH",
+      "fixedVersion": "not fixed",
+      "reference": "https://scout.docker.com/v/CVE-2026-59874?s=redhat&n=tar&ns=redhat&t=rpm&osn=redhatlinux&osv=9&vr=%3E%3D0",
+      "disposition": "open"
+    },
+    {
+      "advisory": "CVE-2026-73566",
+      "packages": [
+        "pkg:rpm/redhat/tar@2%3A1.34-13.el9_8?os_name=redhatlinux&os_version=9"
+      ],
+      "severity": "HIGH",
+      "fixedVersion": "not fixed",
+      "reference": "https://scout.docker.com/v/CVE-2026-73566?s=redhat&n=tar&ns=redhat&t=rpm&osn=redhatlinux&osv=9&vr=%3E%3D0",
+      "disposition": "open"
+    },
+    {
+      "advisory": "CVE-2026-75804",
+      "packages": [
+        "pkg:rpm/redhat/openssl@1%3A3.5.8-2.el9_8?os_name=redhatlinux&os_version=9"
+      ],
+      "severity": "HIGH",
+      "fixedVersion": "not fixed",
+      "reference": "https://scout.docker.com/v/CVE-2026-75804?s=redhat&n=openssl&ns=redhat&t=rpm&osn=redhatlinux&osv=9&vr=%3E%3D0",
+      "disposition": "open"
+    },
+    {
+      "advisory": "CVE-2026-103111",
+      "packages": [
+        "pkg:rpm/redhat/pcre2@10.40-6.el9?os_name=redhatlinux&os_version=9"
+      ],
+      "severity": "HIGH",
+      "fixedVersion": "not fixed",
+      "reference": "https://scout.docker.com/v/CVE-2026-103111?s=redhat&n=pcre2&ns=redhat&t=rpm&osn=redhatlinux&osv=9&vr=%3E%3D0",
+      "disposition": "open"
+    },
+    {
+      "advisory": "CVE-2025-68973",
+      "packages": [
+        "pkg:rpm/redhat/gnupg2@2.3.3-5.el9_7?os_name=redhatlinux&os_version=9"
+      ],
+      "severity": "HIGH",
+      "fixedVersion": "not fixed",
+      "reference": "https://scout.docker.com/v/CVE-2025-68973?s=redhat&n=gnupg2&ns=redhat&t=rpm&osn=redhatlinux&osv=9&vr=%3E%3D0",
+      "disposition": "open"
+    },
+    {
+      "advisory": "CVE-2026-79824",
+      "packages": [
+        "pkg:rpm/redhat/python3.9@3.9.25-7.el9_8.3?os_name=redhatlinux&os_version=9"
+      ],
+      "severity": "HIGH",
+      "fixedVersion": "not fixed",
+      "reference": "https://scout.docker.com/v/CVE-2026-79824?s=redhat&n=python3.9&ns=redhat&t=rpm&osn=redhatlinux&osv=9&vr=%3E%3D0",
+      "disposition": "open"
+    },
+    {
+      "advisory": "CVE-2026-24881",
+      "packages": [
+        "pkg:rpm/redhat/gnupg2@2.3.3-5.el9_7?os_name=redhatlinux&os_version=9"
+      ],
+      "severity": "HIGH",
+      "fixedVersion": "not fixed",
+      "reference": "https://scout.docker.com/v/CVE-2026-24881?s=redhat&n=gnupg2&ns=redhat&t=rpm&osn=redhatlinux&osv=9&vr=%3E%3D0",
+      "disposition": "open"
+    },
+    {
+      "advisory": "CVE-2026-45447",
+      "packages": [
+        "pkg:rpm/redhat/openssl@1%3A3.5.8-2.el9_8?os_name=redhatlinux&os_version=9"
+      ],
+      "severity": "HIGH",
+      "fixedVersion": "not fixed",
+      "reference": "https://scout.docker.com/v/CVE-2026-45447?s=redhat&n=openssl&ns=redhat&t=rpm&osn=redhatlinux&osv=9&vr=%3E%3D0",
+      "disposition": "open"
+    },
+    {
+      "advisory": "CVE-2026-6100",
+      "packages": [
+        "pkg:rpm/redhat/python3.9@3.9.25-7.el9_8.3?os_name=redhatlinux&os_version=9"
+      ],
+      "severity": "HIGH",
+      "fixedVersion": "not fixed",
+      "reference": "https://scout.docker.com/v/CVE-2026-6100?s=redhat&n=python3.9&ns=redhat&t=rpm&osn=redhatlinux&osv=9&vr=%3E%3D0",
+      "disposition": "open"
+    },
+    {
+      "advisory": "CVE-2026-51296",
+      "packages": [
+        "pkg:rpm/redhat/sqlite@3.34.1-11.el9_8?os_name=redhatlinux&os_version=9"
+      ],
+      "severity": "HIGH",
+      "fixedVersion": "not fixed",
+      "reference": "https://scout.docker.com/v/CVE-2026-51296?s=redhat&n=sqlite&ns=redhat&t=rpm&osn=redhatlinux&osv=9&vr=%3E%3D0",
+      "disposition": "open"
+    },
+    {
+      "advisory": "CVE-2026-77214",
+      "packages": [
+        "pkg:rpm/redhat/expat@2.5.0-6.el9_8.5?os_name=redhatlinux&os_version=9"
+      ],
+      "severity": "HIGH",
+      "fixedVersion": "not fixed",
+      "reference": "https://scout.docker.com/v/CVE-2026-77214?s=redhat&n=expat&ns=redhat&t=rpm&osn=redhatlinux&osv=9&vr=%3E%3D0",
+      "disposition": "open"
+    },
+    {
+      "advisory": "CVE-2026-24882",
+      "packages": [
+        "pkg:rpm/redhat/gnupg2@2.3.3-5.el9_7?os_name=redhatlinux&os_version=9"
+      ],
+      "severity": "HIGH",
+      "fixedVersion": "not fixed",
+      "reference": "https://scout.docker.com/v/CVE-2026-24882?s=redhat&n=gnupg2&ns=redhat&t=rpm&osn=redhatlinux&osv=9&vr=%3E%3D0",
+      "disposition": "open"
+    },
+    {
+      "advisory": "CVE-2026-22184",
+      "packages": [
+        "pkg:rpm/redhat/zlib@1.2.11-40.el9?os_name=redhatlinux&os_version=9"
+      ],
+      "severity": "HIGH",
+      "fixedVersion": "not fixed",
+      "reference": "https://scout.docker.com/v/CVE-2026-22184?s=redhat&n=zlib&ns=redhat&t=rpm&osn=redhatlinux&osv=9&vr=%3E%3D0",
+      "disposition": "open"
+    },
+    {
+      "advisory": "CVE-2026-23950",
+      "packages": [
+        "pkg:rpm/redhat/tar@2%3A1.34-13.el9_8?os_name=redhatlinux&os_version=9"
+      ],
+      "severity": "HIGH",
+      "fixedVersion": "not fixed",
+      "reference": "https://scout.docker.com/v/CVE-2026-23950?s=redhat&n=tar&ns=redhat&t=rpm&osn=redhatlinux&osv=9&vr=%3E%3D0",
+      "disposition": "open"
+    },
+    {
+      "advisory": "CVE-2026-0861",
+      "packages": [
+        "pkg:rpm/redhat/glibc@2.34-283.el9_8?os_name=redhatlinux&os_version=9"
+      ],
+      "severity": "HIGH",
+      "fixedVersion": "not fixed",
+      "reference": "https://scout.docker.com/v/CVE-2026-0861?s=redhat&n=glibc&ns=redhat&t=rpm&osn=redhatlinux&osv=9&vr=%3E%3D0",
+      "disposition": "open"
+    },
+    {
+      "advisory": "CVE-2026-51297",
+      "packages": [
+        "pkg:rpm/redhat/sqlite@3.34.1-11.el9_8?os_name=redhatlinux&os_version=9"
+      ],
+      "severity": "HIGH",
+      "fixedVersion": "not fixed",
+      "reference": "https://scout.docker.com/v/CVE-2026-51297?s=redhat&n=sqlite&ns=redhat&t=rpm&osn=redhatlinux&osv=9&vr=%3E%3D0",
+      "disposition": "open"
+    },
+    {
+      "advisory": "CVE-2026-51303",
+      "packages": [
+        "pkg:rpm/redhat/sqlite@3.34.1-11.el9_8?os_name=redhatlinux&os_version=9"
+      ],
+      "severity": "HIGH",
+      "fixedVersion": "not fixed",
+      "reference": "https://scout.docker.com/v/CVE-2026-51303?s=redhat&n=sqlite&ns=redhat&t=rpm&osn=redhatlinux&osv=9&vr=%3E%3D0",
+      "disposition": "open"
+    },
+    {
+      "advisory": "CVE-2026-51304",
+      "packages": [
+        "pkg:rpm/redhat/sqlite@3.34.1-11.el9_8?os_name=redhatlinux&os_version=9"
+      ],
+      "severity": "HIGH",
+      "fixedVersion": "not fixed",
+      "reference": "https://scout.docker.com/v/CVE-2026-51304?s=redhat&n=sqlite&ns=redhat&t=rpm&osn=redhatlinux&osv=9&vr=%3E%3D0",
+      "disposition": "open"
+    },
+    {
+      "advisory": "CVE-2026-51302",
+      "packages": [
+        "pkg:rpm/redhat/sqlite@3.34.1-11.el9_8?os_name=redhatlinux&os_version=9"
+      ],
+      "severity": "CRITICAL",
+      "fixedVersion": "not fixed",
+      "reference": "https://scout.docker.com/v/CVE-2026-51302?s=redhat&n=sqlite&ns=redhat&t=rpm&osn=redhatlinux&osv=9&vr=%3E%3D0",
+      "disposition": "open"
+    }
+  ]
+}

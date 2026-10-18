@@ -27,7 +27,7 @@ The implemented profile includes bounded sequential definitions, deterministic g
 
 ## Remaining owner gates
 
-HC01?HC07 in the [baseline](23-hackathon-requirements-baseline.md#12-remaining-external-decisions-and-sign-off) remain open: authoritative Orchesstra checklist, license interpretation and review, enterprise identity/host contracts, genuine source and business sign-off, approved calendars and mail bindings, production retention/capacity/backup/support policy, and contractual savings evidence. Local coding cannot establish these facts. No OpenShift deployment is part of this hackathon completion claim.
+HC01-HC07 in the [baseline](23-hackathon-requirements-baseline.md#12-remaining-external-decisions-and-sign-off) remain open: authoritative Orchesstra checklist, license interpretation and review, enterprise identity/host contracts, genuine source and business sign-off, approved calendars and mail bindings, production retention/capacity/backup/support policy, and contractual savings evidence. Local coding cannot establish these facts. No OpenShift deployment is part of this hackathon completion claim.
 
 ## Dated verification results
 
@@ -38,7 +38,7 @@ HC01?HC07 in the [baseline](23-hackathon-requirements-baseline.md#12-remaining-e
 - Load harness smoke: two virtual users, forty initial cases, thirty seconds measured, zero unexpected errors. Read p95 102 ms and mutation p95 408 ms. This is not the full capacity qualification (`evidence/hackathon/load-smoke.json`).
 - Frontend CycloneDX SBOM: 503 components from the locked dependency tree, with optional platform-specific packages omitted (`evidence/hackathon/frontend-sbom.json`). License and vulnerability approval remain pending.
 
-Raw logs and generated dependency artifacts are intentionally ignored by Git. Preserve the local `evidence/hackathon*` files with the candidate receipt when sharing the qualification package. The checked-in record reports the observed outcomes; it does not imply that ignored artifacts accompany a fresh clone.
+The [checked-in evidence index](hackathon-evidence/README.md) contains the qualification manifest, dependency inventories and advisory report. The [owner register](hackathon-owner-gates.md) records the evidence required for each open decision. Raw logs and full generated dependency artifacts are intentionally ignored by Git. Preserve the local `evidence/hackathon*` files with the candidate receipt when sharing the qualification package. The checked-in record reports the observed outcomes; it does not imply that ignored artifacts accompany a fresh clone.
 
 - Live local runtime scenario: passed publication, replay, real SLA, SMTP capture, closure and scoped evidence export. Application restart recovered in 28.42 seconds; 8 rendered messages captured. Provider states: providerAccepted. Evidence: `evidence/hackathon/local-demo.json`, `evidence/hackathon-demo-final.log`. This preceded the final frontend-only inbox guard; backend code was identical.
 
@@ -95,4 +95,12 @@ Environment: local Windows 11, Intel Core i7-1195G7, eight logical processors an
 
 A mail-queue sample during measurement showed 62 queued messages with the oldest approximately one second old; accepted and suppressed statuses were recorded separately. This is a sample, not a claim that every message's end-to-end latency was independently measured. SMTP acceptance does not establish external mailbox delivery.
 
-Evidence: `evidence/hackathon/load.json`, `load.fixture.json`, `candidate.json`, `mail-load-snapshot.txt` and `evidence/hackathon-load-final.log`. The candidate receipt records the source/image identifiers, hardware, artifact hashes and final cohort counts. The security scan's 36 open base-image advisories and HC01?HC07 remain unresolved owner gates. Passing this local test does not establish production capacity, availability, genuine Pega equivalence or enterprise compliance.
+Evidence: `evidence/hackathon/load.json`, `load.fixture.json`, `candidate.json`, `mail-load-snapshot.txt` and `evidence/hackathon-load-final.log`. The candidate receipt records the source/image identifiers, hardware, artifact hashes and final cohort counts. The security scan's 36 open base-image advisories and HC01-HC07 remain unresolved owner gates. Passing this local test does not establish production capacity, availability, genuine Pega equivalence or enterprise compliance.
+
+## Subsequent completion review
+
+On 18 October 2026, a clean full backend `verify` on source `57ca2ae` passed in 11 minutes 52 seconds using Java 21 and isolated `target-final-review` directories. Compiler: **495 tests, zero failures/errors**. Application: **793 tests, zero failures/errors, four intentional skips**. That is **1,284 passed and four skipped** overall, with packaging and the compiler coverage gate passing. This supersedes the earlier limitation that only focused checks had run after the fixes. The [verification receipt](hackathon-evidence/backend-verification.json) records the backend Git tree, individual suite hashes, skipped cases and full-log hash; the ignored log is `evidence/hackathon-backend-complete-review.log`.
+
+The completion review also added the checked-in qualification manifest, dependency inventories, advisory report and [owner decision register](hackathon-owner-gates.md). The evidence packager verifies all declared raw-artifact hashes, rejects altered/missing evidence and excludes unselected files. Nine offline tool tests and 88 contract checks passed. Two independently generated packages were byte-identical and passed ZIP integrity checks (SHA-256 `c42556c1f9b780af5d0178bf4c46e6d7cda18f068458745f63a14a0a6ea2a5f0`). The package is a reproducible handoff of the historical qualification artifacts; the subsequent backend receipt is checked in separately.
+
+No additional unfinished feature implementation was identified within the agreed local Tier-1 scope. The 36 base-image security advisories, HC01-HC07 decisions and genuine-source/enterprise evidence remain open; this review does not approve or waive them.

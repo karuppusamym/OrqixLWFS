@@ -41,7 +41,7 @@ describe('shell: permission-based navigation, workspaces, notifications', () => 
     signInAs('wade.admin')
     const second = renderApp(`/w/${WS}`)
     await screen.findByRole('heading', { level: 1 })
-    expect(navLinks()).toEqual(['Home', 'My requests', 'Assistant', 'Settings'])
+    expect(navLinks()).toEqual(['Home', 'My requests', 'Assistant', 'Promotions', 'Settings'])
     second.unmount()
 
     signInAs('otto.outsider')

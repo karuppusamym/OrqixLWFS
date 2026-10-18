@@ -117,9 +117,12 @@ export function userById(id: string): MockUser | undefined {
   return USERS.find((u) => u.id === id)
 }
 
+/** `${workspaceId}:${userId}` pairs that hold the explicit grant workflow.approve-promotion (PL02, docs/build/S69). */
+export const promotionApprovers = new Set<string>()
+
 export function permissionsOf(user: MockUser, wsId: string): Permission[] {
   const roles = MEMBERSHIPS[user.username]?.[wsId] ?? []
-  return [...new Set([...roles.flatMap((r) => ROLE_PERMISSIONS[r] ?? []), ...(db.documentBrowseGrants?.some((grant) => grant.wsId === wsId && grant.subjectId === user.id) ? ['document.browse' as const] : [])])]
+  return [...new Set([...roles.flatMap((r) => ROLE_PERMISSIONS[r] ?? []), ...(promotionApprovers.has(`${wsId}:${user.id}`) ? ['workflow.approve-promotion' as const] : []), ...(db.documentBrowseGrants?.some((grant) => grant.wsId === wsId && grant.subjectId === user.id) ? ['document.browse' as const] : [])])]
 }
 
 export function isMember(user: MockUser, wsId: string): boolean {

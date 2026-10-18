@@ -71,6 +71,7 @@ const TABLE = {
   IDEMPOTENCY_KEY_REUSED: { behavior: 'message', message: 'This request was already sent with different details. Reload the page and start again.' },
   DUPLICATE_KEY: { behavior: 'inline-fields', message: 'That key is already used. Choose a different one.' },
   WORKFLOW_VERSION_CONFLICT: { behavior: 'message', message: 'The workflow changed while you were looking at it. Reload and try again.' },
+  PROMOTION_APPROVAL_REQUIRED: { behavior: 'message', message: 'This workspace requires approval before a release is promoted into it. Ask for approval instead.' },
   RELEASE_NOT_ACTIVE: { behavior: 'reload-form', message: 'This form was updated. Review it and submit again.' },
   TASK_VERSION_CONFLICT: { behavior: 'refresh-task', message: (c) => taskConflictMessage(c, 'This task changed since you opened it. It has been refreshed.') },
   TASK_ALREADY_CLAIMED: { behavior: 'refresh-task', message: (c) => taskConflictMessage(c, 'Someone else claimed this task.') },

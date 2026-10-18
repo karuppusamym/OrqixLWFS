@@ -222,6 +222,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
                 "/workspaces/{ws}/shared-assets/decision", PURCHASING);
         ids.put("assetKind", "decision");
         ids.put("assetKey", assetKey);
+        ids.put("requestId", UUID.randomUUID().toString());
         ids.put("connectionKey", "procurement");
         ids.put("decisionKey", "amount-policy");
         ids.put("groupKey", "managers");
@@ -317,7 +318,8 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "resolveWorkflowThread" -> Map.of("resolved", true);
             case "setWorkspaceEnvironment" -> Map.of("stage", "staging", "expectedVersion", 0);
             case "setWorkflowCanary" -> Map.of("releaseId", ids.get("releaseId"), "percent", 10, "expectedVersion", 1);
-            case "checkReleasePromotion", "promoteRelease" -> Map.of("targetWorkspaceId", UUID.randomUUID().toString());
+            case "checkReleasePromotion", "promoteRelease", "requestReleasePromotion" -> Map.of("targetWorkspaceId", UUID.randomUUID().toString());
+            case "rejectPromotionRequest" -> Map.of("note", "Foreign attempt");
             case "setWorkflowOwner" -> Map.of("ownerSubjectId", UUID.randomUUID().toString(), "expectedVersion", 1);
             case "saveWorkflowTestSuite" -> Map.of("expectedVersion", 0, "cases", List.of());
             case "runWorkflowTestSuite" -> Map.of("revision", 1, "suiteVersion", 1);

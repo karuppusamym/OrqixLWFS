@@ -17,6 +17,7 @@ public enum ProblemCode {
     IDEMPOTENCY_KEY_REUSED(409, "The Idempotency-Key was used for a different request"),
     DUPLICATE_KEY(409, "The key is already in use"),
     WORKFLOW_VERSION_CONFLICT(409, "The workflow changed since you loaded it"),
+    PROMOTION_APPROVAL_REQUIRED(409, "This workspace requires approval before a release is promoted into it"),
     RELEASE_NOT_ACTIVE(409, "Another release of this workflow is now active"),
     TASK_VERSION_CONFLICT(409, "The task changed since you loaded it"),
     TASK_ALREADY_CLAIMED(409, "The task is already claimed"),

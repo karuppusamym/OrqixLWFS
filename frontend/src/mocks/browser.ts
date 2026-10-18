@@ -6,6 +6,7 @@ import { createMigrationHandlers } from '@/features/migration/mocks'
 import { createHandlers, getCurrentUser, setCurrentUser } from './handlers'
 import { createViewHandlers, resetMockViews, restoreMockViews, snapshotMockViews } from './views'
 import { createCaseHandlers, resetMockCases, restoreMockCases, snapshotMockCases } from './cases'
+import { createPromotionHandlers } from './promotion'
 import { createInsightsHandlers } from './insights'
 import { createAdapterHandlers } from './adapters'
 import { createCaseFileHandlers } from './caseFiles'
@@ -71,7 +72,7 @@ export async function startMock(): Promise<void> {
   }, 15_000)
 
   // In-page fetch interception (no service worker): works in every browser context, including embedded previews.
-  const handlers = [...createAiHandlers(), ...createMigrationHandlers(), ...createConversationHandlers(), ...createInsightsHandlers(), ...createAdapterHandlers(), ...createCaseFileHandlers(), ...createDocumentLibraryHandlers(), ...createSharedAssetHandlers(), ...createViewHandlers(getCurrentUser), ...createCaseHandlers(getCurrentUser), ...createHandlers()]
+  const handlers = [...createAiHandlers(), ...createMigrationHandlers(), ...createConversationHandlers(), ...createInsightsHandlers(), ...createAdapterHandlers(), ...createCaseFileHandlers(), ...createDocumentLibraryHandlers(), ...createSharedAssetHandlers(), ...createViewHandlers(getCurrentUser), ...createCaseHandlers(getCurrentUser), ...createPromotionHandlers(getCurrentUser), ...createHandlers()]
   const interceptor = new FetchInterceptor()
   interceptor.on('request', async ({ request, controller }) => {
     const response = await getResponse(handlers, request)

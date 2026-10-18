@@ -89,4 +89,36 @@ public class RolloutController {
             @PathVariable UUID workflowId) {
         return Map.of("items", promotions.history(callers.current(), workspaceId, workflowId));
     }
+
+    @PostMapping("/workflows/{workflowId}/releases/{releaseId}/promotion-requests")
+    public ResponseEntity<PromotionService.PromotionRequestView> requestPromotion(@PathVariable UUID workspaceId,
+            @PathVariable UUID workflowId, @PathVariable UUID releaseId,
+            @Valid @RequestBody PromotionService.RequestPromotionBody request) {
+        return ResponseEntity.status(201)
+                .body(promotions.requestPromotion(callers.current(), workspaceId, workflowId, releaseId, request));
+    }
+
+    @GetMapping("/promotion-requests")
+    public Map<String, List<PromotionService.PromotionRequestView>> promotionRequests(@PathVariable UUID workspaceId,
+            @RequestParam(required = false) String status) {
+        return Map.of("items", promotions.requests(callers.current(), workspaceId, status));
+    }
+
+    @PostMapping("/promotion-requests/{requestId}/approve")
+    public PromotionService.PromotionRequestView approvePromotion(@PathVariable UUID workspaceId,
+            @PathVariable UUID requestId, @Valid @RequestBody(required = false) PromotionService.DecisionBody body) {
+        return promotions.approve(callers.current(), workspaceId, requestId, body);
+    }
+
+    @PostMapping("/promotion-requests/{requestId}/reject")
+    public PromotionService.PromotionRequestView rejectPromotion(@PathVariable UUID workspaceId,
+            @PathVariable UUID requestId, @Valid @RequestBody PromotionService.DecisionBody body) {
+        return promotions.reject(callers.current(), workspaceId, requestId, body);
+    }
+
+    @PostMapping("/promotion-requests/{requestId}/cancel")
+    public PromotionService.PromotionRequestView cancelPromotion(@PathVariable UUID workspaceId,
+            @PathVariable UUID requestId) {
+        return promotions.cancel(callers.current(), workspaceId, requestId);
+    }
 }

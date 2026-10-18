@@ -17,6 +17,9 @@ export const keys = {
   me: ['me'] as const,
   workflows: (ws: string, params?: unknown) => ['ws', ws, 'workflows', params ?? {}] as const,
   workflow: (ws: string, id: string) => ['ws', ws, 'workflow', id] as const,
+  environment: (ws: string) => ['ws', ws, 'environment'] as const,
+  promotions: (ws: string, id: string) => ['ws', ws, 'workflow', id, 'promotions'] as const,
+  promotionRequests: (ws: string, status: string) => ['ws', ws, 'promotion-requests', status] as const,
   rollout: (ws: string, id: string) => ['ws', ws, 'workflow', id, 'rollout'] as const,
   releaseAnalytics: (ws: string, id: string, days: number) => ['ws', ws, 'workflow', id, 'release-analytics', days] as const,
   releases: (ws: string, id: string) => ['ws', ws, 'workflow', id, 'releases'] as const,
@@ -94,6 +97,18 @@ export function useReleases(ws: string, id: string, enabled = true) {
 
 export function useWorkflowRollout(ws: string, id: string, enabled = true) {
   return useQuery({ queryKey: keys.rollout(ws, id), queryFn: () => endpoints.getWorkflowRollout(ws, id), enabled })
+}
+
+export function useWorkspaceEnvironment(ws: string, enabled = true) {
+  return useQuery({ queryKey: keys.environment(ws), queryFn: () => endpoints.getWorkspaceEnvironment(ws), enabled })
+}
+
+export function useWorkflowPromotions(ws: string, id: string, enabled = true) {
+  return useQuery({ queryKey: keys.promotions(ws, id), queryFn: () => endpoints.listWorkflowPromotions(ws, id), enabled })
+}
+
+export function usePromotionRequests(ws: string, status: 'pending' | 'all', enabled = true) {
+  return useQuery({ queryKey: keys.promotionRequests(ws, status), queryFn: () => endpoints.listPromotionRequests(ws, status), enabled })
 }
 
 export function useReleaseAnalytics(ws: string, id: string, days: number, enabled = true) {

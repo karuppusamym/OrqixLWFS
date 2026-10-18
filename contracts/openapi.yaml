@@ -1818,6 +1818,150 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /workspaces/{workspaceId}/workflows/{workflowId}/releases/{releaseId}/promotion-requests:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+      - $ref: '#/components/parameters/ReleaseId'
+    post:
+      tags: [Releases]
+      operationId: requestReleasePromotion
+      summary: Ask for approval to promote a release into a production workspace that requires it
+      description: |
+        Same rights and checks as promoteRelease (workflow.export here, workflow.edit in the target, a later stage,
+        a compatible report). Refused with 422 when the target does not require approval. One request per workflow
+        can wait in a target (409 DUPLICATE_KEY). Nothing is created in the target until a second person approves.
+      x-orqix-permission: workflow.export
+      x-orqix-audit: release.promotion.requested
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RequestPromotion' }
+      responses:
+        '201':
+          description: Request waiting for approval
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PromotionRequest' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/promotion-requests:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [Releases]
+      operationId: listPromotionRequests
+      summary: Promotion requests addressed to this workspace (pending by default; newest 50)
+      description: Visible to people who can read or edit workflows here or hold workflow.approve-promotion.
+      x-orqix-permission: workflow.read
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [pending, all] }
+      responses:
+        '200':
+          description: Requests
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/PromotionRequest' } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/promotion-requests/{requestId}/approve:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: requestId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [Releases]
+      operationId: approvePromotionRequest
+      summary: Approve a promotion request, which saves the draft in this workspace
+      description: |
+        Needs the explicit grant workflow.approve-promotion here and must be someone other than the requester
+        (403 SELF_APPROVAL_DENIED). The target is checked again: an incompatible target is 422 WORKFLOW_INVALID and a
+        stale draft revision is 412 STALE_REVISION; the request stays pending in both cases. Never publishes.
+      x-orqix-permission: workflow.approve-promotion
+      x-orqix-audit: release.promotion.approved
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PromotionDecision' }
+      responses:
+        '200':
+          description: Approved request
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PromotionRequest' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/promotion-requests/{requestId}/reject:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: requestId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [Releases]
+      operationId: rejectPromotionRequest
+      summary: Reject a promotion request with a reason
+      description: Needs workflow.approve-promotion here and someone other than the requester. A reason is required (422 REASON_REQUIRED).
+      x-orqix-permission: workflow.approve-promotion
+      x-orqix-audit: release.promotion.rejected
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PromotionDecision' }
+      responses:
+        '200':
+          description: Rejected request
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PromotionRequest' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/promotion-requests/{requestId}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: requestId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [Releases]
+      operationId: cancelPromotionRequest
+      summary: Withdraw a promotion request that is still waiting
+      x-orqix-permission: requester
+      x-orqix-audit: release.promotion.cancelled
+      responses:
+        '200':
+          description: Cancelled request
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PromotionRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
   /workspaces/{workspaceId}/workflows/{workflowId}/test-suite:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -3916,7 +4060,7 @@ paths:
               additionalProperties: false
               required: [permission, principal]
               properties:
-                permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse, job.work, audit.read] }
+                permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse, job.work, audit.read, workflow.approve-promotion] }
                 workflowId:
                   description: Restrict workflow.start to one workflow; omit for workspace-wide (connection.manage, message.send, document.browse and job.work are always workspace-wide).
                   oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }]
@@ -5502,6 +5646,7 @@ components:
         - message.send
         - document.browse
         - job.work
+        - workflow.approve-promotion
     WorkspaceRole:
       type: string
       enum: [WORKSPACE_ADMIN, WORKFLOW_DESIGNER, PUBLISHER, OPERATOR, VIEWER, APPROVER]
@@ -5532,6 +5677,7 @@ components:
             - IDEMPOTENCY_KEY_REUSED
             - DUPLICATE_KEY
             - WORKFLOW_VERSION_CONFLICT
+            - PROMOTION_APPROVAL_REQUIRED
             - RELEASE_NOT_ACTIVE
             - TASK_VERSION_CONFLICT
             - TASK_ALREADY_CLAIMED
@@ -5818,12 +5964,13 @@ components:
         expectedVersion: { type: integer, minimum: 1, description: 'The workflow version' }
     WorkspaceEnvironment:
       type: object
-      required: [workspaceId, stage, explicit, version]
+      required: [workspaceId, stage, explicit, version, requireApproval]
       properties:
         workspaceId: { $ref: '#/components/schemas/Uuid' }
         stage: { type: string, enum: [development, test, staging, production] }
         explicit: { type: boolean, description: 'False when derived from the workspace test flag' }
         version: { type: integer, minimum: 0 }
+        requireApproval: { type: boolean, description: 'Production only: promotions into this workspace need a second person with workflow.approve-promotion' }
     SetWorkspaceEnvironment:
       type: object
       additionalProperties: false
@@ -5831,6 +5978,9 @@ components:
       properties:
         stage: { type: string, enum: [development, test, staging, production] }
         expectedVersion: { type: integer, minimum: 0 }
+        requireApproval:
+          type: [boolean, 'null']
+          description: 'Omit to keep the current setting. true is only accepted with stage production; any other stage switches it off.'
     WorkflowRollout:
       type: object
       required: [version, activeReleaseNumber, canary]
@@ -5889,11 +6039,12 @@ components:
         expectedDraftRevision: { type: [integer, 'null'], minimum: 1, description: 'Required when the target already has the workflow' }
     PromotionReport:
       type: object
-      required: [compatible, sourceStage, targetStage, targetWorkflow, connections, groups, workflows, issues]
+      required: [compatible, sourceStage, targetStage, approvalRequired, targetWorkflow, connections, groups, workflows, issues]
       properties:
         compatible: { type: boolean, description: 'True when the target compiles the definition without blockers' }
         sourceStage: { type: string }
         targetStage: { type: string }
+        approvalRequired: { type: boolean, description: 'True when the target is a production workspace that requires approval: request the promotion instead of promoting' }
         targetWorkflow:
           type: object
           required: [exists, id, draftRevision]
@@ -5938,9 +6089,41 @@ components:
         draftRevision: { type: integer, minimum: 1 }
         createdWorkflow: { type: boolean }
         report: { $ref: '#/components/schemas/PromotionReport' }
+    RequestPromotion:
+      type: object
+      additionalProperties: false
+      required: [targetWorkspaceId]
+      properties:
+        targetWorkspaceId: { $ref: '#/components/schemas/Uuid' }
+        expectedDraftRevision: { type: [integer, 'null'], minimum: 1, description: 'Required when the target already has the workflow' }
+        note: { type: [string, 'null'], maxLength: 500 }
+    PromotionDecision:
+      type: object
+      additionalProperties: false
+      properties:
+        note: { type: [string, 'null'], maxLength: 500, description: 'Required when rejecting' }
+    PromotionRequest:
+      type: object
+      required: [id, status, sourceWorkspaceKey, workflowKey, releaseNumber, targetWorkspaceId, expectedDraftRevision, note, requestedById, requestedBy, requestedAt, decidedBy, decidedAt, decisionNote, promotionId]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        status: { type: string, enum: [pending, approved, rejected, cancelled] }
+        sourceWorkspaceKey: { type: string }
+        workflowKey: { type: string }
+        releaseNumber: { type: integer }
+        targetWorkspaceId: { $ref: '#/components/schemas/Uuid' }
+        expectedDraftRevision: { type: [integer, 'null'] }
+        note: { type: [string, 'null'] }
+        requestedById: { $ref: '#/components/schemas/Uuid' }
+        requestedBy: { type: string }
+        requestedAt: { $ref: '#/components/schemas/Timestamp' }
+        decidedBy: { type: [string, 'null'] }
+        decidedAt: { oneOf: [{ type: 'null' }, { $ref: '#/components/schemas/Timestamp' }] }
+        decisionNote: { type: [string, 'null'] }
+        promotionId: { oneOf: [{ type: 'null' }, { $ref: '#/components/schemas/Uuid' }] }
     PromotionRecord:
       type: object
-      required: [id, direction, sourceWorkspaceKey, targetWorkspaceKey, workflowKey, releaseNumber, targetDraftRevision, createdWorkflow, promotedAt, promotedBy]
+      required: [id, direction, sourceWorkspaceKey, targetWorkspaceKey, workflowKey, releaseNumber, targetDraftRevision, createdWorkflow, promotedAt, promotedBy, approvedBy]
       properties:
         id: { $ref: '#/components/schemas/Uuid' }
         direction: { type: string, enum: [incoming, outgoing] }
@@ -5952,6 +6135,7 @@ components:
         createdWorkflow: { type: boolean }
         promotedAt: { $ref: '#/components/schemas/Timestamp' }
         promotedBy: { type: string }
+        approvedBy: { type: [string, 'null'], description: 'The second person who approved it; null when no approval was required' }
     Workflow:
       allOf:
         - $ref: '#/components/schemas/WorkflowSummary'
@@ -7560,7 +7744,7 @@ components:
       required: [id, permission, workflowId, principal, createdAt]
       properties:
         id: { $ref: '#/components/schemas/Uuid' }
-        permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse, job.work, audit.read] }
+        permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse, job.work, audit.read, workflow.approve-promotion] }
         workflowId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }] }
         principal: { $ref: '#/components/schemas/Principal' }
         createdAt: { $ref: '#/components/schemas/Timestamp' }

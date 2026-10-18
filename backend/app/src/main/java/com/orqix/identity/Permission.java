@@ -21,7 +21,8 @@ public enum Permission {
     AUDIT_READ("audit.read"),
     MESSAGE_SEND("message.send"),
     DOCUMENT_BROWSE("document.browse"),
-    JOB_WORK("job.work");
+    JOB_WORK("job.work"),
+    WORKFLOW_APPROVE_PROMOTION("workflow.approve-promotion");
 
     private final String value;
 

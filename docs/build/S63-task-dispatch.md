@@ -1,4 +1,4 @@
-# S39 - Explicit task dispatch (WM06)
+# S63 - Explicit task dispatch (WM06)
 
 An approval step may declare `dispatch.policy`. When a task for that step is created, Orqix assigns it to one eligible person instead of leaving it in the candidate-group queue, and records why. Without the setting nothing changes.
 

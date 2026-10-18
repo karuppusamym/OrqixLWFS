@@ -1,4 +1,4 @@
-# S43 - External workers (EX01)
+# S64 - External workers (EX01)
 
 A workflow step of kind **Work by an external worker** (`externalTask`) hands a piece of work to a program or team outside Orqix and waits for the result. Workers talk to a small REST protocol; a single-file Python SDK ([`tools/worker-sdk`](../../tools/worker-sdk/orqix_worker.py)) implements it.
 

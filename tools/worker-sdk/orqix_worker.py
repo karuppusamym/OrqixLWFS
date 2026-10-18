@@ -1,4 +1,4 @@
-"""Orqix external-worker SDK (docs/build/S43-external-workers.md).
+"""Orqix external-worker SDK (docs/build/S64-external-workers.md).
 
 A worker takes jobs for the topics it serves, does the work in its own system, and reports the result. The server
 leases a job to one worker at a time and numbers each lease with a *fence*; every later call must present the fence,

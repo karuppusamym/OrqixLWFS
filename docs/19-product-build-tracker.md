@@ -267,7 +267,7 @@ Observed: all 30 backend cases pass (parser, real PostgreSQL/Flowable API scenar
 
 ## Second competitive batch - 16/17 October 2026
 
-Specs: [S39](build/S39-task-dispatch.md) (WM06), [S40](build/S40-decision-hit-policies.md) (RL04), [S41](build/S41-separation-and-dated-rules.md) (RL03), [S42](build/S42-approver-correction.md) (WM07), [S43](build/S43-external-workers.md) (EX01). Migrations V31 (task separation) and V32 (external jobs). Each is bounded; the limits are in its spec and in [doc 22](22-competitive-gap-delivery.md).
+Specs: [S63](build/S63-task-dispatch.md) (WM06), [S40](build/S40-decision-hit-policies.md) (RL04), [S41](build/S41-separation-and-dated-rules.md) (RL03), [S42](build/S42-approver-correction.md) (WM07), [S64](build/S64-external-workers.md) (EX01). Migrations V31 (task separation) and V32 (external jobs). Each is bounded; the limits are in its spec and in [doc 22](22-competitive-gap-delivery.md).
 
 | Check | Result |
 |---|---|

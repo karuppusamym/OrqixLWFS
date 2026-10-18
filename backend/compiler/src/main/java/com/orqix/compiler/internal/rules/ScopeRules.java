@@ -14,6 +14,7 @@ import java.util.Set;
 
 import com.orqix.compiler.internal.model.Durations;
 import com.orqix.compiler.internal.model.Enums.NodeKind;
+import com.orqix.compiler.internal.model.Enums.Route;
 import com.orqix.compiler.internal.model.Node;
 import com.orqix.compiler.internal.model.WorkflowDefinition;
 import com.orqix.compiler.internal.model.WorkflowDefinition.Subprocess;
@@ -57,6 +58,7 @@ final class ScopeRules {
             structure(rc);
         }
         errors(rc);
+        callFailures(rc);
         signals(rc);
         undo(rc);
     }
@@ -248,13 +250,19 @@ final class ScopeRules {
                     + " has a time limit or an error route, which is not supported yet in a workflow that runs steps in"
                     + " parallel.");
         }
-        if (s.errorTo() != null && members.stream().noneMatch(m -> m instanceof Node.RaiseError r
-                && (s.errorCode() == null || s.errorCode().equals(r.errorCode())))) {
+        if (s.errorTo() != null && members.stream().noneMatch(m -> raises(m, s.errorCode()))) {
             rc.issues().warning("WF_SUBPROCESS_ERROR_UNUSED", s.path() + "/onError", null, null, "No step in the"
                     + " section " + q(s.label()) + " raises " + (s.errorCode() == null ? "an error"
                     : "the error " + q(s.errorCode())) + ", so its error route is never taken. A failing system call"
-                    + " uses its own failure path instead.");
+                    + " uses its own failure path unless it is set to raise an error when it fails.");
         }
+    }
+
+    /** A step that can raise {@code code} (null: any code): a raised error or a call set to raise one on failure. */
+    private static boolean raises(Node m, String code) {
+        String raised = m instanceof Node.RaiseError r ? r.errorCode()
+                : m instanceof Node.Http h ? h.raiseOnFailure() : null;
+        return raised != null && (code == null || code.equals(raised));
     }
 
     private static void route(RuleContext rc, Subprocess s, String targetId, String path, List<Node> members) {
@@ -394,6 +402,50 @@ final class ScopeRules {
                 rc.issues().blocker("WF_ERROR_NOT_CAUGHT", path, n.id(), null, q(n) + " raises "
                         + q(r.errorCode()) + ", but nothing catches it. Put the step in a section with an error route"
                         + " for this code, or add a handler that starts on this error.");
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------- call failures as errors (S66)
+
+    /**
+     * A call with {@code raiseErrorOnFailure} turns its known failures into a business error for the error route of
+     * its section. The opt-in is per call and explicit: the call must sit in a section whose error route catches the
+     * code (error handlers and outer sections are not searched), and it cannot also have its own failed path (S32) or
+     * be an automatic undo call. Platform codes stay reserved.
+     */
+    private static void callFailures(RuleContext rc) {
+        Graph g = rc.graph();
+        for (Node n : rc.definition().nodes()) {
+            if (!(n instanceof Node.Http h) || h.raiseOnFailure() == null || g.isShadowed(n)) {
+                continue;
+            }
+            String path = n.configPath("raiseErrorOnFailure");
+            String code = h.raiseOnFailure();
+            if (code.startsWith(RESERVED_ERROR_PREFIX)) {
+                reserved(rc, path, code);
+                continue;
+            }
+            if (h.automaticUndo()) {
+                rc.issues().blocker("WF_CALL_FAILURE_ERROR_CONFLICT", path, n.id(), null, q(n) + " is an automatic"
+                        + " undo call. It runs from an Undo step and cannot raise an error when it fails.");
+                continue;
+            }
+            for (Transition t : g.outgoing(n)) {
+                if (t.on() == Route.FAILED) {
+                    rc.issues().blocker("WF_CALL_FAILURE_ERROR_CONFLICT", path, n.id(), t.id(), q(n) + " has its own"
+                            + " failure path and is also set to raise " + q(code) + " when it fails. Keep one of"
+                            + " them.");
+                }
+            }
+            Subprocess scope = g.scopeOf(n);
+            if (scope == null || !scope.embedded() || scope.errorTo() == null
+                    || (scope.errorCode() != null && !scope.errorCode().equals(code))) {
+                rc.issues().blocker("WF_CALL_FAILURE_ERROR_NOT_CAUGHT", path, n.id(), null, q(n) + " raises "
+                        + q(code) + " when it fails, but " + (scope == null || !scope.embedded()
+                        ? "it is not in a section." : "the error route of the section " + q(scope.label())
+                        + (scope.errorTo() == null ? " is not set." : " catches only " + q(scope.errorCode()) + "."))
+                        + " Put the call in a section whose error route catches this code, or remove the setting.");
             }
         }
     }

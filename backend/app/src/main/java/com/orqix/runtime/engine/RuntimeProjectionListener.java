@@ -293,6 +293,14 @@ public class RuntimeProjectionListener implements FlowableEventListener {
     /** Command attribute: a step already shown as interrupted in this command. */
     private static final String INTERRUPTED_ATTRIBUTE = "orqix.interrupted.";
 
+    /**
+     * Records in the current command that a step was already projected (for example a call that raised an error on
+     * failure, S66), so the cancellation caused by the catching boundary does not also show it as interrupted.
+     */
+    static void markInterrupted(String processInstanceId, String elementId) {
+        Context.getCommandContext().addAttribute(INTERRUPTED_ATTRIBUTE + processInstanceId + "." + elementId, true);
+    }
+
     private static String label(FlowElement element) {
         return element.getName() == null ? element.getId() : element.getName();
     }

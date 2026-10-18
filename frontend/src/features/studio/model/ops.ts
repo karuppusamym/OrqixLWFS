@@ -273,6 +273,7 @@ export function canConnect(def: Definition, req: Pick<ConnectRequest, 'from' | '
   switch (from.type) {
     case 'http':
       if (req.on !== 'next' && req.on !== 'failed') return { ok: false, reason: 'Choose Next or Failed for a system call.' }
+      if (req.on === 'failed' && typeof from.config.raiseErrorOnFailure === 'string') return { ok: false, reason: 'This call raises an error for its section when it fails, so it has no Failed route. Turn that off first.' }
       if (others.some((t) => t.on === req.on)) return { ok: false, reason: `This step already has a ${req.on === 'failed' ? 'Failed' : 'Next'} route.` }
       break
     case 'approval':

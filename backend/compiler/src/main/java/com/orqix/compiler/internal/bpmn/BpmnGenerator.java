@@ -313,6 +313,10 @@ public final class BpmnGenerator {
                 if (h.compensates() != null) {
                     x.attr("compensates", h.compensates());
                 }
+                if (h.raiseOnFailure() != null) {
+                    // Opt-in (S66): a known failure becomes this business error for the section's error boundary.
+                    x.attr("raiseOnFailure", h.raiseOnFailure());
+                }
                 h.inputMapping().forEach((name, fieldRef) ->
                         x.leaf("orqix", "input", ORQIX_NS).attr("name", name).attr("fieldRef", fieldRef));
                 h.resultMapping().forEach((name, pointer) ->
@@ -751,6 +755,9 @@ public final class BpmnGenerator {
             for (Node n : d.nodes()) {
                 if (n instanceof Node.RaiseError r) {
                     codes.add(r.errorCode());
+                }
+                if (n instanceof Node.Http h && h.raiseOnFailure() != null) {
+                    codes.add(h.raiseOnFailure());
                 }
             }
             for (WorkflowDefinition.Subprocess s : d.subprocesses()) {

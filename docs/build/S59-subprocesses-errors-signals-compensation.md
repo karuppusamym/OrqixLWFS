@@ -44,14 +44,14 @@ Request form inspector: **Sections and handlers** editor (add/remove, name, memb
 1. Scopes are a separate `subprocesses` list over the flat graph, not nested node containers: the canvas, rules and stored definitions stay single-level. No nesting, at most 10.
 2. Automatic compensation is run by Orqix, not by Flowable compensation events: Flowable 8 does not wait for compensation handlers (its source marks waitForCompletion as TODO) and orders them by subscription time only, so a request could finish before its undo calls ran. The Orqix step is sequential, journaled, most-recent-first and retry-safe.
 3. Compensation is request-wide (every completed call with an automatic undo), not per-subprocess scope.
-4. HTTP failures are not converted into catchable business errors; a call keeps its own `failed` route (S32). A section error route catches only Raise an error.
+4. HTTP failures are not converted into catchable business errors; a call keeps its own `failed` route (S32). A section error route catches only Raise an error. (S66 adds an explicit per-call opt-in, `raiseErrorOnFailure`, for the section's error route; the default is unchanged.)
 5. Signals are scoped to one request; no workspace-wide broadcast. External signals require `run.operate`.
 6. A finished request (with a side handler) terminates anything still running alongside it.
 7. Steps a cancelling scope could not clean up (child workflows, external worker jobs, message waits; parallel splits inside sections) are excluded, as are section time limits/error routes in workflows that run steps in parallel.
 
 ## Not covered
 
-Nested subprocesses; subprocess-scoped compensation, compensation of non-HTTP steps or child workflows, BPMN compensation events at runtime; message-, escalation- or conditional-triggered handlers; handlers inside sections; multiple error routes per section; error routes on individual steps; signal boundaries on steps; catching platform failures as business errors; cross-request or workspace-wide signals; drawing section frames on the Studio canvas (sections are edited in the inspector) and on the run diagram canvas (a list is shown instead); the offline mock simulator/validator; release moves of requests in such workflows; Docker-stack and browser (Playwright/axe) journeys.
+Nested subprocesses; subprocess-scoped compensation, compensation of non-HTTP steps or child workflows, BPMN compensation events at runtime; message-, escalation- or conditional-triggered handlers; handlers inside sections; multiple error routes per section; error routes on individual steps; signal boundaries on steps; catching platform failures as business errors; cross-request or workspace-wide signals; drawing section frames on the Studio canvas and the run diagram canvas (done in [S66](S66-scope-frames-and-call-failure-errors.md)); the offline mock simulator/validator; release moves of requests in such workflows; Docker-stack and browser (Playwright/axe) journeys.
 
 ## Verification (17 October 2026, JDK 21, PostgreSQL via Testcontainers, Flowable 8)
 

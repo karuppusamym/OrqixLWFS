@@ -5698,6 +5698,8 @@ export interface components {
             recipients: ("requester" | "assignee" | "candidateGroup" | "supervisor" | "operators")[];
             supervisorGroupRef?: components["schemas"]["key"];
         };
+        /** @description Business error code raised by a 'Raise an error' step and caught by a subprocess error route or an error event subprocess (docs/build/S55). Codes starting with ORQIX_ are reserved. */
+        errorCode: string;
         messagePayloadField: {
             name: string;
             /** @enum {unknown} */
@@ -5713,8 +5715,6 @@ export interface components {
         decisionOutput: {
             [key: string]: components["schemas"]["literal"];
         };
-        /** @description Business error code raised by a 'Raise an error' step and caught by a subprocess error route or an error event subprocess (docs/build/S55). Codes starting with ORQIX_ are reserved. */
-        errorCode: string;
         /** @description Signal name (docs/build/S55): lowercase letters and digits in kebab-case or camelCase. A signal never leaves the request it is sent in. */
         signalName: string;
         /** @description Approved JSON Schema keyword subset for request/output forms. No pattern, $ref, format other than date, nested objects, arrays or remote schemas in v0. */
@@ -5845,6 +5845,8 @@ export interface components {
                  * @enum {unknown}
                  */
                 compensation?: "manual" | "automatic";
+                /** @description Opt-in (docs/build/S66): when this call fails for good with a known failure (the system rejected the request, or a read-only call returned an unusable answer), raise this business error so that the error route of the section holding the call catches it. The call must be in a section whose error route catches this code, and cannot also have a failed path or be an automatic undo call. Unset (the default) keeps the S32 behavior: the failed path when drawn, otherwise retries and needs attention. Failures whose outcome is unknown, retryable failures and policy or configuration failures never raise it. */
+                raiseErrorOnFailure?: components["schemas"]["errorCode"];
             };
         } & components["schemas"]["nodeBase"];
         notificationNode: {
@@ -6406,6 +6408,8 @@ export interface components {
                          * @enum {unknown}
                          */
                         compensation?: "manual" | "automatic";
+                        /** @description Opt-in (docs/build/S66): when this call fails for good with a known failure (the system rejected the request, or a read-only call returned an unusable answer), raise this business error so that the error route of the section holding the call catches it. The call must be in a section whose error route catches this code, and cannot also have a failed path or be an automatic undo call. Unset (the default) keeps the S32 behavior: the failed path when drawn, otherwise retries and needs attention. Failures whose outcome is unknown, retryable failures and policy or configuration failures never raise it. */
+                        raiseErrorOnFailure?: components["schemas"]["errorCode"];
                     };
                 } & components["schemas"]["nodeBase"];
                 notificationNode: {

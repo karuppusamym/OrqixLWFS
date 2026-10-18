@@ -117,3 +117,46 @@
 .orqix-flow .react-flow__edge.sim-untaken {
   opacity: 0.35;
 }
+
+/*
+ * Section and handler frames (docs/build/S66), drawn behind the steps and routes (z-index -1 inside the viewport).
+ * They are decoration only: no pointer events, hidden from assistive technology (the inspector and the run diagram's
+ * "Sections and handlers" list carry the same information as text). Sections are solid, handlers dashed.
+ */
+.orqix-flow .orqix-scope-frame {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: -1;
+  pointer-events: none;
+  border: 2px solid var(--info-border);
+  border-radius: calc(var(--radius) + 6px);
+  background: color-mix(in srgb, var(--info-soft) 55%, transparent);
+}
+.orqix-flow .orqix-scope-frame[data-kind='handler'] {
+  border-style: dashed;
+  border-color: var(--kind-branch);
+  background: color-mix(in srgb, var(--kind-branch-soft) 45%, transparent);
+}
+.orqix-flow .orqix-scope-frame[data-state='active'] {
+  border-width: 3px;
+  border-color: var(--status-waiting-fg);
+}
+.orqix-flow .orqix-scope-frame[data-state='idle'] {
+  opacity: 0.55;
+}
+.orqix-flow .orqix-scope-frame-label {
+  position: absolute;
+  left: 12px;
+  top: 5px;
+  right: 12px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--foreground);
+}
+.orqix-flow .orqix-scope-frame-caption {
+  color: var(--muted-foreground);
+}

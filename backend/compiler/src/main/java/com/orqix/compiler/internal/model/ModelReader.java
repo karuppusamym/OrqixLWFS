@@ -150,7 +150,8 @@ public final class ModelReader {
                     c.get("operation").stringValue(), stringMap(c.get("inputMapping")),
                     stringMap(c.get("resultMapping")), c.get("timeoutSeconds").intValue(),
                     c.has("compensates") ? c.get("compensates").stringValue() : null,
-                    "automatic".equals(c.path("compensation").asString("manual")));
+                    "automatic".equals(c.path("compensation").asString("manual")),
+                    c.has("raiseErrorOnFailure") ? c.get("raiseErrorOnFailure").stringValue() : null);
             case GENERATE_DOCUMENT -> new Node.GenerateDocument(index, id, label, c.get("format").stringValue(),
                     c.get("fileName").stringValue(), c.get("template").stringValue(), stringMap(c.get("inputMapping")));
             case EXTERNAL_TASK -> new Node.ExternalTask(index, id, label, c.get("topic").stringValue(),

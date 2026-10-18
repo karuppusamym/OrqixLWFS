@@ -134,6 +134,75 @@ export function UndoFields({ node }: { node: WorkflowNode }) {
   )
 }
 
+/** Default code offered when a call opts in and its section's error route catches any code (S66). */
+export const DEFAULT_CALL_ERROR = 'CALL_FAILED'
+
+/**
+ * Turns a call's opt-in to raise a business error on a failure for good on (with a code) or off (S66). A call that
+ * raises an error has no Failed route of its own, so turning it on removes that route.
+ */
+export function setRaiseOnFailure(def: Definition, nodeId: string, code: string | undefined): Definition {
+  const next = structuredClone(def)
+  const node = next.nodes.find((n) => n.id === nodeId)
+  if (!node) return def
+  if (code) {
+    node.config.raiseErrorOnFailure = code
+    next.transitions = next.transitions.filter((t) => !(t.from === nodeId && t.on === 'failed'))
+  } else {
+    delete node.config.raiseErrorOnFailure
+  }
+  return next
+}
+
+/** The section (with its error route) a call belongs to, if any. */
+export function sectionOf(def: Definition, nodeId: string): SubprocessDef | undefined {
+  return (def.subprocesses ?? []).find((s) => s.type === 'embedded' && s.nodes.includes(nodeId))
+}
+
+export function CallFailureErrorFields({ node }: { node: WorkflowNode }) {
+  const def = useStudio((s) => s.definition)
+  const { store, readOnly } = useStudioContext()
+  const code = cfg<string>(node, 'raiseErrorOnFailure')
+  const section = sectionOf(def, node.id)
+  const automatic = node.config.compensation === 'automatic'
+  // Shown only where it can apply: a call inside a section with an error route, or a call that already has it.
+  if (code === undefined && (!section?.onError || automatic)) return null
+  const on = code !== undefined
+  const invalid = on && (!ERROR_CODE_PATTERN.test(code) || code.startsWith('ORQIX_'))
+  const caught = !on || (section?.onError && (!section.onError.errorCode || section.onError.errorCode === code))
+  const target = section?.onError ? def.nodes.find((n) => n.id === section.onError?.to) : undefined
+  const id = `call-raise-${node.id}`
+  return (
+    <InspectorSection title="When it fails">
+      <div className="flex items-start gap-3">
+        <Checkbox
+          id={id}
+          checked={on}
+          disabled={readOnly}
+          onCheckedChange={(v) => store.getState().apply((d) => setRaiseOnFailure(d, node.id, v === true ? (section?.onError?.errorCode ?? DEFAULT_CALL_ERROR) : undefined))}
+        />
+        <div>
+          <Label htmlFor={id}>Raise an error for the section&apos;s error route when this call fails for good</Label>
+          <p className="text-xs text-muted-foreground">
+            {section && target ? `The section ${section.label} then stops and the request continues at ${target.label}. ` : ''}
+            Only when the system rejects the request, or a read returns an unusable answer. If the system does not answer, or nobody knows whether the call was done, the request still needs attention. Turning this on removes the call&apos;s Failed route.
+          </p>
+        </div>
+      </div>
+      {on ? (
+        <FormField
+          label="Error code"
+          required
+          id={`call-raise-code-${node.id}`}
+          error={invalid ? 'Use capital letters, digits and underscores, for example ORDER_REJECTED. Codes starting with ORQIX_ are reserved.' : !caught ? "The section's error route does not catch this code." : undefined}
+        >
+          {(ids) => <CommitInput id={ids.input} data-field="config.raiseErrorOnFailure" value={code} maxLength={40} disabled={readOnly} aria-describedby={ids.describedBy} aria-invalid={invalid || !caught || undefined} onCommit={(v) => store.getState().apply((d) => setRaiseOnFailure(d, node.id, v.trim().toUpperCase() || undefined))} />}
+        </FormField>
+      ) : null}
+    </InspectorSection>
+  )
+}
+
 function newId(def: Definition, prefix: string): string {
   const taken = new Set([...def.nodes.map((n) => n.id), ...def.transitions.map((t) => t.id), ...(def.subprocesses ?? []).map((s) => s.id)])
   let n = 1

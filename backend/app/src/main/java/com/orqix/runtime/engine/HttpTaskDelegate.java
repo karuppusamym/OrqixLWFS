@@ -67,6 +67,8 @@ public class HttpTaskDelegate implements JavaDelegate {
         int timeoutSeconds = Integer.parseInt(OrqixModel.attribute(http, "timeoutSeconds"));
         Map<String, String> inputs = OrqixModel.childMap(http, "input", "fieldRef");
         Map<String, String> results = OrqixModel.childMap(http, "result", "pointer");
+        // Opt-in (S66): a known failure becomes this business error for the error route of the call's section.
+        String raise = OrqixModel.attribute(http, "raiseOnFailure");
 
         UUID workspaceId = ProcessData.workspaceId(execution);
         UUID runId = ProcessData.runId(execution);
@@ -83,8 +85,10 @@ public class HttpTaskDelegate implements JavaDelegate {
         // committed its failure route. Reuse that exact known result rather than resending a rejected call.
         EffectDispatcher.Failed recorded = recordedFailure(workspaceId, runId, element.getId(), connection,
                 connectionVersion, operation, json.canonicalSha256(dispatcher.body(values)));
-        if (recorded != null && routeKnownFailure(execution, element, recorded, workspaceId, runId, connection, operation))
-            throw new BpmnError("ORQIX_STEP_FAILED");
+        String recordedError = recorded == null ? null
+                : routeKnownFailure(execution, element, recorded, workspaceId, runId, connection, operation, raise);
+        if (recordedError != null)
+            throw new BpmnError(recordedError);
         EffectDispatcher.DispatchResult result = dispatcher.dispatch(new EffectDispatcher.DispatchRequest(workspaceId,
                 runId, element.getId(), OCCURRENCE, connection, connectionVersion, operation, dispatcher.body(values),
                 results, timeoutSeconds, properties.runtime().lockOwner(), ProcessData.initiator(execution)));
@@ -118,25 +122,35 @@ public class HttpTaskDelegate implements JavaDelegate {
         }
         EffectDispatcher.Failed failed = (EffectDispatcher.Failed) result;
         metrics.effectAttempt(failed.effectClass(), failed.classification());
-        if (routeKnownFailure(execution, element, failed, workspaceId, runId, connection, operation)) {
-            // The engine catches this business error at the generated interrupting boundary in the same transaction.
-            // Journal completion is already durable; no failed-job retry or dead-letter transition is requested.
-            throw new BpmnError("ORQIX_STEP_FAILED");
+        String error = routeKnownFailure(execution, element, failed, workspaceId, runId, connection, operation, raise);
+        if (error != null) {
+            // The engine catches this business error at the generated interrupting boundary (the step's failure path,
+            // or with the S66 opt-in its section's error route) in the same transaction. Journal completion is already
+            // durable; no failed-job retry or dead-letter transition is requested.
+            throw new BpmnError(error);
         }
         throw new JobFailure(failed.retryable(), failed.attentionReason(), failed.errorCode(), failed.classification(),
                 failed.httpStatus(), failed.attempt(), failed.effectId(), failed.businessMessage());
     }
 
-    private boolean routeKnownFailure(DelegateExecution execution, FlowElement element, EffectDispatcher.Failed failed,
-            UUID workspaceId, UUID runId, String connection, String operation) {
-        if (failed.retryable() || !"permanent".equals(failed.classification()) || failed.effectId() == null) return false;
+    /**
+     * @return the BPMN error code to throw for a known permanent failure the workflow routes ({@code ORQIX_STEP_FAILED}
+     *         for the step's own failure path, or the S66 opt-in code for its section's error route), or null when the
+     *         failure is not routed and becomes an ordinary job failure
+     */
+    private String routeKnownFailure(DelegateExecution execution, FlowElement element, EffectDispatcher.Failed failed,
+            UUID workspaceId, UUID runId, String connection, String operation, String raise) {
+        if (failed.retryable() || !"permanent".equals(failed.classification()) || failed.effectId() == null) return null;
         boolean rejected = "EFFECT_REJECTED".equals(failed.attentionReason()) && knownRejection(failed.httpStatus(), failed.errorCode());
         boolean invalidRead = "RESPONSE_INVALID".equals(failed.attentionReason()) && knownInvalidRead(failed.effectClass(), failed.errorCode());
-        if (!rejected && !invalidRead) return false;
+        if (!rejected && !invalidRead) return null;
         var candidate = OrqixModel.model(execution.getProcessDefinitionId()).getFlowElement(element.getId() + "__failed");
-        if (!(candidate instanceof BoundaryEvent boundary) || !element.getId().equals(boundary.getAttachedToRefId())
-                || boundary.getEventDefinitions().stream().noneMatch(definition -> definition instanceof ErrorEventDefinition error
-                        && ("error__stepFailed".equals(error.getErrorCode()) || "ORQIX_STEP_FAILED".equals(error.getErrorCode())))) return false;
+        boolean failurePath = candidate instanceof BoundaryEvent boundary && element.getId().equals(boundary.getAttachedToRefId())
+                && boundary.getEventDefinitions().stream().anyMatch(definition -> definition instanceof ErrorEventDefinition error
+                        && ("error__stepFailed".equals(error.getErrorCode()) || "ORQIX_STEP_FAILED".equals(error.getErrorCode())));
+        // The compiler never lets a call have both; the step's own failure path wins if a hand-made model did.
+        String code = failurePath ? "ORQIX_STEP_FAILED" : raise;
+        if (code == null) return null;
         // Never route an uncertain effect or a policy/configuration failure merely because its result was classified.
         // The stable effect id must identify this exact run/node/occurrence and a completed permanent journal result.
         boolean recorded = jdbc.sql("""
@@ -144,7 +158,7 @@ public class HttpTaskDelegate implements JavaDelegate {
                   AND node_id=:node AND occurrence=:occurrence AND state='permanentFailure')
                 """).param("id", failed.effectId()).param("ws", workspaceId).param("run", runId)
                 .param("node", element.getId()).param("occurrence", OCCURRENCE).query(Boolean.class).single();
-        if (!recorded) return false;
+        if (!recorded) return null;
         String kind = rejected ? "rejected" : "invalidResponse";
         String message = rejected ? "The external system rejected this request." : "The read-only system returned an invalid response.";
         execution.setVariable(ProcessData.stepVariable(element.getId()), json.write(json.object()
@@ -155,10 +169,22 @@ public class HttpTaskDelegate implements JavaDelegate {
         data.put("connectionKey", connection); data.put("operation", operation); data.put("attempt", failed.attempt());
         data.put("httpStatus", failed.httpStatus()); data.put("classification", failed.classification());
         data.put("errorCode", failed.errorCode()); data.put("failureKind", kind); data.put("routed", true);
+        if (!failurePath) {
+            data.put("raisedError", code);
+        }
         events.append(workspaceId, runId, "EFFECT_FAILED", element.getId(), null, data);
-        events.append(workspaceId, runId, "STEP_FAILED", element.getId(), null,
-                Map.of("outcome", "failed", "failureKind", kind, "effectId", failed.effectId().toString()));
-        return true;
+        if (failurePath) {
+            events.append(workspaceId, runId, "STEP_FAILED", element.getId(), null,
+                    Map.of("outcome", "failed", "failureKind", kind, "effectId", failed.effectId().toString()));
+            return code;
+        }
+        // The section's error boundary cancels this call's activity in the same command; it already shows as having
+        // raised the error, not as interrupted.
+        RuntimeProjectionListener.markInterrupted(execution.getProcessInstanceId(), element.getId());
+        events.append(workspaceId, runId, "ERROR_RAISED", element.getId(), null, Map.of("label",
+                element.getName() == null ? element.getId() : element.getName(), "errorCode", code, "source",
+                "callFailure", "failureKind", kind, "effectId", failed.effectId().toString()));
+        return code;
     }
 
     private static boolean knownRejection(Integer status, String code) {

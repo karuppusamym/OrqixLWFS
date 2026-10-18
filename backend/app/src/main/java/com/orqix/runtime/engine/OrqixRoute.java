@@ -49,6 +49,26 @@ public class OrqixRoute {
         return matches(execution, condition);
     }
 
+    /** Prefix of the process variable that holds the step a section was left to (S55). */
+    static final String EXIT_VARIABLE = "orqix_exit_";
+
+    /**
+     * Records, when a section is left through one of its generated end events, which step it continues at (S55). The
+     * identifiers come from the generated BPMN, never from user text.
+     */
+    public void markExit(DelegateExecution execution, String scopeId, String targetNodeId) {
+        execution.setVariable(EXIT_VARIABLE + scopeId, targetNodeId);
+    }
+
+    /** @return true when the section was left towards this step (the gateway after a section with several exits) */
+    public boolean exited(DelegateExecution execution, String scopeId, String targetNodeId) {
+        Object value = execution.getVariable(EXIT_VARIABLE + scopeId);
+        if (value == null) {
+            throw new IllegalStateException("Section " + scopeId + " ended without recording where it continues");
+        }
+        return targetNodeId.equals(value);
+    }
+
     private boolean matches(DelegateExecution execution, ExtensionElement condition) {
         String fieldRef = OrqixModel.attribute(condition, "fieldRef");
         String operator = OrqixModel.attribute(condition, "operator");

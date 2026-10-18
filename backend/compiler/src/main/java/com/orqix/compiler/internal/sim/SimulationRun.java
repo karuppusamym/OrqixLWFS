@@ -91,6 +91,8 @@ final class SimulationRun {
     private final List<ObjectNode> warnings = new ArrayList<>();
     private String lane;
     private Node endNode;
+    /** Where a raised error continues (S55); consumed by the walk. */
+    private Node jump;
     private ObjectNode attention;
 
     SimulationRun(DefaultWorkflowSimulator owner, Pipeline.Outcome outcome, String definitionJson, JsonNode input,
@@ -189,6 +191,12 @@ final class SimulationRun {
             }
             visited.add(node.id());
             Transition next = step(node);
+            if (next == null && jump != null) {
+                // A raised error continues where its section or handler says (S55).
+                node = jump;
+                jump = null;
+                continue;
+            }
             if (next == null) {
                 return endNode != null ? Flow.ENDED : Flow.STALLED;
             }
@@ -238,6 +246,23 @@ final class SimulationRun {
             case Node.Wait n -> wait(n);
             case Node.WaitForMessage n -> waitForMessage(n);
             case Node.StartWorkflow n -> startWorkflow(n);
+            case Node.RaiseError n -> raiseError(n);
+            case Node.SendSignal n -> {
+                Transition t = next(n, Route.NEXT);
+                ObjectNode d = F.objectNode().put("signal", n.signal());
+                add(n, Text.quote(n.label()) + " sends the signal " + Text.quote(n.signal())
+                        + " to the steps of this request that wait for it. This test does not start signal handlers.",
+                        d, null, t);
+                yield t;
+            }
+            case Node.WaitForSignal n -> {
+                Transition t = next(n, Route.NEXT);
+                ObjectNode d = F.objectNode().put("signal", n.signal());
+                add(n, Text.quote(n.label()) + " waits for the signal " + Text.quote(n.signal())
+                        + ". The test assumes it arrives.", d, null, t);
+                yield t;
+            }
+            case Node.Compensate n -> compensate(n);
             case Node.End n -> {
                 endNode = n;
                 ObjectNode d = F.objectNode();
@@ -771,6 +796,70 @@ final class SimulationRun {
     }
 
     // ------------------------------------------------------------------ notification and wait
+
+    // ------------------------------------------------------------------ errors and undo (S55)
+
+    private Transition raiseError(Node.RaiseError n) {
+        ObjectNode d = F.objectNode().put("errorCode", n.errorCode());
+        WorkflowDefinition.Subprocess scope = graph.scopeOf(n);
+        Node target = null;
+        String where = null;
+        if (scope != null && scope.errorTo() != null
+                && (scope.errorCode() == null || scope.errorCode().equals(n.errorCode()))) {
+            target = graph.node(scope.errorTo());
+            where = "the section " + Text.quote(scope.label()) + " stops and the request continues at "
+                    + Text.quote(target.label()) + ".";
+        } else {
+            for (WorkflowDefinition.Subprocess s : def.subprocesses()) {
+                if (s.event() && "error".equals(s.triggerType())
+                        && (s.triggerErrorCode() == null || s.triggerErrorCode().equals(n.errorCode()))) {
+                    target = graph.entry(s);
+                    where = "the handler " + Text.quote(s.label()) + " takes over and the rest of the request stops.";
+                    break;
+                }
+            }
+        }
+        if (target == null) {
+            stallWith(n, Text.quote(n.label()) + " raises the error " + Text.quote(n.errorCode())
+                    + ", which nothing catches.", d, "ERROR_NOT_CAUGHT", "The raised error is not caught.");
+            return null;
+        }
+        d.put("continuesAt", target.id());
+        add(n, Text.quote(n.label()) + " raises the error " + Text.quote(n.errorCode()) + ": " + where, d, null, null);
+        jump = target;
+        return null;
+    }
+
+    private Transition compensate(Node.Compensate n) {
+        List<String> undone = new ArrayList<>();
+        List<String> labels = new ArrayList<>();
+        List<Node> calls = new ArrayList<>();
+        for (String id : visited) {
+            Node v = graph.node(id);
+            if (v instanceof Node.Http h && !h.undoHandler() && steps.containsKey(id)
+                    && !steps.get(id).containsKey("failureKind")) {
+                calls.add(v);
+            }
+        }
+        Collections.reverse(calls);
+        for (Node call : calls) {
+            for (Node other : def.nodes()) {
+                if (other instanceof Node.Http h && h.undoHandler() && call.id().equals(h.compensates())) {
+                    undone.add(h.id());
+                    labels.add(Text.quote(h.label()));
+                }
+            }
+        }
+        ObjectNode d = F.objectNode();
+        ArrayNode list = d.putArray("undoCalls");
+        undone.forEach(list::add);
+        Transition t = next(n, Route.NEXT);
+        add(n, labels.isEmpty() ? Text.quote(n.label()) + ": no call that can be undone has completed in this test,"
+                + " so nothing is undone."
+                : Text.quote(n.label()) + " would run " + String.join(", ", labels)
+                + ", most recent call first. This test calls no system.", d, null, t);
+        return t;
+    }
 
     private Transition notification(Node.Notification n) {
         ObjectNode d = F.objectNode();

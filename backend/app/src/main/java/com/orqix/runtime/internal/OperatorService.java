@@ -397,6 +397,53 @@ public class OperatorService {
         return new Result<>(runService.detail(runAccess.require(caller, workspaceId, runId), List.of()), false);
     }
 
+    /**
+     * Sends a signal to one request (S55): only steps and handlers of this request that wait for it receive it; a
+     * signal never reaches another request. Needs {@code run.operate}, an idempotency key, a reason and the current
+     * version; refused with 409 SIGNAL_NOT_AWAITED when nothing in the request waits for it.
+     */
+    @Transactional
+    public Result<RuntimeDtos.RunDetail> signal(Caller caller, UUID workspaceId, UUID runId, String idempotencyKey,
+            RuntimeDtos.SendRunSignalRequest request) {
+        String key = IdempotencyService.requireKey(idempotencyKey);
+        RunAccess.Visible visible = runAccess.require(caller, workspaceId, runId);
+        policy.require(visible.access(), Permission.RUN_OPERATE, "sendRunSignal", true);
+        String hash = idempotency.requestHash("sendRunSignal", Map.of("workspaceId", workspaceId.toString(),
+                "runId", runId.toString()), request);
+        IdempotencyService.Claim claim = idempotency.claim(workspaceId, caller.subjectId(), "sendRunSignal", key, hash);
+        if (claim.isReplay()) {
+            return new Result<>(runService.detail(runAccess.require(caller, workspaceId, runId), List.of()), true);
+        }
+        RunStore.RunRow run = runs.lock(workspaceId, runId).orElseThrow(ApiException::notFound);
+        if (!run.isActive()) {
+            throw new ApiException(ProblemCode.RUN_NOT_ACTIVE, "The run has already ended.")
+                    .with("currentVersion", run.version());
+        }
+        requireVersion(run, request.expectedVersion());
+        suspensions.requireNotSuspended(workspaceId, runId);
+        if (engine.signalSubscriptions(run.engineProcessInstanceId(), request.signal()).isEmpty()) {
+            throw new ApiException(ProblemCode.SIGNAL_NOT_AWAITED, "No step or handler of this request is waiting for"
+                    + " that signal now.").with("currentVersion", run.version());
+        }
+        runs.mutate(workspaceId, runId, m -> { });
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("signal", request.signal());
+        data.put("reason", request.reason());
+        events.append(workspaceId, runId, "SIGNAL_SENT", null, caller.subjectId(), data);
+        int delivered;
+        try {
+            delivered = engine.signal(run.engineProcessInstanceId(), request.signal(), caller.subjectId());
+        } catch (EngineCommands.EngineConflictException e) {
+            throw new ApiException(ProblemCode.RUN_BUSY, "A step of this run is executing; try again shortly.")
+                    .withHeader("Retry-After", "5");
+        }
+        audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.USER, caller.subjectId(), "run.signal-sent",
+                "run", runId.toString(), AuditWriter.Outcome.SUCCESS, Map.of("signal", request.signal(),
+                        "delivered", delivered)));
+        idempotency.complete(claim, "run", runId.toString(), 200);
+        return new Result<>(runService.detail(runAccess.require(caller, workspaceId, runId), List.of()), false);
+    }
+
     @Transactional
     public Result<RuntimeDtos.RunDetail> resume(Caller caller, UUID workspaceId, UUID runId, String idempotencyKey,
             RuntimeDtos.ResumeRunRequest request) {

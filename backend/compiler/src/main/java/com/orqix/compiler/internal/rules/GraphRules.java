@@ -107,8 +107,23 @@ final class GraphRules {
                 case WAIT_FOR_MESSAGE -> ((Node.WaitForMessage) n).timeoutAfter() != null
                         ? Set.of(Route.NEXT, Route.TIMED_OUT) : Set.of(Route.NEXT);
                 case HTTP, START_WORKFLOW -> Set.of(Route.NEXT, Route.FAILED);
+                // A raised error ends the path; the section or handler that catches it decides what happens (S55).
+                case RAISE_ERROR -> Set.of();
                 default -> Set.of(Route.NEXT);
             };
+            if (n.kind() == NodeKind.RAISE_ERROR) {
+                for (Transition t : rc.leaving(n)) {
+                    rc.issues().blocker("WF_OUTGOING_INVALID", t.path() + "/from", n.id(), t.id(), q(n)
+                            + " raises an error, so it cannot continue to another step. The section or error handler"
+                            + " that catches the error decides where the request continues.");
+                }
+                continue;
+            }
+            if (n instanceof Node.Http h && h.undoHandler()) {
+                continue; // an automatic undo call has no paths at all (ScopeRules reports any)
+            }
+            boolean mayEndHere = rc.graph().scopeOf(n) != null && rc.graph().scopeOf(n).event()
+                    && !rc.graph().scopeOf(n).interrupting();
             Map<Route, Integer> counts = new HashMap<>();
             for (Transition t : rc.leaving(n)) {
                 if (t.on() == Route.FAILED && !allowed.contains(Route.FAILED)) {
@@ -197,6 +212,10 @@ final class GraphRules {
                 }
                 default -> {
                     int next = counts.getOrDefault(Route.NEXT, 0);
+                    if (next == 0 && mayEndHere && rc.leaving(n).isEmpty()) {
+                        // The last step of a handler that runs alongside the request simply ends there (S55).
+                        continue;
+                    }
                     if (next == 0) {
                         rc.issues().blocker("WF_OUTGOING_INVALID", n.path(), n.id(), null, n.label()
                                 + " needs a next step.");

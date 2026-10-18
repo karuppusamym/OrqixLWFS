@@ -121,6 +121,13 @@ public class RuntimeController {
         return replayAware(operator.suspend(callers.current(), workspaceId, runId, idempotencyKey, request));
     }
 
+    @PostMapping("/runs/{runId}/signals")
+    public ResponseEntity<RuntimeDtos.RunDetail> sendRunSignal(@PathVariable UUID workspaceId, @PathVariable UUID runId,
+            @RequestHeader(name = IdempotencyService.HEADER, required = false) String idempotencyKey,
+            @Valid @RequestBody RuntimeDtos.SendRunSignalRequest request) {
+        return replayAware(operator.signal(callers.current(), workspaceId, runId, idempotencyKey, request));
+    }
+
     @GetMapping("/runs/{runId}/diagnosis")
     public RuntimeDtos.RunDiagnosis getRunDiagnosis(@PathVariable UUID workspaceId, @PathVariable UUID runId) {
         return operator.diagnosis(callers.current(), workspaceId, runId);

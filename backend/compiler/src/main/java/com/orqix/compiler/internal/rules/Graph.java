@@ -33,6 +33,9 @@ public final class Graph {
     private final BitSet reachable = new BitSet();
     private final BitSet reachesEnd = new BitSet();
     private final BitSet[] dominators;
+    private final List<List<Node>> extraOut = new ArrayList<>();
+    private final List<List<Node>> extraIn = new ArrayList<>();
+    private final Map<String, WorkflowDefinition.Subprocess> scopeOf = new HashMap<>();
 
     public Graph(WorkflowDefinition definition) {
         this.nodes = definition.nodes();
@@ -58,13 +61,120 @@ public final class Graph {
                 incoming.get(to.index()).add(t);
             }
         }
+        for (Node n : nodes) {
+            extraOut.add(new ArrayList<>());
+            extraIn.add(new ArrayList<>());
+        }
+        scopes(definition);
         for (Node s : starts) {
             mark(s, reachable, true);
         }
-        for (Node e : ends) {
+        List<Node> terminals = new ArrayList<>(ends);
+        for (Node n : nodes) {
+            if (!shadowed.get(n.index()) && terminal(n)) {
+                terminals.add(n);
+            }
+        }
+        for (Node e : terminals) {
             mark(e, reachesEnd, false);
         }
         this.dominators = starts.size() == 1 ? computeDominators(starts.get(0)) : null;
+    }
+
+    // ---------------------------------------------------------------- scopes (S55)
+
+    /**
+     * Implied control flow of subprocesses and automatic undo calls, used for reachability and dominance only: a
+     * section's time limit and error route lead from every step just before the section to their target (nothing
+     * inside the section is guaranteed there), an event handler is entered from the start, and an automatic undo call
+     * runs only after the call it undoes.
+     */
+    private void scopes(WorkflowDefinition definition) {
+        for (WorkflowDefinition.Subprocess s : definition.subprocesses()) {
+            for (String id : s.nodes()) {
+                scopeOf.putIfAbsent(id, s);
+            }
+        }
+        for (WorkflowDefinition.Subprocess s : definition.subprocesses()) {
+            Node entry = entry(s);
+            if (entry == null) {
+                continue;
+            }
+            if (s.embedded()) {
+                List<Node> before = new ArrayList<>();
+                for (Transition t : incoming.get(entry.index())) {
+                    Node from = byId.get(t.from());
+                    if (scopeOf.get(from.id()) != s && !before.contains(from)) {
+                        before.add(from);
+                    }
+                }
+                for (String targetId : java.util.Arrays.asList(s.onTimeout(), s.errorTo())) {
+                    Node target = targetId == null ? null : byId.get(targetId);
+                    if (target != null && scopeOf.get(target.id()) != s) {
+                        before.forEach(p -> implied(p, target));
+                    }
+                }
+            } else if (starts.size() == 1) {
+                implied(starts.get(0), entry);
+            }
+        }
+        for (Node n : nodes) {
+            if (n instanceof Node.Http h && h.undoHandler() && !shadowed.get(n.index())) {
+                Node target = byId.get(h.compensates());
+                if (target != null && target != n) {
+                    implied(target, n);
+                }
+            }
+        }
+    }
+
+    private void implied(Node from, Node to) {
+        if (!extraOut.get(from.index()).contains(to)) {
+            extraOut.get(from.index()).add(to);
+            extraIn.get(to.index()).add(from);
+        }
+    }
+
+    /** Steps where a path may end without a Finish step: errors, undo calls and the last steps of side handlers. */
+    private boolean terminal(Node n) {
+        if (n.kind() == NodeKind.RAISE_ERROR || (n instanceof Node.Http h && h.undoHandler())) {
+            return true;
+        }
+        WorkflowDefinition.Subprocess s = scopeOf.get(n.id());
+        return s != null && s.event() && !s.interrupting() && outgoing.get(n.index()).isEmpty()
+                && n.kind() != NodeKind.END;
+    }
+
+    /** @return the subprocess the step belongs to (the first one listing it), or null */
+    public WorkflowDefinition.Subprocess scopeOf(Node n) {
+        return n == null ? null : scopeOf.get(n.id());
+    }
+
+    /**
+     * @return the single entry step of a subprocess: for a section, the member entered from outside; for a handler,
+     *         the member no path leads to; null when there is not exactly one
+     */
+    public Node entry(WorkflowDefinition.Subprocess s) {
+        Node found = null;
+        for (String id : new java.util.LinkedHashSet<>(s.nodes())) {
+            Node n = byId.get(id);
+            if (n == null || scopeOf.get(id) != s) {
+                continue;
+            }
+            boolean candidate;
+            if (s.embedded()) {
+                candidate = incoming.get(n.index()).stream().anyMatch(t -> scopeOf.get(t.from()) != s);
+            } else {
+                candidate = incoming.get(n.index()).isEmpty();
+            }
+            if (candidate) {
+                if (found != null) {
+                    return null;
+                }
+                found = n;
+            }
+        }
+        return found;
     }
 
     private void mark(Node root, BitSet seen, boolean forward) {
@@ -76,11 +186,15 @@ public final class Graph {
         while (!work.isEmpty()) {
             Node n = work.poll();
             List<Transition> edges = forward ? outgoing.get(n.index()) : incoming.get(n.index());
+            List<Node> next = new ArrayList<>();
             for (Transition t : edges) {
-                Node next = byId.get(forward ? t.to() : t.from());
-                if (!seen.get(next.index())) {
-                    seen.set(next.index());
-                    work.add(next);
+                next.add(byId.get(forward ? t.to() : t.from()));
+            }
+            next.addAll(forward ? extraOut.get(n.index()) : extraIn.get(n.index()));
+            for (Node m : next) {
+                if (!seen.get(m.index())) {
+                    seen.set(m.index());
+                    work.add(m);
                 }
             }
         }
@@ -107,8 +221,12 @@ public final class Graph {
                 // it (union); every other node with several incoming paths is a simple merge (intersection).
                 boolean allBranches = nodes.get(i).kind() == NodeKind.PARALLEL_JOIN && !inclusiveJoin(i);
                 BitSet next = null;
+                List<Integer> preds = new ArrayList<>();
                 for (Transition t : incoming.get(i)) {
-                    int p = byId.get(t.from()).index();
+                    preds.add(byId.get(t.from()).index());
+                }
+                extraIn.get(i).forEach(p -> preds.add(p.index()));
+                for (int p : preds) {
                     if (!reachable.get(p)) {
                         continue;
                     }

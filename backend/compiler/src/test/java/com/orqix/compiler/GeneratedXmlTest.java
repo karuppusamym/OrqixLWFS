@@ -37,7 +37,9 @@ class GeneratedXmlTest {
     private static final Pattern ALLOWED = Pattern.compile(
             "\\$\\{orqixRoute\\.(approved|rejected|condition)\\(execution, '[A-Za-z][A-Za-z0-9_-]{0,63}'\\)\\}"
                     + "|\\$\\{orqixDecisionTask\\}|\\$\\{orqixHttpTask\\}|\\$\\{orqixNotificationTask\\}"
-                    + "|\\$\\{orqixChildTask\\}"
+                    + "|\\$\\{orqixChildTask\\}|\\$\\{orqixCompensationTask\\}"
+                    + "|\\$\\{orqixRoute\\.(exited|markExit)\\(execution, '[A-Za-z][A-Za-z0-9_-]{0,63}',"
+                    + " '[A-Za-z][A-Za-z0-9_-]{0,63}'\\)\\}"
                     + "|\\$\\{orqixWait\\.until\\(execution, '[A-Za-z][A-Za-z0-9_-]{0,63}'\\)\\}");
 
     static String everythingJson() throws IOException {
@@ -53,6 +55,10 @@ class GeneratedXmlTest {
         list.add(Compilers.workflowCompiler().compile(TestSupport.onboardingJson(), TestSupport.onboardingContext()));
         list.add(Compilers.workflowCompiler().compile(TestSupport.read("examples/start-date-onboarding.json"),
                 TestSupport.defaultContext()));
+        // Sections, handlers, errors, signals and automatic undo (S55).
+        for (var scoped : List.of(ScopesAndEventsTest.section(), ScopesAndEventsTest.handlers(), ScopesAndEventsTest.undo())) {
+            list.add(Compilers.workflowCompiler().compile(scoped.toString(), SimulatorFixtures.context().workspace()));
+        }
         for (CompilerCasesTest.Case c : CompilerCasesTest.cases()) {
             if (Compilers.workflowCompiler().validate(c.definition(), c.context()).publishable()) {
                 list.add(Compilers.workflowCompiler().compile(c.definition(), c.context()));

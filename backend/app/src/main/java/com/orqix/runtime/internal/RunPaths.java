@@ -44,6 +44,6 @@ public class RunPaths {
                 truncated ? history.subList(0, MAX_EVENTS) : history, views.steps(run, names), attentionNode);
         return new RunPathBuilder.Result(result.runId(), result.lifecycle(), result.diagram(),
                 truncated ? List.of() : result.visited(), result.current(),
-                truncated ? List.of() : result.taken(), truncated);
+                truncated ? List.of() : result.taken(), truncated, truncated ? List.of() : result.scopeVisits());
     }
 }

@@ -17,6 +17,7 @@ import { MessageInspector } from './MessageInspector'
 import { ChildInspector, ParallelInspector, WaitInspector } from './PatternInspectors'
 import { ApprovalInspector, EndInspector, NotificationInspector, WorkflowInspector } from './SimpleInspectors'
 import { StartInspector } from './StartInspector'
+import { CompensateInspector, RaiseErrorInspector, SignalInspector } from './ScopeInspectors'
 import { CommitInput, CommitTextarea } from './controls'
 
 /** Right-hand inspector (320 px): basic fields first, Advanced collapsed. */
@@ -114,6 +115,9 @@ function NodeInspector({ nodeId, onDeleteNode }: { nodeId: string; onDeleteNode:
       {node.type === 'startWorkflow' ? <ChildInspector node={node} /> : null}
       {node.type === 'notification' ? <NotificationInspector node={node} /> : null}
       {node.type === 'end' ? <EndInspector node={node} /> : null}
+      {node.type === 'sendSignal' || node.type === 'waitForSignal' ? <SignalInspector node={node} /> : null}
+      {node.type === 'raiseError' ? <RaiseErrorInspector node={node} /> : null}
+      {node.type === 'compensate' ? <CompensateInspector node={node} /> : null}
 
       <FormField label="Step notes" optionalText id={`node-notes-${node.id}`} description="Explain the purpose or review decisions for this step. Notes are retained with each published version.">
         {(ids) => <CommitTextarea id={ids.input} aria-describedby={ids.describedBy} value={def.metadata.stepNotes?.[node.id] ?? ''} maxLength={2000} disabled={readOnly} onCommit={(value) => store.getState().apply((current) => {

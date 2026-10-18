@@ -39,7 +39,22 @@ public final class RunPathBuilder {
     public record Transition(String id, String from, String to, String on, String label) {
     }
 
-    public record Diagram(List<Node> nodes, List<Transition> transitions) {
+    public record Diagram(List<Node> nodes, List<Transition> transitions, List<Scope> scopes) {
+        public Diagram(List<Node> nodes, List<Transition> transitions) {
+            this(nodes, transitions, List.of());
+        }
+    }
+
+    /**
+     * A section or handler of the release (S55). {@code routes} are a section's time-limit and error routes, with ids
+     * {@code <scope>__onTimeout} and {@code <scope>__onError} as used in {@code taken}.
+     */
+    public record Scope(String id, String label, String type, List<String> nodes, String trigger, Boolean interrupting,
+            List<Transition> routes) {
+    }
+
+    /** One time a section was entered or a handler started (S55); {@code how} is null while it is still open. */
+    public record ScopeVisit(String scopeId, Instant startedAt, Instant endedAt, String how) {
     }
 
     public record Visit(String nodeId, int occurrence, Instant enteredAt, Instant leftAt, String outcome) {
@@ -50,10 +65,15 @@ public final class RunPathBuilder {
     }
 
     public record Result(UUID runId, String lifecycle, Diagram diagram, List<Visit> visited, List<Current> current,
-            List<String> taken, boolean historyTruncated) {
+            List<String> taken, boolean historyTruncated, List<ScopeVisit> scopeVisits) {
         public Result(UUID runId, String lifecycle, Diagram diagram, List<Visit> visited, List<Current> current,
                 List<String> taken) {
-            this(runId, lifecycle, diagram, visited, current, taken, false);
+            this(runId, lifecycle, diagram, visited, current, taken, false, List.of());
+        }
+
+        public Result(UUID runId, String lifecycle, Diagram diagram, List<Visit> visited, List<Current> current,
+                List<String> taken, boolean historyTruncated) {
+            this(runId, lifecycle, diagram, visited, current, taken, historyTruncated, List.of());
         }
     }
 
@@ -110,6 +130,8 @@ public final class RunPathBuilder {
         }
 
         Map<String, List<MutableVisit>> visits = new LinkedHashMap<>();
+        List<ScopeVisit> scopeVisits = new ArrayList<>();
+        Map<String, Integer> openScopes = new HashMap<>();
         Map<String, Instant> childEnded = new HashMap<>();
         Map<String, String> childEndedKind = new HashMap<>();
         for (RunEvents.EventRow e : events) {
@@ -124,9 +146,47 @@ public final class RunPathBuilder {
                         instant(visits, startId, at, "completed");
                     }
                 }
-                case "TASK_CREATED", "WAIT_STARTED" -> {
+                case "TASK_CREATED", "WAIT_STARTED", "SIGNAL_WAIT_STARTED" -> {
                     if (node != null) {
                         open(visits, node, at);
+                    }
+                }
+                case "SIGNAL_RECEIVED" -> {
+                    if (node != null) {
+                        close(visits, node, at, "completed");
+                    }
+                }
+                case "SIGNAL_SENT", "UNDO_SUCCEEDED", "COMPENSATION_COMPLETED" -> {
+                    if (node != null) {
+                        instant(visits, node, at, "completed");
+                    }
+                }
+                case "ERROR_RAISED" -> {
+                    if (node != null) {
+                        instant(visits, node, at, "raised");
+                    }
+                }
+                case "STEP_INTERRUPTED" -> {
+                    if (node != null && latestOpen(visits, node) != null) {
+                        close(visits, node, at, "interrupted");
+                    } else if (node != null) {
+                        // An HTTP or undo step that was still running shows as interrupted.
+                        instant(visits, node, at, "interrupted");
+                    }
+                }
+                case "SECTION_ENTERED", "HANDLER_STARTED" -> {
+                    String scope = e.nodeId();
+                    if (scope != null) {
+                        openScopes.put(scope, scopeVisits.size());
+                        scopeVisits.add(new ScopeVisit(scope, at, null, null));
+                    }
+                }
+                case "SECTION_LEFT" -> {
+                    Integer index = e.nodeId() == null ? null : openScopes.remove(e.nodeId());
+                    if (index != null) {
+                        ScopeVisit v = scopeVisits.get(index);
+                        scopeVisits.set(index, new ScopeVisit(v.scopeId(), v.startedAt(), at,
+                                e.data().path("how").asString("completed")));
                     }
                 }
                 case "TASK_DECIDED" -> {
@@ -171,8 +231,12 @@ public final class RunPathBuilder {
                         instant(visits, node, at, "completed");
                     }
                     closeAll(visits, at, "cancelled");
+                    closeScopes(scopeVisits, openScopes, at);
                 }
-                case "RUN_CANCELLED" -> closeAll(visits, at, "cancelled");
+                case "RUN_CANCELLED" -> {
+                    closeAll(visits, at, "cancelled");
+                    closeScopes(scopeVisits, openScopes, at);
+                }
                 default -> {
                     // not part of the path
                 }
@@ -189,7 +253,8 @@ public final class RunPathBuilder {
             }
             currentIds.add(id);
             boolean attentionHere = "needsAttention".equals(lifecycle) && id.equals(attention);
-            String status = attentionHere ? "needsAttention" : ("http".equals(step.kind()) || "generateDocument".equals(step.kind())) ? "running" : "waiting";
+            String status = attentionHere ? "needsAttention" : ("http".equals(step.kind()) || "generateDocument".equals(step.kind())
+                    || "compensate".equals(step.kind())) ? "running" : "waiting";
             current.add(new Current(id, step.label(), step.kind(), status, step.since(), step.candidateGroup(),
                     step.assignee(), step.dueAt()));
         }
@@ -254,6 +319,16 @@ public final class RunPathBuilder {
                 taken.add(t.id());
             }
         }
+        List<Scope> scopes = scopes(definition, nodes);
+        for (Scope scope : scopes) {
+            for (Transition route : scope.routes()) {
+                String how = "timedOut".equals(route.on()) ? "timedOut" : "error";
+                if (scopeVisits.stream().anyMatch(v -> v.scopeId().equals(scope.id()) && how.equals(v.how()))
+                        && (visits.containsKey(route.to()) || currentIds.contains(route.to()))) {
+                    taken.add(route.id());
+                }
+            }
+        }
 
         List<Visit> visited = new ArrayList<>();
         visits.values().forEach(list -> list.forEach(v -> visited.add(v.freeze())));
@@ -273,7 +348,49 @@ public final class RunPathBuilder {
                     end ? config.path("businessOutcome").asString(null) : null,
                     config.has("timeoutAfter") && !config.path("timeoutAfter").isNull(), position));
         }
-        return new Result(runId, lifecycle, new Diagram(diagramNodes, transitions), visited, current, taken);
+        return new Result(runId, lifecycle, new Diagram(diagramNodes, transitions, scopes), visited, current, taken,
+                false, scopeVisits);
+    }
+
+    private static List<Scope> scopes(JsonNode definition, Map<String, JsonNode> nodes) {
+        List<Scope> scopes = new ArrayList<>();
+        for (JsonNode s : definition.path("subprocesses")) {
+            String id = s.path("id").asString(null);
+            if (id == null) {
+                continue;
+            }
+            List<String> members = new ArrayList<>();
+            s.path("nodes").forEach(n -> {
+                if (nodes.containsKey(n.asString(""))) {
+                    members.add(n.asString(""));
+                }
+            });
+            boolean event = "event".equals(s.path("type").asString(""));
+            List<Transition> routes = new ArrayList<>();
+            String onTimeout = s.path("onTimeout").asString(null);
+            if (!event && onTimeout != null && nodes.containsKey(onTimeout)) {
+                routes.add(new Transition(id + "__onTimeout", id, onTimeout, "timedOut", null));
+            }
+            String onError = s.path("onError").path("to").asString(null);
+            if (!event && onError != null && nodes.containsKey(onError)) {
+                routes.add(new Transition(id + "__onError", id, onError, "error", null));
+            }
+            scopes.add(new Scope(id, s.path("label").asString(id), event ? "event" : "embedded", members,
+                    event ? s.path("trigger").path("type").asString(null) : null,
+                    event ? s.path("interrupting").asBoolean(false) : null, routes));
+        }
+        return scopes;
+    }
+
+    private static void closeScopes(List<ScopeVisit> scopeVisits, Map<String, Integer> openScopes, Instant at) {
+        // Handlers have no event of their own when they end; everything open ends with the request.
+        for (int i = 0; i < scopeVisits.size(); i++) {
+            ScopeVisit v = scopeVisits.get(i);
+            if (v.endedAt() == null) {
+                scopeVisits.set(i, new ScopeVisit(v.scopeId(), v.startedAt(), at, "completed"));
+            }
+        }
+        openScopes.clear();
     }
 
     private static boolean isTaken(Transition t, Map<String, List<MutableVisit>> visits, Set<String> currentIds) {

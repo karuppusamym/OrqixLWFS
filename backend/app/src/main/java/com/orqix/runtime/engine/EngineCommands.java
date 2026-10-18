@@ -59,6 +59,47 @@ public class EngineCommands {
         });
     }
 
+    /** @return the executions of this process instance subscribed to the signal, oldest first (S55) */
+    public List<String> signalSubscriptions(String processInstanceId, String signal) {
+        return runtimeService.createEventSubscriptionQuery().processInstanceId(processInstanceId).eventType("signal")
+                .eventName(signal).list().stream()
+                .sorted(java.util.Comparator.comparing(org.flowable.eventsubscription.api.EventSubscription::getCreated))
+                .map(org.flowable.eventsubscription.api.EventSubscription::getExecutionId).distinct().toList();
+    }
+
+    /**
+     * Delivers a signal to the subscriptions of one process instance only (never a global broadcast), oldest first; a
+     * subscription removed by an earlier delivery (an interrupting handler) is skipped.
+     *
+     * @return how many subscriptions received it
+     */
+    public int signal(String processInstanceId, String signal, UUID actor) {
+        // The public signal API ignores process-instance scoped subscriptions (Orqix signals never leave a request), so
+        // this delivers them the way a "Send a signal" step of the request itself does.
+        return as(actor, () -> managementService.executeCommand(commandContext -> {
+            var configuration = org.flowable.engine.impl.util.CommandContextUtil.getProcessEngineConfiguration(commandContext);
+            var subscriptions = configuration.getEventSubscriptionServiceConfiguration().getEventSubscriptionService()
+                    .findSignalEventSubscriptionsByProcessInstanceAndEventName(processInstanceId, signal);
+            subscriptions.sort(java.util.Comparator.comparing(
+                    org.flowable.eventsubscription.service.impl.persistence.entity.EventSubscriptionEntity::getCreated));
+            int delivered = 0;
+            for (var subscription : subscriptions) {
+                if (subscription.isDeleted()) {
+                    continue; // removed by an earlier delivery (an interrupting handler)
+                }
+                configuration.getEventDispatcher().dispatchEvent(
+                        org.flowable.engine.delegate.event.impl.FlowableEventBuilder.createSignalEvent(
+                                org.flowable.common.engine.api.delegate.event.FlowableEngineEventType.ACTIVITY_SIGNALED,
+                                subscription.getActivityId(), signal, null, subscription.getExecutionId(),
+                                subscription.getProcessInstanceId(), subscription.getProcessDefinitionId()),
+                        configuration.getEngineCfgKey());
+                org.flowable.engine.impl.util.EventSubscriptionUtil.eventReceived(subscription, null, false);
+                delivered++;
+            }
+            return delivered;
+        }));
+    }
+
     public void claim(String taskId, UUID subject) {
         as(subject, () -> {
             taskService.claim(taskId, subject.toString());

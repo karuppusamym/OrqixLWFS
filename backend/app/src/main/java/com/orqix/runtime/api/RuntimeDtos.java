@@ -53,6 +53,14 @@ public final class RuntimeDtos {
             @NotNull @Min(1) Integer expectedVersion) {
     }
 
+    /** sendRunSignal (S55): the signal name follows the workflow schema's signalName pattern. */
+    public record SendRunSignalRequest(
+            @NotNull @Size(min = 2, max = 64) @jakarta.validation.constraints.Pattern(
+                    regexp = "^[a-z][a-zA-Z0-9]*(-[a-z0-9][a-zA-Z0-9]*)*$") String signal,
+            @NotNull @Size(min = 1, max = 500) String reason,
+            @NotNull @Min(1) Integer expectedVersion) {
+    }
+
     public record RepairRunRequest(@NotNull @Size(min = 1, max = 500) String reason,
             @NotNull @Min(1) Integer expectedVersion) {
     }

@@ -32,7 +32,10 @@ function visitStatus(visit: PathVisit | undefined): StepStatus {
     case 'timedOut':
       return 'timedOut'
     case 'cancelled':
+    case 'interrupted':
       return 'stopped'
+    case 'raised':
+      return 'failed'
     default:
       return 'done'
   }

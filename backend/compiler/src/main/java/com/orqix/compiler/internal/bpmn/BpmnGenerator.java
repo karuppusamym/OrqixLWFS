@@ -50,6 +50,25 @@ public final class BpmnGenerator {
     /** Error code a delegate raises when a step fails for good and the workflow has a {@code failed} path. */
     public static final String FAILED_ERROR_CODE = "ORQIX_STEP_FAILED";
 
+    /** Prefix of the BPMN error definition generated for a business error code (S55). */
+    public static final String ERROR_PREFIX = "error__";
+    /** Prefix of the BPMN signal definition generated for a signal name (S55). */
+    public static final String SIGNAL_PREFIX = "signal__";
+    /** Suffix of the start event generated inside a subprocess (S55). */
+    public static final String SCOPE_START = "__start";
+    /** Infix of the end event generated inside a section for each step it can be left to (S55). */
+    public static final String SCOPE_END = "__end__";
+    /** Suffix of the end event generated inside a handler that runs alongside the request (S55). */
+    public static final String SCOPE_DONE = "__end";
+    /** Suffix of the gateway after a section that can be left to several steps (S55). */
+    public static final String SCOPE_EXIT = "__exit";
+    /** Suffix of the interrupting timer boundary of a section with a time limit (S55). */
+    public static final String SCOPE_TIMEOUT = "__timeout";
+    /** Suffix of the interrupting error boundary of a section with an error route (S55). */
+    public static final String SCOPE_ERROR = "__error";
+    /** Process variable prefix holding the step a section was left to (S55). */
+    public static final String EXIT_VARIABLE = "orqix_exit_";
+
     /** Generated process plus its source map. */
     public record Result(String xml, SourceMap sourceMap) {
     }
@@ -99,6 +118,13 @@ public final class BpmnGenerator {
             // One error definition for every failure route; each error boundary event sits on its own step (S32).
             x.leaf("", "error", BPMN_NS).attr("id", FAILED_ERROR).attr("errorCode", FAILED_ERROR_CODE);
         }
+        Scopes scopes = new Scopes(definition);
+        // Business errors and signals (S55): one definition per code or name, sorted. Signals reach only the steps of
+        // the request that sends them (flowable:scope processInstance), never other requests.
+        scopes.errorCodes().forEach(code ->
+                x.leaf("", "error", BPMN_NS).attr("id", ERROR_PREFIX + code).attr("errorCode", code));
+        scopes.signals().forEach(name -> x.leaf("", "signal", BPMN_NS).attr("id", SIGNAL_PREFIX + name)
+                .attr("name", name).attr("flowable", FLOWABLE_NS, "scope", "processInstance"));
         x.open("", "process", BPMN_NS)
                 .attr("id", definition.workflowKey())
                 .attr("name", definition.name())
@@ -111,22 +137,77 @@ public final class BpmnGenerator {
         x.close();
 
         for (Node n : definition.nodes()) {
-            node(x, map, definition, n, branchDefault, inclusiveJoins, decisionResource, children);
+            if (scopes.scopeOf(n.id()) == null) {
+                node(x, map, definition, n, branchDefault, inclusiveJoins, decisionResource, children, scopes);
+            }
         }
         for (Transition t : definition.transitions()) {
-            flow(x, map, nodes, t);
+            if (scopes.container(t) == null) {
+                flow(x, map, nodes, t, scopes.target(t));
+            }
+        }
+        for (WorkflowDefinition.Subprocess s : definition.subprocesses()) {
+            scope(x, map, definition, nodes, s, branchDefault, inclusiveJoins, decisionResource, children, scopes);
         }
         x.close();
-        Diagram.write(x, definition, nodes);
+        Diagram.write(x, definition, nodes, scopes);
         x.close();
         return new Result(x.finish(), map);
     }
 
     private static void node(XmlOut x, SourceMap map, WorkflowDefinition d, Node n,
                              Map<String, String> branchDefault, java.util.Set<String> inclusiveJoins,
-                             Map<String, String> decisionResource, Map<String, WorkflowInfo> children) {
+                             Map<String, String> decisionResource, Map<String, WorkflowInfo> children,
+                             Scopes scopes) {
         map.node(n.id(), n.id());
         switch (n) {
+            case Node.RaiseError r -> {
+                // An error end event: the section's error boundary or an error handler catches it (S55).
+                x.open("", "endEvent", BPMN_NS).attr("id", r.id()).attr("name", r.label());
+                x.open("", "extensionElements", BPMN_NS);
+                x.leaf("orqix", "raise", ORQIX_NS).attr("errorCode", r.errorCode());
+                x.close();
+                x.leaf("", "errorEventDefinition", BPMN_NS).attr("errorRef", ERROR_PREFIX + r.errorCode());
+                x.close();
+            }
+            case Node.SendSignal s -> {
+                x.open("", "intermediateThrowEvent", BPMN_NS).attr("id", s.id()).attr("name", s.label());
+                x.open("", "extensionElements", BPMN_NS);
+                x.leaf("orqix", "signal", ORQIX_NS).attr("action", "send").attr("name", s.signal());
+                x.close();
+                x.leaf("", "signalEventDefinition", BPMN_NS).attr("signalRef", SIGNAL_PREFIX + s.signal());
+                x.close();
+            }
+            case Node.WaitForSignal w -> {
+                x.open("", "intermediateCatchEvent", BPMN_NS).attr("id", w.id()).attr("name", w.label());
+                x.open("", "extensionElements", BPMN_NS);
+                x.leaf("orqix", "signal", ORQIX_NS).attr("action", "wait").attr("name", w.signal());
+                x.close();
+                x.leaf("", "signalEventDefinition", BPMN_NS).attr("signalRef", SIGNAL_PREFIX + w.signal());
+                x.close();
+            }
+            case Node.Compensate c -> {
+                // Orqix runs the undo calls itself, one after the other and journaled, most recent first; Flowable's
+                // compensation events do not wait for the handlers to finish (S55).
+                x.open("", "serviceTask", BPMN_NS)
+                        .attr("id", c.id())
+                        .attr("name", c.label())
+                        .attr("flowable", FLOWABLE_NS, "async", "true")
+                        .attr("flowable", FLOWABLE_NS, "exclusive", "true")
+                        .attr("flowable", FLOWABLE_NS, "delegateExpression", "${orqixCompensationTask}");
+                x.open("", "extensionElements", BPMN_NS);
+                x.inline("flowable", "failedJobRetryTimeCycle", FLOWABLE_NS, null,
+                        RetryCycle.forAttempts(d.execution().maxAttempts(), d.execution().retryDelaySeconds()), false);
+                x.open("orqix", "compensation", ORQIX_NS);
+                for (Node other : d.nodes()) {
+                    if (other instanceof Node.Http h && h.undoHandler()) {
+                        x.leaf("orqix", "undo", ORQIX_NS).attr("target", h.compensates()).attr("handler", h.id());
+                    }
+                }
+                x.close();
+                x.close();
+                x.close();
+            }
             case Node.Start s -> x.leaf("", "startEvent", BPMN_NS).attr("id", s.id()).attr("name", s.label());
             case Node.Approval a -> {
                 x.open("", "userTask", BPMN_NS)
@@ -213,6 +294,10 @@ public final class BpmnGenerator {
                         .attr("flowable", FLOWABLE_NS, "async", "true")
                         .attr("flowable", FLOWABLE_NS, "exclusive", "true")
                         .attr("flowable", FLOWABLE_NS, "delegateExpression", "${orqixHttpTask}");
+                if (h.undoHandler()) {
+                    // Never reached by a path: the Undo step reads this call's settings and runs it (S55).
+                    x.attr("isForCompensation", "true");
+                }
                 x.open("", "extensionElements", BPMN_NS);
                 x.inline("flowable", "failedJobRetryTimeCycle", FLOWABLE_NS, null,
                         RetryCycle.forAttempts(d.execution().maxAttempts(), d.execution().retryDelaySeconds()),
@@ -405,9 +490,12 @@ public final class BpmnGenerator {
                 x.open("", "extensionElements", BPMN_NS);
                 x.leaf("orqix", "outcome", ORQIX_NS).attr("label", e.businessOutcome()).attr("kind", e.outcomeKind());
                 x.close();
-                if (("rejected".equals(e.outcomeKind()) || "failed".equals(e.outcomeKind()))
-                        && d.nodes().stream().anyMatch(other -> other instanceof Node.ParallelSplit)) {
-                    // A rejection ends the whole request, including parallel branches that are still open (S12).
+                boolean inHandler = scopes.scopeOf(e.id()) != null;
+                if (!inHandler && ((("rejected".equals(e.outcomeKind()) || "failed".equals(e.outcomeKind()))
+                        && d.nodes().stream().anyMatch(other -> other instanceof Node.ParallelSplit))
+                        || scopes.sideHandlers())) {
+                    // A rejection ends the whole request, including parallel branches that are still open (S12); a
+                    // finished request also stops handlers that run alongside it (S55).
                     x.leaf("", "terminateEventDefinition", BPMN_NS);
                 }
                 x.close();
@@ -415,7 +503,282 @@ public final class BpmnGenerator {
         }
     }
 
-    private static void flow(XmlOut x, SourceMap map, Map<String, Node> nodes, Transition t) {
+    /**
+     * A subprocess (S55). A section becomes an embedded {@code subProcess}: a generated start event leads to its entry
+     * step, every path leaving it ends at a generated end event named after the step it leads to, and after the
+     * subprocess a generated gateway continues at that step (directly when there is only one). Its time limit and error
+     * route are interrupting boundary events on the subprocess. A handler becomes an event subprocess whose start event
+     * carries the trigger; the last steps of a handler that runs alongside the request end at a generated end event.
+     */
+    private static void scope(XmlOut x, SourceMap map, WorkflowDefinition d, Map<String, Node> nodes,
+                              WorkflowDefinition.Subprocess s, Map<String, String> branchDefault,
+                              java.util.Set<String> inclusiveJoins, Map<String, String> decisionResource,
+                              Map<String, WorkflowInfo> children, Scopes scopes) {
+        String id = s.id();
+        String entry = scopes.entry(s);
+        x.open("", "subProcess", BPMN_NS).attr("id", id).attr("name", s.label());
+        if (s.event()) {
+            x.attr("triggeredByEvent", "true");
+        }
+        map.node(id, id);
+        x.open("", "extensionElements", BPMN_NS);
+        x.leaf("orqix", "scope", ORQIX_NS).attr("kind", s.event() ? "event" : "embedded");
+        x.close();
+        String start = id + SCOPE_START;
+        x.open("", "startEvent", BPMN_NS).attr("id", start).attr("name", s.label() + ": start");
+        if (s.event()) {
+            x.attr("isInterrupting", Boolean.toString(s.interrupting()));
+            x.open("", "extensionElements", BPMN_NS);
+            x.leaf("orqix", "scopeEvent", ORQIX_NS).attr("scope", id).attr("trigger", s.triggerType())
+                    .attr("interrupting", Boolean.toString(s.interrupting()));
+            x.close();
+            switch (s.triggerType()) {
+                case "error" -> {
+                    x.leaf("", "errorEventDefinition", BPMN_NS);
+                    if (s.triggerErrorCode() != null) {
+                        x.attr("errorRef", ERROR_PREFIX + s.triggerErrorCode());
+                    }
+                }
+                case "signal" -> x.leaf("", "signalEventDefinition", BPMN_NS).attr("signalRef", SIGNAL_PREFIX + s.signal());
+                default -> {
+                    x.open("", "timerEventDefinition", BPMN_NS);
+                    x.inline("", "timeDuration", BPMN_NS, null, s.after(), false);
+                    x.close();
+                }
+            }
+        }
+        x.close();
+        map.node(id, start);
+        for (Node n : d.nodes()) {
+            if (scopes.scopeOf(n.id()) == s) {
+                node(x, map, d, n, branchDefault, inclusiveJoins, decisionResource, children, scopes);
+            }
+        }
+        String begin = id + "__begin";
+        x.leaf("", "sequenceFlow", BPMN_NS).attr("id", begin).attr("sourceRef", start).attr("targetRef", entry);
+        map.node(id, begin);
+        for (Transition t : d.transitions()) {
+            if (scopes.container(t) == s) {
+                flow(x, map, nodes, t, scopes.target(t));
+            }
+        }
+        java.util.List<String> exits = scopes.exits(s);
+        for (String target : exits) {
+            String end = id + SCOPE_END + target;
+            x.open("", "endEvent", BPMN_NS).attr("id", end).attr("name", s.label() + ": done");
+            x.open("", "extensionElements", BPMN_NS);
+            x.leaf("orqix", "scopeEnd", ORQIX_NS).attr("scope", id).attr("exit", target);
+            if (exits.size() > 1) {
+                x.leaf("flowable", "executionListener", FLOWABLE_NS).attr("event", "start")
+                        .attr("expression", "${orqixRoute.markExit(execution, '" + id + "', '" + target + "')}");
+            }
+            x.close();
+            x.close();
+            map.node(id, end);
+        }
+        java.util.List<String> done = scopes.sideEnds(s);
+        if (!done.isEmpty()) {
+            String end = id + SCOPE_DONE;
+            x.open("", "endEvent", BPMN_NS).attr("id", end).attr("name", s.label() + ": done");
+            x.open("", "extensionElements", BPMN_NS);
+            x.leaf("orqix", "scopeEnd", ORQIX_NS).attr("scope", id);
+            x.close();
+            x.close();
+            map.node(id, end);
+            for (String last : done) {
+                String flowId = id + "__done__" + last;
+                x.leaf("", "sequenceFlow", BPMN_NS).attr("id", flowId).attr("sourceRef", last).attr("targetRef", end);
+                map.node(id, flowId);
+            }
+        }
+        x.close();
+        if (s.event()) {
+            return;
+        }
+        // After the section: continue at the step it was left to.
+        if (exits.size() == 1) {
+            String flowId = id + SCOPE_EXIT + "__" + exits.get(0);
+            x.leaf("", "sequenceFlow", BPMN_NS).attr("id", flowId).attr("sourceRef", id)
+                    .attr("targetRef", scopes.outerTarget(exits.get(0)));
+            map.node(id, flowId);
+        } else if (exits.size() > 1) {
+            String gateway = id + SCOPE_EXIT;
+            x.leaf("", "sequenceFlow", BPMN_NS).attr("id", id + "__out").attr("sourceRef", id).attr("targetRef", gateway);
+            map.node(id, id + "__out");
+            x.leaf("", "exclusiveGateway", BPMN_NS).attr("id", gateway).attr("name", s.label() + ": continue");
+            map.node(id, gateway);
+            for (String target : exits) {
+                String flowId = id + SCOPE_EXIT + "__" + target;
+                x.open("", "sequenceFlow", BPMN_NS).attr("id", flowId).attr("sourceRef", gateway)
+                        .attr("targetRef", scopes.outerTarget(target));
+                x.openInline("", "conditionExpression", BPMN_NS)
+                        .attr("xsi", XSI_NS, "type", "tFormalExpression")
+                        .cdata("${orqixRoute.exited(execution, '" + id + "', '" + target + "')}")
+                        .closeInline();
+                x.close();
+                map.node(id, flowId);
+            }
+        }
+        if (s.timeoutAfter() != null && s.onTimeout() != null) {
+            String timeout = id + SCOPE_TIMEOUT;
+            x.open("", "boundaryEvent", BPMN_NS).attr("id", timeout).attr("name", s.label() + ": time limit passed")
+                    .attr("attachedToRef", id).attr("cancelActivity", "true");
+            x.open("", "extensionElements", BPMN_NS);
+            x.leaf("orqix", "scopeTimeout", ORQIX_NS).attr("scope", id).attr("after", s.timeoutAfter());
+            x.close();
+            x.open("", "timerEventDefinition", BPMN_NS);
+            x.inline("", "timeDuration", BPMN_NS, null, s.timeoutAfter(), false);
+            x.close();
+            x.close();
+            map.node(id, timeout);
+            x.leaf("", "sequenceFlow", BPMN_NS).attr("id", id + "__onTimeout").attr("sourceRef", timeout)
+                    .attr("targetRef", scopes.outerTarget(s.onTimeout()));
+            map.node(id, id + "__onTimeout");
+        }
+        if (s.errorTo() != null) {
+            String error = id + SCOPE_ERROR;
+            x.open("", "boundaryEvent", BPMN_NS).attr("id", error).attr("name", s.label() + ": error")
+                    .attr("attachedToRef", id).attr("cancelActivity", "true");
+            x.open("", "extensionElements", BPMN_NS);
+            x.leaf("orqix", "scopeError", ORQIX_NS).attr("scope", id);
+            if (s.errorCode() != null) {
+                x.attr("errorCode", s.errorCode());
+            }
+            x.close();
+            x.leaf("", "errorEventDefinition", BPMN_NS);
+            if (s.errorCode() != null) {
+                x.attr("errorRef", ERROR_PREFIX + s.errorCode());
+            }
+            x.close();
+            map.node(id, error);
+            x.leaf("", "sequenceFlow", BPMN_NS).attr("id", id + "__onError").attr("sourceRef", error)
+                    .attr("targetRef", scopes.outerTarget(s.errorTo()));
+            map.node(id, id + "__onError");
+        }
+    }
+
+    /** Subprocess membership, entries and exits of a definition without blockers (S55). */
+    static final class Scopes {
+        private final WorkflowDefinition d;
+        private final Map<String, WorkflowDefinition.Subprocess> scopeOf = new HashMap<>();
+        private final Map<String, String> entries = new HashMap<>();
+        private final Map<String, WorkflowDefinition.Subprocess> entryOf = new HashMap<>();
+
+        Scopes(WorkflowDefinition d) {
+            this.d = d;
+            for (WorkflowDefinition.Subprocess s : d.subprocesses()) {
+                s.nodes().forEach(id -> scopeOf.putIfAbsent(id, s));
+            }
+            for (WorkflowDefinition.Subprocess s : d.subprocesses()) {
+                for (String id : s.nodes()) {
+                    boolean entered = s.embedded()
+                            ? d.transitions().stream().anyMatch(t -> t.to().equals(id) && scopeOf.get(t.from()) != s)
+                            : d.transitions().stream().noneMatch(t -> t.to().equals(id));
+                    if (entered && !entries.containsKey(s.id())) {
+                        entries.put(s.id(), id);
+                        if (s.embedded()) {
+                            entryOf.put(id, s);
+                        }
+                    }
+                }
+            }
+        }
+
+        WorkflowDefinition.Subprocess scopeOf(String nodeId) {
+            return scopeOf.get(nodeId);
+        }
+
+        String entry(WorkflowDefinition.Subprocess s) {
+            return entries.get(s.id());
+        }
+
+        /** @return the subprocess whose element holds the flow of this transition, or null for the process */
+        WorkflowDefinition.Subprocess container(Transition t) {
+            return scopeOf.get(t.from());
+        }
+
+        /** @return the BPMN target of a transition: the step, a section it enters, or a generated end event */
+        String target(Transition t) {
+            WorkflowDefinition.Subprocess from = scopeOf.get(t.from());
+            WorkflowDefinition.Subprocess to = scopeOf.get(t.to());
+            if (from == to) {
+                return t.to();
+            }
+            if (from != null) {
+                return from.id() + SCOPE_END + t.to();
+            }
+            return outerTarget(t.to());
+        }
+
+        /** @return the element a flow from outside every subprocess goes to for this step */
+        String outerTarget(String nodeId) {
+            WorkflowDefinition.Subprocess entered = entryOf.get(nodeId);
+            return entered == null ? nodeId : entered.id();
+        }
+
+        /** @return the steps outside a section that its paths lead to, in canonical path order */
+        java.util.List<String> exits(WorkflowDefinition.Subprocess s) {
+            java.util.LinkedHashSet<String> targets = new java.util.LinkedHashSet<>();
+            for (Transition t : d.transitions()) {
+                if (scopeOf.get(t.from()) == s && scopeOf.get(t.to()) != s) {
+                    targets.add(t.to());
+                }
+            }
+            return java.util.List.copyOf(targets);
+        }
+
+        /** @return the steps of a handler that runs alongside the request that have no path: they end it */
+        java.util.List<String> sideEnds(WorkflowDefinition.Subprocess s) {
+            if (!s.event() || s.interrupting()) {
+                return java.util.List.of();
+            }
+            java.util.List<String> ends = new java.util.ArrayList<>();
+            for (String id : new java.util.LinkedHashSet<>(s.nodes())) {
+                if (scopeOf.get(id) == s && d.transitions().stream().noneMatch(t -> t.from().equals(id))) {
+                    ends.add(id);
+                }
+            }
+            return ends;
+        }
+
+        /** @return true when a handler can run alongside the request (a finished request then stops it) */
+        boolean sideHandlers() {
+            return d.subprocesses().stream().anyMatch(s -> s.event() && !s.interrupting());
+        }
+
+        java.util.SortedSet<String> errorCodes() {
+            java.util.SortedSet<String> codes = new java.util.TreeSet<>();
+            for (Node n : d.nodes()) {
+                if (n instanceof Node.RaiseError r) {
+                    codes.add(r.errorCode());
+                }
+            }
+            for (WorkflowDefinition.Subprocess s : d.subprocesses()) {
+                if (s.errorCode() != null) {
+                    codes.add(s.errorCode());
+                }
+                if (s.triggerErrorCode() != null) {
+                    codes.add(s.triggerErrorCode());
+                }
+            }
+            return codes;
+        }
+
+        java.util.SortedSet<String> signals() {
+            java.util.SortedSet<String> names = new java.util.TreeSet<>();
+            for (Node n : d.nodes()) {
+                if (n instanceof Node.SendSignal s) {
+                    names.add(s.signal());
+                } else if (n instanceof Node.WaitForSignal w) {
+                    names.add(w.signal());
+                }
+            }
+            d.subprocesses().stream().filter(s -> s.signal() != null).forEach(s -> names.add(s.signal()));
+            return names;
+        }
+    }
+
+    private static void flow(XmlOut x, SourceMap map, Map<String, Node> nodes, Transition t, String target) {
         map.transition(t.id(), t.id());
         Node from = nodes.get(t.from());
         String source = flowSource(from, t);
@@ -427,11 +790,11 @@ public final class BpmnGenerator {
         };
         if (expression == null) {
             x.leaf("", "sequenceFlow", BPMN_NS);
-            flowAttributes(x, t, source);
+            flowAttributes(x, t, source, target);
             return;
         }
         x.open("", "sequenceFlow", BPMN_NS);
-        flowAttributes(x, t, source);
+        flowAttributes(x, t, source, target);
         if (t.condition() != null) {
             Condition c = t.condition();
             x.open("", "extensionElements", BPMN_NS);
@@ -489,12 +852,12 @@ public final class BpmnGenerator {
         return from.id();
     }
 
-    private static void flowAttributes(XmlOut x, Transition t, String source) {
+    private static void flowAttributes(XmlOut x, Transition t, String source, String target) {
         x.attr("id", t.id());
         if (t.label() != null) {
             x.attr("name", t.label());
         }
-        x.attr("sourceRef", source).attr("targetRef", t.to());
+        x.attr("sourceRef", source).attr("targetRef", target);
     }
 
     /** BPMN diagram interchange from {@code uiLayout} (ticket B03.7, priority P2). */
@@ -509,7 +872,7 @@ public final class BpmnGenerator {
         private Diagram() {
         }
 
-        static void write(XmlOut x, WorkflowDefinition d, Map<String, Node> nodes) {
+        static void write(XmlOut x, WorkflowDefinition d, Map<String, Node> nodes, Scopes scopes) {
             if (d.uiLayout() == null || !d.nodes().stream().allMatch(n ->
                     d.uiLayout().positions().containsKey(n.id()))) {
                 return;
@@ -534,12 +897,13 @@ public final class BpmnGenerator {
                     centre.put(n.id() + MESSAGE_TIMEOUT, new BigDecimal[] {cx.add(HELPER_OFFSET), cy.add(BOUNDARY_OFFSET)});
                 }
             }
+            Map<String, BigDecimal[]> boxes = scopeCentres(d, scopes, centre);
             String key = d.workflowKey();
             x.open("bpmndi", "BPMNDiagram", BPMNDI_NS).attr("id", key + "__diagram");
             x.open("bpmndi", "BPMNPlane", BPMNDI_NS).attr("id", key + "__plane").attr("bpmnElement", key);
             for (Node n : d.nodes()) {
                 int[] size = switch (n.kind()) {
-                    case START, END, WAIT -> new int[] {36, 36};
+                    case START, END, WAIT, RAISE_ERROR, SEND_SIGNAL, WAIT_FOR_SIGNAL -> new int[] {36, 36};
                     case WAIT_FOR_MESSAGE -> ((Node.WaitForMessage) n).timeoutAfter() != null
                             ? new int[] {40, 40} : new int[] {36, 36};
                     case BRANCH, PARALLEL_SPLIT, PARALLEL_JOIN -> new int[] {40, 40};
@@ -565,10 +929,108 @@ public final class BpmnGenerator {
             }
             for (Transition t : d.transitions()) {
                 Node from = nodes.get(t.from());
-                edge(x, t.id(), centre.get(flowSource(from, t)), centre.get(t.to()));
+                edge(x, t.id(), centre.get(flowSource(from, t)), centre.get(scopes.target(t)));
             }
+            scopeDiagram(x, d, scopes, centre, boxes);
             x.close();
             x.close();
+        }
+
+        private static final BigDecimal SCOPE_PADDING = new BigDecimal(40);
+
+        /** @return subprocess id to {left, top, right, bottom}; also places the generated subprocess helpers (S55) */
+        private static Map<String, BigDecimal[]> scopeCentres(WorkflowDefinition d, Scopes scopes,
+                Map<String, BigDecimal[]> centre) {
+            Map<String, BigDecimal[]> boxes = new HashMap<>();
+            for (WorkflowDefinition.Subprocess s : d.subprocesses()) {
+                BigDecimal left = null, top = null, right = null, bottom = null;
+                for (String id : s.nodes()) {
+                    Position p = d.uiLayout().positions().get(id);
+                    if (p == null) {
+                        continue;
+                    }
+                    BigDecimal l = p.x(), t = p.y(), r = p.x().add(CARD_HALF_WIDTH.add(CARD_HALF_WIDTH)),
+                            b = p.y().add(CARD_HALF_HEIGHT.add(CARD_HALF_HEIGHT));
+                    left = left == null ? l : left.min(l);
+                    top = top == null ? t : top.min(t);
+                    right = right == null ? r : right.max(r);
+                    bottom = bottom == null ? b : bottom.max(b);
+                }
+                if (left == null) {
+                    continue;
+                }
+                left = left.subtract(SCOPE_PADDING);
+                top = top.subtract(SCOPE_PADDING);
+                right = right.add(SCOPE_PADDING);
+                bottom = bottom.add(SCOPE_PADDING);
+                boxes.put(s.id(), new BigDecimal[] {left, top, right, bottom});
+                BigDecimal midY = top.add(bottom).divide(BigDecimal.valueOf(2));
+                BigDecimal midX = left.add(right).divide(BigDecimal.valueOf(2));
+                String id = s.id();
+                centre.put(id, new BigDecimal[] {midX, midY});
+                centre.put(id + SCOPE_START, new BigDecimal[] {left.add(BigDecimal.valueOf(20)), midY});
+                BigDecimal y = top.add(BigDecimal.valueOf(20));
+                for (String exit : scopes.exits(s)) {
+                    centre.put(id + SCOPE_END + exit, new BigDecimal[] {right.subtract(BigDecimal.valueOf(20)), y});
+                    y = y.add(BigDecimal.valueOf(40));
+                }
+                centre.put(id + SCOPE_DONE, new BigDecimal[] {right.subtract(BigDecimal.valueOf(20)), bottom.subtract(BigDecimal.valueOf(20))});
+                centre.put(id + SCOPE_EXIT, new BigDecimal[] {right.add(BigDecimal.valueOf(60)), midY});
+                centre.put(id + SCOPE_TIMEOUT, new BigDecimal[] {left.add(BigDecimal.valueOf(40)), bottom});
+                centre.put(id + SCOPE_ERROR, new BigDecimal[] {left.add(BigDecimal.valueOf(90)), bottom});
+            }
+            return boxes;
+        }
+
+        private static void scopeDiagram(XmlOut x, WorkflowDefinition d, Scopes scopes, Map<String, BigDecimal[]> centre,
+                Map<String, BigDecimal[]> boxes) {
+            for (WorkflowDefinition.Subprocess s : d.subprocesses()) {
+                BigDecimal[] box = boxes.get(s.id());
+                if (box == null) {
+                    continue;
+                }
+                String id = s.id();
+                x.open("bpmndi", "BPMNShape", BPMNDI_NS).attr("id", id + "__di").attr("bpmnElement", id)
+                        .attr("isExpanded", "true");
+                x.leaf("omgdc", "Bounds", DC_NS).attr("x", num(box[0])).attr("y", num(box[1]))
+                        .attr("width", num(box[2].subtract(box[0]))).attr("height", num(box[3].subtract(box[1])));
+                x.close();
+                shape(x, id + SCOPE_START, centre.get(id + SCOPE_START), 30, 30);
+                edge(x, id + "__begin", centre.get(id + SCOPE_START), centre.get(scopes.entry(s)));
+                java.util.List<String> exits = scopes.exits(s);
+                for (String exit : exits) {
+                    shape(x, id + SCOPE_END + exit, centre.get(id + SCOPE_END + exit), 30, 30);
+                }
+                java.util.List<String> done = scopes.sideEnds(s);
+                if (!done.isEmpty()) {
+                    shape(x, id + SCOPE_DONE, centre.get(id + SCOPE_DONE), 30, 30);
+                    for (String last : done) {
+                        edge(x, id + "__done__" + last, centre.get(last), centre.get(id + SCOPE_DONE));
+                    }
+                }
+                if (s.event()) {
+                    continue;
+                }
+                if (exits.size() == 1) {
+                    edge(x, id + SCOPE_EXIT + "__" + exits.get(0), centre.get(id),
+                            centre.get(scopes.outerTarget(exits.get(0))));
+                } else if (exits.size() > 1) {
+                    shape(x, id + SCOPE_EXIT, centre.get(id + SCOPE_EXIT), 40, 40);
+                    edge(x, id + "__out", centre.get(id), centre.get(id + SCOPE_EXIT));
+                    for (String exit : exits) {
+                        edge(x, id + SCOPE_EXIT + "__" + exit, centre.get(id + SCOPE_EXIT),
+                                centre.get(scopes.outerTarget(exit)));
+                    }
+                }
+                if (s.timeoutAfter() != null && s.onTimeout() != null) {
+                    shape(x, id + SCOPE_TIMEOUT, centre.get(id + SCOPE_TIMEOUT), 36, 36);
+                    edge(x, id + "__onTimeout", centre.get(id + SCOPE_TIMEOUT), centre.get(scopes.outerTarget(s.onTimeout())));
+                }
+                if (s.errorTo() != null) {
+                    shape(x, id + SCOPE_ERROR, centre.get(id + SCOPE_ERROR), 36, 36);
+                    edge(x, id + "__onError", centre.get(id + SCOPE_ERROR), centre.get(scopes.outerTarget(s.errorTo())));
+                }
+            }
         }
 
         private static void shape(XmlOut x, String element, BigDecimal[] c, int width, int height) {

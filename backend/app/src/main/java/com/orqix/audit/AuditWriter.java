@@ -102,6 +102,7 @@ public class AuditWriter {
             Map.entry("externaljob.completed", Set.of("topic", "nodeId", "attempt")),
             Map.entry("externaljob.failed", Set.of("topic", "nodeId", "attempt")),
             Map.entry("run.suspended", Set.of()),
+            Map.entry("run.signal-sent", Set.of("signal", "delivered")),
             Map.entry("run.resumed", Set.of()),
             Map.entry("run.projection-repaired", Set.of("restored", "removed")),
             Map.entry("run.migrated", Set.of("fromRelease", "toRelease")),

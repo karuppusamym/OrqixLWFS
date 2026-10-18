@@ -31,7 +31,7 @@ HC01?HC07 in the [baseline](23-hackathon-requirements-baseline.md#12-remaining-e
 
 ## Dated verification results
 
-- Full frontend suite: 876/877 passed in the combined run; one Studio HTTP-failure-route test exceeded its 15-second limit while builds competed for resources. The same test passed on its isolated rerun (one pass, sixteen filtered cases). This is a combined evidence result, not a clean all-green full run. Logs: `evidence/hackathon-frontend-final-full.log`, `evidence/hackathon-studio-recheck.log`.
+- Full frontend suite: **877/877 tests passed across 114 files** on the final frontend source, using two thread workers and a 30-second per-test ceiling (`evidence/hackathon-frontend-final-green.log`). An earlier run had one 15-second timeout during competing builds; its isolated rerun also passed (`evidence/hackathon-studio-recheck.log`).
 - Production SPA and both independent browser components: build passed, including TypeScript checks and sample-host packaging (`evidence/hackathon-build-final.log`).
 - Contract checks: 88/88 passed (`evidence/hackathon-contract-final.log`). The read-only BPMN check is explicitly exempt from mutation audit requirements.
 - Release preparation: three offline tests passed (`evidence/hackathon-tools-final.log`).
@@ -39,3 +39,27 @@ HC01?HC07 in the [baseline](23-hackathon-requirements-baseline.md#12-remaining-e
 - Frontend CycloneDX SBOM: 503 components from the locked dependency tree, with optional platform-specific packages omitted (`evidence/hackathon/frontend-sbom.json`). License and vulnerability approval remain pending.
 
 Raw logs and generated dependency artifacts are intentionally ignored by Git. Preserve the local `evidence/hackathon*` files with the candidate receipt when sharing the qualification package. The checked-in record reports the observed outcomes; it does not imply that ignored artifacts accompany a fresh clone.
+
+- Live local runtime scenario: passed publication, replay, real SLA, SMTP capture, closure and scoped evidence export. Application restart recovered in 28.42 seconds; 8 rendered messages captured. Provider states: providerAccepted. Evidence: `evidence/hackathon/local-demo.json`, `evidence/hackathon-demo-final.log`. This preceded the final frontend-only inbox guard; backend code was identical.
+
+- Real Edge/browser acceptance: both guided creation and embedded authoring/task-host scenarios passed, including serious/critical axe checks and denied requester access with no browser errors (`evidence/hackathon-browser-final.log`). This uses the final frontend source.
+
+The integrated case-management slice owns a separate CMMN execution boundary. Its controller follows the existing `cases.api` convention; only `CaseService` may import Flowable, and only public CMMN/task/identity-link APIs are allowed there. Architecture verification continues to reject Flowable dependencies elsewhere outside the workflow runtime.
+
+## Dependency findings
+
+The production frontend audit returned zero known vulnerabilities (`evidence/hackathon/frontend-audit.json`). Docker Scout indexed 361 runtime packages. The initial high/critical scan reported 44 distinct advisories (49 package findings): eight advisories in Tomcat/Jackson with available patches and 36 in base-image RPMs marked `not fixed` by the scanner. This is a failed security release gate until remediated or formally dispositioned; it is not an enterprise compliance pass.
+
+The Maven parent overrides Tomcat to 11.0.25, Jackson 2 to 2.21.7 and Jackson 3 to 3.1.7, retaining the existing minor release lines. Patch references: [Apache Tomcat security advisories](https://tomcat.apache.org/security-11.html), [Jackson advisory](https://github.com/FasterXML/jackson-databind/security/advisories/GHSA-cxp5-3px4-pw24), [Jackson 3.1.7 release](https://github.com/FasterXML/jackson/wiki/Jackson-Release-3.1.7). No blanket suppression or unsupported base-image removal is used. The Red Hat image findings remain in the platform/dependency owner gate, with package-level details in `evidence/hackathon/runtime-cves.sarif`.
+
+Load preparation exposed an unnecessary uploader advisory lock on every workflow start, including forms with no files. File-free starts now skip that lock; starts consuming staged files retain uploader-before-file ordering. A regression holds the upload lock on a separate database connection and verifies a file-free request can still start. The first full load preparation was stopped to apply this correction; it has no measured qualification result. Its synthetic cases remain in the fixture database.
+
+Final architecture/case/revocation/hackathon API recheck before dependency patches: 17 tests passed, including all six architecture checks and public grant/export/revoke behavior (`evidence/hackathon-backend-recheck.log`). Security patch compatibility and the upload-lock regression are separately rechecked below.
+
+## Final code verification checkpoint
+
+- Backend full baseline: 495 compiler tests passed; 791 application tests ran with four intentional skips and three failures. The two architecture failures were corrected by the API package move and narrow CMMN adapter boundary. The remaining security-matrix failure came from missing well-formed request bodies for the new case/view create operations; both are now supplied so the test reaches authorization.
+- On the corrected source and patched dependencies, final `verify` passed **30/30 focused tests**, packaging and the compiler coverage gate, reusing the full baseline coverage data (`evidence/hackathon-final-verification.log`). This is full-baseline-plus-corrections evidence, not a claim that the entire application suite was rerun after the patches. The separate patch compatibility run passed 18 tests; the attachment suite passed all 21 tests including the new lock regression.
+- The security-patched image passed both real Edge acceptance scenarios (`evidence/hackathon-browser-patched.log`). Frontend lint and E2E TypeScript checks passed.
+- The rescan confirms all eight fixable Tomcat/Jackson advisories are absent. **36 base-image advisories across 15 packages remain** (`evidence/hackathon/runtime-cves-patched.sarif`). The security/compliance release gate remains open.
+- Full load qualification is running against `orqix/orqix:hackathon-security`; preparation is excluded from measurement. No pass is claimed before its result is recorded.

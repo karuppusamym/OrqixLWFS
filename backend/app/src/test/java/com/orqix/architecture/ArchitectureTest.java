@@ -1,6 +1,8 @@
 package com.orqix.architecture;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAnyPackage;
+import static com.tngtech.archunit.base.DescribedPredicate.not;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
 import org.junit.jupiter.api.Test;
@@ -33,9 +35,20 @@ class ArchitectureTest {
     }
 
     @Test
-    void onlyRuntimeImportsFlowable() {
+    void engineAccessStaysInRuntimeAndTheCmmnAdapter() {
+        // The case module is a separate CMMN execution boundary; only its service is an engine adapter.
         noClasses().that().resideOutsideOfPackage("com.orqix.runtime..")
+                .and().doNotHaveFullyQualifiedName("com.orqix.cases.CaseService")
                 .should().dependOnClassesThat().resideInAPackage("org.flowable..")
+                .check(CLASSES);
+    }
+
+    @Test
+    void cmmnAdapterUsesOnlyPublicCaseTaskAndIdentityApis() {
+        noClasses().that().resideInAPackage("com.orqix.cases..")
+                .should().dependOnClassesThat(resideInAnyPackage("org.flowable..")
+                        .and(not(resideInAnyPackage("org.flowable.cmmn.api..", "org.flowable.task.api..",
+                                "org.flowable.identitylink.api.."))))
                 .check(CLASSES);
     }
 

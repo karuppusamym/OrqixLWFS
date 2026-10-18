@@ -26,6 +26,10 @@
     <!-- Version pins: docs/build/S1-engineering-baseline.md section 1, recorded in docs/adr/0001 after spike B01.2. -->
     <properties>
         <java.version>21</java.version>
+        <!-- Security patch overrides for Boot 4.0.8; see docs/hackathon-acceptance.md. -->
+        <tomcat.version>11.0.25</tomcat.version>
+        <jackson-2-bom.version>2.21.7</jackson-2-bom.version>
+        <jackson-bom.version>3.1.7</jackson-bom.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <!-- Isolate verification from IDE incremental compilation when needed. -->
         <orqix.buildDirectory>target</orqix.buildDirectory>

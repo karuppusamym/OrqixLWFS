@@ -37,3 +37,6 @@ evidence/
 
 # Claude Code local worktrees
 .claude/worktrees/
+
+# Isolated final architecture/API verification output
+target-final-review/

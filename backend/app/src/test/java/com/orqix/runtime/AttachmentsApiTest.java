@@ -34,6 +34,9 @@ class AttachmentsApiTest extends RuntimeTestBase {
     @Autowired
     private RunAttachments attachments;
 
+    @Autowired
+    private javax.sql.DataSource dataSource;
+
     /** Tests share one database: age earlier uploads out of the rate window and drop files waiting on forms. */
     @org.junit.jupiter.api.BeforeEach
     void cleanUploads() {
@@ -638,6 +641,26 @@ class AttachmentsApiTest extends RuntimeTestBase {
         JsonNode detail = api("vic.viewer").get("/workspaces/{ws}/runs/{id}", PURCHASING, run).body();
         assertThat(detail.path("input").isNull()).isTrue();
         assertThat(api("vic.viewer").get(ATTACHMENTS + "/{id}/content", PURCHASING, run, id).status()).isEqualTo(403);
+    }
+
+    @Test
+    void fileFreeStartDoesNotWaitForAnUnrelatedUploadByTheSameRequester() throws Exception {
+        UUID workflow = publishPurchase(PURCHASING, null);
+        UUID requester = UUID.fromString(api("rhea.requester").get("/me").body().path("subject").path("id").asString());
+        try (var blocker = dataSource.getConnection(); var executor = java.util.concurrent.Executors.newSingleThreadExecutor()) {
+            blocker.setAutoCommit(false);
+            try (var statement = blocker.prepareStatement("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))")) {
+                statement.setString(1, "attachment-upload:" + requester);
+                statement.execute();
+            }
+            try {
+                // An unrelated upload remains in progress while the file-free workflow starts.
+                var start = executor.submit(() -> startRun(workflow));
+                assertThat(start.get(15, java.util.concurrent.TimeUnit.SECONDS)).isNotNull();
+            } finally {
+                blocker.rollback();
+            }
+        }
     }
 
     // ---------------------------------------------------------------- database helpers

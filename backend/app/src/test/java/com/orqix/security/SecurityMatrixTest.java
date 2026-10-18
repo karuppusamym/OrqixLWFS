@@ -268,9 +268,21 @@ class SecurityMatrixTest extends RuntimeTestBase {
         return result.getResponse().getStatus();
     }
 
-    private Object sampleBody(String operationId, Map<String, String> ids) {
+    private Object sampleBody(String operationId, Map<String, String> ids) throws Exception {
         Map<String, Object> principal = Map.of("type", "idpGroup", "value", "orqix-foreign");
         return switch (operationId) {
+            case "createCaseDefinition" -> {
+                try (var source = getClass().getResourceAsStream("/cases/cmmn-compatibility.cmmn")) {
+                    yield Map.of("key", "foreign-case", "name", "Foreign case", "sourceXml",
+                            new String(source.readAllBytes(), StandardCharsets.UTF_8));
+                }
+            }
+            case "createView" -> Map.of("name", "Foreign view", "definition",
+                    Map.of("schemaVersion", 1, "kind", "request", "sections",
+                            List.of(Map.of("id", "details", "label", "Details", "columns", 1, "fields",
+                                    List.of(Map.of("id", "title", "label", "Title", "type", "text",
+                                            "binding", "request.title", "required", true)))),
+                            "actions", List.of(Map.of("id", "save", "label", "Save", "type", "saveDraft"))));
             case "createOrganization" -> Map.of("key", "foreign-org", "name", "Foreign");
             case "createWorkspace" -> Map.of("organizationId", UUID.randomUUID().toString(), "key", "foreign-ws",
                     "name", "Foreign", "isTest", false, "initialAdmins", List.of(principal));

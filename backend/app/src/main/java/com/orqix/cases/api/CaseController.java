@@ -1,4 +1,6 @@
-package com.orqix.cases;
+package com.orqix.cases.api;
+
+import com.orqix.cases.CaseService;
 
 import java.util.List;
 import java.util.UUID;

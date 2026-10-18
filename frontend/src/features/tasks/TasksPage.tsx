@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { useTask, useTaskCounters, useTasks } from '@/api/queries'
 import type { TaskSummary, TaskView } from '@/api/types'
 import { useWorkspace } from '@/app/workspace'
+import { ForbiddenPage } from '@/app/ErrorPages'
 import { EmptyState } from '@/components/common/EmptyState'
 import { LoadingBlock } from '@/components/common/LoadingBlock'
 import { PageHeader } from '@/components/common/PageHeader'
@@ -35,6 +36,11 @@ function parseView(value: string | null): TaskView {
  * Desktop shows the panel beside the list; on narrow screens a task opens on its own page (/tasks/:taskId).
  */
 export function TasksPage() {
+  const { can } = useWorkspace()
+  return can('task.act') ? <TaskInbox /> : <ForbiddenPage embedded />
+}
+
+function TaskInbox() {
   const { workspace, me } = useWorkspace()
   const ws = workspace.id
   const { taskId } = useParams()

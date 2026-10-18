@@ -90,7 +90,7 @@ The compiler is a separate Maven module so that "no Spring, Flowable, JDBC or ne
 
 Enforced by Spring Modulith `ApplicationModules.verify()` plus ArchUnit rules:
 
-1. Only `com.orqix.runtime..` imports `org.flowable..`.
+1. Workflow engine imports belong to `com.orqix.runtime..`. The separate CMMN execution adapter `com.orqix.cases.CaseService` may use only public `org.flowable.cmmn.api..`, `org.flowable.task.api..` and `org.flowable.identitylink.api..` APIs. No other case-module class may import Flowable; controllers remain in `..api..` and expose only application DTOs. Architecture tests enforce both boundaries.
 2. No repository method loads a workspace-scoped row without a `workspaceId` parameter (naming rule `findByWorkspaceIdAnd…` or explicit SQL review checklist).
 3. Controllers live in `<module>.api` and call application services, never repositories.
 4. Nothing outside `integration` reads secret files.

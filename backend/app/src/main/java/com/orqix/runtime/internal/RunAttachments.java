@@ -343,13 +343,19 @@ public class RunAttachments {
         List<ApiException.FieldError> errors = new ArrayList<>();
         Set<UUID> seen = new HashSet<>();
         long totalBytes = 0;
-        // Serializes competing starts by this uploader before taking file locks in definition order.
-        lockUploadOwner(caller.subjectId());
+        // Only starts that consume staged files need the uploader lock. Holding it for a file-free
+        // request serializes all starts by that requester through the entire workflow transaction.
+        boolean uploaderLocked = false;
         Instant now = clock.instant();
         for (Map.Entry<String, JsonNode> field : inputSchema.path("properties").properties()) {
             JsonNode schema = field.getValue();
             if (!"attachment".equals(schema.path("format").asString(null)) || !input.path(field.getKey()).isString()) {
                 continue;
+            }
+            if (!uploaderLocked) {
+                // Preserve uploader-before-file lock ordering for competing attachment starts.
+                lockUploadOwner(caller.subjectId());
+                uploaderLocked = true;
             }
             String pointer = "/input/" + field.getKey();
             UUID id = UUID.fromString(input.path(field.getKey()).asString());

@@ -16,14 +16,17 @@ import com.orqix.compiler.internal.bpmn.BpmnXml;
 import com.orqix.compiler.internal.json.StrictJson;
 
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
 /**
  * BPMN as an editable source of a workflow draft (UI03, docs/build/S56).
  * <p>
  * The BPMN is exactly what {@link WorkflowCompiler#compile} generates. It carries the process part of the document:
- * the workflow name, the steps ({@code nodes}), the connections ({@code transitions}) and, when the diagram is present,
- * the canvas positions. Every other section is kept from the draft unchanged ({@link #keptFromDraft}).
+ * the workflow name, the steps ({@code nodes}), the connections ({@code transitions}), the sections and handlers
+ * ({@code subprocesses}, docs/build/S77) and, when the diagram is present, the canvas positions. Every other section is
+ * kept from the draft unchanged ({@link #keptFromDraft}), as are the order in which a section or handler lists its steps
+ * and the field titles (BpmnDefaults).
  * <p>
  * {@link #export} proves the round trip document &rarr; BPMN &rarr; document for a draft and lists every difference.
  * {@link #check} reads edited BPMN back and accepts it only when (1) the text is safe XML in the generated dialect with
@@ -69,7 +72,8 @@ public final class BpmnSource {
             String definitionJson, List<ValidationIssue> blockers) {
     }
 
-    private static final Set<String> CARRIED = Set.of("workflowKey", "name", "nodes", "transitions", "uiLayout");
+    private static final Set<String> CARRIED = Set.of("workflowKey", "name", "nodes", "transitions", "uiLayout",
+            "subprocesses");
     private static final int MAX_DIFFERENCES = 50;
     private static final int MAX_CHANGES = 30;
 
@@ -88,6 +92,7 @@ public final class BpmnSource {
             kept.add("uiLayout.positions");
         }
         kept.addAll(BpmnDefaults.keptTitles(def));
+        kept.addAll(BpmnDefaults.keptMemberOrder(def));
         return List.copyOf(kept);
     }
 
@@ -103,6 +108,8 @@ public final class BpmnSource {
         if (read.graph() != null) {
             // Written defaults and field titles are not in the BPMN: compare with the draft's own spelling (S65).
             BpmnDefaults.adopt(def.get("nodes"), read.graph().get("nodes"));
+            BpmnDefaults.adoptScopes(def.get("subprocesses"), read.graph().get("subprocesses"));
+            differences.addAll(order(def, read.graph(), diagram));
             differences.addAll(diff(project(def, diagram), read.graph()));
         }
         return new Export(compiled.bpmnXml(), differences.isEmpty(),
@@ -156,6 +163,7 @@ public final class BpmnSource {
         }
         // Unchanged defaults keep the draft's spelling and field titles are kept from the draft (S65).
         BpmnDefaults.adopt(base.get("nodes"), read.graph().get("nodes"));
+        BpmnDefaults.adoptScopes(base.get("subprocesses"), read.graph().get("subprocesses"));
         ObjectNode candidate = merge(base, read.graph());
         String candidateJson = write(candidate);
         CompiledWorkflow compiled;
@@ -176,6 +184,7 @@ public final class BpmnSource {
         again.findings().forEach(f -> problems.add(new Problem("roundTrip", f.elementId(), f.message())));
         if (again.graph() != null) {
             BpmnDefaults.adopt(candidate.get("nodes"), again.graph().get("nodes"));
+            BpmnDefaults.adoptScopes(candidate.get("subprocesses"), again.graph().get("subprocesses"));
             boolean diagram = again.graph().get("positions") != null && !again.graph().get("positions").isNull();
             diff(project(candidate, diagram), again.graph())
                     .forEach(d -> problems.add(new Problem("roundTrip", null, d.message())));
@@ -193,6 +202,12 @@ public final class BpmnSource {
         candidate.set("name", graph.get("name"));
         candidate.set("nodes", graph.get("nodes"));
         candidate.set("transitions", graph.get("transitions"));
+        // Sections and handlers are carried by BPMN (S77): absent in the BPMN means none.
+        if (graph.has("subprocesses")) {
+            candidate.set("subprocesses", graph.get("subprocesses"));
+        } else {
+            candidate.remove("subprocesses");
+        }
         JsonNode positions = graph.get("positions");
         Set<String> ids = new LinkedHashSet<>();
         graph.get("nodes").forEach(n -> ids.add(n.path("id").asString()));
@@ -222,6 +237,9 @@ public final class BpmnSource {
         p.set("name", def.get("name"));
         p.set("nodes", def.get("nodes"));
         p.set("transitions", def.get("transitions"));
+        if (def.has("subprocesses")) {
+            p.set("subprocesses", def.get("subprocesses"));
+        }
         if (diagram) {
             JsonNode positions = def.path("uiLayout").get("positions");
             p.set("positions", positions == null ? p.objectNode() : positions);
@@ -229,10 +247,43 @@ public final class BpmnSource {
         return p;
     }
 
+    /**
+     * The order of the steps and connections (S77). With a diagram the reader finds the document order again exactly;
+     * without one, BPMN lists the steps and connections of each section and handler inside it, after the others, so a
+     * draft that lists them differently cannot keep its order. That is reported once, with the reason, and the read
+     * lists are put into the draft's order so that the detailed comparison shows only real differences.
+     */
+    private static List<Difference> order(JsonNode def, ObjectNode graph, boolean diagram) {
+        List<Difference> out = new ArrayList<>();
+        for (String field : List.of("nodes", "transitions")) {
+            JsonNode draft = def.get(field);
+            JsonNode read = graph.get(field);
+            if (draft == null || !draft.isArray() || read == null || !read.isArray()) {
+                continue;
+            }
+            Map<String, JsonNode> byIdRead = byId(read);
+            List<String> draftIds = new ArrayList<>(byId(draft).keySet());
+            if (draftIds.size() != draft.size() || byIdRead.size() != read.size()
+                    || !new TreeSet<>(draftIds).equals(new TreeSet<>(byIdRead.keySet()))
+                    || draftIds.equals(new ArrayList<>(byIdRead.keySet()))) {
+                continue;
+            }
+            String what = field.equals("nodes") ? "steps" : "connections";
+            out.add(new Difference("/" + field, "The order of the " + what + " is different after the BPMN round trip: "
+                    + (diagram ? "the diagram does not list them in the draft's order."
+                    : "without a diagram (a canvas position for every step) BPMN lists the " + what + " of each section "
+                    + "and handler after the others. Give every step a canvas position to keep the draft's order.")));
+            ArrayNode reordered = graph.arrayNode();
+            draftIds.forEach(id -> reordered.add(byIdRead.get(id)));
+            graph.set(field, reordered);
+        }
+        return out;
+    }
+
     /** Differences between a projected document (the expectation) and what was read from BPMN. */
     private static List<Difference> diff(ObjectNode expected, ObjectNode actual) {
         List<Difference> out = new ArrayList<>();
-        for (String field : List.of("workflowKey", "name", "nodes", "transitions", "positions")) {
+        for (String field : List.of("workflowKey", "name", "nodes", "transitions", "subprocesses", "positions")) {
             if (!expected.has(field) && field.equals("positions")) {
                 continue;
             }
@@ -288,18 +339,21 @@ public final class BpmnSource {
     private static String where(String pointer, ObjectNode doc) {
         String[] parts = pointer.substring(1).split("/");
         String section = parts[0];
-        if ((section.equals("nodes") || section.equals("transitions")) && parts.length > 1) {
+        if ((section.equals("nodes") || section.equals("transitions") || section.equals("subprocesses"))
+                && parts.length > 1) {
             JsonNode item = doc.path(section).path(Integer.parseInt(parts[1]));
             String id = item.path("id").asString("#" + parts[1]);
             String rest = parts.length > 2 ? " " + String.join(".", java.util.Arrays.copyOfRange(parts, 2, parts.length))
                     : "";
-            return (section.equals("nodes") ? "Step '" : "Connection '") + id + "'" + rest;
+            String what = section.equals("nodes") ? "Step '" : section.equals("transitions") ? "Connection '"
+                    : "event".equals(item.path("type").asString("")) ? "Handler '" : "Section '";
+            return what + id + "'" + rest;
         }
         if (section.equals("uiLayout") && parts.length > 2) {
             return "The canvas position of '" + parts[2] + "'" + (parts.length > 3 ? " " + parts[3] : "");
         }
         return "The " + (section.equals("workflowKey") ? "workflow key" : section.equals("name") ? "workflow name"
-                : section);
+                : section.equals("subprocesses") ? "list of sections and handlers (subprocesses)" : section);
     }
 
     private static String show(JsonNode value) {
@@ -318,6 +372,7 @@ public final class BpmnSource {
         }
         listChanges(base.path("nodes"), candidate.path("nodes"), "Step", out);
         listChanges(base.path("transitions"), candidate.path("transitions"), "Connection", out);
+        listChanges(base.path("subprocesses"), candidate.path("subprocesses"), "Section or handler", out);
         Map<String, JsonNode> before = byId(base.path("nodes"));
         Map<String, JsonNode> after = byId(candidate.path("nodes"));
         List<String> keptOrderBefore = before.keySet().stream().filter(after::containsKey).toList();

@@ -12,6 +12,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -31,8 +32,10 @@ import tools.jackson.databind.node.ObjectNode;
 
 /**
  * Reads the BPMN dialect written by {@link BpmnGenerator} back into the process part of a workflow document: the
- * workflow name, {@code nodes}, {@code transitions} and (when the diagram is present) {@code uiLayout.positions}
- * (UI03, docs/build/S56). It is the exact inverse of the generator for what the generator writes from these
+ * workflow name, {@code nodes}, {@code transitions}, {@code subprocesses} (sections and handlers, docs/build/S77) and
+ * (when the diagram is present) {@code uiLayout.positions} (UI03, docs/build/S56). The order of steps and connections
+ * comes from the diagram, which the generator writes in document order; the process body groups the elements of each
+ * section and handler inside it. It is the exact inverse of the generator for what the generator writes from these
  * sections; anything else is reported as a {@link Finding}, never skipped. Values the generator derives from other
  * sections (retry cycles, pinned versions, hashes, diagram lines) are not read here: the caller regenerates the BPMN
  * and compares, which is what proves that nothing in the text was lost.
@@ -63,14 +66,27 @@ public final class BpmnReader {
             "^\\$\\{orqixRoute\\.condition\\(execution, '([^']*)'\\)\\}$");
     private static final Set<String> FLOW_ELEMENTS = Set.of("startEvent", "userTask", "serviceTask",
             "exclusiveGateway", "parallelGateway", "inclusiveGateway", "intermediateCatchEvent", "eventBasedGateway",
-            "endEvent", "sequenceFlow", "boundaryEvent");
+            "endEvent", "sequenceFlow", "boundaryEvent", "intermediateThrowEvent");
     private static final BigDecimal CARD_HALF_WIDTH = new BigDecimal(110);
     private static final BigDecimal CARD_HALF_HEIGHT = new BigDecimal(36);
+    /** Container key of the process itself (elements outside every section and handler). */
+    private static final String PROCESS = "";
 
     private final List<Finding> findings = new ArrayList<>();
     private final Map<String, El> byId = new LinkedHashMap<>();
     private final Map<String, String> types = new LinkedHashMap<>();
     private final Map<String, ObjectNode> nodes = new LinkedHashMap<>();
+    /** Sections and handlers (S55/S77): subprocess id to its document form, in BPMN order. */
+    private final Map<String, ObjectNode> scopes = new LinkedHashMap<>();
+    /** Subprocess id to "embedded" or "event". */
+    private final Map<String, String> scopeKinds = new LinkedHashMap<>();
+    /** Element id to the subprocess holding it ({@link #PROCESS} for the process). */
+    private final Map<String, String> containerOf = new HashMap<>();
+    /** Per container (process first, then each subprocess in BPMN order): its steps and its connections, in order. */
+    private final Map<String, List<String>> nodeOrder = new LinkedHashMap<>();
+    private final Map<String, List<ObjectNode>> flowOrder = new LinkedHashMap<>();
+    /** Embedded section id to its entry step (the target of its generated {@code __begin} flow). */
+    private final Map<String, String> entries = new HashMap<>();
 
     private BpmnReader() {
     }
@@ -88,7 +104,10 @@ public final class BpmnReader {
         El diagram = null;
         int diagrams = 0;
         for (El child : root.children()) {
-            if (child.is(BPMN_NS, "process") || child.is(BPMN_NS, "message") || child.is(BPMN_NS, "error")) {
+            // Message, error and signal definitions are derived from the steps; the regenerated BPMN is compared with
+            // them, so a definition the document does not produce is reported there.
+            if (child.is(BPMN_NS, "process") || child.is(BPMN_NS, "message") || child.is(BPMN_NS, "error")
+                    || child.is(BPMN_NS, "signal")) {
                 continue;
             }
             if (child.is(BPMNDI_NS, "BPMNDiagram")) {
@@ -98,7 +117,7 @@ public final class BpmnReader {
             }
             String what = switch (child.local()) {
                 case "collaboration" -> "Pools and collaborations (bpmn:collaboration) are not part of a workflow document.";
-                case "signal", "escalation", "dataStore", "itemDefinition", "resource", "interface" ->
+                case "escalation", "dataStore", "itemDefinition", "resource", "interface" ->
                     child.label() + " definitions are not supported by the workflow document.";
                 default -> child.label() + " is not supported at this level.";
             };
@@ -122,11 +141,72 @@ public final class BpmnReader {
         }
         List<El> flows = new ArrayList<>();
         List<El> helpers = new ArrayList<>();
-        for (El el : process.children()) {
+        walk(process, PROCESS, flows, helpers);
+        for (El helper : helpers) {
+            checkHelper(helper);
+        }
+        scopeRoutes();
+        for (El flow : flows) {
+            ObjectNode t = readFlow(flow);
+            if (t != null) {
+                flowOrder.computeIfAbsent(containerOf.get(flow.attr("id")), k -> new ArrayList<>()).add(t);
+            }
+        }
+        // The diagram lists every step and connection in document order (BpmnGenerator.Diagram); the process body
+        // lists those of each section and handler inside it. Merging the body sequences in diagram order gives the
+        // document order back exactly; without a diagram the body order is used.
+        Map<String, Integer> shapeRank = diagram == null ? Map.of() : rank(diagram, "BPMNShape");
+        Map<String, Integer> edgeRank = diagram == null ? Map.of() : rank(diagram, "BPMNEdge");
+        ArrayNode nodeArray = graph.putArray("nodes");
+        for (String id : interleave(new ArrayList<>(nodeOrder.values()), shapeRank, s -> s)) {
+            nodeArray.add(nodes.get(id));
+        }
+        ArrayNode transitions = graph.putArray("transitions");
+        interleave(new ArrayList<>(flowOrder.values()), edgeRank, t -> t.get("id").stringValue())
+                .forEach(transitions::add);
+        inferJoins(transitions);
+        if (!scopes.isEmpty()) {
+            ArrayNode list = graph.putArray("subprocesses");
+            scopes.forEach((id, s) -> {
+                ArrayNode members = s.putArray("nodes");
+                nodeOrder.getOrDefault(id, List.of()).forEach(members::add);
+                list.add(order(s));
+            });
+        }
+        graph.set("positions", diagram == null ? null : positions(diagram, process.attr("id")));
+        return new Result(graph, List.copyOf(findings));
+    }
+
+    /**
+     * Reads the elements of the process or of one section/handler. Steps and connections are recorded per container;
+     * a {@code subProcess} carrying {@code orqix:scope} is a section or handler (one level only).
+     */
+    private void walk(El container, String scopeId, List<El> flows, List<El> helpers) {
+        nodeOrder.computeIfAbsent(scopeId, k -> new ArrayList<>());
+        for (El el : container.children()) {
             if (el.is(BPMN_NS, "extensionElements")) {
                 continue;
             }
             String id = el.attr("id");
+            if (el.is(BPMN_NS, "subProcess") && ext(el, "scope") != null) {
+                if (!PROCESS.equals(scopeId)) {
+                    unsupported(id, "'" + id + "': sections and handlers cannot be nested; a step belongs to at most one.");
+                    continue;
+                }
+                if (id == null || id.isEmpty() || id.contains("__")) {
+                    unsupported(id, "A section or handler on line " + el.line() + " needs an id without '__'.");
+                    continue;
+                }
+                if (byId.putIfAbsent(id, el) != null) {
+                    unsupported(id, "The id '" + id + "' is used by more than one element.");
+                    continue;
+                }
+                containerOf.put(id, scopeId);
+                if (readScope(el)) {
+                    walk(el, id, flows, helpers);
+                }
+                continue;
+            }
             if (!el.ns().equals(BPMN_NS) || !FLOW_ELEMENTS.contains(el.local())) {
                 unsupported(id, describeUnsupported(el));
                 continue;
@@ -139,6 +219,7 @@ public final class BpmnReader {
                 unsupported(id, "The id '" + id + "' is used by more than one element.");
                 continue;
             }
+            containerOf.put(id, scopeId);
             if (id.contains("__")) {
                 helpers.add(el);
             } else if (el.is(BPMN_NS, "sequenceFlow")) {
@@ -148,23 +229,221 @@ public final class BpmnReader {
                         + "in __timeout or __failed); this one is not part of a workflow document.");
             } else {
                 readNode(el);
+                if (nodes.containsKey(id)) {
+                    nodeOrder.get(scopeId).add(id);
+                }
             }
         }
-        for (El helper : helpers) {
-            checkHelper(helper);
-        }
-        ArrayNode nodeArray = graph.putArray("nodes");
-        nodes.values().forEach(nodeArray::add);
-        ArrayNode transitions = graph.putArray("transitions");
-        for (El flow : flows) {
-            ObjectNode t = readFlow(flow);
-            if (t != null) {
-                transitions.add(t);
+    }
+
+    /** Diagram element (shape or edge) by the id it shows to its position in the diagram. */
+    private static Map<String, Integer> rank(El diagram, String kind) {
+        Map<String, Integer> rank = new HashMap<>();
+        El plane = diagram.child(BPMNDI_NS, "BPMNPlane");
+        if (plane != null) {
+            for (El child : plane.children()) {
+                if (child.is(BPMNDI_NS, kind) && child.attr("bpmnElement") != null) {
+                    rank.putIfAbsent(child.attr("bpmnElement"), rank.size());
+                }
             }
         }
-        inferJoins(transitions);
-        graph.set("positions", diagram == null ? null : positions(diagram, process.attr("id")));
-        return new Result(graph, List.copyOf(findings));
+        return rank;
+    }
+
+    /**
+     * Merges ordered sequences into one list: each sequence keeps its own order; at each step the head with the lowest
+     * rank is taken (unranked heads last, the earlier sequence first on a tie). With no ranks it is the concatenation.
+     */
+    private static <T> List<T> interleave(List<List<T>> sequences, Map<String, Integer> rank,
+            java.util.function.Function<T, String> idOf) {
+        List<T> out = new ArrayList<>();
+        int[] at = new int[sequences.size()];
+        while (true) {
+            int best = -1;
+            int bestRank = Integer.MAX_VALUE;
+            for (int i = 0; i < sequences.size(); i++) {
+                if (at[i] >= sequences.get(i).size()) {
+                    continue;
+                }
+                int r = rank.getOrDefault(idOf.apply(sequences.get(i).get(at[i])), Integer.MAX_VALUE);
+                if (best < 0 || r < bestRank) {
+                    best = i;
+                    bestRank = r;
+                }
+            }
+            if (best < 0) {
+                return out;
+            }
+            out.add(sequences.get(best).get(at[best]++));
+        }
+    }
+
+    // ------------------------------------------------------------------------------------------------ scopes
+
+    /**
+     * A section ({@code orqix:scope kind="embedded"}) or handler ({@code kind="event"}, triggered by the definition on
+     * its generated start event {@code <id>__start}). Returns false when it cannot be read at all.
+     */
+    private boolean readScope(El el) {
+        String id = el.attr("id");
+        String kind = ext(el, "scope").attr("kind");
+        if (!"embedded".equals(kind) && !"event".equals(kind)) {
+            unsupported(id, "The orqix:scope kind of '" + id + "' must be embedded (a section) or event (a handler).");
+            return false;
+        }
+        ObjectNode s = F.objectNode();
+        s.put("id", id);
+        if (el.attr("name") == null) {
+            unsupported(id, "Section or handler '" + id + "' has no name; the name is its label.");
+        } else {
+            s.put("label", el.attr("name"));
+        }
+        s.put("type", kind);
+        if (kind.equals("event")) {
+            El start = null;
+            for (El child : el.children()) {
+                if ((id + BpmnGenerator.SCOPE_START).equals(child.attr("id")) && child.is(BPMN_NS, "startEvent")) {
+                    start = child;
+                }
+            }
+            El event = ext(start, "scopeEvent");
+            if (event == null) {
+                unsupported(id, "Handler '" + id + "' needs its start event '" + id + "__start' with orqix:scopeEvent "
+                        + "(what starts it and whether it stops the request).");
+            } else {
+                trigger(id, start, event.attr("trigger"), s.putObject("trigger"));
+                Boolean interrupting = event.attr("interrupting") == null ? null
+                        : bool(id, "interrupting", event.attr("interrupting"));
+                if (interrupting != null) {
+                    s.put("interrupting", interrupting);
+                }
+            }
+        }
+        scopes.put(id, s);
+        scopeKinds.put(id, kind);
+        return true;
+    }
+
+    private void trigger(String id, El start, String type, ObjectNode trigger) {
+        if (type == null) {
+            unsupported(id, "The orqix:scopeEvent of '" + id + "' needs a trigger (error, signal or timer).");
+            return;
+        }
+        trigger.put("type", type);
+        switch (type) {
+            case "error" -> {
+                El def = start.child(BPMN_NS, "errorEventDefinition");
+                String ref = def == null ? null : def.attr("errorRef");
+                if (def == null) {
+                    unsupported(id, "Handler '" + id + "' is started by an error but its start event has no "
+                            + "errorEventDefinition.");
+                } else if (ref != null) {
+                    if (ref.startsWith(BpmnGenerator.ERROR_PREFIX)) {
+                        trigger.put("errorCode", ref.substring(BpmnGenerator.ERROR_PREFIX.length()));
+                    } else {
+                        unsupported(id, "The errorRef of '" + id + "' must name a generated error definition "
+                                + "(error__CODE).");
+                    }
+                }
+            }
+            case "signal" -> {
+                El def = start.child(BPMN_NS, "signalEventDefinition");
+                String ref = def == null ? null : def.attr("signalRef");
+                if (ref == null || !ref.startsWith(BpmnGenerator.SIGNAL_PREFIX)) {
+                    unsupported(id, "Handler '" + id + "' is started by a signal; its start event needs a "
+                            + "signalEventDefinition naming a generated signal definition (signal__name).");
+                } else {
+                    trigger.put("signal", ref.substring(BpmnGenerator.SIGNAL_PREFIX.length()));
+                }
+            }
+            case "timer" -> {
+                El def = start.child(BPMN_NS, "timerEventDefinition");
+                El duration = def == null ? null : def.child(BPMN_NS, "timeDuration");
+                if (duration == null) {
+                    unsupported(id, "Handler '" + id + "' is started by a timer; its start event needs a "
+                            + "timerEventDefinition with a timeDuration.");
+                } else {
+                    trigger.put("after", duration.text());
+                }
+            }
+            default -> unsupported(id, "The trigger '" + type + "' of '" + id + "' is not error, signal or timer.");
+        }
+    }
+
+    /** Entries of sections (their {@code __begin} flow) and the time limit and error route of each section. */
+    private void scopeRoutes() {
+        scopeKinds.forEach((id, kind) -> {
+            El begin = byId.get(id + "__begin");
+            if (begin != null && id.equals(containerOf.get(begin.attr("id"))) && begin.attr("targetRef") != null
+                    && kind.equals("embedded")) {
+                entries.put(id, begin.attr("targetRef"));
+            }
+        });
+        scopeKinds.forEach((id, kind) -> {
+            if (!kind.equals("embedded")) {
+                return;
+            }
+            ObjectNode s = scopes.get(id);
+            El timeout = byId.get(id + BpmnGenerator.SCOPE_TIMEOUT);
+            if (timeout != null) {
+                El limit = ext(timeout, "scopeTimeout");
+                El route = byId.get(id + "__onTimeout");
+                if (limit == null || route == null) {
+                    unsupported(id + BpmnGenerator.SCOPE_TIMEOUT, "The time limit of section '" + id + "' needs "
+                            + "orqix:scopeTimeout and the path '" + id + "__onTimeout' to the step to continue at.");
+                } else {
+                    putText(s, "timeoutAfter", limit.attr("after"));
+                    putText(s, "onTimeout", outerStep(id + "__onTimeout", route.attr("targetRef")));
+                }
+            }
+            El error = byId.get(id + BpmnGenerator.SCOPE_ERROR);
+            if (error != null) {
+                El caught = ext(error, "scopeError");
+                El route = byId.get(id + "__onError");
+                if (caught == null || route == null) {
+                    unsupported(id + BpmnGenerator.SCOPE_ERROR, "The error route of section '" + id + "' needs "
+                            + "orqix:scopeError and the path '" + id + "__onError' to the step to continue at.");
+                } else {
+                    ObjectNode onError = s.putObject("onError");
+                    putText(onError, "to", outerStep(id + "__onError", route.attr("targetRef")));
+                    putText(onError, "errorCode", caught.attr("errorCode"));
+                }
+            }
+        });
+    }
+
+    /** The step a flow outside every subprocess leads to: a step, or the entry step of the section it goes to. */
+    private String outerStep(String flowId, String target) {
+        if (target != null && "embedded".equals(scopeKinds.get(target))) {
+            String entry = entries.get(target);
+            if (entry == null) {
+                unsupported(flowId, "'" + flowId + "' goes to the section '" + target + "', which has no generated "
+                        + "'" + target + "__begin' path to its first step.");
+            }
+            return entry;
+        }
+        if (target != null && scopeKinds.containsKey(target)) {
+            unsupported(flowId, "'" + flowId + "' goes to the handler '" + target + "'; a handler is started by its "
+                    + "trigger only.");
+            return null;
+        }
+        if (target == null || !nodes.containsKey(target)) {
+            unsupported(flowId, "'" + flowId + "' goes to '" + target + "', which is not a step.");
+            return null;
+        }
+        return target;
+    }
+
+    /** Subprocess members in the schema's order (id, label, type, nodes, routes, trigger, interrupting). */
+    private static ObjectNode order(ObjectNode s) {
+        ObjectNode out = F.objectNode();
+        for (String key : List.of("id", "label", "type", "nodes", "timeoutAfter", "onTimeout", "onError", "trigger",
+                "interrupting")) {
+            if (s.has(key)) {
+                out.set(key, s.get(key));
+            }
+        }
+        return out;
     }
 
     // ------------------------------------------------------------------------------------------------ steps
@@ -194,12 +473,28 @@ public final class BpmnReader {
                 }
             }
             case "intermediateCatchEvent" -> type = catchEvent(el, ext, config);
+            case "intermediateThrowEvent" -> {
+                El signal = ext == null ? null : ext.child(ORQIX_NS, "signal");
+                if (signal == null || !"send".equals(signal.attr("action"))) {
+                    unsupported(id, "Throw event '" + id + "' is not an Orqix 'Send a signal' step (orqix:signal "
+                            + "action=\"send\"); other throw events (messages, escalations, links) are not supported.");
+                    type = null;
+                } else {
+                    type = "sendSignal";
+                    putText(config, "signal", signal.attr("name"));
+                }
+            }
             case "eventBasedGateway" -> type = messageWithLimit(el, config);
             case "endEvent" -> {
-                type = "end";
+                El raise = ext == null ? null : ext.child(ORQIX_NS, "raise");
                 El outcome = ext == null ? null : ext.child(ORQIX_NS, "outcome");
-                if (outcome == null) {
-                    unsupported(id, "End event '" + id + "' has no orqix:outcome (business outcome and kind).");
+                type = raise != null ? "raiseError" : "end";
+                if (raise != null) {
+                    // "Raise an error" (S55): an error end event; the errorRef is compared after regeneration.
+                    putText(config, "errorCode", raise.attr("errorCode"));
+                } else if (outcome == null) {
+                    unsupported(id, "End event '" + id + "' has no orqix:outcome (business outcome and kind) and is "
+                            + "not a raised error (orqix:raise).");
                 } else {
                     putText(config, "businessOutcome", outcome.attr("label"));
                     putText(config, "outcomeKind", outcome.attr("kind"));
@@ -281,17 +576,15 @@ public final class BpmnReader {
             case "${orqixExternalTask}" -> "externalTask";
             case "${orqixNotificationTask}" -> "notification";
             case "${orqixChildTask}" -> "startWorkflow";
+            case "${orqixCompensationTask}" -> "compensate";
+            case "${orqixAdapterTask}" -> "sendAdapter";
             default -> null;
         };
-        if ("${orqixAdapterTask}".equals(delegate)) {
-            unsupported(id, "Step '" + id + "' sends through an adapter. Adapter steps are shown in BPMN but are edited in the"
-                    + " Studio only, so this draft cannot be applied from BPMN.");
-            return null;
-        }
         if (kind == null) {
             unsupported(id, "Service task '" + id + "' is not an Orqix step: only the generated delegates "
-                    + "(decision, call a system, document, external worker, notification, start a workflow) are supported; "
-                    + "classes, scripts, expressions and connectors of other engines are not.");
+                    + "(decision, call a system, document, external worker, notification, start a workflow, undo "
+                    + "completed calls, send through an adapter) are supported; classes, scripts, expressions and "
+                    + "connectors of other engines are not.");
             return null;
         }
         String extension = switch (kind) {
@@ -300,6 +593,8 @@ public final class BpmnReader {
             case "generateDocument" -> "generateDocument";
             case "externalTask" -> "external";
             case "notification" -> "notification";
+            case "compensate" -> "compensation";
+            case "sendAdapter" -> "adapter";
             default -> "child";
         };
         El x = ext == null ? null : ext.child(ORQIX_NS, extension);
@@ -319,6 +614,36 @@ public final class BpmnReader {
                     config.put("timeoutSeconds", timeout);
                 }
                 putText(config, "compensates", x.attr("compensates"));
+                // An automatic undo call (S55) is a compensation handler; "manual" is the default (BpmnDefaults).
+                if ("true".equals(el.attr("isForCompensation"))) {
+                    config.put("compensation", "automatic");
+                }
+                // Opt-in (S66): a known failure raises this business error for the section's error route.
+                putText(config, "raiseErrorOnFailure", x.attr("raiseOnFailure"));
+            }
+            case "compensate" -> {
+                // Nothing to read: the undo entries are recomputed from the calls marked as automatic undo calls.
+            }
+            case "sendAdapter" -> {
+                putText(config, "adapter", x.attr("adapter"));
+                putText(config, "kind", x.attr("kind"));
+                List<El> to = x.all(ORQIX_NS, "to");
+                if (!to.isEmpty()) {
+                    ArrayNode addresses = config.putArray("to");
+                    for (El address : to) {
+                        if (address.attr("address") == null) {
+                            unsupported(id, "Every orqix:to of '" + id + "' needs an address.");
+                        } else {
+                            addresses.add(address.attr("address"));
+                        }
+                    }
+                }
+                for (String member : List.of("subject", "body", "title", "text")) {
+                    base64(id, x, member, member, config);
+                }
+                putText(config, "topic", x.attr("topic"));
+                base64(id, x, "key", "key", config);
+                config.set("inputMapping", pairs(id, x, "input", "fieldRef"));
             }
             case "generateDocument" -> {
                 putText(config, "format", x.attr("format"));
@@ -376,9 +701,28 @@ public final class BpmnReader {
             readMessage(id, message, config);
             return "waitForMessage";
         }
-        unsupported(id, "Intermediate catch event '" + id + "' is neither an Orqix wait (orqix:wait) nor a message wait "
-                + "(orqix:message); signal, conditional, link and plain timer events are not supported.");
+        El signal = ext == null ? null : ext.child(ORQIX_NS, "signal");
+        if (signal != null && "wait".equals(signal.attr("action"))) {
+            putText(config, "signal", signal.attr("name"));
+            return "waitForSignal";
+        }
+        unsupported(id, "Intermediate catch event '" + id + "' is neither an Orqix wait (orqix:wait), a message wait "
+                + "(orqix:message) nor a signal wait (orqix:signal action=\"wait\"); conditional, link and plain timer "
+                + "events are not supported.");
         return null;
+    }
+
+    /** A text member the generator writes as {@code <name>Base64} (so line breaks survive the attribute). */
+    private void base64(String id, El x, String attribute, String member, ObjectNode config) {
+        String encoded = x.attr(attribute + "Base64");
+        if (encoded == null) {
+            return;
+        }
+        try {
+            config.put(member, new String(Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8));
+        } catch (IllegalArgumentException e) {
+            unsupported(id, "The " + attribute + "Base64 of '" + id + "' is not valid base64.");
+        }
     }
 
     private String messageWithLimit(El el, ObjectNode config) {
@@ -427,6 +771,25 @@ public final class BpmnReader {
         String owner = id.substring(0, at);
         String suffix = id.substring(at);
         String type = types.get(owner);
+        String scope = scopeKinds.get(owner);
+        if (scope != null) {
+            // Generated parts of a section (embedded) or handler (event), S55. Their element types, attributes and
+            // places are checked when the BPMN is regenerated and compared.
+            boolean section = scope.equals("embedded");
+            boolean known = switch (suffix) {
+                case BpmnGenerator.SCOPE_START, "__begin" -> true;
+                case BpmnGenerator.SCOPE_DONE -> !section;
+                case BpmnGenerator.SCOPE_EXIT, "__out", BpmnGenerator.SCOPE_TIMEOUT, "__onTimeout",
+                        BpmnGenerator.SCOPE_ERROR, "__onError" -> section;
+                default -> section ? suffix.startsWith(BpmnGenerator.SCOPE_END) || suffix.startsWith("__exit__")
+                        : suffix.startsWith("__done__");
+            };
+            if (!known) {
+                unsupported(id, "'" + id + "' uses the reserved '__' in its id but is not a generated part of the "
+                        + (section ? "section" : "handler") + " '" + owner + "'.");
+            }
+            return;
+        }
         boolean known = type != null && switch (suffix) {
             case BpmnGenerator.APPROVAL_OUT, BpmnGenerator.APPROVAL_ROUTE -> type.equals("approval");
             case "__timeout" -> type.equals("approval") || type.equals("waitForMessage");
@@ -450,7 +813,27 @@ public final class BpmnReader {
             unsupported(id, "Sequence flow '" + id + "' needs a sourceRef and a targetRef.");
             return null;
         }
-        if (target.contains("__") || !nodes.containsKey(target)) {
+        String container = containerOf.get(id);
+        if (target.contains("__")) {
+            // A path leaving a section ends at the generated end event <section>__end__<step> inside it (S55).
+            int at = target.indexOf("__");
+            String owner = target.substring(0, at);
+            String step = target.substring(at).startsWith(BpmnGenerator.SCOPE_END)
+                    ? target.substring(at + BpmnGenerator.SCOPE_END.length()) : null;
+            if (step == null || !"embedded".equals(scopeKinds.get(owner)) || !owner.equals(container)
+                    || !nodes.containsKey(step)) {
+                unsupported(id, "Sequence flow '" + id + "' goes to '" + target + "', which is not a step.");
+                return null;
+            }
+            target = step;
+        } else if (scopeKinds.containsKey(target)) {
+            // A path into a section goes to the section; it starts at the section's first step.
+            String entry = outerStep(id, target);
+            if (entry == null) {
+                return null;
+            }
+            target = entry;
+        } else if (!nodes.containsKey(target)) {
             unsupported(id, "Sequence flow '" + id + "' goes to '" + target + "', which is not a step.");
             return null;
         }
@@ -682,7 +1065,8 @@ public final class BpmnReader {
             }
         }
         for (String element : shapes.keySet()) {
-            if (!element.contains("__") && !nodes.containsKey(element)) {
+            // A section's frame is drawn around its steps and recomputed from their positions.
+            if (!element.contains("__") && !nodes.containsKey(element) && !scopes.containsKey(element)) {
                 unsupported(element, "The diagram has a shape for '" + element + "', which is not a step.");
             }
         }
@@ -695,7 +1079,7 @@ public final class BpmnReader {
     /** Shape size the generator uses for a step (BpmnGenerator.Diagram). */
     private static int[] size(ObjectNode node) {
         return switch (node.get("type").stringValue()) {
-            case "start", "end", "wait" -> new int[] {36, 36};
+            case "start", "end", "wait", "raiseError", "sendSignal", "waitForSignal" -> new int[] {36, 36};
             case "waitForMessage" -> node.get("config").has("timeoutAfter") ? new int[] {40, 40} : new int[] {36, 36};
             case "branch", "parallelSplit", "parallelJoin" -> new int[] {40, 40};
             default -> new int[] {100, 80};
@@ -795,13 +1179,13 @@ public final class BpmnReader {
             case "laneSet", "lane" -> "Lanes (bpmn:laneSet) are not stored in the workflow document: the studio derives "
                     + "lanes from each approval's group, so a lane drawn here would be lost.";
             case "subProcess", "adHocSubProcess", "transaction" ->
-                "Sub-processes are not supported; use a 'Start another workflow' step.";
+                "Sub-processes are not supported except the sections and handlers Orqix generates (a bpmn:subProcess "
+                        + "with orqix:scope); use a section, a handler or a 'Start another workflow' step.";
             case "callActivity" -> "Call activities are generated as service tasks with ${orqixChildTask}; a "
                     + "bpmn:callActivity is not supported.";
             case "scriptTask", "businessRuleTask", "sendTask", "receiveTask", "manualTask", "task" ->
                 el.label() + " is not an Orqix step type.";
             case "complexGateway" -> "Complex gateways are not supported.";
-            case "intermediateThrowEvent" -> "Throw events (signals, messages, escalations, links) are not supported.";
             case "textAnnotation", "association", "group" ->
                 "Annotations and groups (" + el.label() + ") are not kept by the workflow document.";
             case "dataObject", "dataObjectReference", "dataStoreReference", "property", "ioSpecification" ->

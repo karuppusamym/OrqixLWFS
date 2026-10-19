@@ -8,6 +8,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
@@ -21,6 +22,7 @@ class BpmnSourceApiTest extends com.orqix.support.RuntimeTestBase {
     private static final String BPMN = "/workspaces/{ws}/workflows/{id}/draft/bpmn";
     private static final String CHECK = BPMN + "/check";
     private static final String DRAFT = "/workspaces/{ws}/workflows/{id}/draft";
+    private static final JsonMapper JSON = JsonMapper.builder().build();
 
     private static String unique(String prefix) {
         return prefix + "-" + UUID.randomUUID().toString().substring(0, 8);
@@ -163,6 +165,73 @@ class BpmnSourceApiTest extends com.orqix.support.RuntimeTestBase {
         assertThat(node(saved, "manager").path("label").asString()).isEqualTo("Manager review");
         assertThat(node(saved, "manager").path("config").path("requiredSkills").isArray()).isTrue();
         assertThat(node(saved, "procure").path("config").path("compensation").asString()).isEqualTo("manual");
+    }
+
+    /**
+     * S77: a draft with a section (error route, a call that raises an error when it fails), a handler started by a
+     * signal and a raised error round-trips exactly, is BPMN-editable for editors only and keeps what BPMN cannot show
+     * (the order in which the section lists its steps).
+     */
+    @Test
+    void sectionsHandlersAndErrorStepsAreBpmnEditable() throws Exception {
+        UUID wf = workflow();
+        ObjectNode def = (ObjectNode) draft(wf).path("definition").deepCopy();
+        ArrayNode nodes = (ArrayNode) def.path("nodes");
+        nodes.add(JSON.readTree("{\"id\":\"sayWithdrawn\",\"type\":\"notification\",\"label\":\"Confirm withdrawal\","
+                + "\"config\":{\"channel\":\"inApp\",\"recipient\":\"initiator\",\"message\":\"Your request was withdrawn\"}}"));
+        nodes.add(JSON.readTree("{\"id\":\"withdrawn\",\"type\":\"end\",\"label\":\"Withdrawn\",\"config\":"
+                + "{\"businessOutcome\":\"Withdrawn\",\"outcomeKind\":\"rejected\"}}"));
+        ObjectNode positions = (ObjectNode) def.path("uiLayout").path("positions");
+        positions.set("sayWithdrawn", JSON.readTree("{\"x\":600,\"y\":700}"));
+        positions.set("withdrawn", JSON.readTree("{\"x\":900,\"y\":700}"));
+        ((ArrayNode) def.path("transitions")).add(JSON.readTree(
+                "{\"id\":\"w1\",\"from\":\"sayWithdrawn\",\"to\":\"withdrawn\",\"on\":\"next\"}"));
+        ((ObjectNode) node(def, "procure").path("config")).put("raiseErrorOnFailure", "ORDER_REJECTED");
+        def.set("subprocesses", JSON.readTree("[{\"id\":\"order\",\"label\":\"Order\",\"type\":\"embedded\","
+                + "\"nodes\":[\"notify\",\"procure\"],\"onError\":{\"to\":\"notifyRejected\",\"errorCode\":\"ORDER_REJECTED\"}},"
+                + "{\"id\":\"withdraw\",\"label\":\"Withdraw\",\"type\":\"event\",\"nodes\":[\"sayWithdrawn\",\"withdrawn\"],"
+                + "\"trigger\":{\"type\":\"signal\",\"signal\":\"withdraw\"},\"interrupting\":true}]"));
+        var saved = api("dana.designer").put(Map.of("definition", def), "\"r1\"", DRAFT, PURCHASING, wf);
+        assertThat(saved.status()).as(saved.toString()).isEqualTo(200);
+
+        var view = api("vic.viewer").get(BPMN, PURCHASING, wf);
+        assertThat(view.status()).isEqualTo(200);
+        assertThat(view.body().path("roundTrip").path("identical").asBoolean()).as(view.toString()).isTrue();
+        assertThat(view.body().path("keptFromDraft").toString()).doesNotContain("\"subprocesses\"")
+                .contains("the step order of section 'order'");
+        String xml = view.body().path("bpmn").asString();
+        assertThat(xml).contains("<subProcess id=\"order\"", "triggeredByEvent=\"true\"", "raiseOnFailure=\"ORDER_REJECTED\"");
+
+        String edited = xml.replace("<subProcess id=\"order\" name=\"Order\">", "<subProcess id=\"order\" name=\"Ordering\">");
+        assertThat(api("vic.viewer").post(Map.of("revision", 2, "bpmn", edited), CHECK, PURCHASING, wf).status())
+                .isEqualTo(403);
+        assertThat(api("vic.viewer").put(Map.of("bpmn", edited), "\"r2\"", BPMN, PURCHASING, wf).status()).isEqualTo(403);
+        for (String user : new String[] {"fred.facilities", "otto.outsider"}) {
+            assertThat(api(user).get(BPMN, PURCHASING, wf).status()).as(user).isEqualTo(404);
+            assertThat(api(user).put(Map.of("bpmn", edited), "\"r2\"", BPMN, PURCHASING, wf).status()).as(user)
+                    .isEqualTo(404);
+        }
+        var checked = api("dana.designer").post(Map.of("revision", 2, "bpmn", edited), CHECK, PURCHASING, wf);
+        assertThat(checked.body().path("applicable").asBoolean()).as(checked.toString()).isTrue();
+        assertThat(checked.body().path("changes").toString()).contains("Section or handler 'order' (Ordering)");
+        assertThat(api("dana.designer").put(Map.of("bpmn", edited), null, BPMN, PURCHASING, wf).status()).isEqualTo(428);
+        var applied = api("dana.designer").put(Map.of("bpmn", edited), "\"r2\"", BPMN, PURCHASING, wf);
+        assertThat(applied.status()).as(applied.toString()).isEqualTo(200);
+        JsonNode after = draft(wf).path("definition");
+        assertThat(after.path("subprocesses").get(0).path("label").asString()).isEqualTo("Ordering");
+        // Everything else of the sections, handlers and steps is unchanged, including the draft's member order.
+        ObjectNode expected = def.deepCopy();
+        ((ObjectNode) expected.path("subprocesses").get(0)).put("label", "Ordering");
+        assertThat(JSON.readTree(after.path("subprocesses").toString())).isEqualTo(expected.path("subprocesses"));
+        assertThat(node(after, "procure").path("config").path("raiseErrorOnFailure").asString()).isEqualTo("ORDER_REJECTED");
+
+        // A construct BPMN does not support inside a section is still refused with its element named.
+        String script = xml.replace("<startEvent id=\"order__start\"",
+                "<scriptTask id=\"s1\" name=\"Script\"/><startEvent id=\"order__start\"");
+        var refused = api("dana.designer").put(Map.of("bpmn", script), "\"r3\"", BPMN, PURCHASING, wf);
+        assertThat(refused.status()).as(refused.toString()).isEqualTo(422);
+        assertThat(refused.body().path("fieldErrors").toString()).contains("s1: ");
+        assertThat(draft(wf).path("revision").asInt()).isEqualTo(3);
     }
 
     @Test

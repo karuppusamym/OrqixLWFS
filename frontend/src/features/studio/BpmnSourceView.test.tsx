@@ -1,7 +1,9 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { http, HttpResponse } from 'msw'
 import { describe, expect, it } from 'vitest'
 import { db, PURCHASE_WORKFLOW_ID } from '@/mocks/state'
+import { server } from '@/test/server'
 import { renderAppReady, signInAs, WS } from '@/test/utils'
 
 /** UI03 BPMN source (docs/build/S56) against the mock double (which only applies name edits). */
@@ -83,6 +85,31 @@ describe('BPMN source', () => {
     await user.click(screen.getByRole('button', { name: 'BPMN' }))
     expect(await screen.findByTestId('bpmn-unavailable')).toHaveTextContent(/no BPMN yet/)
     expect(screen.queryByTestId('bpmn-text')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Apply BPMN to draft' })).not.toBeInTheDocument()
+  })
+
+  it('lists the specific reason when a draft has no exact BPMN form and keeps the text read-only (S77)', async () => {
+    signInAs('dana.designer')
+    const user = userEvent.setup()
+    // The server's answer for a draft whose step order around a section cannot be kept without a diagram.
+    server.use(http.get('*/api/v1/workspaces/:ws/workflows/:id/draft/bpmn', () => HttpResponse.json({
+      revision: draft().revision, compilerVersion: '0.1.0', available: true, diagram: false,
+      bpmn: '<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"><process id="x" name="x"/></definitions>',
+      roundTrip: { identical: false, differences: [
+        { path: '/nodes', message: 'The order of the steps is different after the BPMN round trip: without a diagram (a canvas position for every step) BPMN lists the steps of each section and handler after the others. Give every step a canvas position to keep the draft order.' },
+        { path: '/nodes/3/config/separateFrom', message: "Step 'finance' config.separateFrom is [\"manager\"] in the draft but absent after the BPMN round trip." },
+      ] },
+      keptFromDraft: ['inputSchema', "the step order of section 'review'"], blockers: [],
+    })))
+    await renderAppReady(EDIT)
+    const box = await openBpmn(user)
+    const reasons = screen.getByTestId('bpmn-roundtrip')
+    expect(reasons).toHaveTextContent(/BPMN editing is not available/)
+    expect(reasons).toHaveTextContent(/order of the steps is different .* Give every step a canvas position/)
+    expect(reasons).toHaveTextContent(/separateFrom/)
+    expect(screen.getByTestId('bpmn-source')).toHaveTextContent(/sections and handlers/)
+    expect(screen.getByTestId('bpmn-source')).toHaveTextContent(/Kept from the draft and not in BPMN: inputSchema, the step order of section 'review'/)
+    expect(box).toHaveAttribute('readonly')
     expect(screen.queryByRole('button', { name: 'Apply BPMN to draft' })).not.toBeInTheDocument()
   })
 })

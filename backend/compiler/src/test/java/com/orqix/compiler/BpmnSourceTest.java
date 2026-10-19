@@ -170,6 +170,8 @@ class BpmnSourceTest {
                 "http.compensation = \"manual\"",
                 "parallelSplit.mode = \"all\"",
                 "startWorkflow.collectionMapping = {}",
+                // S77: a section or handler that does not stop the request.
+                "subprocesses[].interrupting = false",
                 "wait.atTime = \"09:00\"",
                 "waitForMessage.payload = []",
                 "waitForMessage.payload[].required = false");

@@ -59,13 +59,79 @@ public final class BpmnDefaults {
     private BpmnDefaults() {
     }
 
+    /**
+     * Section and handler defaults (S77): {@code interrupting: false} means the same as leaving it out. The model reader
+     * uses false when it is absent, the generator writes the handler's flag either way, a section never uses it, and the
+     * studio shows an absent flag as an unchecked "Stop the rest of the request".
+     */
+    static final List<Rule> SCOPE_RULES = List.of(
+            new Rule("subprocesses", "interrupting", F.booleanNode(false), scope -> true));
+
     /** The documented defaults as text, for messages and documentation tests ({@code type.key = value}). */
     public static List<String> describe() {
         List<String> out = new ArrayList<>();
         RULES.forEach(r -> out.add(r.type() + "." + r.key() + " = " + r.value()));
         FIELD_LISTS.forEach((type, list) -> out.add(type + "." + list + "[].required = false"));
+        SCOPE_RULES.forEach(r -> out.add(r.type() + "[]." + r.key() + " = " + r.value()));
         out.sort(String::compareTo);
         return List.copyOf(out);
+    }
+
+    /**
+     * Gives the sections and handlers read from BPMN the draft's spelling of their defaults and the draft's order of
+     * their member steps (S77), subprocess by subprocess (same id and type). Membership is a set: the order in which a
+     * subprocess lists its steps changes nothing in the compiled process, the validation or the runtime (the entry step
+     * is unique and found from the paths), so the draft's order is kept for the steps that are still members and new
+     * members follow in document order. Changes nothing else; a different set of members is a real edit.
+     */
+    public static void adoptScopes(JsonNode draftScopes, JsonNode targetScopes) {
+        if (draftScopes == null || !draftScopes.isArray() || targetScopes == null || !targetScopes.isArray()) {
+            return;
+        }
+        Map<String, JsonNode> draft = new LinkedHashMap<>();
+        draftScopes.forEach(s -> draft.putIfAbsent(s.path("id").asString(""), s));
+        for (JsonNode scope : targetScopes) {
+            JsonNode before = draft.get(scope.path("id").asString(""));
+            if (before == null || !before.isObject() || !scope.isObject()
+                    || !before.path("type").equals(scope.path("type"))) {
+                continue;
+            }
+            ObjectNode target = (ObjectNode) scope;
+            for (Rule rule : SCOPE_RULES) {
+                adoptDefault(rule.key(), rule.value(), (ObjectNode) before, target);
+            }
+            if (before.path("nodes").isArray() && target.path("nodes").isArray()) {
+                List<String> read = new ArrayList<>();
+                target.get("nodes").forEach(n -> read.add(n.asString("")));
+                ArrayNode ordered = F.arrayNode();
+                java.util.Set<String> placed = new java.util.HashSet<>();
+                for (JsonNode n : before.get("nodes")) {
+                    String id = n.asString("");
+                    if (read.contains(id) && placed.add(id)) {
+                        ordered.add(id);
+                    }
+                }
+                read.stream().filter(placed::add).forEach(ordered::add);
+                target.set("nodes", ordered);
+            }
+        }
+    }
+
+    /** Subprocesses whose member list is not in document order: "the step order of section 'id'". */
+    public static List<String> keptMemberOrder(JsonNode def) {
+        List<String> order = new ArrayList<>();
+        def.path("nodes").forEach(n -> order.add(n.path("id").asString("")));
+        List<String> out = new ArrayList<>();
+        for (JsonNode s : def.path("subprocesses")) {
+            List<String> members = new ArrayList<>();
+            s.path("nodes").forEach(n -> members.add(n.asString("")));
+            List<String> inDocumentOrder = order.stream().filter(members::contains).toList();
+            if (!members.equals(inDocumentOrder)) {
+                out.add("the step order of " + ("event".equals(s.path("type").asString("")) ? "handler" : "section")
+                        + " '" + s.path("id").asString("") + "'");
+            }
+        }
+        return out;
     }
 
     /**

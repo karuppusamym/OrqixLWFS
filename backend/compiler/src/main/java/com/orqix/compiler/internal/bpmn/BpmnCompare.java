@@ -16,7 +16,8 @@ import com.orqix.compiler.internal.bpmn.BpmnXml.El;
 /**
  * Compares the BPMN a person submitted with the BPMN the compiler generates from the document that was read out of it
  * (UI03, docs/build/S56). Both trees are flattened into {@code path -> value} entries (element presence, every
- * attribute, trimmed text); elements directly under the process and the definitions are keyed by id, diagram shapes
+ * attribute, trimmed text); elements directly under the process, a section or handler ({@code subProcess}) and the
+ * definitions are keyed by id, diagram shapes
  * and edges by the element they show, {@code orqix:input}/{@code orqix:result} by name (they are maps), and all other
  * children by position. Namespace prefixes and attribute order do not matter; numbers that are equal as decimals are
  * equal.
@@ -48,9 +49,12 @@ public final class BpmnCompare {
     private static final String PLANE = "/bpmndi:BPMNDiagram[0]/bpmndi:BPMNPlane[0]";
     private static final Pattern RECOMPUTED = Pattern.compile(String.join("|",
             "^" + Pattern.quote(PROCESS) + "/bpmn:extensionElements\\[0\\]/orqix:release\\[0\\]/@(compilerVersion|semanticHash)$",
-            "^" + Pattern.quote(PROCESS) + "/#[^/]+/bpmn:extensionElements\\[0\\]/orqix:child\\[0\\]/@(releaseNumber|semanticHash)$",
-            "^" + Pattern.quote(PROCESS) + "/#[^/]+/bpmn:terminateEventDefinition\\[0\\]$",
-            "^" + Pattern.quote(PROCESS) + "/#[^/]+__[^/]+/@name$",
+            // Elements inside a section or handler are keyed by id below it: /#section/#step/... (S77).
+            "^" + Pattern.quote(PROCESS) + "(/#[^/]+)+/bpmn:extensionElements\\[0\\]/orqix:child\\[0\\]/@(releaseNumber|semanticHash)$",
+            "^" + Pattern.quote(PROCESS) + "(/#[^/]+)+/bpmn:terminateEventDefinition\\[0\\]$",
+            "^" + Pattern.quote(PROCESS) + "(/#[^/]+)*/#[^/]+__[^/]+/@name$",
+            // The undo calls an Undo step lists are derived from the calls marked as automatic undo calls (S55).
+            "^" + Pattern.quote(PROCESS) + "(/#[^/]+)+/bpmn:extensionElements\\[0\\]/orqix:compensation\\[0\\]/orqix:undo\\[\\d+\\](/.*)?$",
             "^" + Pattern.quote(PLANE) + "/edge:.*$",
             "^" + Pattern.quote(PLANE) + "/shape:[^/]*__.*$",
             "^" + Pattern.quote(PLANE) + "/shape:[^/]+/dc:Bounds\\[0\\]/@(width|height)$",
@@ -72,6 +76,10 @@ public final class BpmnCompare {
         keys.addAll(s.keySet());
         List<Difference> problems = new ArrayList<>();
         Map<String, Integer> recomputed = new TreeMap<>();
+        // Section and handler frames (S55) are drawn around their steps: recomputed from the step positions.
+        Set<String> frames = new java.util.HashSet<>();
+        scopeIds(submitted, frames);
+        scopeIds(regenerated, frames);
         for (String key : keys) {
             String sv = s.get(key);
             String rv = r.get(key);
@@ -79,7 +87,7 @@ public final class BpmnCompare {
                 continue;
             }
             String element = elementOf(key);
-            if (RECOMPUTED.matcher(key).find()) {
+            if (RECOMPUTED.matcher(key).find() || frame(key, frames)) {
                 recomputed.merge(category(key), 1, Integer::sum);
                 continue;
             }
@@ -108,6 +116,26 @@ public final class BpmnCompare {
         return new Result(List.copyOf(problems), List.copyOf(notes));
     }
 
+    private static void scopeIds(El el, Set<String> out) {
+        for (El child : el.children()) {
+            if (child.is(BpmnGenerator.BPMN_NS, "subProcess") && child.attr("id") != null) {
+                out.add(child.attr("id"));
+            }
+            if (child.is(BpmnGenerator.BPMN_NS, "process")) {
+                scopeIds(child, out);
+            }
+        }
+    }
+
+    private static boolean frame(String key, Set<String> frames) {
+        if (!key.startsWith(PLANE + "/shape:")) {
+            return false;
+        }
+        String tail = key.substring(PLANE.length() + "/shape:".length());
+        int end = tail.indexOf('/');
+        return frames.contains(end < 0 ? tail : tail.substring(0, end));
+    }
+
     /** Flattens an element tree; see the class comment for the keys. */
     static Map<String, String> flatten(El root) {
         Map<String, String> out = new LinkedHashMap<>();
@@ -123,7 +151,8 @@ public final class BpmnCompare {
         if (!el.text().isEmpty()) {
             put(out, path + "/$text", el.text());
         }
-        boolean keyedById = el.is(BpmnGenerator.BPMN_NS, "process") || el.is(BpmnGenerator.BPMN_NS, "definitions");
+        boolean keyedById = el.is(BpmnGenerator.BPMN_NS, "process") || el.is(BpmnGenerator.BPMN_NS, "definitions")
+                || el.is(BpmnGenerator.BPMN_NS, "subProcess");
         Map<String, Integer> index = new HashMap<>();
         for (El child : el.children()) {
             String label = child.label();
@@ -237,9 +266,14 @@ public final class BpmnCompare {
             return "Names of generated helper elements are recomputed from the step labels";
         }
         if (key.contains("terminateEventDefinition")) {
-            return "Terminate markers on rejected/failed ends are recomputed from whether the workflow runs steps in parallel";
+            return "Terminate markers on Finish steps are recomputed from whether the workflow runs steps in parallel "
+                    + "or has handlers that run alongside the request";
         }
-        return "Diagram lines, helper shapes and shape sizes are recomputed from the step positions";
+        if (key.contains("orqix:undo")) {
+            return "The undo calls an Undo step lists are recomputed from the calls marked to be undone automatically";
+        }
+        return "Diagram lines, helper shapes, section and handler frames and shape sizes are recomputed from the step "
+                + "positions";
     }
 
     private static String section(String key) {

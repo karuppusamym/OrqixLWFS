@@ -35,7 +35,7 @@ import com.orqix.shared.problem.ProblemWriter;
 
 /**
  * Three filter chains (S6 sections 1 and 6): the management port (health and Prometheus only, no authentication;
- * never routed), machine clients with a bearer JWT (restricted to startRun/getRun/listRunEvents/sendMessage, CSRF-exempt, no
+ * never routed), machine clients with a bearer JWT (restricted to run/message/worker operations, CSRF-exempt, no
  * session), and browser sessions (OIDC login with PKCE, JDBC session, cookie CSRF for the SPA, 401 problem JSON for
  * {@code /api/**}).
  */
@@ -92,6 +92,14 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.GET, "/api/v1/workspaces/*/runs/*").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/v1/workspaces/*/runs/*/events").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/v1/workspaces/*/messages").authenticated()
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/v1/workspaces/*/external-jobs/fetch-and-lock",
+                                "/api/v1/workspaces/*/external-jobs/*/extend-lock",
+                                "/api/v1/workspaces/*/external-jobs/*/complete",
+                                "/api/v1/workspaces/*/external-jobs/*/fail",
+                                "/api/v1/workspaces/*/external-jobs/*/await-callback",
+                                "/api/v1/workspaces/*/external-jobs/*/callbacks/*/complete",
+                                "/api/v1/workspaces/*/external-jobs/*/callbacks/*/fail").authenticated()
                         .anyRequest().denyAll())
                 .oauth2ResourceServer(o -> o.jwt(Customizer.withDefaults())
                         .authenticationEntryPoint(problems)

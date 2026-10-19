@@ -5401,7 +5401,7 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: Machine clients (R0 scope - startRun, getRun, listRunEvents only). Issuer and audience validated.
+      description: Machine clients may start/read runs, read run events, correlate messages and POST external-worker lease/callback operations. Issuer and audience are validated; each operation requires its current workspace permission. Other routes remain denied.
 
   parameters:
     WorkspaceId:

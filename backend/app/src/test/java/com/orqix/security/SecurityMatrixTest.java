@@ -125,6 +125,36 @@ class SecurityMatrixTest extends RuntimeTestBase {
     }
 
     @Test
+    void machineWorkerRoutesRequireFreshExplicitGrantAndKeepOtherRoutesDenied() throws Exception {
+        String machine="native-worker-"+UUID.randomUUID();
+        String base="/api/v1/workspaces/"+PURCHASING+"/external-jobs";
+        var fetch=Map.of("workerId","native-gateway","topics",List.of("native-probe"),"maxJobs",1,"leaseSeconds",60);
+        assertThat(bearer(machine,HttpMethod.POST,base+"/fetch-and-lock",fetch)).isIn(403,404);
+        UUID subject=jdbc.sql("SELECT id FROM subject WHERE external_subject=:s").param("s",machine).query(UUID.class).single();
+        var grant=api("wade.admin").post(Map.of("permission","job.work","principal",Map.of("type","subject","value",subject.toString())),"/workspaces/{ws}/access/grants",PURCHASING);
+        assertThat(grant.status()).as(grant.toString()).isEqualTo(201);
+        String grantId=grant.body().path("id").asString();
+        try {
+            assertThat(bearer(machine,HttpMethod.POST,base+"/fetch-and-lock",fetch)).isEqualTo(200);
+            String unknown=base+"/"+UUID.randomUUID();
+            for(var entry:Map.<String,Object>of(
+                    "/extend-lock",Map.of("workerId","native-gateway","fence",1,"leaseSeconds",60),
+                    "/complete",Map.of("workerId","native-gateway","fence",1,"result",Map.of()),
+                    "/fail",Map.of("workerId","native-gateway","fence",1,"message","Failed","retryable",false),
+                    "/await-callback",Map.of("workerId","native-gateway","fence",1,"timeoutSeconds",60),
+                    "/callbacks/"+UUID.randomUUID()+"/complete",Map.of("result",Map.of()),
+                    "/callbacks/"+UUID.randomUUID()+"/fail",Map.of("message","Failed")).entrySet())
+                assertThat(bearer(machine,HttpMethod.POST,unknown+entry.getKey(),entry.getValue())).as(entry.getKey()).isEqualTo(404);
+            assertThat(bearer(machine,HttpMethod.GET,base+"/fetch-and-lock",null)).isEqualTo(403);
+            assertThat(bearer(machine,HttpMethod.GET,"/api/v1/me",null)).isEqualTo(403);
+            assertThat(bearer(machine,HttpMethod.POST,"/api/v1/workspaces/"+SANDBOX+"/external-jobs/fetch-and-lock",fetch)).isEqualTo(404);
+        } finally {
+            jdbc.sql("DELETE FROM permission_grant WHERE id=:id").param("id",UUID.fromString(grantId)).update();
+        }
+        assertThat(bearer(machine,HttpMethod.POST,base+"/fetch-and-lock",fetch)).isIn(403,404);
+    }
+
+    @Test
     void tSec06_deployedBpmnContainsOnlyAllowedExpressions() throws Exception {
         UUID workflowId = publishPurchase(PURCHASING, null);
         String releaseId = api("dana.designer").get("/workspaces/{ws}/workflows/{id}/releases", PURCHASING, workflowId)

@@ -54,6 +54,8 @@ Studio has the step in the palette with an inspector for the topic, lease, sent 
 
 ## SDK
 
+[S76](S76-native-async-agent-protocols.md) adds a separately deployed durable gateway for native MCP tasks, A2A 1.0 and background Responses. See the [SDK deployment guide](../../tools/worker-sdk/README.md). Machine bearer identities with a current workspace `job.work` grant may use the exact POST lease/callback operations; other machine routes remain restricted.
+
 `orqix_worker.Worker(base_url, workspace_id, token=callable, worker_id, ...)` with `run({topic: handler})`. A handler returns the result dict, or raises `JobFailed(message, retryable=...)`. The SDK extends the lease at half its length while the handler runs, sends `Idempotency-Key = <job>:<fence>:complete|fail`, drops jobs whose lease was lost, stops on 401/403, and reports an unexpected exception as a retryable failure naming only the exception class. Protocol tests: `python -m unittest tools/worker-sdk/test_orqix_worker.py`.
 
 ## Limits (deliberate)

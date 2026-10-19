@@ -289,6 +289,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "suspendCaseInstance", "resumeCaseInstance", "closeCaseInstance", "startCasePlanItem", "enableCasePlanItem",
                     "disableCasePlanItem", "activateCaseStage", "completeCaseStage", "terminateCasePlanItem" ->
                     Map.of("expectedVersion",1,"reason","Foreign attempt");
+            case "updateCaseData" -> Map.of("expectedVersion",1,"reason","Foreign attempt","values",Map.of());
             case "terminateCaseInstance" -> Map.of("expectedVersion", 1, "reason", "Foreign attempt");
             case "createCaseDefinition" -> {
                 try (var source = getClass().getResourceAsStream("/cases/cmmn-compatibility.cmmn")) {
@@ -404,7 +405,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
         Map<String, Long> counts = new LinkedHashMap<>();
         for (String table : List.of("organization", "workspace", "subject", "role_binding", "permission_grant",
                 "workspace_group", "workspace_group_member", "migration_job", "migration_project", "migration_policy", "migration_review", "workflow", "workflow_folder", "workflow_folder_item", "document_template", "document_template_version", "decision_asset", "decision_asset_version", "connection_asset", "workspace_attachment_policy", "attachment_ocr_result", "workflow_element_comment", "workflow_draft_revision", "workflow_release",
-                "release_artifact", "case_event", "connection_definition", "connection_binding", "oauth_grant", "oauth_consent", "external_job", "external_job_callback", "workflow_run", "task_context",
+                "release_artifact", "case_catalog", "case_definition", "case_instance", "case_command_response", "case_termination", "case_event", "case_data_event", "connection_definition", "connection_binding", "oauth_grant", "oauth_consent", "external_job", "external_job_callback", "workflow_run", "task_context",
                 "run_attachment", "run_attachment_content", "run_stage", "workflow_test_suite", "workflow_test_result", "document_source",
                 "task_decision", "task_reminder", "inbound_message", "message_subscription", "document_snapshot", "adapter_config", "inbound_trigger", "inbound_event", "effect_journal", "run_event", "notification", "idempotency_record",
                 "act_re_deployment", "act_ru_execution", "act_ru_task", "act_ru_job", "act_ru_deadletter_job")) {
@@ -420,6 +421,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
         counts.put("adapter_versions", jdbc.sql("SELECT (SELECT coalesce(sum(version), 0) FROM adapter_config)"
                 + " + (SELECT coalesce(sum(version), 0) FROM inbound_trigger)").query(Long.class).single());
         counts.put("task_versions", jdbc.sql("SELECT coalesce(sum(version), 0) FROM task_context").query(Long.class).single());
+        counts.put("case_versions", jdbc.sql("SELECT coalesce(sum(version), 0) FROM case_instance").query(Long.class).single());
         counts.put("run_versions", jdbc.sql("SELECT coalesce(sum(version), 0) FROM workflow_run").query(Long.class).single());
         return counts;
     }

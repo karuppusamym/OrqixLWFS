@@ -45,11 +45,21 @@ public class CaseController {
     }
     @PostMapping("/definitions/{definitionId}/instances")
     public ResponseEntity<CaseService.Instance> start(@PathVariable UUID workspaceId,@PathVariable UUID definitionId,
-            @RequestHeader(name=IdempotencyService.HEADER,required=false) String key) {
-        var result=service.start(callers.current(),workspaceId,definitionId,key);
+            @RequestHeader(name=IdempotencyService.HEADER,required=false) String key,
+            @RequestBody(required=false) CaseService.StartCase request) {
+        var result=service.start(callers.current(),workspaceId,definitionId,key,request);
         var response=ResponseEntity.status(result.replayed()?200:201);
         if(result.replayed()) response.header(IdempotencyService.REPLAYED_HEADER,"true");
         return response.body(result.value());
+    }
+    @GetMapping("/instances/{instanceId}/data")
+    public CaseService.CaseData data(@PathVariable UUID workspaceId,@PathVariable UUID instanceId) {
+        return service.data(callers.current(),workspaceId,instanceId);
+    }
+    @PostMapping("/instances/{instanceId}/data")
+    public ResponseEntity<CaseService.Instance> updateData(@PathVariable UUID workspaceId,@PathVariable UUID instanceId,
+            @RequestHeader(name=IdempotencyService.HEADER,required=false) String key,@RequestBody CaseService.UpdateData request) {
+        return response(service.updateData(callers.current(),workspaceId,instanceId,key,request));
     }
     @GetMapping("/instances/{instanceId}/plan")
     public CaseService.PlanOverview plan(@PathVariable UUID workspaceId, @PathVariable UUID instanceId) {

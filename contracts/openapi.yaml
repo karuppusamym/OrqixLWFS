@@ -98,6 +98,7 @@ paths:
       x-orqix-permission: workflow.start
       x-orqix-audit: case.instance.started
       parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: false, content: { application/json: { schema: { $ref: '#/components/schemas/StartCase' } } } }
       responses:
         '201': { description: Started case, content: { application/json: { schema: { $ref: '#/components/schemas/CaseInstance' } } } }
         '200': { description: Identical idempotent replay, content: { application/json: { schema: { $ref: '#/components/schemas/CaseInstance' } } } }
@@ -132,6 +133,38 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /workspaces/{workspaceId}/cases/instances/{instanceId}/data:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: instanceId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    get:
+      tags: [Cases]
+      operationId: getCaseData
+      summary: Read pinned typed case data
+      description: Requires run.read-data, the case starter, or current case-worker eligibility. Historical before/after values require run.read-data.
+      x-orqix-permission: run.read-data
+      responses:
+        '200': { description: Authorized data, content: { application/json: { schema: { $ref: '#/components/schemas/CaseData' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Cases]
+      operationId: updateCaseData
+      summary: Replace validated case data with current eligibility and version
+      description: Requires a currently eligible case worker with task.act, or both run.operate and run.read-data. Held or ended cases reject new edits. Data is separate from engine variables and cannot alter admitted task predicates.
+      x-orqix-permission: task.act
+      x-orqix-audit: case.data.updated
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/UpdateCaseData' } } } }
+      responses:
+        '200': { description: Updated metadata or original replay, content: { application/json: { schema: { $ref: '#/components/schemas/CaseInstance' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
   /workspaces/{workspaceId}/cases/instances/{instanceId}/plan:
     parameters:
       - { $ref: '#/components/parameters/WorkspaceId' }
@@ -5376,6 +5409,54 @@ components:
       content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } }
 
   schemas:
+    CaseDataField:
+      type: object
+      additionalProperties: false
+      required: [key, label, type]
+      properties:
+        key: { type: string, pattern: '^[A-Za-z][A-Za-z0-9_]{0,63}$' }
+        label: { type: string, minLength: 1, maxLength: 120 }
+        type: { type: string, enum: [text, number, integer, boolean, date, choice] }
+        required: { type: boolean, default: false }
+        maxLength: { type: [integer, 'null'], minimum: 1, maximum: 4000 }
+        minimum: { type: [number, 'null'], minimum: -1000000000000000, maximum: 1000000000000000 }
+        maximum: { type: [number, 'null'], minimum: -1000000000000000, maximum: 1000000000000000 }
+        options: { type: [array, 'null'], maxItems: 30, uniqueItems: true, items: { type: string, minLength: 1, maxLength: 120 } }
+    CaseDataValues:
+      type: object
+      maxProperties: 30
+      additionalProperties: { type: [string, number, boolean] }
+    StartCase:
+      type: object
+      additionalProperties: false
+      properties:
+        data: { $ref: '#/components/schemas/CaseDataValues' }
+    UpdateCaseData:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, reason, values]
+      properties:
+        expectedVersion: { type: integer, minimum: 1 }
+        reason: { type: string, minLength: 1, maxLength: 1000 }
+        values: { $ref: '#/components/schemas/CaseDataValues' }
+    CaseDataChange:
+      type: object
+      additionalProperties: false
+      required: [version, before, after]
+      properties:
+        version: { type: integer, minimum: 1 }
+        before: { $ref: '#/components/schemas/CaseDataValues' }
+        after: { $ref: '#/components/schemas/CaseDataValues' }
+    CaseData:
+      type: object
+      additionalProperties: false
+      required: [fields, values, version, canEdit, changes]
+      properties:
+        fields: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseDataField' } }
+        values: { $ref: '#/components/schemas/CaseDataValues' }
+        version: { type: integer, minimum: 1 }
+        canEdit: { type: boolean }
+        changes: { type: array, maxItems: 200, items: { $ref: '#/components/schemas/CaseDataChange' } }
     CreateCaseDefinition:
       type: object
       additionalProperties: false
@@ -5384,6 +5465,7 @@ components:
         key: { type: string, pattern: '^[a-z][a-z0-9-]{1,62}$' }
         name: { type: string, minLength: 1, maxLength: 200 }
         sourceXml: { type: string, minLength: 1, maxLength: 65536, description: Bounded CMMN 1.1 XML source (64 KiB UTF-8) }
+        dataFields: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseDataField' } }
     CaseDefinition:
       type: object
       additionalProperties: false
@@ -5394,6 +5476,7 @@ components:
         name: { type: string }
         version: { type: integer, minimum: 1 }
         createdAt: { $ref: '#/components/schemas/Timestamp' }
+        dataFields: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseDataField' } }
     CaseDefinitionDetail:
       type: object
       additionalProperties: false
@@ -5405,6 +5488,7 @@ components:
         version: { type: integer, minimum: 1 }
         createdAt: { $ref: '#/components/schemas/Timestamp' }
         sourceXml: { type: string }
+        dataFields: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseDataField' } }
     CasePlanItem:
       type: object
       additionalProperties: false

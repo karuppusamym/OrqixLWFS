@@ -355,6 +355,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
             }
             case "putConnectionBinding" -> Map.of("baseUrl", "https://public.test.example", "auth", Map.of("type", "none"),
                     "enabled", true);
+            case "finishConnectionOAuth" -> Map.of("state", "a".repeat(43), "code", "foreign-code");
             case "testConnection" -> Map.of("version", 1, "operation", "health");
             case "reviewOpenApiConnection" -> Map.of("source", "{}");
             case "createAdapter" -> Map.of("key", "foreign-adapter", "kind", "kafka", "name", "Foreign", "secretRef", "foreign-ref",
@@ -380,7 +381,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
         Map<String, Long> counts = new LinkedHashMap<>();
         for (String table : List.of("organization", "workspace", "subject", "role_binding", "permission_grant",
                 "workspace_group", "workspace_group_member", "migration_job", "migration_project", "migration_policy", "migration_review", "workflow", "workflow_folder", "workflow_folder_item", "document_template", "document_template_version", "decision_asset", "decision_asset_version", "connection_asset", "workspace_attachment_policy", "attachment_ocr_result", "workflow_element_comment", "workflow_draft_revision", "workflow_release",
-                "release_artifact", "connection_definition", "connection_binding", "external_job", "external_job_callback", "workflow_run", "task_context",
+                "release_artifact", "connection_definition", "connection_binding", "oauth_grant", "oauth_consent", "external_job", "external_job_callback", "workflow_run", "task_context",
                 "run_attachment", "run_attachment_content", "run_stage", "workflow_test_suite", "workflow_test_result", "document_source",
                 "task_decision", "task_reminder", "inbound_message", "message_subscription", "document_snapshot", "adapter_config", "inbound_trigger", "inbound_event", "effect_journal", "run_event", "notification", "idempotency_record",
                 "act_re_deployment", "act_ru_execution", "act_ru_task", "act_ru_job", "act_ru_deadletter_job")) {

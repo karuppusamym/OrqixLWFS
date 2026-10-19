@@ -27,6 +27,7 @@ import { DocumentFolderPicker } from './DocumentFolderPicker'
 import { DocumentVersionPicker, type DocumentOperation } from './DocumentVersionPicker'
 import { OpenApiImport } from './OpenApiImport'
 import { AdaptersPanel } from './AdaptersPanel'
+import { OAuthConsent } from './OAuthConsent'
 
 export function ConnectionsPanel() {
   const { workspace } = useWorkspace()
@@ -118,7 +119,7 @@ function ConnectionCard({ connection: c }: { connection: ConnectionSummary }) {
   )
 }
 
-const AUTH_LABELS = { none: 'No sign-in', bearerToken: 'Bearer token', apiKeyHeader: 'API key in a header', oauth2ClientCredentials: 'OAuth client credentials' } as const
+const AUTH_LABELS = { none: 'No sign-in', bearerToken: 'Bearer token', apiKeyHeader: 'API key in a header', oauth2ClientCredentials: 'OAuth client credentials', oauth2AuthorizationCode: 'OAuth delegated consent' } as const
 
 function ManageConnection({ connection }: { connection: ConnectionSummary }) {
   const { workspace } = useWorkspace()
@@ -128,7 +129,10 @@ function ManageConnection({ connection }: { connection: ConnectionSummary }) {
   const binding = detail.data.binding
   return (
     <div className="grid gap-8 border-t border-border p-5 lg:grid-cols-2">
-      <BindingForm key={binding?.revision ?? 0} connectionKey={connection.key} binding={binding} graph={connection.kind === 'microsoftGraph'} />
+      <div className="space-y-6">
+        <BindingForm key={binding?.revision ?? 0} connectionKey={connection.key} binding={binding} graph={connection.kind === 'microsoftGraph'} />
+        {binding?.auth.type === 'oauth2AuthorizationCode' ? <OAuthConsent ws={workspace.id} connectionKey={connection.key} /> : null}
+      </div>
       {connection.kind === 'agent' ? <AgentTest connection={connection} /> : <TestConnection connection={connection} detail={detail.data} />}
     </div>
   )
@@ -218,7 +222,7 @@ function BindingForm({ connectionKey, binding, graph }: { connectionKey: string;
       <div className="space-y-1.5">
         <Label htmlFor={`bind-auth-${connectionKey}`}>Sign-in method</Label>
         <Select id={`bind-auth-${connectionKey}`} value={authType} onChange={(e) => setAuthType(e.target.value as keyof typeof AUTH_LABELS)}>
-          {Object.entries(AUTH_LABELS).filter(([value]) => !graph || value === 'bearerToken' || value === 'oauth2ClientCredentials').map(([value, label]) => (
+          {Object.entries(AUTH_LABELS).filter(([value]) => !graph || value === 'bearerToken' || value === 'oauth2ClientCredentials' || value === 'oauth2AuthorizationCode').map(([value, label]) => (
             <option key={value} value={value}>
               {label}
             </option>

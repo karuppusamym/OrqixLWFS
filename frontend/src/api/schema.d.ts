@@ -2809,6 +2809,98 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/connections/{connectionKey}/oauth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                connectionKey: components["parameters"]["ConnectionKey"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Read delegated OAuth consent status
+         * @description Requires fresh connection.manage permission and a delegated OAuth binding. Authorization uses an exact connection-specific redirect URI, subject-bound expiring state and S256 PKCE. Tokens are encrypted server-side. An uncertain exchange is never automatically replayed; start consent again. Disconnect fences in-flight exchanges before optional provider revocation. Responses never include tokens, client secrets or provider response bodies.
+         */
+        get: operations["getConnectionOAuth"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/connections/{connectionKey}/oauth/authorize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                connectionKey: components["parameters"]["ConnectionKey"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Authorize this workspace connection with PKCE
+         * @description Requires fresh connection.manage permission and a delegated OAuth binding. Authorization uses an exact connection-specific redirect URI, subject-bound expiring state and S256 PKCE. Tokens are encrypted server-side. An uncertain exchange is never automatically replayed; start consent again. Disconnect fences in-flight exchanges before optional provider revocation. Responses never include tokens, client secrets or provider response bodies.
+         */
+        post: operations["beginConnectionOAuth"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/connections/{connectionKey}/oauth/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                connectionKey: components["parameters"]["ConnectionKey"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Consume the authenticated consent response once
+         * @description Requires fresh connection.manage permission and a delegated OAuth binding. Authorization uses an exact connection-specific redirect URI, subject-bound expiring state and S256 PKCE. Tokens are encrypted server-side. An uncertain exchange is never automatically replayed; start consent again. Disconnect fences in-flight exchanges before optional provider revocation. Responses never include tokens, client secrets or provider response bodies.
+         */
+        post: operations["finishConnectionOAuth"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/connections/{connectionKey}/oauth/disconnect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                connectionKey: components["parameters"]["ConnectionKey"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Erase local credentials and attempt configured provider revocation
+         * @description Requires fresh connection.manage permission and a delegated OAuth binding. Authorization uses an exact connection-specific redirect URI, subject-bound expiring state and S256 PKCE. Tokens are encrypted server-side. An uncertain exchange is never automatically replayed; start consent again. Disconnect fences in-flight exchanges before optional provider revocation. Responses never include tokens, client secrets or provider response bodies.
+         */
+        post: operations["disconnectConnectionOAuth"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/connections/{connectionKey}/test": {
         parameters: {
             query?: never;
@@ -5343,9 +5435,26 @@ export interface components {
             definitions: components["schemas"]["ConnectionDefinitionRecord"][];
             binding: components["schemas"]["ConnectionBinding"] | null;
         };
+        OAuthAuthorization: {
+            /** Format: uri */
+            authorizationUrl: string;
+            expiresAt: components["schemas"]["Timestamp"];
+        };
+        OAuthStatus: {
+            /** @enum {string} */
+            status: "consentRequired" | "connected" | "refreshing" | "disconnected";
+            /** Format: date-time */
+            expiresAt: string | null;
+            /** @enum {string|null} */
+            remoteRevocation: "confirmed" | "unconfirmed" | "notConfigured" | null;
+        };
+        OAuthFinishRequest: {
+            state: string;
+            code: string;
+        };
         ConnectionAuth: {
             /** @enum {string} */
-            type: "none" | "bearerToken" | "apiKeyHeader" | "oauth2ClientCredentials";
+            type: "none" | "bearerToken" | "apiKeyHeader" | "oauth2ClientCredentials" | "oauth2AuthorizationCode";
             headerName?: string;
             /** @description Name of a mounted secret, never the secret value */
             secretRef?: string;
@@ -11985,6 +12094,134 @@ export interface operations {
             412: components["responses"]["PreconditionFailed"];
             422: components["responses"]["Unprocessable"];
             428: components["responses"]["PreconditionRequired"];
+        };
+    };
+    getConnectionOAuth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                connectionKey: components["parameters"]["ConnectionKey"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OAuth state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthStatus"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["Unprocessable"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    beginConnectionOAuth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                connectionKey: components["parameters"]["ConnectionKey"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OAuth state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthAuthorization"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["Unprocessable"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    finishConnectionOAuth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                connectionKey: components["parameters"]["ConnectionKey"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OAuthFinishRequest"];
+            };
+        };
+        responses: {
+            /** @description OAuth state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthStatus"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["Unprocessable"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    disconnectConnectionOAuth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                connectionKey: components["parameters"]["ConnectionKey"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OAuth state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthStatus"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["Unprocessable"];
+            503: components["responses"]["Unavailable"];
         };
     };
     testConnection: {

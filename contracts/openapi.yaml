@@ -3944,6 +3944,130 @@ paths:
         '422': { $ref: '#/components/responses/Unprocessable' }
         '428': { $ref: '#/components/responses/PreconditionRequired' }
 
+  /workspaces/{workspaceId}/connections/{connectionKey}/oauth:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/ConnectionKey'
+    get:
+      tags: [Connections]
+      operationId: getConnectionOAuth
+      summary: Read delegated OAuth consent status
+      description: >-
+        Requires fresh connection.manage permission and a delegated OAuth binding. Authorization uses an exact
+        connection-specific redirect URI, subject-bound expiring state and S256 PKCE. Tokens are encrypted server-side.
+        An uncertain exchange is never automatically replayed; start consent again. Disconnect fences in-flight exchanges
+        before optional provider revocation. Responses never include tokens, client secrets or provider response bodies.
+      x-orqix-permission: connection.manage
+      responses:
+        '200':
+          description: OAuth state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OAuthStatus' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /workspaces/{workspaceId}/connections/{connectionKey}/oauth/authorize:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/ConnectionKey'
+    post:
+      tags: [Connections]
+      operationId: beginConnectionOAuth
+      summary: Authorize this workspace connection with PKCE
+      description: >-
+        Requires fresh connection.manage permission and a delegated OAuth binding. Authorization uses an exact
+        connection-specific redirect URI, subject-bound expiring state and S256 PKCE. Tokens are encrypted server-side.
+        An uncertain exchange is never automatically replayed; start consent again. Disconnect fences in-flight exchanges
+        before optional provider revocation. Responses never include tokens, client secrets or provider response bodies.
+      x-orqix-permission: connection.manage
+      x-orqix-audit: connection.oauth.started
+      responses:
+        '200':
+          description: OAuth state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OAuthAuthorization' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /workspaces/{workspaceId}/connections/{connectionKey}/oauth/complete:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/ConnectionKey'
+    post:
+      tags: [Connections]
+      operationId: finishConnectionOAuth
+      summary: Consume the authenticated consent response once
+      description: >-
+        Requires fresh connection.manage permission and a delegated OAuth binding. Authorization uses an exact
+        connection-specific redirect URI, subject-bound expiring state and S256 PKCE. Tokens are encrypted server-side.
+        An uncertain exchange is never automatically replayed; start consent again. Disconnect fences in-flight exchanges
+        before optional provider revocation. Responses never include tokens, client secrets or provider response bodies.
+      x-orqix-permission: connection.manage
+      x-orqix-audit: connection.oauth.connected
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OAuthFinishRequest' }
+      responses:
+        '200':
+          description: OAuth state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OAuthStatus' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /workspaces/{workspaceId}/connections/{connectionKey}/oauth/disconnect:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/ConnectionKey'
+    post:
+      tags: [Connections]
+      operationId: disconnectConnectionOAuth
+      summary: Erase local credentials and attempt configured provider revocation
+      description: >-
+        Requires fresh connection.manage permission and a delegated OAuth binding. Authorization uses an exact
+        connection-specific redirect URI, subject-bound expiring state and S256 PKCE. Tokens are encrypted server-side.
+        An uncertain exchange is never automatically replayed; start consent again. Disconnect fences in-flight exchanges
+        before optional provider revocation. Responses never include tokens, client secrets or provider response bodies.
+      x-orqix-permission: connection.manage
+      x-orqix-audit: connection.oauth.disconnected
+      responses:
+        '200':
+          description: OAuth state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OAuthStatus' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
   /workspaces/{workspaceId}/connections/{connectionKey}/test:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -7708,12 +7832,34 @@ components:
         key: { $ref: '#/components/schemas/Key' }
         definitions: { type: array, items: { $ref: '#/components/schemas/ConnectionDefinitionRecord' } }
         binding: { oneOf: [{ $ref: '#/components/schemas/ConnectionBinding' }, { type: 'null' }] }
+    OAuthAuthorization:
+      type: object
+      additionalProperties: false
+      required: [authorizationUrl, expiresAt]
+      properties:
+        authorizationUrl: { type: string, format: uri }
+        expiresAt: { $ref: '#/components/schemas/Timestamp' }
+    OAuthStatus:
+      type: object
+      additionalProperties: false
+      required: [status, expiresAt, remoteRevocation]
+      properties:
+        status: { type: string, enum: [consentRequired, connected, refreshing, disconnected] }
+        expiresAt: { type: [string, 'null'], format: date-time }
+        remoteRevocation: { type: [string, 'null'], enum: [confirmed, unconfirmed, notConfigured, null] }
+    OAuthFinishRequest:
+      type: object
+      additionalProperties: false
+      required: [state, code]
+      properties:
+        state: { type: string, minLength: 43, maxLength: 43 }
+        code: { type: string, minLength: 1, maxLength: 4096 }
     ConnectionAuth:
       type: object
       additionalProperties: false
       required: [type]
       properties:
-        type: { type: string, enum: [none, bearerToken, apiKeyHeader, oauth2ClientCredentials] }
+        type: { type: string, enum: [none, bearerToken, apiKeyHeader, oauth2ClientCredentials, oauth2AuthorizationCode] }
         headerName: { type: string, pattern: '^[A-Za-z][A-Za-z0-9-]{0,63}$' }
         secretRef: { type: string, pattern: '^[a-z0-9][a-z0-9-]{0,62}$', description: 'Name of a mounted secret, never the secret value' }
     PutConnectionBindingRequest:

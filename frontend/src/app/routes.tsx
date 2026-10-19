@@ -31,6 +31,7 @@ export const routes: RouteObject[] = [
           { path: 'tasks/:taskId', element: <TasksPage /> },
           { path: 'runs', element: <RunsPage /> },
           { path: 'runs/:runId', element: <RunDetailPage /> },
+          { path: 'settings/connections/:connectionKey/oauth/callback', lazy: async () => ({ Component: (await import('@/features/settings/OAuthCallbackPage')).OAuthCallbackPage }) },
           { path: 'cases', lazy: async () => ({ Component: (await import('@/features/cases/CasesPage')).CasesPage }) },
           { path: 'cases/:instanceId', lazy: async () => ({ Component: (await import('@/features/cases/CaseDetailPage')).CaseDetailPage }) },
           { path: 'views', lazy: async () => ({ Component: (await import('@/features/views/ViewLibraryPage')).ViewLibraryPage }) },

@@ -118,7 +118,7 @@ public class HttpExecutor {
                 return mapResponse(started, definition, operation, resultMapping, 200,
                         json.write(response).getBytes(StandardCharsets.UTF_8));
             } catch (MicrosoftGraphDocuments.Failure e) {
-                if (Integer.valueOf(401).equals(e.status()) && "oauth2ClientCredentials".equals(target.authType()) && secrets != null)
+                if (Integer.valueOf(401).equals(e.status()) && ("oauth2ClientCredentials".equals(target.authType()) || "oauth2AuthorizationCode".equals(target.authType())) && secrets != null)
                     secrets.invalidateOAuth(target.workspaceId(), target.secretRef());
                 return finish(started, e.observation(), operation.effectClass(), e.status(), e.code(),
                         "Microsoft document read failed (" + e.code() + ")", null, null);
@@ -151,7 +151,7 @@ public class HttpExecutor {
             return classifyFailure(started, e.getCause(), operation.effectClass(), timeoutSeconds);
         }
         int status = response.statusCode();
-        if (status == 401 && "oauth2ClientCredentials".equals(target.authType()) && secrets != null)
+        if (status == 401 && ("oauth2ClientCredentials".equals(target.authType()) || "oauth2AuthorizationCode".equals(target.authType())) && secrets != null)
             secrets.invalidateOAuth(target.workspaceId(), target.secretRef());
         if (status >= 300 && status < 400) {
             return finish(started, Observation.REDIRECT, operation.effectClass(), status, "UNEXPECTED_STATUS",
@@ -277,7 +277,7 @@ public class HttpExecutor {
                 .timeout(Duration.ofSeconds(timeoutSeconds))
                 .header("Accept", "application/json")
                 .header(CorrelationId.HEADER, CorrelationId.current());
-        if ("bearerToken".equals(target.authType()) || "oauth2ClientCredentials".equals(target.authType())) {
+        if ("bearerToken".equals(target.authType()) || ("oauth2ClientCredentials".equals(target.authType()) || "oauth2AuthorizationCode".equals(target.authType()))) {
             builder.header("Authorization", "Bearer " + secretValue);
         } else if ("apiKeyHeader".equals(target.authType())) {
             builder.header(target.authHeaderName(), secretValue);

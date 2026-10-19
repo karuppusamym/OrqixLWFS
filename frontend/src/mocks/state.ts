@@ -322,7 +322,7 @@ export interface MockNotification {
 export interface MockBinding {
   connectionKey: string
   baseUrl: string
-  auth: { type: 'none' | 'bearerToken' | 'apiKeyHeader'; headerName?: string; secretRef?: string }
+  auth: { type: 'none' | 'bearerToken' | 'apiKeyHeader' | 'oauth2ClientCredentials' | 'oauth2AuthorizationCode'; headerName?: string; secretRef?: string }
   enabled: boolean
   revision: number
   updatedAt: string

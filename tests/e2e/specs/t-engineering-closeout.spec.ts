@@ -82,3 +82,16 @@ test('operator confirms a case termination with a reason and open tasks disappea
   await page.setViewportSize({ width: 390, height: 844 })
   await expectNoSeriousViolations(page, 'Terminated case detail')
 })
+
+test('OAuth callback removes provider details and offers a safe return after denial', async ({ sessions }) => {
+  const page = await sessions.as('wade.admin')
+  const ws = await workspaceId(page)
+  await page.goto(`/w/${ws}/settings/connections/procurement/oauth/callback?error=access_denied&error_description=private-provider-detail`)
+  await expect(page.getByText('Authorization could not be completed. Return to settings and start authorization again.')).toBeVisible()
+  await expect(page).toHaveURL(new RegExp(`/w/${ws}/settings/connections/procurement/oauth/callback$`))
+  await expect(page.getByText('private-provider-detail')).toHaveCount(0)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expectNoSeriousViolations(page, 'OAuth callback denial')
+  await page.getByRole('link', { name: 'Return to settings' }).click()
+  await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible()
+})

@@ -22,23 +22,27 @@ public class SecretStore {
 
     private final OrqixProperties properties;
     private final com.orqix.integration.OAuthTokenClient oauth;
+    private final com.orqix.integration.DelegatedOAuth delegated;
 
-    public SecretStore(OrqixProperties properties, com.orqix.integration.OAuthTokenClient oauth) {
+    public SecretStore(OrqixProperties properties, com.orqix.integration.OAuthTokenClient oauth,
+            com.orqix.integration.DelegatedOAuth delegated) {
         this.properties = properties;
         this.oauth = oauth;
+        this.delegated = delegated;
     }
 
     public Optional<String> credential(String authType, String reference, java.util.UUID workspace) {
+        if ("oauth2AuthorizationCode".equals(authType)) return delegated.resolve(workspace, reference);
         var value = read(reference);
         return "oauth2ClientCredentials".equals(authType)
                 ? value.flatMap(config -> oauth.resolve(workspace, reference, config)) : value;
     }
 
-    public void invalidateOAuth(java.util.UUID workspace, String reference) { oauth.invalidate(workspace, reference); }
+    public void invalidateOAuth(java.util.UUID workspace, String reference) { oauth.invalidate(workspace, reference); delegated.invalidate(workspace, reference); }
 
     /** @return the secret value, or empty when the file is missing or unreadable (CONNECTION_UNAVAILABLE) */
     public Optional<String> read(String secretRef) {
-        if (secretRef == null || !REF.matcher(secretRef).matches()) {
+        if (secretRef == null || "oauth-token-keyring".equals(secretRef) || !REF.matcher(secretRef).matches()) {
             return Optional.empty();
         }
         Path dir = properties.secrets().dir().toAbsolutePath().normalize();

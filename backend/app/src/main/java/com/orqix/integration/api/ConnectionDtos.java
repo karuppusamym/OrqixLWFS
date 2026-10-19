@@ -39,7 +39,7 @@ public final class ConnectionDtos {
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    public record Auth(@NotNull @Pattern(regexp = "none|bearerToken|apiKeyHeader|oauth2ClientCredentials") String type,
+    public record Auth(@NotNull @Pattern(regexp = "none|bearerToken|apiKeyHeader|oauth2ClientCredentials|oauth2AuthorizationCode") String type,
             @Pattern(regexp = "^[A-Za-z][A-Za-z0-9-]{0,63}$") String headerName,
             @Pattern(regexp = "^[a-z0-9][a-z0-9-]{0,62}$") String secretRef) {
     }

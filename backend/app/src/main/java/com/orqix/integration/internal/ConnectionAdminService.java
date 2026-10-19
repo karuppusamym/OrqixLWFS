@@ -191,8 +191,10 @@ public class ConnectionAdminService {
         policy.require(access, Permission.CONNECTION_MANAGE, "putConnectionBinding", true);
         ConnectionDtos.Auth auth = request.auth();
         List<ApiException.FieldError> errors = new ArrayList<>();
+        if ("oauth-token-keyring".equals(auth.secretRef())) errors.add(new ApiException.FieldError(
+                "/auth/secretRef", "reserved", "This reference is reserved for platform encryption."));
         if (connections.definitions(workspaceId, key).stream().anyMatch(d -> d.definition().isMicrosoftGraph())
-                && !"bearerToken".equals(auth.type()) && !"oauth2ClientCredentials".equals(auth.type())) {
+                && !"bearerToken".equals(auth.type()) && !"oauth2ClientCredentials".equals(auth.type()) && !"oauth2AuthorizationCode".equals(auth.type())) {
             errors.add(new ApiException.FieldError("/auth/type", "enum",
                     "A Microsoft Graph document connection requires bearerToken authentication"));
         }
@@ -203,7 +205,7 @@ public class ConnectionAdminService {
                             "No secretRef or headerName for auth type none"));
                 }
             }
-            case "bearerToken", "oauth2ClientCredentials" -> {
+            case "bearerToken", "oauth2ClientCredentials", "oauth2AuthorizationCode" -> {
                 if (auth.secretRef() == null || auth.headerName() != null) {
                     errors.add(new ApiException.FieldError("/auth/secretRef", "required", "secretRef is required"));
                 }
@@ -214,7 +216,7 @@ public class ConnectionAdminService {
                 }
                 if (connections.definitions(workspaceId, key).stream().anyMatch(d -> d.definition().isAgent())) {
                     errors.add(new ApiException.FieldError("/auth/type", "enum",
-                            "An agent connection supports none, bearerToken and oauth2ClientCredentials"));
+                            "An agent connection supports none, bearerToken, oauth2ClientCredentials and oauth2AuthorizationCode"));
                 }
             }
             default -> errors.add(new ApiException.FieldError("/auth/type", "enum", "Unknown auth type"));

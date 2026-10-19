@@ -1437,6 +1437,30 @@ export function createHandlers(): HttpHandler[] {
       if (str(params.ws) === WORKSPACES[2]?.id) return HttpResponse.json({ items: [] })
       return HttpResponse.json({ items: Object.keys(CONNECTIONS).map((key) => connectionSummary(str(params.ws), key)) })
     }),
+    http.get(`${B}/workspaces/:ws/connections/:key/oauth`, ({ params }) => {
+      const g = guard(params.ws, 'connection.manage')
+      if (!g.ok) return g.res
+      if (!(str(params.key) in CONNECTIONS)) return notFound()
+      return problem(503, 'DEPENDENCY_UNAVAILABLE', 'Delegated OAuth requires the real backend and a configured provider.')
+    }),
+    http.post(`${B}/workspaces/:ws/connections/:key/oauth/authorize`, ({ params }) => {
+      const g = guard(params.ws, 'connection.manage')
+      if (!g.ok) return g.res
+      if (!(str(params.key) in CONNECTIONS)) return notFound()
+      return problem(503, 'DEPENDENCY_UNAVAILABLE', 'Delegated OAuth requires the real backend and a configured provider.')
+    }),
+    http.post(`${B}/workspaces/:ws/connections/:key/oauth/complete`, ({ params }) => {
+      const g = guard(params.ws, 'connection.manage')
+      if (!g.ok) return g.res
+      if (!(str(params.key) in CONNECTIONS)) return notFound()
+      return problem(503, 'DEPENDENCY_UNAVAILABLE', 'Delegated OAuth requires the real backend and a configured provider.')
+    }),
+    http.post(`${B}/workspaces/:ws/connections/:key/oauth/disconnect`, ({ params }) => {
+      const g = guard(params.ws, 'connection.manage')
+      if (!g.ok) return g.res
+      if (!(str(params.key) in CONNECTIONS)) return notFound()
+      return problem(503, 'DEPENDENCY_UNAVAILABLE', 'Delegated OAuth requires the real backend and a configured provider.')
+    }),
     http.get(`${B}/workspaces/:ws/connections/:key`, async ({ params }) => {
       await slow()
       const g = guard(params.ws, 'connection.read')
@@ -1464,7 +1488,7 @@ export function createHandlers(): HttpHandler[] {
         if (!ifMatch) return problem(428, 'PRECONDITION_REQUIRED', 'If-Match header required')
         if (ifMatch !== `"r${existing.revision}"`) return problem(412, 'STALE_REVISION', 'The binding changed', { currentRevision: existing.revision })
       }
-      const input = await body<{ baseUrl: string; auth: { type: 'none' | 'bearerToken' | 'apiKeyHeader'; headerName?: string; secretRef?: string }; enabled: boolean }>(request)
+      const input = await body<{ baseUrl: string; auth: components['schemas']['ConnectionAuth']; enabled: boolean }>(request)
       let host = ''
       try {
         const u = new URL(input.baseUrl)

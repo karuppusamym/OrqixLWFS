@@ -106,12 +106,12 @@ public class DocumentSources {
     private JsonNode call(UUID workspaceId, Row source, String operationName, JsonNode input) {
         var definition = connections.definition(workspaceId, source.source().connectionKey(), source.source().definitionVersion()).orElseThrow(ApiException::notFound).definition();
         var binding = connections.binding(workspaceId, source.source().connectionKey()).orElseThrow(ApiException::notFound);
-        if (!binding.enabled() || !("bearerToken".equals(binding.authType()) || "oauth2ClientCredentials".equals(binding.authType()))) throw new ApiException(ProblemCode.DEPENDENCY_UNAVAILABLE);
+        if (!binding.enabled() || !("bearerToken".equals(binding.authType()) || ("oauth2ClientCredentials".equals(binding.authType()) || "oauth2AuthorizationCode".equals(binding.authType())))) throw new ApiException(ProblemCode.DEPENDENCY_UNAVAILABLE);
         String secret = secrets.credential(binding.authType(), binding.secretRef(), workspaceId).orElseThrow(() -> new ApiException(ProblemCode.DEPENDENCY_UNAVAILABLE));
         try { return documents.read(new HttpExecutor.Target(binding.baseUrl(), binding.authType(), binding.authHeaderName(), binding.secretRef(), workspaceId),
                 source.source().connectionKey(), definition.operation(operationName), input, secret, 10); }
         catch (MicrosoftGraphDocuments.Failure e) {
-            if (Integer.valueOf(401).equals(e.status()) && "oauth2ClientCredentials".equals(binding.authType()))
+            if (Integer.valueOf(401).equals(e.status()) && ("oauth2ClientCredentials".equals(binding.authType()) || "oauth2AuthorizationCode".equals(binding.authType())))
                 secrets.invalidateOAuth(workspaceId, binding.secretRef());
             throw new ApiException(ProblemCode.DEPENDENCY_UNAVAILABLE, "The approved document source is unavailable.");
         }

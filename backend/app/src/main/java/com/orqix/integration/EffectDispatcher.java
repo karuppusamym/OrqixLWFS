@@ -211,7 +211,7 @@ public class EffectDispatcher {
         AgentExecutor.Result run = agents.execute(new AgentExecutor.Request(request.workspaceId(), request.runId(),
                 effect.id(), request.initiatorSubjectId(), request.nodeId(), attempt, record.definition(), operation,
                 request.body(), request.resultMapping(), target.baseUrl(),
-                ("bearerToken".equals(target.authType()) || "oauth2ClientCredentials".equals(target.authType())) ? secretValue : null, request.timeoutSeconds()));
+                ("bearerToken".equals(target.authType()) || ("oauth2ClientCredentials".equals(target.authType()) || "oauth2AuthorizationCode".equals(target.authType()))) ? secretValue : null, request.timeoutSeconds()));
         switch (run.outcome()) {
             case SUCCEEDED -> {
                 journal.finish(request.workspaceId(), effect.id(), EffectJournal.SUCCEEDED, null, null, run.detail(),

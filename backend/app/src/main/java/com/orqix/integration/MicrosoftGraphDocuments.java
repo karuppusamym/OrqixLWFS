@@ -68,7 +68,7 @@ public final class MicrosoftGraphDocuments {
 
     public ObjectNode read(Target target, String connectionKey, ConnectionDefinition.Operation operation, JsonNode input,
             String token, int timeoutSeconds) {
-        if (!("bearerToken".equals(target.authType()) || "oauth2ClientCredentials".equals(target.authType())) || token == null || token.isBlank()) {
+        if (!("bearerToken".equals(target.authType()) || ("oauth2ClientCredentials".equals(target.authType()) || "oauth2AuthorizationCode".equals(target.authType()))) || token == null || token.isBlank()) {
             throw fail("DOCUMENT_AUTH_REQUIRED");
         }
         if (input == null || operation.requestSchema() == null

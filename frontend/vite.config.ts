@@ -1,3 +1,4 @@
+import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import tailwindcss from '@tailwindcss/vite'
@@ -45,6 +46,26 @@ const securityHeaders = {
   'Referrer-Policy': 'no-referrer',
 }
 
+/**
+ * Test files that replace modules (`vi.mock`, `vi.doMock`, `vi.resetModules`) need a fresh module graph per file, so
+ * they run in the isolated project. Everything else shares one warm module graph and one jsdom per worker (see the
+ * `projects` comment in `test` below). Discovered from the sources, so a new file that mocks modules is isolated
+ * automatically instead of silently breaking its neighbours.
+ */
+function isolatedTestFiles(): string[] {
+  const out: string[] = []
+  const walk = (dir: string) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name)
+      if (entry.isDirectory()) walk(full)
+      else if (/\.test\.tsx?$/.test(entry.name) && /\bvi\.(mock|doMock|resetModules)\(/.test(fs.readFileSync(full, 'utf8')))
+        out.push(path.relative(here, full).split(path.sep).join('/'))
+    }
+  }
+  walk(path.join(here, 'src'))
+  return out.sort()
+}
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, here, 'VITE_')
   // Mock mode: `--mode mock`, or VITE_MOCK_API=true in the environment or a .env file.
@@ -70,11 +91,18 @@ export default defineConfig(({ mode }) => {
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
-    include: ['src/**/*.test.{ts,tsx}'],
     // CSS is not processed in tests, except when a test reads a stylesheet as text (the design-token checks in src/styles).
     css: { include: [/\.css\?raw/] },
     restoreMocks: true,
     testTimeout: 15000,
+    // Reliability (docs/build/S78): with a fresh module graph and a fresh jsdom for every file, 125 files each spent
+    // seconds re-evaluating the app and the mock server and creating jsdom, which is what pushed heavy interaction
+    // tests over the timeout when the machine was busy. Files that do not replace modules share one warm graph per
+    // worker (setup, the per-test reseed and cleanup still run for every test); the few that do stay isolated.
+    projects: [
+      { extends: true, test: { name: 'shared', isolate: false, include: ['src/**/*.test.{ts,tsx}'], exclude: isolatedTestFiles() } },
+      { extends: true, test: { name: 'isolated', isolate: true, include: isolatedTestFiles() } },
+    ],
   },
   }
 })

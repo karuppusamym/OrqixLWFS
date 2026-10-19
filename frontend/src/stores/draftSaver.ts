@@ -8,6 +8,12 @@ export interface SaveResult {
   savedBy: string
 }
 
+/**
+ * Test seam only: the unit-test setup shortens the quiet period so UI tests do not sit through the real 1.5 s timer
+ * after every edit. Left undefined in the product, so the spec value below always applies there.
+ */
+export const draftSaverTestTuning: { debounceMs?: number } = {}
+
 export type SaveFn = (definition: Definition, revision: number) => Promise<SaveResult>
 
 export interface DraftSaverOptions {
@@ -37,7 +43,7 @@ export class DraftSaver {
   constructor(store: StudioStore, saveFn: SaveFn, options: DraftSaverOptions = {}) {
     this.store = store
     this.saveFn = saveFn
-    this.debounceMs = options.debounceMs ?? 1500
+    this.debounceMs = options.debounceMs ?? draftSaverTestTuning.debounceMs ?? 1500
     this.backoffMs = options.backoffMs ?? [2000, 4000, 8000, 16000, 30000]
   }
 

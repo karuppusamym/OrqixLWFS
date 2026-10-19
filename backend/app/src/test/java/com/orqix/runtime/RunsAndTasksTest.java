@@ -108,13 +108,13 @@ class RunsAndTasksTest extends RuntimeTestBase {
         UUID workflowId = workflow();
         UUID rheaRun = UUID.fromString(start("rhea.requester", PURCHASING, workflowId, BigDecimal.ONE).path("id").asString());
         UUID maniRun = UUID.fromString(start("mani.manager", PURCHASING, workflowId, BigDecimal.ONE).path("id").asString());
-        List<String> maniClaimable = runIds(api("mani.manager").get("/workspaces/{ws}/tasks?view=claimable&limit=100",
-                PURCHASING).body());
+        List<String> maniClaimable = runIds(api("mani.manager").getAllPages("/workspaces/{ws}/tasks?view=claimable&limit=100",
+                PURCHASING));
         assertThat(maniClaimable).contains(rheaRun.toString()).doesNotContain(maniRun.toString());
-        List<String> maxClaimable = runIds(api("max.manager").get("/workspaces/{ws}/tasks?view=claimable&limit=100",
-                PURCHASING).body());
+        List<String> maxClaimable = runIds(api("max.manager").getAllPages("/workspaces/{ws}/tasks?view=claimable&limit=100",
+                PURCHASING));
         assertThat(maxClaimable).contains(rheaRun.toString(), maniRun.toString());
-        assertThat(api("fin.finance").get("/workspaces/{ws}/tasks?view=claimable&limit=100", PURCHASING).body()
+        assertThat(api("fin.finance").getAllPages("/workspaces/{ws}/tasks?view=claimable&limit=100", PURCHASING)
                 .path("items").findValues("runId").stream().map(JsonNode::asString).toList())
                 .doesNotContain(rheaRun.toString());
         assertThat(api("rhea.requester").get("/workspaces/{ws}/tasks?view=claimable", PURCHASING).status()).isEqualTo(403);
@@ -127,11 +127,11 @@ class RunsAndTasksTest extends RuntimeTestBase {
         // Assigned and completed views.
         String rheaTask = openTask(PURCHASING, rheaRun, "manager").path("id").asString();
         assertThat(claim("max.manager", PURCHASING, rheaTask).status()).isEqualTo(200);
-        JsonNode assigned = api("max.manager").get("/workspaces/{ws}/tasks?view=assigned&limit=100", PURCHASING).body();
+        JsonNode assigned = api("max.manager").getAllPages("/workspaces/{ws}/tasks?view=assigned&limit=100", PURCHASING);
         assertThat(runIds(assigned)).contains(rheaRun.toString());
         assertThat(assigned.path("counts").path("assigned").asInt()).isPositive();
         assertThat(decide("max.manager", PURCHASING, rheaTask, "reject", "Not needed").status()).isEqualTo(201);
-        JsonNode completed = api("max.manager").get("/workspaces/{ws}/tasks?view=completed&limit=100", PURCHASING).body();
+        JsonNode completed = api("max.manager").getAllPages("/workspaces/{ws}/tasks?view=completed&limit=100", PURCHASING);
         assertThat(runIds(completed)).contains(rheaRun.toString());
     }
 
@@ -140,7 +140,7 @@ class RunsAndTasksTest extends RuntimeTestBase {
         UUID workflowId = publishPurchase(SANDBOX, d -> ((ObjectNode) d.path("security")).put("selfApproval", "allow"));
         UUID runId = UUID.fromString(start("mani.manager", SANDBOX, workflowId, BigDecimal.ONE).path("id").asString());
         String taskId = openTaskIn(SANDBOX, runId, "manager");
-        assertThat(api("mani.manager").get("/workspaces/{ws}/tasks?view=claimable&limit=100", SANDBOX).body()
+        assertThat(api("mani.manager").getAllPages("/workspaces/{ws}/tasks?view=claimable&limit=100", SANDBOX)
                 .path("items").findValues("runId").stream().map(JsonNode::asString).toList()).contains(runId.toString());
         assertThat(claim("mani.manager", SANDBOX, taskId).status()).isEqualTo(200);
         Response decided = decide("mani.manager", SANDBOX, taskId, "approve", null);
@@ -362,16 +362,16 @@ class RunsAndTasksTest extends RuntimeTestBase {
         assertThat(run(PURCHASING, runId).path("reference").asString()).isEqualTo(reference);
         assertThat(api("rhea.requester").get("/workspaces/{ws}/runs/{id}", PURCHASING, runId).body().path("reference")
                 .asString()).isEqualTo(reference);
-        assertThat(referenceOf(api("olga.operator").get("/workspaces/{ws}/runs?limit=100", PURCHASING).body(), "id",
+        assertThat(referenceOf(api("olga.operator").getAllPages("/workspaces/{ws}/runs?limit=100", PURCHASING), "id",
                 runId.toString())).isEqualTo(reference);
-        assertThat(strings(api("rhea.requester").get("/workspaces/{ws}/me/requests?limit=100", PURCHASING).body(),
+        assertThat(strings(api("rhea.requester").getAllPages("/workspaces/{ws}/me/requests?limit=100", PURCHASING),
                 "reference")).contains(reference).allMatch(r -> r.matches("ORQ-[1-9][0-9]{3,}"));
         JsonNode task = openTask(PURCHASING, runId, "manager");
         assertThat(task.path("runReference").asString()).isEqualTo(reference);
         String taskId = task.path("id").asString();
         assertThat(api("olga.operator").get("/workspaces/{ws}/tasks/{id}", PURCHASING, taskId).body()
                 .path("runReference").asString()).isEqualTo(reference);
-        assertThat(strings(api("max.manager").get("/workspaces/{ws}/tasks?view=claimable&limit=100", PURCHASING).body(),
+        assertThat(strings(api("max.manager").getAllPages("/workspaces/{ws}/tasks?view=claimable&limit=100", PURCHASING),
                 "runReference")).contains(reference);
 
         // Request fields are labelled in form order (inputUi.order), not in the storage order of the jsonb document.
@@ -386,8 +386,7 @@ class RunsAndTasksTest extends RuntimeTestBase {
         // Notifications carry the reference of their request.
         approve("mani.manager", PURCHASING, runId, "manager");
         awaitLifecycle(PURCHASING, runId, "completed", "waiting", "needsAttention");
-        for (JsonNode notification : api("rhea.requester").get("/workspaces/{ws}/me/notifications?limit=100", PURCHASING)
-                .body().path("items")) {
+        for (JsonNode notification : api("rhea.requester").getAllPages("/workspaces/{ws}/me/notifications?limit=100", PURCHASING).path("items")) {
             if (runId.toString().equals(notification.path("runId").asString())) {
                 assertThat(notification.path("runReference").asString()).isEqualTo(reference);
             }
@@ -402,9 +401,9 @@ class RunsAndTasksTest extends RuntimeTestBase {
         // the start response goes to the initiator, who may read the request
         assertThat(started.path("requestTitle").asString()).isEqualTo("Replacement laptop");
         // the initiator (my requests) and an operator (run.read-data) see the title
-        assertThat(titleIn(api("rhea.requester").get("/workspaces/{ws}/me/requests?limit=100", PURCHASING).body(), runId))
+        assertThat(titleIn(api("rhea.requester").getAllPages("/workspaces/{ws}/me/requests?limit=100", PURCHASING), runId))
                 .isEqualTo("Replacement laptop");
-        assertThat(titleIn(api("olga.operator").get("/workspaces/{ws}/runs?limit=100", PURCHASING).body(), runId))
+        assertThat(titleIn(api("olga.operator").getAllPages("/workspaces/{ws}/runs?limit=100", PURCHASING), runId))
                 .isEqualTo("Replacement laptop");
         assertThat(run(PURCHASING, runId).path("requestTitle").asString()).isEqualTo("Replacement laptop");
         // a viewer sees that the request exists, but the title is withheld together with the input
@@ -419,8 +418,7 @@ class RunsAndTasksTest extends RuntimeTestBase {
         // notifications of the request carry the title for the initiator
         approve("mani.manager", PURCHASING, runId, "manager");
         awaitLifecycle(PURCHASING, runId, "completed", "waiting", "needsAttention");
-        for (JsonNode notification : api("rhea.requester").get("/workspaces/{ws}/me/notifications?limit=100", PURCHASING)
-                .body().path("items")) {
+        for (JsonNode notification : api("rhea.requester").getAllPages("/workspaces/{ws}/me/notifications?limit=100", PURCHASING).path("items")) {
             if (runId.toString().equals(notification.path("runId").asString())) {
                 assertThat(notification.path("requestTitle").asString()).isEqualTo("Replacement laptop");
             }
@@ -439,7 +437,7 @@ class RunsAndTasksTest extends RuntimeTestBase {
         changed.put("name", "Purchase approval (changed)");
         assertThat(api("dana.designer").put(Map.of("definition", changed), "\"r2\"",
                 "/workspaces/{ws}/workflows/{id}/draft", PURCHASING, id).status()).isEqualTo(200);
-        JsonNode list = api("dana.designer").get("/workspaces/{ws}/workflows?limit=100", PURCHASING).body();
+        JsonNode list = api("dana.designer").getAllPages("/workspaces/{ws}/workflows?limit=100", PURCHASING);
         JsonNode listed = null;
         for (JsonNode item : list.path("items")) {
             if (id.toString().equals(item.path("id").asString())) {

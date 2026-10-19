@@ -116,6 +116,13 @@ export function createCaseHandlers(getUser: () => MockUser): HttpHandler[] {
       if (!['run.read', 'workflow.start', 'task.act'].some(permission => perms.includes(permission as typeof perms[number]))) return failure(403, 'FORBIDDEN', 'Cases are not visible.')
       return HttpResponse.json(instances.filter(row => definitions.some(def => def.ws === ws && def.id === row.value.definitionId) && visible(row, user, ws)).map(row => project(row, user)))
     }),
+    http.get(`${B}/workspaces/:ws/cases/instances/:id/data`, ({ params }) => {
+      const ws = String(params.ws), user = getUser(), perms = permissionsOf(user, ws)
+      const row = instances.find(value => value.value.id === String(params.id) && definitions.some(def => def.ws === ws && def.id === value.value.definitionId))
+      if (!member(ws, user) || !row || !(perms.includes('run.read-data') || row.startedBy === user.id || row.value.tasks.some(item => item.candidateGroups.some(group => inGroup(user, group))))) return failure(404, 'NOT_FOUND', 'Case data not found.')
+      return HttpResponse.json({ fields: [], values: {}, version: row.value.version, canEdit: false, changes: [] })
+    }),
+    http.post(`${B}/workspaces/:ws/cases/instances/:id/data`, () => failure(503, 'DEPENDENCY_UNAVAILABLE', 'Typed case data editing requires the real backend.')),
     http.get(`${B}/workspaces/:ws/cases/instances/:id/plan`, ({ params }) => {
       const ws = String(params.ws), user = getUser(), row = instances.find(value => value.value.id === String(params.id))
       if (!member(ws, user) || !row || !definitions.some(def => def.ws === ws && def.id === row.value.definitionId) || !visible(row, user, ws)) return failure(404, 'NOT_FOUND', 'Case not found.')

@@ -106,6 +106,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/cases/instances/{instanceId}/data": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Read pinned typed case data
+         * @description Requires run.read-data, the case starter, or current case-worker eligibility. Historical before/after values require run.read-data.
+         */
+        get: operations["getCaseData"];
+        put?: never;
+        /**
+         * Replace validated case data with current eligibility and version
+         * @description Requires a currently eligible case worker with task.act, or both run.operate and run.read-data. Held or ended cases reject new edits. Data is separate from engine variables and cannot alter admitted task predicates.
+         */
+        post: operations["updateCaseData"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/cases/instances/{instanceId}/plan": {
         parameters: {
             query?: never;
@@ -3554,11 +3581,47 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        CaseDataField: {
+            key: string;
+            label: string;
+            /** @enum {string} */
+            type: "text" | "number" | "integer" | "boolean" | "date" | "choice";
+            /** @default false */
+            required: boolean;
+            maxLength?: number | null;
+            minimum?: number | null;
+            maximum?: number | null;
+            options?: string[] | null;
+        };
+        CaseDataValues: {
+            [key: string]: string | number | boolean;
+        };
+        StartCase: {
+            data?: components["schemas"]["CaseDataValues"];
+        };
+        UpdateCaseData: {
+            expectedVersion: number;
+            reason: string;
+            values: components["schemas"]["CaseDataValues"];
+        };
+        CaseDataChange: {
+            version: number;
+            before: components["schemas"]["CaseDataValues"];
+            after: components["schemas"]["CaseDataValues"];
+        };
+        CaseData: {
+            fields: components["schemas"]["CaseDataField"][];
+            values: components["schemas"]["CaseDataValues"];
+            version: number;
+            canEdit: boolean;
+            changes: components["schemas"]["CaseDataChange"][];
+        };
         CreateCaseDefinition: {
             key: string;
             name: string;
             /** @description Bounded CMMN 1.1 XML source (64 KiB UTF-8) */
             sourceXml: string;
+            dataFields?: components["schemas"]["CaseDataField"][];
         };
         CaseDefinition: {
             id: components["schemas"]["Uuid"];
@@ -3566,6 +3629,7 @@ export interface components {
             name: string;
             version: number;
             createdAt: components["schemas"]["Timestamp"];
+            dataFields?: components["schemas"]["CaseDataField"][];
         };
         CaseDefinitionDetail: {
             id: components["schemas"]["Uuid"];
@@ -3574,6 +3638,7 @@ export interface components {
             version: number;
             createdAt: components["schemas"]["Timestamp"];
             sourceXml: string;
+            dataFields?: components["schemas"]["CaseDataField"][];
         };
         CasePlanItem: {
             id: string;
@@ -7687,7 +7752,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["StartCase"];
+            };
+        };
         responses: {
             /** @description Identical idempotent replay */
             200: {
@@ -7763,6 +7832,68 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    getCaseData: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized data */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseData"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateCaseData: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateCaseData"];
+            };
+        };
+        responses: {
+            /** @description Updated metadata or original replay */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseInstance"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     getCasePlan: {

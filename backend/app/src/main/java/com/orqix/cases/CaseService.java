@@ -32,13 +32,27 @@ import com.orqix.shared.web.Sql;
 /** Orqix authorization and persistence boundary for a deliberately restricted executable CMMN subset. */
 @Service
 public class CaseService {
-    public record Definition(UUID id, String key, String name, int version, Instant createdAt) {}
-    public record DefinitionDetail(UUID id, String key, String name, int version, Instant createdAt, String sourceXml) {}
+    public record Definition(UUID id, String key, String name, int version, Instant createdAt, List<CaseDataModel.Field> dataFields) {}
+    public record DefinitionDetail(UUID id, String key, String name, int version, Instant createdAt, String sourceXml, List<CaseDataModel.Field> dataFields) {}
     public record Task(String id, String name, String status, List<String> candidateGroups, boolean eligible) {}
     public record Instance(UUID id, UUID definitionId, int definitionVersion, String status, int version,
             List<Task> tasks, Instant createdAt) {}
     public record Result<T>(T value, boolean replayed) {}
-    public record CreateDefinition(String key, String name, String sourceXml) {}
+    public record CreateDefinition(String key, String name, String sourceXml, List<CaseDataModel.Field> dataFields) {
+        public CreateDefinition(String key,String name,String sourceXml) { this(key,name,sourceXml,null); }
+    }
+    public record StartCase(tools.jackson.databind.JsonNode data) {
+        @Override public String toString() { return "Start case [data redacted]"; }
+    }
+    public record UpdateData(int expectedVersion,String reason,tools.jackson.databind.JsonNode values) {
+        @Override public String toString() { return "Case data update [data and reason redacted]"; }
+    }
+    public record DataChange(int version,tools.jackson.databind.JsonNode before,tools.jackson.databind.JsonNode after) {
+        @Override public String toString() { return "Case data change " + version + " [data redacted]"; }
+    }
+    public record CaseData(List<CaseDataModel.Field> fields,tools.jackson.databind.JsonNode values,int version,boolean canEdit,List<DataChange> changes) {
+        @Override public String toString() { return "Case data " + version + " [data redacted]"; }
+    }
     public record CompleteTask(int expectedVersion) {}
     public record TerminateCase(int expectedVersion, String reason) {
         @Override public String toString() { return "Case termination [reason redacted]"; }
@@ -56,9 +70,9 @@ public class CaseService {
     public record PlanOverview(List<PlanItem> items, List<Milestone> milestones, List<CaseEvent> events, boolean canClose) {}
 
     private record DefinitionRow(UUID id, UUID workspaceId, String key, String name, int version,
-            Instant createdAt, String sourceXml, String engineDefinitionId) {
-        Definition summary() { return new Definition(id, key, name, version, createdAt); }
-        DefinitionDetail detail() { return new DefinitionDetail(id, key, name, version, createdAt, sourceXml); }
+            Instant createdAt, String sourceXml, String engineDefinitionId, List<CaseDataModel.Field> dataFields) {
+        Definition summary() { return new Definition(id, key, name, version, createdAt, dataFields); }
+        DefinitionDetail detail() { return new DefinitionDetail(id, key, name, version, createdAt, sourceXml, dataFields); }
     }
     private record InstanceRow(UUID id, UUID definitionId, int definitionVersion, String engineInstanceId,
             String status, int version, Instant createdAt, UUID startedBy) {}
@@ -73,15 +87,16 @@ public class CaseService {
     private final IdempotencyService idempotency;
     private final Json json;
     private final AuditWriter audit;
+    private final CaseDataModel dataModel;
     private final Map<UUID,Map<String,Set<String>>> groupsByDefinition = new java.util.concurrent.ConcurrentHashMap<>();
     private final Map<UUID,Set<String>> requiredByDefinition = new java.util.concurrent.ConcurrentHashMap<>();
 
     public CaseService(JdbcClient jdbc, PolicyService policy, CmmnSubsetValidator validator,
             CmmnRepositoryService repository, CmmnRuntimeService runtime, CmmnTaskService tasks,
-            CmmnHistoryService history, IdempotencyService idempotency, Json json, AuditWriter audit) {
+            CmmnHistoryService history, IdempotencyService idempotency, Json json, AuditWriter audit, CaseDataModel dataModel) {
         this.jdbc=jdbc; this.policy=policy; this.validator=validator; this.repository=repository;
         this.runtime=runtime; this.tasks=tasks; this.idempotency=idempotency; this.json=json; this.audit=audit;
-        this.history=history;
+        this.history=history; this.dataModel=dataModel;
     }
 
     private WorkspaceAccess access(Caller caller, UUID workspaceId, Permission permission, String operation) {
@@ -97,6 +112,7 @@ public class CaseService {
                 || request.name() == null || request.name().isBlank() || request.name().length() > 200)
             throw new ApiException(ProblemCode.VALIDATION_FAILED, "Case key or name is invalid.");
         String xml = request.sourceXml();
+        var dataFields=dataModel.fields(request.dataFields());
         Set<String> groups = validator.validate(xml, request.key());
         long found = jdbc.sql("SELECT count(*) FROM workspace_group WHERE workspace_id=:ws AND key IN (:groups)")
                 .param("ws",ws).param("groups",groups).query(Long.class).single();
@@ -125,13 +141,13 @@ public class CaseService {
         catch (Exception ex) { throw new IllegalStateException(ex); }
         jdbc.sql("""
                 INSERT INTO case_definition(id,workspace_id,catalog_id,version,name,source_xml,source_sha256,
-                    engine_definition_id,engine_deployment_id,created_by)
-                VALUES(:id,:ws,:catalog,:version,:name,:xml,:sha,:engine,:deployment,:actor)
+                    engine_definition_id,engine_deployment_id,created_by,data_fields)
+                VALUES(:id,:ws,:catalog,:version,:name,:xml,:sha,:engine,:deployment,:actor,CAST(:fields AS jsonb))
                 """)
                 .param("id",id).param("ws",ws).param("catalog",existing.getKey()).param("version",version)
                 .param("name",request.name().strip()).param("xml",xml).param("sha",sha)
                 .param("engine",engineDefinition.getId()).param("deployment",deployment.getId())
-                .param("actor",caller.subjectId()).update();
+                .param("actor",caller.subjectId()).param("fields",json.write(dataFields)).update();
         jdbc.sql("UPDATE case_catalog SET current_version=:v WHERE id=:id")
                 .param("v",version).param("id",existing.getKey()).update();
         audit.write(new AuditWriter.Entry(ws,AuditWriter.ActorType.USER,caller.subjectId(),"case.definition.created",
@@ -145,10 +161,10 @@ public class CaseService {
         if (!membership.has(Permission.WORKFLOW_READ) && !membership.has(Permission.WORKFLOW_START))
             throw ApiException.forbidden();
         return jdbc.sql("""
-                SELECT d.id,d.workspace_id,c.key,d.name,d.version,d.created_at,d.source_xml,d.engine_definition_id
+                SELECT d.id,d.workspace_id,c.key,d.name,d.version,d.created_at,d.source_xml,d.engine_definition_id,d.data_fields::text AS data_fields
                 FROM case_definition d JOIN case_catalog c ON c.workspace_id=d.workspace_id AND c.id=d.catalog_id
                 WHERE d.workspace_id=:ws ORDER BY d.created_at DESC,d.id DESC LIMIT 100
-                """).param("ws",ws).query(CaseService::mapDefinition).list().stream().map(DefinitionRow::summary).toList();
+                """).param("ws",ws).query(this::mapDefinition).list().stream().map(DefinitionRow::summary).toList();
     }
 
     @Transactional(readOnly=true)
@@ -159,34 +175,41 @@ public class CaseService {
 
     private DefinitionRow definition(UUID ws, UUID id) {
         return jdbc.sql("""
-                SELECT d.id,d.workspace_id,c.key,d.name,d.version,d.created_at,d.source_xml,d.engine_definition_id
+                SELECT d.id,d.workspace_id,c.key,d.name,d.version,d.created_at,d.source_xml,d.engine_definition_id,d.data_fields::text AS data_fields
                 FROM case_definition d JOIN case_catalog c ON c.workspace_id=d.workspace_id AND c.id=d.catalog_id
                 WHERE d.workspace_id=:ws AND d.id=:id
-                """).param("ws",ws).param("id",id).query(CaseService::mapDefinition).optional().orElseThrow(ApiException::notFound);
+                """).param("ws",ws).param("id",id).query(this::mapDefinition).optional().orElseThrow(ApiException::notFound);
     }
 
-    private static DefinitionRow mapDefinition(java.sql.ResultSet rs, int n) throws java.sql.SQLException {
+    private DefinitionRow mapDefinition(java.sql.ResultSet rs, int n) throws java.sql.SQLException {
         return new DefinitionRow(Sql.uuid(rs,"id"),Sql.uuid(rs,"workspace_id"),rs.getString("key"),
                 rs.getString("name"),rs.getInt("version"),Sql.instant(rs,"created_at"),
-                rs.getString("source_xml"),rs.getString("engine_definition_id"));
+                rs.getString("source_xml"),rs.getString("engine_definition_id"),dataModel.readFields(rs.getString("data_fields")));
     }
 
     @Transactional
     public Result<Instance> start(Caller caller, UUID ws, UUID definitionId, String key) {
+        return start(caller,ws,definitionId,key,null);
+    }
+
+    @Transactional
+    public Result<Instance> start(Caller caller, UUID ws, UUID definitionId, String key, StartCase request) {
         var access = access(caller,ws,Permission.WORKFLOW_START,"startCase");
         var definition = definition(ws,definitionId);
+        var initialData=dataModel.values(definition.dataFields(),request==null?null:request.data());
         String operation="startCase";
         var claim=idempotency.claim(ws,caller.subjectId(),operation,IdempotencyService.requireKey(key),
-                idempotency.requestHash(operation,Map.of("definitionId",definitionId.toString()),Map.of()));
+                idempotency.requestHash(operation,Map.of("definitionId",definitionId.toString()),initialData.isEmpty()?Map.of():initialData));
         if (claim.isReplay()) return new Result<>(replayed(claim,access),true);
         UUID id=Ids.newId();
         var engine=runtime.createCaseInstanceBuilder().caseDefinitionId(definition.engineDefinitionId())
                 .tenantId(access.workspace().engineTenantId()).businessKey(id.toString()).start();
         boolean engineActive = runtime.createCaseInstanceQuery().caseInstanceId(engine.getId()).singleResult()!=null;
-        jdbc.sql("INSERT INTO case_instance(id,workspace_id,definition_id,engine_instance_id,status,started_by,completed_at) VALUES(:id,:ws,:definition,:engine,:status,:actor,CASE WHEN :active THEN NULL ELSE now() END)")
+        jdbc.sql("INSERT INTO case_instance(id,workspace_id,definition_id,engine_instance_id,status,started_by,completed_at,data_values) VALUES(:id,:ws,:definition,:engine,:status,:actor,CASE WHEN :active THEN NULL ELSE now() END,CAST(:data AS jsonb))")
                 .param("id",id).param("ws",ws).param("definition",definitionId).param("engine",engine.getId())
-                .param("actor",caller.subjectId()).param("status",engineActive?"active":"completed").param("active",engineActive).update();
+                .param("actor",caller.subjectId()).param("status",engineActive?"active":"completed").param("active",engineActive).param("data",json.write(initialData)).update();
         appendEvent(ws,id,1,"started",null,null,engineActive?"active":"completed",caller,null);
+        appendDataEvent(ws,id,1,json.object(),initialData);
         audit.write(new AuditWriter.Entry(ws,AuditWriter.ActorType.USER,caller.subjectId(),"case.instance.started",
                 "caseInstance",id.toString(),AuditWriter.Outcome.SUCCESS,Map.of("definitionId",definitionId.toString(),"version",definition.version())));
         Instance response=instance(ws,id,access);
@@ -495,6 +518,81 @@ public class CaseService {
                 "caseInstance",id.toString(),AuditWriter.Outcome.SUCCESS,Map.of("action",action,"planItemId",itemId,"version",row.version()+1)));
         Instance response=instance(ws,id,access); saveResponse(claim,id,groups,response);
         idempotency.complete(claim,"caseInstance",id.toString(),200); return new Result<>(response,false);
+    }
+
+    private boolean canReadData(InstanceRow row,WorkspaceAccess access) {
+        return access.has(Permission.RUN_READ_DATA) || row.startedBy().equals(access.subjectId())
+                || eligibleCaseWorker(row,access);
+    }
+
+    private boolean canEditData(InstanceRow row,WorkspaceAccess access) {
+        if(!row.status().equals("active")) return false;
+        if(access.has(Permission.RUN_OPERATE) && access.has(Permission.RUN_READ_DATA)) return true;
+        return eligibleCaseWorker(row,access);
+    }
+
+    private boolean eligibleCaseWorker(InstanceRow row,WorkspaceAccess access) {
+        if(!access.has(Permission.TASK_ACT) || !Set.of("active","suspended").contains(row.status())) return false;
+        // Eligibility is checked independently of metadata-read grants.
+        for(var task:tasks.createTaskQuery().caseInstanceId(row.engineInstanceId()).list()) {
+            var groups=tasks.getIdentityLinksForTask(task.getId()).stream().filter(link->"candidate".equals(link.getType()) && link.getGroupId()!=null)
+                    .map(org.flowable.identitylink.api.IdentityLink::getGroupId).toList();
+            if(eligible(task.getAssignee(),groups,access)) return true;
+        }
+        for(var item:runtime.createPlanItemInstanceQuery().caseInstanceId(row.engineInstanceId()).list()) {
+            if(org.flowable.cmmn.api.runtime.PlanItemDefinitionType.HUMAN_TASK.equals(item.getPlanItemDefinitionType())
+                    && Set.of("enabled","disabled").contains(item.getState())
+                    && humanGroups(row,access.workspaceId()).getOrDefault(item.getPlanItemDefinitionId(),Set.of()).stream().anyMatch(access.groupKeys()::contains)) return true;
+        }
+        return false;
+    }
+
+    @Transactional(readOnly=true,isolation=org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
+    public CaseData data(Caller caller,UUID ws,UUID id) {
+        var access=policy.requireMember(caller,ws); var row=instanceRow(ws,id,false);
+        if(!canReadData(row,access) && !canEditData(row,access)) throw ApiException.notFound();
+        var definition=definition(ws,row.definitionId());
+        var values=jdbc.sql("SELECT data_values::text FROM case_instance WHERE workspace_id=:ws AND id=:id")
+                .param("ws",ws).param("id",id).query(String.class).single();
+        var changes=access.has(Permission.RUN_READ_DATA)?jdbc.sql("SELECT version,before_values::text,after_values::text FROM case_data_event WHERE workspace_id=:ws AND case_id=:id ORDER BY version DESC LIMIT 200")
+                .param("ws",ws).param("id",id).query((rs,n)->new DataChange(rs.getInt(1),json.parse(rs.getString(2)),json.parse(rs.getString(3)))).list():List.<DataChange>of();
+        return new CaseData(definition.dataFields(),json.parse(values),row.version(),canEditData(row,access),changes);
+    }
+
+    @Transactional
+    public Result<Instance> updateData(Caller caller,UUID ws,UUID id,String key,UpdateData request) {
+        var access=policy.requireMember(caller,ws);
+        if(!access.has(Permission.TASK_ACT) && !(access.has(Permission.RUN_OPERATE) && access.has(Permission.RUN_READ_DATA))) throw ApiException.forbidden();
+        if(request==null || request.values()==null) throw new ApiException(ProblemCode.VALIDATION_FAILED);
+        validateCommand(new CaseCommand(request.expectedVersion(),request.reason()));
+        var row=instanceRow(ws,id,true);
+        var values=dataModel.values(definition(ws,row.definitionId()).dataFields(),request.values());
+        String operation="updateCaseData";
+        var claim=idempotency.claim(ws,caller.subjectId(),operation,IdempotencyService.requireKey(key),
+                idempotency.requestHash(operation,Map.of("caseId",id.toString()),request));
+        if(claim.isReplay()) {
+            if(!(access.has(Permission.RUN_OPERATE) && access.has(Permission.RUN_READ_DATA)) && !eligibleCaseWorker(row,access)) throw new ApiException(ProblemCode.NOT_ELIGIBLE);
+            return new Result<>(replayed(claim,access),true);
+        }
+        requireActive(row);
+        if(!canEditData(row,access)) throw new ApiException(ProblemCode.NOT_ELIGIBLE);
+        if(row.version()!=request.expectedVersion()) throw new ApiException(ProblemCode.TASK_VERSION_CONFLICT);
+        var before=json.parse(jdbc.sql("SELECT data_values::text FROM case_instance WHERE workspace_id=:ws AND id=:id").param("ws",ws).param("id",id).query(String.class).single());
+        if(before.equals(values)) throw new ApiException(ProblemCode.VALIDATION_FAILED,"Change at least one case data field.");
+        jdbc.sql("UPDATE case_instance SET data_values=CAST(:data AS jsonb),version=version+1 WHERE workspace_id=:ws AND id=:id")
+                .param("data",json.write(values)).param("ws",ws).param("id",id).update();
+        appendEvent(ws,id,row.version()+1,"dataUpdated",null,row.status(),row.status(),caller,request.reason().strip());
+        appendDataEvent(ws,id,row.version()+1,before,values);
+        var changed=new java.util.TreeSet<String>(); before.propertyNames().forEach(changed::add);values.propertyNames().forEach(changed::add);
+        changed.removeIf(field->java.util.Objects.equals(before.get(field),values.get(field)));
+        audit.write(new AuditWriter.Entry(ws,AuditWriter.ActorType.USER,caller.subjectId(),"case.data.updated","caseInstance",id.toString(),AuditWriter.Outcome.SUCCESS,Map.of("version",row.version()+1,"fields",changed)));
+        var response=instance(ws,id,access);saveResponse(claim,id,List.of(),response);
+        idempotency.complete(claim,"caseInstance",id.toString(),200);return new Result<>(response,false);
+    }
+
+    private void appendDataEvent(UUID ws,UUID id,int version,tools.jackson.databind.JsonNode before,tools.jackson.databind.JsonNode after) {
+        jdbc.sql("INSERT INTO case_data_event(workspace_id,case_id,version,before_values,after_values) VALUES(:ws,:id,:version,CAST(:before AS jsonb),CAST(:after AS jsonb))")
+                .param("ws",ws).param("id",id).param("version",version).param("before",json.write(before)).param("after",json.write(after)).update();
     }
 
     private void appendEvent(UUID ws,UUID id,int version,String action,String itemId,String before,String after,Caller caller,String reason) {

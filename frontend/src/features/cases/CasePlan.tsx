@@ -12,7 +12,7 @@ import { changeCasePlanItem, getCasePlan, type PlanItemAction } from './api'
 
 const ITEM_LABELS: Record<string, string> = { humantask: 'Human task', stage: 'Stage', milestone: 'Milestone' }
 const ACTION_LABELS: Record<PlanItemAction, string> = { start: 'Start task', enable: 'Enable task', disable: 'Disable task', activateStage: 'Activate stage', completeStage: 'Complete stage', terminate: 'Cancel plan item' }
-const HISTORY_LABELS: Record<string, string> = { started: 'Case started', taskCompleted: 'Task completed', suspend: 'Case put on hold', resume: 'Case resumed', close: 'Case closed', terminated: 'Case terminated', ...ACTION_LABELS }
+const HISTORY_LABELS: Record<string, string> = { dataUpdated: 'Case data updated', started: 'Case started', taskCompleted: 'Task completed', suspend: 'Case put on hold', resume: 'Case resumed', close: 'Case closed', terminated: 'Case terminated', ...ACTION_LABELS }
 
 export function CasePlan({ ws, instanceId, version, busy, onPending }: { ws: string; instanceId: string; version: number; busy: boolean; onPending: (pending: boolean) => void }) {
   const [expanded, setExpanded] = useState(false)

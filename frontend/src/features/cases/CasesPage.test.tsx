@@ -164,4 +164,59 @@ describe('case workbench', () => {
     await waitFor(() => expect(body).toEqual({ expectedVersion: 1 }))
     expect(await screen.findByText('No tasks are currently available.')).toBeInTheDocument()
   })
+  it('collects typed initial case data before starting a pinned definition', async () => {
+    signInAs('rhea.requester')
+    let body: unknown
+    const dataFields = [{ key: 'amount', label: 'Claim amount', type: 'number', required: true }, { key: 'confirmed', label: 'Confirmed', type: 'boolean' }]
+    server.use(
+      http.get('*/api/v1/workspaces/:ws/cases/definitions', () => HttpResponse.json([{ ...definition, dataFields }])),
+      http.get('*/api/v1/workspaces/:ws/cases/instances', () => HttpResponse.json([])),
+      http.get('*/api/v1/workspaces/:ws/cases/instances/:id', () => HttpResponse.json(active)),
+      http.post('*/api/v1/workspaces/:ws/cases/definitions/:id/instances', async ({ request }) => { body = await request.json(); return HttpResponse.json(active, { status: 201 }) }),
+    )
+    const user = userEvent.setup(); await renderAppReady(`/w/${ws}/cases`)
+    await user.click(await screen.findByRole('button', { name: /^Start case$/ }))
+    expect(body).toBeUndefined()
+    const dialog = screen.getByRole('dialog', { name: /^Start case$/ })
+    await user.type(within(dialog).getByLabelText('Claim amount (required)'), '12.25')
+    await user.selectOptions(within(dialog).getByLabelText('Confirmed'), 'false')
+    await user.click(within(dialog).getByRole('button', { name: 'Start case with data' }))
+    await waitFor(() => expect(body).toEqual({ data: { amount: 12.25, confirmed: false } }))
+  })
+
+  it('saves typed data with a reason and case version, then renders protected history', async () => {
+    signInAs('olga.operator')
+    let body: unknown, updated = false
+    const fields = [{ key: 'amount', label: 'Claim amount', type: 'number', required: true }]
+    server.use(
+      http.get('*/api/v1/workspaces/:ws/cases/instances/:id', () => HttpResponse.json({ ...active, version: updated ? 2 : 1 })),
+      http.get('*/api/v1/workspaces/:ws/cases/instances/:id/data', () => HttpResponse.json({ fields, values: { amount: updated ? 20 : 12.25 }, version: updated ? 2 : 1, canEdit: true, changes: updated ? [{ version: 2, before: { amount: 12.25 }, after: { amount: 20 } }] : [] })),
+      http.post('*/api/v1/workspaces/:ws/cases/instances/:id/data', async ({ request }) => { expect(request.headers.get('Idempotency-Key')).toBeTruthy(); body = await request.json(); updated = true; return HttpResponse.json({ ...active, version: 2 }) }),
+    )
+    const user = userEvent.setup(); await renderAppReady(`/w/${ws}/cases/${instanceId}`)
+    await user.click(await screen.findByRole('button', { name: 'Show case data' }))
+    const input = await screen.findByLabelText('Claim amount (required)')
+    await user.clear(input); await user.type(input, '20')
+    expect(screen.getByRole('button', { name: 'Save case data' })).toBeDisabled()
+    await user.type(screen.getByLabelText('Reason for data change'), 'Correct evidence amount')
+    await user.click(screen.getByRole('button', { name: 'Save case data' }))
+    await waitFor(() => expect(body).toEqual({ expectedVersion: 1, reason: 'Correct evidence amount', values: { amount: 20 } }))
+    expect(await screen.findByRole('heading', { name: 'Data changes' })).toBeInTheDocument()
+    expect(screen.getByText('12.25 \u2192 20')).toBeInTheDocument()
+  })
+
+  it('renders held case data without edit controls', async () => {
+    signInAs('mani.manager')
+    server.use(
+      http.get('*/api/v1/workspaces/:ws/cases/instances/:id', () => HttpResponse.json({ ...active, status: 'suspended', tasks: active.tasks.map(task => ({ ...task, eligible: false })) })),
+      http.get('*/api/v1/workspaces/:ws/cases/instances/:id/data', () => HttpResponse.json({ fields: [{ key: 'summary', label: 'Summary', type: 'text' }], values: { summary: 'Awaiting evidence' }, version: 1, canEdit: false, changes: [] })),
+    )
+    const user = userEvent.setup(); await renderAppReady(`/w/${ws}/cases/${instanceId}`)
+    await user.click(await screen.findByRole('button', { name: 'Show case data' }))
+    expect(await screen.findByLabelText('Summary')).toHaveValue('Awaiting evidence')
+    expect(screen.getByLabelText('Summary')).toHaveAttribute('readonly')
+    expect(screen.queryByRole('button', { name: 'Save case data' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Data changes' })).not.toBeInTheDocument()
+  })
+
 })

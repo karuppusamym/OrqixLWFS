@@ -27,3 +27,7 @@ Real Edge against the refreshed PostgreSQL/Flowable/Keycloak stack passes all fo
 ## Remaining original acceptance
 
 Full case acceptance still includes typed case data, discretionary planning, pinned workflow case tasks and result mapping, repetition/listeners/nested cases, full suspension semantics, a case designer and source-linked import/export/conformance coverage. General application UI designer acceptance and approved write-capable agent tools remain separate unfinished scope. This increment closes WM04e only.
+
+The subsequent full S68 regression gate passes 495 compiler tests and 831 application cases (827 pass/four intentional skips), with Maven verify/coverage/package success (`evidence/case-controls-full-backend.log`), plus all 888 frontend tests across 116 files (`evidence/case-controls-full-frontend.log`). This snapshot precedes typed case-data work.
+
+[S69](S69-typed-case-data.md) subsequently delivers pinned scalar case data, validated start/corrections and protected before/after history. The remaining-scope paragraph above describes the S68 checkpoint; native CMMN case-file semantics and the other full WM04 requirements remain open.

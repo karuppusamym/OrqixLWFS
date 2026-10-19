@@ -76,6 +76,7 @@ public class AuditWriter {
             Map.entry("workflow.created", Set.of("key", "templateId", "source")),
             Map.entry("case.definition.created", Set.of("version")),
             Map.entry("case.instance.started", Set.of("definitionId", "version")),
+            Map.entry("case.data.updated", Set.of("version", "fields")),
             Map.entry("case.lifecycle.changed", Set.of("action", "version")),
             Map.entry("case.planitem.changed", Set.of("action", "planItemId", "version")),
             Map.entry("case.task.completed", Set.of("taskId", "version")),

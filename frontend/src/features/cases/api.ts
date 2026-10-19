@@ -20,8 +20,8 @@ export const getCaseInstance = (ws: string, instanceId: string) => call(api.GET(
   params: { path: { workspaceId: ws, instanceId } },
 }))
 
-export const startCaseInstance = (ws: string, definitionId: string) => call(api.POST('/workspaces/{workspaceId}/cases/definitions/{definitionId}/instances', {
-  params: { path: { workspaceId: ws, definitionId }, header: { 'Idempotency-Key': uuid() } },
+export const startCaseInstance = (ws: string, definitionId: string, data?: S['CaseDataValues']) => call(api.POST('/workspaces/{workspaceId}/cases/definitions/{definitionId}/instances', {
+  params: { path: { workspaceId: ws, definitionId }, header: { 'Idempotency-Key': uuid() } }, body: data ? { data } : undefined,
 }))
 
 export const completeCaseTask = (ws: string, instanceId: string, taskId: string, expectedVersion: number) =>
@@ -63,3 +63,11 @@ export const changeCasePlanItem = (ws: string, instanceId: string, planItemId: s
   } as const
   return call(api.POST(path[action], { params: { path: { workspaceId: ws, instanceId, planItemId }, header: { 'Idempotency-Key': uuid() } }, body: { expectedVersion, reason } }))
 }
+
+export const getCaseData = (ws: string, instanceId: string) => call(api.GET('/workspaces/{workspaceId}/cases/instances/{instanceId}/data', {
+  params: { path: { workspaceId: ws, instanceId } },
+}))
+
+export const updateCaseData = (ws: string, instanceId: string, expectedVersion: number, reason: string, values: S['CaseDataValues']) => call(api.POST('/workspaces/{workspaceId}/cases/instances/{instanceId}/data', {
+  params: { path: { workspaceId: ws, instanceId }, header: { 'Idempotency-Key': uuid() } }, body: { expectedVersion, reason, values },
+}))

@@ -1184,8 +1184,9 @@ paths:
       operationId: getDraftBpmn
       summary: Compiled BPMN of a draft revision with its round-trip check (UI03, docs/build/S56)
       description: |
-        The BPMN is exactly what publishing would deploy. It carries the workflow name, the steps, the connections
-        and (when every step has a canvas position) the diagram; keptFromDraft lists the sections BPMN does not carry.
+        The BPMN is exactly what publishing would deploy. It carries the workflow name, the steps, the connections,
+        the sections and handlers (subprocesses, docs/build/S77) and (when every step has a canvas position) the
+        diagram; keptFromDraft lists the sections BPMN does not carry.
         roundTrip says whether the draft converts to BPMN and back without any difference; only then can edited BPMN
         be applied. A draft with blockers has no BPMN (available false, blockers listed). Read-only for anyone who
         can read the draft, like the YAML source view.

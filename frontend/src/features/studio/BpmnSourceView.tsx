@@ -136,7 +136,7 @@ export function BpmnSourceView() {
   return (
     <div className="space-y-3" data-testid="bpmn-source">
       <p className="text-sm text-muted">
-        The draft as BPMN 2.0, exactly as publishing would compile it (revision {loaded.revision}). It carries the workflow name, the steps, the connections{loaded.diagram ? ' and the canvas positions' : ''}.
+        The draft as BPMN 2.0, exactly as publishing would compile it (revision {loaded.revision}). It carries the workflow name, the steps, the connections, the sections and handlers{loaded.diagram ? ' and the canvas positions' : ''}.
         {loaded.keptFromDraft.length > 0 ? ` Kept from the draft and not in BPMN: ${loaded.keptFromDraft.join(', ')}.` : ''}
       </p>
       {!loaded.available ? (

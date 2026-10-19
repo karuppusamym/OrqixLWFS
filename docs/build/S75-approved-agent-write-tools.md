@@ -72,6 +72,7 @@ All runs in this worktree (JDK 21, Testcontainers PostgreSQL/Flowable, Docker up
 - Frontend: full `vitest run` **931 passed in 125 files** (`frontend-full.log`, run after the backend build, not concurrently); `tsc -b --noEmit`, `eslint .` and `api:check` clean (`frontend-static.log`). New: `AgentWriteToolsPage.test.tsx` (3), `operatorText.test.ts` (1); `Shell.test.tsx` operator navigation now lists "Agent writes".
 - `tools/contract-check/contract_check.py`: PASS, 88 checks (permission vocabulary, audit whitelist, schema.d.ts, LF line endings).
 - Not run: browser journeys (mock or real), Docker stack, image refresh, any live transport.
+- Follow-up, same day: the one failure above was a test fragility, not a product defect. `SeparationOfDutiesTest` read only the first 100 claimable tasks, and the shared test database held more open manager tasks than that. The test now walks every page (`claimableQueueContains`). After that fix a full `clean verify` of this branch exited 0, including the coverage gate and packaging. Frontend was not re-run (no frontend change since the 931-test run).
 
 ## Not included (exclusions)
 

@@ -102,6 +102,29 @@ public abstract class IntegrationTestBase {
             this.groups = groups;
         }
 
+        /**
+         * GET a cursor-paged list and follow {@code nextCursor} to the end. Returns the first page's body with {@code items}
+         * replaced by the items of every page. The shared test database grows over a JVM run, so a presence check on the
+         * first page ({@code limit=100}) can pass or fail depending on which tests ran before; this makes it order-independent.
+         * {@code path} must already contain a query string.
+         */
+        public JsonNode getAllPages(String path, Object... vars) throws Exception {
+            JsonNode first = get(path, vars).body();
+            tools.jackson.databind.node.ObjectNode merged = ((tools.jackson.databind.node.ObjectNode) first).deepCopy();
+            tools.jackson.databind.node.ArrayNode items = merged.putArray("items");
+            JsonNode page = first;
+            for (int guard = 0; guard < 500; guard++) {
+                page.path("items").forEach(items::add);
+                String cursor = page.path("nextCursor").isMissingNode() || page.path("nextCursor").isNull()
+                        ? "" : page.path("nextCursor").asString();
+                if (cursor.isEmpty()) {
+                    return merged;
+                }
+                page = get(path + "&cursor=" + java.net.URLEncoder.encode(cursor, StandardCharsets.UTF_8), vars).body();
+            }
+            throw new AssertionError("Paging did not end after 500 pages: " + path);
+        }
+
         public Response get(String path, Object... vars) throws Exception {
             return send(MockMvcRequestBuilders.get("/api/v1" + path, vars));
         }

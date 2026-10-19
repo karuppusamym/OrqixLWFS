@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { http } from 'msw'
 import { describe, expect, it } from 'vitest'
 import { db, PURCHASE_WORKFLOW_ID } from '@/mocks/state'
+import { draftSaverTestTuning } from '@/stores/draftSaver'
 import { server } from '@/test/server'
 import { renderAppReady, signInAs, WS } from '@/test/utils'
 
@@ -182,6 +183,8 @@ describe('studio (Steps tab, inspector, autosave, check, conflicts)', () => {
   })
 
   it('edits a route from the Steps tab, autosaves after 1.5 s with If-Match, and shows honest save state', async () => {
+    // Asserts 'Unsaved changes' before the autosave fires, so it keeps the spec's 1.5 s quiet period.
+    draftSaverTestTuning.debounceMs = undefined
     signInAs('dana.designer')
     const user = userEvent.setup()
     let ifMatch: string | null = null
@@ -203,6 +206,9 @@ describe('studio (Steps tab, inspector, autosave, check, conflicts)', () => {
   })
 
   it('undo and redo work with the keyboard and return to the saved state', async () => {
+    // This test asserts a state that only exists before the autosave fires; keep the spec's 1.5 s quiet period so a loaded
+    // machine cannot let the save slip in between the edit and the assertion.
+    draftSaverTestTuning.debounceMs = undefined
     signInAs('dana.designer')
     const user = userEvent.setup()
     await renderAppReady(EDIT)

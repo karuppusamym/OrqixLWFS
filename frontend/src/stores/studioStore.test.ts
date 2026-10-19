@@ -3,7 +3,7 @@ import purchase from '../../../examples/purchase-approval.json'
 import { ProblemError } from '@/api/problem'
 import { normalizeDefinition } from '@/features/studio/model/types'
 import { renameHttpResult } from '@/features/studio/model/ops'
-import { DraftSaver, type SaveFn } from './draftSaver'
+import { DraftSaver, draftSaverTestTuning, type SaveFn } from './draftSaver'
 import { createStudioStore, HISTORY_LIMIT, isDirty, type StudioStore } from './studioStore'
 
 function loaded(): StudioStore {
@@ -134,7 +134,10 @@ describe('studio store: add, connect, delete, undo', () => {
 })
 
 describe('draft autosave', () => {
-  beforeEach(() => vi.useFakeTimers())
+  beforeEach(() => {
+    draftSaverTestTuning.debounceMs = undefined // this suite asserts the spec's 1.5 s quiet period
+    vi.useFakeTimers()
+  })
   afterEach(() => vi.useRealTimers())
 
   const ok = (revision: number): SaveFn => vi.fn(async () => ({ revision, savedAt: '2026-10-07T10:05:00Z', savedBy: 'Dana Designer' }))

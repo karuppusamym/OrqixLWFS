@@ -68,9 +68,9 @@ class InclusiveAndMultiInstanceTest extends RuntimeTestBase {
         Response refused = claim("mani.manager", PURCHASING, tasks.get(1));
         assertThat(refused.status()).isEqualTo(403);
         assertThat(refused.body().path("code").asString()).isEqualTo("SEPARATION_OF_DUTIES");
-        assertThat(api("mani.manager").get("/workspaces/{ws}/tasks?view=claimable&limit=100", PURCHASING).body().toString())
+        assertThat(api("mani.manager").getAllPages("/workspaces/{ws}/tasks?view=claimable&limit=100", PURCHASING).toString())
                 .doesNotContain(tasks.get(1));
-        assertThat(api("max.manager").get("/workspaces/{ws}/tasks?view=claimable&limit=100", PURCHASING).body().toString())
+        assertThat(api("max.manager").getAllPages("/workspaces/{ws}/tasks?view=claimable&limit=100", PURCHASING).toString())
                 .contains(tasks.get(1));
 
         assertThat(claim("max.manager", PURCHASING, tasks.get(1)).status()).isEqualTo(200);

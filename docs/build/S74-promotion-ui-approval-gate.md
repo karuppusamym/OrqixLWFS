@@ -1,4 +1,4 @@
-# S69 - Promotion screen and optional approval gate (PL02b)
+# S74 - Promotion screen and optional approval gate (PL02b)
 
 Builds on [S54](S54-promotion-canary-environments.md). It adds the browser screens for environment promotion, an optional approval gate before promotion into a production-stage workspace, and a stronger rollout UI test. Not a Git integration and not cross-organization promotion (a target in another organization is still `404`).
 

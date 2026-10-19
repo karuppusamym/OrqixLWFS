@@ -32,7 +32,7 @@ Migrations `V65__release_canary.sql` (`workflow_canary`), `V66__workspace_enviro
 
 - Git as a source of truth, branch/PR flows, repository sync, signed bundles, or cross-organization/cross-instance promotion (a bundle import path). Promotion is between workspaces of one installation.
 - Automatic canary evaluation, automatic rollback, progressive stepping, metric thresholds, sticky per-person routing, a canary for different request forms, or a canary on child workflows.
-- Scheduled promotions, promoting several releases or workflows at once, and copying connection bindings, secrets or groups. The promotion screen and an optional approval gate were added later in [S69](S69-promotion-ui-approval-gate.md).
+- Scheduled promotions, promoting several releases or workflows at once, and copying connection bindings, secrets or groups. The promotion screen and an optional approval gate were added later in [S74](S74-promotion-ui-approval-gate.md).
 - Analytics beyond per-release counts: no percentile latency, per-step timing, cohort or trend charts, cost, or cross-workflow comparison; no CSV/JSON export of these figures.
 - Production infrastructure (blue/green hosts, traffic routers, HA) is out of scope by design.
 - No browser (Playwright) journey was run for this slice.

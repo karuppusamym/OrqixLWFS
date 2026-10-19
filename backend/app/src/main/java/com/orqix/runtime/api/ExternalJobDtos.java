@@ -42,6 +42,19 @@ public final class ExternalJobDtos {
     public record ExtendResult(Instant leaseExpiresAt) {
     }
 
+    public record AwaitCallbackRequest(@NotBlank @Size(max = 100) String workerId,
+            @NotNull @Min(1) Integer fence, @NotNull @Min(30) @Max(86400) Integer timeoutSeconds) {
+    }
+
+    public record CallbackRegistration(UUID callbackId, Instant deadline) {
+    }
+
+    public record CallbackResult(@NotNull @Valid Map<String, JsonNode> result) {
+    }
+
+    public record CallbackFailure(@NotBlank @Size(max = 500) String message) {
+    }
+
     public record CompleteRequest(@NotBlank @Size(max = 100) String workerId, @NotNull @Min(1) Integer fence,
             @NotNull @Valid Map<String, JsonNode> result) {
     }

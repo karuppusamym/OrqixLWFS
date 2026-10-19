@@ -115,6 +115,8 @@ describe('timeline text in business language (docs/build/S7-frontend.md section 
     expect(describeEvent(event('RUN_COMPLETED', { data: { outcome: 'Fulfilled' } }), ctx)).toBe('Finished: Fulfilled')
     expect(describeEvent(event('RUN_CANCELLED', { actor, data: { reason: 'Duplicate request' } }), ctx)).toBe('Olga Operator cancelled the request: Duplicate request')
     expect(describeEvent(event('TASK_DISPATCHED', { nodeId: 'manager', data: { assignee: 'Mani Manager', rule: 'Fewest open tasks among 2 eligible people.' } }), ctx)).toContain('Mani Manager was assigned')
+    expect(eventTone(event('EXTERNAL_JOB_CALLBACK_REGISTERED'))).toBe('waiting')
+    expect(describeEvent(event('EXTERNAL_JOB_CALLBACK_REGISTERED', { nodeId: 'check' }), ctx)).toContain('waiting for an asynchronous result')
     expect(describeEvent(event('EXTERNAL_JOB_PUBLISHED', { nodeId: 'check', data: { topic: 'address-check' } }), ctx)).toContain('waiting for an outside worker (address-check)')
     expect(describeEvent(event('EXTERNAL_JOB_FAILED', { nodeId: 'check', data: { message: 'Address service said no' } }), ctx)).toContain('could not complete')
     expect(describeEvent(event('RUN_SUSPENDED', { actor, data: { reason: 'Audit hold' } }), ctx)).toBe('Olga Operator suspended the request: Audit hold')

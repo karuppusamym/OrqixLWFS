@@ -110,6 +110,162 @@ class ExternalWorkerTest extends RuntimeTestBase {
                 .param("run", run).param("status", status).query(Long.class).single() == count);
     }
 
+    private Response handoff(JsonNode job, String key) throws Exception {
+        return api("wally.worker").post(Map.of("workerId", "gateway", "fence", job.path("fence").asInt(),
+                "timeoutSeconds", 3600), key, "/workspaces/{ws}/external-jobs/{id}/await-callback",
+                PURCHASING, job.path("id").asString());
+    }
+
+    private Response callback(String user, JsonNode job, String callbackId, Object result, String key) throws Exception {
+        return api(user).post(Map.of("result", result), key,
+                "/workspaces/{ws}/external-jobs/{id}/callbacks/{callback}/complete", PURCHASING,
+                job.path("id").asString(), callbackId);
+    }
+
+    @Test
+    void asynchronousDeliveryIsDurableTypedFencedAndIdempotent() throws Exception {
+        UUID run = startRun();
+        awaitJobs(run, "available", 1);
+        JsonNode job = firstJob(fetch("wally.worker", "gateway", topic));
+        String registerKey = UUID.randomUUID().toString();
+        Response registered = handoff(job, registerKey);
+        assertThat(registered.status()).as(registered.toString()).isEqualTo(200);
+        String callbackId = registered.body().path("callbackId").asString();
+        assertThat(handoff(job, registerKey).body()).isEqualTo(registered.body());
+        assertThat(handoff(job, UUID.randomUUID().toString()).status()).isEqualTo(409);
+        assertThat(fetch("wally.worker", "other", topic).body().path("items")).isEmpty();
+        assertThat(complete("gateway", job, 1, Map.of("score", 1), UUID.randomUUID().toString()).status()).isEqualTo(409);
+        assertThat(fail("gateway", job, true).status()).isEqualTo(409);
+        assertThat(api("wally.worker").post(Map.of("workerId", "gateway", "fence", 1),
+                "/workspaces/{ws}/external-jobs/{id}/extend-lock", PURCHASING, job.path("id").asString()).status())
+                .isEqualTo(409);
+        assertThat(callback("wally.worker", job, UUID.randomUUID().toString(), Map.of("score", 3),
+                UUID.randomUUID().toString()).status()).isEqualTo(404);
+        assertThat(callback("wally.worker", job, callbackId, Map.of("score", "invalid"),
+                UUID.randomUUID().toString()).status()).isEqualTo(422);
+        // Only durable identifiers are needed; the leasing process and its in-memory state are no longer involved.
+        String completionKey = UUID.randomUUID().toString();
+        var concurrent = java.util.stream.IntStream.range(0, 2).mapToObj(ignored ->
+                java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                    try {
+                        return callback("wally.worker", job, callbackId, Map.of("score", 9), completionKey);
+                    } catch (Exception ex) {
+                        throw new java.util.concurrent.CompletionException(ex);
+                    }
+                })).toList();
+        for (var delivered : concurrent) {
+            assertThat(delivered.get(30, java.util.concurrent.TimeUnit.SECONDS).status()).isEqualTo(204);
+        }
+        assertThat(callback("wally.worker", job, callbackId, Map.of("score", 8), completionKey).body().path("code").asString())
+                .isEqualTo("IDEMPOTENCY_KEY_REUSED");
+        assertThat(handoff(job, registerKey).body()).isEqualTo(registered.body());
+        assertThat(jdbc.sql("SELECT count(*) FROM run_event WHERE run_id = :run AND type = 'EXTERNAL_JOB_COMPLETED'")
+                .param("run", run).query(Long.class).single()).isEqualTo(1);
+        awaitJobs(run, "available", 1);
+        assertThat(firstJob(fetch("wally.worker", "next", scoring)).path("input").path("score").asInt()).isEqualTo(9);
+    }
+
+    @Test
+    void callbackTimeoutNeedsReviewWithoutRedispatchAndLateResultsLoseTheirFence() throws Exception {
+        UUID run = startRun();
+        awaitJobs(run, "available", 1);
+        JsonNode job = firstJob(fetch("wally.worker", "gateway", topic));
+        String callbackId = handoff(job, UUID.randomUUID().toString()).body().path("callbackId").asString();
+        jdbc.sql("UPDATE external_job SET lease_expires_at = now() - interval '1 minute' WHERE run_id = :run")
+                .param("run", run).update();
+        assertThat(callback("wally.worker", job, callbackId, Map.of("score", 1), UUID.randomUUID().toString()).status())
+                .as("deadline is enforced even before the sweeper runs").isEqualTo(409);
+        jobs.recoverExpired();
+        assertThat(lifecycle(PURCHASING, run)).isEqualTo("needsAttention");
+        assertThat(fetch("wally.worker", "other", topic).body().path("items")).isEmpty();
+        JsonNode detail = run(PURCHASING, run);
+        assertThat(api("olga.operator").post(Map.of("reason", "Confirmed the provider did not apply the operation",
+                "expectedVersion", detail.path("version").asInt()), UUID.randomUUID().toString(),
+                "/workspaces/{ws}/runs/{id}/retry", PURCHASING, run).status()).isEqualTo(200);
+        JsonNode next = firstJob(fetch("wally.worker", "gateway", topic));
+        assertThat(next.path("fence").asInt()).isEqualTo(2);
+        assertThat(callback("wally.worker", job, callbackId, Map.of("score", 1), UUID.randomUUID().toString()).status())
+                .isEqualTo(409);
+        assertThat(complete("gateway", next, 2, Map.of("score", 2), UUID.randomUUID().toString()).status()).isEqualTo(204);
+    }
+
+    @Test
+    void callbackPermissionIsFreshAndTheRegistrationBelongsToOneSubject() throws Exception {
+        UUID run = startRun();
+        awaitJobs(run, "available", 1);
+        JsonNode job = firstJob(fetch("wally.worker", "gateway", topic));
+        Response registration = handoff(job, UUID.randomUUID().toString());
+        String callbackId = registration.body().path("callbackId").asString();
+        assertThat(callback("rhea.requester", job, callbackId, Map.of("score", 1), UUID.randomUUID().toString()).status())
+                .isEqualTo(403);
+        jdbc.sql("""
+                INSERT INTO permission_grant (id, workspace_id, permission, principal_type, principal_value, created_at)
+                VALUES (:id, :ws, 'job.work', 'idpGroup', 'orqix-purchasing-requesters', now())
+                """).param("id", UUID.randomUUID()).param("ws", PURCHASING).update();
+        assertThat(callback("rhea.requester", job, callbackId, Map.of("score", 1), UUID.randomUUID().toString()).status())
+                .as("permission alone does not transfer callback ownership").isEqualTo(404);
+        String key = UUID.randomUUID().toString();
+        assertThat(callback("wally.worker", job, callbackId, Map.of("score", 1), key).status()).isEqualTo(204);
+        revokeWork();
+        assertThat(callback("wally.worker", job, callbackId, Map.of("score", 1), key).status())
+                .as("revoking the only grant also removes workspace visibility, including on replay").isEqualTo(404);
+    }
+
+    @Test
+    void suspendedAndCancelledRunsRefuseAsynchronousResults() throws Exception {
+        UUID run = startRun();
+        awaitJobs(run, "available", 1);
+        JsonNode job = firstJob(fetch("wally.worker", "gateway", topic));
+        String callbackId = handoff(job, UUID.randomUUID().toString()).body().path("callbackId").asString();
+        JsonNode detail = run(PURCHASING, run);
+        assertThat(api("olga.operator").post(Map.of("reason", "Hold", "expectedVersion", detail.path("version").asInt()),
+                UUID.randomUUID().toString(), "/workspaces/{ws}/runs/{id}/suspend", PURCHASING, run).status()).isEqualTo(200);
+        String key = UUID.randomUUID().toString();
+        assertThat(callback("wally.worker", job, callbackId, Map.of("score", 1), key).body().path("code").asString())
+                .isEqualTo("RUN_SUSPENDED");
+        detail = run(PURCHASING, run);
+        assertThat(api("olga.operator").post(Map.of("reason", "Proceed", "expectedVersion", detail.path("version").asInt()),
+                UUID.randomUUID().toString(), "/workspaces/{ws}/runs/{id}/resume", PURCHASING, run).status()).isEqualTo(200);
+        detail = run(PURCHASING, run);
+        assertThat(api("olga.operator").post(Map.of("reason", "No longer needed", "expectedVersion", detail.path("version").asInt()),
+                UUID.randomUUID().toString(), "/workspaces/{ws}/runs/{id}/cancel", PURCHASING, run).status()).isEqualTo(200);
+        assertThat(callback("wally.worker", job, callbackId, Map.of("score", 1), key).body().path("code").asString())
+                .isEqualTo("JOB_NOT_OPEN");
+    }
+
+    @Test
+    void anExpiredOrdinaryLeaseCannotBeExtendedOrCompletedBeforeRecovery() throws Exception {
+        UUID run = startRun();
+        awaitJobs(run, "available", 1);
+        JsonNode job = firstJob(fetch("wally.worker", "w1", topic));
+        jdbc.sql("UPDATE external_job SET lease_expires_at = now() - interval '1 minute' WHERE run_id = :run")
+                .param("run", run).update();
+        assertThat(complete("w1", job, 1, Map.of("score", 1), UUID.randomUUID().toString()).body().path("code").asString())
+                .isEqualTo("JOB_LEASE_LOST");
+        assertThat(api("wally.worker").post(Map.of("workerId", "w1", "fence", 1),
+                "/workspaces/{ws}/external-jobs/{id}/extend-lock", PURCHASING, job.path("id").asString()).body()
+                .path("code").asString()).isEqualTo("JOB_LEASE_LOST");
+    }
+
+    @Test
+    void anAsynchronousFailureIsFinalUntilAnOperatorDecides() throws Exception {
+        UUID run = startRun();
+        awaitJobs(run, "available", 1);
+        JsonNode job = firstJob(fetch("wally.worker", "gateway", topic));
+        String callbackId = handoff(job, UUID.randomUUID().toString()).body().path("callbackId").asString();
+        String key = UUID.randomUUID().toString();
+        for (int i = 0; i < 2; i++) {
+            Response failure = api("wally.worker").post(Map.of("message", "Provider could not finish"), key,
+                    "/workspaces/{ws}/external-jobs/{id}/callbacks/{callback}/fail", PURCHASING,
+                    job.path("id").asString(), callbackId);
+            assertThat(failure.status()).as(failure.toString()).isEqualTo(204);
+        }
+        assertThat(lifecycle(PURCHASING, run)).isEqualTo("needsAttention");
+        assertThat(fetch("wally.worker", "other", topic).body().path("items")).isEmpty();
+        assertThat(callback("wally.worker", job, callbackId, Map.of("score", 1), UUID.randomUUID().toString()).body()
+                .path("code").asString()).isEqualTo("JOB_NOT_OPEN");
+    }
+
     @Test
     void aWorkerLeasesCompletesAndTheNextStepReceivesTheTypedResult() throws Exception {
         UUID run = startRun();

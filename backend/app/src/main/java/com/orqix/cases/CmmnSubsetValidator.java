@@ -21,28 +21,33 @@ import com.orqix.shared.problem.ProblemCode;
 public class CmmnSubsetValidator {
     private static final String CMMN = "http://www.omg.org/spec/CMMN/20151109/MODEL";
     private static final String FLOWABLE = "http://flowable.org/cmmn";
-    private static final Map<String, Set<String>> CHILDREN = Map.of(
-            "definitions", Set.of("case"),
-            "case", Set.of("casePlanModel"),
-            "casePlanModel", Set.of("planItem", "sentry", "humanTask", "milestone"),
-            "planItem", Set.of("entryCriterion"),
-            "entryCriterion", Set.of(),
-            "sentry", Set.of("planItemOnPart"),
-            "planItemOnPart", Set.of("standardEvent"),
-            "standardEvent", Set.of(),
-            "humanTask", Set.of(),
-            "milestone", Set.of());
-    private static final Map<String, Set<String>> ATTRIBUTES = Map.of(
-            "definitions", Set.of("targetNamespace"),
-            "case", Set.of("id", "name"),
-            "casePlanModel", Set.of("id", "name"),
-            "planItem", Set.of("id", "name", "definitionRef"),
-            "entryCriterion", Set.of("id", "sentryRef"),
-            "sentry", Set.of("id"),
-            "planItemOnPart", Set.of("id", "sourceRef"),
-            "standardEvent", Set.of(),
-            "humanTask", Set.of("id", "name"),
-            "milestone", Set.of("id", "name"));
+    private static final Set<String> PLAN_CHILDREN = Set.of("planItem", "sentry", "humanTask", "milestone", "stage");
+    private static final Map<String, Set<String>> CHILDREN = Map.ofEntries(
+            Map.entry("definitions", Set.of("case")),
+            Map.entry("case", Set.of("casePlanModel")),
+            Map.entry("casePlanModel", PLAN_CHILDREN),
+            Map.entry("stage", PLAN_CHILDREN),
+            Map.entry("planItem", Set.of("entryCriterion", "exitCriterion")),
+            Map.entry("entryCriterion", Set.of()),
+            Map.entry("exitCriterion", Set.of()),
+            Map.entry("sentry", Set.of("planItemOnPart")),
+            Map.entry("planItemOnPart", Set.of("standardEvent")),
+            Map.entry("standardEvent", Set.of()),
+            Map.entry("humanTask", Set.of()),
+            Map.entry("milestone", Set.of()));
+    private static final Map<String, Set<String>> ATTRIBUTES = Map.ofEntries(
+            Map.entry("definitions", Set.of("targetNamespace")),
+            Map.entry("case", Set.of("id", "name")),
+            Map.entry("casePlanModel", Set.of("id", "name")),
+            Map.entry("stage", Set.of("id", "name", "autoComplete")),
+            Map.entry("planItem", Set.of("id", "name", "definitionRef")),
+            Map.entry("entryCriterion", Set.of("id", "sentryRef")),
+            Map.entry("exitCriterion", Set.of("id", "sentryRef")),
+            Map.entry("sentry", Set.of("id")),
+            Map.entry("planItemOnPart", Set.of("id", "sourceRef")),
+            Map.entry("standardEvent", Set.of()),
+            Map.entry("humanTask", Set.of("id", "name")),
+            Map.entry("milestone", Set.of("id", "name")));
 
     public Set<String> validate(String xml, String key) {
         if (xml == null || xml.getBytes(StandardCharsets.UTF_8).length > 65536 || xml.isBlank())
@@ -70,40 +75,67 @@ public class CmmnSubsetValidator {
                 throw invalid("Exactly one case with an ID matching the catalog key is required.");
             var plans = children(cases.getFirst(), "casePlanModel");
             if (plans.size() != 1) throw invalid("Exactly one case plan model is required.");
-            var plan = plans.getFirst();
-            var items = children(plan, "planItem");
-            if (items.isEmpty() || items.size() > 30 || groups.isEmpty())
+            long count = ids.values().stream().filter(e -> "planItem".equals(e.getLocalName())).count();
+            if (count < 1 || count > 30 || groups.isEmpty())
                 throw invalid("The case needs 1 to 30 plan items and at least one assigned human task.");
-            boolean initialHumanTask = false;
-            for (var item : items) {
-                var definition = ids.get(item.getAttribute("definitionRef"));
-                if (definition == null || !("humanTask".equals(definition.getLocalName()) || "milestone".equals(definition.getLocalName())))
-                    throw invalid("Every plan item must reference a human task or milestone in this case.");
-                if ("humanTask".equals(definition.getLocalName()) && children(item,"entryCriterion").isEmpty())
-                    initialHumanTask = true;
-                for (var criterion : children(item, "entryCriterion")) {
-                    var sentry = ids.get(criterion.getAttribute("sentryRef"));
-                    if (sentry == null || !"sentry".equals(sentry.getLocalName()))
-                        throw invalid("An entry criterion references a missing sentry.");
-                }
-            }
-            if (!initialHumanTask) throw invalid("At least one human task must be available when the case starts.");
-            for (var sentry : children(plan, "sentry")) {
-                if (children(sentry, "planItemOnPart").isEmpty()) throw invalid("Empty sentries are unsupported.");
-                for (var onPart : children(sentry, "planItemOnPart")) {
-                    var source = ids.get(onPart.getAttribute("sourceRef"));
-                    if (source == null || !"planItem".equals(source.getLocalName())
-                            || children(onPart, "standardEvent").size() != 1
-                            || !"complete".equals(children(onPart, "standardEvent").getFirst().getTextContent().trim()))
-                        throw invalid("Only plan-item completion sentries are supported.");
-                }
-            }
+            if (!validatePlan(plans.getFirst(), ids, 0))
+                throw invalid("At least one human task must be available when the case starts.");
             return Set.copyOf(groups);
         } catch (ApiException ex) {
             throw ex;
         } catch (Exception ex) {
             throw invalid("CMMN XML is invalid or contains prohibited XML features.");
         }
+    }
+
+    /** CMMN stage scopes are lexical: definitions, sentries and event sources must belong to the same plan. */
+    private static boolean validatePlan(Element plan, Map<String, Element> ids, int depth) {
+        if (depth > 4) throw invalid("At most four nested stages are supported.");
+        var items = children(plan, "planItem");
+        if (items.isEmpty()) throw invalid("Every stage needs at least one plan item.");
+        boolean initialHuman = false;
+        Set<String> used = new HashSet<>();
+        for (var stage : children(plan, "stage")) {
+            if (stage.hasAttribute("autoComplete") && !Set.of("true", "false").contains(stage.getAttribute("autoComplete")))
+                throw invalid("Stage autoComplete must be a literal boolean.");
+        }
+        for (var item : items) {
+            var definition = ids.get(item.getAttribute("definitionRef"));
+            if (definition == null || definition.getParentNode() != plan
+                    || !Set.of("humanTask", "milestone", "stage").contains(definition.getLocalName()))
+                throw invalid("Every plan item must reference a human task, milestone or stage defined in its own stage.");
+            if (!used.add(definition.getAttribute("id")))
+                throw invalid("Each task, milestone or stage definition may be instantiated only once in this subset.");
+            boolean stageHuman = "stage".equals(definition.getLocalName()) && validatePlan(definition, ids, depth + 1);
+            if (children(item, "entryCriterion").isEmpty() && ("humanTask".equals(definition.getLocalName()) || stageHuman))
+                initialHuman = true;
+            for (var criterion : children(item)) {
+                if ("milestone".equals(definition.getLocalName()) && "exitCriterion".equals(criterion.getLocalName()))
+                    throw invalid("A milestone cannot have an exit criterion.");
+                var sentry = ids.get(criterion.getAttribute("sentryRef"));
+                if (sentry == null || sentry.getParentNode() != plan || !"sentry".equals(sentry.getLocalName()))
+                    throw invalid("A criterion must reference a sentry in its own stage.");
+            }
+        }
+        for (var definition : children(plan)) {
+            if (Set.of("humanTask", "milestone", "stage").contains(definition.getLocalName())
+                    && !used.contains(definition.getAttribute("id")))
+                throw invalid("Every task, milestone or stage definition needs a plan item in its own stage.");
+        }
+        for (var sentry : children(plan, "sentry")) {
+            if (children(sentry, "planItemOnPart").isEmpty()) throw invalid("Empty sentries are unsupported.");
+            for (var onPart : children(sentry, "planItemOnPart")) {
+                var source = ids.get(onPart.getAttribute("sourceRef"));
+                var events = children(onPart, "standardEvent");
+                if (source == null || source.getParentNode() != plan || !"planItem".equals(source.getLocalName()) || events.size() != 1)
+                    throw invalid("A sentry event must reference a plan item in its own stage.");
+                var sourceDefinition = ids.get(source.getAttribute("definitionRef"));
+                String expected = sourceDefinition != null && "milestone".equals(sourceDefinition.getLocalName()) ? "occur" : "complete";
+                if (!expected.equals(events.getFirst().getTextContent().trim()))
+                    throw invalid("Sentries support human/stage completion or milestone occurrence events.");
+            }
+        }
+        return initialHuman;
     }
 
     private static void walk(Element element, Map<String, Element> ids, Set<String> groups, int depth) {
@@ -125,7 +157,7 @@ public class CmmnSubsetValidator {
         }
         String id = element.getAttribute("id");
         if (!id.isEmpty() && ids.putIfAbsent(id, element) != null) throw invalid("Duplicate CMMN ID: " + id);
-        if ((kind.equals("planItem") || kind.equals("humanTask") || kind.equals("sentry") || kind.equals("case")) && id.isEmpty())
+        if ((kind.equals("planItem") || kind.equals("humanTask") || kind.equals("sentry") || kind.equals("case") || kind.equals("stage") || kind.equals("milestone") || kind.equals("casePlanModel")) && id.isEmpty())
             throw invalid("A required CMMN ID is missing.");
         if (kind.equals("humanTask") && !element.hasAttributeNS(FLOWABLE, "candidateGroups"))
             throw invalid("Every human task needs candidate groups.");

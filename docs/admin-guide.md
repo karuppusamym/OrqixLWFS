@@ -155,3 +155,7 @@ PostgreSQL: include it in the database sizing and backup plan. Removing a file d
 ## OAuth service connections — 18 October 2026
 
 Bindings can use `oauth2ClientCredentials` with a mounted secret containing the approved token endpoint, client ID, client secret and optional scope. Both the service and token endpoint need approved egress. [S65](build/S65-engineering-closeout-increments.md#oauth-client-credentials-in03a) documents the format, renewal/rotation, limits and deployment migrations. Credentials are provisioned through platform secret management; settings accepts only their reference. Delegated consent/refresh tokens and enterprise provider acceptance remain open.
+
+## Asynchronous external-agent gateways - 18 October 2026
+
+Apply V85 before running callback-enabled application code. Provision a gateway service identity with the existing workspace `job.work` grant. The gateway leases an external-task topic, registers its callback before remote submission, and persists the returned ticket in its dispatch outbox. The same subject must authenticate to deliver the result after restart; token renewal is allowed. Verify provider webhooks in the gateway, rather than giving providers Orqix service tokens. Callback timeout/failure requires operator review and never automatically redispatches remote work. See the [worker protocol](build/S64-external-workers.md#durable-asynchronous-callbacks) for endpoints, SDK methods and exact recovery behavior. The embedded synchronous MCP agent executor remains read-only and unchanged.

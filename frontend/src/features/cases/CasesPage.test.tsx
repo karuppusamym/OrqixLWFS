@@ -35,6 +35,37 @@ describe('case workbench', () => {
     expect(await screen.findByText('terminated')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Terminate case' })).not.toBeInTheDocument()
   })
+  it('loads the nested case plan on demand and refreshes milestones after a task decision', async () => {
+    signInAs('dana.designer')
+    let completed = false, planReads = 0
+    server.use(
+      http.get('*/api/v1/workspaces/:ws/cases/instances/:id', () => HttpResponse.json(active)),
+      http.get('*/api/v1/workspaces/:ws/cases/instances/:id/plan', () => {
+        planReads++
+        return HttpResponse.json({ items: [
+          { id: 'stage', elementId: 'evidence', name: 'Evidence phase', type: 'stage', state: completed ? 'completed' : 'active', parentStageId: null, createdAt: active.createdAt, endedAt: null },
+          { id: 'child', elementId: 'collect', name: 'Collection plan item', type: 'humanTask', state: completed ? 'completed' : 'active', parentStageId: 'stage', createdAt: active.createdAt, endedAt: null },
+        ], milestones: completed ? [{ id: 'milestone', elementId: 'ready', name: 'Evidence ready', achievedAt: active.createdAt }] : [] })
+      }),
+      http.post('*/api/v1/workspaces/:ws/cases/instances/:id/tasks/:taskId/complete', () => {
+        completed = true
+        return HttpResponse.json({ ...active, status: 'completed', version: 2, tasks: [] })
+      }),
+    )
+    const user = userEvent.setup(); await renderAppReady(`/w/${ws}/cases/${instanceId}`)
+    await screen.findByRole('button', { name: 'Show case plan' })
+    expect(planReads).toBe(0)
+    await user.click(screen.getByRole('button', { name: 'Show case plan' }))
+    expect(await screen.findByText('Evidence phase')).toBeInTheDocument()
+    expect(screen.getByText(/In stage: Evidence phase/)).toBeInTheDocument()
+    expect(screen.getByText('No milestones have been achieved.')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Complete task' }))
+    expect(await screen.findByText('Evidence ready')).toBeInTheDocument()
+    expect(planReads).toBe(2)
+    await user.click(screen.getByRole('button', { name: 'Hide case plan' }))
+    expect(screen.getByText('Evidence ready')).not.toBeVisible()
+  })
+
   it('uploads a reviewed model and starts a case from the returned definition', async () => {
     signInAs('dana.designer')
     let submitted: unknown

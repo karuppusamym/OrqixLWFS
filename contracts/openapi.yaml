@@ -132,6 +132,23 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /workspaces/{workspaceId}/cases/instances/{instanceId}/plan:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: instanceId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    get:
+      tags: [Cases]
+      operationId: getCasePlan
+      summary: Read case plan-item history, nested stage states and achieved milestones
+      description: >-
+        Uses the same visibility rules as case detail. Returns engine history for the exact pinned case,
+        including ended stages and achieved milestones. No variables, task payloads or termination reasons are included.
+      x-orqix-permission: run.read
+      responses:
+        '200': { description: Case plan, content: { application/json: { schema: { $ref: '#/components/schemas/CasePlanOverview' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /workspaces/{workspaceId}/cases/instances/{instanceId}/tasks/{taskId}/complete:
     parameters:
       - { $ref: '#/components/parameters/WorkspaceId' }
@@ -3017,6 +3034,111 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
 
+  /workspaces/{workspaceId}/external-jobs/{jobId}/await-callback:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: jobId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [ExternalJobs]
+      operationId: awaitExternalJobCallback
+      summary: Hand off a leased job to a durable asynchronous callback
+      description: >-
+        Requires current job.work permission. Register before remote submission and retain the registration in the
+        gateway's durable outbox. The callback ID is a correlation identifier, not a bearer credential; callback delivery
+        must authenticate as the registering subject. The handoff fixes a deadline of 30 seconds to one day and retains
+        the lease fence. Ordinary completion, failure and heartbeat are refused after handoff. Expired or superseded
+        callbacks cannot change the run. Timeout or failure requires operator review and never automatically redispatches.
+        Identical completed commands replay after fresh authorization, including after the deadline; changed intent conflicts.
+      x-orqix-permission: job.work
+      x-orqix-audit: externaljob.callback-registered
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExternalJobAwaitCallbackRequest' }
+      responses:
+        '200':
+          description: Durable callback registration; identical retries return the original ID and deadline
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExternalJobCallbackRegistration' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/external-jobs/{jobId}/callbacks/{callbackId}/complete:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: jobId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+      - { name: callbackId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [ExternalJobs]
+      operationId: completeExternalJobCallback
+      summary: Deliver a typed asynchronous result
+      description: >-
+        Requires current job.work permission. Register before remote submission and retain the registration in the
+        gateway's durable outbox. The callback ID is a correlation identifier, not a bearer credential; callback delivery
+        must authenticate as the registering subject. The handoff fixes a deadline of 30 seconds to one day and retains
+        the lease fence. Ordinary completion, failure and heartbeat are refused after handoff. Expired or superseded
+        callbacks cannot change the run. Timeout or failure requires operator review and never automatically redispatches.
+        Identical completed commands replay after fresh authorization, including after the deadline; changed intent conflicts.
+      x-orqix-permission: job.work
+      x-orqix-audit: externaljob.completed
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExternalJobCallbackResult' }
+      responses:
+        '204': { description: Completed or replayed }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/external-jobs/{jobId}/callbacks/{callbackId}/fail:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: jobId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+      - { name: callbackId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [ExternalJobs]
+      operationId: failExternalJobCallback
+      summary: Report a final asynchronous failure for operator review
+      description: >-
+        Requires current job.work permission. Register before remote submission and retain the registration in the
+        gateway's durable outbox. The callback ID is a correlation identifier, not a bearer credential; callback delivery
+        must authenticate as the registering subject. The handoff fixes a deadline of 30 seconds to one day and retains
+        the lease fence. Ordinary completion, failure and heartbeat are refused after handoff. Expired or superseded
+        callbacks cannot change the run. Timeout or failure requires operator review and never automatically redispatches.
+        Identical completed commands replay after fresh authorization, including after the deadline; changed intent conflicts.
+      x-orqix-permission: job.work
+      x-orqix-audit: externaljob.failed
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExternalJobCallbackFailure' }
+      responses:
+        '204': { description: Recorded or replayed }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
   /workspaces/{workspaceId}/external-jobs/{jobId}/complete:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -4661,6 +4783,35 @@ components:
         version: { type: integer, minimum: 1 }
         createdAt: { $ref: '#/components/schemas/Timestamp' }
         sourceXml: { type: string }
+    CasePlanItem:
+      type: object
+      additionalProperties: false
+      required: [id, elementId, name, type, state, parentStageId, createdAt, endedAt]
+      properties:
+        id: { type: string }
+        elementId: { type: string }
+        name: { type: [string, 'null'] }
+        type: { type: string }
+        state: { type: string }
+        parentStageId: { type: [string, 'null'] }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+        endedAt: { type: [string, 'null'], format: date-time }
+    CaseMilestone:
+      type: object
+      additionalProperties: false
+      required: [id, elementId, name, achievedAt]
+      properties:
+        id: { type: string }
+        elementId: { type: string }
+        name: { type: [string, 'null'] }
+        achievedAt: { $ref: '#/components/schemas/Timestamp' }
+    CasePlanOverview:
+      type: object
+      additionalProperties: false
+      required: [items, milestones]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/CasePlanItem' } }
+        milestones: { type: array, items: { $ref: '#/components/schemas/CaseMilestone' } }
     CaseTask:
       type: object
       additionalProperties: false
@@ -7199,6 +7350,33 @@ components:
       required: [leaseExpiresAt]
       properties:
         leaseExpiresAt: { $ref: '#/components/schemas/Timestamp' }
+    ExternalJobAwaitCallbackRequest:
+      type: object
+      additionalProperties: false
+      required: [workerId, fence, timeoutSeconds]
+      properties:
+        workerId: { type: string, minLength: 1, maxLength: 100 }
+        fence: { type: integer, minimum: 1 }
+        timeoutSeconds: { type: integer, minimum: 30, maximum: 86400 }
+    ExternalJobCallbackRegistration:
+      type: object
+      additionalProperties: false
+      required: [callbackId, deadline]
+      properties:
+        callbackId: { $ref: '#/components/schemas/Uuid' }
+        deadline: { type: string, format: date-time }
+    ExternalJobCallbackResult:
+      type: object
+      additionalProperties: false
+      required: [result]
+      properties:
+        result: { type: object, additionalProperties: true }
+    ExternalJobCallbackFailure:
+      type: object
+      additionalProperties: false
+      required: [message]
+      properties:
+        message: { type: string, minLength: 1, maxLength: 500 }
     ExternalJobCompleteRequest:
       type: object
       additionalProperties: false

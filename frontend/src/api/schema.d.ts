@@ -106,6 +106,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/cases/instances/{instanceId}/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Read case plan-item history, nested stage states and achieved milestones
+         * @description Uses the same visibility rules as case detail. Returns engine history for the exact pinned case, including ended stages and achieved milestones. No variables, task payloads or termination reasons are included.
+         */
+        get: operations["getCasePlan"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/cases/instances/{instanceId}/tasks/{taskId}/complete": {
         parameters: {
             query?: never;
@@ -2110,6 +2133,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/external-jobs/{jobId}/await-callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                jobId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Hand off a leased job to a durable asynchronous callback
+         * @description Requires current job.work permission. Register before remote submission and retain the registration in the gateway's durable outbox. The callback ID is a correlation identifier, not a bearer credential; callback delivery must authenticate as the registering subject. The handoff fixes a deadline of 30 seconds to one day and retains the lease fence. Ordinary completion, failure and heartbeat are refused after handoff. Expired or superseded callbacks cannot change the run. Timeout or failure requires operator review and never automatically redispatches. Identical completed commands replay after fresh authorization, including after the deadline; changed intent conflicts.
+         */
+        post: operations["awaitExternalJobCallback"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/external-jobs/{jobId}/callbacks/{callbackId}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                jobId: components["schemas"]["Uuid"];
+                callbackId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Deliver a typed asynchronous result
+         * @description Requires current job.work permission. Register before remote submission and retain the registration in the gateway's durable outbox. The callback ID is a correlation identifier, not a bearer credential; callback delivery must authenticate as the registering subject. The handoff fixes a deadline of 30 seconds to one day and retains the lease fence. Ordinary completion, failure and heartbeat are refused after handoff. Expired or superseded callbacks cannot change the run. Timeout or failure requires operator review and never automatically redispatches. Identical completed commands replay after fresh authorization, including after the deadline; changed intent conflicts.
+         */
+        post: operations["completeExternalJobCallback"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/external-jobs/{jobId}/callbacks/{callbackId}/fail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                jobId: components["schemas"]["Uuid"];
+                callbackId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Report a final asynchronous failure for operator review
+         * @description Requires current job.work permission. Register before remote submission and retain the registration in the gateway's durable outbox. The callback ID is a correlation identifier, not a bearer credential; callback delivery must authenticate as the registering subject. The handoff fixes a deadline of 30 seconds to one day and retains the lease fence. Ordinary completion, failure and heartbeat are refused after handoff. Expired or superseded callbacks cannot change the run. Timeout or failure requires operator review and never automatically redispatches. Identical completed commands replay after fresh authorization, including after the deadline; changed intent conflicts.
+         */
+        post: operations["failExternalJobCallback"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/external-jobs/{jobId}/complete": {
         parameters: {
             query?: never;
@@ -3175,6 +3269,27 @@ export interface components {
             version: number;
             createdAt: components["schemas"]["Timestamp"];
             sourceXml: string;
+        };
+        CasePlanItem: {
+            id: string;
+            elementId: string;
+            name: string | null;
+            type: string;
+            state: string;
+            parentStageId: string | null;
+            createdAt: components["schemas"]["Timestamp"];
+            /** Format: date-time */
+            endedAt: string | null;
+        };
+        CaseMilestone: {
+            id: string;
+            elementId: string;
+            name: string | null;
+            achievedAt: components["schemas"]["Timestamp"];
+        };
+        CasePlanOverview: {
+            items: components["schemas"]["CasePlanItem"][];
+            milestones: components["schemas"]["CaseMilestone"][];
         };
         CaseTask: {
             id: string;
@@ -4960,6 +5075,24 @@ export interface components {
         };
         ExternalJobExtendResult: {
             leaseExpiresAt: components["schemas"]["Timestamp"];
+        };
+        ExternalJobAwaitCallbackRequest: {
+            workerId: string;
+            fence: number;
+            timeoutSeconds: number;
+        };
+        ExternalJobCallbackRegistration: {
+            callbackId: components["schemas"]["Uuid"];
+            /** Format: date-time */
+            deadline: string;
+        };
+        ExternalJobCallbackResult: {
+            result: {
+                [key: string]: unknown;
+            };
+        };
+        ExternalJobCallbackFailure: {
+            message: string;
         };
         ExternalJobCompleteRequest: {
             workerId: string;
@@ -7282,6 +7415,32 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CaseInstance"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getCasePlan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Case plan */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CasePlanOverview"];
                 };
             };
             401: components["responses"]["Unauthenticated"];
@@ -10765,6 +10924,112 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    awaitExternalJobCallback: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                jobId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExternalJobAwaitCallbackRequest"];
+            };
+        };
+        responses: {
+            /** @description Durable callback registration; identical retries return the original ID and deadline */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalJobCallbackRegistration"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    completeExternalJobCallback: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                jobId: components["schemas"]["Uuid"];
+                callbackId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExternalJobCallbackResult"];
+            };
+        };
+        responses: {
+            /** @description Completed or replayed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    failExternalJobCallback: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                jobId: components["schemas"]["Uuid"];
+                callbackId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExternalJobCallbackFailure"];
+            };
+        };
+        responses: {
+            /** @description Recorded or replayed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     completeExternalJob: {

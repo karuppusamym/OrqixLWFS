@@ -49,6 +49,31 @@ public class ExternalJobController {
         return ResponseEntity.noContent().build();
     }
 
+    @PostMapping("/{jobId}/await-callback")
+    public ExternalJobDtos.CallbackRegistration awaitCallback(@PathVariable UUID workspaceId, @PathVariable UUID jobId,
+            @RequestHeader(name = IdempotencyService.HEADER, required = false) String idempotencyKey,
+            @Valid @RequestBody ExternalJobDtos.AwaitCallbackRequest request) {
+        return jobs.awaitCallback(callers.current(), workspaceId, jobId, idempotencyKey, request);
+    }
+
+    @PostMapping("/{jobId}/callbacks/{callbackId}/complete")
+    public ResponseEntity<Void> completeCallback(@PathVariable UUID workspaceId, @PathVariable UUID jobId,
+            @PathVariable UUID callbackId,
+            @RequestHeader(name = IdempotencyService.HEADER, required = false) String idempotencyKey,
+            @Valid @RequestBody ExternalJobDtos.CallbackResult request) {
+        jobs.completeCallback(callers.current(), workspaceId, jobId, callbackId, idempotencyKey, request);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{jobId}/callbacks/{callbackId}/fail")
+    public ResponseEntity<Void> failCallback(@PathVariable UUID workspaceId, @PathVariable UUID jobId,
+            @PathVariable UUID callbackId,
+            @RequestHeader(name = IdempotencyService.HEADER, required = false) String idempotencyKey,
+            @Valid @RequestBody ExternalJobDtos.CallbackFailure request) {
+        jobs.failCallback(callers.current(), workspaceId, jobId, callbackId, idempotencyKey, request);
+        return ResponseEntity.noContent().build();
+    }
+
     @PostMapping("/{jobId}/fail")
     public ResponseEntity<Void> fail(@PathVariable UUID workspaceId, @PathVariable UUID jobId,
             @RequestHeader(name = IdempotencyService.HEADER, required = false) String idempotencyKey,

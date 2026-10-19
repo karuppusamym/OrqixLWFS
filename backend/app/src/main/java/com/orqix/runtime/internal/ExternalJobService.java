@@ -141,11 +141,16 @@ public class ExternalJobService {
     public ExternalJobDtos.ExtendResult extendLock(Caller caller, UUID workspaceId, UUID jobId,
             ExternalJobDtos.ExtendRequest request) {
         requireWorker(caller, workspaceId, "extendExternalJobLock");
+        // Serialize with handoff before checking its registration in a fresh statement snapshot.
+        lockJob(workspaceId, jobId, request.workerId(), request.fence());
         Instant now = clock.instant();
         Optional<Instant> extended = jdbc.sql("""
                 UPDATE external_job SET lease_expires_at = CAST(:now AS timestamptz)
                        + make_interval(secs => GREATEST(30, LEAST(:lease, lease_seconds)))
                 WHERE workspace_id = :ws AND id = :id AND status = 'locked' AND worker_id = :worker AND fence = :fence
+                  AND lease_expires_at > :now
+                  AND NOT EXISTS (SELECT 1 FROM external_job_callback c WHERE c.job_id = external_job.id
+                                  AND c.fence = external_job.fence)
                 RETURNING lease_expires_at
                 """)
                 .param("ws", workspaceId).param("id", jobId).param("worker", request.workerId())
@@ -158,18 +163,99 @@ public class ExternalJobService {
         return new ExternalJobDtos.ExtendResult(extended.get());
     }
 
+    /** Register before submitting to a provider; persist the returned ID in the gateway's dispatch outbox. */
+    @Transactional
+    public ExternalJobDtos.CallbackRegistration awaitCallback(Caller caller, UUID workspaceId, UUID jobId,
+            String idempotencyKey, ExternalJobDtos.AwaitCallbackRequest request) {
+        requireWorker(caller, workspaceId, "awaitExternalJobCallback");
+        var claim = callbackClaim(caller, workspaceId, jobId, null, "awaitExternalJobCallback", idempotencyKey, request);
+        if (claim.isReplay()) {
+            Callback prior = callback(caller, workspaceId, jobId, UUID.fromString(claim.replay().resourceId()));
+            return new ExternalJobDtos.CallbackRegistration(prior.id(), prior.deadline());
+        }
+        Job job = lockJob(workspaceId, jobId, request.workerId(), request.fence());
+        RunStore.RunRow run = runs.lock(workspaceId, job.runId()).orElseThrow(ApiException::notFound);
+        requireRunning(run);
+        UUID id = UUID.randomUUID();
+        Instant now = clock.instant().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+        Instant deadline = now.plusSeconds(request.timeoutSeconds());
+        jdbc.sql("""
+                INSERT INTO external_job_callback (id, workspace_id, job_id, fence, worker_id, subject_id, deadline, created_at)
+                VALUES (:id, :ws, :job, :fence, :worker, :subject, :deadline, :now)
+                """).param("id", id).param("ws", workspaceId).param("job", jobId).param("fence", job.fence())
+                .param("worker", request.workerId()).param("subject", caller.subjectId())
+                .param("deadline", Sql.ts(deadline)).param("now", Sql.ts(now)).update();
+        jdbc.sql("UPDATE external_job SET lease_expires_at = :deadline WHERE workspace_id = :ws AND id = :job")
+                .param("deadline", Sql.ts(deadline)).param("ws", workspaceId).param("job", jobId).update();
+        events.append(workspaceId, run.id(), "EXTERNAL_JOB_CALLBACK_REGISTERED", job.nodeId(), caller.subjectId(),
+                Map.of("deadline", deadline.toString()));
+        audit.write(new AuditWriter.Entry(workspaceId, actor(caller), caller.subjectId(),
+                "externaljob.callback-registered", "externalJob", jobId.toString(), AuditWriter.Outcome.SUCCESS,
+                Map.of("nodeId", job.nodeId(), "attempt", job.attempt())));
+        idempotency.complete(claim, "externalJobCallback", id.toString(), 200);
+        return new ExternalJobDtos.CallbackRegistration(id, deadline);
+    }
+
+    @Transactional
+    public void completeCallback(Caller caller, UUID workspaceId, UUID jobId, UUID callbackId, String key,
+            ExternalJobDtos.CallbackResult request) {
+        requireWorker(caller, workspaceId, "completeExternalJobCallback");
+        Callback registration = callback(caller, workspaceId, jobId, callbackId);
+        complete(caller, workspaceId, jobId, key,
+                new ExternalJobDtos.CompleteRequest(registration.workerId(), registration.fence(), request.result()),
+                callbackId);
+    }
+
+    @Transactional
+    public void failCallback(Caller caller, UUID workspaceId, UUID jobId, UUID callbackId, String key,
+            ExternalJobDtos.CallbackFailure request) {
+        requireWorker(caller, workspaceId, "failExternalJobCallback");
+        Callback registration = callback(caller, workspaceId, jobId, callbackId);
+        // A remote failure can follow a partial effect. Only an operator may authorize another dispatch.
+        fail(caller, workspaceId, jobId, key,
+                new ExternalJobDtos.FailRequest(registration.workerId(), registration.fence(), request.message(), false, null),
+                callbackId);
+    }
+
+    private record Callback(UUID id, String workerId, int fence, Instant deadline) {
+    }
+
+    private Callback callback(Caller caller, UUID workspaceId, UUID jobId, UUID callbackId) {
+        return jdbc.sql("""
+                SELECT id, worker_id, fence, deadline FROM external_job_callback
+                WHERE workspace_id = :ws AND job_id = :job AND id = :id AND subject_id = :subject
+                """).param("ws", workspaceId).param("job", jobId).param("id", callbackId)
+                .param("subject", caller.subjectId())
+                .query((rs, n) -> new Callback(Sql.uuid(rs, "id"), rs.getString("worker_id"), rs.getInt("fence"),
+                        Sql.instant(rs, "deadline"))).optional().orElseThrow(ApiException::notFound);
+    }
+
+    private IdempotencyService.Claim callbackClaim(Caller caller, UUID workspaceId, UUID jobId, UUID callbackId,
+            String operation, String key, Object request) {
+        return idempotency.claim(workspaceId, caller.subjectId(), operation, IdempotencyService.requireKey(key),
+                idempotency.requestHash(operation, Map.of("workspaceId", workspaceId.toString(), "jobId", jobId.toString(),
+                        "callbackId", callbackId == null ? "" : callbackId.toString()), request));
+    }
+
     @Transactional
     public void complete(Caller caller, UUID workspaceId, UUID jobId, String idempotencyKey,
             ExternalJobDtos.CompleteRequest request) {
+        complete(caller, workspaceId, jobId, idempotencyKey, request, null);
+    }
+
+    private void complete(Caller caller, UUID workspaceId, UUID jobId, String idempotencyKey,
+            ExternalJobDtos.CompleteRequest request, UUID callbackId) {
         requireWorker(caller, workspaceId, "completeExternalJob");
         String key = IdempotencyService.requireKey(idempotencyKey);
         String hash = idempotency.requestHash("completeExternalJob",
                 Map.of("workspaceId", workspaceId.toString(), "jobId", jobId.toString()), request);
-        IdempotencyService.Claim claim = idempotency.claim(workspaceId, caller.subjectId(), "completeExternalJob", key, hash);
+        IdempotencyService.Claim claim = callbackId == null
+                ? idempotency.claim(workspaceId, caller.subjectId(), "completeExternalJob", key, hash)
+                : callbackClaim(caller, workspaceId, jobId, callbackId, "completeExternalJobCallback", key, request);
         if (claim.isReplay()) {
             return;
         }
-        Job job = lockJob(workspaceId, jobId, request.workerId(), request.fence());
+        Job job = lockJob(workspaceId, jobId, request.workerId(), request.fence(), callbackId);
         RunStore.RunRow run = runs.lock(workspaceId, job.runId()).orElseThrow(ApiException::notFound);
         requireRunning(run);
         ObjectNode result = validateResult(workspaceId, run, job, request.result());
@@ -198,15 +284,22 @@ public class ExternalJobService {
 
     @Transactional
     public void fail(Caller caller, UUID workspaceId, UUID jobId, String idempotencyKey, ExternalJobDtos.FailRequest request) {
+        fail(caller, workspaceId, jobId, idempotencyKey, request, null);
+    }
+
+    private void fail(Caller caller, UUID workspaceId, UUID jobId, String idempotencyKey,
+            ExternalJobDtos.FailRequest request, UUID callbackId) {
         requireWorker(caller, workspaceId, "failExternalJob");
         String key = IdempotencyService.requireKey(idempotencyKey);
         String hash = idempotency.requestHash("failExternalJob",
                 Map.of("workspaceId", workspaceId.toString(), "jobId", jobId.toString()), request);
-        IdempotencyService.Claim claim = idempotency.claim(workspaceId, caller.subjectId(), "failExternalJob", key, hash);
+        IdempotencyService.Claim claim = callbackId == null
+                ? idempotency.claim(workspaceId, caller.subjectId(), "failExternalJob", key, hash)
+                : callbackClaim(caller, workspaceId, jobId, callbackId, "failExternalJobCallback", key, request);
         if (claim.isReplay()) {
             return;
         }
-        Job job = lockJob(workspaceId, jobId, request.workerId(), request.fence());
+        Job job = lockJob(workspaceId, jobId, request.workerId(), request.fence(), callbackId);
         RunStore.RunRow run = runs.lock(workspaceId, job.runId()).orElseThrow(ApiException::notFound);
         requireRunning(run);
         String message = truncate(request.message());
@@ -251,6 +344,9 @@ public class ExternalJobService {
             RunStore.RunRow run = runs.lock(job.workspaceId(), job.runId()).orElse(null);
             if (run == null || !run.isActive()) {
                 endJob(job.workspaceId(), job.id(), "cancelled", "The request ended while the job was leased.", now);
+            } else if (hasCallback(job.workspaceId(), job.id(), job.fence())) {
+                exhaust(job.workspaceId(), run, job,
+                        "The asynchronous provider did not report a result before its deadline. Check the remote outcome before retrying.", now);
             } else if (job.attempt() < job.maxAttempts()) {
                 jdbc.sql("""
                         UPDATE external_job SET status = 'available', worker_id = NULL, lease_expires_at = NULL,
@@ -311,8 +407,17 @@ public class ExternalJobService {
         policy.require(access, Permission.JOB_WORK, operation, true);
     }
 
+    private boolean hasCallback(UUID workspaceId, UUID jobId, int fence) {
+        return jdbc.sql("SELECT EXISTS (SELECT 1 FROM external_job_callback WHERE workspace_id = :ws AND job_id = :id AND fence = :fence)")
+                .param("ws", workspaceId).param("id", jobId).param("fence", fence).query(Boolean.class).single();
+    }
+
     /** Locks the job row and checks that the caller still holds the lease it claims. */
     private Job lockJob(UUID workspaceId, UUID jobId, String workerId, int fence) {
+        return lockJob(workspaceId, jobId, workerId, fence, null);
+    }
+
+    private Job lockJob(UUID workspaceId, UUID jobId, String workerId, int fence, UUID callbackId) {
         Job job = jdbc.sql("""
                 SELECT id, workspace_id, run_id, node_id, topic, attempt, max_attempts, retry_delay_seconds, fence, status,
                        worker_id FROM external_job WHERE workspace_id = :ws AND id = :id FOR UPDATE
@@ -326,6 +431,12 @@ public class ExternalJobService {
             throw new ApiException("locked".equals(job.status()) || "available".equals(job.status())
                     ? ProblemCode.JOB_LEASE_LOST : ProblemCode.JOB_NOT_OPEN,
                     "You no longer hold this job. Another worker may have it, or it has ended.");
+        }
+        Instant expires = jdbc.sql("SELECT lease_expires_at FROM external_job WHERE workspace_id = :ws AND id = :id")
+                .param("ws", workspaceId).param("id", jobId).query((rs, n) -> Sql.instant(rs, "lease_expires_at")).single();
+        if (!expires.isAfter(clock.instant()) || (callbackId == null && hasCallback(workspaceId, jobId, fence))) {
+            throw new ApiException(ProblemCode.JOB_LEASE_LOST,
+                    "This lease expired or was handed off to an asynchronous callback.");
         }
         return job;
     }
@@ -369,8 +480,10 @@ public class ExternalJobService {
         attention.put("reason", "RETRIES_EXHAUSTED");
         attention.put("nodeId", job.nodeId());
         attention.putNull("effectId");
-        attention.put("message", "The external worker could not complete the work after " + job.attempt()
-                + (job.attempt() == 1 ? " attempt." : " attempts."));
+        attention.put("message", hasCallback(job.workspaceId(), job.id(), job.fence())
+                ? "The asynchronous work did not complete. Check the remote outcome before authorizing another dispatch."
+                : "The external worker could not complete the work after " + job.attempt()
+                        + (job.attempt() == 1 ? " attempt." : " attempts."));
         attention.put("since", now.toString());
         runs.mutate(workspaceId, run.id(), m -> {
             m.lifecycle = RunStore.NEEDS_ATTENTION;

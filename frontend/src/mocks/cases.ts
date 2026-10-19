@@ -91,6 +91,18 @@ export function createCaseHandlers(getUser: () => MockUser): HttpHandler[] {
       if (!['run.read', 'workflow.start', 'task.act'].some(permission => perms.includes(permission as typeof perms[number]))) return failure(403, 'FORBIDDEN', 'Cases are not visible.')
       return HttpResponse.json(instances.filter(row => definitions.some(def => def.ws === ws && def.id === row.value.definitionId) && visible(row, user, ws)).map(row => project(row, user)))
     }),
+    http.get(`${B}/workspaces/:ws/cases/instances/:id/plan`, ({ params }) => {
+      const ws = String(params.ws), user = getUser(), row = instances.find(value => value.value.id === String(params.id))
+      if (!member(ws, user) || !row || !definitions.some(def => def.ws === ws && def.id === row.value.definitionId) || !visible(row, user, ws)) return failure(404, 'NOT_FOUND', 'Case not found.')
+      // Demonstration history only; arbitrary nested-stage execution is covered by the PostgreSQL engine tests.
+      const items: components['schemas']['CasePlanItem'][] = [0, 1].filter(step => step <= row.step).map(step => ({
+        id: `${row.value.id}-${step}`, elementId: step ? 'review' : 'collect', name: task(step).name, type: 'humanTask',
+        state: step < row.step ? 'completed' : row.value.status === 'terminated' ? 'terminated' : 'active',
+        parentStageId: null, createdAt: row.value.createdAt, endedAt: step < row.step || row.value.status !== 'active' ? row.value.createdAt : null,
+      }))
+      const milestones = row.value.status === 'completed' ? [{ id: `${row.value.id}-milestone`, elementId: 'done', name: 'Reviewed', achievedAt: row.value.createdAt }] : []
+      return HttpResponse.json({ items, milestones })
+    }),
     http.get(`${B}/workspaces/:ws/cases/instances/:id`, ({ params }) => {
       const ws = String(params.ws), user = getUser(), row = instances.find(value => value.value.id === String(params.id))
       if (!member(ws, user) || !row || !definitions.some(def => def.ws === ws && def.id === row.value.definitionId) || !visible(row, user, ws)) return failure(404, 'NOT_FOUND', 'Case not found.')

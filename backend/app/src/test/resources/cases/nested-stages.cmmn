@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/CMMN/20151109/MODEL"
+             xmlns:flowable="http://flowable.org/cmmn" targetNamespace="urn:orqix:stages">
+  <case id="nestedCase" name="Nested evidence review">
+    <casePlanModel id="plan" name="Case plan">
+      <planItem id="phase" name="Evidence phase" definitionRef="phaseStage"/>
+      <planItem id="ready" name="Ready for decision" definitionRef="readyMilestone">
+        <entryCriterion id="readyEntry" sentryRef="phaseCompleted"/>
+      </planItem>
+      <planItem id="decide" name="Final decision" definitionRef="decideTask">
+        <entryCriterion id="decideEntry" sentryRef="readyOccurred"/>
+      </planItem>
+      <sentry id="phaseCompleted"><planItemOnPart id="phaseEvent" sourceRef="phase"><standardEvent>complete</standardEvent></planItemOnPart></sentry>
+      <sentry id="readyOccurred"><planItemOnPart id="readyEvent" sourceRef="ready"><standardEvent>occur</standardEvent></planItemOnPart></sentry>
+      <stage id="phaseStage" name="Evidence phase">
+        <planItem id="collectStageItem" name="Collect evidence" definitionRef="collectStage"/>
+        <stage id="collectStage" name="Collection stage">
+          <planItem id="collect" name="Collect evidence" definitionRef="collectTask"/>
+          <planItem id="obsolete" name="Alternate evidence" definitionRef="alternateTask">
+            <exitCriterion id="alternateExit" sentryRef="collected"/>
+          </planItem>
+          <planItem id="evidenceReady" name="Evidence collected" definitionRef="collectedMilestone">
+            <entryCriterion id="collectedEntry" sentryRef="collected"/>
+          </planItem>
+          <sentry id="collected"><planItemOnPart id="collectedEvent" sourceRef="collect"><standardEvent>complete</standardEvent></planItemOnPart></sentry>
+          <humanTask id="collectTask" name="Collect evidence" flowable:candidateGroups="managers"/>
+          <humanTask id="alternateTask" name="Alternate evidence" flowable:candidateGroups="managers"/>
+          <milestone id="collectedMilestone" name="Evidence collected"/>
+        </stage>
+      </stage>
+      <milestone id="readyMilestone" name="Ready for decision"/>
+      <humanTask id="decideTask" name="Final decision" flowable:candidateGroups="managers"/>
+    </casePlanModel>
+  </case>
+</definitions>

@@ -225,6 +225,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
         ids.put("connectionKey", "procurement");
         ids.put("decisionKey", "amount-policy");
         ids.put("groupKey", "managers");
+        ids.put("callbackId", UUID.randomUUID().toString());
         JsonNode access = api("wade.admin").get("/workspaces/{ws}/access", PURCHASING).body();
         ids.put("bindingId", access.path("roleBindings").get(0).path("id").asString());
         ids.put("grantId", access.path("grants").get(0).path("id").asString());
@@ -328,6 +329,9 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "startRun" -> Map.of("workflowId", ids.get("workflowId"), "input", input(BigDecimal.ONE));
             case "sendMessage" -> Map.of("name", "payment-received", "correlationKey", "SO-FOREIGN");
             case "fetchExternalJobs" -> Map.of("workerId", "w1", "topics", List.of("any-topic"));
+            case "awaitExternalJobCallback" -> Map.of("workerId", "w1", "fence", 1, "timeoutSeconds", 3600);
+            case "completeExternalJobCallback" -> Map.of("result", Map.of());
+            case "failExternalJobCallback" -> Map.of("message", "Foreign attempt");
             case "extendExternalJobLock" -> Map.of("workerId", "w1", "fence", 1);
             case "completeExternalJob" -> Map.of("workerId", "w1", "fence", 1, "result", Map.of());
             case "failExternalJob" -> Map.of("workerId", "w1", "fence", 1, "message", "Foreign attempt", "retryable", true);
@@ -376,7 +380,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
         Map<String, Long> counts = new LinkedHashMap<>();
         for (String table : List.of("organization", "workspace", "subject", "role_binding", "permission_grant",
                 "workspace_group", "workspace_group_member", "migration_job", "migration_project", "migration_policy", "migration_review", "workflow", "workflow_folder", "workflow_folder_item", "document_template", "document_template_version", "decision_asset", "decision_asset_version", "connection_asset", "workspace_attachment_policy", "attachment_ocr_result", "workflow_element_comment", "workflow_draft_revision", "workflow_release",
-                "release_artifact", "connection_definition", "connection_binding", "workflow_run", "task_context",
+                "release_artifact", "connection_definition", "connection_binding", "external_job", "external_job_callback", "workflow_run", "task_context",
                 "run_attachment", "run_attachment_content", "run_stage", "workflow_test_suite", "workflow_test_result", "document_source",
                 "task_decision", "task_reminder", "inbound_message", "message_subscription", "document_snapshot", "adapter_config", "inbound_trigger", "inbound_event", "effect_journal", "run_event", "notification", "idempotency_record",
                 "act_re_deployment", "act_ru_execution", "act_ru_task", "act_ru_job", "act_ru_deadletter_job")) {

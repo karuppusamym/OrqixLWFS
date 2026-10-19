@@ -13,6 +13,7 @@ import java.util.UUID;
 import org.flowable.cmmn.api.CmmnRepositoryService;
 import org.flowable.cmmn.api.CmmnRuntimeService;
 import org.flowable.cmmn.api.CmmnTaskService;
+import org.flowable.cmmn.api.CmmnHistoryService;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,6 +41,10 @@ public class CaseService {
     public record CreateDefinition(String key, String name, String sourceXml) {}
     public record CompleteTask(int expectedVersion) {}
     public record TerminateCase(int expectedVersion, String reason) {}
+    public record PlanItem(String id, String elementId, String name, String type, String state,
+            String parentStageId, Instant createdAt, Instant endedAt) {}
+    public record Milestone(String id, String elementId, String name, Instant achievedAt) {}
+    public record PlanOverview(List<PlanItem> items, List<Milestone> milestones) {}
 
     private record DefinitionRow(UUID id, UUID workspaceId, String key, String name, int version,
             Instant createdAt, String sourceXml, String engineDefinitionId) {
@@ -55,15 +60,17 @@ public class CaseService {
     private final CmmnRepositoryService repository;
     private final CmmnRuntimeService runtime;
     private final CmmnTaskService tasks;
+    private final CmmnHistoryService history;
     private final IdempotencyService idempotency;
     private final Json json;
     private final AuditWriter audit;
 
     public CaseService(JdbcClient jdbc, PolicyService policy, CmmnSubsetValidator validator,
             CmmnRepositoryService repository, CmmnRuntimeService runtime, CmmnTaskService tasks,
-            IdempotencyService idempotency, Json json, AuditWriter audit) {
+            CmmnHistoryService history, IdempotencyService idempotency, Json json, AuditWriter audit) {
         this.jdbc=jdbc; this.policy=policy; this.validator=validator; this.repository=repository;
         this.runtime=runtime; this.tasks=tasks; this.idempotency=idempotency; this.json=json; this.audit=audit;
+        this.history=history;
     }
 
     private WorkspaceAccess access(Caller caller, UUID workspaceId, Permission permission, String operation) {
@@ -211,6 +218,26 @@ public class CaseService {
         }
         return false;
     }
+
+    /** Read only engine history, including completed/terminated stages and milestones after the case ends. */
+    @Transactional(readOnly=true)
+    public PlanOverview plan(Caller caller, UUID ws, UUID id) {
+        var access = policy.requireMember(caller, ws);
+        var row = instanceRow(ws, id, false);
+        if (!canRead(row, access)) throw ApiException.notFound();
+        var items = history.createHistoricPlanItemInstanceQuery().planItemInstanceCaseInstanceId(row.engineInstanceId())
+                .list().stream().map(item -> new PlanItem(item.getId(), item.getElementId(), item.getName(),
+                        item.getPlanItemDefinitionType(), item.getState(), item.getStageInstanceId(),
+                        instant(item.getCreateTime()), instant(item.getEndedTime())))
+                .sorted(Comparator.comparing(PlanItem::elementId).thenComparing(PlanItem::id)).toList();
+        var milestones = history.createHistoricMilestoneInstanceQuery().milestoneInstanceCaseInstanceId(row.engineInstanceId())
+                .list().stream().map(item -> new Milestone(item.getId(), item.getElementId(), item.getName(),
+                        instant(item.getTimeStamp())))
+                .sorted(Comparator.comparing(Milestone::achievedAt).thenComparing(Milestone::id)).toList();
+        return new PlanOverview(items, milestones);
+    }
+
+    private static Instant instant(java.util.Date date) { return date == null ? null : date.toInstant(); }
 
     private Instance instance(UUID ws, UUID id, WorkspaceAccess access) {
         var row=instanceRow(ws,id,false);

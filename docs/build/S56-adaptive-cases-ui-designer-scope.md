@@ -41,3 +41,5 @@ Mark WM04 or UI02 Closed only after the chosen supported model, API, designer, r
 ## 18 October engineering follow-up
 
 [S65](S65-engineering-closeout-increments.md) records operator case termination and version-pinned request-view reuse. The existing case API and view library supersede the earlier foundation-only descriptions above. These increments do not close the full WM04/UI02 acceptance in this specification.
+
+[S66](S66-case-stages-async-callbacks.md) extends the executable case subset with nested stages, scoped entry/exit sentries, milestone occurrence and a read-only case-plan history UI. Full WM04 acceptance above remains open.

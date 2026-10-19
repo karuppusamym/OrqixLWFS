@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 from urllib import error, request
 
-__all__ = ["Worker", "Job", "JobFailed", "ApiError"]
+__all__ = ["Worker", "Job", "CallbackTicket", "JobFailed", "ApiError"]
 
 
 class ApiError(Exception):
@@ -64,6 +64,15 @@ class Job:
     run_reference: str
     node_id: str
     raw: Dict[str, Any] = field(default_factory=dict, repr=False)
+
+
+@dataclass(frozen=True)
+class CallbackTicket:
+    """Persist these fields in a gateway outbox. This correlation ID does not grant API access."""
+
+    job_id: str
+    callback_id: str
+    deadline: str
 
 
 Handler = Callable[[Job], Dict[str, Any]]
@@ -119,6 +128,28 @@ class Worker:
             "workerId": self.worker_id, "fence": job.fence, "leaseSeconds": seconds or self.lease_seconds})
         job.lease_expires_at = result["leaseExpiresAt"]
         return job.lease_expires_at
+
+    def await_callback(self, job: Job, timeout_seconds: int = 3600) -> CallbackTicket:
+        """Hand off before remote submission; use an outbox and a stable provider dispatch key.
+
+        Use the explicit protocol methods for asynchronous gateways, rather than ``handle`` or ``run``.
+        Neither callback timeout nor callback failure automatically resubmits remote work.
+        """
+        registration = self._call("POST", f"/external-jobs/{job.id}/await-callback",
+                                  {"workerId": self.worker_id, "fence": job.fence,
+                                   "timeoutSeconds": timeout_seconds},
+                                  idempotency_key=f"{job.id}:{job.fence}:await-callback")
+        return CallbackTicket(job.id, registration["callbackId"], registration["deadline"])
+
+    def complete_callback(self, ticket: CallbackTicket, result: Dict[str, Any]) -> None:
+        """Deliver as the subject that registered the callback; the process may have restarted."""
+        self._call("POST", f"/external-jobs/{ticket.job_id}/callbacks/{ticket.callback_id}/complete",
+                   {"result": result}, idempotency_key=f"{ticket.callback_id}:complete")
+
+    def fail_callback(self, ticket: CallbackTicket, message: str) -> None:
+        """Report a final remote failure. An operator must inspect the outcome before retrying."""
+        self._call("POST", f"/external-jobs/{ticket.job_id}/callbacks/{ticket.callback_id}/fail",
+                   {"message": message[:500]}, idempotency_key=f"{ticket.callback_id}:fail")
 
     def complete(self, job: Job, result: Dict[str, Any]) -> None:
         # One key per job and fence: a retried call after a lost response cannot complete the job twice.

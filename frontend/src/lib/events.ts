@@ -82,6 +82,7 @@ export function eventTone(event: Pick<RunEvent, 'type' | 'data'>): EventTone {
       return 'cancelled'
     case 'RUN_SUSPENDED':
     case 'EXTERNAL_JOB_PUBLISHED':
+    case 'EXTERNAL_JOB_CALLBACK_REGISTERED':
     case 'EXTERNAL_JOB_RETRY_SCHEDULED':
       return 'waiting'
     case 'EFFECT_FAILED':
@@ -156,6 +157,8 @@ export function describeEvent(event: RunEvent, ctx: EventContext): string {
       return `The time limit for ${label} passed; the approval was cancelled`
     case 'EXTERNAL_JOB_PUBLISHED':
       return `${label}: waiting for an outside worker (${str(event.data.topic) ?? 'job'})`
+    case 'EXTERNAL_JOB_CALLBACK_REGISTERED':
+      return `${label}: waiting for an asynchronous result`
     case 'EXTERNAL_JOB_COMPLETED':
       return `An outside worker completed ${label}`
     case 'EXTERNAL_JOB_RETRY_SCHEDULED': {

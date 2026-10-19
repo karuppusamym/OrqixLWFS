@@ -35,3 +35,7 @@ export const terminateCaseInstance = (ws: string, instanceId: string, expectedVe
     params: { path: { workspaceId: ws, instanceId }, header: { 'Idempotency-Key': uuid() } },
     body: { expectedVersion, reason },
   }))
+
+export const getCasePlan = (ws: string, instanceId: string) => call(api.GET('/workspaces/{workspaceId}/cases/instances/{instanceId}/plan', {
+  params: { path: { workspaceId: ws, instanceId } },
+}))

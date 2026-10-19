@@ -26,9 +26,19 @@ All calls need the workspace-wide permission **`job.work`** (granted like `messa
 | `POST /{jobId}/complete` with `workerId`, `fence`, `result`, plus `Idempotency-Key` | The result must be exactly the declared fields with the declared types (`422` otherwise, lease kept). On success the request continues with the result as the step outputs. `409 RUN_SUSPENDED` while suspended; `409 JOB_NOT_OPEN` when the job or request ended. |
 | `POST /{jobId}/fail` with `workerId`, `fence`, `message`, `retryable`, `retryAfterSeconds`, plus `Idempotency-Key` | A retryable failure returns the job to the queue after the delay until the attempt limit; otherwise the request needs attention (`RETRIES_EXHAUSTED`). |
 
-**Fencing.** A worker that was too slow loses its lease when the sweeper (every 5 seconds) returns an expired job to the queue. Whoever locks the job next gets a higher fence, and every call with an older fence is refused with `JOB_LEASE_LOST`, even from a worker with the same name. A lease that expired but was not yet recovered can still be completed by its holder, since nothing else has happened to the job.
+**Fencing.** A worker that was too slow loses its lease when the sweeper (every 5 seconds) returns an expired job to the queue. Whoever locks the job next gets a higher fence, and every call with an older fence is refused with `JOB_LEASE_LOST`, even from a worker with the same name. Expired leases are refused immediately, even before the sweeper recovers them; they cannot be completed or extended.
 
 **Recovery.** Jobs whose lease ran out are offered again until the attempt limit; the last expiry makes the request need attention. An operator **Retry** on such a request offers the job again from attempt 1. Cancelling or ending the request makes its jobs unusable (`JOB_NOT_OPEN`).
+
+## Durable asynchronous callbacks
+
+A gateway for a long-running agent/provider can register `POST /{jobId}/await-callback` with `workerId`, `fence`, `timeoutSeconds` (30?86400) and `Idempotency-Key` before submitting remote work. The response contains `callbackId` and an absolute `deadline`; identical registration retries return the original response. Persist the ticket in the gateway's dispatch outbox. Use a stable provider idempotency key for dispatch and reconcile interrupted submissions with the provider; registration itself does not send a remote request.
+
+After handoff, ordinary heartbeat/complete/fail are refused. The job remains durably locked until the fixed callback deadline, across application/gateway restarts. Deliver `POST /{jobId}/callbacks/{callbackId}/complete` with `{ "result": { ... } }`, or `/fail` with `{ "message": "..." }`, and an idempotency key. Delivery must authenticate as the registering subject with current `job.work`; the callback ID is a correlation identifier, not a secret or anonymous authorization capability. A public provider webhook belongs behind a gateway that verifies the provider's signature and then calls this authenticated protocol. Never give the provider an Orqix service credential.
+
+Results retain the declared type/field checks. Duplicate successful delivery replays; changed payload with the same key conflicts. Suspended/cancelled runs and superseded/expired fences refuse new results. A failed callback or missed deadline raises attention without automatically redispatching remote work. The operator must check the remote outcome before authorizing Retry, which creates a new fence; old callback tickets remain unusable. This is not automatic remote-effect reconciliation.
+
+The Python SDK exposes `await_callback(job, timeout_seconds) -> CallbackTicket`, `complete_callback(ticket, result)` and `fail_callback(ticket, message)`. Serialize the dataclass fields in durable gateway storage and reconstruct the ticket after restart. Use these explicit methods for asynchronous gateways; the synchronous `run`/`handle` handler loop remains for handlers that return a result directly. V85 must run before deployment. The synchronous MCP agent executor is unchanged; providers use an external-task gateway for this callback protocol.
 
 ## Boundaries
 
@@ -36,7 +46,7 @@ All calls need the workspace-wide permission **`job.work`** (granted like `messa
 - **Topic:** a worker only receives jobs of the topics in its request. Any holder of `job.work` in the workspace may serve any topic of that workspace; there is no per-topic grant yet.
 - **Payload:** only the mapped values are sent. They are copied into the job when it is published and **deleted when the job completes**; a job awaiting an operator keeps them. Results are validated and stored only as the step outputs.
 - **Visibility:** failure messages from workers (at most 500 characters, control characters removed) appear in the timeline for readers with request-data access; other readers see that the job failed.
-- **Audit:** `externaljob.completed` and `externaljob.failed` (topic, step, attempt). Fetch and extend are high-volume protocol calls and are not audited individually.
+- **Audit:** `externaljob.callback-registered` (step and attempt), `externaljob.completed` and `externaljob.failed` (topic, step, attempt). Fetch and extend are high-volume protocol calls and are not audited individually.
 
 ## Studio, runs and tests
 

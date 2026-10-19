@@ -8,7 +8,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from orqix_worker import ApiError, Job, JobFailed, Worker  # noqa: E402
+from orqix_worker import ApiError, CallbackTicket, Job, JobFailed, Worker  # noqa: E402
 
 
 class Fake:
@@ -36,6 +36,8 @@ def serve(fake):
             if self.path.endswith("/fetch-and-lock"):
                 items, fake.jobs = fake.jobs, []
                 return self.reply(200, {"items": items})
+            if self.path.endswith("/await-callback"):
+                return self.reply(200, {"callbackId": "cb1", "deadline": "2099-01-01T00:00:00Z"})
             if self.path.endswith("/extend-lock"):
                 return self.reply(200, {"leaseExpiresAt": "2099-01-01T00:00:00Z"})
             return self.reply(200, {})
@@ -67,6 +69,7 @@ class WorkerTest(unittest.TestCase):
 
     def tearDown(self):
         self.server.shutdown()
+        self.server.server_close()
 
     def paths(self):
         return [c["path"].split("/workspaces/ws1")[1] for c in self.fake.calls]
@@ -79,6 +82,28 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual(complete["body"], {"workerId": "w1", "fence": 3, "result": {"ok": True}})
         self.assertEqual(complete["key"], "j1:3:complete")
         self.assertEqual(complete["auth"], "Bearer tok")
+
+    def test_callback_ticket_survives_a_gateway_restart_and_keys_are_stable(self):
+        from dataclasses import asdict
+
+        self.fake.jobs = [job_json()]
+        job = self.worker.fetch_and_lock(["t"])[0]
+        ticket = self.worker.await_callback(job, 7200)
+        restored = CallbackTicket(**json.loads(json.dumps(asdict(ticket))))
+        restarted = Worker(self.worker._base, "ws1", token=lambda: "renewed", worker_id="restarted")
+        restarted.complete_callback(restored, {"ok": True})
+        restarted.complete_callback(restored, {"ok": True})
+        registered = self.fake.calls[1]
+        self.assertEqual(registered["body"], {"workerId": "w1", "fence": 3, "timeoutSeconds": 7200})
+        self.assertEqual(registered["key"], "j1:3:await-callback")
+        for delivered in self.fake.calls[2:]:
+            self.assertTrue(delivered["path"].endswith("/j1/callbacks/cb1/complete"))
+            self.assertEqual(delivered["key"], "cb1:complete")
+            self.assertEqual(delivered["auth"], "Bearer renewed")
+            self.assertEqual(delivered["body"], {"result": {"ok": True}})
+        restarted.fail_callback(restored, "Provider failed")
+        self.assertEqual(self.fake.calls[-1]["body"], {"message": "Provider failed"})
+        self.assertEqual(self.fake.calls[-1]["key"], "cb1:fail")
 
     def test_a_failed_job_reports_the_message_and_retry_flag(self):
         self.fake.jobs = [job_json()]

@@ -51,6 +51,10 @@ public class CaseController {
         if(result.replayed()) response.header(IdempotencyService.REPLAYED_HEADER,"true");
         return response.body(result.value());
     }
+    @GetMapping("/instances/{instanceId}/plan")
+    public CaseService.PlanOverview plan(@PathVariable UUID workspaceId, @PathVariable UUID instanceId) {
+        return service.plan(callers.current(), workspaceId, instanceId);
+    }
     @PostMapping("/instances/{instanceId}/tasks/{taskId}/complete")
     public ResponseEntity<CaseService.Instance> complete(@PathVariable UUID workspaceId,@PathVariable UUID instanceId,
             @PathVariable String taskId,@RequestHeader(name=IdempotencyService.HEADER,required=false) String key,

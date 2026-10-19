@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Dialog } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { CasePlan } from './CasePlan'
 import { completeCaseTask, getCaseInstance, terminateCaseInstance } from './api'
 
 export function CaseDetailPage() {
@@ -68,6 +69,7 @@ export function CaseDetailPage() {
         <div className="flex gap-2"><Button disabled={!reason.trim() || pendingTask !== null} loading={pendingTask === 'terminate'} onClick={() => void terminate()}>Confirm termination</Button><Button variant="secondary" disabled={pendingTask !== null} onClick={() => setTerminating(false)}>Keep case open</Button></div>
       </div>
     </Dialog>
+    <CasePlan ws={ws} instanceId={instanceId} version={data.version} />
     <section className="space-y-3" aria-label="Available case tasks"><h2>Available tasks</h2>
       {data.tasks.length ? <div className="grid gap-3 md:grid-cols-2">{data.tasks.map(task => <Card key={task.id}><CardHeader><h3>{task.name}</h3></CardHeader><CardContent className="space-y-3"><p className="text-sm text-muted-foreground">Eligible groups: {task.candidateGroups.length ? task.candidateGroups.join(', ') : 'None listed'}</p><Button variant="primary" disabled={!can('task.act') || !task.eligible || pendingTask !== null} loading={pendingTask === task.id} onClick={() => void complete(task.id, data.version)}>Complete task</Button>{!task.eligible ? <p className="text-sm text-muted-foreground">You are not eligible for this task.</p> : null}</CardContent></Card>)}</div> : <p className="text-sm text-muted-foreground">No tasks are currently available.</p>}
     </section>

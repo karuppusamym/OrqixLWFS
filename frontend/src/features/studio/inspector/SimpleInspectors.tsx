@@ -10,6 +10,7 @@ import { cfg, type WorkflowNode } from '../model/types'
 import { Advanced, CommitInput, CommitNumber, CommitTextarea, DurationPreview, InspectorSection } from './controls'
 import { StageEmailFields, Tier1Settings } from './StageEmailFields'
 import { WorkManagementFields } from './WorkManagementFields'
+import { ApprovalViewPicker } from './ApprovalViewPicker'
 
 /** Rename a step ID in Advanced: IDs are stable references, so the change is validated and applied everywhere. */
 export function StepIdField({ node }: { node: WorkflowNode }) {
@@ -45,6 +46,7 @@ export function ApprovalInspector({ node }: { node: WorkflowNode }) {
   const known = !group || items.some((g) => g.key === group)
   return (
     <>
+      <ApprovalViewPicker node={node} />
       <InspectorSection title="Basic">
         <FormField label="Assign to" required id={`approval-group-${node.id}`} description="The group whose members can approve or reject.">
           {(ids) => (

@@ -72,15 +72,7 @@ public class RequestViewCheck {
                 String key = binding.substring(8);
                 var property = properties.path(key);
                 String type = field.path("type").asString();
-                boolean compatible = switch (type) {
-                    case "text" -> "string".equals(property.path("type").asString()) && !property.has("format") && !property.has("enum");
-                    case "number" -> Set.of("number","integer").contains(property.path("type").asString());
-                    case "date" -> "string".equals(property.path("type").asString()) && "date".equals(property.path("format").asString());
-                    case "file" -> "string".equals(property.path("type").asString()) && "attachment".equals(property.path("format").asString());
-                    case "row" -> "array".equals(property.path("type").asString()) && "object".equals(property.path("items").path("type").asString());
-                    case "choice" -> choiceMatches(field, property);
-                    default -> false;
-                };
+                boolean compatible = fieldCompatible(field, property);
                 if (!compatible || !bound.add(key) || required.contains(key) != field.path("required").asBoolean(false))
                     return List.of("The request view's field types, required fields or bindings do not match the workflow input schema.");
                 if (!field.path("label").equals(property.path("title"))) return List.of("Request field labels differ from the pinned view.");
@@ -95,6 +87,17 @@ public class RequestViewCheck {
                 || !widgets.equals(ui.path("widgets")) || !submit.equals(ui.path("submitLabel").asString("")))
             return List.of("The request form layout or submit action differs from its pinned view. Reapply the view or detach it before editing.");
         return List.of();
+    }
+    static boolean fieldCompatible(JsonNode field, JsonNode property) {
+        return switch (field.path("type").asString()) {
+            case "text" -> "string".equals(property.path("type").asString()) && !property.has("format") && !property.has("enum");
+            case "number" -> Set.of("number", "integer").contains(property.path("type").asString());
+            case "date" -> "string".equals(property.path("type").asString()) && "date".equals(property.path("format").asString());
+            case "file" -> "string".equals(property.path("type").asString()) && "attachment".equals(property.path("format").asString());
+            case "row" -> "array".equals(property.path("type").asString()) && "object".equals(property.path("items").path("type").asString());
+            case "choice" -> choiceMatches(field, property);
+            default -> false;
+        };
     }
     private static boolean choiceMatches(JsonNode field, JsonNode property) {
         if (!"string".equals(property.path("type").asString()) || !property.path("enum").isArray()) return false;

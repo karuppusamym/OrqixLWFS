@@ -27,6 +27,8 @@ import { RunFiles } from '@/features/runs/RunFiles'
 import { TaskStage } from '@/features/runs/StageProgress'
 import { TaskDelegation } from './TaskDelegation'
 import { TaskPriority } from './TaskPriority'
+import { ApprovalRequest } from './ApprovalRequest'
+import type { ViewDefinition } from '@/features/views/model'
 
 type Banner = { tone: 'success' | 'warning' | 'info'; text: string }
 
@@ -203,6 +205,9 @@ export function TaskPanel({ taskId, onClaimed }: { taskId: string; onClaimed?: (
     }
   }
 
+  const approvalView = task.approvalView as unknown as ViewDefinition | undefined
+  const actionLabel = (type: 'approve' | 'reject') => approvalView?.actions.find(action => action.type === type)?.label ?? (type === 'approve' ? 'Approve' : 'Reject')
+  const navigation = approvalView?.actions.find(action => action.type === 'navigate')
   const due = dueInfo(task.dueAt)
   const open = task.status === 'open'
   const canClaim = task.allowedActions.claim.allowed && open
@@ -248,15 +253,17 @@ export function TaskPanel({ taskId, onClaimed }: { taskId: string; onClaimed?: (
           <h3 id="task-request-heading" className="mb-2 text-sm text-muted-foreground uppercase">
             Request
           </h3>
-          <dl className="divide-y divide-border rounded-card border border-border">
+          <>{approvalView ? <ApprovalRequest task={task} /> : <dl className="divide-y divide-border rounded-card border border-border">
             {fields.map((f) => (
               <div key={f.key} className="grid gap-1 px-4 py-2.5 sm:grid-cols-[10rem_1fr]">
                 <dt className="text-sm font-semibold text-muted-foreground">{f.label}</dt>
                 <dd className="wrap-anywhere whitespace-pre-wrap">{displayJsonValue(f, asRecord(task.request.input)[f.key])}</dd>
               </div>
             ))}
-          </dl>
+          </dl>}</>
         </section>
+
+        {navigation?.target ? <Link to={navigation.target}>{navigation.label}</Link> : null}
 
         <TaskCorrection ws={ws} task={task} fields={fields} onDone={refreshAll} />
 
@@ -345,10 +352,10 @@ export function TaskPanel({ taskId, onClaimed }: { taskId: string; onClaimed?: (
               )}
               <div className="flex gap-3">
                 <Button variant="secondary" size="lg" onClick={() => void decide('reject')} loading={pending === 'reject'} disabled={busy}>
-                  Reject
+                  {actionLabel('reject')}
                 </Button>
                 <Button variant="primary" size="lg" onClick={() => void decide('approve')} loading={pending === 'approve'} disabled={busy}>
-                  Approve
+                  {actionLabel('approve')}
                 </Button>
               </div>
             </div>

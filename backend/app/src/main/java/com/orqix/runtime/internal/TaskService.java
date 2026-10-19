@@ -507,7 +507,8 @@ public class TaskService {
                         release.inputUi().isMissingNode() ? null : release.inputUi()),
                 historyViews, new RuntimeDtos.TaskForm(reasonRequired, correctableFor(access, task, node, run)),
                 allowed(access, task, suspensions.isSuspended(task.workspaceId(), task.runId())),
-                own == null ? null : views.ref(own.actor(), names));
+                own == null ? null : views.ref(own.actor(), names),
+                node == null || !node.path("config").has("viewBinding") ? null : node.path("config").path("viewBinding").path("definition"));
     }
 
     /** The request fields the caller may correct on this open task now: the holder of the task, or an operator who can see the data. */

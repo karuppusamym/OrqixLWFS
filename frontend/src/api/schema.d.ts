@@ -6167,6 +6167,10 @@ export interface components {
                 inputSchema: Record<string, never>;
                 inputUi?: Record<string, never>;
             };
+            /** @description Immutable approval presentation copied from the pinned workflow release. Request data and current action permissions remain authoritative. */
+            approvalView?: {
+                [key: string]: unknown;
+            } | null;
             history: components["schemas"]["TaskDecision"][];
             form: {
                 rejectReasonRequired: boolean;
@@ -6900,6 +6904,13 @@ export interface components {
                     rejection: components["schemas"]["stageEmail"];
                     overdue: components["schemas"]["stageEmail"];
                 };
+                /** @description Immutable published approval view and copied presentation. Server validates workspace, exact version, types, bindings and allowed actions at publication. */
+                viewBinding?: {
+                    /** Format: uuid */
+                    id: string;
+                    version: number;
+                    definition: Record<string, never>;
+                };
             };
         } & components["schemas"]["nodeBase"];
         decisionNode: {
@@ -7502,6 +7513,13 @@ export interface components {
                             completion: components["schemas"]["stageEmail"];
                             rejection: components["schemas"]["stageEmail"];
                             overdue: components["schemas"]["stageEmail"];
+                        };
+                        /** @description Immutable published approval view and copied presentation. Server validates workspace, exact version, types, bindings and allowed actions at publication. */
+                        viewBinding?: {
+                            /** Format: uuid */
+                            id: string;
+                            version: number;
+                            definition: Record<string, never>;
                         };
                     };
                 } & components["schemas"]["nodeBase"];

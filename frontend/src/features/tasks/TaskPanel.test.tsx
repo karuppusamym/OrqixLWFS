@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest'
 import { claim, currentRelease, decide } from '@/mocks/engine'
 import { db, userByName, type MockRun, type MockTask } from '@/mocks/state'
 import { renderApp, signInAs, WS } from '@/test/utils'
+import { bindApprovalView } from '@/features/views/approvalBinding'
+import type { ViewDefinition } from '@/features/views/model'
 
 /** Find a seeded open task by the request title it shows. */
 function taskByTitle(title: string): { run: MockRun; task: MockTask } {
@@ -212,5 +214,39 @@ describe('task panel: states and conflict UX (T-UI-03)', () => {
     expect(await screen.findByTestId('task-actions')).toBeInTheDocument()
     // The own request is not offered to claim (separation of duties).
     expect(screen.queryByText('Training budget')).not.toBeInTheDocument()
+  })
+})
+
+
+describe('published reusable approval presentation', () => {
+  function applyView(run: MockRun, task: MockTask) {
+    const release = currentRelease(run)
+    const view: ViewDefinition = { schemaVersion: 1, kind: 'approval', sections: [{ id: 'review', label: 'Shared purchase review', columns: 2,
+      fields: Object.entries(release.definition.inputSchema.properties).map(([key, property]) => ({ id: key, label: `Review ${key}`, binding: `request.${key}`, required: release.definition.inputSchema.required?.includes(key), type: property.enum ? 'choice' : property.type === 'number' ? 'number' : 'text', ...(property.enum ? { options: property.enum.map(value => ({ value, label: value })) } : {}) })) }], actions: [{ id: 'yes', type: 'approve', label: 'Authorize purchase' }, { id: 'no', type: 'reject', label: 'Decline purchase' }] }
+    release.definition = bindApprovalView(release.definition, task.nodeId, 'shared-view', 1, view)
+  }
+  it('renders copied labels and layout, then uses normal claim and decision controls', async () => {
+    signInAs('max.manager')
+    const { run, task } = taskByTitle('Replacement laptop'); applyView(run, task)
+    const user = userEvent.setup(); await openPanel('Replacement laptop')
+    expect(await screen.findByRole('region', { name: 'Shared purchase review' })).toHaveTextContent('Replacement laptop')
+    expect(screen.getByTestId('approval-view')).toHaveTextContent('Review amount')
+    expect(screen.queryByRole('button', { name: 'Authorize purchase' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Claim task' }))
+    await user.click(await screen.findByRole('button', { name: 'Decline purchase' }))
+    expect(await screen.findByText('Add a reason so the requester knows what to change')).toBeInTheDocument()
+    await user.type(screen.getByLabelText(/Comment/), 'Over budget')
+    await user.click(screen.getByRole('button', { name: 'Decline purchase' }))
+    expect(await screen.findByTestId('task-banner')).toHaveTextContent('You rejected')
+    expect(task.decision?.reason).toBe('Over budget')
+  })
+  it('keeps task actions unavailable to an ineligible reader despite custom labels', async () => {
+    signInAs('mani.manager')
+    const { run, task } = taskByTitle('Training budget'); applyView(run, task)
+    await openPanel('Training budget')
+    expect(await screen.findByTestId('approval-view')).toHaveTextContent('Shared purchase review')
+    expect(screen.queryByRole('button', { name: 'Authorize purchase' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Decline purchase' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Claim task' })).not.toBeInTheDocument()
   })
 })

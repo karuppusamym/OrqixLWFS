@@ -1,7 +1,7 @@
 import type { Definition, FieldSchemaDoc } from '@/features/studio/model/types'
 import { validateView, type ViewDefinition, type ViewField } from './model'
 
-function compatible(field: ViewField, schema: FieldSchemaDoc): boolean {
+export function compatible(field: ViewField, schema: FieldSchemaDoc): boolean {
   switch (field.type) {
     case 'text': return schema.type === 'string' && !schema.format && !schema.enum
     case 'number': return schema.type === 'number' || schema.type === 'integer'

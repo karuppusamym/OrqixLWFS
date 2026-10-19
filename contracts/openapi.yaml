@@ -8672,6 +8672,10 @@ components:
                 input: { type: object }
                 inputSchema: { type: object, description: 'Pinned release schema, used for labels/formatting' }
                 inputUi: { type: object }
+            approvalView:
+              type: [object, 'null']
+              additionalProperties: true
+              description: Immutable approval presentation copied from the pinned workflow release. Request data and current action permissions remain authoritative.
             history: { type: array, items: { $ref: '#/components/schemas/TaskDecision' } }
             form:
               type: object

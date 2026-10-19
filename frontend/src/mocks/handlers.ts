@@ -276,6 +276,7 @@ function taskDetail(user: MockUser, perms: Permission[], run: MockRun, task: Moc
     ...summaryValue,
     request: { input: run.input, inputSchema: rel.definition.inputSchema as never, inputUi: (rel.definition.inputUi ?? {}) as never },
     history: run.tasks.filter((t) => t.decision).map((t) => t.decision!).sort((a, b) => a.decidedAt.localeCompare(b.decidedAt)),
+    approvalView: rel.definition.nodes.find(node => node.id === task.nodeId)?.config.viewBinding ? (rel.definition.nodes.find(node => node.id === task.nodeId)!.config.viewBinding as { definition: unknown }).definition : undefined,
     form: { rejectReasonRequired: true, correctableFields: open && !run.suspension && (isAssignee && eligibleGroup || perms.includes('run.operate') && perms.includes('run.read-data')) ? correctableOf(run, task) : [] },
     completedBy: task.completedById ? subjectRef(userById(task.completedById)) : null,
     allowedActions: {

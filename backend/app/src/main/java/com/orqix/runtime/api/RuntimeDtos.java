@@ -240,7 +240,7 @@ public final class RuntimeDtos {
     public record TaskDetail(String id, UUID runId, String runReference, String workflowName, String businessKey, String nodeId,
             String label, String requestTitle, SubjectRef requester, GroupRef candidateGroup, SubjectRef assignee,
             String status, Instant dueAt, Instant createdAt, int version, int priority, TaskDecision decision, TaskRequest request,
-            List<TaskDecision> history, TaskForm form, AllowedTaskActions allowedActions, SubjectRef completedBy) {
+            List<TaskDecision> history, TaskForm form, AllowedTaskActions allowedActions, SubjectRef completedBy, JsonNode approvalView) {
     }
 
     public record TaskCounts(int assigned, int claimable) {

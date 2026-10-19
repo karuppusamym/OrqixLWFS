@@ -45,3 +45,6 @@ Mark WM04 or UI02 Closed only after the chosen supported model, API, designer, r
 [S66](S66-case-stages-async-callbacks.md) extends the executable case subset with nested stages, scoped entry/exit sentries, milestone occurrence and a read-only case-plan history UI. Full WM04 acceptance above remains open.
 
 [S68](S68-case-work-controls.md) adds required/manual work, stage controls, guarded closure, command hold/resume and protected command history. [S69](S69-typed-case-data.md) adds pinned scalar case data, validated start/corrections and protected before/after history. Both have real-stack browser acceptance; S69 also verifies retained data/history after application restart. Native CMMN case-file semantics and the remaining full WM04/UI02 boundaries above remain open.
+
+
+[S79](S79-pinned-approval-views.md) completes UI02c reusable approval presentation with exact workspace-local version pins, authoritative publication checks and the existing authorized task actions. This extends the first request/approval-view delivery; case/worklist pages, composed actions, localization, extensions and the full UI02 acceptance remain open.

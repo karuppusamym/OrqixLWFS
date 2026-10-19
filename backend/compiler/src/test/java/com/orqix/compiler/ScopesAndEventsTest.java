@@ -375,6 +375,102 @@ class ScopesAndEventsTest {
         assertThat(issues(never, Severity.WARNING)).contains("WF_UNDO_NEVER_RUN");
     }
 
+    /**
+     * S66: the purchase order and the confirmation are a section "Order" whose error route (ORDER_REJECTED) continues at
+     * the rejection notice; the purchase order call opts in to raise ORDER_REJECTED when it fails for good.
+     */
+    static ObjectNode callFailure() {
+        ObjectNode d = TestSupport.purchase();
+        scope(d, "{\"id\":\"order\",\"label\":\"Order\",\"type\":\"embedded\",\"nodes\":[\"procure\",\"notify\"],"
+                + "\"onError\":{\"to\":\"notifyRejected\",\"errorCode\":\"ORDER_REJECTED\"}}");
+        config(d, "procure").put("raiseErrorOnFailure", "ORDER_REJECTED");
+        return d;
+    }
+
+    @Test
+    void aCallCanRaiseAnErrorForItsSectionsErrorRouteWhenItFails() throws Exception {
+        ObjectNode d = callFailure();
+        assertThat(blockers(d)).isEmpty();
+        assertThat(issues(d, Severity.WARNING)).doesNotContain("WF_SUBPROCESS_ERROR_UNUSED");
+        String xml = bpmn(d);
+        assertThat(xml).contains("raiseOnFailure=\"ORDER_REJECTED\"",
+                "<error id=\"error__ORDER_REJECTED\" errorCode=\"ORDER_REJECTED\"/>",
+                "<boundaryEvent id=\"order__error\" name=\"Order: error\" attachedToRef=\"order\" cancelActivity=\"true\">",
+                "<errorEventDefinition errorRef=\"error__ORDER_REJECTED\"/>",
+                "<sequenceFlow id=\"order__onError\" sourceRef=\"order__error\" targetRef=\"notifyRejected\"/>")
+                // the call has no failure path of its own, so no step-level failure boundary
+                .doesNotContain("procure__failed", "error__stepFailed");
+        // An error route for any code catches it too.
+        ObjectNode anyCode = callFailure();
+        ((ObjectNode) anyCode.path("subprocesses").get(0).path("onError")).remove("errorCode");
+        assertThat(blockers(anyCode)).isEmpty();
+    }
+
+    @Test
+    void callFailuresDoNotRaiseErrorsUnlessTheCallOptsIn() throws Exception {
+        // The same section without the opt-in: the call keeps the S32 behavior and the route is reported unused.
+        ObjectNode d = callFailure();
+        config(d, "procure").remove("raiseErrorOnFailure");
+        assertThat(blockers(d)).isEmpty();
+        assertThat(issues(d, Severity.WARNING)).contains("WF_SUBPROCESS_ERROR_UNUSED");
+        assertThat(bpmn(d)).doesNotContain("raiseOnFailure");
+        // The unchanged example workflow compiles exactly as before (no new attribute, no new error definition).
+        assertThat(bpmn(TestSupport.purchase())).doesNotContain("raiseOnFailure", "<error ");
+    }
+
+    @Test
+    void aCallThatRaisesAnErrorOnFailureIsChecked() {
+        // Outside any section: nothing would catch it.
+        ObjectNode outside = TestSupport.purchase();
+        config(outside, "procure").put("raiseErrorOnFailure", "ORDER_REJECTED");
+        assertThat(blockers(outside)).contains("WF_CALL_FAILURE_ERROR_NOT_CAUGHT");
+        // The section's error route catches another code, or the section has no error route.
+        ObjectNode other = callFailure();
+        ((ObjectNode) other.path("subprocesses").get(0).path("onError")).put("errorCode", "SOMETHING_ELSE");
+        assertThat(blockers(other)).contains("WF_CALL_FAILURE_ERROR_NOT_CAUGHT");
+        ObjectNode noRoute = callFailure();
+        ((ObjectNode) noRoute.path("subprocesses").get(0)).remove("onError");
+        assertThat(blockers(noRoute)).contains("WF_CALL_FAILURE_ERROR_NOT_CAUGHT");
+        // An error handler does not count: the opt-in is for the section's error route only.
+        ObjectNode handled = outside.deepCopy();
+        add(handled, "{\"id\":\"sorry\",\"type\":\"end\",\"label\":\"Stopped\",\"config\":{\"businessOutcome\":\"Stopped\","
+                + "\"outcomeKind\":\"failed\"}}", 900, 900);
+        scope(handled, "{\"id\":\"onAnyError\",\"label\":\"Any error\",\"type\":\"event\",\"nodes\":[\"sorry\"],"
+                + "\"trigger\":{\"type\":\"error\"},\"interrupting\":true}");
+        assertThat(blockers(handled)).contains("WF_CALL_FAILURE_ERROR_NOT_CAUGHT");
+        // Its own failure path and the opt-in are exclusive.
+        ObjectNode both = callFailure();
+        add(both, "{\"id\":\"orderFailed\",\"type\":\"notification\",\"label\":\"Order failed\",\"config\":{\"channel\":\"inApp\","
+                + "\"recipient\":\"initiator\",\"message\":\"The order failed\"}}", 900, 900);
+        path(both, "{\"id\":\"f1\",\"from\":\"procure\",\"to\":\"orderFailed\",\"on\":\"failed\"}");
+        path(both, "{\"id\":\"f2\",\"from\":\"orderFailed\",\"to\":\"rejected\",\"on\":\"next\"}");
+        assertThat(blockers(both)).contains("WF_CALL_FAILURE_ERROR_CONFLICT");
+        // Platform codes stay reserved; the code format is checked by the schema.
+        ObjectNode reserved = callFailure();
+        config(reserved, "procure").put("raiseErrorOnFailure", "ORQIX_STEP_FAILED");
+        assertThat(blockers(reserved)).contains("WF_ERROR_CODE_RESERVED");
+        ObjectNode badFormat = callFailure();
+        config(badFormat, "procure").put("raiseErrorOnFailure", "order rejected");
+        assertThat(blockers(badFormat)).isNotEmpty();
+        // An automatic undo call cannot raise an error on failure.
+        ObjectNode undoCall = undo();
+        config(undoCall, "cancelOrder").put("raiseErrorOnFailure", "ORDER_REJECTED");
+        assertThat(blockers(undoCall)).contains("WF_CALL_FAILURE_ERROR_CONFLICT");
+    }
+
+    @Test
+    void theSimulatorRaisesTheErrorOfACallThatFailsForGood() {
+        JsonNode rejected = SimulatorFixtures.run(callFailure().toString(), INPUT.formatted("IT", 100),
+                "{\"calls\":{\"procure\":{\"failure\":\"rejected\"}}}");
+        assertThat(rejected.toString()).contains("raises the error \\\"ORDER_REJECTED\\\"", "the section \\\"Order\\\" stops",
+                "\"endStepId\":\"rejected\"");
+        // An unknown outcome is never turned into a business error: the request needs attention.
+        JsonNode unknown = SimulatorFixtures.run(callFailure().toString(), INPUT.formatted("IT", 100),
+                "{\"calls\":{\"procure\":{\"failure\":\"unknownOutcome\"}}}");
+        assertThat(unknown.path("outcome").path("status").asString()).isEqualTo("needsAttention");
+        assertThat(unknown.toString()).doesNotContain("raises the error");
+    }
+
     @Test
     void theSimulatorFollowsRaisedErrorsAndListsTheCallsToUndo() {
         JsonNode raised = SimulatorFixtures.run(section().toString(), INPUT.formatted("IT", 150000), "{}");

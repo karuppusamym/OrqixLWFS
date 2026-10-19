@@ -1207,6 +1207,10 @@
                 "manual",
                 "automatic"
               ]
+            },
+            "raiseErrorOnFailure": {
+              "description": "Opt-in (docs/build/S66): when this call fails for good with a known failure (the system rejected the request, or a read-only call returned an unusable answer), raise this business error so that the error route of the section holding the call catches it. The call must be in a section whose error route catches this code, and cannot also have a failed path or be an automatic undo call. Unset (the default) keeps the S32 behavior: the failed path when drawn, otherwise retries and needs attention. Failures whose outcome is unknown, retryable failures and policy or configuration failures never raise it.",
+              "$ref": "#/$defs/errorCode"
             }
           },
           "required": [

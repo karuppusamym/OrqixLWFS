@@ -17,7 +17,7 @@ import { renameHttpResult, syncConnectionDependencies } from '../model/ops'
 import { connectionDefinition } from '../connectionSchema'
 import { cfg, type WorkflowNode } from '../model/types'
 import { Advanced, CommitInput, CommitNumber, InspectorSection } from './controls'
-import { UndoFields } from './ScopeInspectors'
+import { CallFailureErrorFields, UndoFields } from './ScopeInspectors'
 import { StepIdField } from './SimpleInspectors'
 import { DocumentReferenceAuthoring } from './DocumentReferenceAuthoring'
 import { applyDocumentReference } from '../model/documentReference'
@@ -252,6 +252,7 @@ export function HttpInspector({ node }: { node: WorkflowNode }) {
       </InspectorSection>
 
       <UndoFields node={node} />
+      <CallFailureErrorFields node={node} />
 
       <Advanced>
         <FormField label="Timeout (seconds)" id={`http-timeout-${node.id}`} description={operation ? `At most ${operation.maxTimeoutSeconds} seconds for this operation.` : undefined}>

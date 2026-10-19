@@ -682,6 +682,9 @@ final class SimulationRun {
             if (("EFFECT_REJECTED".equals(reason) || "RESPONSE_INVALID".equals(reason)) && next(n, Route.FAILED) != null) {
                 return knownFailure(n, d, callText + " " + what, reason);
             }
+            if (("EFFECT_REJECTED".equals(reason) || "RESPONSE_INVALID".equals(reason)) && n.raiseOnFailure() != null) {
+                return raiseFromCall(n, d, callText + " " + what, reason);
+            }
             stallWith(n, callText + " " + what + " " + consequence, d, reason, what + " " + consequence);
             return null;
         }
@@ -712,6 +715,9 @@ final class SimulationRun {
             if (readOnly && next(n, Route.FAILED) != null) {
                 return knownFailure(n, d, callText + " " + what, "RESPONSE_INVALID");
             }
+            if (readOnly && n.raiseOnFailure() != null) {
+                return raiseFromCall(n, d, callText + " " + what, "RESPONSE_INVALID");
+            }
             stallWith(n, callText + " " + what + " " + consequence, d, readOnly ? "RESPONSE_INVALID" : "EFFECT_UNKNOWN",
                     what + " " + consequence);
             return null;
@@ -740,6 +746,28 @@ final class SimulationRun {
         Transition route = next(n, Route.FAILED);
         add(n, description + " The workflow takes its authored failure path.", details, out, route);
         return route;
+    }
+
+    /**
+     * A known failure of a call set to raise an error on failure (S66): the section holding it stops and the request
+     * continues at the section's error route (the compiler guarantees the route catches the code).
+     */
+    private Transition raiseFromCall(Node.Http n, ObjectNode details, String description, String reason) {
+        WorkflowDefinition.Subprocess scope = graph.scopeOf(n);
+        Node target = scope == null || scope.errorTo() == null ? null : graph.node(scope.errorTo());
+        details.put("errorCode", n.raiseOnFailure());
+        if (target == null) {
+            stallWith(n, description + " It raises the error " + Text.quote(n.raiseOnFailure()) + ", which nothing"
+                    + " catches.", details, "ERROR_NOT_CAUGHT", "The raised error is not caught.");
+            return null;
+        }
+        details.put("failureReason", reason);
+        details.put("continuesAt", target.id());
+        add(n, description + " It raises the error " + Text.quote(n.raiseOnFailure()) + ": the section "
+                + Text.quote(scope.label()) + " stops and the request continues at " + Text.quote(target.label()) + ".",
+                details, null, null);
+        jump = target;
+        return null;
     }
 
     private static JsonNode pointer(JsonNode body, String pointer) {

@@ -26,6 +26,7 @@ import { useAnnounce } from '@/components/common/Announcer'
 import { Button } from '@/components/ui/button'
 import { useStudio, useStudioContext } from './StudioContext'
 import { RouteEdge, type RouteFlowEdge } from './RouteEdge'
+import { ScopeFrames, framesOf } from './ScopeFrames'
 import { StepNode, type StepFlowNode, type StepNodeData } from './StepNode'
 import { countByNode } from './model/issues'
 import { nodeById } from './model/graph'
@@ -117,6 +118,7 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
         const data: StepNodeData = { kind: n.type, label: n.label, subtitle: nodeSubtitle(def, n, groupNames), blockers: c?.blockers ?? 0, warnings: c?.warnings ?? 0 }
         const stage = def.stages?.find((s) => s.nodes.includes(n.id))
         if (stage) data.stage = stage.label
+        const scope = def.subprocesses?.find((s) => s.nodes.includes(n.id))
         if (n.type === 'approval' || n.type === 'waitForMessage') data.timeout = !!n.config.timeoutAfter
         if (n.type === 'end') {
           data.outcomeKind = n.config.outcomeKind === 'failed' ? 'failed' : n.config.outcomeKind === 'rejected' ? 'rejected' : 'success'
@@ -129,7 +131,7 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
           selected: selection?.type === 'node' && selection.id === n.id,
           ...(playActive ? { className: playCurrent === n.id ? 'sim-current' : playVisited.has(n.id) ? 'sim-visited' : playReached.has(n.id) ? 'sim-ahead' : 'sim-unreached' } : {}),
           deletable: n.type !== 'start',
-          ariaLabel: nodeAriaLabel(n, total),
+          ariaLabel: nodeAriaLabel(n, total) + (scope ? `, in the ${scope.type === 'embedded' ? 'section' : 'handler'} ${scope.label}` : ''),
           data,
         }
       }),
@@ -344,6 +346,7 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
   )
 
   const onlyStart = def.nodes.length <= 1
+  const frames = useMemo(() => framesOf(def), [def])
 
   return (
     <div ref={rootRef} className="orqix-flow relative h-full min-h-[480px] w-full" aria-label="Workflow canvas" role="group">
@@ -379,6 +382,7 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
           proOptions={{ hideAttribution: false }}
         >
           <Background variant={BackgroundVariant.Dots} gap={22} size={1.5} color="var(--canvas-dot)" />
+          <ScopeFrames frames={frames} />
           <Controls showInteractive={false} position="bottom-left" fitViewOptions={{ ...FIT_ALL, duration: 200 }} />
           <MiniMap
             pannable

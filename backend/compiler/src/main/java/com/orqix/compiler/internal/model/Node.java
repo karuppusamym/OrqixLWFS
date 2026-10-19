@@ -76,22 +76,38 @@ public sealed interface Node {
      */
     record Http(int index, String id, String label, String connectionRef, String operation,
                 Map<String, String> inputMapping, Map<String, String> resultMapping, int timeoutSeconds,
-                String compensates, boolean automaticUndo) implements Node {
+                String compensates, boolean automaticUndo, String raiseOnFailure) implements Node {
         public Http(int index, String id, String label, String connectionRef, String operation,
                 Map<String, String> inputMapping, Map<String, String> resultMapping, int timeoutSeconds) {
-            this(index, id, label, connectionRef, operation, inputMapping, resultMapping, timeoutSeconds, null, false);
+            this(index, id, label, connectionRef, operation, inputMapping, resultMapping, timeoutSeconds, null, false,
+                    null);
+        }
+
+        public Http(int index, String id, String label, String connectionRef, String operation,
+                Map<String, String> inputMapping, Map<String, String> resultMapping, int timeoutSeconds,
+                String compensates, boolean automaticUndo) {
+            this(index, id, label, connectionRef, operation, inputMapping, resultMapping, timeoutSeconds, compensates,
+                    automaticUndo, null);
         }
 
         public Http(int index, String id, String label, String connectionRef, String operation,
                 Map<String, String> inputMapping, Map<String, String> resultMapping, int timeoutSeconds,
                 String compensates) {
             this(index, id, label, connectionRef, operation, inputMapping, resultMapping, timeoutSeconds, compensates,
-                    false);
+                    false, null);
         }
 
         /** @return true for an automatic undo handler (S55): it has no paths and runs only from an Undo step */
         public boolean undoHandler() {
             return automaticUndo && compensates != null;
+        }
+
+        /**
+         * @return the business error code this call raises when it fails for good with a known failure (S66 opt-in,
+         *         {@code config.raiseErrorOnFailure}), or null for the S32 behavior (failed path or needs attention)
+         */
+        public String raiseOnFailure() {
+            return raiseOnFailure;
         }
         @Override
         public NodeKind kind() {

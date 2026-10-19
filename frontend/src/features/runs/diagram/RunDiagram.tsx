@@ -29,6 +29,7 @@ import { KINDS } from '@/features/studio/model/kinds'
 import { computeLayout, hasPoorLayout, structureKey } from '@/features/studio/model/layout'
 import { normalizeDefinition, type Definition, type NodeKind, type Position as StudioPosition, type RouteKind } from '@/features/studio/model/types'
 import type { StepNodeData } from '@/features/studio/StepNode'
+import { ScopeFrames, type FrameSpec } from '@/features/studio/ScopeFrames'
 import { cn } from '@/lib/cn'
 import { useRunPath, type PathNode, type RunPath } from './api'
 import { RunEdge, type RunFlowEdge } from './RunEdge'
@@ -267,6 +268,7 @@ function DiagramInner({ ws, run, operator, path }: Props & { path: RunPath }) {
     return () => root?.removeEventListener('keydown', onKey)
   }, [])
 
+  const frames = useMemo(() => runFrames(path), [path])
   const selected = selectedId ? (views.get(selectedId) ?? null) : null
   const currentViews = [...views.values()].filter((v) => v.current)
 
@@ -319,6 +321,7 @@ function DiagramInner({ ws, run, operator, path }: Props & { path: RunPath }) {
             proOptions={{ hideAttribution: false }}
           >
             <Background variant={BackgroundVariant.Dots} gap={22} size={1.5} color="var(--canvas-dot)" />
+            <ScopeFrames frames={frames} />
             <Controls showInteractive={false} position="bottom-left" fitViewOptions={{ ...FIT, minZoom: 0.1, duration: prefersReducedMotion() ? 0 : 200 }} />
             {selected ? <StepPopover view={selected} run={run} operator={operator} /> : null}
           </ReactFlow>
@@ -453,6 +456,27 @@ const SCOPE_HOW: Record<string, string> = {
   error: 'left because a step raised an error',
   signal: 'stopped by a signal handler',
   timer: 'stopped by a timed handler',
+}
+
+/** What a section or handler frame on the run diagram says, and how it is drawn (docs/build/S66). */
+export function runFrames(path: RunPath): FrameSpec[] {
+  const label = (id: string) => path.diagram.nodes.find((n) => n.id === id)?.label ?? id
+  return (path.diagram.scopes ?? []).map((s) => {
+    const visits = (path.scopeVisits ?? []).filter((v) => v.scopeId === s.id)
+    const last = visits[visits.length - 1]
+    const event = s.type === 'event'
+    const state: FrameSpec['state'] = !last ? 'idle' : last.how ? 'passed' : 'active'
+    const word = !last ? (event ? 'not started' : 'not entered') : last.how ? (SCOPE_HOW[last.how] ?? last.how) : 'in progress'
+    const route = s.routes.find((r) => path.taken.includes(r.id))
+    return {
+      id: s.id,
+      kind: event ? 'handler' : 'section',
+      title: `${event ? 'Handler' : 'Section'}: ${s.label}`,
+      caption: route ? `${word}, continued at ${label(route.to)}` : word,
+      nodes: s.nodes,
+      state,
+    }
+  })
 }
 
 /** Sections and handlers of the release and what happened to them in this request (docs/build/S55). */

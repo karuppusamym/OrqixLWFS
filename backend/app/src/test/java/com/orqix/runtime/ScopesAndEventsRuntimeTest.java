@@ -159,6 +159,83 @@ class ScopesAndEventsRuntimeTest extends RuntimeTestBase {
         assertThat(path.path("visited").toString()).contains("\"outcome\":\"interrupted\"");
     }
 
+    // ---------------------------------------------------------------- call failures as section errors (S66)
+
+    /** The purchase order and the confirmation are a section whose error route continues at the rejection notice. */
+    private Consumer<ObjectNode> orderSection(boolean optIn) {
+        return d -> {
+            scope(d, "{\"id\":\"order\",\"label\":\"Order\",\"type\":\"embedded\",\"nodes\":[\"procure\",\"notify\"],"
+                    + "\"onError\":{\"to\":\"notifyRejected\",\"errorCode\":\"ORDER_REJECTED\"}}");
+            if (optIn) {
+                for (JsonNode n : d.path("nodes")) {
+                    if ("procure".equals(n.path("id").asString())) {
+                        ((ObjectNode) n.path("config")).put("raiseErrorOnFailure", "ORDER_REJECTED");
+                    }
+                }
+            }
+            d.remove("uiLayout");
+        };
+    }
+
+    @Test
+    void aRejectedCallThatOptsInRaisesItsErrorAndLeavesTheSectionByItsErrorRoute() throws Exception {
+        UUID workflow = publishPurchase(PURCHASING, orderSection(true));
+        UUID run = startRun(workflow, "10");
+        awaitTask(run, "manager");
+        Stub.fault(Stub.Mode.STATUS400, 1, 0);
+        approve("mani.manager", PURCHASING, run, "manager");
+        awaitLifecycle(PURCHASING, run, "completed", "needsAttention");
+        JsonNode done = run(PURCHASING, run);
+        assertThat(done.path("lifecycle").asString()).as(events(run).toString()).isEqualTo("completed");
+        assertThat(done.path("outcomeKind").asString()).isEqualTo("rejected");
+        assertThat(done.path("currentSteps").size()).isZero();
+        // A known rejection is sent once, never retried, and raised as the section's business error.
+        assertThat(Stub.postCount()).isEqualTo(1);
+        assertThat(events(run)).containsSubsequence("SECTION_ENTERED:order", "EFFECT_FAILED:procure",
+                "ERROR_RAISED:procure", "ERROR_CAUGHT:order", "SECTION_LEFT:order",
+                "NOTIFICATION_CREATED:notifyRejected", "RUN_COMPLETED:rejected");
+        assertThat(events(run)).doesNotContain("STEP_FAILED:procure", "STEP_INTERRUPTED:procure", "NOTIFICATION_CREATED:notify");
+        assertThat(eventData(run, "ERROR_RAISED")).contains("\"errorCode\": \"ORDER_REJECTED\"", "\"source\": \"callFailure\"",
+                "\"failureKind\": \"rejected\"");
+        assertThat(eventData(run, "EFFECT_FAILED")).contains("\"raisedError\": \"ORDER_REJECTED\"", "\"routed\": true");
+        assertThat(eventData(run, "SECTION_LEFT")).contains("\"how\": \"error\"");
+        assertThat(jdbc.sql("SELECT state FROM effect_journal WHERE run_id = :run AND node_id = 'procure'")
+                .param("run", run).query(String.class).single()).isEqualTo("permanentFailure");
+        JsonNode path = path(run);
+        assertThat(path.path("taken").toString()).contains("order__onError");
+        assertThat(path.path("visited").toString()).contains("\"nodeId\":\"procure\"", "\"outcome\":\"raised\"");
+        assertThat(path.path("scopeVisits").get(0).path("how").asString()).isEqualTo("error");
+    }
+
+    @Test
+    void anUnavailableSystemStillNeedsAttentionAndACallWithoutTheOptInKeepsItsOldBehavior() throws Exception {
+        // With the opt-in, a failure that may be temporary is retried and then needs attention; no error is raised.
+        UUID workflow = publishPurchase(PURCHASING, orderSection(true));
+        UUID run = startRun(workflow, "10");
+        awaitTask(run, "manager");
+        Stub.fault(Stub.Mode.STATUS500, 20, 0);
+        approve("mani.manager", PURCHASING, run, "manager");
+        awaitLifecycle(PURCHASING, run, "needsAttention", "completed");
+        JsonNode stuck = run(PURCHASING, run);
+        assertThat(stuck.path("lifecycle").asString()).isEqualTo("needsAttention");
+        assertThat(stuck.path("attention").path("nodeId").asString()).isEqualTo("procure");
+        assertThat(events(run)).noneMatch(e -> e.startsWith("ERROR_RAISED") || e.startsWith("SECTION_LEFT"));
+
+        // Without the opt-in, a rejected call in the same section needs attention exactly as before (S32 default).
+        Stub.reset();
+        bindStub(PURCHASING);
+        UUID plain = publishPurchase(PURCHASING, orderSection(false));
+        UUID other = startRun(plain, "10");
+        awaitTask(other, "manager");
+        Stub.fault(Stub.Mode.STATUS400, 1, 0);
+        approve("mani.manager", PURCHASING, other, "manager");
+        awaitLifecycle(PURCHASING, other, "needsAttention", "completed");
+        JsonNode held = run(PURCHASING, other);
+        assertThat(held.path("lifecycle").asString()).isEqualTo("needsAttention");
+        assertThat(held.path("attention").path("nodeId").asString()).isEqualTo("procure");
+        assertThat(events(other)).noneMatch(e -> e.startsWith("ERROR_RAISED") || e.startsWith("ERROR_CAUGHT"));
+    }
+
     // ---------------------------------------------------------------- handlers and signals
 
     private Consumer<ObjectNode> handlers() {

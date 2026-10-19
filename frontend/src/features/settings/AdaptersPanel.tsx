@@ -7,11 +7,13 @@ import { useWorkflows } from '@/api/queries'
 import { useWorkspace } from '@/app/workspace'
 import { Alert } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input, Select, Textarea } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ProblemAlert, toProblem } from '@/components/common/ProblemAlert'
 
 type Adapter = components['schemas']['Adapter']
+type Trigger = components['schemas']['InboundTrigger']
 type Kind = Adapter['kind']
 
 export const KIND_LABEL: Record<Kind, string> = { email: 'Email', teams: 'Microsoft Teams', jdbc: 'Database read (JDBC)', kafka: 'Kafka topic' }
@@ -35,6 +37,26 @@ export function buildAdapterConfig(kind: Kind, f: AdapterFields): Record<string,
     case 'jdbc': return { statement: f.statement.trim(), parameters: list(f.parameters), ...(f.maxRows.trim() ? { maxRows: Number(f.maxRows) } : {}) }
     case 'kafka': return { allowedTopics: list(f.topics) }
   }
+}
+
+const words = (value: unknown): string => (Array.isArray(value) ? value.filter((v) => typeof v === 'string').join(', ') : '')
+
+/** The editable fields of a stored adapter configuration (the reverse of buildAdapterConfig). */
+export function adapterFields(kind: Kind, config: Record<string, unknown>): AdapterFields {
+  return {
+    from: kind === 'email' ? String(config.from ?? '') : '',
+    domains: kind === 'email' ? words(config.allowedRecipientDomains) : '',
+    baseUrl: kind === 'teams' ? String(config.baseUrl ?? '') : '',
+    statement: kind === 'jdbc' ? String(config.statement ?? '') : '',
+    parameters: kind === 'jdbc' ? words(config.parameters) : '',
+    maxRows: kind === 'jdbc' && config.maxRows !== undefined ? String(config.maxRows) : '',
+    topics: kind === 'kafka' ? words(config.allowedTopics) : '',
+  }
+}
+
+/** "title=/value/title" lines from a stored mapping. */
+export function mappingText(mapping: Record<string, string>): string {
+  return Object.entries(mapping).map(([field, pointer]) => `${field}=${pointer}`).join('\n')
 }
 
 /** Parses "title=/value/title" lines into the mapping object. */
@@ -76,6 +98,11 @@ export function AdaptersPanel() {
   const [tSecret, setTSecret] = useState('')
   const [tFilter, setTFilter] = useState('')
   const [tMapping, setTMapping] = useState('')
+  // Editing (S68): one adapter or trigger at a time, with the version it was loaded at.
+  const [editAdapter, setEditAdapter] = useState<{ adapter: Adapter; name: string; secretRef: string; enabled: boolean; fields: AdapterFields } | null>(null)
+  const [editTrigger, setEditTrigger] = useState<{ trigger: Trigger; name: string; secretRef: string; enabled: boolean; filter: string; mapping: string } | null>(null)
+  const [purgeDays, setPurgeDays] = useState('90')
+  const [purgeUnstarted, setPurgeUnstarted] = useState(false)
 
   const client = useQueryClient()
   const adapterQuery = useQuery({ queryKey: ['ws', workspace.id, 'adapters'], queryFn: () => call(api.GET('/workspaces/{workspaceId}/adapters', { params: { path: { workspaceId: workspace.id } } })) })
@@ -108,6 +135,39 @@ export function AdaptersPanel() {
     }))
     setNotice(`Test message for ${adapter.key} accepted by the local stub (${result.outcome}). Nothing was sent to a remote system.`)
   })
+  const saveAdapterEdit = () => run(async () => {
+    if (!editAdapter) return
+    const { adapter } = editAdapter
+    const updated = await call(api.PUT('/workspaces/{workspaceId}/adapters/{adapterKey}', {
+      params: { path: { workspaceId: workspace.id, adapterKey: adapter.key } },
+      body: { name: editAdapter.name.trim(), secretRef: editAdapter.secretRef, config: buildAdapterConfig(adapter.kind, editAdapter.fields), enabled: editAdapter.enabled, expectedVersion: adapter.version },
+    }))
+    setNotice(`Adapter ${adapter.key} saved (version ${updated.version}${updated.enabled ? '' : ', disabled'}). Workflow steps check it again before every send.`)
+    setEditAdapter(null)
+    await load()
+  })
+  const saveTriggerEdit = () => run(async () => {
+    if (!editTrigger) return
+    const { trigger } = editTrigger
+    const parsed = parseMapping(editTrigger.mapping)
+    if (!parsed) throw new Error('List at least one start form field as field=/path/in/event.')
+    const filter = trigger.source === 'email' ? { allowedSenderDomains: list(editTrigger.filter) } : trigger.source === 'kafka' ? { allowedTopics: list(editTrigger.filter) } : {}
+    const updated = await call(api.PUT('/workspaces/{workspaceId}/inbound-triggers/{triggerId}', {
+      params: { path: { workspaceId: workspace.id, triggerId: trigger.id } },
+      body: { name: editTrigger.name.trim(), secretRef: editTrigger.secretRef, filter, mapping: parsed, enabled: editTrigger.enabled, expectedVersion: trigger.version },
+    }))
+    setNotice(`Trigger ${trigger.key} saved (version ${updated.version}${updated.enabled ? '' : ', disabled: senders are refused'}).`)
+    setEditTrigger(null)
+    await load()
+  })
+  const purgeDaysValue = Number(purgeDays)
+  const purgeValid = Number.isInteger(purgeDaysValue) && purgeDaysValue >= 1 && purgeDaysValue <= 3650
+  const purge = () => run(async () => {
+    const result = await call(api.POST('/workspaces/{workspaceId}/inbound-events/purge', {
+      params: { path: { workspaceId: workspace.id } }, body: { olderThanDays: purgeDaysValue, includeUnstarted: purgeUnstarted },
+    }))
+    setNotice(`${result.deleted} received ${result.deleted === 1 ? 'event' : 'events'} older than ${purgeDaysValue} days deleted.`)
+  })
   const mapping = parseMapping(tMapping)
   const triggerValid = KEY.test(tKey) && tName.trim() !== '' && SECRET.test(tSecret) && tWorkflow !== '' && mapping !== null
   const saveTrigger = () => run(async () => {
@@ -130,8 +190,22 @@ export function AdaptersPanel() {
       <h3>Adapters</h3>
       {adapters.length === 0 ? <p className="text-sm">No adapters are defined in this workspace.</p> : <ul className="space-y-2">
         {adapters.map(adapter => <li key={adapter.id} className="rounded-card border border-border p-3">
-          <p><strong>{adapter.name}</strong> <span className="text-sm text-muted-foreground">({adapter.key}, {KIND_LABEL[adapter.kind]})</span></p>
+          <p><strong>{adapter.name}</strong> <span className="text-sm text-muted-foreground">({adapter.key}, {KIND_LABEL[adapter.kind]}{adapter.enabled ? '' : ', disabled'})</span></p>
+          {manage && editAdapter?.adapter.key === adapter.key ? <div className="mt-2 space-y-2" role="group" aria-label={`Edit adapter ${adapter.key}`}>
+            <div><Label htmlFor={`edit-name-${adapter.key}`}>Name of {adapter.key}</Label><Input id={`edit-name-${adapter.key}`} value={editAdapter.name} maxLength={100} onChange={event => setEditAdapter({ ...editAdapter, name: event.target.value })} /></div>
+            <div><Label htmlFor={`edit-secret-${adapter.key}`}>Secret reference name of {adapter.key}</Label><Input id={`edit-secret-${adapter.key}`} value={editAdapter.secretRef} maxLength={63} onChange={event => setEditAdapter({ ...editAdapter, secretRef: event.target.value })} /></div>
+            {adapter.kind === 'email' ? <div><Label htmlFor={`edit-domains-${adapter.key}`}>Approved recipient domains of {adapter.key}</Label><Input id={`edit-domains-${adapter.key}`} value={editAdapter.fields.domains} onChange={event => setEditAdapter({ ...editAdapter, fields: { ...editAdapter.fields, domains: event.target.value } })} /></div> : null}
+            {adapter.kind === 'teams' ? <div><Label htmlFor={`edit-base-${adapter.key}`}>Teams service address of {adapter.key}</Label><Input id={`edit-base-${adapter.key}`} value={editAdapter.fields.baseUrl} onChange={event => setEditAdapter({ ...editAdapter, fields: { ...editAdapter.fields, baseUrl: event.target.value } })} /></div> : null}
+            {adapter.kind === 'jdbc' ? <div><Label htmlFor={`edit-statement-${adapter.key}`}>Read-only SELECT statement of {adapter.key}</Label><Textarea id={`edit-statement-${adapter.key}`} value={editAdapter.fields.statement} onChange={event => setEditAdapter({ ...editAdapter, fields: { ...editAdapter.fields, statement: event.target.value } })} />
+              <Label htmlFor={`edit-params-${adapter.key}`}>Parameter names of {adapter.key}</Label><Input id={`edit-params-${adapter.key}`} value={editAdapter.fields.parameters} onChange={event => setEditAdapter({ ...editAdapter, fields: { ...editAdapter.fields, parameters: event.target.value } })} /></div> : null}
+            {adapter.kind === 'kafka' ? <div><Label htmlFor={`edit-topics-${adapter.key}`}>Approved topics of {adapter.key}</Label><Input id={`edit-topics-${adapter.key}`} value={editAdapter.fields.topics} onChange={event => setEditAdapter({ ...editAdapter, fields: { ...editAdapter.fields, topics: event.target.value } })} /></div> : null}
+            <div className="flex items-center gap-2"><Checkbox id={`edit-enabled-${adapter.key}`} checked={editAdapter.enabled} onCheckedChange={checked => setEditAdapter({ ...editAdapter, enabled: checked === true })} /><Label htmlFor={`edit-enabled-${adapter.key}`}>{adapter.key} is enabled</Label></div>
+            <p className="text-sm text-muted-foreground">Kind and key cannot change. A disabled adapter or a narrower allowlist stops later workflow sends, which then need attention; a wider allowlist adds no recipient or topic to existing steps.</p>
+            <div className="flex gap-2"><Button disabled={pending || editAdapter.name.trim() === '' || !SECRET.test(editAdapter.secretRef)} onClick={() => void saveAdapterEdit()}>Save changes to {adapter.key}</Button>
+              <Button variant="secondary" onClick={() => setEditAdapter(null)}>Cancel</Button></div>
+          </div> : null}
           {manage ? <div className="mt-2 space-y-2">
+            {editAdapter?.adapter.key === adapter.key ? null : <Button variant="secondary" disabled={pending} onClick={() => setEditAdapter({ adapter, name: adapter.name, secretRef: adapter.secretRef ?? '', enabled: adapter.enabled, fields: adapterFields(adapter.kind, adapter.config as Record<string, unknown>) })}>Edit {adapter.key}</Button>}
             <Button variant="secondary" disabled={pending} onClick={() => { setTesting(adapter.key); setPayload(JSON.stringify(SAMPLE_PAYLOAD[adapter.kind], null, 2)) }}>Prepare test message for {adapter.key}</Button>
             {testing === adapter.key ? <div className="space-y-2">
               <Label htmlFor={`test-${adapter.key}`}>Test message for {adapter.key}</Label>
@@ -166,8 +240,19 @@ export function AdaptersPanel() {
       <h3>Inbound triggers</h3>
       {triggers.length === 0 ? <p className="text-sm">No inbound triggers are defined in this workspace.</p> : <ul className="space-y-2">
         {triggers.map(trigger => <li key={trigger.id} className="rounded-card border border-border p-3">
-          <p><strong>{trigger.name}</strong> <span className="text-sm text-muted-foreground">({trigger.key}, {KIND_LABEL[trigger.source]})</span></p>
+          <p><strong>{trigger.name}</strong> <span className="text-sm text-muted-foreground">({trigger.key}, {KIND_LABEL[trigger.source]}{trigger.enabled ? '' : ', disabled'})</span></p>
           {trigger.receivePath ? <p className="text-sm">Senders post signed events to <code>{trigger.receivePath}</code></p> : null}
+          {manage && editTrigger?.trigger.id === trigger.id ? <div className="mt-2 space-y-2" role="group" aria-label={`Edit trigger ${trigger.key}`}>
+            <div><Label htmlFor={`edit-tname-${trigger.key}`}>Name of {trigger.key}</Label><Input id={`edit-tname-${trigger.key}`} value={editTrigger.name} maxLength={100} onChange={event => setEditTrigger({ ...editTrigger, name: event.target.value })} /></div>
+            <div><Label htmlFor={`edit-tsecret-${trigger.key}`}>Signing secret reference name of {trigger.key}</Label><Input id={`edit-tsecret-${trigger.key}`} value={editTrigger.secretRef} maxLength={63} onChange={event => setEditTrigger({ ...editTrigger, secretRef: event.target.value })} /></div>
+            {trigger.source === 'email' || trigger.source === 'kafka' ? <div><Label htmlFor={`edit-tfilter-${trigger.key}`}>{trigger.source === 'email' ? 'Approved sender domains' : 'Approved topics'} of {trigger.key}</Label><Input id={`edit-tfilter-${trigger.key}`} value={editTrigger.filter} onChange={event => setEditTrigger({ ...editTrigger, filter: event.target.value })} /></div> : null}
+            <div><Label htmlFor={`edit-tmapping-${trigger.key}`}>Start form fields of {trigger.key}</Label><Textarea id={`edit-tmapping-${trigger.key}`} value={editTrigger.mapping} onChange={event => setEditTrigger({ ...editTrigger, mapping: event.target.value })} /></div>
+            <div className="flex items-center gap-2"><Checkbox id={`edit-tenabled-${trigger.key}`} checked={editTrigger.enabled} onCheckedChange={checked => setEditTrigger({ ...editTrigger, enabled: checked === true })} /><Label htmlFor={`edit-tenabled-${trigger.key}`}>{trigger.key} accepts events</Label></div>
+            <p className="text-sm text-muted-foreground">Source, key and workflow cannot change. Events already received keep the values they arrived with and can still be started.</p>
+            <div className="flex gap-2"><Button disabled={pending || editTrigger.name.trim() === '' || !SECRET.test(editTrigger.secretRef) || parseMapping(editTrigger.mapping) === null} onClick={() => void saveTriggerEdit()}>Save changes to {trigger.key}</Button>
+              <Button variant="secondary" onClick={() => setEditTrigger(null)}>Cancel</Button></div>
+          </div> : manage ? <Button variant="secondary" className="mt-2" disabled={pending} onClick={() => setEditTrigger({ trigger, name: trigger.name, secretRef: trigger.secretRef ?? '', enabled: trigger.enabled,
+            filter: words((trigger.filter as Record<string, unknown>).allowedSenderDomains ?? (trigger.filter as Record<string, unknown>).allowedTopics), mapping: mappingText(trigger.mapping) })}>Edit {trigger.key}</Button> : null}
         </li>)}
       </ul>}
     </div>
@@ -184,6 +269,13 @@ export function AdaptersPanel() {
       {tSource === 'email' || tSource === 'kafka' ? <div><Label htmlFor="trigger-filter">{tSource === 'email' ? 'Approved sender domains' : 'Approved topics to receive from'}</Label><Input id="trigger-filter" value={tFilter} onChange={event => setTFilter(event.target.value)} /></div> : null}
       <div><Label htmlFor="trigger-mapping">Start form fields, one per line as field=/path/in/event</Label><Textarea id="trigger-mapping" value={tMapping} onChange={event => setTMapping(event.target.value)} /></div>
       <Button disabled={pending || !triggerValid} onClick={() => void saveTrigger()}>Save trigger</Button>
+    </div> : null}
+    {manage ? <div className="space-y-3">
+      <h3>Received event retention</h3>
+      <p className="text-sm text-muted-foreground">Delete received events older than a number of days. Started events are always included; their requests are not affected. Events nobody started are only deleted when you include them. A sender that repeats a deleted event is accepted again as a new event.</p>
+      <div><Label htmlFor="purge-days">Delete events older than (days)</Label><Input id="purge-days" type="number" min={1} max={3650} value={purgeDays} onChange={event => setPurgeDays(event.target.value)} /></div>
+      <div className="flex items-center gap-2"><Checkbox id="purge-unstarted" checked={purgeUnstarted} onCheckedChange={checked => setPurgeUnstarted(checked === true)} /><Label htmlFor="purge-unstarted">Also delete events nobody started</Label></div>
+      <Button variant="secondary" disabled={pending || !purgeValid} onClick={() => void purge()}>Delete old events</Button>
     </div> : null}
     {error ? <><ProblemAlert error={error} />{error.detail ? <p className="text-sm text-danger">{error.detail}</p> : null}</> : loadError ? <ProblemAlert error={toProblem(loadError)} /> : null}
     {notice ? <Alert tone="info">{notice}</Alert> : null}

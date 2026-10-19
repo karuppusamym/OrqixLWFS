@@ -195,6 +195,18 @@ export function validateDefinition(def: Definition, ctx: ValidationContext): Iss
         }
         break
       }
+      case 'sendAdapter': {
+        // Simplified double of the S68 rules; the server checks the adapter's allowlists authoritatively.
+        if (!c.adapter) issues.push(issue('WF_ADAPTER_UNKNOWN', 'blocker', `"${n.label}" needs an adapter.`, nodePath(n, '/config/adapter'), n.id))
+        if (c.kind === 'email' && (!Array.isArray(c.to) || c.to.length === 0 || !c.subject || !c.body))
+          issues.push(issue('WF_ADAPTER_MESSAGE', 'blocker', `"${n.label}": an email needs recipients, a subject and a body.`, nodePath(n, '/config/to'), n.id))
+        if (c.kind === 'teams' && !c.text) issues.push(issue('WF_ADAPTER_MESSAGE', 'blocker', `"${n.label}": a Teams message needs a text.`, nodePath(n, '/config/text'), n.id))
+        if (c.kind === 'kafka' && !c.topic) issues.push(issue('WF_ADAPTER_MESSAGE', 'blocker', `"${n.label}": name one exact topic to send to.`, nodePath(n, '/config/topic'), n.id))
+        for (const [name, ref] of Object.entries((c.inputMapping ?? {}) as Record<string, string>)) {
+          if (!ref) issues.push(issue('WF_ADAPTER_INPUT_UNKNOWN', 'blocker', `"${n.label}" uses "${name}" but no value is chosen for it.`, nodePath(n, `/config/inputMapping/${name}`), n.id))
+        }
+        break
+      }
       case 'startWorkflow': {
         const each = c.forEach as { itemsRef?: string } | undefined
         if (each?.itemsRef?.startsWith('/input/')) {

@@ -349,6 +349,8 @@ class Run {
         return this.wait(node)
       case 'startWorkflow':
         return this.startWorkflow(node)
+      case 'sendAdapter':
+        return this.sendAdapter(node)
       case 'end': {
         this.endNode = node
         const businessOutcome = String(node.config.businessOutcome)
@@ -683,6 +685,25 @@ class Run {
   }
 
   // -------------------------------------------------------------------------------------------- message wait
+
+  /** An adapter step sends nothing in a test (S68); like the local stub, a database read returns no rows. */
+  private sendAdapter(n: WorkflowNode): Transition | null {
+    const mapping = (n.config.inputMapping ?? {}) as Record<string, string>
+    if (Object.values(mapping).some((ref) => this.resolve(ref) == null)) {
+      this.stall(n, 'TEST_ADAPTER_INPUT_MISSING', 'A value this step sends is missing from this sample request.')
+      return null
+    }
+    const kind = String(n.config.kind ?? '')
+    const adapter = String(n.config.adapter ?? '')
+    const to = Array.isArray(n.config.to) ? n.config.to.length : 0
+    const what = kind === 'email' ? `an email to ${to} fixed ${to === 1 ? 'recipient' : 'recipients'}` : kind === 'teams' ? 'a Teams message'
+      : kind === 'kafka' ? `a message to the topic ${quote(String(n.config.topic ?? ''))}` : 'a database read'
+    const out: Record<string, unknown> = kind === 'jdbc' ? { outcome: 'stubbed', rowCount: 0 } : { outcome: 'stubbed' }
+    const t = this.next(n, 'next')
+    this.steps.set(n.id, out)
+    this.add(n, `${quote(n.label)} would send ${what} through the adapter ${quote(adapter)}. This test sends nothing; in this build adapters deliver only to a local test stub.`, { adapter, adapterKind: kind, result: { ...out } as Json }, out, t)
+    return t
+  }
 
   /** A worker is not simulated: the test settings may give its result, otherwise declared fields get sample values. */
   private externalTask(n: WorkflowNode): Transition | null {

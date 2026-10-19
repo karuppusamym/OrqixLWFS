@@ -108,6 +108,9 @@ function stepOutputs(def: Definition, node: WorkflowNode, lookup?: ConnectionLoo
       const result = (Array.isArray(node.config.result) ? node.config.result : []) as Array<{ name?: string; type?: FieldType; title?: string }>
       return result.filter((p) => p.name).map((p) => base(p.name as string, p.type ?? 'string', p.title || humanize(p.name as string)))
     }
+    case 'sendAdapter':
+      // S68: how the adapter took the message; a database read also reports its row count.
+      return node.config.kind === 'jdbc' ? [base('outcome', 'string'), base('rowCount', 'integer', 'Row count')] : [base('outcome', 'string')]
     case 'startWorkflow': {
       const mapping = (node.config.resultMapping ?? {}) as Record<string, string>
       const collections = (node.config.collectionMapping ?? {}) as Record<string, string>
@@ -168,7 +171,7 @@ export function rewriteRefs(def: Definition, map: (ref: string) => string): void
   }
   for (const n of def.nodes) {
     if (n.type === 'waitForMessage' && typeof n.config.correlationField === 'string') n.config.correlationField = map(n.config.correlationField)
-    if (n.type === 'http' || n.type === 'generateDocument' || n.type === 'startWorkflow' || n.type === 'externalTask') {
+    if (n.type === 'http' || n.type === 'generateDocument' || n.type === 'startWorkflow' || n.type === 'externalTask' || n.type === 'sendAdapter') {
       const mapping = n.config.inputMapping as Record<string, string> | undefined
       if (mapping) for (const k of Object.keys(mapping)) mapping[k] = map(mapping[k] as string)
       const each = n.config.forEach as { itemsRef: string } | undefined
@@ -189,7 +192,7 @@ export function usagesOfRef(def: Definition, predicate: (ref: string) => boolean
   }
   for (const n of def.nodes) {
     if (n.type === 'waitForMessage' && typeof n.config.correlationField === 'string' && predicate(n.config.correlationField)) places.push(`the step "${n.label}"`)
-    if (n.type === 'http' || n.type === 'generateDocument' || n.type === 'startWorkflow' || n.type === 'externalTask') {
+    if (n.type === 'http' || n.type === 'generateDocument' || n.type === 'startWorkflow' || n.type === 'externalTask' || n.type === 'sendAdapter') {
       const mapping = (n.config.inputMapping ?? {}) as Record<string, string>
       if (Object.values(mapping).some(predicate)) places.push(`the step "${n.label}"`)
       const each = n.config.forEach as { itemsRef: string } | undefined

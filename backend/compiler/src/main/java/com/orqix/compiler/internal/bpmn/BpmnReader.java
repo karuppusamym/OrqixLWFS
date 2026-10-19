@@ -283,6 +283,11 @@ public final class BpmnReader {
             case "${orqixChildTask}" -> "startWorkflow";
             default -> null;
         };
+        if ("${orqixAdapterTask}".equals(delegate)) {
+            unsupported(id, "Step '" + id + "' sends through an adapter. Adapter steps are shown in BPMN but are edited in the"
+                    + " Studio only, so this draft cannot be applied from BPMN.");
+            return null;
+        }
         if (kind == null) {
             unsupported(id, "Service task '" + id + "' is not an Orqix step: only the generated delegates "
                     + "(decision, call a system, document, external worker, notification, start a workflow) are supported; "

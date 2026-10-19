@@ -36,6 +36,8 @@ describe('timeline text in business language (docs/build/S7-frontend.md section 
 
   it('effects: success, failure with attempts, unknown outcome', () => {
     expect(describeEvent(event('EFFECT_SUCCEEDED', { nodeId: 'procure', data: { remoteReference: 'PO-1001' } }), ctx)).toBe('Create purchase order completed (reference PO-1001)')
+    expect(describeEvent(event('EFFECT_SUCCEEDED', { nodeId: 'procure', data: { adapterKey: 'ops-mail', adapterKind: 'email', outcome: 'stubbed' } }), ctx))
+      .toBe('Create purchase order: accepted by the local test stub of the adapter ops-mail; nothing was sent outside Orqix')
     expect(
       describeEvent(event('EFFECT_SUCCEEDED', { nodeId: 'procure', data: { summary: "Vendor risk assistant checked 'Acme Ltd' using Vendor registry: risk 72 (high)" } }), ctx),
     ).toBe("Vendor risk assistant checked 'Acme Ltd' using Vendor registry: risk 72 (high)")

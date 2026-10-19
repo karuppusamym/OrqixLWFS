@@ -2845,6 +2845,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/adapters/{adapterKey}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                adapterKey: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Edit or disable an adapter (docs/build/S68)
+         * @description Kind and key never change. The configuration is validated exactly like on creation. `expectedVersion` must equal
+         *     the stored version (409 CONFIGURATION_VERSION_CONFLICT otherwise). Workflow steps read the adapter again before
+         *     every send, so disabling it or narrowing an allowlist stops later sends (the request then needs attention);
+         *     widening an allowlist adds no recipient or topic, because those are fixed in each step.
+         */
+        put: operations["updateAdapter"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/adapters/{adapterKey}/test-send": {
         parameters: {
             query?: never;
@@ -2885,6 +2911,31 @@ export interface paths {
          * @description A received event never starts a run by itself; a person with workflow.start starts it.
          */
         post: operations["createInboundTrigger"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/inbound-triggers/{triggerId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                triggerId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Edit or disable an inbound trigger (docs/build/S68)
+         * @description Source, key and target workflow never change. A disabled trigger answers 404 to senders; events already received
+         *     stay and can still be started or purged. `expectedVersion` must equal the stored version (409
+         *     CONFIGURATION_VERSION_CONFLICT otherwise).
+         */
+        put: operations["updateInboundTrigger"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2932,6 +2983,29 @@ export interface paths {
         get: operations["listInboundEvents"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/inbound-events/purge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Delete received events older than a number of days (retention, docs/build/S68)
+         * @description Started events are always eligible; unstarted events only with `includeUnstarted`. Returns a count only; no event
+         *     data. A purged event id that a sender repeats later is accepted as a new event.
+         */
+        post: operations["purgeInboundEvents"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3922,8 +3996,12 @@ export interface components {
                 [key: string]: unknown;
             };
             enabled: boolean;
+            /** @description Optimistic version; send it as expectedVersion when editing */
+            version: number;
             /** Format: date-time */
             createdAt: string;
+            /** Format: date-time */
+            updatedAt?: string | null;
         };
         AdapterList: {
             items: components["schemas"]["Adapter"][];
@@ -3937,6 +4015,15 @@ export interface components {
             config: {
                 [key: string]: unknown;
             };
+        };
+        AdapterUpdateRequest: {
+            name: string;
+            secretRef: string;
+            config: {
+                [key: string]: unknown;
+            };
+            enabled: boolean;
+            expectedVersion: number;
         };
         AdapterSendRequest: {
             payload: {
@@ -3970,9 +4057,12 @@ export interface components {
                 [key: string]: string;
             };
             enabled: boolean;
+            version: number;
             receivePath?: string | null;
             /** Format: date-time */
             createdAt: string;
+            /** Format: date-time */
+            updatedAt?: string | null;
         };
         InboundTriggerList: {
             items: components["schemas"]["InboundTrigger"][];
@@ -3991,6 +4081,28 @@ export interface components {
             mapping: {
                 [key: string]: string;
             };
+        };
+        InboundTriggerUpdateRequest: {
+            name: string;
+            secretRef: string;
+            filter?: {
+                [key: string]: unknown;
+            };
+            mapping: {
+                [key: string]: string;
+            };
+            enabled: boolean;
+            expectedVersion: number;
+        };
+        InboundPurgeRequest: {
+            olderThanDays: number;
+            /** @default false */
+            includeUnstarted: boolean;
+        };
+        InboundPurgeResult: {
+            deleted: number;
+            /** Format: date-time */
+            receivedBefore: string;
         };
         InboundAccepted: {
             /** Format: uuid */
@@ -4151,7 +4263,7 @@ export interface components {
             detail?: string;
             instance?: string;
             /** @enum {string} */
-            code: "MALFORMED_REQUEST" | "IDEMPOTENCY_KEY_REQUIRED" | "INVALID_CURSOR" | "UNAUTHENTICATED" | "FORBIDDEN" | "CSRF_INVALID" | "SELF_APPROVAL_DENIED" | "SEPARATION_OF_DUTIES" | "NOT_ELIGIBLE" | "NOT_FOUND" | "IDEMPOTENCY_KEY_REUSED" | "DUPLICATE_KEY" | "WORKFLOW_VERSION_CONFLICT" | "RELEASE_NOT_ACTIVE" | "TASK_VERSION_CONFLICT" | "TASK_ALREADY_CLAIMED" | "TASK_NOT_CLAIMED_BY_CALLER" | "TASK_NOT_OPEN" | "RUN_NOT_ACTIVE" | "RUN_HAS_OPEN_TASKS" | "RUN_BUSY" | "RUN_NOT_RECOVERABLE" | "RUN_SUSPENDED" | "RUN_NOT_SUSPENDED" | "RUN_NOT_SUSPENDABLE" | "RUN_NOT_REPAIRABLE" | "RUN_NOT_MIGRATABLE" | "SIGNAL_NOT_AWAITED" | "JOB_LEASE_LOST" | "JOB_NOT_OPEN" | "EFFECT_NOT_RECONCILED" | "EFFECT_STATE_CONFLICT" | "GROUP_REVISION_CONFLICT" | "STALE_REVISION" | "PAYLOAD_TOO_LARGE" | "VALIDATION_FAILED" | "WORKFLOW_INVALID" | "WARNINGS_NOT_ACKNOWLEDGED" | "NO_ACTIVE_RELEASE" | "REASON_REQUIRED" | "CONNECTION_NOT_BOUND" | "EGRESS_NOT_ALLOWED" | "OPERATION_NOT_TESTABLE" | "PRECONDITION_REQUIRED" | "QUOTA_EXCEEDED" | "RATE_LIMITED" | "DEPENDENCY_UNAVAILABLE" | "AI_NOT_CONFIGURED" | "AI_MODEL_NOT_ALLOWED" | "AI_OUTPUT_INVALID" | "AI_PROVIDER_UNAVAILABLE" | "AI_BUDGET_EXCEEDED" | "SOURCE_INVALID" | "MIGRATION_BLOCKED" | "ATTACHMENT_BLOCKED" | "ATTACHMENT_LIMIT_REACHED" | "INTERNAL_ERROR";
+            code: "MALFORMED_REQUEST" | "IDEMPOTENCY_KEY_REQUIRED" | "INVALID_CURSOR" | "UNAUTHENTICATED" | "FORBIDDEN" | "CSRF_INVALID" | "SELF_APPROVAL_DENIED" | "SEPARATION_OF_DUTIES" | "NOT_ELIGIBLE" | "NOT_FOUND" | "IDEMPOTENCY_KEY_REUSED" | "DUPLICATE_KEY" | "WORKFLOW_VERSION_CONFLICT" | "RELEASE_NOT_ACTIVE" | "TASK_VERSION_CONFLICT" | "TASK_ALREADY_CLAIMED" | "TASK_NOT_CLAIMED_BY_CALLER" | "TASK_NOT_OPEN" | "RUN_NOT_ACTIVE" | "RUN_HAS_OPEN_TASKS" | "RUN_BUSY" | "RUN_NOT_RECOVERABLE" | "RUN_SUSPENDED" | "RUN_NOT_SUSPENDED" | "RUN_NOT_SUSPENDABLE" | "RUN_NOT_REPAIRABLE" | "RUN_NOT_MIGRATABLE" | "SIGNAL_NOT_AWAITED" | "JOB_LEASE_LOST" | "JOB_NOT_OPEN" | "EFFECT_NOT_RECONCILED" | "EFFECT_STATE_CONFLICT" | "GROUP_REVISION_CONFLICT" | "CONFIGURATION_VERSION_CONFLICT" | "STALE_REVISION" | "PAYLOAD_TOO_LARGE" | "VALIDATION_FAILED" | "WORKFLOW_INVALID" | "WARNINGS_NOT_ACKNOWLEDGED" | "NO_ACTIVE_RELEASE" | "REASON_REQUIRED" | "CONNECTION_NOT_BOUND" | "EGRESS_NOT_ALLOWED" | "OPERATION_NOT_TESTABLE" | "PRECONDITION_REQUIRED" | "QUOTA_EXCEEDED" | "RATE_LIMITED" | "DEPENDENCY_UNAVAILABLE" | "AI_NOT_CONFIGURED" | "AI_MODEL_NOT_ALLOWED" | "AI_OUTPUT_INVALID" | "AI_PROVIDER_UNAVAILABLE" | "AI_BUDGET_EXCEEDED" | "SOURCE_INVALID" | "MIGRATION_BLOCKED" | "ATTACHMENT_BLOCKED" | "ATTACHMENT_LIMIT_REACHED" | "INTERNAL_ERROR";
             correlationId: string;
             fieldErrors?: components["schemas"]["FieldError"][];
             issues?: components["schemas"]["ValidationIssue"][];
@@ -4808,7 +4920,7 @@ export interface components {
             nodeId: string;
             label: string;
             /** @enum {string} */
-            kind: "approval" | "http" | "wait" | "child" | "generateDocument" | "external" | "waitForSignal" | "compensate";
+            kind: "approval" | "http" | "wait" | "child" | "generateDocument" | "external" | "waitForSignal" | "compensate" | "adapter";
             /** @description Set while the step (kind wait) waits for this message (docs/build/S16). */
             messageName?: string | null;
             since: components["schemas"]["Timestamp"];
@@ -5228,7 +5340,7 @@ export interface components {
             nodeId: string;
             label: string;
             /** @enum {string} */
-            kind: "approval" | "http" | "wait" | "child" | "generateDocument" | "external" | "waitForSignal" | "compensate";
+            kind: "approval" | "http" | "wait" | "child" | "generateDocument" | "external" | "waitForSignal" | "compensate" | "adapter";
             /** @enum {string} */
             status: "waiting" | "running" | "needsAttention";
             since: components["schemas"]["Timestamp"];
@@ -6582,6 +6694,40 @@ export interface components {
             /** @description Undo completed calls (docs/build/S55): runs the automatic undo call of every call that completed successfully in this request, most recent first, then continues. */
             config?: Record<string, never>;
         } & components["schemas"]["nodeBase"];
+        sendAdapterNode: {
+            id?: unknown;
+            label?: unknown;
+            /** @constant */
+            type?: "sendAdapter";
+            /** @description Send through a configured adapter (docs/build/S68): email, Microsoft Teams, Kafka produce or a database read. In this build every adapter delivers only to the local test stub. Recipients and the topic are fixed in the step and must be on the adapter's allowlist; they never come from request data. Text members may contain {{name}} placeholders for inputMapping names. The Kafka value is the mapped values; database parameters are the mapped values and must equal the adapter's declared parameters. */
+            config?: {
+                /** @description Key of the workspace adapter. */
+                adapter: components["schemas"]["key"];
+                /**
+                 * @description The adapter's kind; must match the adapter, so a step is never silently re-pointed to another kind of system.
+                 * @enum {unknown}
+                 */
+                kind: "email" | "teams" | "kafka" | "jdbc";
+                /** @description Email only: fixed recipient addresses (1-10), each in a domain the adapter approves. */
+                to?: string[];
+                /** @description Email only: a single line. */
+                subject?: string;
+                /** @description Email only. */
+                body?: string;
+                /** @description Teams only, optional: a single line. */
+                title?: string;
+                /** @description Teams only. */
+                text?: string;
+                /** @description Kafka only: one of the adapter's approved topics. */
+                topic?: string;
+                /** @description Kafka only, optional: the message key. */
+                key?: string;
+                /** @description Request or earlier-step values used by this step, by name. */
+                inputMapping: {
+                    [key: string]: components["schemas"]["fieldRef"];
+                };
+            };
+        } & components["schemas"]["nodeBase"];
         transition: {
             id: components["schemas"]["id"];
             from: components["schemas"]["id"];
@@ -6702,7 +6848,7 @@ export interface components {
             };
             outputSchema: components["schemas"]["formSchema"];
             triggers: ("manual" | "api")[];
-            nodes: (components["schemas"]["startNode"] | components["schemas"]["approvalNode"] | components["schemas"]["decisionNode"] | components["schemas"]["branchNode"] | components["schemas"]["httpNode"] | components["schemas"]["notificationNode"] | components["schemas"]["parallelSplitNode"] | components["schemas"]["parallelJoinNode"] | components["schemas"]["waitNode"] | components["schemas"]["startWorkflowNode"] | components["schemas"]["waitForMessageNode"] | components["schemas"]["endNode"] | components["schemas"]["generateDocumentNode"] | components["schemas"]["externalTaskNode"] | components["schemas"]["raiseErrorNode"] | components["schemas"]["sendSignalNode"] | components["schemas"]["waitForSignalNode"] | components["schemas"]["compensateNode"])[];
+            nodes: (components["schemas"]["startNode"] | components["schemas"]["approvalNode"] | components["schemas"]["decisionNode"] | components["schemas"]["branchNode"] | components["schemas"]["httpNode"] | components["schemas"]["notificationNode"] | components["schemas"]["parallelSplitNode"] | components["schemas"]["parallelJoinNode"] | components["schemas"]["waitNode"] | components["schemas"]["startWorkflowNode"] | components["schemas"]["waitForMessageNode"] | components["schemas"]["endNode"] | components["schemas"]["generateDocumentNode"] | components["schemas"]["externalTaskNode"] | components["schemas"]["raiseErrorNode"] | components["schemas"]["sendSignalNode"] | components["schemas"]["waitForSignalNode"] | components["schemas"]["compensateNode"] | components["schemas"]["sendAdapterNode"])[];
             transitions: components["schemas"]["transition"][];
             decisions: components["schemas"]["decisionTable"][];
             /** @description maxAttempts/retryDelaySeconds apply only to external service work (http nodes), never to human decisions. */
@@ -7296,6 +7442,40 @@ export interface components {
                     recipients: ("requester" | "assignee" | "candidateGroup" | "supervisor" | "operators")[];
                     supervisorGroupRef?: components["schemas"]["key"];
                 };
+                sendAdapterNode: {
+                    id?: unknown;
+                    label?: unknown;
+                    /** @constant */
+                    type?: "sendAdapter";
+                    /** @description Send through a configured adapter (docs/build/S68): email, Microsoft Teams, Kafka produce or a database read. In this build every adapter delivers only to the local test stub. Recipients and the topic are fixed in the step and must be on the adapter's allowlist; they never come from request data. Text members may contain {{name}} placeholders for inputMapping names. The Kafka value is the mapped values; database parameters are the mapped values and must equal the adapter's declared parameters. */
+                    config?: {
+                        /** @description Key of the workspace adapter. */
+                        adapter: components["schemas"]["key"];
+                        /**
+                         * @description The adapter's kind; must match the adapter, so a step is never silently re-pointed to another kind of system.
+                         * @enum {unknown}
+                         */
+                        kind: "email" | "teams" | "kafka" | "jdbc";
+                        /** @description Email only: fixed recipient addresses (1-10), each in a domain the adapter approves. */
+                        to?: string[];
+                        /** @description Email only: a single line. */
+                        subject?: string;
+                        /** @description Email only. */
+                        body?: string;
+                        /** @description Teams only, optional: a single line. */
+                        title?: string;
+                        /** @description Teams only. */
+                        text?: string;
+                        /** @description Kafka only: one of the adapter's approved topics. */
+                        topic?: string;
+                        /** @description Kafka only, optional: the message key. */
+                        key?: string;
+                        /** @description Request or earlier-step values used by this step, by name. */
+                        inputMapping: {
+                            [key: string]: components["schemas"]["fieldRef"];
+                        };
+                    };
+                } & components["schemas"]["nodeBase"];
             };
         };
         scalarField: {
@@ -12432,6 +12612,39 @@ export interface operations {
             422: components["responses"]["Unprocessable"];
         };
     };
+    updateAdapter: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                adapterKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdapterUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Adapter"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
     testAdapterSend: {
         parameters: {
             query?: never;
@@ -12521,6 +12734,39 @@ export interface operations {
             422: components["responses"]["Unprocessable"];
         };
     };
+    updateInboundTrigger: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                triggerId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InboundTriggerUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InboundTrigger"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
     receiveInboundEvent: {
         parameters: {
             query?: never;
@@ -12582,6 +12828,37 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    purgeInboundEvents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InboundPurgeRequest"];
+            };
+        };
+        responses: {
+            /** @description Purged */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InboundPurgeResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     startInboundEvent: {

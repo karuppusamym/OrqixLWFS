@@ -118,6 +118,61 @@ describe('adapters and inbound triggers panel', () => {
     expect(screen.queryByRole('button', { name: 'Save trigger' })).not.toBeInTheDocument()
   })
 
+  it('edits and disables an adapter with the loaded version and reports a concurrent change', async () => {
+    const user = userEvent.setup(); const puts: Record<string, unknown>[] = []
+    let version = 1
+    server.use(
+      http.get('*/api/v1/workspaces/:ws/adapters', () => HttpResponse.json({ items: [{ id: 'a1', key: 'orders-out', kind: 'kafka', name: 'Orders out', secretRef: 'kafka-creds', config: { allowedTopics: ['orders.created', 'orders.cancelled'] }, enabled: true, version, createdAt: '2026-10-17T00:00:00Z' }] })),
+      http.put('*/api/v1/workspaces/:ws/adapters/:key', async ({ request }) => {
+        const body = await request.json() as Record<string, unknown>; puts.push(body)
+        if (body.expectedVersion !== version) return HttpResponse.json({ type: 'about:blank', title: 'The adapter or trigger changed since you loaded it', status: 409, code: 'CONFIGURATION_VERSION_CONFLICT', correlationId: 'c' }, { status: 409, headers: { 'Content-Type': 'application/problem+json' } })
+        version += 1
+        return HttpResponse.json({ id: 'a1', key: 'orders-out', kind: 'kafka', name: body.name, secretRef: body.secretRef, config: body.config, enabled: body.enabled, version, createdAt: '2026-10-17T00:00:00Z' })
+      }),
+    )
+    mount()
+    await user.click(await screen.findByRole('button', { name: 'Edit orders-out' }))
+    expect(screen.getByLabelText('Approved topics of orders-out')).toHaveValue('orders.created, orders.cancelled')
+    await user.clear(screen.getByLabelText('Approved topics of orders-out'))
+    await user.type(screen.getByLabelText('Approved topics of orders-out'), 'orders.created')
+    await user.click(screen.getByLabelText('orders-out is enabled'))
+    await user.click(screen.getByRole('button', { name: 'Save changes to orders-out' }))
+    await screen.findByText(/version 2, disabled/)
+    expect(puts[0]).toEqual({ name: 'Orders out', secretRef: 'kafka-creds', config: { allowedTopics: ['orders.created'] }, enabled: false, expectedVersion: 1 })
+    version = 5 // someone else changed it meanwhile
+    await user.click(await screen.findByRole('button', { name: 'Edit orders-out' }))
+    await user.click(screen.getByRole('button', { name: 'Save changes to orders-out' }))
+    expect(await screen.findByText(/changed by someone else/)).toBeVisible()
+  })
+
+  it('edits a trigger mapping and purges old events by age', async () => {
+    const user = userEvent.setup(); const puts: Record<string, unknown>[] = []; const purges: Record<string, unknown>[] = []
+    server.use(
+      http.get('*/api/v1/workspaces/:ws/inbound-triggers', () => HttpResponse.json({ items: [{ id: 't1', key: 'orders-in', source: 'kafka', name: 'Orders feed', workflowId: '00000000-0000-7000-8000-0000000000aa', secretRef: 'in-secret', filter: { allowedTopics: ['purchases'] }, mapping: { title: '/value/title' }, enabled: true, version: 3, receivePath: '/x', createdAt: '2026-10-17T00:00:00Z' }] })),
+      http.put('*/api/v1/workspaces/:ws/inbound-triggers/:id', async ({ request }) => {
+        const body = await request.json() as Record<string, unknown>; puts.push(body)
+        return HttpResponse.json({ id: 't1', key: 'orders-in', source: 'kafka', name: body.name, workflowId: '00000000-0000-7000-8000-0000000000aa', secretRef: body.secretRef, filter: body.filter, mapping: body.mapping, enabled: body.enabled, version: 4, receivePath: '/x', createdAt: '2026-10-17T00:00:00Z' })
+      }),
+      http.post('*/api/v1/workspaces/:ws/inbound-events/purge', async ({ request }) => {
+        purges.push(await request.json() as Record<string, unknown>)
+        return HttpResponse.json({ deleted: 7, receivedBefore: '2026-07-20T00:00:00Z' })
+      }),
+    )
+    mount()
+    await user.click(await screen.findByRole('button', { name: 'Edit orders-in' }))
+    expect(screen.getByLabelText('Start form fields of orders-in')).toHaveValue('title=/value/title')
+    await user.type(screen.getByLabelText('Start form fields of orders-in'), '\namount=/value/amount')
+    await user.click(screen.getByRole('button', { name: 'Save changes to orders-in' }))
+    await screen.findByText(/Trigger orders-in saved \(version 4\)/)
+    expect(puts[0]).toEqual({ name: 'Orders feed', secretRef: 'in-secret', filter: { allowedTopics: ['purchases'] }, mapping: { title: '/value/title', amount: '/value/amount' }, enabled: true, expectedVersion: 3 })
+    await user.clear(screen.getByLabelText(/Delete events older than/))
+    await user.type(screen.getByLabelText(/Delete events older than/), '30')
+    await user.click(screen.getByLabelText('Also delete events nobody started'))
+    await user.click(screen.getByRole('button', { name: 'Delete old events' }))
+    await screen.findByText('7 received events older than 30 days deleted.')
+    expect(purges).toEqual([{ olderThanDays: 30, includeUnstarted: true }])
+  })
+
   it('does not request the workflow list when a connection manager cannot read workflows', async () => {
     permission.read = false
     mount()

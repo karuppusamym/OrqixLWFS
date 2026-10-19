@@ -163,6 +163,9 @@ public class AuditWriter {
             Map.entry("inbound.trigger-created", Set.of("source", "key", "workflowId")),
             Map.entry("inbound.received", Set.of("source", "key", "sizeBytes")),
             Map.entry("inbound.event-started", Set.of("runId")),
+            Map.entry("adapter.updated", Set.of("kind", "key", "version", "enabled")),
+            Map.entry("inbound.trigger-updated", Set.of("source", "key", "version", "enabled")),
+            Map.entry("inbound.events-purged", Set.of("olderThanDays", "includeUnstarted", "deleted")),
             Map.entry("agent.call", Set.of("key", "operation", "profile", "model", "outcome", "toolCalls", "inputTokens",
                     "outputTokens", "costUsd", "durationMs", "effectId")));
 

@@ -236,6 +236,7 @@ final class SimulationRun {
                 yield t;
             }
             case Node.ExternalTask n -> externalTask(n);
+            case Node.SendAdapter n -> sendAdapter(n);
             case Node.Notification n -> notification(n);
             case Node.ParallelSplit n -> split(n);
             case Node.ParallelJoin n -> {
@@ -968,6 +969,52 @@ final class SimulationRun {
         add(n, Text.quote(n.label()) + ": a worker for the topic " + Text.quote(n.topic())
                 + " takes the job and returns its result. This test calls no worker; the result "
                 + (given.isObject() ? "comes from the test settings." : "uses sample values."), d, null, t);
+        return t;
+    }
+
+    /**
+     * An adapter step is not executed by a test (S68): the values it would use are checked and the message is described,
+     * but nothing is sent. Like the local stub of this build, a database read returns no rows.
+     */
+    private Transition sendAdapter(Node.SendAdapter n) {
+        Map<String, String> values = new TreeMap<>();
+        for (var entry : new TreeMap<>(n.inputMapping()).entrySet()) {
+            Object value = resolve(entry.getValue());
+            if (value == null) {
+                stall(n, "TEST_ADAPTER_INPUT_MISSING", "A value this step sends is missing from this sample request.");
+                return null;
+            }
+            values.put(entry.getKey(), value instanceof BigDecimal b ? b.toPlainString() : String.valueOf(value));
+        }
+        ObjectNode d = F.objectNode();
+        d.put("adapter", n.adapterRef());
+        d.put("adapterKind", n.adapterKind());
+        String what = switch (n.adapterKind()) {
+            case "email" -> {
+                d.put("recipientCount", n.to().size());
+                d.put("subject", com.orqix.compiler.AdapterMessages.render(n.subject(), values));
+                yield "an email to " + n.to().size() + (n.to().size() == 1 ? " fixed recipient" : " fixed recipients");
+            }
+            case "teams" -> "a Teams message";
+            case "kafka" -> {
+                d.put("topic", n.topic());
+                yield "a message to the topic " + Text.quote(n.topic());
+            }
+            default -> {
+                d.put("parameterCount", values.size());
+                yield "a database read";
+            }
+        };
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("outcome", "stubbed");
+        if ("jdbc".equals(n.adapterKind())) {
+            out.put("rowCount", BigDecimal.ZERO);
+        }
+        steps.put(n.id(), out);
+        d.set("result", DefaultWorkflowSimulator.json(out));
+        Transition t = next(n, Route.NEXT);
+        add(n, Text.quote(n.label()) + " would send " + what + " through the adapter " + Text.quote(n.adapterRef())
+                + ". This test sends nothing; in this build adapters deliver only to a local test stub.", d, out, t);
         return t;
     }
 

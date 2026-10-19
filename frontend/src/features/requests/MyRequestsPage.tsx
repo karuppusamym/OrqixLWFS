@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/input'
 import { RunsTable } from '@/features/runs/RunsTable'
+import { InboundEventsPanel } from './InboundEventsPanel'
 import { LIFECYCLE_LABELS } from '@/lib/status'
 
 const FILTERS: Array<Lifecycle | ''> = ['', 'waiting', 'running', 'needsAttention', 'completed', 'cancelled']
@@ -27,6 +28,7 @@ export function MyRequestsPage() {
   return (
     <>
       <PageHeader title="My requests" description="Everything you have submitted and where it stands." />
+      <InboundEventsPanel />
       <div className="mb-4 flex flex-wrap items-end gap-3 rounded-card border border-border bg-surface p-4">
         <div className="space-y-1.5">
           <Label htmlFor="req-status">Show</Label>

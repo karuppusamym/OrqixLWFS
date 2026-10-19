@@ -182,6 +182,12 @@ public final class ModelReader {
             case SEND_SIGNAL -> new Node.SendSignal(index, id, label, c.get("signal").stringValue());
             case WAIT_FOR_SIGNAL -> new Node.WaitForSignal(index, id, label, c.get("signal").stringValue());
             case COMPENSATE -> new Node.Compensate(index, id, label);
+            case SEND_ADAPTER -> new Node.SendAdapter(index, id, label, c.get("adapter").stringValue(),
+                    c.get("kind").stringValue(),
+                    c.has("to") ? java.util.stream.StreamSupport.stream(c.get("to").spliterator(), false)
+                            .map(JsonNode::stringValue).toList() : List.of(),
+                    text(c, "subject"), text(c, "body"), text(c, "title"), text(c, "text"), text(c, "topic"),
+                    text(c, "key"), stringMap(c.get("inputMapping")));
         };
     }
 

@@ -47,7 +47,7 @@ final class ScopeRules {
             NodeKind.COMPENSATE, NodeKind.END);
     /** Work an interrupting handler could not cancel cleanly (child requests, worker jobs, message waits). */
     private static final Set<NodeKind> NOT_INTERRUPTIBLE = Set.of(NodeKind.START_WORKFLOW, NodeKind.EXTERNAL_TASK,
-            NodeKind.WAIT_FOR_MESSAGE);
+            NodeKind.WAIT_FOR_MESSAGE, NodeKind.SEND_ADAPTER);
 
     private ScopeRules() {
     }

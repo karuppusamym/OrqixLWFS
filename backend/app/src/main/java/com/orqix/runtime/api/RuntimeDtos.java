@@ -70,6 +70,16 @@ public final class RuntimeDtos {
             List<String> engineNodeIds, int version) {
     }
 
+    /** What the periodic scan last found for one request (docs/build/S67). The scan only reports; it never repairs. */
+    public record ConsistencyFinding(UUID runId, String reference, String state, boolean repairable, String message,
+            int version, String firstSeenAt, String checkedAt) {
+    }
+
+    /** Open findings of the scan plus whether it is switched on and how much it has covered. */
+    public record ConsistencyFindings(boolean enabled, int scannedRuns, String lastCheckedAt, int total,
+            List<ConsistencyFinding> items) {
+    }
+
     public record MigrateRunRequest(@NotNull UUID targetReleaseId, @NotNull @Size(min = 1, max = 500) String reason,
             @NotNull @Min(1) Integer expectedVersion) {
     }

@@ -2198,9 +2198,31 @@ export interface paths {
         };
         /**
          * Compare what the request shows with what the engine holds
-         * @description Read-only. Reports inSync, projectionDrift (open approvals the engine holds are missing from the request; repairable), strandedToken (the engine has a token that nothing can move; cancel only), emptyRequest, engineMissing, unsupported, protected (suspended) or ended.
+         * @description Read-only. Reports inSync, projectionDrift (open approvals, date or message waits, or external-worker steps the engine holds are missing from the request; repairable only when the engine state fully determines every step), strandedToken (the engine has a token that nothing can move; cancel only), emptyRequest, engineMissing, unsupported, protected (suspended) or ended.
          */
         get: operations["getRunDiagnosis"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/consistency-findings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Drifted requests found by the periodic consistency scan
+         * @description Read-only report of the opt-in periodic scan (EX09). The scan never repairs; open the request and use the consistency check to rebuild or cancel. `enabled` is false when the scan is switched off.
+         */
+        get: operations["listConsistencyFindings"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2222,8 +2244,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Rebuild the open approval steps of a request from the engine
-         * @description Only for projectionDrift on a running or waiting request that is not suspended. The decision is re-made under the request lock; the engine is never triggered, skipped or modified. Refused with 409 RUN_NOT_REPAIRABLE otherwise, including stranded tokens, which can only be cancelled.
+         * Rebuild the open steps of a request from the engine
+         * @description Rebuilds approvals, date and message waits and external-worker steps. Only for projectionDrift on a running or waiting request that is not suspended. The decision is re-made under the request lock; the engine is never triggered, skipped or modified. Refused with 409 RUN_NOT_REPAIRABLE otherwise, including stranded tokens, which can only be cancelled.
          */
         post: operations["repairRun"];
         delete?: never;
@@ -5463,6 +5485,27 @@ export interface components {
             projectedNodeIds: string[];
             engineNodeIds: string[];
             version: number;
+        };
+        ConsistencyFinding: {
+            runId: components["schemas"]["Uuid"];
+            reference: string;
+            /** @enum {string} */
+            state: "projectionDrift" | "strandedToken" | "emptyRequest" | "engineMissing" | "unsupported";
+            repairable: boolean;
+            message: string;
+            version: number;
+            /** Format: date-time */
+            firstSeenAt: string;
+            /** Format: date-time */
+            checkedAt: string;
+        };
+        ConsistencyFindings: {
+            enabled: boolean;
+            scannedRuns: number;
+            /** Format: date-time */
+            lastCheckedAt: string | null;
+            total: number;
+            items: components["schemas"]["ConsistencyFinding"][];
         };
         MigrateRunRequest: {
             targetReleaseId: components["schemas"]["Uuid"];
@@ -11408,6 +11451,33 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunDiagnosis"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listConsistencyFindings: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Findings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsistencyFindings"];
                 };
             };
             401: components["responses"]["Unauthenticated"];

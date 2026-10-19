@@ -306,7 +306,7 @@ export function ResumeDialog(props: DialogProps) {
 // Consistency check and repair (EX09) --------------------------------------------------------------
 const DIAGNOSIS_TITLE: Record<string, string> = {
   inSync: 'Everything matches',
-  projectionDrift: 'Open approvals are missing from this request',
+  projectionDrift: 'Open steps are missing from this request',
   strandedToken: 'A step is stuck and nothing can move it',
   emptyRequest: 'The engine holds no work for this request',
   engineMissing: 'The workflow engine has no record of this request',
@@ -339,7 +339,7 @@ export function RepairDialog({ open, run, onClose, onCancelRequest }: DialogProp
       const idem = key.keyFor(fingerprintOf(run.id, 'repair', reason.trim(), found.version))
       await endpoints.repairRun(ws, run.id, { reason: reason.trim(), expectedVersion: found.version }, idem)
       await refresh()
-      announce('The open approval steps were rebuilt.')
+      announce('The open steps were rebuilt.')
       onClose()
     } catch (cause) {
       setError(toProblem(cause))
@@ -366,7 +366,7 @@ export function RepairDialog({ open, run, onClose, onCancelRequest }: DialogProp
           ) : null}
           {found?.repairable ? (
             <Button variant="primary" onClick={() => void submit()} loading={pending}>
-              Rebuild approval steps
+              Rebuild steps
             </Button>
           ) : null}
         </>
@@ -383,7 +383,7 @@ export function RepairDialog({ open, run, onClose, onCancelRequest }: DialogProp
         {found?.repairable ? (
           <>
             <p className="text-sm text-muted-foreground">
-              Rebuilding only rewrites what this page shows, from approvals the engine still holds. The engine is not triggered, so nothing runs twice and no outcome is invented.
+              Rebuilding only rewrites what this page shows, from approvals, date or message waits and worker steps the engine still holds. The engine is not triggered, so nothing runs twice and no outcome is invented.
             </p>
             <ReasonField id="repair-reason" value={reason} onChange={setReason} error={reasonError} />
           </>

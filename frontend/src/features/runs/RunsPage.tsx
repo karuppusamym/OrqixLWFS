@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Input, Select } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { LIFECYCLE_LABELS } from '@/lib/status'
+import { ConsistencyScanPanel } from './ConsistencyScanPanel'
 import { RunsTable } from './RunsTable'
 
 const FILTERS: Array<Lifecycle | ''> = ['', 'waiting', 'running', 'completed', 'cancelled']
@@ -44,6 +45,7 @@ export function RunsPage() {
   return (
     <>
       <PageHeader title="Runs" description="All requests in this workspace. Technical details are available on each run." />
+      <ConsistencyScanPanel />
       <div className="mb-4 flex flex-wrap items-end gap-4 rounded-card border border-border bg-surface p-4">
         <Button
           variant="secondary"

@@ -10,7 +10,7 @@ S53 delivered the Lanes tab, the YAML source tab and threaded discussion, and le
 
 **Draft round trip (document -> BPMN -> document).** On every load the server compiles the stored revision, reads the BPMN back with a strict reader (the exact inverse of the generator) and compares the carried sections. The view shows either "converts to BPMN and back without any difference" or every difference as a JSON Pointer with both values. BPMN editing is only offered when the round trip is identical. Values are compared in canonical form (key order ignored, numbers compared as decimals).
 
-Constructs that the compiled BPMN does not carry make the round trip fail, so BPMN editing is unavailable for such drafts (found by running every example; the reasons are reported, not hidden). [S65](S65-bpmn-defaults-and-examples.md) later removed the payload-title and explicit-default limits below (`order-payment-wait` and `start-date-onboarding` are now editable); the list is kept as delivered in S60:
+Constructs that the compiled BPMN does not carry make the round trip fail, so BPMN editing is unavailable for such drafts (found by running every example; the reasons are reported, not hidden). [S70](S70-bpmn-defaults-and-examples.md) later removed the payload-title and explicit-default limits below (`order-payment-wait` and `start-date-onboarding` are now editable); the list is kept as delivered in S60:
 
 - `startWorkflow` `repeat`, `forEach` and `collectionMapping` (examples `banking-credit-approval`, `medium-bounded-rework`, `banking-card-claim`, `complex-batch-review`);
 - approval `separateFrom`, `correctable` and `dispatch`;

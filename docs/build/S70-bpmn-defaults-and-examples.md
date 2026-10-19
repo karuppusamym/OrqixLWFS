@@ -1,4 +1,4 @@
-# S65 - BPMN source: written defaults, field titles and the four example workflows (UI03)
+# S70 - BPMN source: written defaults, field titles and the four example workflows (UI03)
 
 S60 made BPMN editing available only for drafts whose round trip document -> BPMN -> document is identical. Several drafts failed that check only because they spelled a value differently from what the reader writes back. This slice removes those limits. It does not change the compiled output (no generator change, no compiler version bump, golden files unchanged), add `orqix:*` extensions, change the canonical schema, the runtime or the database (no migration).
 

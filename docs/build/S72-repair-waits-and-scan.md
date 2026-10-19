@@ -1,4 +1,4 @@
-# S67 - Repair of wait and worker steps, and the periodic consistency scan (EX09 extension)
+# S72 - Repair of wait and worker steps, and the periodic consistency scan (EX09 extension)
 
 Builds on S49 (EX09 on-demand check and approval rebuild) and S31 (EX03 watchdog). Three additions, none of which triggers, skips, migrates or modifies the engine.
 

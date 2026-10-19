@@ -51,7 +51,7 @@ Request form inspector: **Sections and handlers** editor (add/remove, name, memb
 
 ## Not covered
 
-Nested subprocesses; subprocess-scoped compensation, compensation of non-HTTP steps or child workflows, BPMN compensation events at runtime; message-, escalation- or conditional-triggered handlers; handlers inside sections; multiple error routes per section; error routes on individual steps; signal boundaries on steps; catching platform failures as business errors; cross-request or workspace-wide signals; drawing section frames on the Studio canvas and the run diagram canvas (done in [S66](S66-scope-frames-and-call-failure-errors.md)); the offline mock simulator/validator; release moves of requests in such workflows; Docker-stack and browser (Playwright/axe) journeys.
+Nested subprocesses; subprocess-scoped compensation, compensation of non-HTTP steps or child workflows, BPMN compensation events at runtime; message-, escalation- or conditional-triggered handlers; handlers inside sections; multiple error routes per section; error routes on individual steps; signal boundaries on steps; catching platform failures as business errors; cross-request or workspace-wide signals; drawing section frames on the Studio canvas and the run diagram canvas (done in [S71](S71-scope-frames-and-call-failure-errors.md)); the offline mock simulator/validator; release moves of requests in such workflows; Docker-stack and browser (Playwright/axe) journeys.
 
 ## Verification (17 October 2026, JDK 21, PostgreSQL via Testcontainers, Flowable 8)
 

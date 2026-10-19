@@ -1,4 +1,4 @@
-# S66 - Section and handler frames; call failures as section errors (EX06/EX08 follow-up to S59)
+# S71 - Section and handler frames; call failures as section errors (EX06/EX08 follow-up to S59)
 
 S59 left two items with the most user-facing value open: sections and handlers were only edited in the inspector and listed as text on the run diagram (no frames on either canvas), and a section's error route could catch only a "Raise an error" step, never a failing system call. This slice delivers both, bounded, without changing the flat workflow model or any default behavior. No migration was needed (V90-V92 unused).
 

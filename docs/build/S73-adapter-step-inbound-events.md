@@ -1,4 +1,4 @@
-# S68 - Adapter workflow step, received-event UI, adapter/trigger editing and event retention (IN02 follow-up)
+# S73 - Adapter workflow step, received-event UI, adapter/trigger editing and event retention (IN02 follow-up)
 
 Extends [S47](S47-adapters-inbound-triggers.md). Everything still delivers only to the `LocalStubTransport`: no SMTP, Microsoft Graph/Teams, JDBC driver or Kafka client is linked, and `secretRef` contents are never read by an adapter.
 

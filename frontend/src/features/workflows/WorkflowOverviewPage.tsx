@@ -204,6 +204,13 @@ export function WorkflowOverviewPage() {
                             </Button>
                           ) : null}
                           {can('workflow.export') ? (
+                            <Button size="sm" variant="secondary" asChild>
+                              <Link to={`/w/${ws}/workflows/${workflowId}/releases/${r.id}/promote`} aria-label={`Promote version ${r.releaseNumber} to another workspace`}>
+                                Promote
+                              </Link>
+                            </Button>
+                          ) : null}
+                          {can('workflow.export') ? (
                             <Button size="sm" variant="secondary" onClick={() => void exportRelease(r)} loading={exporting === r.id} aria-label={`Export version ${r.releaseNumber}`}>
                               <Download aria-hidden="true" /> Export
                             </Button>

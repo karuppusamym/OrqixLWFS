@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { makeRelease } from '@/mocks/seed'
 import { db, PURCHASE_WORKFLOW_ID } from '@/mocks/state'
+import { server } from '@/test/server'
 import { renderAppReady, signInAs, WS } from '@/test/utils'
 
 function twoVersions() {
@@ -48,10 +49,33 @@ describe('gradual rollout and per-version figures (PL02)', () => {
     expect(within(row).getAllByRole('cell')[1]).toHaveTextContent('0')
   })
 
-  it('hides the whole section from someone who can neither read workflows nor runs', async () => {
+  it('sends a requester who cannot read workflows to the permission message and never asks for rollout data', async () => {
     signInAs('rhea.requester', { published: true, sampleRuns: false })
     const workflow = twoVersions()
-    await renderAppReady(`/w/${WS}/workflows/${workflow.id}`).catch(() => undefined)
-    expect(screen.queryByRole('heading', { name: 'Gradual rollout' })).not.toBeInTheDocument()
+    const requested: string[] = []
+    const listener = ({ request }: { request: Request }) => requested.push(new URL(request.url).pathname)
+    server.events.on('request:start', listener)
+    try {
+      await renderAppReady(`/w/${WS}/workflows/${workflow.id}`)
+      // The page itself cannot load for this person, so the outcome is an explicit, visible refusal rather than a missing section.
+      expect(await screen.findByText("You don't have permission to view this workflow.")).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: 'Gradual rollout' })).not.toBeInTheDocument()
+      expect(screen.queryByTestId('canary-status')).not.toBeInTheDocument()
+      expect(requested.filter((path) => /\/(rollout|release-analytics|canary)$/.test(path))).toEqual([])
+    } finally {
+      server.events.removeListener('request:start', listener)
+    }
+  })
+
+  it('shows a designer who cannot publish or read runs the status only, with no controls and no figures', async () => {
+    signInAs('dana.designer', { published: true, sampleRuns: true })
+    const workflow = twoVersions()
+    db.canaries.set(workflow.id, { releaseId: workflow.releases[1]!.id, percent: 20, setAt: new Date().toISOString() })
+    await renderAppReady(`/w/${WS}/workflows/${workflow.id}`)
+
+    expect(await screen.findByRole('heading', { name: 'Gradual rollout' })).toBeInTheDocument()
+    expect(await screen.findByTestId('canary-status')).toHaveTextContent('20% of new requests use version 2')
+    expect(screen.queryByRole('button', { name: 'Stop the rollout' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('table', { name: /Requests by version/ })).not.toBeInTheDocument()
   })
 })

@@ -32,7 +32,7 @@ Migrations `V65__release_canary.sql` (`workflow_canary`), `V66__workspace_enviro
 
 - Git as a source of truth, branch/PR flows, repository sync, signed bundles, or cross-organization/cross-instance promotion (a bundle import path). Promotion is between workspaces of one installation.
 - Automatic canary evaluation, automatic rollback, progressive stepping, metric thresholds, sticky per-person routing, a canary for different request forms, or a canary on child workflows.
-- Promotion approvals/gates, scheduled promotions, promoting several releases or workflows at once, copying connection bindings, secrets or groups, and a promotion user interface (the API is built; the browser has no promote screen).
+- Scheduled promotions, promoting several releases or workflows at once, and copying connection bindings, secrets or groups. The promotion screen and an optional approval gate were added later in [S69](S69-promotion-ui-approval-gate.md).
 - Analytics beyond per-release counts: no percentile latency, per-step timing, cohort or trend charts, cost, or cross-workflow comparison; no CSV/JSON export of these figures.
 - Production infrastructure (blue/green hosts, traffic routers, HA) is out of scope by design.
 - No browser (Playwright) journey was run for this slice.
@@ -45,7 +45,7 @@ Backend (JDK 21, real PostgreSQL via Testcontainers and Flowable, every response
 - `SecurityMatrixTest` (3, extended with sample bodies for the new operations) confirms every new operation declares its permission/audit and returns 404 to foreign principals without changing state.
 - Regression run: `ArchitectureTest`, `CatalogApiTest`, `DatabaseTest`, `RollbackPinningTest`, `ReleaseCompatibilityTest`, `RunPathApiTest`, `AccessApiTest`, `PermissionRevocationTest`, `InsightsApiTest`, `RunMigrationTest` pass. The full backend suite was not run.
 
-Frontend: 3 new tests (`ReleaseRollout.test.tsx`: publisher starts and stops a rollout; run readers see read-only status and figures; the third test only asserts the section is absent for a requester and is weak because that user may not reach the page at all). Full suite 800 tests: 797 passed on the first run and 3 timed out under load (`ai.test.tsx`, `StudioPage.test.tsx`), which pass when run alone (28 of 28); not caused by this change. `tsc -b`, `api:check`, scoped ESLint and `build:mock` pass. Mock handlers are a simplified double of the server (e.g. no form-compatibility check, no average duration).
+Frontend: 3 new tests (`ReleaseRollout.test.tsx`: publisher starts and stops a rollout; run readers see read-only status and figures; the third test only asserted the section was absent for a requester and was weak because that user cannot reach the page at all; S69 replaced it). Full suite 800 tests: 797 passed on the first run and 3 timed out under load (`ai.test.tsx`, `StudioPage.test.tsx`), which pass when run alone (28 of 28); not caused by this change. `tsc -b`, `api:check`, scoped ESLint and `build:mock` pass. Mock handlers are a simplified double of the server (e.g. no form-compatibility check, no average duration).
 
 Evidence (untracked, `evidence/`): `pl02-backend*.log`, `pl02-frontend.log`, `pl02-types.log`, `pl02-lint.log`, `pl02-apicheck.log`, `pl02-build.log`.
 

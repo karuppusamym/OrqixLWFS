@@ -1,4 +1,4 @@
-import { Activity, BarChart3, Check, ClipboardList, ChevronsUpDown, FlaskConical, House, Inbox, Layers3, LogOut, Menu, MessageSquare, PanelsTopLeft, Settings, Workflow, X } from 'lucide-react'
+import { Activity, BarChart3, Check, ClipboardList, ChevronsUpDown, FlaskConical, House, Inbox, Layers3, LogOut, Menu, MessageSquare, PanelsTopLeft, Rocket, Settings, Workflow, X } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, NavLink, Outlet, useLocation, useMatches, useNavigate } from 'react-router'
 import { signOut } from '@/api/auth'
@@ -78,6 +78,7 @@ export function Shell() {
     { to: `${base}/cases`, label: 'Cases', icon: Layers3, visible: can('workflow.read', 'workflow.start', 'run.read', 'task.act') },
     { to: `${base}/views`, label: 'Views', icon: PanelsTopLeft, visible: can('workflow.read') },
     { to: `${base}/insights`, label: 'Insights', icon: BarChart3, visible: can('run.read') },
+    { to: `${base}/promotions`, label: 'Promotions', icon: Rocket, visible: can('workflow.approve-promotion', 'workspace.manage-access', 'workflow.edit') },
     { to: `${base}/settings`, label: 'Settings', icon: Settings, visible: can('workspace.manage-access', 'connection.read') },
   ]
 

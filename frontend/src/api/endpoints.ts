@@ -170,6 +170,37 @@ export const clearWorkflowCanary = (ws: string, workflowId: string, expectedVers
 export const getReleaseAnalytics = (ws: string, workflowId: string, days = 30) =>
   call(api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/release-analytics', { params: { path: { workspaceId: ws, workflowId }, query: { days } } }))
 
+// Environment stages and promotion (PL02, docs/build/S54 and S69)
+export const getWorkspaceEnvironment = (ws: string) =>
+  call(api.GET('/workspaces/{workspaceId}/environment', { params: { path: { workspaceId: ws } } }))
+
+export const setWorkspaceEnvironment = (ws: string, body: S['SetWorkspaceEnvironment']) =>
+  call(api.PUT('/workspaces/{workspaceId}/environment', { params: { path: { workspaceId: ws } }, body }))
+
+export const checkReleasePromotion = (ws: string, workflowId: string, releaseId: string, body: S['PromoteRelease']) =>
+  call(api.POST('/workspaces/{workspaceId}/workflows/{workflowId}/releases/{releaseId}/promotion-check', { params: { path: { workspaceId: ws, workflowId, releaseId } }, body }))
+
+export const promoteRelease = (ws: string, workflowId: string, releaseId: string, body: S['PromoteRelease']) =>
+  call(api.POST('/workspaces/{workspaceId}/workflows/{workflowId}/releases/{releaseId}/promote', { params: { path: { workspaceId: ws, workflowId, releaseId } }, body }))
+
+export const requestReleasePromotion = (ws: string, workflowId: string, releaseId: string, body: S['RequestPromotion']) =>
+  call(api.POST('/workspaces/{workspaceId}/workflows/{workflowId}/releases/{releaseId}/promotion-requests', { params: { path: { workspaceId: ws, workflowId, releaseId } }, body }))
+
+export const listWorkflowPromotions = (ws: string, workflowId: string) =>
+  call(api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/promotions', { params: { path: { workspaceId: ws, workflowId } } }))
+
+export const listPromotionRequests = (ws: string, status: 'pending' | 'all') =>
+  call(api.GET('/workspaces/{workspaceId}/promotion-requests', { params: { path: { workspaceId: ws }, query: { status } } }))
+
+export const approvePromotionRequest = (ws: string, requestId: string, body: S['PromotionDecision']) =>
+  call(api.POST('/workspaces/{workspaceId}/promotion-requests/{requestId}/approve', { params: { path: { workspaceId: ws, requestId } }, body }))
+
+export const rejectPromotionRequest = (ws: string, requestId: string, body: S['PromotionDecision']) =>
+  call(api.POST('/workspaces/{workspaceId}/promotion-requests/{requestId}/reject', { params: { path: { workspaceId: ws, requestId } }, body }))
+
+export const cancelPromotionRequest = (ws: string, requestId: string) =>
+  call(api.POST('/workspaces/{workspaceId}/promotion-requests/{requestId}/cancel', { params: { path: { workspaceId: ws, requestId } } }))
+
 // Runs
 export const getStartForm = (ws: string, workflowId: string) =>
   call(api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/start-form', { params: { path: { workspaceId: ws, workflowId } } }))

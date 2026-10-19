@@ -32,7 +32,7 @@ MATRIX_EXEMPT_OPERATIONS = {
 # Qualifiers in x-orqix-permission that are not Permission enum values: relationship or role checks.
 PERMISSION_QUALIFIERS = {
     "authenticated", "platform.admin", "workspace.member", "initiator", "taskParticipant", "taskEligible",
-    "currentAssignee", "assignee", "candidate", "recipient", "conversation.author",
+    "currentAssignee", "assignee", "candidate", "recipient", "conversation.author", "requester",
     "inboundSignature",  # IN02: HMAC over the body with a per-trigger secret; no session or token
 }
 # Free-text fragments allowed inside an x-orqix-permission value.

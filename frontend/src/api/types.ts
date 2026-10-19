@@ -91,3 +91,9 @@ export type EffectClass = Effect['effectClass']
 export function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
 }
+
+export type WorkspaceEnvironment = S['WorkspaceEnvironment']
+export type PromotionReport = S['PromotionReport']
+export type ReleasePromotion = S['ReleasePromotion']
+export type PromotionRecord = S['PromotionRecord']
+export type PromotionRequest = S['PromotionRequest']

@@ -68,6 +68,14 @@ export const routes: RouteObject[] = [
             lazy: async () => ({ Component: (await import('@/features/workflows/PublishReviewPage')).PublishReviewPage }),
           },
           {
+            path: 'workflows/:workflowId/releases/:releaseId/promote',
+            lazy: async () => ({ Component: (await import('@/features/promotion/PromotePage')).PromotePage }),
+          },
+          {
+            path: 'promotions',
+            lazy: async () => ({ Component: (await import('@/features/promotion/PromotionRequestsPage')).PromotionRequestsPage }),
+          },
+          {
             path: 'settings',
             lazy: async () => ({ Component: (await import('@/features/settings/SettingsPage')).SettingsPage }),
           },

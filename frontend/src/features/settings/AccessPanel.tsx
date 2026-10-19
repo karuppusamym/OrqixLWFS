@@ -29,6 +29,7 @@ const PERMISSION_HELP: Record<string, string> = {
   'document.browse': 'Can browse specifically granted document folders',
   'audit.read': 'Can export control evidence for requests they can access',
   'job.work': 'Can take and complete jobs for external workers',
+  'workflow.approve-promotion': 'Can approve or reject requests to promote a release into this workspace',
 }
 
 /** Members, roles and groups, read only in R0 (changes go through the API or seed; editing is R1). */

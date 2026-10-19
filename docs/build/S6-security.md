@@ -53,6 +53,7 @@ Results are cached per (subject, hash of session groups, workspace) for 50 s by 
 | `connection.read` | Connection metadata and operation contracts | WORKSPACE_ADMIN, WORKFLOW_DESIGNER, PUBLISHER, OPERATOR |
 | `connection.manage` | Register definitions, set bindings, run connection tests | Grant only (integration administrator) |
 | `audit.read` | Audit log browsing (R1; R0 shows run timelines only) | Reserved |
+| `workflow.approve-promotion` | Approve or reject requests to promote a release into this production workspace (S69); never the requester | Grant only |
 
 Administrators do not inherit business permissions: PLATFORM/ORGANIZATION/WORKSPACE_ADMIN can manage access but cannot read runs, approve or publish unless separately granted. Technical recovery (`run.operate`) never authorizes changing a business decision. Designers test by holding requester/approver access in a test workspace (`is_test`); there is no in-studio test run in R0.
 

@@ -63,7 +63,29 @@ public class InboundService implements InboundEvents {
     }
 
     public record TriggerView(UUID id, String key, String source, String name, UUID workflowId, String secretRef,
-            JsonNode filter, JsonNode mapping, boolean enabled, String receivePath, Instant createdAt) {
+            JsonNode filter, JsonNode mapping, boolean enabled, int version, String receivePath, Instant createdAt,
+            Instant updatedAt) {
+    }
+
+    /** Source, key and target workflow never change; {@code expectedVersion} is the version the editor loaded (S68). */
+    public record UpdateTrigger(@NotBlank @Size(max = 100) String name,
+            @NotNull @jakarta.validation.constraints.Pattern(regexp = "^[a-z0-9][a-z0-9-]{0,62}$") String secretRef,
+            JsonNode filter, @NotNull JsonNode mapping, @NotNull Boolean enabled,
+            @NotNull @jakarta.validation.constraints.Min(1) Integer expectedVersion) {
+    }
+
+    /** Retention purge (S68): events received more than {@code olderThanDays} days ago. */
+    public record PurgeRequest(
+            @NotNull @jakarta.validation.constraints.Min(1) @jakarta.validation.constraints.Max(3650) Integer olderThanDays,
+            Boolean includeUnstarted) {
+
+        /** @return true only when explicitly asked: unstarted events are work someone may still start */
+        public boolean unstarted() {
+            return Boolean.TRUE.equals(includeUnstarted);
+        }
+    }
+
+    public record PurgeResult(int deleted, Instant receivedBefore) {
     }
 
     public record TriggerList(List<TriggerView> items) {
@@ -138,7 +160,84 @@ public class InboundService implements InboundEvents {
                 "inbound.trigger-created", "inboundTrigger", id.toString(), AuditWriter.Outcome.SUCCESS,
                 Map.of("source", kind.value(), "key", request.key(), "workflowId", request.workflowId().toString())));
         return new TriggerView(id, request.key(), kind.value(), request.name().strip(), request.workflowId(),
-                request.secretRef(), filter, mapping, true, path(workspaceId, id), now);
+                request.secretRef(), filter, mapping, true, 1, path(workspaceId, id), now, null);
+    }
+
+    /**
+     * Edits or disables a trigger (S68). A disabled trigger answers 404 to senders like an unknown one; events already
+     * received stay and can still be started or purged, with the values mapped when they arrived.
+     */
+    @Transactional
+    public TriggerView update(Caller caller, UUID workspaceId, UUID triggerId, UpdateTrigger request) {
+        WorkspaceAccess access = policy.freshAccess(caller, workspaceId).filter(WorkspaceAccess::visible)
+                .orElseThrow(ApiException::notFound);
+        policy.require(access, Permission.CONNECTION_MANAGE, "updateInboundTrigger", true);
+        record Current(String key, String source, UUID workflowId, int version, Instant createdAt) {
+        }
+        Current current = jdbc.sql("""
+                SELECT key, source, workflow_id, version, created_at FROM inbound_trigger
+                WHERE id = :id AND workspace_id = :ws FOR UPDATE
+                """).param("id", triggerId).param("ws", workspaceId)
+                .query((rs, n) -> new Current(rs.getString("key"), rs.getString("source"),
+                        rs.getObject("workflow_id", UUID.class), rs.getInt("version"), Sql.instant(rs, "created_at")))
+                .optional().orElseThrow(ApiException::notFound);
+        if (current.version() != request.expectedVersion()) {
+            throw new ApiException(ProblemCode.CONFIGURATION_VERSION_CONFLICT,
+                    "The trigger changed since you loaded it (now version " + current.version() + ").");
+        }
+        AdapterRules.Kind kind = AdapterRules.Kind.of(current.source());
+        ObjectNode filter;
+        ObjectNode mapping;
+        try {
+            filter = AdapterRules.validateFilter(kind, request.filter());
+            mapping = AdapterRules.validateMapping(request.mapping());
+            if (kind == AdapterRules.Kind.EMAIL && filter.isEmpty() || kind == AdapterRules.Kind.KAFKA && filter.isEmpty()) {
+                throw new AdapterRules.Invalid("/filter", "Approve at least one sender domain or topic.");
+            }
+        } catch (AdapterRules.Invalid e) {
+            throw AdapterService.invalid(e);
+        }
+        Instant now = clock.instant();
+        int version = current.version() + 1;
+        jdbc.sql("""
+                UPDATE inbound_trigger SET name = :name, secret_ref = :ref, filter = CAST(:filter AS jsonb),
+                       mapping = CAST(:mapping AS jsonb), enabled = :enabled, version = :version, updated_by = :by,
+                       updated_at = :now
+                WHERE id = :id AND workspace_id = :ws
+                """).param("name", request.name().strip()).param("ref", request.secretRef())
+                .param("filter", json.write(filter)).param("mapping", json.write(mapping)).param("enabled", request.enabled())
+                .param("version", version).param("by", caller.subjectId()).param("now", Sql.ts(now))
+                .param("id", triggerId).param("ws", workspaceId).update();
+        audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.USER, caller.subjectId(),
+                "inbound.trigger-updated", "inboundTrigger", triggerId.toString(), AuditWriter.Outcome.SUCCESS,
+                Map.of("source", kind.value(), "key", current.key(), "version", version, "enabled", request.enabled())));
+        return new TriggerView(triggerId, current.key(), kind.value(), request.name().strip(), current.workflowId(),
+                request.secretRef(), filter, mapping, request.enabled(), version, path(workspaceId, triggerId),
+                current.createdAt(), now);
+    }
+
+    /**
+     * Retention (S68): deletes events received before the cutoff. Started events are always eligible (the run keeps its
+     * own record and the audit log names the event); unstarted ones only with {@code includeUnstarted}, because someone
+     * may still start them. Only a count is returned. A sender that repeats a purged event id later is accepted as a new
+     * event: deduplication lasts as long as the event is kept.
+     */
+    @Transactional
+    public PurgeResult purge(Caller caller, UUID workspaceId, PurgeRequest request) {
+        WorkspaceAccess access = policy.freshAccess(caller, workspaceId).filter(WorkspaceAccess::visible)
+                .orElseThrow(ApiException::notFound);
+        policy.require(access, Permission.CONNECTION_MANAGE, "purgeInboundEvents", true);
+        Instant cutoff = clock.instant().minus(java.time.Duration.ofDays(request.olderThanDays()));
+        int deleted = jdbc.sql("""
+                DELETE FROM inbound_event WHERE workspace_id = :ws AND received_at < :cutoff
+                  AND (status = 'started' OR :unstarted)
+                """).param("ws", workspaceId).param("cutoff", Sql.ts(cutoff)).param("unstarted", request.unstarted())
+                .update();
+        audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.USER, caller.subjectId(),
+                "inbound.events-purged", "workspace", workspaceId.toString(), AuditWriter.Outcome.SUCCESS,
+                Map.of("olderThanDays", request.olderThanDays(), "includeUnstarted", request.unstarted(),
+                        "deleted", deleted)));
+        return new PurgeResult(deleted, cutoff);
     }
 
     @Transactional(readOnly = true)
@@ -148,13 +247,14 @@ public class InboundService implements InboundEvents {
         boolean manager = access.has(Permission.CONNECTION_MANAGE);
         return new TriggerList(jdbc.sql("""
                 SELECT id, key, source, name, workflow_id, secret_ref, filter::text AS filter, mapping::text AS mapping,
-                       enabled, created_at
+                       enabled, version, created_at, updated_at
                 FROM inbound_trigger WHERE workspace_id = :ws ORDER BY key
                 """).param("ws", workspaceId).query((rs, n) -> new TriggerView(rs.getObject("id", UUID.class),
                 rs.getString("key"), rs.getString("source"), rs.getString("name"), rs.getObject("workflow_id", UUID.class),
                 manager ? rs.getString("secret_ref") : null, json.parse(rs.getString("filter")),
-                json.parse(rs.getString("mapping")), rs.getBoolean("enabled"),
-                manager ? path(workspaceId, rs.getObject("id", UUID.class)) : null, Sql.instant(rs, "created_at"))).list());
+                json.parse(rs.getString("mapping")), rs.getBoolean("enabled"), rs.getInt("version"),
+                manager ? path(workspaceId, rs.getObject("id", UUID.class)) : null, Sql.instant(rs, "created_at"),
+                Sql.instant(rs, "updated_at"))).list());
     }
 
     // ---------------------------------------------------------------- receiving

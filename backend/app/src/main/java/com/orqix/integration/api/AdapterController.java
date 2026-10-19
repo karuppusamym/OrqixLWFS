@@ -9,6 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -48,6 +49,24 @@ public class AdapterController {
     public AdapterService.SendResult testAdapterSend(@PathVariable UUID workspaceId, @PathVariable String key,
             @Valid @RequestBody AdapterService.SendRequest request) {
         return adapters.testSend(callers.current(), workspaceId, key, request);
+    }
+
+    @PutMapping("/adapters/{key}")
+    public AdapterService.View updateAdapter(@PathVariable UUID workspaceId, @PathVariable String key,
+            @Valid @RequestBody AdapterService.UpdateRequest request) {
+        return adapters.update(callers.current(), workspaceId, key, request);
+    }
+
+    @PutMapping("/inbound-triggers/{triggerId}")
+    public InboundService.TriggerView updateInboundTrigger(@PathVariable UUID workspaceId, @PathVariable UUID triggerId,
+            @Valid @RequestBody InboundService.UpdateTrigger request) {
+        return inbound.update(callers.current(), workspaceId, triggerId, request);
+    }
+
+    @PostMapping("/inbound-events/purge")
+    public InboundService.PurgeResult purgeInboundEvents(@PathVariable UUID workspaceId,
+            @Valid @RequestBody InboundService.PurgeRequest request) {
+        return inbound.purge(callers.current(), workspaceId, request);
     }
 
     @GetMapping("/inbound-triggers")

@@ -81,11 +81,12 @@ export const KINDS: Record<NodeKind, KindInfo> = {
   sendSignal: { kind: 'sendSignal', paletteLabel: 'Send a signal', caption: 'Send a signal', description: 'Tell the steps and handlers of this same request that wait for a signal. It never reaches other requests.', defaultLabel: 'Send a signal', routes: ['next'] },
   waitForSignal: { kind: 'waitForSignal', paletteLabel: 'Wait for a signal', caption: 'Wait for a signal', description: 'Pause until the signal is sent in this request, by a step or an operator.', defaultLabel: 'Wait for a signal', routes: ['next'] },
   compensate: { kind: 'compensate', paletteLabel: 'Undo completed calls', caption: 'Undo completed calls', description: 'Run the automatic undo call of every call that completed in this request, most recent first.', defaultLabel: 'Undo completed calls', routes: ['next'] },
+  sendAdapter: { kind: 'sendAdapter', paletteLabel: 'Send through an adapter', caption: 'Adapter', description: 'Send an email, Teams message or Kafka message, or read a database, through an adapter your administrator set up. This build delivers only to a local test stub.', defaultLabel: 'Send through an adapter', routes: ['next'] },
   startWorkflow: { kind: 'startWorkflow', paletteLabel: 'Start another workflow', caption: 'Child workflow', description: 'Start a published workflow and wait for its result.', defaultLabel: 'Start another workflow', routes: ['next'] },
 }
 
 /** Palette order. The start step always exists and cannot be added or deleted. */
-export const PALETTE_KINDS: NodeKind[] = ['approval', 'decision', 'branch', 'http', 'generateDocument', 'notification', 'parallelSplit', 'parallelJoin', 'wait', 'waitForMessage', 'waitForSignal', 'sendSignal', 'externalTask', 'startWorkflow', 'compensate', 'raiseError', 'end']
+export const PALETTE_KINDS: NodeKind[] = ['approval', 'decision', 'branch', 'http', 'generateDocument', 'notification', 'parallelSplit', 'parallelJoin', 'wait', 'waitForMessage', 'waitForSignal', 'sendSignal', 'externalTask', 'sendAdapter', 'startWorkflow', 'compensate', 'raiseError', 'end']
 
 export const ROUTE_LABEL: Record<RouteKind, string> = {
   next: 'Next',
@@ -133,5 +134,7 @@ export function defaultConfig(kind: NodeKind): Record<string, unknown> {
       return { signal: 'signal-name' }
     case 'compensate':
       return {}
+    case 'sendAdapter':
+      return { adapter: '', kind: 'email', to: [], subject: '', body: '', inputMapping: {} }
   }
 }

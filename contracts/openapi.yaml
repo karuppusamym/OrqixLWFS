@@ -3537,6 +3537,42 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
 
+  /workspaces/{workspaceId}/adapters/{adapterKey}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: adapterKey
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[a-z][a-z0-9-]{0,62}[a-z0-9]$' }
+    put:
+      tags: [Adapters]
+      operationId: updateAdapter
+      summary: Edit or disable an adapter (docs/build/S68)
+      description: |
+        Kind and key never change. The configuration is validated exactly like on creation. `expectedVersion` must equal
+        the stored version (409 CONFIGURATION_VERSION_CONFLICT otherwise). Workflow steps read the adapter again before
+        every send, so disabling it or narrowing an allowlist stops later sends (the request then needs attention);
+        widening an allowlist adds no recipient or topic, because those are fixed in each step.
+      x-orqix-permission: connection.manage
+      x-orqix-audit: adapter.updated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdapterUpdateRequest' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Adapter' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
   /workspaces/{workspaceId}/adapters/{adapterKey}/test-send:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -3609,6 +3645,41 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
 
+  /workspaces/{workspaceId}/inbound-triggers/{triggerId}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: triggerId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    put:
+      tags: [Adapters]
+      operationId: updateInboundTrigger
+      summary: Edit or disable an inbound trigger (docs/build/S68)
+      description: |
+        Source, key and target workflow never change. A disabled trigger answers 404 to senders; events already received
+        stay and can still be started or purged. `expectedVersion` must equal the stored version (409
+        CONFIGURATION_VERSION_CONFLICT otherwise).
+      x-orqix-permission: connection.manage
+      x-orqix-audit: inbound.trigger-updated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InboundTriggerUpdateRequest' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InboundTrigger' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
   /workspaces/{workspaceId}/inbound/{triggerId}:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -3666,6 +3737,34 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/inbound-events/purge:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    post:
+      tags: [Adapters]
+      operationId: purgeInboundEvents
+      summary: Delete received events older than a number of days (retention, docs/build/S68)
+      description: |
+        Started events are always eligible; unstarted events only with `includeUnstarted`. Returns a count only; no event
+        data. A purged event id that a sender repeats later is accepted as a new event.
+      x-orqix-permission: connection.manage
+      x-orqix-audit: inbound.events-purged
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InboundPurgeRequest' }
+      responses:
+        '200':
+          description: Purged
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InboundPurgeResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
 
   /workspaces/{workspaceId}/inbound-events/{eventId}/start:
     parameters:
@@ -5144,7 +5243,7 @@ components:
     Adapter:
       type: object
       additionalProperties: false
-      required: [id, key, kind, name, config, enabled, createdAt]
+      required: [id, key, kind, name, config, enabled, version, createdAt]
       properties:
         id: { type: string, format: uuid }
         key: { type: string }
@@ -5153,7 +5252,9 @@ components:
         secretRef: { type: [string, 'null'], description: Shown to connection.manage only }
         config: { type: object, additionalProperties: true }
         enabled: { type: boolean }
+        version: { type: integer, minimum: 1, description: Optimistic version; send it as expectedVersion when editing }
         createdAt: { type: string, format: date-time }
+        updatedAt: { type: [string, 'null'], format: date-time }
     AdapterList:
       type: object
       additionalProperties: false
@@ -5170,6 +5271,16 @@ components:
         name: { type: string, minLength: 1, maxLength: 100 }
         secretRef: { type: string, pattern: '^[a-z0-9][a-z0-9-]{0,62}$' }
         config: { type: object, additionalProperties: true }
+    AdapterUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [name, secretRef, config, enabled, expectedVersion]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        secretRef: { type: string, pattern: '^[a-z0-9][a-z0-9-]{0,62}$' }
+        config: { type: object, additionalProperties: true }
+        enabled: { type: boolean }
+        expectedVersion: { type: integer, minimum: 1 }
     AdapterSendRequest:
       type: object
       additionalProperties: false
@@ -5188,7 +5299,7 @@ components:
     InboundTrigger:
       type: object
       additionalProperties: false
-      required: [id, key, source, name, workflowId, filter, mapping, enabled, createdAt]
+      required: [id, key, source, name, workflowId, filter, mapping, enabled, version, createdAt]
       properties:
         id: { type: string, format: uuid }
         key: { type: string }
@@ -5199,8 +5310,10 @@ components:
         filter: { type: object, additionalProperties: true }
         mapping: { type: object, additionalProperties: { type: string } }
         enabled: { type: boolean }
+        version: { type: integer, minimum: 1 }
         receivePath: { type: [string, 'null'] }
         createdAt: { type: string, format: date-time }
+        updatedAt: { type: [string, 'null'], format: date-time }
     InboundTriggerList:
       type: object
       additionalProperties: false
@@ -5219,6 +5332,31 @@ components:
         secretRef: { type: string, pattern: '^[a-z0-9][a-z0-9-]{0,62}$' }
         filter: { type: object, additionalProperties: true }
         mapping: { type: object, additionalProperties: { type: string } }
+    InboundTriggerUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [name, secretRef, mapping, enabled, expectedVersion]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        secretRef: { type: string, pattern: '^[a-z0-9][a-z0-9-]{0,62}$' }
+        filter: { type: object, additionalProperties: true }
+        mapping: { type: object, additionalProperties: { type: string } }
+        enabled: { type: boolean }
+        expectedVersion: { type: integer, minimum: 1 }
+    InboundPurgeRequest:
+      type: object
+      additionalProperties: false
+      required: [olderThanDays]
+      properties:
+        olderThanDays: { type: integer, minimum: 1, maximum: 3650 }
+        includeUnstarted: { type: boolean, default: false }
+    InboundPurgeResult:
+      type: object
+      additionalProperties: false
+      required: [deleted, receivedBefore]
+      properties:
+        deleted: { type: integer, minimum: 0 }
+        receivedBefore: { type: string, format: date-time }
     InboundAccepted:
       type: object
       additionalProperties: false
@@ -5552,6 +5690,7 @@ components:
             - EFFECT_NOT_RECONCILED
             - EFFECT_STATE_CONFLICT
             - GROUP_REVISION_CONFLICT
+            - CONFIGURATION_VERSION_CONFLICT
             - STALE_REVISION
             - PAYLOAD_TOO_LARGE
             - VALIDATION_FAILED
@@ -6420,7 +6559,7 @@ components:
       properties:
         nodeId: { type: string }
         label: { type: string }
-        kind: { type: string, enum: [approval, http, wait, child, generateDocument, external, waitForSignal, compensate] }
+        kind: { type: string, enum: [approval, http, wait, child, generateDocument, external, waitForSignal, compensate, adapter] }
         messageName: { type: [string, 'null'], description: 'Set while the step (kind wait) waits for this message (docs/build/S16).' }
         since: { $ref: '#/components/schemas/Timestamp' }
         candidateGroup: { type: [string, 'null'] }
@@ -6949,7 +7088,7 @@ components:
       properties:
         nodeId: { type: string }
         label: { type: string }
-        kind: { type: string, enum: [approval, http, wait, child, generateDocument, external, waitForSignal, compensate] }
+        kind: { type: string, enum: [approval, http, wait, child, generateDocument, external, waitForSignal, compensate, adapter] }
         status: { type: string, enum: [waiting, running, needsAttention] }
         since: { $ref: '#/components/schemas/Timestamp' }
         candidateGroup: { type: [string, 'null'] }

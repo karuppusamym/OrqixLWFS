@@ -202,6 +202,9 @@
           },
           {
             "$ref": "#/$defs/compensateNode"
+          },
+          {
+            "$ref": "#/$defs/sendAdapterNode"
           }
         ]
       }
@@ -2383,6 +2386,105 @@
           "$ref": "#/$defs/key"
         }
       }
+    },
+    "sendAdapterNode": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/nodeBase"
+        }
+      ],
+      "properties": {
+        "id": true,
+        "label": true,
+        "type": {
+          "const": "sendAdapter"
+        },
+        "config": {
+          "description": "Send through a configured adapter (docs/build/S68): email, Microsoft Teams, Kafka produce or a database read. In this build every adapter delivers only to the local test stub. Recipients and the topic are fixed in the step and must be on the adapter's allowlist; they never come from request data. Text members may contain {{name}} placeholders for inputMapping names. The Kafka value is the mapped values; database parameters are the mapped values and must equal the adapter's declared parameters.",
+          "type": "object",
+          "properties": {
+            "adapter": {
+              "description": "Key of the workspace adapter.",
+              "$ref": "#/$defs/key"
+            },
+            "kind": {
+              "description": "The adapter's kind; must match the adapter, so a step is never silently re-pointed to another kind of system.",
+              "enum": [
+                "email",
+                "teams",
+                "kafka",
+                "jdbc"
+              ]
+            },
+            "to": {
+              "description": "Email only: fixed recipient addresses (1-10), each in a domain the adapter approves.",
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 10,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 254,
+                "pattern": "^[^\\s@]{1,64}@[^\\s@]{1,190}$"
+              }
+            },
+            "subject": {
+              "description": "Email only: a single line.",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "body": {
+              "description": "Email only.",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 20000
+            },
+            "title": {
+              "description": "Teams only, optional: a single line.",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "text": {
+              "description": "Teams only.",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4000
+            },
+            "topic": {
+              "description": "Kafka only: one of the adapter's approved topics.",
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$"
+            },
+            "key": {
+              "description": "Kafka only, optional: the message key.",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "inputMapping": {
+              "description": "Request or earlier-step values used by this step, by name.",
+              "type": "object",
+              "maxProperties": 20,
+              "propertyNames": {
+                "pattern": "^[A-Za-z][A-Za-z0-9_]{0,39}$"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/fieldRef"
+              }
+            }
+          },
+          "required": [
+            "adapter",
+            "kind",
+            "inputMapping"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

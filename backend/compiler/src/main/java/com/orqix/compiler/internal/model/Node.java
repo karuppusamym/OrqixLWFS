@@ -121,6 +121,22 @@ public sealed interface Node {
         }
     }
 
+    /**
+     * Send through a configured adapter (S68). {@code adapterKind} must equal the adapter's kind. Recipients ({@code to})
+     * and the Kafka {@code topic} are literals of the step, never request data, and must be on the adapter's allowlist.
+     * {@code subject}, {@code body}, {@code title}, {@code text} and {@code messageKey} may contain {@code {{name}}}
+     * placeholders for {@code inputMapping} names; the Kafka value is the mapped values; database parameters are the
+     * mapped values. Unused members are null (or empty for {@code to}).
+     */
+    record SendAdapter(int index, String id, String label, String adapterRef, String adapterKind,
+                       java.util.List<String> to, String subject, String body, String title, String text, String topic,
+                       String messageKey, Map<String, String> inputMapping) implements Node {
+        @Override
+        public NodeKind kind() {
+            return NodeKind.SEND_ADAPTER;
+        }
+    }
+
     /** Notify someone. */
     record Notification(int index, String id, String label, String channel, String recipient, String message)
             implements Node {

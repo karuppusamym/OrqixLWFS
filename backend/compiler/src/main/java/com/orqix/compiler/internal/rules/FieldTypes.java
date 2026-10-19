@@ -117,6 +117,7 @@ public final class FieldTypes {
             case Node.StartWorkflow w -> startWorkflowOutput(w, key);
             case Node.WaitForMessage m -> messageOutput(m, key);
             case Node.ExternalTask e -> externalOutput(e, key);
+            case Node.SendAdapter a -> adapterOutput(a, key);
             default -> new Unknown("\"" + producer.label() + "\" (" + producer.kind().businessLabel()
                     + ") does not produce any data that can be used here.");
         };
@@ -173,6 +174,21 @@ public final class FieldTypes {
                 : col.maximum().multiply(rows);
         return new Resolved(new FieldType(col.type() == FieldKind.INTEGER ? FieldKind.INTEGER : FieldKind.NUMBER, null,
                 false, lo, hi), null, key);
+    }
+
+    /**
+     * Outputs of "Send through an adapter" (S68): {@code outcome} (how the adapter took the message; {@code stubbed} in
+     * this build) and, for a database read, {@code rowCount}.
+     */
+    private Resolution adapterOutput(Node.SendAdapter a, String key) {
+        if ("outcome".equals(key)) {
+            return new Resolved(new FieldType(FieldKind.STRING, null, false, null, null), a, key);
+        }
+        if ("rowCount".equals(key) && "jdbc".equals(a.adapterKind())) {
+            return new Resolved(new FieldType(FieldKind.INTEGER, null, false, BigDecimal.ZERO, BigDecimal.valueOf(500)), a, key);
+        }
+        return new Unknown("\"" + a.label() + "\" does not return \"" + key + "\". It returns: outcome"
+                + ("jdbc".equals(a.adapterKind()) ? ", rowCount." : "."));
     }
 
     /** Outputs of "Work by an external worker": the declared result fields (S43); a field that is not required may be missing. */

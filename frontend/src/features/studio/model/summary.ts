@@ -87,6 +87,8 @@ export function nodeSubtitle(def: Definition, node: WorkflowNode, groupNames: Re
     }
     case 'externalTask':
       return (c.topic as string) ? `Worker topic ${c.topic as string}` : 'No topic chosen'
+    case 'sendAdapter':
+      return (c.adapter as string) ? `Through ${c.adapter as string} (${String(c.kind ?? '')})` : 'No adapter chosen'
     case 'startWorkflow':
       return (c.workflowRef as string) || 'No workflow chosen'
     case 'end':

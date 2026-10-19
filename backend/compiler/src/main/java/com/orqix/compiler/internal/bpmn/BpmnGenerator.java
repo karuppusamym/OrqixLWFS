@@ -364,6 +364,41 @@ public final class BpmnGenerator {
                 x.close();
                 x.close();
             }
+            case Node.SendAdapter a -> {
+                // Like a call to a system: an async job whose delegate uses the effect journal, so a retry never resends
+                // a message whose outcome is unknown (S68). Texts are Base64 so line breaks survive the attribute.
+                x.open("", "serviceTask", BPMN_NS)
+                        .attr("id", a.id())
+                        .attr("name", a.label())
+                        .attr("flowable", FLOWABLE_NS, "async", "true")
+                        .attr("flowable", FLOWABLE_NS, "exclusive", "true")
+                        .attr("flowable", FLOWABLE_NS, "delegateExpression", "${orqixAdapterTask}");
+                x.open("", "extensionElements", BPMN_NS);
+                x.inline("flowable", "failedJobRetryTimeCycle", FLOWABLE_NS, null,
+                        RetryCycle.forAttempts(d.execution().maxAttempts(), d.execution().retryDelaySeconds()), false);
+                x.open("orqix", "adapter", ORQIX_NS).attr("adapter", a.adapterRef()).attr("kind", a.adapterKind());
+                if (a.topic() != null) {
+                    x.attr("topic", a.topic());
+                }
+                java.util.Map<String, String> texts = new java.util.LinkedHashMap<>();
+                texts.put("subject", a.subject());
+                texts.put("body", a.body());
+                texts.put("title", a.title());
+                texts.put("text", a.text());
+                texts.put("key", a.messageKey());
+                texts.forEach((name, value) -> {
+                    if (value != null) {
+                        x.attr(name + "Base64", java.util.Base64.getEncoder()
+                                .encodeToString(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+                    }
+                });
+                a.to().forEach(address -> x.leaf("orqix", "to", ORQIX_NS).attr("address", address));
+                a.inputMapping().forEach((name, fieldRef) ->
+                        x.leaf("orqix", "input", ORQIX_NS).attr("name", name).attr("fieldRef", fieldRef));
+                x.close();
+                x.close();
+                x.close();
+            }
             case Node.Notification no -> {
                 x.open("", "serviceTask", BPMN_NS)
                         .attr("id", no.id())

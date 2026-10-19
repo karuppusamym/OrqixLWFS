@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -49,8 +50,14 @@ public class AdapterService {
     public record SendRequest(@NotNull JsonNode payload) {
     }
 
+    /** Kind and key never change; {@code expectedVersion} is the version the editor loaded (S68). */
+    public record UpdateRequest(@NotBlank @Size(max = 100) String name,
+            @NotNull @Pattern(regexp = "^[a-z0-9][a-z0-9-]{0,62}$") String secretRef,
+            @NotNull JsonNode config, @NotNull Boolean enabled, @NotNull @Min(1) Integer expectedVersion) {
+    }
+
     public record View(UUID id, String key, String kind, String name, String secretRef, JsonNode config, boolean enabled,
-            Instant createdAt) {
+            int version, Instant createdAt, Instant updatedAt) {
     }
 
     public record ViewList(List<View> items) {
@@ -84,11 +91,12 @@ public class AdapterService {
         policy.require(access, Permission.CONNECTION_READ, "listAdapters", false);
         boolean manager = access.has(Permission.CONNECTION_MANAGE);
         return new ViewList(jdbc.sql("""
-                SELECT id, key, kind, name, secret_ref, config::text AS config, enabled, created_at
+                SELECT id, key, kind, name, secret_ref, config::text AS config, enabled, version, created_at, updated_at
                 FROM adapter_config WHERE workspace_id = :ws ORDER BY key
                 """).param("ws", workspaceId).query((rs, n) -> new View(rs.getObject("id", UUID.class), rs.getString("key"),
                 rs.getString("kind"), rs.getString("name"), manager ? rs.getString("secret_ref") : null,
-                json.parse(rs.getString("config")), rs.getBoolean("enabled"), Sql.instant(rs, "created_at"))).list());
+                json.parse(rs.getString("config")), rs.getBoolean("enabled"), rs.getInt("version"),
+                Sql.instant(rs, "created_at"), Sql.instant(rs, "updated_at"))).list());
     }
 
     @Transactional
@@ -120,7 +128,54 @@ public class AdapterService {
         }
         audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.USER, caller.subjectId(), "adapter.created",
                 "adapter", request.key(), AuditWriter.Outcome.SUCCESS, Map.of("kind", kind.value(), "key", request.key())));
-        return new View(id, request.key(), kind.value(), request.name().strip(), request.secretRef(), config, true, now);
+        return new View(id, request.key(), kind.value(), request.name().strip(), request.secretRef(), config, true, 1, now,
+                null);
+    }
+
+    /**
+     * Edits or disables an adapter (S68). The configuration is validated exactly like on creation. Releases are not
+     * re-checked here: every later send reads the adapter again, so a narrowed allowlist or a disabled adapter stops the
+     * sends it no longer allows (the request then needs attention), and a widened allowlist adds no recipient or topic
+     * because those are fixed in each step.
+     */
+    @Transactional
+    public View update(Caller caller, UUID workspaceId, String key, UpdateRequest request) {
+        WorkspaceAccess access = policy.freshAccess(caller, workspaceId).filter(WorkspaceAccess::visible)
+                .orElseThrow(ApiException::notFound);
+        policy.require(access, Permission.CONNECTION_MANAGE, "updateAdapter", true);
+        record Current(UUID id, String kind, int version, Instant createdAt) {
+        }
+        Current current = jdbc.sql("""
+                SELECT id, kind, version, created_at FROM adapter_config WHERE workspace_id = :ws AND key = :key FOR UPDATE
+                """).param("ws", workspaceId).param("key", key)
+                .query((rs, n) -> new Current(rs.getObject("id", UUID.class), rs.getString("kind"), rs.getInt("version"),
+                        Sql.instant(rs, "created_at"))).optional().orElseThrow(ApiException::notFound);
+        if (current.version() != request.expectedVersion()) {
+            throw new ApiException(ProblemCode.CONFIGURATION_VERSION_CONFLICT,
+                    "The adapter changed since you loaded it (now version " + current.version() + ").");
+        }
+        AdapterRules.Kind kind = AdapterRules.Kind.of(current.kind());
+        ObjectNode config;
+        try {
+            config = AdapterRules.validateConfig(kind, request.config(), this::checkEgress);
+        } catch (AdapterRules.Invalid e) {
+            throw invalid(e);
+        }
+        Instant now = clock.instant();
+        int version = current.version() + 1;
+        jdbc.sql("""
+                UPDATE adapter_config SET name = :name, secret_ref = :ref, config = CAST(:config AS jsonb), enabled = :enabled,
+                       version = :version, updated_by = :by, updated_at = :now
+                WHERE id = :id AND workspace_id = :ws
+                """).param("name", request.name().strip()).param("ref", request.secretRef())
+                .param("config", json.write(config)).param("enabled", request.enabled()).param("version", version)
+                .param("by", caller.subjectId()).param("now", Sql.ts(now)).param("id", current.id()).param("ws", workspaceId)
+                .update();
+        audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.USER, caller.subjectId(), "adapter.updated",
+                "adapter", key, AuditWriter.Outcome.SUCCESS, Map.of("kind", kind.value(), "key", key, "version", version,
+                        "enabled", request.enabled())));
+        return new View(current.id(), key, kind.value(), request.name().strip(), request.secretRef(), config,
+                request.enabled(), version, current.createdAt(), now);
     }
 
     /** Validates a request against the stored rules and hands it to the local stub; never contacts a remote system. */

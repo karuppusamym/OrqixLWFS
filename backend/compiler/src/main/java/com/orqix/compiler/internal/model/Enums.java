@@ -31,6 +31,8 @@ public final class Enums {
         WAIT_FOR_SIGNAL("waitForSignal", "Wait for a signal"),
         /** Run the automatic undo calls of the calls that completed (S55). */
         COMPENSATE("compensate", "Undo completed calls"),
+        /** Send through a configured adapter (email, Teams, Kafka produce or database read; S68). */
+        SEND_ADAPTER("sendAdapter", "Send through an adapter"),
         END("end", "Finish");
 
         private final String json;

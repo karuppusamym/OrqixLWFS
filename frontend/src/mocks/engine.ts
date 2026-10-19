@@ -338,6 +338,14 @@ function advanceFrom(run: MockRun, nodeId: string): void {
         current = next('next')
         break
       }
+      case 'sendAdapter': {
+        // S68: the mock, like this build's server, only records a stub delivery; no message content is kept.
+        const kind = String(node.config.kind ?? '')
+        run.steps[node.id] = kind === 'jdbc' ? { outcome: 'stubbed', rowCount: 0 } : { outcome: 'stubbed' }
+        addEvent(run, 'EFFECT_SUCCEEDED', { nodeId: node.id, data: { label: node.label, adapterKey: String(node.config.adapter ?? ''), adapterKind: kind, attempt: 1, outcome: 'stubbed' } })
+        current = next('next')
+        break
+      }
       case 'notification': {
         notify(run, run.initiatorId, 'workflowMessage', (node.config.message as string) ?? '')
         addEvent(run, 'NOTIFICATION_CREATED', { nodeId: node.id, data: { label: node.label, kind: 'workflowMessage', recipient: 'initiator' } })

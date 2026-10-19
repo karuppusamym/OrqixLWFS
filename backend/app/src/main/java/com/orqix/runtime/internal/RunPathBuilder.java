@@ -254,7 +254,7 @@ public final class RunPathBuilder {
             currentIds.add(id);
             boolean attentionHere = "needsAttention".equals(lifecycle) && id.equals(attention);
             String status = attentionHere ? "needsAttention" : ("http".equals(step.kind()) || "generateDocument".equals(step.kind())
-                    || "compensate".equals(step.kind())) ? "running" : "waiting";
+                    || "compensate".equals(step.kind()) || "adapter".equals(step.kind())) ? "running" : "waiting";
             current.add(new Current(id, step.label(), step.kind(), status, step.since(), step.candidateGroup(),
                     step.assignee(), step.dueAt()));
         }

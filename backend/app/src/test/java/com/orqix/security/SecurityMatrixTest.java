@@ -223,6 +223,14 @@ class SecurityMatrixTest extends RuntimeTestBase {
         ids.put("assetKind", "decision");
         ids.put("assetKey", assetKey);
         ids.put("connectionKey", "procurement");
+        // A real adapter and trigger (S68), so a foreign edit is refused by access, not by a missing resource.
+        String adapterKey = "matrix-" + UUID.randomUUID().toString().substring(0, 8);
+        api("wade.admin").post(Map.of("key", adapterKey, "kind", "kafka", "name", "Matrix", "secretRef", "matrix-ref",
+                "config", Map.of("allowedTopics", List.of("matrix.topic"))), "/workspaces/{ws}/adapters", PURCHASING);
+        ids.put("adapterKey", adapterKey);
+        ids.put("triggerId", api("wade.admin").post(Map.of("key", adapterKey, "source", "teams", "name", "Matrix",
+                "workflowId", workflowId.toString(), "secretRef", "matrix-ref", "mapping", Map.of("title", "/text")),
+                "/workspaces/{ws}/inbound-triggers", PURCHASING).body().path("id").asString());
         ids.put("decisionKey", "amount-policy");
         ids.put("groupKey", "managers");
         JsonNode access = api("wade.admin").get("/workspaces/{ws}/access", PURCHASING).body();
@@ -236,7 +244,11 @@ class SecurityMatrixTest extends RuntimeTestBase {
         String path = template;
         Matcher m = Pattern.compile("\\{([^}]+)}").matcher(template);
         while (m.find()) {
-            path = path.replace(m.group(), ids.getOrDefault(m.group(1), "x"));
+            // The signed receive endpoint has no session: for a real trigger it answers 401 to any unsigned caller, so
+            // the matrix keeps addressing an unknown trigger there (404), as before S68 added a real one.
+            String value = "receiveInboundEvent".equals(operationId) && "triggerId".equals(m.group(1)) ? "x"
+                    : ids.getOrDefault(m.group(1), "x");
+            path = path.replace(m.group(), value);
         }
         if ("listTasks".equals(operationId)) {
             path += "?view=claimable";
@@ -358,6 +370,11 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "createInboundTrigger" -> Map.of("key", "foreign-trigger", "source", "teams", "name", "Foreign",
                     "workflowId", ids.get("workflowId"), "secretRef", "foreign-ref", "mapping", Map.of("title", "/text"));
             case "receiveInboundEvent" -> Map.of("text", "foreign");
+            case "updateAdapter" -> Map.of("name", "Foreign", "secretRef", "foreign-ref", "config",
+                    Map.of("allowedTopics", List.of("foreign.topic")), "enabled", false, "expectedVersion", 1);
+            case "updateInboundTrigger" -> Map.of("name", "Foreign", "secretRef", "foreign-ref", "mapping",
+                    Map.of("title", "/text"), "enabled", false, "expectedVersion", 1);
+            case "purgeInboundEvents" -> Map.of("olderThanDays", 1, "includeUnstarted", true);
             case "createRoleBinding" -> Map.of("role", "VIEWER", "principal", principal);
             case "createPermissionGrant" -> Map.of("permission", "workflow.start", "principal", principal);
             case "putGroup" -> Map.of("name", "Foreign", "members", List.of());
@@ -388,6 +405,8 @@ class SecurityMatrixTest extends RuntimeTestBase {
                 + " + (SELECT coalesce(sum(revision), 0) FROM connection_asset)").query(Long.class).single());
         counts.put("binding_revisions", jdbc.sql("SELECT coalesce(sum(revision), 0) FROM connection_binding")
                 .query(Long.class).single());
+        counts.put("adapter_versions", jdbc.sql("SELECT (SELECT coalesce(sum(version), 0) FROM adapter_config)"
+                + " + (SELECT coalesce(sum(version), 0) FROM inbound_trigger)").query(Long.class).single());
         counts.put("task_versions", jdbc.sql("SELECT coalesce(sum(version), 0) FROM task_context").query(Long.class).single());
         counts.put("run_versions", jdbc.sql("SELECT coalesce(sum(version), 0) FROM workflow_run").query(Long.class).single());
         return counts;

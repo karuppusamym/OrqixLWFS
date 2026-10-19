@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.orqix.compiler.CompileContext;
 import com.orqix.identity.GroupDirectory;
 import com.orqix.identity.WorkspaceAccess;
+import com.orqix.integration.AdapterSteps;
 import com.orqix.integration.ConnectionService;
 import com.orqix.shared.json.Json;
 
@@ -24,12 +25,15 @@ public class CompileContextFactory {
     private final GroupDirectory groups;
     private final ConnectionService connections;
     private final CatalogStore store;
+    private final AdapterSteps adapters;
     private final Json json;
 
-    public CompileContextFactory(GroupDirectory groups, ConnectionService connections, CatalogStore store, Json json) {
+    public CompileContextFactory(GroupDirectory groups, ConnectionService connections, CatalogStore store,
+            AdapterSteps adapters, Json json) {
         this.groups = groups;
         this.connections = connections;
         this.store = store;
+        this.adapters = adapters;
         this.json = json;
     }
 
@@ -87,7 +91,14 @@ public class CompileContextFactory {
                     row.activeReleaseId().toString(), row.releaseNumber(), row.semanticHash(), row.definitionJson(),
                     closure, manifest.path("callHeight").asInt(0)));
         }
+        // Adapter steps (S68) are checked against the workspace's current adapters; publishing pins nothing, the runtime
+        // checks the adapter again before every send.
+        Map<String, CompileContext.AdapterInfo> adapterInfos = new LinkedHashMap<>();
+        for (AdapterSteps.Fact fact : adapters.facts(workspace.id())) {
+            adapterInfos.put(fact.key(), new CompileContext.AdapterInfo(fact.key(), fact.kind(), fact.name(), fact.enabled(),
+                    fact.configJson()));
+        }
         return new CompileContext(workspace.allowSelfApprovalWorkflows(), groupInfos, versions,
-                connections.enabledBindings(workspace.id()), children);
+                connections.enabledBindings(workspace.id()), children, adapterInfos);
     }
 }

@@ -260,7 +260,7 @@ public class RuntimeProjectionListener implements FlowableEventListener {
         }
         FlowElement element = OrqixModel.flowElement(job.getProcessDefinitionId(), job.getElementId());
         if (OrqixModel.extension(element, "http").isEmpty() && OrqixModel.extension(element, "generateDocument").isEmpty()
-                && OrqixModel.extension(element, "compensation").isEmpty()) {
+                && OrqixModel.extension(element, "compensation").isEmpty() && OrqixModel.extension(element, "adapter").isEmpty()) {
             return;
         }
         ExecutionEntity execution = CommandContextUtil.getExecutionEntityManager().findById(job.getExecutionId());
@@ -276,7 +276,8 @@ public class RuntimeProjectionListener implements FlowableEventListener {
             step.put("nodeId", element.getId());
             step.put("label", label);
             step.put("kind", OrqixModel.extension(element, "generateDocument").isPresent() ? "generateDocument"
-                    : OrqixModel.extension(element, "compensation").isPresent() ? "compensate" : "http");
+                    : OrqixModel.extension(element, "compensation").isPresent() ? "compensate"
+                    : OrqixModel.extension(element, "adapter").isPresent() ? "adapter" : "http");
             step.put("since", now.toString());
             step.putNull("candidateGroup");
             step.putNull("assigneeId");

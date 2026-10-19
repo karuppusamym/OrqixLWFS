@@ -217,6 +217,12 @@ export function describeEvent(event: RunEvent, ctx: EventContext): string {
       // An AI agent step carries a business sentence built from its connection definition (S13).
       const summary = str(event.data.summary)
       if (summary) return summary
+      // An adapter step (S68). In this build the only transport is the local test stub, so say so plainly.
+      if (str(event.data.adapterKind)) {
+        return event.data.outcome === 'stubbed'
+          ? `${label}: accepted by the local test stub of the adapter ${str(event.data.adapterKey) ?? ''}; nothing was sent outside Orqix`.replace(' ;', ';')
+          : `${label} completed through the adapter ${str(event.data.adapterKey) ?? ''}`.trimEnd()
+      }
       const ref = str(event.data.remoteReference)
       return `${label} completed${ref ? ` (reference ${ref})` : ''}`
     }

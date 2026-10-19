@@ -22,25 +22,50 @@ import tools.jackson.databind.JsonNode;
  * @param enabledConnectionBindings connection keys with an enabled binding in this workspace
  * @param workflows                 workflows of the workspace by key with the facts needed to start them as child
  *                                  requests (S12); the active release of each is what a publish pins
+ * @param adapters                  outbound adapters of the workspace by key (S68); a step may only send through one
+ *                                  listed here, to recipients or topics its configuration approves
  */
 public record CompileContext(
         boolean selfApprovalAllowed,
         Map<String, GroupInfo> groups,
         List<ConnectionVersion> connectionVersions,
         Set<String> enabledConnectionBindings,
-        Map<String, WorkflowInfo> workflows) {
+        Map<String, WorkflowInfo> workflows,
+        Map<String, AdapterInfo> adapters) {
 
     public CompileContext {
         groups = Map.copyOf(groups);
         connectionVersions = List.copyOf(connectionVersions);
         enabledConnectionBindings = Set.copyOf(enabledConnectionBindings);
         workflows = workflows == null ? Map.of() : Map.copyOf(workflows);
+        adapters = adapters == null ? Map.of() : Map.copyOf(adapters);
+    }
+
+    /** A context without adapter facts (no adapter step can be valid). */
+    public CompileContext(boolean selfApprovalAllowed, Map<String, GroupInfo> groups,
+            List<ConnectionVersion> connectionVersions, Set<String> enabledConnectionBindings,
+            Map<String, WorkflowInfo> workflows) {
+        this(selfApprovalAllowed, groups, connectionVersions, enabledConnectionBindings, workflows, Map.of());
+    }
+
+    /** @return the same facts with these adapters */
+    public CompileContext withAdapters(Map<String, AdapterInfo> adapters) {
+        return new CompileContext(selfApprovalAllowed, groups, connectionVersions, enabledConnectionBindings, workflows,
+                adapters);
+    }
+
+    /**
+     * An outbound adapter (S68). {@code configJson} is the stored allowlist configuration (never a secret): approved
+     * recipient domains and the recipient limit for email, approved topics for Kafka, declared parameters for a
+     * database read.
+     */
+    public record AdapterInfo(String key, String kind, String name, boolean enabled, String configJson) {
     }
 
     /** A context without child-workflow facts (no other workflow can be started). */
     public CompileContext(boolean selfApprovalAllowed, Map<String, GroupInfo> groups,
             List<ConnectionVersion> connectionVersions, Set<String> enabledConnectionBindings) {
-        this(selfApprovalAllowed, groups, connectionVersions, enabledConnectionBindings, Map.of());
+        this(selfApprovalAllowed, groups, connectionVersions, enabledConnectionBindings, Map.of(), Map.of());
     }
 
     /** @param configuredMemberCount configured member principals (IdP group membership cannot be counted) */

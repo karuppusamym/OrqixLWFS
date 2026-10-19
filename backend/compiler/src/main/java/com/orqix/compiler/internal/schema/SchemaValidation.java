@@ -42,7 +42,8 @@ public final class SchemaValidation {
     /** Order of the {@code oneOf} alternatives in the workflow schema. */
     private static final List<NodeKind> BRANCH_ORDER = List.of(NodeKind.START, NodeKind.APPROVAL,
             NodeKind.DECISION, NodeKind.BRANCH, NodeKind.HTTP, NodeKind.NOTIFICATION, NodeKind.PARALLEL_SPLIT,
-            NodeKind.PARALLEL_JOIN, NodeKind.WAIT, NodeKind.START_WORKFLOW, NodeKind.WAIT_FOR_MESSAGE, NodeKind.END, NodeKind.GENERATE_DOCUMENT, NodeKind.EXTERNAL_TASK);
+            NodeKind.PARALLEL_JOIN, NodeKind.WAIT, NodeKind.START_WORKFLOW, NodeKind.WAIT_FOR_MESSAGE, NodeKind.END, NodeKind.GENERATE_DOCUMENT, NodeKind.EXTERNAL_TASK,
+            NodeKind.RAISE_ERROR, NodeKind.SEND_SIGNAL, NodeKind.WAIT_FOR_SIGNAL, NodeKind.COMPENSATE, NodeKind.SEND_ADAPTER);
 
     private final Schema workflowSchema;
     private final Schema connectionSchema;

@@ -38,7 +38,8 @@ import tools.jackson.databind.node.ObjectNode;
  * and compares, which is what proves that nothing in the text was lost.
  * <p>
  * Optional values are written back the way the studio stores them: {@code atTime} 09:00, {@code leaseSeconds} 120,
- * {@code required: false} on payload/result fields and the parallel {@code mode} "all" are left out.
+ * {@code required: false} on payload/result fields and the parallel {@code mode} "all" are left out. Callers that compare
+ * with or apply to a draft give the result the draft's own spelling of these defaults with {@link BpmnDefaults#adopt}.
  */
 public final class BpmnReader {
 
@@ -240,6 +241,12 @@ public final class BpmnReader {
             Integer hours = integer(id, "dueAfterHours", a.attr("dueAfterHours"));
             if (hours != null) {
                 config.put("dueAfterHours", hours);
+            }
+        }
+        if (a.attr("dueAfterMinutes") != null) {
+            Integer minutes = integer(id, "dueAfterMinutes", a.attr("dueAfterMinutes"));
+            if (minutes != null) {
+                config.put("dueAfterMinutes", minutes);
             }
         }
         putText(config, "timeoutAfter", a.attr("timeoutAfter"));

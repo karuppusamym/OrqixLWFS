@@ -35,11 +35,9 @@
 }
 
 .run-step[data-dim='true'] > .run-step-card {
-  opacity: 0.5;
-}
-
-.run-step[data-dim='true'] .run-step-card {
-  filter: grayscale(0.6);
+  /* Not reached: set apart by a dashed border and no colour, never by opacity (low opacity fails WCAG 2.2 AA text contrast). */
+  border-style: dashed;
+  filter: grayscale(1);
 }
 
 @keyframes orqix-run-pulse {

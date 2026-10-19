@@ -2,6 +2,7 @@ import type { Page } from '@playwright/test'
 import { expect, test } from '../support/fixtures'
 import { expectNoSeriousViolations } from '../support/axe'
 import { MOCK } from '../support/env'
+import { apiRead } from '../support/api'
 import { apiGet, ensureTemplatePublished, selectStep, submitPurchase, workflowIdByKey, workspaceId } from '../support/app'
 
 /**
@@ -60,7 +61,27 @@ test('approver screens', async ({ sessions }) => {
   const ws = await workspaceId(page)
   await page.goto(`/w/${ws}/tasks?view=claimable`)
   await scan(page, 'tasks: available to claim')
-  await page.getByRole('link', { name: /Accessibility check item|Replacement laptop/ }).first().click()
+  if (MOCK) {
+    await page.getByRole('link', { name: /Accessibility check item|Replacement laptop/ }).first().click()
+  } else {
+    // The claimable list is paged and a long-lived shared database holds many open tasks, so a title search on the first page
+    // can miss the task. Find one through the API (preferring the seeded titles) and open it directly.
+    type TaskPage = { items: Array<{ id: string; label?: string; workflowName?: string }>; nextCursor?: string | null }
+    let taskId: string | undefined
+    let fallback: string | undefined
+    let cursor: string | null = null
+    do {
+      const r: { status: number; body: TaskPage } = await apiRead<TaskPage>(page, `/workspaces/${ws}/tasks?view=claimable&limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`)
+      for (const t of r.body?.items ?? []) {
+        fallback ??= t.id
+        if (/Accessibility check item|Replacement laptop/.test(`${t.label ?? ''} ${t.workflowName ?? ''}`)) { taskId = t.id; break }
+      }
+      cursor = taskId ? null : (r.body?.nextCursor ?? null)
+    } while (cursor)
+    const target = taskId ?? fallback
+    if (!target) throw new Error('No claimable task for the approver')
+    await page.goto(`/w/${ws}/tasks/${target}`)
+  }
   await expect(page.getByTestId('task-actions')).toBeVisible()
   await scan(page, 'task panel (unclaimed)')
   await page.getByRole('button', { name: 'Claim task' }).click()

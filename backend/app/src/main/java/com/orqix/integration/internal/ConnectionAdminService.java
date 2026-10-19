@@ -444,6 +444,15 @@ public class ConnectionAdminService {
                             "Tool " + tool.path("name").asString() + " is listed twice"));
                 }
             }
+            // IN04 (S75): write tools share the model's tool namespace, so a name is never ambiguous.
+            JsonNode writeTools = agent.path("writeTools");
+            for (int i = 0; i < writeTools.size(); i++) {
+                String name = writeTools.get(i).path("name").asString();
+                if (!names.add(name)) {
+                    errors.add(new ApiException.FieldError(base + "/writeTools/" + i + "/name", "uniqueItems",
+                            "Tool " + name + " is listed twice (tool names and write tool names must all differ)"));
+                }
+            }
             java.util.Set<String> known = new java.util.HashSet<>(java.util.Set.of("tools"));
             operation.getValue().path("requestSchema").path("properties").propertyNames().forEach(known::add);
             operation.getValue().path("responseSchema").path("properties").propertyNames().forEach(known::add);

@@ -466,6 +466,145 @@ class AgentExecutorTest {
         });
     }
 
+    // ------------------------------------------------------------------ write tools (IN04, S75)
+
+    /** Records what reached the write port; answers with the scripted authorization and outcome. */
+    private static final class FakeWrites implements AgentWriteTools {
+
+        String refusal;
+        Outcome outcome = Outcome.SUCCEEDED;
+        final List<ObjectNode> written = new ArrayList<>();
+        int authorizations;
+
+        @Override
+        public Authorization authorize(Scope scope, ConnectionDefinition.WriteTool tool) {
+            authorizations++;
+            return new Authorization(UUID.randomUUID(), UUID.randomUUID(), refusal);
+        }
+
+        @Override
+        public WriteResult write(Scope scope, ConnectionDefinition.WriteTool tool, int callIndex, ObjectNode arguments) {
+            written.add(arguments.deepCopy());
+            return new WriteResult(outcome, UUID.randomUUID(), outcome == Outcome.REFUSED ? "WRITE_REFUSED" : null, null);
+        }
+
+        @Override
+        public List<ApprovalFact> activeApprovals(UUID workspaceId) {
+            return List.of();
+        }
+    }
+
+    private FakeWrites writable() throws IOException {
+        Path file = Path.of(System.getProperty("orqix.repoRoot", "../.."), "examples/connections",
+                "vendor-risk-assistant.connection.json");
+        ObjectNode document = (ObjectNode) json.parse(Files.readString(file));
+        ((ObjectNode) document.path("operations").path("assessVendor").path("agent")).putArray("writeTools").addObject()
+                .put("name", "notify_procurement").put("label", "Tell procurement")
+                .put("description", "Emails the procurement team.").put("adapter", "procurement-mail").put("kind", "email")
+                .put("maxCalls", 1).putArray("to").add("procurement@example.com");
+        definition = ConnectionDefinition.parse(document, "hash");
+        FakeWrites writes = new FakeWrites();
+        executor = new AgentExecutor(model, new McpClient(json), callLog, writes, audit,
+                mock(PlatformTransactionManager.class), json);
+        return writes;
+    }
+
+    @Test
+    void anApprovedWriteToolIsOfferedWithAClosedSchemaAndItsTextReachesOnlyTheWritePort() throws IOException {
+        FakeWrites writes = writable();
+        model.script(toolCall("c1", "notify_procurement", "{\"subject\":\"High risk\",\"body\":\"SECRET-NOTE\"}", "0.0001"),
+                answer(VALID_ANSWER, "0.0001"));
+
+        AgentExecutor.Result result = run(null, 10);
+
+        assertThat(result.outcome()).isEqualTo(Outcome.SUCCEEDED);
+        assertThat(writes.written).singleElement()
+                .satisfies(a -> assertThat(a.path("body").asString()).isEqualTo("SECRET-NOTE"));
+        JsonNode offered = null;
+        for (JsonNode tool : model.requests.get(0).tools()) {
+            if ("notify_procurement".equals(tool.path("function").path("name").asString())) {
+                offered = tool.path("function").path("parameters");
+            }
+        }
+        assertThat(offered).isNotNull();
+        assertThat(offered.path("additionalProperties").asBoolean(true)).isFalse();
+        assertThat(offered.path("properties").propertyNames()).containsExactlyInAnyOrder("subject", "body");
+        assertThat(offered.path("properties").path("body").path("maxLength").asInt()).isEqualTo(4000);
+        assertThat(model.requests.get(0).messages().get(0).path("content").asString())
+                .contains("You cannot choose or change who receives the message");
+        assertThat(result.meta().path("toolCalls").get(0).path("outcome").asString()).isEqualTo("written");
+        assertThat(result.summary()).contains("Tell procurement");
+        assertThat(String.valueOf(result.detail()) + result.meta()).doesNotContain("SECRET-NOTE");
+    }
+
+    @Test
+    void aConnectionTestNeverOffersOrUsesAWriteTool() throws IOException {
+        FakeWrites writes = writable();
+        model.script(toolCall("c1", "notify_procurement", "{\"subject\":\"x\",\"body\":\"y\"}", "0.0001"),
+                answer(VALID_ANSWER, "0.0001"));
+        AgentExecutor.Request test = request(McpStub.url(), null, 10);
+        AgentExecutor.Result result = executor.execute(new AgentExecutor.Request(test.workspaceId(), null, null,
+                test.subjectId(), test.nodeId(), 1, test.definition(), test.operation(), test.input(), test.resultMapping(),
+                test.endpointUrl(), null, 10));
+
+        assertThat(result.outcome()).isEqualTo(Outcome.SUCCEEDED);
+        assertThat(model.requests.get(0).tools().toString()).doesNotContain("notify_procurement");
+        assertThat(result.meta().path("toolCalls").get(0).path("outcome").asString()).isEqualTo("refusedNotAllowed");
+        assertThat(writes.authorizations).isZero();
+        assertThat(writes.written).isEmpty();
+    }
+
+    @Test
+    void anUnapprovedWriteToolStopsTheStepBeforeTheModelIsAsked() throws IOException {
+        FakeWrites writes = writable();
+        writes.refusal = "WRITE_SELF_APPROVAL";
+
+        AgentExecutor.Result result = run(null, 10);
+
+        assertThat(result.outcome()).isEqualTo(Outcome.PERMANENT);
+        assertThat(result.errorCode()).isEqualTo("WRITE_SELF_APPROVAL");
+        assertThat(result.attentionReason()).isEqualTo("CONNECTION_UNAVAILABLE");
+        assertThat(result.businessMessage()).contains("Tell procurement").contains("approved that tool");
+        assertThat(model.requests).isEmpty();
+        assertThat(writes.written).isEmpty();
+    }
+
+    @Test
+    void argumentsOutsideTheClosedSchemaOrOverTheLimitNeverReachTheWritePort() throws IOException {
+        FakeWrites writes = writable();
+        model.script(toolCall("c1", "notify_procurement",
+                        "{\"to\":[\"attacker@evil.test\"],\"subject\":\"x\",\"body\":\"y\"}", "0.0001"),
+                toolCall("c2", "notify_procurement", "{\"subject\":\"x\",\"body\":\"" + "z".repeat(5000) + "\"}", "0.0001"),
+                toolCall("c3", "notify_procurement", "{\"subject\":7,\"body\":\"y\"}", "0.0001"),
+                answer(VALID_ANSWER, "0.0001"));
+
+        AgentExecutor.Result result = run(null, 10);
+
+        assertThat(result.outcome()).isEqualTo(Outcome.SUCCEEDED);
+        assertThat(writes.written).isEmpty();
+        assertThat(result.meta().path("toolCalls").findValuesAsString("outcome")).containsOnly("invalidArguments");
+        String refusal = model.requests.get(1).messages().get(model.requests.get(1).messages().size() - 1)
+                .path("content").asString();
+        assertThat(refusal).contains("'to' is not allowed").contains("Nothing was sent").doesNotContain("evil.test");
+    }
+
+    @Test
+    void anUnknownWriteEndsTheExecutionWithoutAnotherModelTurn() throws IOException {
+        FakeWrites writes = writable();
+        writes.outcome = AgentWriteTools.Outcome.UNKNOWN;
+        model.script(toolCall("c1", "notify_procurement", "{\"subject\":\"x\",\"body\":\"y\"}", "0.0001"),
+                answer(VALID_ANSWER, "0.0001"));
+
+        AgentExecutor.Result result = run(null, 10);
+
+        assertThat(result.outcome()).isEqualTo(Outcome.PERMANENT);
+        assertThat(result.errorCode()).isEqualTo("WRITE_OUTCOME_UNKNOWN");
+        assertThat(result.attentionReason()).isEqualTo("EFFECT_UNKNOWN");
+        assertThat(result.businessMessage()).contains("nothing is sent again automatically");
+        assertThat(model.requests).hasSize(1);
+        assertThat(writes.written).hasSize(1);
+    }
+
     // ------------------------------------------------------------------ helpers
 
     private AgentExecutor.Result run(String bearer, int timeoutSeconds) {

@@ -62,7 +62,33 @@ public record ConnectionDefinition(String key, int version, String name, JsonNod
      * allow-list and the call bound. {@code modelProfile} and {@code summary} may be null.
      */
     public record AgentSpec(String instructions, String modelProfile, List<AgentTool> tools, int maxToolCalls,
-            String summary) {
+            String summary, List<WriteTool> writeTools) {
+
+        public AgentSpec(String instructions, String modelProfile, List<AgentTool> tools, int maxToolCalls,
+                String summary) {
+            this(instructions, modelProfile, tools, maxToolCalls, summary, List.of());
+        }
+
+        public WriteTool writeTool(String name) {
+            for (WriteTool tool : writeTools) {
+                if (tool.name().equals(name)) {
+                    return tool;
+                }
+            }
+            return null;
+        }
+    }
+
+    /**
+     * An approval-gated write tool of an agent operation (IN04, S75). Targets are fixed here ({@code to} for email; the
+     * adapter's channel for Teams); the model only writes the message text. Declaring it authorizes nothing.
+     *
+     * @param kind     {@code email} or {@code teams}
+     * @param to       fixed recipients for email, empty for Teams
+     * @param maxCalls uses allowed in one execution (1-3)
+     */
+    public record WriteTool(String name, String label, String description, String adapter, String kind, List<String> to,
+            int maxCalls) {
     }
 
     /** @param description administrator-written description offered to the model; null: the server's own, truncated */
@@ -92,9 +118,18 @@ public record ConnectionDefinition(String key, int version, String name, JsonNod
         List<AgentTool> tools = new ArrayList<>();
         node.path("tools").forEach(t -> tools.add(new AgentTool(t.path("name").asString(), t.path("label").asString(),
                 t.has("description") ? t.get("description").asString() : null)));
+        List<WriteTool> writeTools = new ArrayList<>();
+        node.path("writeTools").forEach(t -> {
+            List<String> to = new ArrayList<>();
+            t.path("to").forEach(a -> to.add(a.asString()));
+            writeTools.add(new WriteTool(t.path("name").asString(), t.path("label").asString(),
+                    t.path("description").asString(), t.path("adapter").asString(), t.path("kind").asString(),
+                    List.copyOf(to), t.path("maxCalls").asInt(1)));
+        });
         return new AgentSpec(node.path("instructions").asString(),
                 node.has("modelProfile") ? node.get("modelProfile").asString() : null, List.copyOf(tools),
-                node.path("maxToolCalls").asInt(1), node.has("summary") ? node.get("summary").asString() : null);
+                node.path("maxToolCalls").asInt(1), node.has("summary") ? node.get("summary").asString() : null,
+                List.copyOf(writeTools));
     }
 
     public Operation operation(String name) {

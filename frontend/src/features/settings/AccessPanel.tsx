@@ -30,6 +30,7 @@ const PERMISSION_HELP: Record<string, string> = {
   'audit.read': 'Can export control evidence for requests they can access',
   'job.work': 'Can take and complete jobs for external workers',
   'workflow.approve-promotion': 'Can approve or reject requests to promote a release into this workspace',
+  'agent.approve-write-tool': 'Can approve or revoke the write tools an AI agent may use in a workflow (never for their own requests)',
 }
 
 /** Members, roles and groups, read only in R0 (changes go through the API or seed; editing is R1). */

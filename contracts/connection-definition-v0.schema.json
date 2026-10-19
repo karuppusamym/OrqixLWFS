@@ -332,7 +332,7 @@
           ]
         },
         "effectClass": {
-          "description": "Agents cannot cause side effects in this release: always readOnly.",
+          "description": "The agent task itself is repeatable: always readOnly. Approved write tools (agentSpec.writeTools, IN04, docs/build/S75) are journaled as their own nonIdempotent effects, never through this class.",
           "const": "readOnly"
         },
         "maxTimeoutSeconds": {
@@ -392,6 +392,15 @@
           "description": "Business sentence shown on the run timeline, after the connection name. {field} is replaced by a request or result value, {tools} by the labels of the tools that were called.",
           "type": "string",
           "maxLength": 300
+        },
+        "writeTools": {
+          "description": "Write-capable tools (IN04, docs/build/S75). Each sends one message through a workspace adapter to targets fixed here, never chosen by the model. Declaring a tool authorizes nothing: it is offered to the model only while a person holding agent.approve-write-tool has approved it for the workflow, this connection version, operation and tool, and the run was not started by that approver. Delivery uses the local stub transport only in this build.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/agentWriteTool"
+          }
         }
       },
       "required": [
@@ -426,6 +435,104 @@
         "label"
       ],
       "additionalProperties": false
+    },
+    "agentWriteTool": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Tool name offered to the model. Must differ from every name in tools.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,47}$"
+        },
+        "label": {
+          "description": "Business name shown to approvers, operators and on the run timeline.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "description": {
+          "description": "Administrator-written description offered to the model. The model can only fill the message text; targets are fixed.",
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 500
+        },
+        "adapter": {
+          "description": "Key of the workspace adapter (IN02) that delivers the message. Its allowlist is checked at publish and before every send.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,62}[a-z0-9]$"
+        },
+        "kind": {
+          "description": "email: the model writes subject and body. teams: the model writes text and an optional title.",
+          "enum": [
+            "email",
+            "teams"
+          ]
+        },
+        "to": {
+          "description": "email only: fixed recipient addresses. Never taken from model output or request data.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "maxLength": 254,
+            "pattern": "^[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9-]{1,63}(\\.[A-Za-z0-9-]{1,63})+$"
+          }
+        },
+        "maxCalls": {
+          "description": "Upper bound on uses of this tool in one execution (default 1).",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3
+        }
+      },
+      "required": [
+        "name",
+        "label",
+        "description",
+        "adapter",
+        "kind"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "email"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "to"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "teams"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "not": {
+              "required": [
+                "to"
+              ]
+            }
+          }
+        }
+      ]
     }
   },
   "allOf": [

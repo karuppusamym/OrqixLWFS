@@ -32,7 +32,7 @@ import { SendTestMessage } from './SendTestMessage'
 import { DecisionEvidence } from './DecisionEvidence'
 import { IncidentCorrectionPanel } from './IncidentCorrectionPanel'
 import { IncidentCorrectionEvidence } from './IncidentCorrectionEvidence'
-import { candidateEffects, EFFECT_CLASS_LABEL, EFFECT_STATE_LABEL, reasonText } from './operatorText'
+import { candidateEffects, EFFECT_CLASS_LABEL, EFFECT_STATE_LABEL, isAgentWrite, reasonText } from './operatorText'
 
 const TONE_DOT: Record<EventTone, string> = {
   neutral: 'bg-muted-foreground',
@@ -111,7 +111,7 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
   // Lead with the next safe action. An unknown outcome is checked before anything is retried; a definite failure or used-up
   // retries are retried; only a stuck request with nothing to retry points at the task owner. A request that is simply
   // waiting needs no recommendation.
-  const unknownOutcome = effects.some((e) => e.state === 'unknown')
+  const unknownOutcome = effects.some((e) => e.state === 'unknown' && !isAgentWrite(e))
   const nextAction = !needsAttention
     ? null
     : unknownOutcome && allowed.reconcile.allowed ? 'reconcile'
@@ -399,6 +399,7 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
 }
 
 function TechnicalDetails({ run, effects, onReconcile }: { run: RunDetail; effects: Effect[]; onReconcile: (effectId: string) => void }) {
+  const ws = useWorkspace().workspace.id
   return (
     <Card>
       <details open={run.lifecycle === 'needsAttention'}>
@@ -467,7 +468,13 @@ function TechnicalDetails({ run, effects, onReconcile }: { run: RunDetail; effec
                       </TD>
                       <TD className="font-mono text-xs">{e.remoteReference ?? '—'}</TD>
                       <TD>
-                        {e.state === 'unknown' || e.state === 'permanentFailure' || e.state === 'retryableFailure' ? (
+                        {isAgentWrite(e) ? (
+                          e.state === 'unknown' ? (
+                            <Link className="text-sm font-semibold underline" to={`/w/${ws}/agent-writes`}>
+                              Record the outcome under Agent writes
+                            </Link>
+                          ) : null
+                        ) : e.state === 'unknown' || e.state === 'permanentFailure' || e.state === 'retryableFailure' ? (
                           <Button size="sm" variant="secondary" onClick={() => onReconcile(e.id)} aria-label={`Reconcile ${e.label ?? e.nodeId}`}>
                             Reconcile
                           </Button>

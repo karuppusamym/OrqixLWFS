@@ -150,6 +150,28 @@ public class EffectJournal {
         return new BeginResult(BeginAction.PROCEED, find(request.workspaceId(), effect.id()).orElseThrow());
     }
 
+    /**
+     * Agent write tools (IN04, S75): a later attempt of the same write slot may carry different model-written text. The
+     * stored request is replaced only while nothing can have been delivered for the slot (pending, retryable or
+     * permanent failure, or reconciled as not applied); a succeeded, in-flight or unknown entry is never touched, so
+     * {@link #begin} then reuses, waits or refuses exactly as for any other effect.
+     *
+     * @return true when the stored request now equals {@code requestHash}
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public boolean replaceUnappliedRequest(UUID workspaceId, String effectKey, String requestHash) {
+        jdbc.sql("""
+                UPDATE effect_journal SET request_hash = :hash, updated_at = :now
+                WHERE workspace_id = :ws AND effect_key = :key AND request_hash <> :hash
+                  AND state IN ('pending', 'retryableFailure', 'permanentFailure', 'notApplied')
+                """)
+                .param("hash", requestHash).param("now", Sql.ts(clock.instant())).param("ws", workspaceId)
+                .param("key", effectKey).update();
+        return jdbc.sql("SELECT count(*) FROM effect_journal WHERE workspace_id = :ws AND effect_key = :key AND request_hash = :hash")
+                .param("ws", workspaceId).param("key", effectKey).param("hash", requestHash).query(Integer.class)
+                .single() > 0;
+    }
+
     /** Transaction B: record the classified outcome of one attempt and release the lease. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Effect finish(UUID workspaceId, UUID effectId, String state, Integer httpStatus, String errorCode,

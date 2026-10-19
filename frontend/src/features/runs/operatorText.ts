@@ -38,6 +38,11 @@ export function reasonText(code: string | null | undefined): string {
   return REASONS[code] ?? `Not available (${code.toLowerCase().replace(/_/g, ' ')}).`
 }
 
+/** A message sent through an agent write tool (IN04): reconciled on the Agent writes page, never as a step result. */
+export function isAgentWrite(effect: Effect): boolean {
+  return effect.operation.startsWith('agentWrite.')
+}
+
 export function candidateEffects(effects: Effect[] | undefined): Effect[] {
-  return (effects ?? []).filter((e) => e.state === 'unknown' || e.state === 'permanentFailure' || e.state === 'retryableFailure')
+  return (effects ?? []).filter((e) => !isAgentWrite(e) && (e.state === 'unknown' || e.state === 'permanentFailure' || e.state === 'retryableFailure'))
 }

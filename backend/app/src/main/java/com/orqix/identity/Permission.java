@@ -22,7 +22,9 @@ public enum Permission {
     MESSAGE_SEND("message.send"),
     DOCUMENT_BROWSE("document.browse"),
     JOB_WORK("job.work"),
-    WORKFLOW_APPROVE_PROMOTION("workflow.approve-promotion");
+    WORKFLOW_APPROVE_PROMOTION("workflow.approve-promotion"),
+    /** IN04 (S75): grant-only, workspace-wide; approves or revokes agent write tools. No role carries it. */
+    AGENT_APPROVE_WRITE_TOOL("agent.approve-write-tool");
 
     private final String value;
 

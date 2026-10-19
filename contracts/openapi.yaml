@@ -35,6 +35,7 @@ tags:
   - name: Notifications
   - name: Connections
   - name: Adapters
+  - name: Agent write tools
   - name: Access
   - name: AI
   - name: Migration
@@ -4340,6 +4341,147 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Unprocessable' }
 
+  /workspaces/{workspaceId}/agent-write-tools:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [Agent write tools]
+      operationId: listAgentWriteTools
+      summary: Write tools declared by agent connection versions, and their approvals (IN04, docs/build/S75)
+      description: Needs connection.read, run.operate or agent.approve-write-tool. Declaring a tool or having its adapter authorizes nothing.
+      x-orqix-permission: connection.read | run.operate | agent.approve-write-tool
+      responses:
+        '200':
+          description: Declared tools and approvals
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentWriteToolOverview' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/agent-write-tools/approvals:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    post:
+      tags: [Agent write tools]
+      operationId: approveAgentWriteTool
+      summary: Approve one agent write tool for one workflow
+      description: |
+        Needs the grant-only permission agent.approve-write-tool (no role carries it). The approval covers exactly this
+        workflow key, connection version (and its definition hash), operation and tool; a new connection version needs a
+        new approval. The approver can never trigger a write through the tool: a run they started is refused. A reason is
+        required (422 REASON_REQUIRED). One active approval per combination (409 DUPLICATE_KEY).
+      x-orqix-permission: agent.approve-write-tool
+      x-orqix-audit: agent.write-tool.approved
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AgentWriteToolApproveRequest' }
+      responses:
+        '201':
+          description: Approved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentWriteToolApproval' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/agent-write-tools/approvals/{approvalId}/revoke:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: approvalId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Uuid' }
+    post:
+      tags: [Agent write tools]
+      operationId: revokeAgentWriteTool
+      summary: Revoke an approval; the next write through the tool is refused
+      description: Needs agent.approve-write-tool or connection.manage. Reason required; expectedVersion must match (409 CONFIGURATION_VERSION_CONFLICT).
+      x-orqix-permission: agent.approve-write-tool | connection.manage
+      x-orqix-audit: agent.write-tool.revoked
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AgentWriteToolRevokeRequest' }
+      responses:
+        '200':
+          description: Revoked
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentWriteToolApproval' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/agent-writes:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [Agent write tools]
+      operationId: listAgentWriteCalls
+      summary: Writes made through agent write tools, newest first (at most 200)
+      description: Needs run.operate or agent.approve-write-tool. No message content is stored or returned. `state=unknown` lists the writes an operator must reconcile.
+      x-orqix-permission: run.operate | agent.approve-write-tool
+      parameters:
+        - name: state
+          in: query
+          required: false
+          schema: { type: string, enum: [pending, inFlight, succeeded, retryableFailure, permanentFailure, unknown, notApplied] }
+      responses:
+        '200':
+          description: Writes
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentWriteCallList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/agent-writes/{writeId}/reconcile:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: writeId
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Uuid' }
+    post:
+      tags: [Agent write tools]
+      operationId: reconcileAgentWrite
+      summary: Record what an operator found at the target for a write whose outcome is unknown
+      description: |
+        Needs run.operate. Only an `unknown` write (409 EFFECT_STATE_CONFLICT otherwise). `succeeded`: it was delivered and
+        is reused, never resent. `notApplied`: it was not delivered; an explicit operator retry of the request may send it
+        again. A reason is required (422 REASON_REQUIRED) and expectedVersion must match (409
+        CONFIGURATION_VERSION_CONFLICT). The request itself is not resumed; retrying it is a separate operator action.
+      x-orqix-permission: run.operate
+      x-orqix-audit: agent.write.reconciled
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AgentWriteReconcileRequest' }
+      responses:
+        '200':
+          description: Reconciled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentWriteCall' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
   /workspaces/{workspaceId}/inbound-events/{eventId}/start:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -4713,7 +4855,7 @@ paths:
               additionalProperties: false
               required: [permission, principal]
               properties:
-                permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse, job.work, audit.read, workflow.approve-promotion] }
+                permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse, job.work, audit.read, workflow.approve-promotion, agent.approve-write-tool] }
                 workflowId:
                   description: Restrict workflow.start to one workflow; omit for workspace-wide (connection.manage, message.send, document.browse and job.work are always workspace-wide).
                   oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }]
@@ -6451,6 +6593,120 @@ components:
         - document.browse
         - job.work
         - workflow.approve-promotion
+        - agent.approve-write-tool
+    AgentWriteSubject:
+      type: object
+      required: [id, displayName]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        displayName: { type: string }
+    AgentWriteToolDeclared:
+      type: object
+      description: A write tool as declared in an agent connection version (connection-definition agentSpec.writeTools). Declaring it authorizes nothing.
+      required: [connectionKey, connectionVersion, connectionName, operation, operationLabel, toolName, label, description, adapterKey, kind, to, maxCalls]
+      properties:
+        connectionKey: { $ref: '#/components/schemas/Key' }
+        connectionVersion: { type: integer, minimum: 1 }
+        connectionName: { type: string }
+        operation: { type: string }
+        operationLabel: { type: string }
+        toolName: { type: string }
+        label: { type: string }
+        description: { type: string }
+        adapterKey: { type: string }
+        kind: { type: string, enum: [email, teams] }
+        to: { type: array, items: { type: string }, description: Fixed recipients (email); empty for Teams }
+        maxCalls: { type: integer, minimum: 1, maximum: 3 }
+    AgentWriteToolApproval:
+      type: object
+      required: [id, workflowKey, connectionKey, connectionVersion, operation, toolName, adapterKey, status, approvedBy, approvedAt, approvalReason, revokedBy, revokedAt, revokeReason, version]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        workflowKey: { $ref: '#/components/schemas/Key' }
+        connectionKey: { $ref: '#/components/schemas/Key' }
+        connectionVersion: { type: integer, minimum: 1 }
+        operation: { type: string }
+        toolName: { type: string }
+        adapterKey: { type: string }
+        status: { type: string, enum: [active, revoked] }
+        approvedBy: { $ref: '#/components/schemas/AgentWriteSubject' }
+        approvedAt: { $ref: '#/components/schemas/Timestamp' }
+        approvalReason: { type: string }
+        revokedBy: { oneOf: [{ $ref: '#/components/schemas/AgentWriteSubject' }, { type: 'null' }] }
+        revokedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+        revokeReason: { type: [string, 'null'] }
+        version: { type: integer, minimum: 1 }
+    AgentWriteToolOverview:
+      type: object
+      required: [tools, approvals, canApprove, canRevoke]
+      properties:
+        tools: { type: array, items: { $ref: '#/components/schemas/AgentWriteToolDeclared' } }
+        approvals: { type: array, items: { $ref: '#/components/schemas/AgentWriteToolApproval' } }
+        canApprove: { type: boolean, description: The caller holds agent.approve-write-tool }
+        canRevoke: { type: boolean, description: The caller holds agent.approve-write-tool or connection.manage }
+    AgentWriteToolApproveRequest:
+      type: object
+      additionalProperties: false
+      required: [workflowKey, connectionKey, connectionVersion, operation, toolName, reason]
+      properties:
+        workflowKey: { $ref: '#/components/schemas/Key' }
+        connectionKey: { $ref: '#/components/schemas/Key' }
+        connectionVersion: { type: integer, minimum: 1 }
+        operation: { type: string, minLength: 1, maxLength: 100 }
+        toolName: { type: string, pattern: '^[a-z][a-z0-9_]{0,47}$' }
+        reason: { type: string, maxLength: 500, description: Required (422 REASON_REQUIRED when blank) }
+    AgentWriteToolRevokeRequest:
+      type: object
+      additionalProperties: false
+      required: [reason, expectedVersion]
+      properties:
+        reason: { type: string, maxLength: 500 }
+        expectedVersion: { type: integer, minimum: 1 }
+    AgentWriteCall:
+      type: object
+      description: One write slot of an agent execution. Holds no message content; state is the effect journal state (null while not yet registered).
+      required: [id, runId, nodeId, connectionKey, connectionVersion, operation, toolName, callIndex, adapterKey, kind, approvalId, approvedBy, requestedBy, argumentChars, effectId, state, attempts, lastErrorCode, reconciledOutcome, reconciledBy, reconciledAt, reconcileReason, version, createdAt, updatedAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        runId: { $ref: '#/components/schemas/Uuid' }
+        nodeId: { type: string }
+        connectionKey: { $ref: '#/components/schemas/Key' }
+        connectionVersion: { type: integer }
+        operation: { type: string }
+        toolName: { type: string }
+        callIndex: { type: integer, minimum: 1, maximum: 3 }
+        adapterKey: { type: string }
+        kind: { type: string, enum: [email, teams] }
+        approvalId: { $ref: '#/components/schemas/Uuid' }
+        approvedBy: { $ref: '#/components/schemas/AgentWriteSubject' }
+        requestedBy: { $ref: '#/components/schemas/AgentWriteSubject' }
+        argumentChars: { type: integer, minimum: 0 }
+        effectId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }] }
+        state: { type: [string, 'null'], enum: [pending, inFlight, succeeded, retryableFailure, permanentFailure, unknown, notApplied, null] }
+        attempts: { type: integer }
+        lastErrorCode: { type: [string, 'null'] }
+        reconciledOutcome: { type: [string, 'null'], enum: [succeeded, notApplied, null] }
+        reconciledBy: { oneOf: [{ $ref: '#/components/schemas/AgentWriteSubject' }, { type: 'null' }] }
+        reconciledAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+        reconcileReason: { type: [string, 'null'] }
+        version: { type: integer, minimum: 1 }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+        updatedAt: { $ref: '#/components/schemas/Timestamp' }
+    AgentWriteCallList:
+      type: object
+      required: [items, canReconcile]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AgentWriteCall' } }
+        canReconcile: { type: boolean, description: The caller holds run.operate }
+    AgentWriteReconcileRequest:
+      type: object
+      additionalProperties: false
+      required: [outcome, reason, expectedVersion]
+      properties:
+        outcome: { type: string, enum: [succeeded, notApplied], description: What the operator found at the target; never inferred }
+        reason: { type: string, maxLength: 500 }
+        remoteReference: { type: [string, 'null'], maxLength: 200 }
+        expectedVersion: { type: integer, minimum: 1 }
     WorkspaceRole:
       type: string
       enum: [WORKSPACE_ADMIN, WORKFLOW_DESIGNER, PUBLISHER, OPERATOR, VIEWER, APPROVER]
@@ -8621,7 +8877,7 @@ components:
       required: [id, permission, workflowId, principal, createdAt]
       properties:
         id: { $ref: '#/components/schemas/Uuid' }
-        permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse, job.work, audit.read, workflow.approve-promotion] }
+        permission: { type: string, enum: [workflow.start, connection.manage, message.send, document.browse, job.work, audit.read, workflow.approve-promotion, agent.approve-write-tool] }
         workflowId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }] }
         principal: { $ref: '#/components/schemas/Principal' }
         createdAt: { $ref: '#/components/schemas/Timestamp' }

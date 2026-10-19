@@ -13,6 +13,7 @@ import com.orqix.compiler.CompileContext;
 import com.orqix.identity.GroupDirectory;
 import com.orqix.identity.WorkspaceAccess;
 import com.orqix.integration.AdapterSteps;
+import com.orqix.integration.AgentWriteTools;
 import com.orqix.integration.ConnectionService;
 import com.orqix.shared.json.Json;
 
@@ -26,14 +27,16 @@ public class CompileContextFactory {
     private final ConnectionService connections;
     private final CatalogStore store;
     private final AdapterSteps adapters;
+    private final AgentWriteTools writeTools;
     private final Json json;
 
     public CompileContextFactory(GroupDirectory groups, ConnectionService connections, CatalogStore store,
-            AdapterSteps adapters, Json json) {
+            AdapterSteps adapters, AgentWriteTools writeTools, Json json) {
         this.groups = groups;
         this.connections = connections;
         this.store = store;
         this.adapters = adapters;
+        this.writeTools = writeTools;
         this.json = json;
     }
 
@@ -98,7 +101,13 @@ public class CompileContextFactory {
             adapterInfos.put(fact.key(), new CompileContext.AdapterInfo(fact.key(), fact.kind(), fact.name(), fact.enabled(),
                     fact.configJson()));
         }
+        // Agent write tools (IN04, S75): only currently active approvals; the runtime checks again before every write.
+        Set<CompileContext.WriteToolApproval> approvals = new LinkedHashSet<>();
+        for (AgentWriteTools.ApprovalFact fact : writeTools.activeApprovals(workspace.id())) {
+            approvals.add(new CompileContext.WriteToolApproval(fact.workflowKey(), fact.connectionKey(),
+                    fact.connectionVersion(), fact.operation(), fact.toolName()));
+        }
         return new CompileContext(workspace.allowSelfApprovalWorkflows(), groupInfos, versions,
-                connections.enabledBindings(workspace.id()), children, adapterInfos);
+                connections.enabledBindings(workspace.id()), children, adapterInfos, approvals);
     }
 }

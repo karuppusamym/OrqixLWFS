@@ -3155,6 +3155,124 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/agent-write-tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Write tools declared by agent connection versions, and their approvals (IN04, docs/build/S75)
+         * @description Needs connection.read, run.operate or agent.approve-write-tool. Declaring a tool or having its adapter authorizes nothing.
+         */
+        get: operations["listAgentWriteTools"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/agent-write-tools/approvals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve one agent write tool for one workflow
+         * @description Needs the grant-only permission agent.approve-write-tool (no role carries it). The approval covers exactly this
+         *     workflow key, connection version (and its definition hash), operation and tool; a new connection version needs a
+         *     new approval. The approver can never trigger a write through the tool: a run they started is refused. A reason is
+         *     required (422 REASON_REQUIRED). One active approval per combination (409 DUPLICATE_KEY).
+         */
+        post: operations["approveAgentWriteTool"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/agent-write-tools/approvals/{approvalId}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                approvalId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revoke an approval; the next write through the tool is refused
+         * @description Needs agent.approve-write-tool or connection.manage. Reason required; expectedVersion must match (409 CONFIGURATION_VERSION_CONFLICT).
+         */
+        post: operations["revokeAgentWriteTool"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/agent-writes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Writes made through agent write tools, newest first (at most 200)
+         * @description Needs run.operate or agent.approve-write-tool. No message content is stored or returned. `state=unknown` lists the writes an operator must reconcile.
+         */
+        get: operations["listAgentWriteCalls"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/agent-writes/{writeId}/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                writeId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record what an operator found at the target for a write whose outcome is unknown
+         * @description Needs run.operate. Only an `unknown` write (409 EFFECT_STATE_CONFLICT otherwise). `succeeded`: it was delivered and
+         *     is reused, never resent. `notApplied`: it was not delivered; an explicit operator retry of the request may send it
+         *     again. A reason is required (422 REASON_REQUIRED) and expectedVersion must match (409
+         *     CONFIGURATION_VERSION_CONFLICT). The request itself is not resumed; retrying it is a separate operator action.
+         */
+        post: operations["reconcileAgentWrite"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/inbound-events/{eventId}/start": {
         parameters: {
             query?: never;
@@ -4429,7 +4547,113 @@ export interface components {
             hasMore: false;
         };
         /** @enum {string} */
-        Permission: "workflow.read" | "workflow.edit" | "workflow.publish" | "workflow.export" | "workflow.start" | "run.read" | "run.read-data" | "run.operate" | "task.act" | "connection.read" | "connection.manage" | "workspace.manage-access" | "audit.read" | "message.send" | "document.browse" | "job.work" | "workflow.approve-promotion";
+        Permission: "workflow.read" | "workflow.edit" | "workflow.publish" | "workflow.export" | "workflow.start" | "run.read" | "run.read-data" | "run.operate" | "task.act" | "connection.read" | "connection.manage" | "workspace.manage-access" | "audit.read" | "message.send" | "document.browse" | "job.work" | "workflow.approve-promotion" | "agent.approve-write-tool";
+        AgentWriteSubject: {
+            id: components["schemas"]["Uuid"];
+            displayName: string;
+        };
+        /** @description A write tool as declared in an agent connection version (connection-definition agentSpec.writeTools). Declaring it authorizes nothing. */
+        AgentWriteToolDeclared: {
+            connectionKey: components["schemas"]["Key"];
+            connectionVersion: number;
+            connectionName: string;
+            operation: string;
+            operationLabel: string;
+            toolName: string;
+            label: string;
+            description: string;
+            adapterKey: string;
+            /** @enum {string} */
+            kind: "email" | "teams";
+            /** @description Fixed recipients (email); empty for Teams */
+            to: string[];
+            maxCalls: number;
+        };
+        AgentWriteToolApproval: {
+            id: components["schemas"]["Uuid"];
+            workflowKey: components["schemas"]["Key"];
+            connectionKey: components["schemas"]["Key"];
+            connectionVersion: number;
+            operation: string;
+            toolName: string;
+            adapterKey: string;
+            /** @enum {string} */
+            status: "active" | "revoked";
+            approvedBy: components["schemas"]["AgentWriteSubject"];
+            approvedAt: components["schemas"]["Timestamp"];
+            approvalReason: string;
+            revokedBy: components["schemas"]["AgentWriteSubject"] | null;
+            revokedAt: components["schemas"]["Timestamp"] | null;
+            revokeReason: string | null;
+            version: number;
+        };
+        AgentWriteToolOverview: {
+            tools: components["schemas"]["AgentWriteToolDeclared"][];
+            approvals: components["schemas"]["AgentWriteToolApproval"][];
+            /** @description The caller holds agent.approve-write-tool */
+            canApprove: boolean;
+            /** @description The caller holds agent.approve-write-tool or connection.manage */
+            canRevoke: boolean;
+        };
+        AgentWriteToolApproveRequest: {
+            workflowKey: components["schemas"]["Key"];
+            connectionKey: components["schemas"]["Key"];
+            connectionVersion: number;
+            operation: string;
+            toolName: string;
+            /** @description Required (422 REASON_REQUIRED when blank) */
+            reason: string;
+        };
+        AgentWriteToolRevokeRequest: {
+            reason: string;
+            expectedVersion: number;
+        };
+        /** @description One write slot of an agent execution. Holds no message content; state is the effect journal state (null while not yet registered). */
+        AgentWriteCall: {
+            id: components["schemas"]["Uuid"];
+            runId: components["schemas"]["Uuid"];
+            nodeId: string;
+            connectionKey: components["schemas"]["Key"];
+            connectionVersion: number;
+            operation: string;
+            toolName: string;
+            callIndex: number;
+            adapterKey: string;
+            /** @enum {string} */
+            kind: "email" | "teams";
+            approvalId: components["schemas"]["Uuid"];
+            approvedBy: components["schemas"]["AgentWriteSubject"];
+            requestedBy: components["schemas"]["AgentWriteSubject"];
+            argumentChars: number;
+            effectId: components["schemas"]["Uuid"] | null;
+            /** @enum {string|null} */
+            state: "pending" | "inFlight" | "succeeded" | "retryableFailure" | "permanentFailure" | "unknown" | "notApplied" | null;
+            attempts: number;
+            lastErrorCode: string | null;
+            /** @enum {string|null} */
+            reconciledOutcome: "succeeded" | "notApplied" | null;
+            reconciledBy: components["schemas"]["AgentWriteSubject"] | null;
+            reconciledAt: components["schemas"]["Timestamp"] | null;
+            reconcileReason: string | null;
+            version: number;
+            createdAt: components["schemas"]["Timestamp"];
+            updatedAt: components["schemas"]["Timestamp"];
+        };
+        AgentWriteCallList: {
+            items: components["schemas"]["AgentWriteCall"][];
+            /** @description The caller holds run.operate */
+            canReconcile: boolean;
+        };
+        AgentWriteReconcileRequest: {
+            /**
+             * @description What the operator found at the target; never inferred
+             * @enum {string}
+             */
+            outcome: "succeeded" | "notApplied";
+            reason: string;
+            remoteReference?: string | null;
+            expectedVersion: number;
+        };
         /** @enum {string} */
         WorkspaceRole: "WORKSPACE_ADMIN" | "WORKFLOW_DESIGNER" | "PUBLISHER" | "OPERATOR" | "VIEWER" | "APPROVER";
         /** @description RFC 9457 problem details with Orqix extension members. */
@@ -6104,7 +6328,7 @@ export interface components {
         PermissionGrant: {
             id: components["schemas"]["Uuid"];
             /** @enum {string} */
-            permission: "workflow.start" | "connection.manage" | "message.send" | "document.browse" | "job.work" | "audit.read" | "workflow.approve-promotion";
+            permission: "workflow.start" | "connection.manage" | "message.send" | "document.browse" | "job.work" | "audit.read" | "workflow.approve-promotion" | "agent.approve-write-tool";
             workflowId: components["schemas"]["Uuid"] | null;
             principal: components["schemas"]["Principal"];
             createdAt: components["schemas"]["Timestamp"];
@@ -7731,6 +7955,25 @@ export interface components {
             /** @description Optional administrator-written tool description offered to the model instead of the server's own description (which is untrusted). */
             description?: string;
         };
+        agentWriteTool: {
+            /** @description Tool name offered to the model. Must differ from every name in tools. */
+            name: string;
+            /** @description Business name shown to approvers, operators and on the run timeline. */
+            label: string;
+            /** @description Administrator-written description offered to the model. The model can only fill the message text; targets are fixed. */
+            description: string;
+            /** @description Key of the workspace adapter (IN02) that delivers the message. Its allowlist is checked at publish and before every send. */
+            adapter: string;
+            /**
+             * @description email: the model writes subject and body. teams: the model writes text and an optional title.
+             * @enum {unknown}
+             */
+            kind: "email" | "teams";
+            /** @description email only: fixed recipient addresses. Never taken from model output or request data. */
+            to?: string[];
+            /** @description Upper bound on uses of this tool in one execution (default 1). */
+            maxCalls?: number;
+        } & (unknown & unknown);
         agentSpec: {
             /** @description Fixed system prompt written by an administrator and versioned with the connection version. Run data is never part of it. */
             instructions: string;
@@ -7742,6 +7985,8 @@ export interface components {
             maxToolCalls: number;
             /** @description Business sentence shown on the run timeline, after the connection name. {field} is replaced by a request or result value, {tools} by the labels of the tools that were called. */
             summary?: string;
+            /** @description Write-capable tools (IN04, docs/build/S75). Each sends one message through a workspace adapter to targets fixed here, never chosen by the model. Declaring a tool authorizes nothing: it is offered to the model only while a person holding agent.approve-write-tool has approved it for the workflow, this connection version, operation and tool, and the run was not started by that approver. Delivery uses the local stub transport only in this build. */
+            writeTools?: components["schemas"]["agentWriteTool"][];
         };
         /** @description An AI task: a fixed instruction, an allow-list of MCP tools, structured input and a structured result. requestSchema is the input (flat scalars, mapped from workflow fields like an HTTP request); responseSchema is the result the agent must produce (additionalProperties false). */
         agentOperation: {
@@ -7753,7 +7998,7 @@ export interface components {
                 additionalProperties: false;
             };
             /**
-             * @description Agents cannot cause side effects in this release: always readOnly.
+             * @description The agent task itself is repeatable: always readOnly. Approved write tools (agentSpec.writeTools, IN04, docs/build/S75) are journaled as their own nonIdempotent effects, never through this class.
              * @constant
              */
             effectClass: "readOnly";
@@ -7860,7 +8105,7 @@ export interface components {
                         additionalProperties: false;
                     };
                     /**
-                     * @description Agents cannot cause side effects in this release: always readOnly.
+                     * @description The agent task itself is repeatable: always readOnly. Approved write tools (agentSpec.writeTools, IN04, docs/build/S75) are journaled as their own nonIdempotent effects, never through this class.
                      * @constant
                      */
                     effectClass: "readOnly";
@@ -7880,6 +8125,8 @@ export interface components {
                     maxToolCalls: number;
                     /** @description Business sentence shown on the run timeline, after the connection name. {field} is replaced by a request or result value, {tools} by the labels of the tools that were called. */
                     summary?: string;
+                    /** @description Write-capable tools (IN04, docs/build/S75). Each sends one message through a workspace adapter to targets fixed here, never chosen by the model. Declaring a tool authorizes nothing: it is offered to the model only while a person holding agent.approve-write-tool has approved it for the workflow, this connection version, operation and tool, and the run was not started by that approver. Delivery uses the local stub transport only in this build. */
+                    writeTools?: components["schemas"]["agentWriteTool"][];
                 };
                 agentTool: {
                     /** @description Tool name as listed by the MCP server. */
@@ -7889,6 +8136,25 @@ export interface components {
                     /** @description Optional administrator-written tool description offered to the model instead of the server's own description (which is untrusted). */
                     description?: string;
                 };
+                agentWriteTool: {
+                    /** @description Tool name offered to the model. Must differ from every name in tools. */
+                    name: string;
+                    /** @description Business name shown to approvers, operators and on the run timeline. */
+                    label: string;
+                    /** @description Administrator-written description offered to the model. The model can only fill the message text; targets are fixed. */
+                    description: string;
+                    /** @description Key of the workspace adapter (IN02) that delivers the message. Its allowlist is checked at publish and before every send. */
+                    adapter: string;
+                    /**
+                     * @description email: the model writes subject and body. teams: the model writes text and an optional title.
+                     * @enum {unknown}
+                     */
+                    kind: "email" | "teams";
+                    /** @description email only: fixed recipient addresses. Never taken from model output or request data. */
+                    to?: string[];
+                    /** @description Upper bound on uses of this tool in one execution (default 1). */
+                    maxCalls?: number;
+                } & (unknown & unknown);
             };
         } & (unknown & unknown);
     };
@@ -13303,6 +13569,157 @@ export interface operations {
             422: components["responses"]["Unprocessable"];
         };
     };
+    listAgentWriteTools: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Declared tools and approvals */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentWriteToolOverview"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    approveAgentWriteTool: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentWriteToolApproveRequest"];
+            };
+        };
+        responses: {
+            /** @description Approved */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentWriteToolApproval"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    revokeAgentWriteTool: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                approvalId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentWriteToolRevokeRequest"];
+            };
+        };
+        responses: {
+            /** @description Revoked */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentWriteToolApproval"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listAgentWriteCalls: {
+        parameters: {
+            query?: {
+                state?: "pending" | "inFlight" | "succeeded" | "retryableFailure" | "permanentFailure" | "unknown" | "notApplied";
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Writes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentWriteCallList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    reconcileAgentWrite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                writeId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentWriteReconcileRequest"];
+            };
+        };
+        responses: {
+            /** @description Reconciled */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentWriteCall"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
     startInboundEvent: {
         parameters: {
             query?: never;
@@ -13712,7 +14129,7 @@ export interface operations {
             content: {
                 "application/json": {
                     /** @enum {string} */
-                    permission: "workflow.start" | "connection.manage" | "message.send" | "document.browse" | "job.work" | "audit.read" | "workflow.approve-promotion";
+                    permission: "workflow.start" | "connection.manage" | "message.send" | "document.browse" | "job.work" | "audit.read" | "workflow.approve-promotion" | "agent.approve-write-tool";
                     /** @description Restrict workflow.start to one workflow; omit for workspace-wide (connection.manage, message.send, document.browse and job.work are always workspace-wide). */
                     workflowId?: components["schemas"]["Uuid"] | null;
                     principal: components["schemas"]["PrincipalRef"];

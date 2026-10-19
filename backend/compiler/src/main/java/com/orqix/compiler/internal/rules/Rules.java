@@ -24,6 +24,7 @@ public final class Rules {
         DocumentRules.check(rc);
         ExternalRules.check(rc);
         AdapterStepRules.check(rc);
+        AgentWriteToolRules.check(rc);
         MultiInstanceRules.check(rc);
         TypeRules.check(rc);
         BindingRules.check(rc);

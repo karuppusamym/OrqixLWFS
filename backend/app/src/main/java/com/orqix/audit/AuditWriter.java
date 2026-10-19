@@ -173,7 +173,15 @@ public class AuditWriter {
             Map.entry("inbound.trigger-updated", Set.of("source", "key", "version", "enabled")),
             Map.entry("inbound.events-purged", Set.of("olderThanDays", "includeUnstarted", "deleted")),
             Map.entry("agent.call", Set.of("key", "operation", "profile", "model", "outcome", "toolCalls", "inputTokens",
-                    "outputTokens", "costUsd", "durationMs", "effectId")));
+                    "outputTokens", "costUsd", "durationMs", "effectId")),
+            // IN04 (S75): ids, names and sizes only; never the model's arguments or a reason text.
+            Map.entry("agent.write-tool.approved", Set.of("workflowKey", "connectionKey", "connectionVersion", "operation",
+                    "toolName", "adapterKey")),
+            Map.entry("agent.write-tool.revoked", Set.of("workflowKey", "connectionKey", "connectionVersion", "operation",
+                    "toolName", "adapterKey")),
+            Map.entry("agent.write", Set.of("runId", "agentEffectId", "effectId", "connectionKey", "connectionVersion",
+                    "operation", "toolName", "adapterKey", "approvalId", "outcome", "argumentChars")),
+            Map.entry("agent.write.reconciled", Set.of("effectId", "runId", "outcome", "remoteReference")));
 
     private final JdbcClient jdbc;
     private final Json json;

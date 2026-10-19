@@ -236,6 +236,9 @@ class SecurityMatrixTest extends RuntimeTestBase {
         ids.put("groupKey", "managers");
         ids.put("callbackId", UUID.randomUUID().toString());
         ids.put("planItemId", UUID.randomUUID().toString());
+        // IN04: the workspace is invisible to foreign principals, so unknown ids prove the 404 as well as real ones.
+        ids.put("approvalId", UUID.randomUUID().toString());
+        ids.put("writeId", UUID.randomUUID().toString());
         JsonNode access = api("wade.admin").get("/workspaces/{ws}/access", PURCHASING).body();
         ids.put("bindingId", access.path("roleBindings").get(0).path("id").asString());
         ids.put("grantId", access.path("grants").get(0).path("id").asString());
@@ -388,6 +391,10 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "updateInboundTrigger" -> Map.of("name", "Foreign", "secretRef", "foreign-ref", "mapping",
                     Map.of("title", "/text"), "enabled", false, "expectedVersion", 1);
             case "purgeInboundEvents" -> Map.of("olderThanDays", 1, "includeUnstarted", true);
+            case "approveAgentWriteTool" -> Map.of("workflowKey", "foreign-flow", "connectionKey", "vendor-risk-assistant",
+                    "connectionVersion", 1, "operation", "assessVendor", "toolName", "notify_team", "reason", "Foreign");
+            case "revokeAgentWriteTool" -> Map.of("reason", "Foreign", "expectedVersion", 1);
+            case "reconcileAgentWrite" -> Map.of("outcome", "notApplied", "reason", "Foreign", "expectedVersion", 1);
             case "createRoleBinding" -> Map.of("role", "VIEWER", "principal", principal);
             case "createPermissionGrant" -> Map.of("permission", "workflow.start", "principal", principal);
             case "putGroup" -> Map.of("name", "Foreign", "members", List.of());

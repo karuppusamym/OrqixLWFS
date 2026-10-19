@@ -13,6 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -33,6 +34,7 @@ import com.orqix.integration.AgentModelPort.UsageRecord;
 import com.orqix.integration.ConnectionDefinition.AgentSpec;
 import com.orqix.integration.ConnectionDefinition.AgentTool;
 import com.orqix.integration.ConnectionDefinition.Operation;
+import com.orqix.integration.ConnectionDefinition.WriteTool;
 import com.orqix.integration.HttpExecutor.Outcome;
 import com.orqix.integration.McpClient.McpException;
 import com.orqix.integration.McpClient.Tool;
@@ -52,6 +54,11 @@ import tools.jackson.databind.node.ObjectNode;
  * credentials); tool output and tool descriptions of the server are untrusted data; the model cannot touch the workflow,
  * it can only produce a schema-valid result; every wait is bounded by one deadline; the cost is bounded by the budget
  * left. Journal, audit and metering rows hold names, timings, tokens and cost, never prompts or tool payloads.
+ *
+ * <p>Write tools (IN04, S75): offered only inside a workflow run (never in a connection test) and only while
+ * {@link AgentWriteTools} confirms an active approval that the run initiator did not give. Their arguments are checked
+ * against a closed schema ({@link WriteToolArguments}) and never logged; targets come from the definition only. Every use
+ * is its own journaled effect; a refused, unknown or busy write stops the execution so a person decides what happens.
  */
 @Component
 public class AgentExecutor {
@@ -97,20 +104,40 @@ public class AgentExecutor {
     private record ToolLog(String name, long durationMs, String outcome) {
     }
 
+    /** Ends the execution from inside the tool loop (a write that must not be followed by more model turns). */
+    private static final class Stop extends RuntimeException {
+
+        private final transient Result result;
+
+        Stop(Result result) {
+            super(null, null, false, false);
+            this.result = result;
+        }
+    }
+
     private final AgentModelPort model;
     private final McpClient mcp;
     private final AgentCallLog callLog;
+    private final AgentWriteTools writeTools;
     private final AuditWriter audit;
     private final TransactionTemplate independentTx;
     private final Json json;
     private final Map<String, Schema> outputSchemas = new ConcurrentHashMap<>();
     private final SchemaRegistry schemaRegistry = SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12);
 
+    /** Without write tools: every declared write tool is refused (unit tests). */
     public AgentExecutor(AgentModelPort model, McpClient mcp, AgentCallLog callLog, AuditWriter audit,
             PlatformTransactionManager transactions, Json json) {
+        this(model, mcp, callLog, AgentWriteTools.NONE, audit, transactions, json);
+    }
+
+    @Autowired
+    public AgentExecutor(AgentModelPort model, McpClient mcp, AgentCallLog callLog, AgentWriteTools writeTools,
+            AuditWriter audit, PlatformTransactionManager transactions, Json json) {
         this.model = model;
         this.mcp = mcp;
         this.callLog = callLog;
+        this.writeTools = writeTools;
         this.audit = audit;
         this.independentTx = new TransactionTemplate(transactions);
         this.independentTx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
@@ -148,12 +175,29 @@ public class AgentExecutor {
                             + "budget, then an operator can retry.");
         }
 
+        // IN04: every declared write tool must be approved now, before anything is asked of the model. A missing approval
+        // stops the step visibly instead of letting the agent silently skip a write the workflow relies on.
+        AgentWriteTools.Scope scope = scope(request);
+        Map<String, WriteTool> writable = new LinkedHashMap<>();
+        if (scope != null) {
+            for (WriteTool tool : spec.writeTools()) {
+                AgentWriteTools.Authorization authorization = writeTools.authorize(scope, tool);
+                if (!authorization.allowed()) {
+                    return failed(Outcome.PERMANENT, authorization.refusal(), "CONNECTION_UNAVAILABLE",
+                            "Write tool not approved", notApprovedMessage(name, tool, authorization.refusal()));
+                }
+                writable.put(tool.name(), tool);
+            }
+        }
+
         McpClient.Deadline deadline = new McpClient.Deadline(Duration.ofSeconds(request.timeoutSeconds()));
-        Run run = new Run(request, spec, resolved, budgetLeft, deadline);
+        Run run = new Run(request, spec, resolved, budgetLeft, deadline, scope, writable);
         Result result;
         try (McpClient.Session session = mcp.connect(new McpClient.Endpoint(request.endpointUrl(), request.bearer()),
                 deadline)) {
             result = run.loop(session, name, operation);
+        } catch (Stop e) {
+            result = e.result;
         } catch (McpException e) {
             result = run.mcpFailure(e, name);
         } catch (ModelException e) {
@@ -170,6 +214,25 @@ public class AgentExecutor {
         return new Result(outcome, errorCode, detail, attention, null, null, null, message, null);
     }
 
+    /** Write tools exist only inside a workflow run: a connection test (no run, no effect) never writes. */
+    private static AgentWriteTools.Scope scope(Request request) {
+        if (request.runId() == null || request.effectId() == null || request.subjectId() == null) {
+            return null;
+        }
+        return new AgentWriteTools.Scope(request.workspaceId(), request.runId(), request.effectId(), request.nodeId(),
+                request.subjectId(), request.definition(), request.operation().name());
+    }
+
+    private static String notApprovedMessage(String name, WriteTool tool, String refusal) {
+        if ("WRITE_SELF_APPROVAL".equals(refusal)) {
+            return name + " may not use '" + tool.label() + "' for this request: the person who approved that tool "
+                    + "started it, and nobody writes through a tool they approved. Someone else must approve the tool "
+                    + "(or the request must be made by another person), then an operator can retry.";
+        }
+        return name + " may only use '" + tool.label() + "' after a person allowed to approve write tools approves it "
+                + "for this workflow and connection version. Once approved, an operator can retry.";
+    }
+
     /** State of one execution. */
     private final class Run {
 
@@ -178,6 +241,9 @@ public class AgentExecutor {
         private final ResolvedModel resolved;
         private final BigDecimal budgetLeft;
         private final McpClient.Deadline deadline;
+        private final AgentWriteTools.Scope scope;
+        private final Map<String, WriteTool> writable;
+        private final Map<String, Integer> writeUses = new LinkedHashMap<>();
         private final List<ToolLog> tools = new ArrayList<>();
         private int turns;
         private int providerCalls;
@@ -189,12 +255,15 @@ public class AgentExecutor {
         private String answeredBy;
         private String ledgerOutcome = "providerError";
 
-        Run(Request request, AgentSpec spec, ResolvedModel resolved, BigDecimal budgetLeft, McpClient.Deadline deadline) {
+        Run(Request request, AgentSpec spec, ResolvedModel resolved, BigDecimal budgetLeft, McpClient.Deadline deadline,
+                AgentWriteTools.Scope scope, Map<String, WriteTool> writable) {
             this.request = request;
             this.spec = spec;
             this.resolved = resolved;
             this.budgetLeft = budgetLeft;
             this.deadline = deadline;
+            this.scope = scope;
+            this.writable = writable;
         }
 
         Result loop(McpClient.Session session, String name, Operation operation) {
@@ -206,7 +275,8 @@ public class AgentExecutor {
             }
             ArrayNode toolDefinitions = toolDefinitions(offered);
             ArrayNode messages = json.mapper().createArrayNode();
-            messages.addObject().put("role", "system").put("content", systemPrompt(operation));
+            messages.addObject().put("role", "system").put("content", systemPrompt(operation)
+                    + (writable.isEmpty() ? "" : WRITE_RULE));
             messages.addObject().put("role", "user").put("content", userPrompt(request.input()));
             int calls = 0;
             int repairs = 0;
@@ -294,6 +364,16 @@ public class AgentExecutor {
                 function.set("parameters", schema != null && schema.isObject() ? schema
                         : json.mapper().createObjectNode().put("type", "object"));
             }
+            for (WriteTool tool : writable.values()) {
+                if (offered.containsKey(tool.name())) {
+                    continue; // never shadowed by a server tool of the same name; registration refuses that anyway
+                }
+                ObjectNode function = definitions.addObject().put("type", "function").putObject("function");
+                function.put("name", tool.name());
+                function.put("description", tool.description() + " (Sends a message to fixed recipients; at most "
+                        + tool.maxCalls() + (tool.maxCalls() == 1 ? " use" : " uses") + " in this task.)");
+                function.set("parameters", WriteToolArguments.schema(tool));
+            }
             return definitions;
         }
 
@@ -301,6 +381,9 @@ public class AgentExecutor {
         private String runTool(McpClient.Session session, Map<String, Tool> offered, JsonNode call, boolean overLimit) {
             String toolName = call.path("function").path("name").asString("");
             long begun = System.nanoTime();
+            if (writable.containsKey(toolName) && !offered.containsKey(toolName)) {
+                return runWrite(writable.get(toolName), call, overLimit, begun);
+            }
             Tool tool = offered.get(toolName);
             if (tool == null) {
                 tools.add(new ToolLog(safeName(toolName), 0, "refusedNotAllowed"));
@@ -334,6 +417,80 @@ public class AgentExecutor {
             tools.add(new ToolLog(toolName, (System.nanoTime() - begun) / 1_000_000, result.isError() ? "toolError" : "ok"));
             String text = result.structured() != null ? json.write(result.structured()) : result.text();
             return (result.isError() ? "Error: " : "") + truncate(text, MAX_TOOL_RESULT_CHARS);
+        }
+
+        /**
+         * One use of an approved write tool. Invalid arguments and over-limit calls never reach the journal and go back to
+         * the model; a refusal, an unknown outcome or a busy slot ends the execution (nothing is sent again).
+         */
+        private String runWrite(WriteTool tool, JsonNode call, boolean overLimit, long begun) {
+            if (overLimit) {
+                tools.add(new ToolLog(tool.name(), 0, "refusedLimit"));
+                return "Error: the tool call limit was reached. Give your final answer now.";
+            }
+            int used = writeUses.getOrDefault(tool.name(), 0);
+            if (used >= tool.maxCalls()) {
+                tools.add(new ToolLog(tool.name(), 0, "refusedLimit"));
+                return "Error: " + tool.name() + " may be used at most " + tool.maxCalls()
+                        + (tool.maxCalls() == 1 ? " time" : " times") + " in this task. Do not call it again.";
+            }
+            String argumentText = call.path("function").path("arguments").asString("");
+            JsonNode parsed;
+            try {
+                if (argumentText.length() > WriteToolArguments.MAX_RAW_CHARS) {
+                    throw new IllegalArgumentException("too long");
+                }
+                parsed = argumentText.isBlank() ? json.object() : json.parse(argumentText);
+            } catch (IllegalArgumentException e) {
+                tools.add(new ToolLog(tool.name(), 0, "invalidArguments"));
+                return "Error: the arguments must be one JSON object of at most " + WriteToolArguments.MAX_RAW_CHARS
+                        + " characters. Nothing was sent.";
+            }
+            List<String> problems = WriteToolArguments.problems(tool, parsed);
+            if (!problems.isEmpty()) {
+                tools.add(new ToolLog(tool.name(), 0, "invalidArguments"));
+                return "Error: the arguments do not match the tool schema: " + String.join("; ", problems)
+                        + ". Nothing was sent.";
+            }
+            writeUses.put(tool.name(), used + 1);
+            AgentWriteTools.WriteResult written = writeTools.write(scope, tool, used + 1, (ObjectNode) parsed);
+            long took = (System.nanoTime() - begun) / 1_000_000;
+            String name = request.definition().name();
+            switch (written.outcome()) {
+                case SUCCEEDED -> {
+                    tools.add(new ToolLog(tool.name(), took, "written"));
+                    return "Done: the message was accepted for delivery. Do not send it again.";
+                }
+                case REUSED -> {
+                    tools.add(new ToolLog(tool.name(), took, "reused"));
+                    return "Done earlier in this task: the message was already accepted and was not sent again.";
+                }
+                case UNKNOWN -> {
+                    tools.add(new ToolLog(tool.name(), took, "unknown"));
+                    throw new Stop(fail(Outcome.PERMANENT, "WRITE_OUTCOME_UNKNOWN", "EFFECT_UNKNOWN",
+                            "Write outcome unknown", "It is not known whether '" + tool.label() + "' of " + name
+                                    + " was delivered. An operator must check and record the outcome under Agent "
+                                    + "write tools before the request can continue; nothing is sent again automatically.",
+                            "providerError"));
+                }
+                case BUSY -> {
+                    tools.add(new ToolLog(tool.name(), took, "busy"));
+                    throw new Stop(fail(Outcome.RETRYABLE, "BUSY", "RETRIES_EXHAUSTED", "Write in progress elsewhere",
+                            "Another attempt of this step is still writing. An operator can retry later.",
+                            "providerError"));
+                }
+                default -> {
+                    tools.add(new ToolLog(tool.name(), took, "refused"));
+                    String code = written.errorCode() == null ? "WRITE_REFUSED" : written.errorCode();
+                    String message = "WRITE_NOT_APPROVED".equals(code) || "WRITE_SELF_APPROVAL".equals(code)
+                            ? notApprovedMessage(name, tool, code)
+                            : "'" + tool.label() + "' of " + name + " could not send the message: "
+                                    + (written.message() == null ? "it was refused." : written.message())
+                                    + " Nothing was sent. An administrator must fix it, then an operator can retry.";
+                    throw new Stop(fail(Outcome.PERMANENT, code, "CONNECTION_UNAVAILABLE", "Write refused", message,
+                            "providerError"));
+                }
+            }
         }
 
         private List<String> validateArguments(Tool tool, ObjectNode arguments) {
@@ -549,7 +706,7 @@ public class AgentExecutor {
             }
             Set<String> used = new LinkedHashSet<>();
             for (ToolLog t : tools) {
-                if ("ok".equals(t.outcome())) {
+                if ("ok".equals(t.outcome()) || "written".equals(t.outcome()) || "reused".equals(t.outcome())) {
                     used.add(labelOf(t.name()));
                 }
             }
@@ -579,12 +736,22 @@ public class AgentExecutor {
         }
 
         private String labelOf(String toolName) {
+            WriteTool write = spec.writeTool(toolName);
+            if (write != null) {
+                return write.label();
+            }
             return spec.tools().stream().filter(t -> t.name().equals(toolName)).map(AgentTool::label).findFirst()
                     .orElse(toolName);
         }
     }
 
     // ------------------------------------------------------------------ helpers
+
+    /** Appended to the system prompt only when write tools are offered (IN04). */
+    static final String WRITE_RULE = "\n5. Some tools send a message (write tools). Use one only when your instructions "
+            + "say so, at most as often as its description allows, and only with text that the task needs. You cannot "
+            + "choose or change who receives the message. A write tool result that says the message was accepted means "
+            + "it is done: never send it again.";
 
     /** Instructions, fixed platform rules and the schema; run data is never part of it. */
     String systemPrompt(Operation operation) {

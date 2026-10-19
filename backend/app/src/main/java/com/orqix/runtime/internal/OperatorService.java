@@ -167,6 +167,12 @@ public class OperatorService {
         EffectJournal.Effect effect = journal.find(workspaceId, effectId).filter(e -> e.runId().equals(runId))
                 .orElseThrow(ApiException::notFound);
         policy.require(visible.access(), Permission.RUN_OPERATE, "reconcileEffect", true);
+        if (effect.operation().startsWith("agentWrite.")) {
+            // IN04 (S75): agent writes are reconciled with their own version-checked command, which keeps the run's
+            // step result untouched (a write has no step result to confirm).
+            throw new ApiException(ProblemCode.EFFECT_STATE_CONFLICT,
+                    "Record the outcome of an agent write under Agent write tools, then retry the request.");
+        }
         String hash = idempotency.requestHash("reconcileEffect", Map.of("workspaceId", workspaceId.toString(),
                 "runId", runId.toString(), "effectId", effectId.toString()), request);
         IdempotencyService.Claim claim = idempotency.claim(workspaceId, caller.subjectId(), "reconcileEffect", key, hash);

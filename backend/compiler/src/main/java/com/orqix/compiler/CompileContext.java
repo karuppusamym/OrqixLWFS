@@ -24,6 +24,9 @@ import tools.jackson.databind.JsonNode;
  *                                  requests (S12); the active release of each is what a publish pins
  * @param adapters                  outbound adapters of the workspace by key (S68); a step may only send through one
  *                                  listed here, to recipients or topics its configuration approves
+ * @param writeToolApprovals        active agent write-tool approvals of the workspace (IN04, S75); an agent step whose
+ *                                  operation declares write tools can only be published when each is approved for
+ *                                  this workflow. Empty means none is approved (fail closed).
  */
 public record CompileContext(
         boolean selfApprovalAllowed,
@@ -31,7 +34,8 @@ public record CompileContext(
         List<ConnectionVersion> connectionVersions,
         Set<String> enabledConnectionBindings,
         Map<String, WorkflowInfo> workflows,
-        Map<String, AdapterInfo> adapters) {
+        Map<String, AdapterInfo> adapters,
+        Set<WriteToolApproval> writeToolApprovals) {
 
     public CompileContext {
         groups = Map.copyOf(groups);
@@ -39,6 +43,25 @@ public record CompileContext(
         enabledConnectionBindings = Set.copyOf(enabledConnectionBindings);
         workflows = workflows == null ? Map.of() : Map.copyOf(workflows);
         adapters = adapters == null ? Map.of() : Map.copyOf(adapters);
+        writeToolApprovals = writeToolApprovals == null ? Set.of() : Set.copyOf(writeToolApprovals);
+    }
+
+    /** A context without write-tool approvals (no agent write tool can be published). */
+    public CompileContext(boolean selfApprovalAllowed, Map<String, GroupInfo> groups,
+            List<ConnectionVersion> connectionVersions, Set<String> enabledConnectionBindings,
+            Map<String, WorkflowInfo> workflows, Map<String, AdapterInfo> adapters) {
+        this(selfApprovalAllowed, groups, connectionVersions, enabledConnectionBindings, workflows, adapters, Set.of());
+    }
+
+    /** An active approval of one agent write tool for one workflow key (IN04, S75). */
+    public record WriteToolApproval(String workflowKey, String connectionKey, int connectionVersion, String operation,
+            String toolName) {
+    }
+
+    /** @return the same facts with these write-tool approvals */
+    public CompileContext withWriteToolApprovals(Set<WriteToolApproval> approvals) {
+        return new CompileContext(selfApprovalAllowed, groups, connectionVersions, enabledConnectionBindings, workflows,
+                adapters, approvals);
     }
 
     /** A context without adapter facts (no adapter step can be valid). */
@@ -51,7 +74,7 @@ public record CompileContext(
     /** @return the same facts with these adapters */
     public CompileContext withAdapters(Map<String, AdapterInfo> adapters) {
         return new CompileContext(selfApprovalAllowed, groups, connectionVersions, enabledConnectionBindings, workflows,
-                adapters);
+                adapters, writeToolApprovals);
     }
 
     /**

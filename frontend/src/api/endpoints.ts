@@ -201,6 +201,22 @@ export const rejectPromotionRequest = (ws: string, requestId: string, body: S['P
 export const cancelPromotionRequest = (ws: string, requestId: string) =>
   call(api.POST('/workspaces/{workspaceId}/promotion-requests/{requestId}/cancel', { params: { path: { workspaceId: ws, requestId } } }))
 
+// Agent write tools (IN04, docs/build/S75)
+export const listAgentWriteTools = (ws: string) =>
+  call(api.GET('/workspaces/{workspaceId}/agent-write-tools', { params: { path: { workspaceId: ws } } }))
+
+export const approveAgentWriteTool = (ws: string, body: S['AgentWriteToolApproveRequest']) =>
+  call(api.POST('/workspaces/{workspaceId}/agent-write-tools/approvals', { params: { path: { workspaceId: ws } }, body }))
+
+export const revokeAgentWriteTool = (ws: string, approvalId: string, body: S['AgentWriteToolRevokeRequest']) =>
+  call(api.POST('/workspaces/{workspaceId}/agent-write-tools/approvals/{approvalId}/revoke', { params: { path: { workspaceId: ws, approvalId } }, body }))
+
+export const listAgentWriteCalls = (ws: string, state?: 'unknown') =>
+  call(api.GET('/workspaces/{workspaceId}/agent-writes', { params: { path: { workspaceId: ws }, query: state ? { state } : {} } }))
+
+export const reconcileAgentWrite = (ws: string, writeId: string, body: S['AgentWriteReconcileRequest']) =>
+  call(api.POST('/workspaces/{workspaceId}/agent-writes/{writeId}/reconcile', { params: { path: { workspaceId: ws, writeId } }, body }))
+
 // Runs
 export const getStartForm = (ws: string, workflowId: string) =>
   call(api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/start-form', { params: { path: { workspaceId: ws, workflowId } } }))

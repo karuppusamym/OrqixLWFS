@@ -40,6 +40,22 @@ class SeparationOfDutiesTest extends RuntimeTestBase {
         return run;
     }
 
+    /** Walks every page of the claimable queue: the shared test database can hold more than one page of open tasks. */
+    private boolean claimableQueueContains(String user, String taskId) throws Exception {
+        String cursor = null;
+        do {
+            String path = "/workspaces/{ws}/tasks?view=claimable&limit=100" + (cursor == null ? "" : "&cursor=" + cursor);
+            JsonNode page = api(user).get(path, PURCHASING).body();
+            for (JsonNode item : page.path("items")) {
+                if (taskId.equals(item.path("id").asString())) {
+                    return true;
+                }
+            }
+            cursor = page.path("nextCursor").isMissingNode() || page.path("nextCursor").isNull() ? null : page.path("nextCursor").asString();
+        } while (cursor != null && !cursor.isEmpty());
+        return false;
+    }
+
     @Test
     void thePersonWhoDecidedTheFirstStepCannotClaimDecideOrSeeTheSecond() throws Exception {
         UUID run = runAtFinance(publishPurchase(PURCHASING, sameGroup(true)));
@@ -53,10 +69,8 @@ class SeparationOfDutiesTest extends RuntimeTestBase {
         assertThat(detail.path("allowedActions").path("claim").path("reasonCode").asString()).isEqualTo("SEPARATION_OF_DUTIES");
 
         // The task is not offered to them in the queue, but it is offered to the other manager.
-        assertThat(api("mani.manager").get("/workspaces/{ws}/tasks?view=claimable&limit=100", PURCHASING).body().toString())
-                .doesNotContain(taskId);
-        assertThat(api("max.manager").get("/workspaces/{ws}/tasks?view=claimable&limit=100", PURCHASING).body().toString())
-                .contains(taskId);
+        assertThat(claimableQueueContains("mani.manager", taskId)).isFalse();
+        assertThat(claimableQueueContains("max.manager", taskId)).isTrue();
 
         assertThat(claim("max.manager", PURCHASING, taskId).status()).isEqualTo(200);
         assertThat(decide("max.manager", PURCHASING, taskId, "approve", null).status()).isEqualTo(201);

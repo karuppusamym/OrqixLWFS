@@ -19,7 +19,7 @@ import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
 /**
- * UI03 BPMN source (docs/build/S56): the compiled BPMN of a draft reads back into the same document, edited BPMN is
+ * UI03 BPMN source (docs/build/S60): the compiled BPMN of a draft reads back into the same document, edited BPMN is
  * accepted only when the document can represent it exactly, and every refusal names the element and the difference.
  */
 class BpmnSourceTest {
@@ -147,7 +147,7 @@ class BpmnSourceTest {
         assertThat(compiled).isGreaterThanOrEqualTo(20);
         assertThat(identical).contains("purchase-approval.json", "new-hire-onboarding.json",
                 "banking-kyc-onboarding.json", "vendor-onboarding-check.json", "document-review.json", "case:valid-base",
-                // S65: a written default (atTime 09:00) equals omission; payload titles are kept from the draft.
+                // S70: a written default (atTime 09:00) equals omission; payload titles are kept from the draft.
                 "start-date-onboarding.json", "order-payment-wait.json");
         // Behaviour the compiled BPMN does not carry: each is reported with its exact place in the document.
         assertThat(differing).containsEntry("banking-card-claim.json",
@@ -159,7 +159,7 @@ class BpmnSourceTest {
         assertThat(differing).hasSize(4);
     }
 
-    // ---------------------------------------------------------------- written defaults and field titles (S65)
+    // ---------------------------------------------------------------- written defaults and field titles (S70)
 
     @Test
     void theDefaultsAreExactlyTheDocumentedOnes() {

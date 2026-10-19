@@ -1235,7 +1235,7 @@ paths:
     get:
       tags: [Workflows]
       operationId: getDraftBpmn
-      summary: Compiled BPMN of a draft revision with its round-trip check (UI03, docs/build/S56)
+      summary: Compiled BPMN of a draft revision with its round-trip check (UI03, docs/build/S60)
       description: |
         The BPMN is exactly what publishing would deploy. It carries the workflow name, the steps, the connections,
         the sections and handlers (subprocesses, docs/build/S77) and (when every step has a canvas position) the
@@ -1301,7 +1301,7 @@ paths:
     post:
       tags: [Workflows]
       operationId: checkDraftBpmn
-      summary: Check edited BPMN against a draft revision without saving (UI03, docs/build/S56)
+      summary: Check edited BPMN against a draft revision without saving (UI03, docs/build/S60)
       description: |
         Applicable only when the draft itself round-trips exactly, the text is safe XML in the compiled dialect with
         nothing unsupported (comments, lanes, pools, sub-processes, foreign extensions and free expressions are listed
@@ -1602,7 +1602,7 @@ paths:
         Only the kinds the caller may read are searched (decisions and document templates need workflow.read, connections
         need connection.read); searchedKinds lists them, and a caller who may read none gets 403. q matches the name, the
         key or the owner's display name (case-insensitive substring). At most 300 results, ordered by name; truncated
-        tells when there were more. Archived assets are hidden unless includeArchived is true (docs/build/S57).
+        tells when there were more. Archived assets are hidden unless includeArchived is true (docs/build/S61).
       x-orqix-permission: workflow.read
       parameters:
         - { name: q, in: query, required: false, schema: { type: string, maxLength: 100 } }
@@ -3279,7 +3279,7 @@ paths:
       operationId: sendRunSignal
       summary: Send a signal to one request
       description: >-
-        docs/build/S55. Delivers the named signal to the steps ("Wait for a signal") and handlers of this request that
+        docs/build/S59. Delivers the named signal to the steps ("Wait for a signal") and handlers of this request that
         are waiting for it now, oldest first. A signal never reaches another request. Refused with 409
         SIGNAL_NOT_AWAITED when nothing in the request waits for it, RUN_SUSPENDED while suspended and RUN_NOT_ACTIVE
         when the request ended or changed since it was loaded.
@@ -4176,7 +4176,7 @@ paths:
     put:
       tags: [Adapters]
       operationId: updateAdapter
-      summary: Edit or disable an adapter (docs/build/S68)
+      summary: Edit or disable an adapter (docs/build/S73)
       description: |
         Kind and key never change. The configuration is validated exactly like on creation. `expectedVersion` must equal
         the stored version (409 CONFIGURATION_VERSION_CONFLICT otherwise). Workflow steps read the adapter again before
@@ -4284,7 +4284,7 @@ paths:
     put:
       tags: [Adapters]
       operationId: updateInboundTrigger
-      summary: Edit or disable an inbound trigger (docs/build/S68)
+      summary: Edit or disable an inbound trigger (docs/build/S73)
       description: |
         Source, key and target workflow never change. A disabled trigger answers 404 to senders; events already received
         stay and can still be started or purged. `expectedVersion` must equal the stored version (409
@@ -4372,7 +4372,7 @@ paths:
     post:
       tags: [Adapters]
       operationId: purgeInboundEvents
-      summary: Delete received events older than a number of days (retention, docs/build/S68)
+      summary: Delete received events older than a number of days (retention, docs/build/S73)
       description: |
         Started events are always eligible; unstarted events only with `includeUnstarted`. Returns a count only; no event
         data. A purged event id that a sender repeats later is accepted as a new event.
@@ -7698,7 +7698,7 @@ components:
         groups: { type: array, items: { $ref: '#/components/schemas/Key' } }
         assets:
           type: array
-          description: Shared asset versions the release's copies were published from (docs/build/S57)
+          description: Shared asset versions the release's copies were published from (docs/build/S61)
           items:
             type: object
             required: [kind, key, version, target]
@@ -8093,7 +8093,7 @@ components:
         body: { type: string, minLength: 1, maxLength: 16000, description: 'Plain text with {{field}} placeholders, as in the Generate a document step' }
         changeNote: { type: [string, 'null'], maxLength: 300 }
         key:
-          description: Stable key used by versioned workflow references (docs/build/S57); derived from the name when omitted
+          description: Stable key used by versioned workflow references (docs/build/S61); derived from the name when omitted
           $ref: '#/components/schemas/Key'
     AddDocumentTemplateVersion:
       type: object
@@ -8272,7 +8272,7 @@ components:
         id: { type: string }
         from: { type: string }
         to: { type: string }
-        on: { type: string, enum: [next, approved, rejected, timedOut, failed, condition, default, error], description: 'error only on a section error route (S55).' }
+        on: { type: string, enum: [next, approved, rejected, timedOut, failed, condition, default, error], description: 'error only on a section error route (S59).' }
         label: { type: [string, 'null'], description: The designer's route label. Conditions are never included. }
     PathVisit:
       type: object
@@ -8311,12 +8311,12 @@ components:
           properties:
             nodes: { type: array, items: { $ref: '#/components/schemas/PathNode' } }
             transitions: { type: array, items: { $ref: '#/components/schemas/PathTransition' } }
-            scopes: { type: array, items: { $ref: '#/components/schemas/PathScope' }, description: 'Sections and handlers (S55).' }
+            scopes: { type: array, items: { $ref: '#/components/schemas/PathScope' }, description: 'Sections and handlers (S59).' }
         visited: { type: array, items: { $ref: '#/components/schemas/PathVisit' } }
         current: { type: array, items: { $ref: '#/components/schemas/PathCurrent' } }
         taken: { type: array, items: { type: string }, description: Ids of the routes the request has used. }
         historyTruncated: { type: boolean, description: History exceeded the diagram limit; only current steps are reliable. }
-        scopeVisits: { type: array, items: { $ref: '#/components/schemas/PathScopeVisit' }, description: 'Each time a section was entered or a handler started (S55).' }
+        scopeVisits: { type: array, items: { $ref: '#/components/schemas/PathScopeVisit' }, description: 'Each time a section was entered or a handler started (S59).' }
     PathScope:
       type: object
       required: [id, label, type, nodes, routes]

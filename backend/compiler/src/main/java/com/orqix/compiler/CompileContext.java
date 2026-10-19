@@ -22,7 +22,7 @@ import tools.jackson.databind.JsonNode;
  * @param enabledConnectionBindings connection keys with an enabled binding in this workspace
  * @param workflows                 workflows of the workspace by key with the facts needed to start them as child
  *                                  requests (S12); the active release of each is what a publish pins
- * @param adapters                  outbound adapters of the workspace by key (S68); a step may only send through one
+ * @param adapters                  outbound adapters of the workspace by key (S73); a step may only send through one
  *                                  listed here, to recipients or topics its configuration approves
  * @param writeToolApprovals        active agent write-tool approvals of the workspace (IN04, S75); an agent step whose
  *                                  operation declares write tools can only be published when each is approved for
@@ -78,7 +78,7 @@ public record CompileContext(
     }
 
     /**
-     * An outbound adapter (S68). {@code configJson} is the stored allowlist configuration (never a secret): approved
+     * An outbound adapter (S73). {@code configJson} is the stored allowlist configuration (never a secret): approved
      * recipient domains and the recipient limit for email, approved topics for Kafka, declared parameters for a
      * database read.
      */

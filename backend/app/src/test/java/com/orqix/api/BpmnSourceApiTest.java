@@ -13,7 +13,7 @@ import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
 /**
- * UI03 BPMN source (docs/build/S56) on PostgreSQL: the compiled BPMN of a draft, the round-trip check, checking and
+ * UI03 BPMN source (docs/build/S60) on PostgreSQL: the compiled BPMN of a draft, the round-trip check, checking and
  * applying edited BPMN with the YAML source mode's permission boundaries (read: workflow.read; check/apply:
  * workflow.edit), If-Match, refusal with the specific problem and no leakage outside the workspace.
  */
@@ -147,7 +147,7 @@ class BpmnSourceApiTest extends com.orqix.support.RuntimeTestBase {
                 .isEqualTo(404);
     }
 
-    /** S65: defaults written out in the draft equal omission; applying BPMN keeps the draft's spelling of them. */
+    /** S70: defaults written out in the draft equal omission; applying BPMN keeps the draft's spelling of them. */
     @Test
     void writtenDefaultsDoNotStopBpmnEditing() throws Exception {
         UUID wf = workflow();

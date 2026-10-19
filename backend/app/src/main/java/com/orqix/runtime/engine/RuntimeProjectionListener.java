@@ -108,7 +108,7 @@ public class RuntimeProjectionListener implements FlowableEventListener {
         }
         boolean selfChecked = type == FlowableEngineEventType.ACTIVITY_COMPLETED
                 || type == FlowableEngineEventType.ACTIVITY_CANCELLED || type == FlowableEngineEventType.ACTIVITY_ERROR_RECEIVED;
-        // The S55 handlers filter on the element first and check the run themselves (they fire for every activity).
+        // The S59 handlers filter on the element first and check the run themselves (they fire for every activity).
         if (!selfChecked && !isOrqixProcess(event)) {
             // Every process deployed by Orqix carries orqix_runId; anything else (engine spikes) is not projected.
             return;
@@ -287,7 +287,7 @@ public class RuntimeProjectionListener implements FlowableEventListener {
         });
     }
 
-    // ---------------------------------------------------------------- sections, handlers, errors, signals (S55)
+    // ---------------------------------------------------------------- sections, handlers, errors, signals (S59)
 
     /** Command attribute: the handler started by an error in this process instance (its interruption has no cause). */
     private static final String ERROR_HANDLER_ATTRIBUTE = "orqix.errorHandler.";
@@ -296,7 +296,7 @@ public class RuntimeProjectionListener implements FlowableEventListener {
 
     /**
      * Records in the current command that a step was already projected (for example a call that raised an error on
-     * failure, S66), so the cancellation caused by the catching boundary does not also show it as interrupted.
+     * failure, S71), so the cancellation caused by the catching boundary does not also show it as interrupted.
      */
     static void markInterrupted(String processInstanceId, String elementId) {
         Context.getCommandContext().addAttribute(INTERRUPTED_ATTRIBUTE + processInstanceId + "." + elementId, true);
@@ -407,7 +407,7 @@ public class RuntimeProjectionListener implements FlowableEventListener {
 
     /**
      * Work cancelled because a section's time limit passed or an error left it, or because a handler interrupted the
-     * request (S55): its task is cancelled and it no longer shows as a current step. Other cancellations (a decision
+     * request (S59): its task is cancelled and it no longer shows as a current step. Other cancellations (a decision
      * time limit, a failure route, a rejection that ends the request, an operator) keep their own handling.
      */
     private void onActivityCancelled(FlowableActivityCancelledEvent event) {
@@ -486,7 +486,7 @@ public class RuntimeProjectionListener implements FlowableEventListener {
 
     // ---------------------------------------------------------------- messages (S16)
 
-    /** A token reached a "Wait for a signal" step (S55); handler start subscriptions are not waiting steps. */
+    /** A token reached a "Wait for a signal" step (S59); handler start subscriptions are not waiting steps. */
     private void onSignalWait(EventSubscriptionEntity subscription) {
         if (subscription.getProcessDefinitionId() == null || subscription.getActivityId() == null
                 || subscription.getExecutionId() == null) {
@@ -690,7 +690,7 @@ public class RuntimeProjectionListener implements FlowableEventListener {
         }
         ExtensionElement outcome = OrqixModel.extension(element, "outcome").orElse(null);
         if (outcome == null) {
-            // A raised error or the generated end of a section or handler (S55): the request does not finish here.
+            // A raised error or the generated end of a section or handler (S59): the request does not finish here.
             OrqixModel.extension(element, "raise").ifPresent(raise -> {
                 ExecutionEntity raising = CommandContextUtil.getExecutionEntityManager().findById(event.getExecutionId());
                 Map<String, Object> data = new LinkedHashMap<>();

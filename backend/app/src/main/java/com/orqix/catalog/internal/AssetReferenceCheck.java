@@ -24,7 +24,7 @@ import com.orqix.shared.json.Json;
 import tools.jackson.databind.JsonNode;
 
 /**
- * Checks a workflow's versioned references to shared assets (docs/build/S57) against the workspace's current assets at
+ * Checks a workflow's versioned references to shared assets (docs/build/S61) against the workspace's current assets at
  * validation and publish. A reference is never resolved silently: a missing (deleted, or from another workspace),
  * archived or differing asset is a blocker, and a newer version than the pinned one is a warning the publisher must
  * acknowledge. Connection pins ({@code dependencies.connections}) get the archive and newer-version checks; their

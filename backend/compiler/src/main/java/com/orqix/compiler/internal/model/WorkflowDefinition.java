@@ -35,7 +35,7 @@ public record WorkflowDefinition(
         List<Subprocess> subprocesses) {
 
     /**
-     * A scope over existing steps (S55). An embedded subprocess is a section entered through one entry step and left
+     * A scope over existing steps (S59). An embedded subprocess is a section entered through one entry step and left
      * by the ordinary paths of its members, with an optional time limit ({@code timeoutAfter} to {@code onTimeout}) and
      * error route ({@code errorTo}, catching {@code errorCode}, or any code when null). An event subprocess is a handler
      * started by {@code triggerType} (error, signal or timer) and is {@code interrupting} or not.

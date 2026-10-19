@@ -16,7 +16,7 @@ import com.orqix.support.RuntimeTestBase;
 import tools.jackson.databind.JsonNode;
 
 /**
- * PL02b (docs/build/S69): the optional approval gate before promotion into a production workspace. Real PostgreSQL;
+ * PL02b (docs/build/S74): the optional approval gate before promotion into a production workspace. Real PostgreSQL;
  * every response is validated against openapi.yaml by the test client.
  */
 class PromotionApprovalTest extends RuntimeTestBase {

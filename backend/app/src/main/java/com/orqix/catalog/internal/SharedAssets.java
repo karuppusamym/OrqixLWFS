@@ -39,7 +39,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.ObjectNode;
 
 /**
- * PL01 shared reusable assets (docs/build/S57). Three kinds share one index, owner and archive model: shared decision
+ * PL01 shared reusable assets (docs/build/S61). Three kinds share one index, owner and archive model: shared decision
  * tables (new, {@code decision_asset}), document templates (DOC08 registry) and connection definitions (V1). Each is
  * identified by kind and key inside one workspace, has immutable numbered versions, an owner and an archive flag.
  * <p>

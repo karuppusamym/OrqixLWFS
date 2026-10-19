@@ -1,4 +1,4 @@
--- PL02b (docs/build/S69): optional approval gate before a release is promoted into a production-stage workspace.
+-- PL02b (docs/build/S74): optional approval gate before a release is promoted into a production-stage workspace.
 -- A gated target takes promotions only through a request that a second person, holding the explicit grant
 -- workflow.approve-promotion in the target, approves. The database refuses a decision by the requester.
 

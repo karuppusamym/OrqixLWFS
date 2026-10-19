@@ -22,7 +22,7 @@ import com.orqix.shared.problem.ProblemCode;
 import com.orqix.shared.problem.ProblemWriter;
 
 /**
- * Request body limits (S3 section 8): drafts 256 KiB, BPMN source 2 MiB (S56), every other body 64 KiB, enforced on Content-Length and on the
+ * Request body limits (S3 section 8): drafts 256 KiB, BPMN source 2 MiB (S60), every other body 64 KiB, enforced on Content-Length and on the
  * actual stream (chunked bodies). Exceeding returns {@code 413 PAYLOAD_TOO_LARGE}.
  */
 @Component
@@ -30,7 +30,7 @@ import com.orqix.shared.problem.ProblemWriter;
 public class RequestLimitsFilter extends OncePerRequestFilter {
 
     private static final Pattern DRAFT_PATH = Pattern.compile("^/api/v1/workspaces/[^/]+/workflows/[^/]+/draft$");
-    /** BPMN source of a draft (docs/build/S56): up to 1 MiB of XML, JSON-escaped inside the request body. */
+    /** BPMN source of a draft (docs/build/S60): up to 1 MiB of XML, JSON-escaped inside the request body. */
     private static final Pattern DRAFT_BPMN_PATH = Pattern
             .compile("^/api/v1/workspaces/[^/]+/workflows/[^/]+/draft/bpmn(/check)?$");
     private static final Pattern OPENAPI_REVIEW_PATH = Pattern.compile("^/api/v1/workspaces/[^/]+/connections/import-openapi$");

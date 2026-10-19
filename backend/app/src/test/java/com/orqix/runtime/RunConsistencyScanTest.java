@@ -25,7 +25,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import tools.jackson.databind.JsonNode;
 
 /**
- * EX09 periodic consistency scan (docs/build/S67): opt-in, bounded, rate-limited, report-only, and it does not look at
+ * EX09 periodic consistency scan (docs/build/S72): opt-in, bounded, rate-limited, report-only, and it does not look at
  * healthy requests again before the recheck time. The database is shared with other tests, so every assertion is
  * about the requests created here.
  */

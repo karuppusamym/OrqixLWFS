@@ -177,7 +177,7 @@ public final class FieldTypes {
     }
 
     /**
-     * Outputs of "Send through an adapter" (S68): {@code outcome} (how the adapter took the message; {@code stubbed} in
+     * Outputs of "Send through an adapter" (S73): {@code outcome} (how the adapter took the message; {@code stubbed} in
      * this build) and, for a database read, {@code rowCount}.
      */
     private Resolution adapterOutput(Node.SendAdapter a, String key) {

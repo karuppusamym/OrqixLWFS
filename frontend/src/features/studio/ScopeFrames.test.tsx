@@ -36,7 +36,7 @@ function Live({ id, view }: { id: string; view: (node: WorkflowNode) => React.Re
   return node ? <>{view(node)}</> : null
 }
 
-describe('section and handler frames (S66)', () => {
+describe('section and handler frames (S71)', () => {
   it('frames the measured steps with room for the label, and nothing when no member is drawn', () => {
     const nodes = [
       { id: 'a', position: { x: 100, y: 50 }, measured: { width: 200, height: 100 } },
@@ -122,7 +122,7 @@ describe('section and handler frames (S66)', () => {
   })
 })
 
-describe('a call that raises an error for its section when it fails (S66)', () => {
+describe('a call that raises an error for its section when it fails (S71)', () => {
   it('is offered only inside a section with an error route, uses its code, removes the Failed route and refuses a new one', async () => {
     const definition = withScopes()
     definition.nodes.push({ id: 'failedNote', type: 'notification', label: 'Order failed', config: { channel: 'inApp', recipient: 'initiator', message: 'Failed' } })

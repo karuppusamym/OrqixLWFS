@@ -53,7 +53,7 @@ public final class RuntimeDtos {
             @NotNull @Min(1) Integer expectedVersion) {
     }
 
-    /** sendRunSignal (S55): the signal name follows the workflow schema's signalName pattern. */
+    /** sendRunSignal (S59): the signal name follows the workflow schema's signalName pattern. */
     public record SendRunSignalRequest(
             @NotNull @Size(min = 2, max = 64) @jakarta.validation.constraints.Pattern(
                     regexp = "^[a-z][a-zA-Z0-9]*(-[a-z0-9][a-zA-Z0-9]*)*$") String signal,
@@ -70,7 +70,7 @@ public final class RuntimeDtos {
             List<String> engineNodeIds, int version) {
     }
 
-    /** What the periodic scan last found for one request (docs/build/S67). The scan only reports; it never repairs. */
+    /** What the periodic scan last found for one request (docs/build/S72). The scan only reports; it never repairs. */
     public record ConsistencyFinding(UUID runId, String reference, String state, boolean repairable, String message,
             int version, String firstSeenAt, String checkedAt) {
     }

@@ -196,7 +196,7 @@ export function validateDefinition(def: Definition, ctx: ValidationContext): Iss
         break
       }
       case 'sendAdapter': {
-        // Simplified double of the S68 rules; the server checks the adapter's allowlists authoritatively.
+        // Simplified double of the S73 rules; the server checks the adapter's allowlists authoritatively.
         if (!c.adapter) issues.push(issue('WF_ADAPTER_UNKNOWN', 'blocker', `"${n.label}" needs an adapter.`, nodePath(n, '/config/adapter'), n.id))
         if (c.kind === 'email' && (!Array.isArray(c.to) || c.to.length === 0 || !c.subject || !c.body))
           issues.push(issue('WF_ADAPTER_MESSAGE', 'blocker', `"${n.label}": an email needs recipients, a subject and a body.`, nodePath(n, '/config/to'), n.id))

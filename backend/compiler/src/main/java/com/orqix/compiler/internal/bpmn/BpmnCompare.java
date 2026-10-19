@@ -15,7 +15,7 @@ import com.orqix.compiler.internal.bpmn.BpmnXml.El;
 
 /**
  * Compares the BPMN a person submitted with the BPMN the compiler generates from the document that was read out of it
- * (UI03, docs/build/S56). Both trees are flattened into {@code path -> value} entries (element presence, every
+ * (UI03, docs/build/S60). Both trees are flattened into {@code path -> value} entries (element presence, every
  * attribute, trimmed text); elements directly under the process, a section or handler ({@code subProcess}) and the
  * definitions are keyed by id, diagram shapes
  * and edges by the element they show, {@code orqix:input}/{@code orqix:result} by name (they are maps), and all other
@@ -53,7 +53,7 @@ public final class BpmnCompare {
             "^" + Pattern.quote(PROCESS) + "(/#[^/]+)+/bpmn:extensionElements\\[0\\]/orqix:child\\[0\\]/@(releaseNumber|semanticHash)$",
             "^" + Pattern.quote(PROCESS) + "(/#[^/]+)+/bpmn:terminateEventDefinition\\[0\\]$",
             "^" + Pattern.quote(PROCESS) + "(/#[^/]+)*/#[^/]+__[^/]+/@name$",
-            // The undo calls an Undo step lists are derived from the calls marked as automatic undo calls (S55).
+            // The undo calls an Undo step lists are derived from the calls marked as automatic undo calls (S59).
             "^" + Pattern.quote(PROCESS) + "(/#[^/]+)+/bpmn:extensionElements\\[0\\]/orqix:compensation\\[0\\]/orqix:undo\\[\\d+\\](/.*)?$",
             "^" + Pattern.quote(PLANE) + "/edge:.*$",
             "^" + Pattern.quote(PLANE) + "/shape:[^/]*__.*$",
@@ -76,7 +76,7 @@ public final class BpmnCompare {
         keys.addAll(s.keySet());
         List<Difference> problems = new ArrayList<>();
         Map<String, Integer> recomputed = new TreeMap<>();
-        // Section and handler frames (S55) are drawn around their steps: recomputed from the step positions.
+        // Section and handler frames (S59) are drawn around their steps: recomputed from the step positions.
         Set<String> frames = new java.util.HashSet<>();
         scopeIds(submitted, frames);
         scopeIds(regenerated, frames);

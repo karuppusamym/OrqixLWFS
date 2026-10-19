@@ -686,7 +686,7 @@ class Run {
 
   // -------------------------------------------------------------------------------------------- message wait
 
-  /** An adapter step sends nothing in a test (S68); like the local stub, a database read returns no rows. */
+  /** An adapter step sends nothing in a test (S73); like the local stub, a database read returns no rows. */
   private sendAdapter(n: WorkflowNode): Transition | null {
     const mapping = (n.config.inputMapping ?? {}) as Record<string, string>
     if (Object.values(mapping).some((ref) => this.resolve(ref) == null)) {

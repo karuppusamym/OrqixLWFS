@@ -7,7 +7,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Plain-text placeholders of "Send through an adapter" steps (S68): {@code {{name}}} is replaced by the value mapped under
+ * Plain-text placeholders of "Send through an adapter" steps (S73): {@code {{name}}} is replaced by the value mapped under
  * that name. No expressions, no nesting, and nothing else is interpolated. Shared by the compiler (validation) and the
  * runtime (rendering) so both read a text the same way.
  */

@@ -47,7 +47,7 @@ export function recipientProblems(recipients: string[], approvedDomains: string[
 const strings = (value: unknown): string[] => (Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [])
 
 /**
- * "Send through an adapter" (docs/build/S68). The step names an adapter set up by an administrator and fixes who receives
+ * "Send through an adapter" (docs/build/S73). The step names an adapter set up by an administrator and fixes who receives
  * the message or which topic it goes to; request data only fills the text and values. The server checks the adapter's
  * allowlist again at publish time and before every send. This build delivers only to a local test stub.
  */

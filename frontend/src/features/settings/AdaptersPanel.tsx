@@ -98,7 +98,7 @@ export function AdaptersPanel() {
   const [tSecret, setTSecret] = useState('')
   const [tFilter, setTFilter] = useState('')
   const [tMapping, setTMapping] = useState('')
-  // Editing (S68): one adapter or trigger at a time, with the version it was loaded at.
+  // Editing (S73): one adapter or trigger at a time, with the version it was loaded at.
   const [editAdapter, setEditAdapter] = useState<{ adapter: Adapter; name: string; secretRef: string; enabled: boolean; fields: AdapterFields } | null>(null)
   const [editTrigger, setEditTrigger] = useState<{ trigger: Trigger; name: string; secretRef: string; enabled: boolean; filter: string; mapping: string } | null>(null)
   const [purgeDays, setPurgeDays] = useState('90')

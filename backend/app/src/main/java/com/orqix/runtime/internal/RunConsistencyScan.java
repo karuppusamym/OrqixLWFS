@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * EX09 periodic consistency scan (docs/build/S67). Opt-in ({@code orqix.watchdog.consistency-scan.enabled}), bounded
+ * EX09 periodic consistency scan (docs/build/S72). Opt-in ({@code orqix.watchdog.consistency-scan.enabled}), bounded
  * (at most {@code batch-size}, hard cap {@value #MAX_BATCH}, requests per pass) and rate-limited (at most one pass per
  * {@code interval} on an instance). Healthy requests are looked at again only after {@code recheck-after}, findings
  * after {@code finding-recheck-after}, so the oldest-first sweep never keeps re-inspecting healthy waiting requests.

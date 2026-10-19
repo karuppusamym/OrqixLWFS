@@ -23,15 +23,15 @@ public final class Enums {
         START_WORKFLOW("startWorkflow", "Start another workflow"),
         WAIT_FOR_MESSAGE("waitForMessage", "Wait for a message"),
         EXTERNAL_TASK("externalTask", "Work by an external worker"),
-        /** Raise a business error caught by a section's error route or an error event subprocess (S55). */
+        /** Raise a business error caught by a section's error route or an error event subprocess (S59). */
         RAISE_ERROR("raiseError", "Raise an error"),
-        /** Send a signal within the same request (S55). */
+        /** Send a signal within the same request (S59). */
         SEND_SIGNAL("sendSignal", "Send a signal"),
-        /** Wait until a signal is sent in the same request (S55). */
+        /** Wait until a signal is sent in the same request (S59). */
         WAIT_FOR_SIGNAL("waitForSignal", "Wait for a signal"),
-        /** Run the automatic undo calls of the calls that completed (S55). */
+        /** Run the automatic undo calls of the calls that completed (S59). */
         COMPENSATE("compensate", "Undo completed calls"),
-        /** Send through a configured adapter (email, Teams, Kafka produce or database read; S68). */
+        /** Send through a configured adapter (email, Teams, Kafka produce or database read; S73). */
         SEND_ADAPTER("sendAdapter", "Send through an adapter"),
         END("end", "Finish");
 

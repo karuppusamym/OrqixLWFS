@@ -1,4 +1,4 @@
--- EX09 periodic consistency scan (docs/build/S67): the last read-only comparison of an active request with the engine.
+-- EX09 periodic consistency scan (docs/build/S72): the last read-only comparison of an active request with the engine.
 -- One row per scanned request. The scan only records what it found (never changes a request); a row whose state is
 -- 'inSync' lets the scan skip that request until recheck time, so healthy waiting requests are not re-inspected on
 -- every sweep. Rows go away with the request.

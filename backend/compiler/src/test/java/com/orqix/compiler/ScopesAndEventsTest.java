@@ -12,7 +12,7 @@ import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
 /**
- * EX06/EX08 slice (docs/build/S55): sections (embedded subprocesses) with a time limit, error route and several exits;
+ * EX06/EX08 slice (docs/build/S59): sections (embedded subprocesses) with a time limit, error route and several exits;
  * handlers (event subprocesses) started by an error, a signal or a timer; raised errors; signals within a request;
  * automatic undo calls run by an "Undo completed calls" step.
  */
@@ -376,7 +376,7 @@ class ScopesAndEventsTest {
     }
 
     /**
-     * S66: the purchase order and the confirmation are a section "Order" whose error route (ORDER_REJECTED) continues at
+     * S71: the purchase order and the confirmation are a section "Order" whose error route (ORDER_REJECTED) continues at
      * the rejection notice; the purchase order call opts in to raise ORDER_REJECTED when it fails for good.
      */
     static ObjectNode callFailure() {

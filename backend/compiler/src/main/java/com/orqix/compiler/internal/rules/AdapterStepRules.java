@@ -18,7 +18,7 @@ import com.orqix.compiler.internal.rules.FieldTypes.Unknown;
 import tools.jackson.databind.JsonNode;
 
 /**
- * "Send through an adapter" (S68). The step names an adapter of the workspace and must state its kind, so it is never
+ * "Send through an adapter" (S73). The step names an adapter of the workspace and must state its kind, so it is never
  * silently re-pointed to another kind of system. Recipients and the Kafka topic are fixed in the step and must be on the
  * adapter's allowlist: request data can never choose who receives a message or where it goes, and the adapter being
  * available grants nothing by itself. The runtime checks the same rules again against the adapter's current settings.

@@ -254,7 +254,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
         ids.put("assetKey", assetKey);
         ids.put("requestId", UUID.randomUUID().toString());
         ids.put("connectionKey", "procurement");
-        // A real adapter and trigger (S68), so a foreign edit is refused by access, not by a missing resource.
+        // A real adapter and trigger (S73), so a foreign edit is refused by access, not by a missing resource.
         String adapterKey = "matrix-" + UUID.randomUUID().toString().substring(0, 8);
         api("wade.admin").post(Map.of("key", adapterKey, "kind", "kafka", "name", "Matrix", "secretRef", "matrix-ref",
                 "config", Map.of("allowedTopics", List.of("matrix.topic"))), "/workspaces/{ws}/adapters", PURCHASING);
@@ -281,7 +281,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
         Matcher m = Pattern.compile("\\{([^}]+)}").matcher(template);
         while (m.find()) {
             // The signed receive endpoint has no session: for a real trigger it answers 401 to any unsigned caller, so
-            // the matrix keeps addressing an unknown trigger there (404), as before S68 added a real one.
+            // the matrix keeps addressing an unknown trigger there (404), as before S73 added a real one.
             String value = "receiveInboundEvent".equals(operationId) && "triggerId".equals(m.group(1)) ? "x"
                     : ids.getOrDefault(m.group(1), "x");
             path = path.replace(m.group(), value);

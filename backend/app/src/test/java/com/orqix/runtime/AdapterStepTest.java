@@ -25,7 +25,7 @@ import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
 /**
- * S68 "Send through an adapter" on PostgreSQL/Flowable: compile-time allowlists, journaled delivery to the local stub
+ * S73 "Send through an adapter" on PostgreSQL/Flowable: compile-time allowlists, journaled delivery to the local stub
  * only, outputs for later steps, a disabled or narrowed adapter stopping the send, operator retry, and reuse of a recorded
  * result instead of a resend.
  */

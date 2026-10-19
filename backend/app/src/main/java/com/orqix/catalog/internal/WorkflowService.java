@@ -247,7 +247,7 @@ public class WorkflowService {
         ValidationReport report = compiler.validate(draft.definitionJson(), context);
         List<ValidationIssue> all = new java.util.ArrayList<>(report.issues());
         all.addAll(agentCheck.warnings(draft.definitionJson(), context));
-        // Shared asset references (S57) are checked against the workspace's current assets, never resolved silently.
+        // Shared asset references (S61) are checked against the workspace's current assets, never resolved silently.
         List<ValidationIssue> assetIssues = assetCheck.issues(workspaceId, draft.definitionJson());
         all.addAll(assetIssues);
         return new CatalogDtos.ValidationReport(revision, report.compilerVersion(),

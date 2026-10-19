@@ -72,7 +72,7 @@ export async function saveDraft(ws: string, workflowId: string, definition: obje
   return { draft: data, etag: etagOf(response) ?? revisionEtag(data.revision) }
 }
 
-// BPMN source of a draft (UI03, docs/build/S56)
+// BPMN source of a draft (UI03, docs/build/S60)
 export const getDraftBpmn = (ws: string, workflowId: string, revision?: number) =>
   call(api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/draft/bpmn', { params: { path: { workspaceId: ws, workflowId }, query: revision ? { revision } : {} } }))
 
@@ -170,7 +170,7 @@ export const clearWorkflowCanary = (ws: string, workflowId: string, expectedVers
 export const getReleaseAnalytics = (ws: string, workflowId: string, days = 30) =>
   call(api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/release-analytics', { params: { path: { workspaceId: ws, workflowId }, query: { days } } }))
 
-// Environment stages and promotion (PL02, docs/build/S54 and S69)
+// Environment stages and promotion (PL02, docs/build/S54 and S74)
 export const getWorkspaceEnvironment = (ws: string) =>
   call(api.GET('/workspaces/{workspaceId}/environment', { params: { path: { workspaceId: ws } } }))
 
@@ -466,7 +466,7 @@ export const getStageMail = (ws: string, runId: string) =>
 
 export const exportCaseEvidence = (ws: string, runId: string, format: 'json' | 'csv') =>
   call(api.GET('/workspaces/{workspaceId}/runs/{runId}/evidence', { params: { path: { workspaceId: ws, runId }, query: { format } }, parseAs: 'blob' }))
-// Shared assets (PL01, docs/build/S57): search, detail, where-used, shared decisions, owners and archive
+// Shared assets (PL01, docs/build/S61): search, detail, where-used, shared decisions, owners and archive
 type AssetKind = S['SharedAssetKind']
 export const listSharedAssets = (ws: string, query: { q?: string; kind?: AssetKind; owner?: string; includeArchived?: boolean } = {}) =>
   call(api.GET('/workspaces/{workspaceId}/shared-assets', { params: { path: { workspaceId: ws }, query } }))

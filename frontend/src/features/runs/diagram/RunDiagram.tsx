@@ -458,7 +458,7 @@ const SCOPE_HOW: Record<string, string> = {
   timer: 'stopped by a timed handler',
 }
 
-/** What a section or handler frame on the run diagram says, and how it is drawn (docs/build/S66). */
+/** What a section or handler frame on the run diagram says, and how it is drawn (docs/build/S71). */
 export function runFrames(path: RunPath): FrameSpec[] {
   const label = (id: string) => path.diagram.nodes.find((n) => n.id === id)?.label ?? id
   return (path.diagram.scopes ?? []).map((s) => {
@@ -479,7 +479,7 @@ export function runFrames(path: RunPath): FrameSpec[] {
   })
 }
 
-/** Sections and handlers of the release and what happened to them in this request (docs/build/S55). */
+/** Sections and handlers of the release and what happened to them in this request (docs/build/S59). */
 export function ScopeList({ path }: { path: RunPath }) {
   const scopes = path.diagram.scopes ?? []
   if (!scopes.length) return null

@@ -13,7 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.orqix.shared.web.Sql;
 
 /**
- * The automatic undo plan of an "Undo completed calls" step (docs/build/S55, V70). Written in short transactions of
+ * The automatic undo plan of an "Undo completed calls" step (docs/build/S59, V70). Written in short transactions of
  * their own (like the effect journal) so that the plan and each completed undo survive a failed job: a retry follows
  * the same plan and never resends an undo call that already succeeded.
  */

@@ -27,7 +27,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.ObjectNode;
 
 /**
- * Delegate {@code orqixAdapterTask} (S68): "Send through an adapter". Builds the adapter request only from the step's fixed
+ * Delegate {@code orqixAdapterTask} (S73): "Send through an adapter". Builds the adapter request only from the step's fixed
  * recipients or topic and its mapped values, then sends it through the effect journal ({@link AdapterSteps}). Success
  * stores {@code outcome} (and {@code rowCount} for a database read) as the step's outputs; failures become classified
  * {@link JobFailure}s, so an unknown outcome or a refused message needs an operator and is never resent blindly.

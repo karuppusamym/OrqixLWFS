@@ -363,7 +363,7 @@ public final class DraftRules {
         ObjectNode dependencies = definition.putObject("dependencies");
         ArrayNode connections = dependencies.putArray("connections");
         if (assets.isArray()) {
-            // Shared asset references (S57) are kept as they are; the server checks them at validation and publish.
+            // Shared asset references (S61) are kept as they are; the server checks them at validation and publish.
             dependencies.set("assets", assets.deepCopy());
         }
         Set<String> seen = new HashSet<>();

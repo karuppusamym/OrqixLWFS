@@ -13,7 +13,7 @@ import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
-/** S68 "Send through an adapter": schema, allowlist and kind rules, typing, BPMN and simulation. */
+/** S73 "Send through an adapter": schema, allowlist and kind rules, typing, BPMN and simulation. */
 class AdapterStepRulesTest {
 
     private static final JsonMapper MAPPER = JsonMapper.builder().build();

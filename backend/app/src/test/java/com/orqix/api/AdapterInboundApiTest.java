@@ -253,7 +253,7 @@ class AdapterInboundApiTest extends RuntimeTestBase {
         assertThat(audit).doesNotContain("Replacement laptop", SECRET);
     }
 
-    // ---------------------------------------------------------------- S68: edit, disable, cap and retention
+    // ---------------------------------------------------------------- S73: edit, disable, cap and retention
 
     @Test
     void adaptersAndTriggersAreEditedAndDisabledUnderManageWithVersionChecks() throws Exception {

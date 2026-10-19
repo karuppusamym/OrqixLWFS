@@ -436,7 +436,7 @@ export function renameDecisionKey(def: Definition, oldKey: string, newKey: strin
   return { ok: true, def: next }
 }
 
-// Shared assets (PL01, docs/build/S57) -------------------------------------------------------------------------
+// Shared assets (PL01, docs/build/S61) -------------------------------------------------------------------------
 
 export function assetRef(def: Definition, kind: AssetRef['kind'], target: string): AssetRef | undefined {
   return def.dependencies.assets?.find((a) => a.kind === kind && a.target === target)

@@ -914,7 +914,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Compiled BPMN of a draft revision with its round-trip check (UI03, docs/build/S56)
+         * Compiled BPMN of a draft revision with its round-trip check (UI03, docs/build/S60)
          * @description The BPMN is exactly what publishing would deploy. It carries the workflow name, the steps, the connections,
          *     the sections and handlers (subprocesses, docs/build/S77) and (when every step has a canvas position) the
          *     diagram; keptFromDraft lists the sections BPMN does not carry.
@@ -952,7 +952,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Check edited BPMN against a draft revision without saving (UI03, docs/build/S56)
+         * Check edited BPMN against a draft revision without saving (UI03, docs/build/S60)
          * @description Applicable only when the draft itself round-trips exactly, the text is safe XML in the compiled dialect with
          *     nothing unsupported (comments, lanes, pools, sub-processes, foreign extensions and free expressions are listed
          *     as problems, never dropped), the process id equals the workflow key, the resulting draft compiles without
@@ -1166,7 +1166,7 @@ export interface paths {
          * @description Only the kinds the caller may read are searched (decisions and document templates need workflow.read, connections
          *     need connection.read); searchedKinds lists them, and a caller who may read none gets 403. q matches the name, the
          *     key or the owner's display name (case-insensitive substring). At most 300 results, ordered by name; truncated
-         *     tells when there were more. Archived assets are hidden unless includeArchived is true (docs/build/S57).
+         *     tells when there were more. Archived assets are hidden unless includeArchived is true (docs/build/S61).
          */
         get: operations["listSharedAssets"];
         put?: never;
@@ -2365,7 +2365,7 @@ export interface paths {
         put?: never;
         /**
          * Send a signal to one request
-         * @description docs/build/S55. Delivers the named signal to the steps ("Wait for a signal") and handlers of this request that are waiting for it now, oldest first. A signal never reaches another request. Refused with 409 SIGNAL_NOT_AWAITED when nothing in the request waits for it, RUN_SUSPENDED while suspended and RUN_NOT_ACTIVE when the request ended or changed since it was loaded.
+         * @description docs/build/S59. Delivers the named signal to the steps ("Wait for a signal") and handlers of this request that are waiting for it now, oldest first. A signal never reaches another request. Refused with 409 SIGNAL_NOT_AWAITED when nothing in the request waits for it, RUN_SUSPENDED while suspended and RUN_NOT_ACTIVE when the request ended or changed since it was loaded.
          */
         post: operations["sendRunSignal"];
         delete?: never;
@@ -3045,7 +3045,7 @@ export interface paths {
         };
         get?: never;
         /**
-         * Edit or disable an adapter (docs/build/S68)
+         * Edit or disable an adapter (docs/build/S73)
          * @description Kind and key never change. The configuration is validated exactly like on creation. `expectedVersion` must equal
          *     the stored version (409 CONFIGURATION_VERSION_CONFLICT otherwise). Workflow steps read the adapter again before
          *     every send, so disabling it or narrowing an allowlist stops later sends (the request then needs attention);
@@ -3117,7 +3117,7 @@ export interface paths {
         };
         get?: never;
         /**
-         * Edit or disable an inbound trigger (docs/build/S68)
+         * Edit or disable an inbound trigger (docs/build/S73)
          * @description Source, key and target workflow never change. A disabled trigger answers 404 to senders; events already received
          *     stay and can still be started or purged. `expectedVersion` must equal the stored version (409
          *     CONFIGURATION_VERSION_CONFLICT otherwise).
@@ -3189,7 +3189,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Delete received events older than a number of days (retention, docs/build/S68)
+         * Delete received events older than a number of days (retention, docs/build/S73)
          * @description Started events are always eligible; unstarted events only with `includeUnstarted`. Returns a count only; no event
          *     data. A purged event id that a sender repeats later is accepted as a new event.
          */
@@ -5385,7 +5385,7 @@ export interface components {
                 definitionHash: string;
             }[];
             groups: components["schemas"]["Key"][];
-            /** @description Shared asset versions the release's copies were published from (docs/build/S57) */
+            /** @description Shared asset versions the release's copies were published from (docs/build/S61) */
             assets?: {
                 kind: string;
                 key: components["schemas"]["Key"];
@@ -5697,7 +5697,7 @@ export interface components {
             /** @description Plain text with {{field}} placeholders, as in the Generate a document step */
             body: string;
             changeNote?: string | null;
-            /** @description Stable key used by versioned workflow references (docs/build/S57); derived from the name when omitted */
+            /** @description Stable key used by versioned workflow references (docs/build/S61); derived from the name when omitted */
             key?: components["schemas"]["Key"];
         };
         AddDocumentTemplateVersion: {
@@ -5841,7 +5841,7 @@ export interface components {
             from: string;
             to: string;
             /**
-             * @description error only on a section error route (S55).
+             * @description error only on a section error route (S59).
              * @enum {string}
              */
             on: "next" | "approved" | "rejected" | "timedOut" | "failed" | "condition" | "default" | "error";
@@ -5875,7 +5875,7 @@ export interface components {
             diagram: {
                 nodes: components["schemas"]["PathNode"][];
                 transitions: components["schemas"]["PathTransition"][];
-                /** @description Sections and handlers (S55). */
+                /** @description Sections and handlers (S59). */
                 scopes?: components["schemas"]["PathScope"][];
             };
             visited: components["schemas"]["PathVisit"][];
@@ -5884,7 +5884,7 @@ export interface components {
             taken: string[];
             /** @description History exceeded the diagram limit; only current steps are reliable. */
             historyTruncated?: boolean;
-            /** @description Each time a section was entered or a handler started (S55). */
+            /** @description Each time a section was entered or a handler started (S59). */
             scopeVisits?: components["schemas"]["PathScopeVisit"][];
         };
         PathScope: {

@@ -15,7 +15,7 @@ export const FINDING_LABELS: Record<ConsistencyFinding['state'], string> = {
 }
 
 /**
- * Findings of the periodic consistency scan (EX09, docs/build/S67). The scan only reports; each finding opens the request,
+ * Findings of the periodic consistency scan (EX09, docs/build/S72). The scan only reports; each finding opens the request,
  * where the guarded "Check consistency" action rebuilds or cancels. Shown to operators only, and only when there is
  * something to say (the scan is opt-in, so a quiet panel is not noise).
  */

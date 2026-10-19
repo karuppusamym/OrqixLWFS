@@ -29,7 +29,7 @@ function messageOf(error: unknown): string {
 }
 
 /**
- * Shared decision link for one rule table (PL01, docs/build/S57). The table always holds its own copy; the link pins
+ * Shared decision link for one rule table (PL01, docs/build/S61). The table always holds its own copy; the link pins
  * the shared version it came from. Validation and publish compare the copy with that version, report a newer version
  * and block an archived or missing asset, so a change to the shared decision never reaches this workflow by itself.
  */

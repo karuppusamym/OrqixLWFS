@@ -49,11 +49,11 @@ public class OrqixRoute {
         return matches(execution, condition);
     }
 
-    /** Prefix of the process variable that holds the step a section was left to (S55). */
+    /** Prefix of the process variable that holds the step a section was left to (S59). */
     static final String EXIT_VARIABLE = "orqix_exit_";
 
     /**
-     * Records, when a section is left through one of its generated end events, which step it continues at (S55). The
+     * Records, when a section is left through one of its generated end events, which step it continues at (S59). The
      * identifiers come from the generated BPMN, never from user text.
      */
     public void markExit(DelegateExecution execution, String scopeId, String targetNodeId) {

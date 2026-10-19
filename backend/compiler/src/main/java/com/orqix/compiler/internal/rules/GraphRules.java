@@ -107,7 +107,7 @@ final class GraphRules {
                 case WAIT_FOR_MESSAGE -> ((Node.WaitForMessage) n).timeoutAfter() != null
                         ? Set.of(Route.NEXT, Route.TIMED_OUT) : Set.of(Route.NEXT);
                 case HTTP, START_WORKFLOW -> Set.of(Route.NEXT, Route.FAILED);
-                // A raised error ends the path; the section or handler that catches it decides what happens (S55).
+                // A raised error ends the path; the section or handler that catches it decides what happens (S59).
                 case RAISE_ERROR -> Set.of();
                 default -> Set.of(Route.NEXT);
             };
@@ -213,7 +213,7 @@ final class GraphRules {
                 default -> {
                     int next = counts.getOrDefault(Route.NEXT, 0);
                     if (next == 0 && mayEndHere && rc.leaving(n).isEmpty()) {
-                        // The last step of a handler that runs alongside the request simply ends there (S55).
+                        // The last step of a handler that runs alongside the request simply ends there (S59).
                         continue;
                     }
                     if (next == 0) {

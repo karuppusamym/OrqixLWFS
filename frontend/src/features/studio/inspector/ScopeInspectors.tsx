@@ -9,7 +9,7 @@ import { cfg, type Definition, type SubprocessDef, type WorkflowNode } from '../
 import { Advanced, CommitInput, InspectorSection } from './controls'
 import { StepIdField } from './SimpleInspectors'
 
-/** Signal names follow the workflow schema (docs/build/S55). */
+/** Signal names follow the workflow schema (docs/build/S59). */
 export const SIGNAL_PATTERN = /^[a-z][a-zA-Z0-9]*(-[a-z0-9][a-zA-Z0-9]*)*$/
 /** Business error codes; ORQIX_ is reserved for the platform. */
 export const ERROR_CODE_PATTERN = /^[A-Z][A-Z0-9_]{1,39}$/
@@ -91,7 +91,7 @@ export function CompensateInspector({ node }: { node: WorkflowNode }) {
   )
 }
 
-/** Sets or clears the automatic undo of a call; an automatic undo call keeps no paths of its own (S55). */
+/** Sets or clears the automatic undo of a call; an automatic undo call keeps no paths of its own (S59). */
 export function setUndo(def: Definition, nodeId: string, compensates: string | undefined, automatic: boolean): Definition {
   const next = structuredClone(def)
   const node = next.nodes.find((n) => n.id === nodeId)
@@ -134,11 +134,11 @@ export function UndoFields({ node }: { node: WorkflowNode }) {
   )
 }
 
-/** Default code offered when a call opts in and its section's error route catches any code (S66). */
+/** Default code offered when a call opts in and its section's error route catches any code (S71). */
 export const DEFAULT_CALL_ERROR = 'CALL_FAILED'
 
 /**
- * Turns a call's opt-in to raise a business error on a failure for good on (with a code) or off (S66). A call that
+ * Turns a call's opt-in to raise a business error on a failure for good on (with a code) or off (S71). A call that
  * raises an error has no Failed route of its own, so turning it on removes that route.
  */
 export function setRaiseOnFailure(def: Definition, nodeId: string, code: string | undefined): Definition {
@@ -237,7 +237,7 @@ export function removeSubprocess(def: Definition, id: string): Definition {
   return rest
 }
 
-/** Sections and handlers (docs/build/S55), authored like case stages: a scope over existing steps. */
+/** Sections and handlers (docs/build/S59), authored like case stages: a scope over existing steps. */
 export function SubprocessesInspector() {
   const def = useStudio((s) => s.definition)
   const { store, readOnly } = useStudioContext()

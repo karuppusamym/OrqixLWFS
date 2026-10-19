@@ -409,7 +409,7 @@ public class OperatorService {
     }
 
     /**
-     * Sends a signal to one request (S55): only steps and handlers of this request that wait for it receive it; a
+     * Sends a signal to one request (S59): only steps and handlers of this request that wait for it receive it; a
      * signal never reaches another request. Needs {@code run.operate}, an idempotency key, a reason and the current
      * version; refused with 409 SIGNAL_NOT_AWAITED when nothing in the request waits for it.
      */
@@ -504,7 +504,7 @@ public class OperatorService {
         return repairs.diagnose(visible.run()).diagnosis();
     }
 
-    /** Open findings of the periodic scan (docs/build/S67): run.operate in the workspace; read-only. */
+    /** Open findings of the periodic scan (docs/build/S72): run.operate in the workspace; read-only. */
     @Transactional(readOnly = true)
     public RuntimeDtos.ConsistencyFindings consistencyFindings(Caller caller, UUID workspaceId, Integer limit) {
         var access = policy.freshAccess(caller, workspaceId).filter(a -> a.visible()).orElseThrow(ApiException::notFound);

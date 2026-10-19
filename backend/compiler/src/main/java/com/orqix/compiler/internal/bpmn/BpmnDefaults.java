@@ -12,7 +12,7 @@ import tools.jackson.databind.node.JsonNodeFactory;
 import tools.jackson.databind.node.ObjectNode;
 
 /**
- * Explicitly written defaults and field titles in the BPMN round trip (UI03, docs/build/S65).
+ * Explicitly written defaults and field titles in the BPMN round trip (UI03, docs/build/S70).
  * <p>
  * <b>Default.</b> A step setting is a default when all three hold: (1) the workflow schema allows leaving it out,
  * (2) the compiler's model reader ({@code ModelReader}) uses exactly this value when it is left out, so the compiled

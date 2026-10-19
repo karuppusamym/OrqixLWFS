@@ -27,7 +27,7 @@ import com.orqix.shared.json.Json;
 import tools.jackson.databind.JsonNode;
 
 /**
- * Delegate {@code orqixCompensationTask} of an "Undo completed calls" step (docs/build/S55), executed by the async
+ * Delegate {@code orqixCompensationTask} of an "Undo completed calls" step (docs/build/S59), executed by the async
  * executor inside a job transaction.
  * <ol>
  * <li>The first time, it fixes the plan: every call named by an {@code orqix:undo} entry whose effect journal entry in

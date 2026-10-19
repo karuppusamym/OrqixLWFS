@@ -67,7 +67,7 @@ public class HttpTaskDelegate implements JavaDelegate {
         int timeoutSeconds = Integer.parseInt(OrqixModel.attribute(http, "timeoutSeconds"));
         Map<String, String> inputs = OrqixModel.childMap(http, "input", "fieldRef");
         Map<String, String> results = OrqixModel.childMap(http, "result", "pointer");
-        // Opt-in (S66): a known failure becomes this business error for the error route of the call's section.
+        // Opt-in (S71): a known failure becomes this business error for the error route of the call's section.
         String raise = OrqixModel.attribute(http, "raiseOnFailure");
 
         UUID workspaceId = ProcessData.workspaceId(execution);
@@ -125,7 +125,7 @@ public class HttpTaskDelegate implements JavaDelegate {
         String error = routeKnownFailure(execution, element, failed, workspaceId, runId, connection, operation, raise);
         if (error != null) {
             // The engine catches this business error at the generated interrupting boundary (the step's failure path,
-            // or with the S66 opt-in its section's error route) in the same transaction. Journal completion is already
+            // or with the S71 opt-in its section's error route) in the same transaction. Journal completion is already
             // durable; no failed-job retry or dead-letter transition is requested.
             throw new BpmnError(error);
         }
@@ -135,7 +135,7 @@ public class HttpTaskDelegate implements JavaDelegate {
 
     /**
      * @return the BPMN error code to throw for a known permanent failure the workflow routes ({@code ORQIX_STEP_FAILED}
-     *         for the step's own failure path, or the S66 opt-in code for its section's error route), or null when the
+     *         for the step's own failure path, or the S71 opt-in code for its section's error route), or null when the
      *         failure is not routed and becomes an ordinary job failure
      */
     private String routeKnownFailure(DelegateExecution execution, FlowElement element, EffectDispatcher.Failed failed,

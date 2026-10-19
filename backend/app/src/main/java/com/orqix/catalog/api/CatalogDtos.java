@@ -63,7 +63,7 @@ public final class CatalogDtos {
     public record ValidateRequest(@NotNull @Min(1) Integer revision) {
     }
 
-    /** UI03 BPMN source (docs/build/S56): one difference of the draft's own BPMN round trip. */
+    /** UI03 BPMN source (docs/build/S60): one difference of the draft's own BPMN round trip. */
     public record BpmnDifference(String path, String message) {
     }
 

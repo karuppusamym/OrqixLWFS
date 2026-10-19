@@ -50,7 +50,7 @@ public class AdapterService {
     public record SendRequest(@NotNull JsonNode payload) {
     }
 
-    /** Kind and key never change; {@code expectedVersion} is the version the editor loaded (S68). */
+    /** Kind and key never change; {@code expectedVersion} is the version the editor loaded (S73). */
     public record UpdateRequest(@NotBlank @Size(max = 100) String name,
             @NotNull @Pattern(regexp = "^[a-z0-9][a-z0-9-]{0,62}$") String secretRef,
             @NotNull JsonNode config, @NotNull Boolean enabled, @NotNull @Min(1) Integer expectedVersion) {
@@ -133,7 +133,7 @@ public class AdapterService {
     }
 
     /**
-     * Edits or disables an adapter (S68). The configuration is validated exactly like on creation. Releases are not
+     * Edits or disables an adapter (S73). The configuration is validated exactly like on creation. Releases are not
      * re-checked here: every later send reads the adapter again, so a narrowed allowlist or a disabled adapter stops the
      * sends it no longer allows (the request then needs attention), and a widened allowlist adds no recipient or topic
      * because those are fixed in each step.

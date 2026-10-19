@@ -395,7 +395,7 @@ public class PromotionService {
         return result;
     }
 
-    // ---------------------------------------------------------------- approval gate (docs/build/S69)
+    // ---------------------------------------------------------------- approval gate (docs/build/S74)
 
     private static final String REQUEST_SELECT = """
             SELECT r.id, r.status, r.source_workspace_key, r.source_workflow_key, r.source_release_number,

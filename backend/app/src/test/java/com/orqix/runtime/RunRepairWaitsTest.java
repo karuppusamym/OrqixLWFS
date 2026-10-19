@@ -29,7 +29,7 @@ import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
 /**
- * EX09 extension (docs/build/S67): lost projections of date waits, message waits and external-worker steps are rebuilt
+ * EX09 extension (docs/build/S72): lost projections of date waits, message waits and external-worker steps are rebuilt
  * from what the engine holds, and refused when the engine state does not fully determine them. PostgreSQL and
  * Flowable through the public API.
  */

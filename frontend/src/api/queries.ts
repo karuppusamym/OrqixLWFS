@@ -232,7 +232,7 @@ export function useRunDiagnosis(ws: string, runId: string, enabled: boolean) {
   return useQuery({ queryKey: keys.runDiagnosis(ws, runId), queryFn: () => endpoints.getRunDiagnosis(ws, runId), enabled, retry: false, gcTime: 0 })
 }
 
-/** Findings of the periodic consistency scan (EX09, S67); read-only and only for operators. */
+/** Findings of the periodic consistency scan (EX09, S72); read-only and only for operators. */
 export function useConsistencyFindings(ws: string, enabled: boolean) {
   return useQuery({ queryKey: keys.consistencyFindings(ws), queryFn: () => endpoints.listConsistencyFindings(ws, 50), enabled, retry: false, refetchInterval: 60_000 })
 }

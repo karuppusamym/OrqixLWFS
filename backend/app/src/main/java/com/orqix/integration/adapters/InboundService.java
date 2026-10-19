@@ -67,14 +67,14 @@ public class InboundService implements InboundEvents {
             Instant updatedAt) {
     }
 
-    /** Source, key and target workflow never change; {@code expectedVersion} is the version the editor loaded (S68). */
+    /** Source, key and target workflow never change; {@code expectedVersion} is the version the editor loaded (S73). */
     public record UpdateTrigger(@NotBlank @Size(max = 100) String name,
             @NotNull @jakarta.validation.constraints.Pattern(regexp = "^[a-z0-9][a-z0-9-]{0,62}$") String secretRef,
             JsonNode filter, @NotNull JsonNode mapping, @NotNull Boolean enabled,
             @NotNull @jakarta.validation.constraints.Min(1) Integer expectedVersion) {
     }
 
-    /** Retention purge (S68): events received more than {@code olderThanDays} days ago. */
+    /** Retention purge (S73): events received more than {@code olderThanDays} days ago. */
     public record PurgeRequest(
             @NotNull @jakarta.validation.constraints.Min(1) @jakarta.validation.constraints.Max(3650) Integer olderThanDays,
             Boolean includeUnstarted) {
@@ -164,7 +164,7 @@ public class InboundService implements InboundEvents {
     }
 
     /**
-     * Edits or disables a trigger (S68). A disabled trigger answers 404 to senders like an unknown one; events already
+     * Edits or disables a trigger (S73). A disabled trigger answers 404 to senders like an unknown one; events already
      * received stay and can still be started or purged, with the values mapped when they arrived.
      */
     @Transactional
@@ -217,7 +217,7 @@ public class InboundService implements InboundEvents {
     }
 
     /**
-     * Retention (S68): deletes events received before the cutoff. Started events are always eligible (the run keeps its
+     * Retention (S73): deletes events received before the cutoff. Started events are always eligible (the run keeps its
      * own record and the audit log names the event); unstarted ones only with {@code includeUnstarted}, because someone
      * may still start them. Only a count is returned. A sender that repeats a purged event id later is accepted as a new
      * event: deduplication lasts as long as the event is kept.

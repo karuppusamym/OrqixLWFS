@@ -129,6 +129,219 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/cases/instances/{instanceId}/suspend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply the suspend case lifecycle command
+         * @description Requires current permission, current case version, a reason and an idempotency key. Human task controls also require current candidate-group eligibility. A held case refuses work changes; close/stage completion never bypass required or active work. Hold/resume freeze the admitted synchronous subset through the Orqix command boundary; they do not claim a native Flowable CMMN suspended plan-item state. Audit metadata excludes reasons.
+         */
+        post: operations["suspendCaseInstance"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/cases/instances/{instanceId}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply the resume case lifecycle command
+         * @description Requires current permission, current case version, a reason and an idempotency key. Human task controls also require current candidate-group eligibility. A held case refuses work changes; close/stage completion never bypass required or active work. Hold/resume freeze the admitted synchronous subset through the Orqix command boundary; they do not claim a native Flowable CMMN suspended plan-item state. Audit metadata excludes reasons.
+         */
+        post: operations["resumeCaseInstance"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/cases/instances/{instanceId}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply the close case lifecycle command
+         * @description Requires current permission, current case version, a reason and an idempotency key. Human task controls also require current candidate-group eligibility. A held case refuses work changes; close/stage completion never bypass required or active work. Hold/resume freeze the admitted synchronous subset through the Orqix command boundary; they do not claim a native Flowable CMMN suspended plan-item state. Audit metadata excludes reasons.
+         */
+        post: operations["closeCaseInstance"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+                planItemId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply the start case plan-item command
+         * @description Requires current permission, current case version, a reason and an idempotency key. Human task controls also require current candidate-group eligibility. A held case refuses work changes; close/stage completion never bypass required or active work. Hold/resume freeze the admitted synchronous subset through the Orqix command boundary; they do not claim a native Flowable CMMN suspended plan-item state. Audit metadata excludes reasons.
+         */
+        post: operations["startCasePlanItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+                planItemId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply the enable case plan-item command
+         * @description Requires current permission, current case version, a reason and an idempotency key. Human task controls also require current candidate-group eligibility. A held case refuses work changes; close/stage completion never bypass required or active work. Hold/resume freeze the admitted synchronous subset through the Orqix command boundary; they do not claim a native Flowable CMMN suspended plan-item state. Audit metadata excludes reasons.
+         */
+        post: operations["enableCasePlanItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+                planItemId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply the disable case plan-item command
+         * @description Requires current permission, current case version, a reason and an idempotency key. Human task controls also require current candidate-group eligibility. A held case refuses work changes; close/stage completion never bypass required or active work. Hold/resume freeze the admitted synchronous subset through the Orqix command boundary; they do not claim a native Flowable CMMN suspended plan-item state. Audit metadata excludes reasons.
+         */
+        post: operations["disableCasePlanItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/activateStage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+                planItemId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply the activateStage case plan-item command
+         * @description Requires current permission, current case version, a reason and an idempotency key. Human task controls also require current candidate-group eligibility. A held case refuses work changes; close/stage completion never bypass required or active work. Hold/resume freeze the admitted synchronous subset through the Orqix command boundary; they do not claim a native Flowable CMMN suspended plan-item state. Audit metadata excludes reasons.
+         */
+        post: operations["activateCaseStage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/completeStage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+                planItemId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply the completeStage case plan-item command
+         * @description Requires current permission, current case version, a reason and an idempotency key. Human task controls also require current candidate-group eligibility. A held case refuses work changes; close/stage completion never bypass required or active work. Hold/resume freeze the admitted synchronous subset through the Orqix command boundary; they do not claim a native Flowable CMMN suspended plan-item state. Audit metadata excludes reasons.
+         */
+        post: operations["completeCaseStage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/terminate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+                planItemId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply the terminate case plan-item command
+         * @description Requires current permission, current case version, a reason and an idempotency key. Human task controls also require current candidate-group eligibility. A held case refuses work changes; close/stage completion never bypass required or active work. Hold/resume freeze the admitted synchronous subset through the Orqix command boundary; they do not claim a native Flowable CMMN suspended plan-item state. Audit metadata excludes reasons.
+         */
+        post: operations["terminateCasePlanItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/cases/instances/{instanceId}/tasks/{taskId}/complete": {
         parameters: {
             query?: never;
@@ -3372,6 +3585,25 @@ export interface components {
             createdAt: components["schemas"]["Timestamp"];
             /** Format: date-time */
             endedAt: string | null;
+            required: boolean;
+            allowedActions: {
+                [key: string]: boolean;
+            };
+        };
+        CaseEvent: {
+            version: number;
+            action: string;
+            planItemId: string | null;
+            fromStatus: string | null;
+            toStatus: string;
+            actorId: components["schemas"]["Uuid"];
+            actorName: string | null;
+            reason: string | null;
+            occurredAt: components["schemas"]["Timestamp"];
+        };
+        CaseCommand: {
+            expectedVersion: number;
+            reason: string;
         };
         CaseMilestone: {
             id: string;
@@ -3382,6 +3614,8 @@ export interface components {
         CasePlanOverview: {
             items: components["schemas"]["CasePlanItem"][];
             milestones: components["schemas"]["CaseMilestone"][];
+            events: components["schemas"]["CaseEvent"][];
+            canClose: boolean;
         };
         CaseTask: {
             id: string;
@@ -3396,7 +3630,7 @@ export interface components {
             definitionId: components["schemas"]["Uuid"];
             definitionVersion: number;
             /** @enum {string} */
-            status: "active" | "completed" | "terminated";
+            status: "active" | "suspended" | "completed" | "terminated";
             version: number;
             tasks: components["schemas"]["CaseTask"][];
             createdAt: components["schemas"]["Timestamp"];
@@ -7555,6 +7789,336 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    suspendCaseInstance: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CaseCommand"];
+            };
+        };
+        responses: {
+            /** @description Updated case or replay */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseInstance"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    resumeCaseInstance: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CaseCommand"];
+            };
+        };
+        responses: {
+            /** @description Updated case or replay */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseInstance"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    closeCaseInstance: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CaseCommand"];
+            };
+        };
+        responses: {
+            /** @description Updated case or replay */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseInstance"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    startCasePlanItem: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+                planItemId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CaseCommand"];
+            };
+        };
+        responses: {
+            /** @description Updated case or replay */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseInstance"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    enableCasePlanItem: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+                planItemId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CaseCommand"];
+            };
+        };
+        responses: {
+            /** @description Updated case or replay */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseInstance"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    disableCasePlanItem: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+                planItemId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CaseCommand"];
+            };
+        };
+        responses: {
+            /** @description Updated case or replay */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseInstance"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    activateCaseStage: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+                planItemId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CaseCommand"];
+            };
+        };
+        responses: {
+            /** @description Updated case or replay */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseInstance"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    completeCaseStage: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+                planItemId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CaseCommand"];
+            };
+        };
+        responses: {
+            /** @description Updated case or replay */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseInstance"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    terminateCasePlanItem: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+                planItemId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CaseCommand"];
+            };
+        };
+        responses: {
+            /** @description Updated case or replay */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseInstance"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     completeCaseTask: {

@@ -26,19 +26,24 @@ public class CmmnSubsetValidator {
             Map.entry("definitions", Set.of("case")),
             Map.entry("case", Set.of("casePlanModel")),
             Map.entry("casePlanModel", PLAN_CHILDREN),
-            Map.entry("stage", PLAN_CHILDREN),
-            Map.entry("planItem", Set.of("entryCriterion", "exitCriterion")),
+            Map.entry("stage", union(PLAN_CHILDREN,"defaultControl")),
+            Map.entry("planItem", Set.of("entryCriterion", "exitCriterion", "itemControl")),
             Map.entry("entryCriterion", Set.of()),
             Map.entry("exitCriterion", Set.of()),
             Map.entry("sentry", Set.of("planItemOnPart")),
             Map.entry("planItemOnPart", Set.of("standardEvent")),
             Map.entry("standardEvent", Set.of()),
-            Map.entry("humanTask", Set.of()),
-            Map.entry("milestone", Set.of()));
+            Map.entry("humanTask", Set.of("defaultControl")),
+            Map.entry("milestone", Set.of("defaultControl")),
+            Map.entry("defaultControl", Set.of("manualActivationRule", "requiredRule")),
+            Map.entry("itemControl", Set.of("manualActivationRule", "requiredRule")),
+            Map.entry("manualActivationRule", Set.of("condition")),
+            Map.entry("requiredRule", Set.of("condition")),
+            Map.entry("condition", Set.of()));
     private static final Map<String, Set<String>> ATTRIBUTES = Map.ofEntries(
             Map.entry("definitions", Set.of("targetNamespace")),
             Map.entry("case", Set.of("id", "name")),
-            Map.entry("casePlanModel", Set.of("id", "name")),
+            Map.entry("casePlanModel", Set.of("id", "name", "autoComplete")),
             Map.entry("stage", Set.of("id", "name", "autoComplete")),
             Map.entry("planItem", Set.of("id", "name", "definitionRef")),
             Map.entry("entryCriterion", Set.of("id", "sentryRef")),
@@ -47,23 +52,18 @@ public class CmmnSubsetValidator {
             Map.entry("planItemOnPart", Set.of("id", "sourceRef")),
             Map.entry("standardEvent", Set.of()),
             Map.entry("humanTask", Set.of("id", "name")),
-            Map.entry("milestone", Set.of("id", "name")));
+            Map.entry("milestone", Set.of("id", "name")),
+            Map.entry("defaultControl", Set.of("id")),
+            Map.entry("itemControl", Set.of("id")),
+            Map.entry("manualActivationRule", Set.of("id")),
+            Map.entry("requiredRule", Set.of("id")),
+            Map.entry("condition", Set.of()));
 
     public Set<String> validate(String xml, String key) {
         if (xml == null || xml.getBytes(StandardCharsets.UTF_8).length > 65536 || xml.isBlank())
             throw invalid("CMMN source must be 1 to 65536 bytes.");
         try {
-            var factory = DocumentBuilderFactory.newInstance();
-            factory.setNamespaceAware(true);
-            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-            factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
-            factory.setXIncludeAware(false);
-            factory.setExpandEntityReferences(false);
-            factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
-            factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
-            var doc = factory.newDocumentBuilder().parse(new InputSource(new StringReader(xml)));
+            var doc = parse(xml);
             var root = doc.getDocumentElement();
             if (!CMMN.equals(root.getNamespaceURI()) || !"definitions".equals(root.getLocalName()))
                 throw invalid("Expected CMMN 1.1 definitions.");
@@ -88,9 +88,71 @@ public class CmmnSubsetValidator {
         }
     }
 
+    private static Set<String> union(Set<String> values,String extra) {
+        var out=new HashSet<>(values); out.add(extra); return Set.copyOf(out);
+    }
+
+    private static org.w3c.dom.Document parse(String xml) throws Exception {
+            var factory = DocumentBuilderFactory.newInstance();
+            factory.setNamespaceAware(true);
+            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            factory.setXIncludeAware(false);
+            factory.setExpandEntityReferences(false);
+            factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+            factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
+            return factory.newDocumentBuilder().parse(new InputSource(new StringReader(xml)));
+    }
+
+    /** The source was admitted and pinned at publication; parsing still prohibits external XML resolution. */
+    public Map<String,Set<String>> humanTaskGroups(String xml) {
+        try {
+            var out=new HashMap<String,Set<String>>();
+            var tasks=parse(xml).getElementsByTagNameNS(CMMN,"humanTask");
+            for(int index=0;index<tasks.getLength();index++) {
+                var task=(Element)tasks.item(index);
+                out.put(task.getAttribute("id"),Set.copyOf(java.util.List.of(task.getAttributeNS(FLOWABLE,"candidateGroups").split(","))));
+            }
+            return Map.copyOf(out);
+        } catch(Exception ex) { throw invalid("The pinned case definition cannot be read."); }
+    }
+
+    public Set<String> requiredPlanItems(String xml) {
+        try {
+            var document=parse(xml); var byId=new HashMap<String,Element>();
+            var elements=document.getElementsByTagNameNS(CMMN,"*");
+            for(int index=0;index<elements.getLength();index++) {
+                var element=(Element)elements.item(index);
+                if(element.hasAttribute("id")) byId.put(element.getAttribute("id"),element);
+            }
+            var required=new HashSet<String>();
+            for(var element:byId.values()) {
+                if(!"planItem".equals(element.getLocalName())) continue;
+                Element rule=null;
+                for(var control:children(element,"itemControl")) {
+                    var rules=children(control,"requiredRule"); if(!rules.isEmpty()) rule=rules.getFirst();
+                }
+                if(rule==null) {
+                    var definition=byId.get(element.getAttribute("definitionRef"));
+                    if(definition!=null) for(var control:children(definition,"defaultControl")) {
+                        var rules=children(control,"requiredRule"); if(!rules.isEmpty()) rule=rules.getFirst();
+                    }
+                }
+                if(rule!=null && (children(rule,"condition").isEmpty()
+                        || !"${false}".equals(children(rule,"condition").getFirst().getTextContent().strip())))
+                    required.add(element.getAttribute("id"));
+            }
+            return Set.copyOf(required);
+        } catch(Exception ex) { throw invalid("The pinned case controls cannot be read."); }
+    }
+
     /** CMMN stage scopes are lexical: definitions, sentries and event sources must belong to the same plan. */
     private static boolean validatePlan(Element plan, Map<String, Element> ids, int depth) {
         if (depth > 4) throw invalid("At most four nested stages are supported.");
+        if (plan.hasAttribute("autoComplete") && !Set.of("true", "false").contains(plan.getAttribute("autoComplete")))
+            throw invalid("Stage autoComplete must be a literal boolean.");
         var items = children(plan, "planItem");
         if (items.isEmpty()) throw invalid("Every stage needs at least one plan item.");
         boolean initialHuman = false;
@@ -106,10 +168,15 @@ public class CmmnSubsetValidator {
                 throw invalid("Every plan item must reference a human task, milestone or stage defined in its own stage.");
             if (!used.add(definition.getAttribute("id")))
                 throw invalid("Each task, milestone or stage definition may be instantiated only once in this subset.");
+            if ("milestone".equals(definition.getLocalName())) {
+                for (var control : children(item,"itemControl"))
+                    if (!children(control,"manualActivationRule").isEmpty()) throw invalid("Milestones cannot be manually activated.");
+            }
             boolean stageHuman = "stage".equals(definition.getLocalName()) && validatePlan(definition, ids, depth + 1);
             if (children(item, "entryCriterion").isEmpty() && ("humanTask".equals(definition.getLocalName()) || stageHuman))
                 initialHuman = true;
             for (var criterion : children(item)) {
+                if ("itemControl".equals(criterion.getLocalName())) continue;
                 if ("milestone".equals(definition.getLocalName()) && "exitCriterion".equals(criterion.getLocalName()))
                     throw invalid("A milestone cannot have an exit criterion.");
                 var sentry = ids.get(criterion.getAttribute("sentryRef"));
@@ -161,7 +228,27 @@ public class CmmnSubsetValidator {
             throw invalid("A required CMMN ID is missing.");
         if (kind.equals("humanTask") && !element.hasAttributeNS(FLOWABLE, "candidateGroups"))
             throw invalid("Every human task needs candidate groups.");
-        if (kind.equals("standardEvent")) {
+        if (Set.of("defaultControl","itemControl").contains(kind)) {
+            for (String rule : Set.of("manualActivationRule","requiredRule"))
+                if (children(element,rule).size()>1) throw invalid("An item control may define each rule only once.");
+            boolean sawManual=false;
+            for(var rule : children(element)) {
+                if("manualActivationRule".equals(rule.getLocalName())) sawManual=true;
+                else if(sawManual) throw invalid("Required rules must precede manual activation rules in CMMN XML.");
+            }
+            Element controlled = (Element) element.getParentNode();
+            if ("milestone".equals(controlled.getLocalName()) && !children(element,"manualActivationRule").isEmpty())
+                throw invalid("Milestones cannot be manually activated.");
+        }
+        if (Set.of("planItem","humanTask","stage","milestone").contains(kind)
+                && (children(element,"itemControl").size()>1 || children(element,"defaultControl").size()>1))
+            throw invalid("A plan item or definition may have only one control.");
+        if (Set.of("manualActivationRule","requiredRule").contains(kind) && children(element,"condition").size()>1)
+            throw invalid("An item rule may have at most one condition.");
+        if (kind.equals("condition")) {
+            if (!Set.of("${true}","${false}").contains(element.getTextContent().strip()))
+                throw invalid("Item controls currently support only constant boolean conditions.");
+        } else if (kind.equals("standardEvent")) {
             if (element.getTextContent().length() > 20) throw invalid("Invalid standard event.");
         } else if (element.getTextContent().strip().length() > 0 && children(element).isEmpty())
             throw invalid("Unexpected text in CMMN model.");
@@ -180,7 +267,7 @@ public class CmmnSubsetValidator {
         for (int i = 0; i < nodes.getLength(); i++) {
             Node node = nodes.item(i);
             if (node instanceof Element element) result.add(element);
-            else if (node.getNodeType() == Node.TEXT_NODE && !node.getTextContent().isBlank() && !"standardEvent".equals(parent.getLocalName()))
+            else if (node.getNodeType() == Node.TEXT_NODE && !node.getTextContent().isBlank() && !Set.of("standardEvent","condition").contains(parent.getLocalName()))
                 throw invalid("Unexpected CMMN text.");
         }
         return result;

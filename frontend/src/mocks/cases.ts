@@ -4,7 +4,7 @@ import { clock, inGroup, isMember, newId, permissionsOf, WS_PURCHASING, type Moc
 
 type Definition = components['schemas']['CaseDefinition']
 type Instance = components['schemas']['CaseInstance']
-type Row = { value: Instance; startedBy: string; step: number }
+type Row = { value: Instance; startedBy: string; step: number; events?: components['schemas']['CaseEvent'][] }
 
 const B = '/api/v1'
 const DEMO_DEFINITION: Definition = { id: '77777777-7777-4777-8777-777777777701', key: 'demoCase', name: 'Evidence review', version: 1, createdAt: '2026-10-17T12:00:00Z' }
@@ -13,6 +13,7 @@ let definitions: Array<Definition & { ws: string }> = []
 let instances: Row[] = []
 const replays = new Map<string, Instance>()
 const terminations = new Map<string, { request: string; value: Instance }>()
+const lifecycleCommands = new Map<string, { request: string; value: Instance }>()
 
 const task = (step: number): Instance['tasks'][number] => step === 0
   ? { id: 'demo-collect', name: 'Collect evidence', status: 'available', candidateGroups: ['managers'], eligible: false }
@@ -25,6 +26,7 @@ export function resetMockCases(): void {
       tasks: [task(0)], createdAt: clock.iso() } }]
   replays.clear()
   terminations.clear()
+  lifecycleCommands.clear()
 }
 
 export function snapshotMockCases(): string { return JSON.stringify({ definitions, instances }) }
@@ -46,7 +48,7 @@ function visible(row: Row, user: MockUser, ws: string): boolean {
 }
 
 function project(row: Row, user: MockUser): Instance {
-  return { ...row.value, tasks: row.value.tasks.map(item => ({ ...item, eligible: item.candidateGroups.some(group => inGroup(user, group)) })) }
+  return { ...row.value, tasks: row.value.tasks.map(item => ({ ...item, eligible: row.value.status === 'active' && item.candidateGroups.some(group => inGroup(user, group)) })) }
 }
 
 /** Lightweight walkthrough behavior only; arbitrary CMMN deployment is exercised against the real backend. */
@@ -67,12 +69,35 @@ export function createCaseHandlers(getUser: () => MockUser): HttpHandler[] {
       const replay = terminations.get(replayKey)
       if (replay) return replay.request === fingerprint ? HttpResponse.json(replay.value, { headers: { 'Idempotent-Replayed': 'true' } }) : failure(409, 'IDEMPOTENCY_KEY_REUSED', 'The command changed.')
       if (row.value.version !== body.expectedVersion) return failure(409, 'TASK_VERSION_CONFLICT', 'Refresh the case.')
-      if (row.value.status !== 'active') return failure(409, 'TASK_NOT_OPEN', 'The case has ended.')
+      if (!['active', 'suspended'].includes(row.value.status)) return failure(409, 'TASK_NOT_OPEN', 'The case has ended.')
       row.value = { ...row.value, status: 'terminated', version: row.value.version + 1, tasks: [] }
       const value = project(row, user)
       terminations.set(replayKey, { request: fingerprint, value })
       return HttpResponse.json(value)
     }),
+    ...(['suspend', 'resume', 'close'] as const).map(action => http.post(`${B}/workspaces/:ws/cases/instances/:id/${action}`, async ({ params, request }) => {
+      const ws = String(params.ws), user = getUser(), perms = permissionsOf(user, ws)
+      if (!member(ws, user)) return failure(404, 'NOT_FOUND', 'Workspace not found.')
+      if (!perms.includes('run.operate')) return failure(403, 'FORBIDDEN', 'Case operations are not allowed.')
+      const row = instances.find(value => value.value.id === String(params.id) && definitions.some(def => def.ws === ws && def.id === value.value.definitionId))
+      if (!row) return failure(404, 'NOT_FOUND', 'Case not found.')
+      const key = request.headers.get('Idempotency-Key')
+      if (!key) return failure(400, 'MALFORMED_REQUEST', 'Idempotency-Key is required.')
+      const body = await request.json() as { expectedVersion: number; reason: string }
+      if (!Number.isInteger(body.expectedVersion) || body.expectedVersion < 1 || typeof body.reason !== 'string' || !body.reason.trim() || body.reason.length > 1000) return failure(422, 'VALIDATION_FAILED', 'Supply a current version and reason.')
+      const replayKey = `${ws}:${user.id}:${action}:${key}`, fingerprint = JSON.stringify({ id: row.value.id, ...body })
+      const replay = lifecycleCommands.get(replayKey)
+      if (replay) return replay.request === fingerprint ? HttpResponse.json(replay.value, { headers: { 'Idempotent-Replayed': 'true' } }) : failure(409, 'IDEMPOTENCY_KEY_REUSED', 'The command changed.')
+      if (row.value.version !== body.expectedVersion) return failure(409, 'TASK_VERSION_CONFLICT', 'Refresh the case.')
+      if (row.value.status !== (action === 'resume' ? 'suspended' : 'active')) return failure(409, row.value.status === 'suspended' ? 'RUN_SUSPENDED' : 'TASK_NOT_OPEN', 'That command is not available now.')
+      if (action === 'close' && row.value.tasks.length) return failure(422, 'VALIDATION_FAILED', 'Required or active work still prevents closing this case.')
+      const before = row.value.status
+      row.value = { ...row.value, status: action === 'suspend' ? 'suspended' : action === 'resume' ? 'active' : 'completed', version: row.value.version + 1 }
+      row.events = [{ version: row.value.version, action, planItemId: null, fromStatus: before, toStatus: row.value.status, actorId: user.id, actorName: user.displayName, reason: body.reason.trim(), occurredAt: clock.iso() }, ...(row.events ?? [])]
+      const result = project(row, user)
+      lifecycleCommands.set(replayKey, { request: fingerprint, value: result })
+      return HttpResponse.json(result)
+    })),
     http.get(`${B}/workspaces/:ws/cases/definitions`, ({ params }) => {
       const ws = String(params.ws), user = getUser(), perms = permissionsOf(user, ws)
       if (!member(ws, user)) return failure(404, 'NOT_FOUND', 'Workspace not found.')
@@ -96,12 +121,12 @@ export function createCaseHandlers(getUser: () => MockUser): HttpHandler[] {
       if (!member(ws, user) || !row || !definitions.some(def => def.ws === ws && def.id === row.value.definitionId) || !visible(row, user, ws)) return failure(404, 'NOT_FOUND', 'Case not found.')
       // Demonstration history only; arbitrary nested-stage execution is covered by the PostgreSQL engine tests.
       const items: components['schemas']['CasePlanItem'][] = [0, 1].filter(step => step <= row.step).map(step => ({
-        id: `${row.value.id}-${step}`, elementId: step ? 'review' : 'collect', name: task(step).name, type: 'humanTask',
+        id: `${row.value.id}-${step}`, elementId: step ? 'review' : 'collect', name: task(step).name, type: 'humantask',
         state: step < row.step ? 'completed' : row.value.status === 'terminated' ? 'terminated' : 'active',
-        parentStageId: null, createdAt: row.value.createdAt, endedAt: step < row.step || row.value.status !== 'active' ? row.value.createdAt : null,
+        required: false, allowedActions: {}, parentStageId: null, createdAt: row.value.createdAt, endedAt: step < row.step || row.value.status !== 'active' ? row.value.createdAt : null,
       }))
       const milestones = row.value.status === 'completed' ? [{ id: `${row.value.id}-milestone`, elementId: 'done', name: 'Reviewed', achievedAt: row.value.createdAt }] : []
-      return HttpResponse.json({ items, milestones })
+      return HttpResponse.json({ items, milestones, events: (row.events ?? []).map(event => ({ ...event, reason: permissionsOf(user, ws).includes('run.read-data') ? event.reason : null })), canClose: row.value.status === 'active' && !row.value.tasks.length && permissionsOf(user, ws).includes('run.operate') })
     }),
     http.get(`${B}/workspaces/:ws/cases/instances/:id`, ({ params }) => {
       const ws = String(params.ws), user = getUser(), row = instances.find(value => value.value.id === String(params.id))
@@ -130,6 +155,7 @@ export function createCaseHandlers(getUser: () => MockUser): HttpHandler[] {
       if (!perms.includes('task.act')) return failure(403, 'FORBIDDEN', 'Case task action is not allowed.')
       const row = instances.find(value => value.value.id === String(params.id) && definitions.some(def => def.ws === ws && def.id === value.value.definitionId))
       if (!row) return failure(404, 'NOT_FOUND', 'Case not found.')
+      if (row.value.status === 'suspended') return failure(409, 'RUN_SUSPENDED', 'The case is on hold.')
       const key = request.headers.get('Idempotency-Key')
       if (!key) return failure(400, 'MALFORMED_REQUEST', 'Idempotency-Key is required.')
       const replayKey = `complete:${ws}:${user.id}:${key}`

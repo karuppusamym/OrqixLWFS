@@ -39,3 +39,27 @@ export const terminateCaseInstance = (ws: string, instanceId: string, expectedVe
 export const getCasePlan = (ws: string, instanceId: string) => call(api.GET('/workspaces/{workspaceId}/cases/instances/{instanceId}/plan', {
   params: { path: { workspaceId: ws, instanceId } },
 }))
+
+export type CaseLifecycleAction = 'suspend' | 'resume' | 'close'
+export type PlanItemAction = 'start' | 'enable' | 'disable' | 'activateStage' | 'completeStage' | 'terminate'
+
+export const changeCaseLifecycle = (ws: string, instanceId: string, action: CaseLifecycleAction, expectedVersion: number, reason: string) => {
+  const path = {
+    suspend: '/workspaces/{workspaceId}/cases/instances/{instanceId}/suspend',
+    resume: '/workspaces/{workspaceId}/cases/instances/{instanceId}/resume',
+    close: '/workspaces/{workspaceId}/cases/instances/{instanceId}/close',
+  } as const
+  return call(api.POST(path[action], { params: { path: { workspaceId: ws, instanceId }, header: { 'Idempotency-Key': uuid() } }, body: { expectedVersion, reason } }))
+}
+
+export const changeCasePlanItem = (ws: string, instanceId: string, planItemId: string, action: PlanItemAction, expectedVersion: number, reason: string) => {
+  const path = {
+    start: '/workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/start',
+    enable: '/workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/enable',
+    disable: '/workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/disable',
+    activateStage: '/workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/activateStage',
+    completeStage: '/workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/completeStage',
+    terminate: '/workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/terminate',
+  } as const
+  return call(api.POST(path[action], { params: { path: { workspaceId: ws, instanceId, planItemId }, header: { 'Idempotency-Key': uuid() } }, body: { expectedVersion, reason } }))
+}

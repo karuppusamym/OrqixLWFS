@@ -149,6 +149,237 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /workspaces/{workspaceId}/cases/instances/{instanceId}/suspend:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: instanceId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [Cases]
+      operationId: suspendCaseInstance
+      summary: Apply the suspend case lifecycle command
+      description: >-
+        Requires current permission, current case version, a reason and an idempotency key. Human task controls also
+        require current candidate-group eligibility. A held case refuses work changes; close/stage completion never
+        bypass required or active work. Hold/resume freeze the admitted synchronous subset through the Orqix command
+        boundary; they do not claim a native Flowable CMMN suspended plan-item state. Audit metadata excludes reasons.
+      x-orqix-permission: run.operate
+      x-orqix-audit: case.lifecycle.changed
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CaseCommand' } } } }
+      responses:
+        '200': { description: Updated case or replay, content: { application/json: { schema: { $ref: '#/components/schemas/CaseInstance' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/cases/instances/{instanceId}/resume:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: instanceId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [Cases]
+      operationId: resumeCaseInstance
+      summary: Apply the resume case lifecycle command
+      description: >-
+        Requires current permission, current case version, a reason and an idempotency key. Human task controls also
+        require current candidate-group eligibility. A held case refuses work changes; close/stage completion never
+        bypass required or active work. Hold/resume freeze the admitted synchronous subset through the Orqix command
+        boundary; they do not claim a native Flowable CMMN suspended plan-item state. Audit metadata excludes reasons.
+      x-orqix-permission: run.operate
+      x-orqix-audit: case.lifecycle.changed
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CaseCommand' } } } }
+      responses:
+        '200': { description: Updated case or replay, content: { application/json: { schema: { $ref: '#/components/schemas/CaseInstance' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/cases/instances/{instanceId}/close:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: instanceId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [Cases]
+      operationId: closeCaseInstance
+      summary: Apply the close case lifecycle command
+      description: >-
+        Requires current permission, current case version, a reason and an idempotency key. Human task controls also
+        require current candidate-group eligibility. A held case refuses work changes; close/stage completion never
+        bypass required or active work. Hold/resume freeze the admitted synchronous subset through the Orqix command
+        boundary; they do not claim a native Flowable CMMN suspended plan-item state. Audit metadata excludes reasons.
+      x-orqix-permission: run.operate
+      x-orqix-audit: case.lifecycle.changed
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CaseCommand' } } } }
+      responses:
+        '200': { description: Updated case or replay, content: { application/json: { schema: { $ref: '#/components/schemas/CaseInstance' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/start:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: instanceId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+      - { name: planItemId, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Cases]
+      operationId: startCasePlanItem
+      summary: Apply the start case plan-item command
+      description: >-
+        Requires current permission, current case version, a reason and an idempotency key. Human task controls also
+        require current candidate-group eligibility. A held case refuses work changes; close/stage completion never
+        bypass required or active work. Hold/resume freeze the admitted synchronous subset through the Orqix command
+        boundary; they do not claim a native Flowable CMMN suspended plan-item state. Audit metadata excludes reasons.
+      x-orqix-permission: task.act
+      x-orqix-audit: case.planitem.changed
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CaseCommand' } } } }
+      responses:
+        '200': { description: Updated case or replay, content: { application/json: { schema: { $ref: '#/components/schemas/CaseInstance' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/enable:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: instanceId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+      - { name: planItemId, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Cases]
+      operationId: enableCasePlanItem
+      summary: Apply the enable case plan-item command
+      description: >-
+        Requires current permission, current case version, a reason and an idempotency key. Human task controls also
+        require current candidate-group eligibility. A held case refuses work changes; close/stage completion never
+        bypass required or active work. Hold/resume freeze the admitted synchronous subset through the Orqix command
+        boundary; they do not claim a native Flowable CMMN suspended plan-item state. Audit metadata excludes reasons.
+      x-orqix-permission: task.act
+      x-orqix-audit: case.planitem.changed
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CaseCommand' } } } }
+      responses:
+        '200': { description: Updated case or replay, content: { application/json: { schema: { $ref: '#/components/schemas/CaseInstance' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/disable:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: instanceId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+      - { name: planItemId, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Cases]
+      operationId: disableCasePlanItem
+      summary: Apply the disable case plan-item command
+      description: >-
+        Requires current permission, current case version, a reason and an idempotency key. Human task controls also
+        require current candidate-group eligibility. A held case refuses work changes; close/stage completion never
+        bypass required or active work. Hold/resume freeze the admitted synchronous subset through the Orqix command
+        boundary; they do not claim a native Flowable CMMN suspended plan-item state. Audit metadata excludes reasons.
+      x-orqix-permission: task.act
+      x-orqix-audit: case.planitem.changed
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CaseCommand' } } } }
+      responses:
+        '200': { description: Updated case or replay, content: { application/json: { schema: { $ref: '#/components/schemas/CaseInstance' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/activateStage:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: instanceId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+      - { name: planItemId, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Cases]
+      operationId: activateCaseStage
+      summary: Apply the activateStage case plan-item command
+      description: >-
+        Requires current permission, current case version, a reason and an idempotency key. Human task controls also
+        require current candidate-group eligibility. A held case refuses work changes; close/stage completion never
+        bypass required or active work. Hold/resume freeze the admitted synchronous subset through the Orqix command
+        boundary; they do not claim a native Flowable CMMN suspended plan-item state. Audit metadata excludes reasons.
+      x-orqix-permission: run.operate
+      x-orqix-audit: case.planitem.changed
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CaseCommand' } } } }
+      responses:
+        '200': { description: Updated case or replay, content: { application/json: { schema: { $ref: '#/components/schemas/CaseInstance' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/completeStage:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: instanceId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+      - { name: planItemId, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Cases]
+      operationId: completeCaseStage
+      summary: Apply the completeStage case plan-item command
+      description: >-
+        Requires current permission, current case version, a reason and an idempotency key. Human task controls also
+        require current candidate-group eligibility. A held case refuses work changes; close/stage completion never
+        bypass required or active work. Hold/resume freeze the admitted synchronous subset through the Orqix command
+        boundary; they do not claim a native Flowable CMMN suspended plan-item state. Audit metadata excludes reasons.
+      x-orqix-permission: run.operate
+      x-orqix-audit: case.planitem.changed
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CaseCommand' } } } }
+      responses:
+        '200': { description: Updated case or replay, content: { application/json: { schema: { $ref: '#/components/schemas/CaseInstance' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/terminate:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: instanceId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+      - { name: planItemId, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Cases]
+      operationId: terminateCasePlanItem
+      summary: Apply the terminate case plan-item command
+      description: >-
+        Requires current permission, current case version, a reason and an idempotency key. Human task controls also
+        require current candidate-group eligibility. A held case refuses work changes; close/stage completion never
+        bypass required or active work. Hold/resume freeze the admitted synchronous subset through the Orqix command
+        boundary; they do not claim a native Flowable CMMN suspended plan-item state. Audit metadata excludes reasons.
+      x-orqix-permission: run.operate
+      x-orqix-audit: case.planitem.changed
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CaseCommand' } } } }
+      responses:
+        '200': { description: Updated case or replay, content: { application/json: { schema: { $ref: '#/components/schemas/CaseInstance' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
   /workspaces/{workspaceId}/cases/instances/{instanceId}/tasks/{taskId}/complete:
     parameters:
       - { $ref: '#/components/parameters/WorkspaceId' }
@@ -4910,7 +5141,7 @@ components:
     CasePlanItem:
       type: object
       additionalProperties: false
-      required: [id, elementId, name, type, state, parentStageId, createdAt, endedAt]
+      required: [id, elementId, name, type, state, parentStageId, createdAt, endedAt, required, allowedActions]
       properties:
         id: { type: string }
         elementId: { type: string }
@@ -4920,6 +5151,29 @@ components:
         parentStageId: { type: [string, 'null'] }
         createdAt: { $ref: '#/components/schemas/Timestamp' }
         endedAt: { type: [string, 'null'], format: date-time }
+        required: { type: boolean }
+        allowedActions: { type: object, additionalProperties: { type: boolean } }
+    CaseEvent:
+      type: object
+      additionalProperties: false
+      required: [version, action, planItemId, fromStatus, toStatus, actorId, actorName, reason, occurredAt]
+      properties:
+        version: { type: integer, minimum: 1 }
+        action: { type: string }
+        planItemId: { type: [string, 'null'] }
+        fromStatus: { type: [string, 'null'] }
+        toStatus: { type: string }
+        actorId: { $ref: '#/components/schemas/Uuid' }
+        actorName: { type: [string, 'null'] }
+        reason: { type: [string, 'null'] }
+        occurredAt: { $ref: '#/components/schemas/Timestamp' }
+    CaseCommand:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, reason]
+      properties:
+        expectedVersion: { type: integer, minimum: 1 }
+        reason: { type: string, minLength: 1, maxLength: 1000 }
     CaseMilestone:
       type: object
       additionalProperties: false
@@ -4932,10 +5186,12 @@ components:
     CasePlanOverview:
       type: object
       additionalProperties: false
-      required: [items, milestones]
+      required: [items, milestones, events, canClose]
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/CasePlanItem' } }
         milestones: { type: array, items: { $ref: '#/components/schemas/CaseMilestone' } }
+        events: { type: array, items: { $ref: '#/components/schemas/CaseEvent' } }
+        canClose: { type: boolean }
     CaseTask:
       type: object
       additionalProperties: false
@@ -4954,7 +5210,7 @@ components:
         id: { $ref: '#/components/schemas/Uuid' }
         definitionId: { $ref: '#/components/schemas/Uuid' }
         definitionVersion: { type: integer, minimum: 1 }
-        status: { type: string, enum: [active, completed, terminated] }
+        status: { type: string, enum: [active, suspended, completed, terminated] }
         version: { type: integer, minimum: 1 }
         tasks: { type: array, items: { $ref: '#/components/schemas/CaseTask' } }
         createdAt: { $ref: '#/components/schemas/Timestamp' }

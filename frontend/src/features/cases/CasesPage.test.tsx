@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { HttpResponse, http } from 'msw'
 import { describe, expect, it } from 'vitest'
@@ -64,6 +64,57 @@ describe('case workbench', () => {
     expect(planReads).toBe(2)
     await user.click(screen.getByRole('button', { name: 'Hide case plan' }))
     expect(screen.getByText('Evidence ready')).not.toBeVisible()
+  })
+
+  it('requires reasons for operator holds and resumes and disables held work', async () => {
+    signInAs('olga.operator')
+    let current = active
+    const calls: Array<{ action: string; body: unknown }> = []
+    server.use(
+      http.get('*/api/v1/workspaces/:ws/cases/instances/:id', () => HttpResponse.json(current)),
+      ...(['suspend', 'resume'] as const).map(action => http.post(`*/api/v1/workspaces/:ws/cases/instances/:id/${action}`, async ({ request }) => {
+        const body = await request.json(); calls.push({ action, body })
+        current = { ...current, status: action === 'suspend' ? 'suspended' : 'active', version: current.version + 1, tasks: current.tasks.map(task => ({ ...task, eligible: action === 'resume' })) }
+        return HttpResponse.json(current)
+      })),
+    )
+    const user = userEvent.setup(); await renderAppReady(`/w/${ws}/cases/${instanceId}`)
+    await user.click(await screen.findByRole('button', { name: 'Put case on hold' }))
+    expect(screen.getByRole('button', { name: 'Confirm change' })).toBeDisabled()
+    await user.type(screen.getByLabelText('Reason'), 'Wait for evidence')
+    await user.click(screen.getByRole('button', { name: 'Confirm change' }))
+    expect(await screen.findByText('suspended')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Complete task' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Resume case' }))
+    await user.type(screen.getByLabelText('Reason'), 'Evidence arrived')
+    await user.click(screen.getByRole('button', { name: 'Confirm change' }))
+    await screen.findByRole('button', { name: 'Put case on hold' })
+    expect(calls).toEqual([{ action: 'suspend', body: { expectedVersion: 1, reason: 'Wait for evidence' } }, { action: 'resume', body: { expectedVersion: 2, reason: 'Evidence arrived' } }])
+  })
+
+  it('starts only a server-authorized manual plan item with its current case version', async () => {
+    signInAs('dana.designer')
+    let started = false, body: unknown
+    server.use(
+      http.get('*/api/v1/workspaces/:ws/cases/instances/:id', () => HttpResponse.json({ ...active, tasks: [] })),
+      http.get('*/api/v1/workspaces/:ws/cases/instances/:id/plan', () => HttpResponse.json({ items: [
+        { id: 'manual-item', elementId: 'manual', name: 'Manual review', type: 'humanTask', state: started ? 'active' : 'enabled', parentStageId: null, createdAt: active.createdAt, endedAt: null, allowedActions: { start: !started } },
+      ], milestones: [], events: [], canClose: false })),
+      http.post('*/api/v1/workspaces/:ws/cases/instances/:id/plan-items/:item/start', async ({ request }) => {
+        expect(request.headers.get('Idempotency-Key')).toBeTruthy(); body = await request.json(); started = true
+        return HttpResponse.json({ ...active, version: 2 })
+      }),
+    )
+    const user = userEvent.setup(); await renderAppReady(`/w/${ws}/cases/${instanceId}`)
+    await user.click(await screen.findByRole('button', { name: 'Show case plan' }))
+    const row = (await screen.findByText('Manual review')).closest('li')!
+    await user.click(within(row).getByRole('button', { name: 'Start task' }))
+    expect(screen.getByRole('button', { name: 'Confirm plan change' })).toBeDisabled()
+    await user.type(screen.getByLabelText('Reason'), 'Begin manual review')
+    await user.click(screen.getByRole('button', { name: 'Confirm plan change' }))
+    expect(await screen.findByRole('button', { name: 'Complete task' })).toBeInTheDocument()
+    expect(body).toEqual({ expectedVersion: 1, reason: 'Begin manual review' })
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Start task' })).not.toBeInTheDocument())
   })
 
   it('uploads a reviewed model and starts a case from the returned definition', async () => {

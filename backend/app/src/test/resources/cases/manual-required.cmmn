@@ -1,0 +1,16 @@
+<definitions xmlns="http://www.omg.org/spec/CMMN/20151109/MODEL"
+             xmlns:flowable="http://flowable.org/cmmn" targetNamespace="urn:orqix:lifecycle">
+  <case id="lifecycleCase" name="Controlled review">
+    <casePlanModel id="plan" name="Review plan" autoComplete="false">
+      <planItem id="requiredReview" name="Required review" definitionRef="requiredTask">
+        <itemControl><requiredRule><condition>${true}</condition></requiredRule>
+          <manualActivationRule><condition>${true}</condition></manualActivationRule></itemControl>
+      </planItem>
+      <planItem id="optionalReview" name="Optional review" definitionRef="optionalTask">
+        <itemControl><manualActivationRule><condition>${true}</condition></manualActivationRule></itemControl>
+      </planItem>
+      <humanTask id="requiredTask" name="Required review" flowable:candidateGroups="managers"/>
+      <humanTask id="optionalTask" name="Optional review" flowable:candidateGroups="managers"/>
+    </casePlanModel>
+  </case>
+</definitions>

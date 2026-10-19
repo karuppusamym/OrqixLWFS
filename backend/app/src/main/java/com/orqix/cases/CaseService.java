@@ -40,11 +40,20 @@ public class CaseService {
     public record Result<T>(T value, boolean replayed) {}
     public record CreateDefinition(String key, String name, String sourceXml) {}
     public record CompleteTask(int expectedVersion) {}
-    public record TerminateCase(int expectedVersion, String reason) {}
+    public record TerminateCase(int expectedVersion, String reason) {
+        @Override public String toString() { return "Case termination [reason redacted]"; }
+    }
+    public record CaseCommand(int expectedVersion, String reason) {
+        @Override public String toString() { return "Case command [reason redacted]"; }
+    }
     public record PlanItem(String id, String elementId, String name, String type, String state,
-            String parentStageId, Instant createdAt, Instant endedAt) {}
+            String parentStageId, Instant createdAt, Instant endedAt, boolean required, Map<String,Boolean> allowedActions) {}
     public record Milestone(String id, String elementId, String name, Instant achievedAt) {}
-    public record PlanOverview(List<PlanItem> items, List<Milestone> milestones) {}
+    public record CaseEvent(int version, String action, String planItemId, String fromStatus, String toStatus,
+            UUID actorId, String actorName, String reason, Instant occurredAt) {
+        @Override public String toString() { return "Case event " + version + " " + action + " [reason redacted]"; }
+    }
+    public record PlanOverview(List<PlanItem> items, List<Milestone> milestones, List<CaseEvent> events, boolean canClose) {}
 
     private record DefinitionRow(UUID id, UUID workspaceId, String key, String name, int version,
             Instant createdAt, String sourceXml, String engineDefinitionId) {
@@ -64,6 +73,8 @@ public class CaseService {
     private final IdempotencyService idempotency;
     private final Json json;
     private final AuditWriter audit;
+    private final Map<UUID,Map<String,Set<String>>> groupsByDefinition = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Map<UUID,Set<String>> requiredByDefinition = new java.util.concurrent.ConcurrentHashMap<>();
 
     public CaseService(JdbcClient jdbc, PolicyService policy, CmmnSubsetValidator validator,
             CmmnRepositoryService repository, CmmnRuntimeService runtime, CmmnTaskService tasks,
@@ -171,9 +182,11 @@ public class CaseService {
         UUID id=Ids.newId();
         var engine=runtime.createCaseInstanceBuilder().caseDefinitionId(definition.engineDefinitionId())
                 .tenantId(access.workspace().engineTenantId()).businessKey(id.toString()).start();
-        jdbc.sql("INSERT INTO case_instance(id,workspace_id,definition_id,engine_instance_id,status,started_by) VALUES(:id,:ws,:definition,:engine,'active',:actor)")
+        boolean engineActive = runtime.createCaseInstanceQuery().caseInstanceId(engine.getId()).singleResult()!=null;
+        jdbc.sql("INSERT INTO case_instance(id,workspace_id,definition_id,engine_instance_id,status,started_by,completed_at) VALUES(:id,:ws,:definition,:engine,:status,:actor,CASE WHEN :active THEN NULL ELSE now() END)")
                 .param("id",id).param("ws",ws).param("definition",definitionId).param("engine",engine.getId())
-                .param("actor",caller.subjectId()).update();
+                .param("actor",caller.subjectId()).param("status",engineActive?"active":"completed").param("active",engineActive).update();
+        appendEvent(ws,id,1,"started",null,null,engineActive?"active":"completed",caller,null);
         audit.write(new AuditWriter.Entry(ws,AuditWriter.ActorType.USER,caller.subjectId(),"case.instance.started",
                 "caseInstance",id.toString(),AuditWriter.Outcome.SUCCESS,Map.of("definitionId",definitionId.toString(),"version",definition.version())));
         Instance response=instance(ws,id,access);
@@ -209,12 +222,17 @@ public class CaseService {
 
     private boolean canRead(InstanceRow row, WorkspaceAccess access) {
         if (access.has(Permission.RUN_READ) || row.startedBy().equals(access.subjectId())) return true;
-        if (!access.has(Permission.TASK_ACT) || !row.status().equals("active")) return false;
+        if (!access.has(Permission.TASK_ACT) || !Set.of("active","suspended").contains(row.status())) return false;
         for (var task : tasks.createTaskQuery().caseInstanceId(row.engineInstanceId()).list()) {
             var groups=tasks.getIdentityLinksForTask(task.getId()).stream()
                     .filter(link -> "candidate".equals(link.getType()) && link.getGroupId()!=null)
                     .map(org.flowable.identitylink.api.IdentityLink::getGroupId).toList();
             if (eligible(task.getAssignee(),groups,access)) return true;
+        }
+        for (var item : runtime.createPlanItemInstanceQuery().caseInstanceId(row.engineInstanceId()).list()) {
+            if (org.flowable.cmmn.api.runtime.PlanItemDefinitionType.HUMAN_TASK.equals(item.getPlanItemDefinitionType()) && Set.of("enabled","disabled").contains(item.getState())
+                    && humanGroups(row,access.workspaceId()).getOrDefault(item.getPlanItemDefinitionId(),Set.of()).stream().anyMatch(access.groupKeys()::contains))
+                return true;
         }
         return false;
     }
@@ -228,13 +246,23 @@ public class CaseService {
         var items = history.createHistoricPlanItemInstanceQuery().planItemInstanceCaseInstanceId(row.engineInstanceId())
                 .list().stream().map(item -> new PlanItem(item.getId(), item.getElementId(), item.getName(),
                         item.getPlanItemDefinitionType(), item.getState(), item.getStageInstanceId(),
-                        instant(item.getCreateTime()), instant(item.getEndedTime())))
+                        instant(item.getCreateTime()), instant(item.getEndedTime()), required(row,item.getElementId(),access.workspaceId()), actions(row,item.getId(),access)))
                 .sorted(Comparator.comparing(PlanItem::elementId).thenComparing(PlanItem::id)).toList();
         var milestones = history.createHistoricMilestoneInstanceQuery().milestoneInstanceCaseInstanceId(row.engineInstanceId())
                 .list().stream().map(item -> new Milestone(item.getId(), item.getElementId(), item.getName(),
                         instant(item.getTimeStamp())))
                 .sorted(Comparator.comparing(Milestone::achievedAt).thenComparing(Milestone::id)).toList();
-        return new PlanOverview(items, milestones);
+        var engine=runtime.createCaseInstanceQuery().caseInstanceId(row.engineInstanceId()).singleResult();
+        var events=jdbc.sql("""
+                SELECT e.version,e.action,e.plan_item_id,e.from_status,e.to_status,e.actor_subject_id,s.display_name,
+                    e.reason,e.occurred_at FROM case_event e LEFT JOIN subject s ON s.id=e.actor_subject_id
+                WHERE e.workspace_id=:ws AND e.case_id=:id ORDER BY e.version DESC LIMIT 200
+                """).param("ws",ws).param("id",id).query((rs,n)->new CaseEvent(rs.getInt("version"),rs.getString("action"),
+                        rs.getString("plan_item_id"),rs.getString("from_status"),rs.getString("to_status"),Sql.uuid(rs,"actor_subject_id"),
+                        rs.getString("display_name"),access.has(Permission.RUN_READ_DATA)?rs.getString("reason"):null,
+                        Sql.instant(rs,"occurred_at"))).list();
+        return new PlanOverview(items, milestones, events, row.status().equals("active") && access.has(Permission.RUN_OPERATE)
+                && engine!=null && engine.isCompletable());
     }
 
     private static Instant instant(java.util.Date date) { return date == null ? null : date.toInstant(); }
@@ -242,13 +270,13 @@ public class CaseService {
     private Instance instance(UUID ws, UUID id, WorkspaceAccess access) {
         var row=instanceRow(ws,id,false);
         List<Task> visibleTasks = new ArrayList<>();
-        if (row.status().equals("active")) {
+        if (Set.of("active","suspended").contains(row.status())) {
             for (var task : tasks.createTaskQuery().caseInstanceId(row.engineInstanceId()).list()) {
                 var groups=tasks.getIdentityLinksForTask(task.getId()).stream()
                         .filter(link -> "candidate".equals(link.getType()) && link.getGroupId()!=null)
                         .map(org.flowable.identitylink.api.IdentityLink::getGroupId).distinct().sorted().toList();
                 boolean eligible=eligible(task.getAssignee(),groups,access);
-                visibleTasks.add(new Task(task.getId(),task.getName(),"available",groups,eligible));
+                visibleTasks.add(new Task(task.getId(),task.getName(),"available",groups,eligible && row.status().equals("active")));
             }
         }
         visibleTasks.sort(Comparator.comparing(Task::id));
@@ -285,17 +313,19 @@ public class CaseService {
                 idempotency.requestHash(operation,Map.of("caseId",id.toString(),"taskId",taskId),request));
         if (claim.isReplay()) return new Result<>(replayed(claim,access),true);
         if (row.version()!=request.expectedVersion()) throw new ApiException(ProblemCode.TASK_VERSION_CONFLICT);
-        if (!row.status().equals("active")) throw new ApiException(ProblemCode.TASK_NOT_OPEN);
+        requireActive(row);
         var task=tasks.createTaskQuery().taskId(taskId).caseInstanceId(row.engineInstanceId()).singleResult();
         if (task == null) throw ApiException.notFound();
         var groups=tasks.getIdentityLinksForTask(taskId).stream()
                 .filter(link -> "candidate".equals(link.getType()) && link.getGroupId()!=null)
                 .map(org.flowable.identitylink.api.IdentityLink::getGroupId).toList();
         if (!eligible(task.getAssignee(),groups,access)) throw new ApiException(ProblemCode.NOT_ELIGIBLE);
+        String planItemId=task.getSubScopeId();
         tasks.complete(taskId);
         boolean active=runtime.createCaseInstanceQuery().caseInstanceId(row.engineInstanceId()).singleResult()!=null;
         jdbc.sql("UPDATE case_instance SET version=version+1,status=:status,completed_at=CASE WHEN :active THEN NULL ELSE now() END WHERE workspace_id=:ws AND id=:id")
                 .param("status",active?"active":"completed").param("active",active).param("ws",ws).param("id",id).update();
+        appendEvent(ws,id,row.version()+1,"taskCompleted",planItemId,row.status(),active?"active":"completed",caller,null);
         audit.write(new AuditWriter.Entry(ws,AuditWriter.ActorType.USER,caller.subjectId(),"case.task.completed",
                 "caseInstance",id.toString(),AuditWriter.Outcome.SUCCESS,Map.of("taskId",taskId,"version",row.version()+1)));
         Instance response=instance(ws,id,access);
@@ -326,19 +356,153 @@ public class CaseService {
                 idempotency.requestHash(operation, Map.of("caseId", id.toString()), request));
         if (claim.isReplay()) return new Result<>(replayed(claim, access), true);
         if (row.version() != request.expectedVersion()) throw new ApiException(ProblemCode.TASK_VERSION_CONFLICT);
-        if (!row.status().equals("active")) throw new ApiException(ProblemCode.TASK_NOT_OPEN);
+        if (!Set.of("active","suspended").contains(row.status())) throw new ApiException(ProblemCode.TASK_NOT_OPEN);
         runtime.terminateCaseInstance(row.engineInstanceId());
         jdbc.sql("UPDATE case_instance SET version=version+1,status='terminated',completed_at=now() WHERE workspace_id=:ws AND id=:id")
                 .param("ws", ws).param("id", id).update();
         // The reason is retained separately under run-read-data authorization, never in audit metadata.
         jdbc.sql("INSERT INTO case_termination(workspace_id,case_id,reason,terminated_by) VALUES(:ws,:id,:reason,:actor)")
                 .param("ws", ws).param("id", id).param("reason", request.reason().strip()).param("actor", caller.subjectId()).update();
+        appendEvent(ws,id,row.version()+1,"terminated",null,row.status(),"terminated",caller,request.reason().strip());
         audit.write(new AuditWriter.Entry(ws, AuditWriter.ActorType.USER, caller.subjectId(), "case.instance.terminated",
                 "caseInstance", id.toString(), AuditWriter.Outcome.SUCCESS, Map.of("version", row.version() + 1)));
         Instance response = instance(ws, id, access);
         saveResponse(claim, id, List.of(), response);
         idempotency.complete(claim, "caseInstance", id.toString(), 200);
         return new Result<>(response, false);
+    }
+
+    private Map<String,Set<String>> humanGroups(InstanceRow row,UUID ws) {
+        if(groupsByDefinition.size()>=200 && !groupsByDefinition.containsKey(row.definitionId())) groupsByDefinition.clear();
+        return groupsByDefinition.computeIfAbsent(row.definitionId(),ignored -> {
+            String source=jdbc.sql("SELECT source_xml FROM case_definition WHERE workspace_id=:ws AND id=:id")
+                    .param("ws",ws).param("id",row.definitionId()).query(String.class).single();
+            return validator.humanTaskGroups(source);
+        });
+    }
+
+    private boolean required(InstanceRow row,String elementId,UUID ws) {
+        if(requiredByDefinition.size()>=200 && !requiredByDefinition.containsKey(row.definitionId())) requiredByDefinition.clear();
+        return requiredByDefinition.computeIfAbsent(row.definitionId(),ignored -> {
+            String source=jdbc.sql("SELECT source_xml FROM case_definition WHERE workspace_id=:ws AND id=:id")
+                    .param("ws",ws).param("id",row.definitionId()).query(String.class).single();
+            return validator.requiredPlanItems(source);
+        }).contains(elementId);
+    }
+
+    private Map<String,Boolean> actions(InstanceRow row,String itemId,WorkspaceAccess access) {
+        if(!row.status().equals("active")) return Map.of();
+        var item=runtime.createPlanItemInstanceQuery().caseInstanceId(row.engineInstanceId()).planItemInstanceId(itemId).singleResult();
+        if(item==null) return Map.of();
+        boolean human=org.flowable.cmmn.api.runtime.PlanItemDefinitionType.HUMAN_TASK.equals(item.getPlanItemDefinitionType());
+        boolean worker=human && access.has(Permission.TASK_ACT) && humanGroups(row,access.workspaceId())
+                .getOrDefault(item.getPlanItemDefinitionId(),Set.of()).stream().anyMatch(access.groupKeys()::contains);
+        boolean operator=access.has(Permission.RUN_OPERATE);
+        return Map.of("start",worker && "enabled".equals(item.getState()),
+                "enable",worker && "disabled".equals(item.getState()),
+                "disable",worker && "enabled".equals(item.getState()) && !required(row,item.getElementId(),access.workspaceId()),
+                "activateStage",operator && item.isStage() && "enabled".equals(item.getState()),
+                "completeStage",operator && item.isStage() && "active".equals(item.getState()) && item.isCompletable(),
+                "terminate",operator && (human || item.isStage()) && Set.of("active","enabled","disabled","available").contains(item.getState()));
+    }
+
+    private static void requireActive(InstanceRow row) {
+        if(row.status().equals("suspended")) throw new ApiException(ProblemCode.RUN_SUSPENDED,"The case is on hold. Resume it before changing its work.");
+        if(!row.status().equals("active")) throw new ApiException(ProblemCode.TASK_NOT_OPEN);
+    }
+    private static void validateCommand(CaseCommand request) {
+        if(request==null || request.expectedVersion()<1 || request.reason()==null || request.reason().isBlank() || request.reason().length()>1000)
+            throw new ApiException(ProblemCode.VALIDATION_FAILED,"Supply the current case version and a reason of 1 to 1000 characters.");
+    }
+
+    /** A hold freezes every command in the admitted synchronous subset; no engine suspension API is implied. */
+    @Transactional
+    public Result<Instance> lifecycle(Caller caller,UUID ws,UUID id,String action,String key,CaseCommand request) {
+        String operation=switch(action) {
+            case "suspend" -> "suspendCaseInstance";
+            case "resume" -> "resumeCaseInstance";
+            case "close" -> "closeCaseInstance";
+            default -> throw ApiException.notFound();
+        };
+        var access=access(caller,ws,Permission.RUN_OPERATE,operation); validateCommand(request);
+        var row=instanceRow(ws,id,true);
+        var claim=idempotency.claim(ws,caller.subjectId(),operation,IdempotencyService.requireKey(key),
+                idempotency.requestHash(operation,Map.of("caseId",id.toString()),request));
+        if(claim.isReplay()) return new Result<>(replayed(claim,access),true);
+        if(row.version()!=request.expectedVersion()) throw new ApiException(ProblemCode.TASK_VERSION_CONFLICT);
+        String status;
+        if(action.equals("resume")) {
+            if(!row.status().equals("suspended")) throw new ApiException(ProblemCode.TASK_NOT_OPEN,"Only a held case can resume.");
+            status="active";
+        } else {
+            requireActive(row);
+            if(action.equals("close")) {
+                var engine=runtime.createCaseInstanceQuery().caseInstanceId(row.engineInstanceId()).singleResult();
+                if(engine==null || !engine.isCompletable()) throw new ApiException(ProblemCode.VALIDATION_FAILED,
+                        "Required or active work still prevents closing this case.");
+                runtime.completeCaseInstance(row.engineInstanceId()); status="completed";
+            } else status="suspended";
+        }
+        jdbc.sql("UPDATE case_instance SET status=:status,version=version+1,completed_at=CASE WHEN :ended THEN now() ELSE NULL END WHERE workspace_id=:ws AND id=:id")
+                .param("status",status).param("ended",status.equals("completed")).param("ws",ws).param("id",id).update();
+        appendEvent(ws,id,row.version()+1,action,null,row.status(),status,caller,request.reason().strip());
+        audit.write(new AuditWriter.Entry(ws,AuditWriter.ActorType.USER,caller.subjectId(),"case.lifecycle.changed",
+                "caseInstance",id.toString(),AuditWriter.Outcome.SUCCESS,Map.of("action",action,"version",row.version()+1)));
+        Instance response=instance(ws,id,access); saveResponse(claim,id,List.of(),response);
+        idempotency.complete(claim,"caseInstance",id.toString(),200); return new Result<>(response,false);
+    }
+
+    @Transactional
+    public Result<Instance> planItem(Caller caller,UUID ws,UUID id,String itemId,String action,String key,CaseCommand request) {
+        String operation=switch(action) {
+            case "start" -> "startCasePlanItem";
+            case "enable" -> "enableCasePlanItem";
+            case "disable" -> "disableCasePlanItem";
+            case "activateStage" -> "activateCaseStage";
+            case "completeStage" -> "completeCaseStage";
+            case "terminate" -> "terminateCasePlanItem";
+            default -> throw ApiException.notFound();
+        };
+        boolean worker=Set.of("start","enable","disable").contains(action);
+        var access=access(caller,ws,worker?Permission.TASK_ACT:Permission.RUN_OPERATE,operation); validateCommand(request);
+        var row=instanceRow(ws,id,true);
+        var claim=idempotency.claim(ws,caller.subjectId(),operation,IdempotencyService.requireKey(key),
+                idempotency.requestHash(operation,Map.of("caseId",id.toString(),"planItemId",itemId),request));
+        if(claim.isReplay()) return new Result<>(replayed(claim,access),true);
+        if(row.version()!=request.expectedVersion()) throw new ApiException(ProblemCode.TASK_VERSION_CONFLICT);
+        requireActive(row);
+        var item=runtime.createPlanItemInstanceQuery().caseInstanceId(row.engineInstanceId()).planItemInstanceId(itemId).singleResult();
+        if(item==null) throw ApiException.notFound();
+        List<String> groups=worker?humanGroups(row,access.workspaceId()).getOrDefault(item.getPlanItemDefinitionId(),Set.of()).stream().sorted().toList():List.of();
+        if(worker && (!org.flowable.cmmn.api.runtime.PlanItemDefinitionType.HUMAN_TASK.equals(item.getPlanItemDefinitionType()) || groups.stream().noneMatch(access.groupKeys()::contains)))
+            throw new ApiException(ProblemCode.NOT_ELIGIBLE);
+        if(!Boolean.TRUE.equals(actions(row,itemId,access).get(action)))
+            throw new ApiException(ProblemCode.TASK_NOT_OPEN,"That action is not available in the current plan-item state.");
+        switch(action) {
+            case "start","activateStage" -> runtime.startPlanItemInstance(itemId);
+            case "enable" -> runtime.enablePlanItemInstance(itemId);
+            case "disable" -> runtime.disablePlanItemInstance(itemId);
+            case "completeStage" -> runtime.completeStagePlanItemInstance(itemId);
+            case "terminate" -> runtime.terminatePlanItemInstance(itemId);
+            default -> throw new IllegalStateException();
+        }
+        boolean active=runtime.createCaseInstanceQuery().caseInstanceId(row.engineInstanceId()).singleResult()!=null;
+        String status=active?"active":"completed";
+        jdbc.sql("UPDATE case_instance SET status=:status,version=version+1,completed_at=CASE WHEN :active THEN NULL ELSE now() END WHERE workspace_id=:ws AND id=:id")
+                .param("status",status).param("active",active).param("ws",ws).param("id",id).update();
+        appendEvent(ws,id,row.version()+1,action,itemId,row.status(),status,caller,request.reason().strip());
+        audit.write(new AuditWriter.Entry(ws,AuditWriter.ActorType.USER,caller.subjectId(),"case.planitem.changed",
+                "caseInstance",id.toString(),AuditWriter.Outcome.SUCCESS,Map.of("action",action,"planItemId",itemId,"version",row.version()+1)));
+        Instance response=instance(ws,id,access); saveResponse(claim,id,groups,response);
+        idempotency.complete(claim,"caseInstance",id.toString(),200); return new Result<>(response,false);
+    }
+
+    private void appendEvent(UUID ws,UUID id,int version,String action,String itemId,String before,String after,Caller caller,String reason) {
+        jdbc.sql("""
+                INSERT INTO case_event(workspace_id,case_id,version,action,plan_item_id,from_status,to_status,actor_subject_id,reason)
+                VALUES(:ws,:id,:version,:action,:item,:before,:after,:actor,:reason)
+                """).param("ws",ws).param("id",id).param("version",version).param("action",action).param("item",itemId)
+                .param("before",before).param("after",after).param("actor",caller.subjectId()).param("reason",reason).update();
     }
 
     private Instance replayed(IdempotencyService.Claim claim, WorkspaceAccess access) {
@@ -349,7 +513,7 @@ public class CaseService {
                 .param("operation",claim.operation()).param("key",claim.key())
                 .query((rs,n)->Map.entry(rs.getString(1),rs.getString(2))).optional()
                 .orElseThrow(() -> new IllegalStateException("Case response snapshot missing"));
-        if (claim.operation().equals("completeCaseTask")) {
+        if (Set.of("completeCaseTask","startCasePlanItem","enableCasePlanItem","disableCasePlanItem").contains(claim.operation())) {
             var groups=new ArrayList<String>();
             for (var node : json.parse(stored.getKey())) groups.add(node.asString());
             if (!groups.isEmpty() && groups.stream().noneMatch(access.groupKeys()::contains))

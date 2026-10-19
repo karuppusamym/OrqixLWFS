@@ -74,4 +74,70 @@ public class CaseController {
         if (result.replayed()) response.header(IdempotencyService.REPLAYED_HEADER, "true");
         return response.body(result.value());
     }
+    @PostMapping("/instances/{instanceId}/suspend")
+    public ResponseEntity<CaseService.Instance> suspend(@PathVariable UUID workspaceId,@PathVariable UUID instanceId,
+            @RequestHeader(name=IdempotencyService.HEADER,required=false) String key,@RequestBody CaseService.CaseCommand request) {
+        return response(service.lifecycle(callers.current(),workspaceId,instanceId,"suspend",key,request));
+    }
+
+    @PostMapping("/instances/{instanceId}/resume")
+    public ResponseEntity<CaseService.Instance> resume(@PathVariable UUID workspaceId,@PathVariable UUID instanceId,
+            @RequestHeader(name=IdempotencyService.HEADER,required=false) String key,@RequestBody CaseService.CaseCommand request) {
+        return response(service.lifecycle(callers.current(),workspaceId,instanceId,"resume",key,request));
+    }
+
+    @PostMapping("/instances/{instanceId}/close")
+    public ResponseEntity<CaseService.Instance> close(@PathVariable UUID workspaceId,@PathVariable UUID instanceId,
+            @RequestHeader(name=IdempotencyService.HEADER,required=false) String key,@RequestBody CaseService.CaseCommand request) {
+        return response(service.lifecycle(callers.current(),workspaceId,instanceId,"close",key,request));
+    }
+
+    @PostMapping("/instances/{instanceId}/plan-items/{planItemId}/start")
+    public ResponseEntity<CaseService.Instance> startPlanItem(@PathVariable UUID workspaceId,@PathVariable UUID instanceId,
+            @PathVariable String planItemId,@RequestHeader(name=IdempotencyService.HEADER,required=false) String key,
+            @RequestBody CaseService.CaseCommand request) {
+        return response(service.planItem(callers.current(),workspaceId,instanceId,planItemId,"start",key,request));
+    }
+
+    @PostMapping("/instances/{instanceId}/plan-items/{planItemId}/enable")
+    public ResponseEntity<CaseService.Instance> enablePlanItem(@PathVariable UUID workspaceId,@PathVariable UUID instanceId,
+            @PathVariable String planItemId,@RequestHeader(name=IdempotencyService.HEADER,required=false) String key,
+            @RequestBody CaseService.CaseCommand request) {
+        return response(service.planItem(callers.current(),workspaceId,instanceId,planItemId,"enable",key,request));
+    }
+
+    @PostMapping("/instances/{instanceId}/plan-items/{planItemId}/disable")
+    public ResponseEntity<CaseService.Instance> disablePlanItem(@PathVariable UUID workspaceId,@PathVariable UUID instanceId,
+            @PathVariable String planItemId,@RequestHeader(name=IdempotencyService.HEADER,required=false) String key,
+            @RequestBody CaseService.CaseCommand request) {
+        return response(service.planItem(callers.current(),workspaceId,instanceId,planItemId,"disable",key,request));
+    }
+
+    @PostMapping("/instances/{instanceId}/plan-items/{planItemId}/activateStage")
+    public ResponseEntity<CaseService.Instance> activateStagePlanItem(@PathVariable UUID workspaceId,@PathVariable UUID instanceId,
+            @PathVariable String planItemId,@RequestHeader(name=IdempotencyService.HEADER,required=false) String key,
+            @RequestBody CaseService.CaseCommand request) {
+        return response(service.planItem(callers.current(),workspaceId,instanceId,planItemId,"activateStage",key,request));
+    }
+
+    @PostMapping("/instances/{instanceId}/plan-items/{planItemId}/completeStage")
+    public ResponseEntity<CaseService.Instance> completeStagePlanItem(@PathVariable UUID workspaceId,@PathVariable UUID instanceId,
+            @PathVariable String planItemId,@RequestHeader(name=IdempotencyService.HEADER,required=false) String key,
+            @RequestBody CaseService.CaseCommand request) {
+        return response(service.planItem(callers.current(),workspaceId,instanceId,planItemId,"completeStage",key,request));
+    }
+
+    @PostMapping("/instances/{instanceId}/plan-items/{planItemId}/terminate")
+    public ResponseEntity<CaseService.Instance> terminatePlanItem(@PathVariable UUID workspaceId,@PathVariable UUID instanceId,
+            @PathVariable String planItemId,@RequestHeader(name=IdempotencyService.HEADER,required=false) String key,
+            @RequestBody CaseService.CaseCommand request) {
+        return response(service.planItem(callers.current(),workspaceId,instanceId,planItemId,"terminate",key,request));
+    }
+
+    private static ResponseEntity<CaseService.Instance> response(CaseService.Result<CaseService.Instance> result) {
+        var response=ResponseEntity.ok();
+        if(result.replayed()) response.header(IdempotencyService.REPLAYED_HEADER,"true");
+        return response.body(result.value());
+    }
+
 }

@@ -26,7 +26,7 @@ final class ViewDefinition {
         if (node == null || !node.isObject() || json.write(node).getBytes(StandardCharsets.UTF_8).length > 32_768) {
             fail("definition", "must be a JSON object of at most 32 KiB");
         }
-        keys(node, "definition", Set.of("schemaVersion", "kind", "sections", "actions"));
+        keys(node, "definition", Set.of("schemaVersion", "kind", "sections", "actions", "presentation"));
         if (!node.path("schemaVersion").isIntegralNumber() || node.path("schemaVersion").asInt() != 1) {
             fail("schemaVersion", "must be 1");
         }
@@ -108,8 +108,32 @@ final class ViewDefinition {
                 fail(path + "/target", "is only allowed for navigation");
             }
         }
+        var targets=new HashSet<>(ids);
+        for(var section:sections) for(var field:section.path("fields")) for(int option=0;option<field.path("options").size();option++)
+            targets.add(field.path("id").asString()+".option."+option);
+        if(node.has("presentation")) validatePresentation(node.path("presentation"),targets);
         if (kind.equals("worklist")) WorklistViews.validate(node);
         return kind;
+    }
+
+    private static void validatePresentation(JsonNode presentation,Set<String> targets) {
+        String path="presentation";object(presentation,path);
+        keys(presentation,path,Set.of("baseLocale","breakpoint","density","tone","translations"));
+        String base=string(presentation,"baseLocale",6,path);
+        if(!base.matches("[a-z]{2,3}(?:-[A-Z]{2})?"))fail(path+"/baseLocale","must be a language code, optionally with an uppercase region");
+        if(!Set.of("sm","md","lg").contains(string(presentation,"breakpoint",2,path)))fail(path+"/breakpoint","must be sm, md or lg");
+        if(!Set.of("comfortable","compact").contains(string(presentation,"density",20,path)))fail(path+"/density","must be comfortable or compact");
+        if(!Set.of("brand","neutral").contains(string(presentation,"tone",20,path)))fail(path+"/tone","must be brand or neutral");
+        var translations=presentation.path("translations");object(translations,path+"/translations");
+        if(translations.size()>8)fail(path+"/translations","supports at most eight languages");
+        for(String locale:translations.propertyNames()) {
+            if(!locale.matches("[a-z]{2,3}(?:-[A-Z]{2})?")||locale.equals(base))fail(path+"/translations/"+locale,"must be a valid non-base language");
+            var labels=translations.path(locale);object(labels,path+"/translations/"+locale);
+            for(String id:labels.propertyNames()) {
+                if(!targets.contains(id))fail(path+"/translations/"+locale+"/"+id,"must reference a current view label");
+                string(labels,id,120,path+"/translations/"+locale);
+            }
+        }
     }
 
     private static void object(JsonNode node, String path) {

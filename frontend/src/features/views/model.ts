@@ -25,7 +25,16 @@ export interface ViewAction {
   target?: string
 }
 
+export interface ViewPresentation {
+  baseLocale: string
+  breakpoint: 'sm' | 'md' | 'lg'
+  density: 'comfortable' | 'compact'
+  tone: 'brand' | 'neutral'
+  translations: Record<string, Record<string,string>>
+}
+
 export interface ViewDefinition {
+  presentation?: ViewPresentation
   schemaVersion: 1
   kind: ViewKind
   sections: ViewSection[]
@@ -95,5 +104,23 @@ export function validateView(definition: ViewDefinition): string[] {
     if (fields.some(field=>field.required || !(field.type==='text'&&text.includes(field.binding) || field.type==='number'&&field.binding==='task.priority'))) problems.push('Use supported read-only task summary columns with matching types.')
     if (!fields.some(field=>field.binding==='task.requestTitle') || definition.actions.length!==1 || definition.actions[0]?.type!=='openTask') problems.push('A worklist needs a request title column and one Open task action.')
   }
+  if(definition.presentation) {
+    const p=definition.presentation, targets=new Set(translationTargets(definition).map(target=>target.id))
+    if(!/^[a-z]{2,3}(?:-[A-Z]{2})?$/.test(p.baseLocale)||!['sm','md','lg'].includes(p.breakpoint)||!['comfortable','compact'].includes(p.density)||!['brand','neutral'].includes(p.tone)) problems.push('Choose valid view language, breakpoint, density and theme tokens.')
+    if(Object.keys(p.translations).length>8)problems.push('Use at most eight translated languages.')
+    for(const [locale,labels] of Object.entries(p.translations)) {
+      if(!/^[a-z]{2,3}(?:-[A-Z]{2})?$/.test(locale)||locale===p.baseLocale)problems.push('Translation languages must be valid and different from the base language.')
+      for(const [id,label] of Object.entries(labels))if(!targets.has(id)||!label.trim()||label!==label.trim()||label.length>120)problems.push(`Translation ${locale}/${id} must reference a current label and contain trimmed text of at most 120 characters.`)
+    }
+  }
   return problems
+}
+
+export function translationTargets(view: ViewDefinition): Array<{id:string;label:string}> {
+  return [...view.sections.flatMap(section=>[{id:section.id,label:section.label},...section.fields.flatMap(field=>[{id:field.id,label:field.label},...(field.options??[]).map((option,index)=>({id:`${field.id}.option.${index}`,label:option.label}))])]),...view.actions.map(action=>({id:action.id,label:action.label}))]
+}
+export function pruneTranslations(view:ViewDefinition):ViewDefinition {
+  if(!view.presentation)return view
+  const targets=new Set(translationTargets(view).map(target=>target.id))
+  return {...view,presentation:{...view.presentation,translations:Object.fromEntries(Object.entries(view.presentation.translations).map(([locale,labels])=>[locale,Object.fromEntries(Object.entries(labels).filter(([id])=>targets.has(id)))]))}}
 }

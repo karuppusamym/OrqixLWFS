@@ -39,6 +39,7 @@ class RequestViewBindingTest extends RuntimeTestBase {
     }
     private void bind(ObjectNode workflow, UUID id, ObjectNode view) {
         var ui = (ObjectNode) workflow.path("inputUi");
+        if(view.has("presentation"))ui.set("viewDefinition",view.deepCopy());
         ui.putObject("viewRef").put("id",id.toString()).put("version",1);
         ui.put("submitLabel","Send for review");
         var order = ui.putArray("order"); var widgets = ui.putObject("widgets");
@@ -97,4 +98,21 @@ class RequestViewBindingTest extends RuntimeTestBase {
         ((ObjectNode) missing.path("inputUi")).putNull("viewRef");
         assertThat(check.issues(PURCHASING,missing)).extracting(com.orqix.compiler.ValidationIssue::code).containsExactly(AssetReferenceCheck.INVALID);
     }
+    @Test void localizedRequestPresentationIsPinnedAndTamperingOrDetachmentCannotBypassPublicationChecks() throws Exception {
+        var view=view();
+        view.putObject("presentation").put("baseLocale","en").put("breakpoint","lg").put("density","compact").put("tone","neutral")
+                .putObject("translations").putObject("fr").put("details","Détails").put("amount","Montant").put("submit","Envoyer");
+        var id=publishView(view);
+        var workflow=publishPurchase(PURCHASING,definition->bind(definition,id,view));
+        var form=api("rhea.requester").get("/workspaces/{ws}/workflows/{id}/start-form",PURCHASING,workflow);
+        assertThat(form.status()).isEqualTo(200);
+        assertThat(form.body().path("inputUi").path("viewDefinition")).isEqualTo(view);
+        assertThat(form.body().path("inputSchema").path("properties").path("amount").path("type").asString()).isEqualTo("number");
+        var definition=(ObjectNode)Fixtures.purchaseTemplate().deepCopy();bind(definition,id,view);
+        ((ObjectNode)definition.path("inputUi").path("viewDefinition").path("presentation")).put("tone","brand");
+        assertThat(check.issues(PURCHASING,definition)).extracting(com.orqix.compiler.ValidationIssue::code).containsExactly(AssetReferenceCheck.DIVERGED);
+        ((ObjectNode)definition.path("inputUi")).remove("viewRef");
+        assertThat(check.issues(PURCHASING,definition)).extracting(com.orqix.compiler.ValidationIssue::code).containsExactly(AssetReferenceCheck.INVALID);
+    }
+
 }

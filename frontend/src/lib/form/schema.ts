@@ -3,6 +3,7 @@
  * and the presentation hints (`inputUi`). Server data is untrusted, so parsing is defensive.
  */
 
+import { validateView,type ViewDefinition } from '@/features/views/model'
 import { isCalendarDate } from '../dates'
 import type { Condition } from '@/features/studio/model/types'
 
@@ -44,6 +45,7 @@ export interface FormSchema {
 }
 
 export interface FormUi {
+  viewDefinition?: ViewDefinition
   submitLabel?: string
   order?: string[]
   widgets?: Record<string, Widget>
@@ -118,6 +120,10 @@ export function parseFormSchema(raw: unknown): FormSchema {
 export function parseFormUi(raw: unknown): FormUi {
   if (!isRecord(raw)) return {}
   const ui: FormUi = {}
+  if(isRecord(raw.viewDefinition))try {
+    const view=raw.viewDefinition as unknown as ViewDefinition
+    if(view.kind==='request'&&validateView(view).length===0)ui.viewDefinition=view
+  } catch { /* Malformed untrusted presentation is ignored. */ }
   if (typeof raw.submitLabel === 'string' && raw.submitLabel.trim() && raw.submitLabel.length <= 80) ui.submitLabel = raw.submitLabel
   if (Array.isArray(raw.order)) ui.order = raw.order.filter((v): v is string => typeof v === 'string')
   if (isRecord(raw.widgets)) {
@@ -162,6 +168,7 @@ function parseCondition(value: unknown): Condition | undefined {
 }
 
 export interface FieldDef {
+  optionLabels?: Record<string,string>
   key: string
   label: string
   description: string | undefined
@@ -217,5 +224,16 @@ export function buildFields(schema: FormSchema, ui: FormUi): FieldDef[] {
       section: section ? { id: section.id, title: section.title, columns: section.columns ?? 1 } : undefined,
       helpAbove: ui.layout ? ui.layout.helpText === 'above' : undefined,
     }
+  })
+}
+
+
+/** Translate copied presentation only; schemas, raw values and visibility/required rules are unchanged. */
+export function presentFields(fields:FieldDef[],view?:ViewDefinition):FieldDef[] {
+  if(!view)return fields
+  return fields.map(field=>{
+    const section=view.sections.find(section=>section.fields.some(control=>control.binding===`request.${field.key}`))
+    const control=section?.fields.find(control=>control.binding===`request.${field.key}`)
+    return control?{...field,label:control.label,optionLabels:control.options?Object.fromEntries(control.options.map(option=>[option.value,option.label])):undefined,section:field.section&&section?{...field.section,title:section.label}:field.section}:field
   })
 }

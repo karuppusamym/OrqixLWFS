@@ -1,3 +1,5 @@
+import type { ViewDefinition } from '@/features/views/model'
+import { viewGrid } from '@/features/views/presentation'
 import { AlertCircle } from 'lucide-react'
 import { FormField } from '@/components/common/FormField'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -17,6 +19,7 @@ export function fieldDomId(prefix: string, key: string): string {
 }
 
 export interface FormRendererProps {
+  view?: ViewDefinition
   fields: FieldDef[]
   values: RawValues
   onChange: (key: string, value: RawValue) => void
@@ -32,7 +35,7 @@ export interface FormRendererProps {
  * `title` is the label, `description` is help text linked with aria-describedby, required fields are marked in text,
  * and client or server errors render on the same field.
  */
-export function FormRenderer({ fields, values, onChange, errors, idPrefix = 'f', disabled, onFileBusyChange }: FormRendererProps) {
+export function FormRenderer({ fields, values, onChange, errors, idPrefix = 'f', disabled, onFileBusyChange,view }: FormRendererProps) {
   const shown = visibleFields(fields, values)
   const render = (f: FieldDef) => <FieldControl key={f.key} field={f} value={values[f.key]} onChange={(v) => onChange(f.key, v)} error={errors[f.key]} id={fieldDomId(idPrefix, f.key)} disabled={disabled} onFileBusyChange={onFileBusyChange} />
   const sectionIds = [...new Set(shown.flatMap(f => f.section ? [f.section.id] : []))]
@@ -41,7 +44,7 @@ export function FormRenderer({ fields, values, onChange, errors, idPrefix = 'f',
       {sectionIds.map(sectionId => {
         const members = shown.filter(f => f.section?.id === sectionId)
         const section = members[0]!.section!
-        return <fieldset key={sectionId} className="space-y-4 rounded-card border border-border p-4"><legend className="px-1 font-semibold">{section.title}</legend><div className={section.columns === 2 ? 'grid gap-5 md:grid-cols-2' : 'space-y-5'}>{members.map(render)}</div></fieldset>
+        return <fieldset key={sectionId} className="space-y-4 rounded-card border border-border p-4"><legend className="px-1 font-semibold">{section.title}</legend><div className={viewGrid(view,section.columns,'md')}>{members.map(render)}</div></fieldset>
       })}
       {shown.filter(f => !f.section).map(render)}
     </div>
@@ -157,7 +160,7 @@ function FieldControl({
             <div key={option} className="flex items-center gap-3">
               <RadioGroupItem value={option} id={`${id}-${option}`} />
               <Label htmlFor={`${id}-${option}`} className="font-medium">
-                {option}
+                {f.optionLabels?.[option]??option}
               </Label>
             </div>
           ))}
@@ -211,7 +214,7 @@ function FieldControl({
                 <option value="">Choose an option</option>
                 {(f.schema.enum ?? []).map((option) => (
                   <option key={option} value={option}>
-                    {option}
+                    {f.optionLabels?.[option]??option}
                   </option>
                 ))}
               </Select>

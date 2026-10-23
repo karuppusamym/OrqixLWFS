@@ -34,6 +34,8 @@ export function bindRequestView(workflow: Definition, id: string, version: numbe
     if (field.type === 'text' || field.type === 'number' || field.type === 'choice') widgets[key] = field.type === 'choice' ? 'select' : field.type
   }
   next.inputUi = { ...next.inputUi, viewRef: { id, version }, order: keys, widgets, layout: { ...next.inputUi?.layout, sections: view.sections.map(section => ({ id: section.id, title: section.label, columns: section.columns, fields: section.fields.map(field => field.binding.slice(8)) })) } }
+  if(view.presentation)next.inputUi.viewDefinition=structuredClone(view)
+  else delete next.inputUi.viewDefinition
   if (view.actions[0]) next.inputUi.submitLabel = view.actions[0].label
   else delete next.inputUi.submitLabel
   return next

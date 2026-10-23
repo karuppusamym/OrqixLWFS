@@ -2,6 +2,8 @@
  * Canonical workflow v0.1 document as the studio edits it (contracts/workflow-v0.schema.json).
  * Drafts may be incomplete, so every container is normalized on load and every accessor is defensive.
  */
+import type { ViewDefinition } from '@/features/views/model'
+
 export type NodeKind = 'start' | 'approval' | 'decision' | 'branch' | 'http' | 'generateDocument' | 'notification' | 'parallelSplit' | 'parallelJoin' | 'wait' | 'waitForMessage' | 'externalTask' | 'startWorkflow' | 'raiseError' | 'sendSignal' | 'waitForSignal' | 'compensate' | 'sendAdapter' | 'end'
 export type Operator = 'eq' | 'ne' | 'gte' | 'gt' | 'lt' | 'lte'
 export type RouteKind = 'next' | 'approved' | 'rejected' | 'timedOut' | 'failed' | 'condition' | 'default'
@@ -100,6 +102,7 @@ export interface FormSchemaDoc {
 }
 
 export interface InputUiDoc {
+  viewDefinition?: ViewDefinition
   viewRef?: { id: string; version: number }
   submitLabel?: string
   order?: string[]

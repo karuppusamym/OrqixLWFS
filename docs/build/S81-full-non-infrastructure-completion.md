@@ -9,7 +9,7 @@
 | Worklist views | Versioned authoring, explicit workspace binding, authorized task-list rendering, concurrency, read-only roles, mobile/a11y | Implemented: published workspace pins, CAS/reset/history, task-summary columns and real Edge desktop/mobile acceptance; general list composition remains separate |
 | General application pages | Composable case/worklist pages, reusable components, typed lists/details and conditional visibility | Request/approval/case-data views exist; general page composition remains open |
 | Application actions | Submit/save draft/approval/correction/navigation and composed actions with server authority | Fixed request/approval/case-data actions exist; general composition/correction action binding remains open |
-| Responsive/localized design | Authorable breakpoints, localization, theme tokens | Existing responsive renderers/themes are foundations; general authoring/runtime acceptance remains open |
+| Responsive/localized design | Authorable breakpoints, localization, theme tokens | S83 delivers authored breakpoint/density/theme tokens, translated view labels/choices/actions and language selection across request/approval/case/worklist snapshots; general page-composition acceptance remains open |
 | View migration | Reviewed explicit version migration and compatibility diagnostics across applications | Immutable pins and explicit reapplication exist; general migration remains open |
 | Component extensions | Sandbox, capability grants, CSP and failure isolation; approved external data/actions | Not implemented; remains open |
 | CMMN planning/lifecycle | Discretionary planning, repetition, event listeners, nested cases, normative suspension and termination | Restricted stages/human tasks/sentries/milestones, authorized native user events and finite sequential human-task repetition (S82), command hold and termination exist; full semantics remain open |
@@ -77,3 +77,8 @@ UI02e (workspace worklist presentation) and WM04g (visual authoring/export of th
 ## 23 October follow-up: event-driven case work
 
 [S82](S82-case-user-events-repetition.md) adds native role-authorized user events, occurrence sentries and finite sequential human-task repetition with visual authoring, immutable command replay, fresh eligibility, required-work guards and real browser/restart acceptance. It records pinned-engine completion/termination limitations explicitly. The local application is refreshed to the S82 image/V114; the S81 image evidence above remains the historical checkpoint. Full original scope, generalized CMMN semantics and the general application designer remain open.
+
+
+## 23 October follow-up: responsive/localized view presentation
+
+[S83](S83-view-presentation.md) delivers authored responsive breakpoints, fixed density/theme tokens and localized view labels/choices/actions across request, approval, case and worklist bindings. Exact request snapshot publication checks, authoring/preview, canonical-value retention and current action/data permissions have compiler/backend/frontend/browser acceptance. The local image is refreshed to the S83 checkpoint with migration 114 retained. Full general application composition/actions/migration/extensions and full CMMN remain open.

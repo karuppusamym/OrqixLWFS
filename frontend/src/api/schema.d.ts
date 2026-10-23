@@ -4129,7 +4129,23 @@ export interface components {
             /** @description Same-application route for navigate action only */
             target?: string;
         };
+        ViewPresentation: {
+            baseLocale: string;
+            /** @enum {string} */
+            breakpoint: "sm" | "md" | "lg";
+            /** @enum {string} */
+            density: "comfortable" | "compact";
+            /** @enum {string} */
+            tone: "brand" | "neutral";
+            /** @description Partial locale dictionaries keyed by section/field/action IDs and fieldId.option.index. Missing labels use base text. Values never change stored typed values or action grants. */
+            translations: {
+                [key: string]: {
+                    [key: string]: string;
+                };
+            };
+        };
         ViewDefinition: {
+            presentation?: components["schemas"]["ViewPresentation"];
             /** @enum {integer} */
             schemaVersion: 1;
             /** @enum {string} */
@@ -7332,6 +7348,8 @@ export interface components {
             inputSchema: components["schemas"]["formSchema"];
             /** @description Presentation hints for the request form. Never affects validation or execution. */
             inputUi?: {
+                /** @description Exact published request-view snapshot when reusable presentation is configured; workspace and equality checked at publication. */
+                viewDefinition?: Record<string, never>;
                 viewRef?: {
                     /** Format: uuid */
                     id: string;

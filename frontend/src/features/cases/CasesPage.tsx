@@ -1,3 +1,5 @@
+import { usePresentedView,ViewLanguage } from '@/features/views/ViewLanguage'
+import { viewSurface } from '@/features/views/presentation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router'
@@ -34,6 +36,7 @@ export function CasesPage() {
   const [viewRef, setViewRef] = useState<{ id: string; version: number }>()
   const [dataFields, setDataFields] = useState<DataField[]>([])
   const [starting, setStarting] = useState<components['schemas']['CaseDefinition'] | null>(null)
+  const appearance=usePresentedView(starting?.viewBinding?.definition as ViewDefinition|undefined)
   const [initialData, setInitialData] = useState<DataInputs>({})
   const [key, setKey] = useState('')
   const [name, setName] = useState('')
@@ -101,8 +104,9 @@ export function CasesPage() {
         : <p className="text-sm text-muted-foreground">No case definitions are available in this workspace.</p>}
     </section> : null}
     <Dialog open={starting !== null} onClose={() => setStarting(null)} dismissible={!pending} title="Start case" description={starting?.name}>
-      <form className="space-y-4" onSubmit={event => { event.preventDefault(); if (starting) void start(starting.id, starting.dataFields ?? []) }}>
-        {starting ? <CaseDataFields view={starting.viewBinding?.definition as ViewDefinition | undefined} fields={starting.dataFields ?? []} values={initialData} onChange={setInitialData} disabled={pending} /> : null}
+      <form lang={appearance.locale} className={`space-y-4 ${viewSurface(appearance.view)}`} onSubmit={event => { event.preventDefault(); if (starting) void start(starting.id, starting.dataFields ?? []) }}>
+        <ViewLanguage definition={starting?.viewBinding?.definition as ViewDefinition|undefined} locale={appearance.locale} onChange={appearance.setLocale}/>
+        {starting ? <CaseDataFields view={appearance.view} fields={starting.dataFields ?? []} values={initialData} onChange={setInitialData} disabled={pending} /> : null}
         {error ? <Alert tone="danger">{error}</Alert> : null}
         <Button type="submit" loading={pending} disabled={pending}>Start case with data</Button>
       </form>

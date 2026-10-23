@@ -5838,11 +5838,29 @@ components:
         label: { type: string, minLength: 1, maxLength: 200 }
         type: { type: string, enum: [submit, saveDraft, approve, reject, requestCorrection, navigate, saveData, openTask] }
         target: { type: string, description: Same-application route for navigate action only }
+    ViewPresentation:
+      type: object
+      additionalProperties: false
+      required: [baseLocale, breakpoint, density, tone, translations]
+      properties:
+        baseLocale: { type: string, pattern: '^[a-z]{2,3}(-[A-Z]{2})?$' }
+        breakpoint: { type: string, enum: [sm, md, lg] }
+        density: { type: string, enum: [comfortable, compact] }
+        tone: { type: string, enum: [brand, neutral] }
+        translations:
+          type: object
+          maxProperties: 8
+          description: Partial locale dictionaries keyed by section/field/action IDs and fieldId.option.index. Missing labels use base text. Values never change stored typed values or action grants.
+          propertyNames: { pattern: '^[a-z]{2,3}(-[A-Z]{2})?$' }
+          additionalProperties:
+            type: object
+            additionalProperties: { type: string, minLength: 1, maxLength: 120 }
     ViewDefinition:
       type: object
       additionalProperties: false
       required: [schemaVersion, kind, sections, actions]
       properties:
+        presentation: { $ref: '#/components/schemas/ViewPresentation' }
         schemaVersion: { type: integer, enum: [1] }
         kind: { type: string, enum: [request, approval, case, worklist] }
         sections: { type: array, items: { $ref: '#/components/schemas/ViewSection' } }

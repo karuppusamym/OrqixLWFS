@@ -1,3 +1,5 @@
+import { usePresentedView,ViewLanguage } from '@/features/views/ViewLanguage'
+import { viewSurface } from '@/features/views/presentation'
 import { RequestDocumentPicker } from './RequestDocumentPicker'
 import { useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2 } from 'lucide-react'
@@ -21,7 +23,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAnnounce } from '@/components/common/Announcer'
-import { buildFields, parseFormSchema, parseFormUi, type FieldDef } from '@/lib/form/schema'
+import { buildFields, presentFields, parseFormSchema, parseFormUi, type FieldDef } from '@/lib/form/schema'
 import { carryOverValues, validateForm, type FieldErrors, type RawValue, type RawValues } from '@/lib/form/values'
 import { visibleFields } from '@/lib/form/visibility'
 import { describeProblem, fieldErrorMap } from '@/lib/problemMessages'
@@ -38,7 +40,7 @@ export function displayValue(field: FieldDef, raw: RawValue | undefined): string
   const text = typeof raw === 'string' ? raw : ''
   if (text === '') return '—'
   if (field.widget === 'file') return 'A file is attached'
-  return field.isMoney ? formatUsd(text) : text
+  return field.isMoney ? formatUsd(text) : field.optionLabels?.[text]??text
 }
 
 export function StartRequestPage() {
@@ -64,7 +66,8 @@ export function StartRequestPage() {
 
   const schema = useMemo(() => parseFormSchema(form.data?.inputSchema), [form.data?.inputSchema])
   const ui = useMemo(() => parseFormUi(form.data?.inputUi), [form.data?.inputUi])
-  const fields = useMemo(() => buildFields(schema, ui), [schema, ui])
+  const appearance=usePresentedView(ui.viewDefinition)
+  const fields = useMemo(() => presentFields(buildFields(schema, ui),appearance.view), [schema, ui,appearance.view])
   // Values always follow the current form: keys that no longer exist are dropped, existing keys are kept.
   const values = useMemo(() => carryOverValues(typed, fields), [typed, fields])
 
@@ -164,7 +167,7 @@ export function StartRequestPage() {
   if (stage === 'submitted' && result) {
     const first = result.currentSteps[0]
     return (
-      <div className="mx-auto max-w-2xl">
+      <div lang={appearance.locale} className={`mx-auto max-w-2xl ${viewSurface(appearance.view)}`}>
         <PageHeader key="submitted" title="Request submitted" />
         <Card>
           <CardContent className="space-y-4 pt-5">
@@ -197,7 +200,7 @@ export function StartRequestPage() {
 
   if (stage === 'review') {
     return (
-      <div className="mx-auto max-w-2xl">
+      <div lang={appearance.locale} className={`mx-auto max-w-2xl ${viewSurface(appearance.view)}`}>
         <PageHeader key="review" title="Check your request" description={`${startForm.workflowName} · Version ${startForm.releaseNumber}`} />
         <Card>
           <CardContent className="space-y-5 pt-5">
@@ -228,7 +231,7 @@ export function StartRequestPage() {
                 Back to edit
               </Button>
               <Button variant="primary" size="lg" onClick={() => void submit()} loading={submitting}>
-                {submitting ? 'Submitting' : ui.submitLabel ?? 'Submit request'}
+                {submitting ? 'Submitting' : appearance.view?.actions.find(action=>action.type==='submit')?.label ?? ui.submitLabel ?? 'Submit request'}
               </Button>
             </div>
           </CardContent>
@@ -238,7 +241,7 @@ export function StartRequestPage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl">
+    <div lang={appearance.locale} className={`mx-auto max-w-2xl ${viewSurface(appearance.view)}`}>
       <PageHeader key="edit" title={startForm.workflowName} description={`Version ${startForm.releaseNumber}`} />
       {staleNotice ? (
         <Alert tone="warning" className="mb-4" title="This form was updated">
@@ -257,7 +260,7 @@ export function StartRequestPage() {
         <Card>
           <CardContent className="space-y-5 pt-5">
             {showSummary ? <ErrorSummary ref={summaryRef} fields={visibleFields(fields, values)} errors={errors} idPrefix={ID_PREFIX} /> : null}
-            <FormRenderer key={`${ws}:${workflowId}:${startForm.releaseNumber}`} fields={fields} values={values} onChange={change} errors={errors} idPrefix={ID_PREFIX} onFileBusyChange={(key, busy) => {
+            <ViewLanguage definition={ui.viewDefinition} locale={appearance.locale} onChange={appearance.setLocale}/><FormRenderer view={appearance.view} key={`${ws}:${workflowId}:${startForm.releaseNumber}`} fields={fields} values={values} onChange={change} errors={errors} idPrefix={ID_PREFIX} onFileBusyChange={(key, busy) => {
               setUploadingFields((previous) => { const next = new Set(previous); if (busy) next.add(key); else next.delete(key); return next })
             }} />
             {can('document.browse') ? <RequestDocumentPicker key={`${ws}:${workflowId}:${startForm.releaseId}`} workspaceId={ws} fields={fields} onApply={(references) => Object.entries(references).forEach(([key, value]) => change(key, value))} /> : null}

@@ -1,3 +1,5 @@
+import { usePresentedView,ViewLanguage } from '@/features/views/ViewLanguage'
+import { viewSurface } from '@/features/views/presentation'
 import { TaskCorrection } from './TaskCorrection'
 import { useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, ShieldAlert, Undo2, UserCheck, XCircle } from 'lucide-react'
@@ -69,6 +71,7 @@ export function TaskPanel({ taskId, onClaimed }: { taskId: string; onClaimed?: (
   const announce = useAnnounce()
   const query = useTask(ws, taskId)
   const task = query.data
+  const appearance=usePresentedView(task?.approvalView as unknown as ViewDefinition|undefined)
   const idempotency = useIdempotencyKey()
   const [comment, setComment] = useState('')
   const [commentError, setCommentError] = useState<string>()
@@ -205,7 +208,7 @@ export function TaskPanel({ taskId, onClaimed }: { taskId: string; onClaimed?: (
     }
   }
 
-  const approvalView = task.approvalView as unknown as ViewDefinition | undefined
+  const approvalView = appearance.view
   const actionLabel = (type: 'approve' | 'reject') => approvalView?.actions.find(action => action.type === type)?.label ?? (type === 'approve' ? 'Approve' : 'Reject')
   const navigation = approvalView?.actions.find(action => action.type === 'navigate')
   const due = dueInfo(task.dueAt)
@@ -223,7 +226,8 @@ export function TaskPanel({ taskId, onClaimed }: { taskId: string; onClaimed?: (
   })()
 
   return (
-    <div className="flex min-h-0 flex-col">
+    <div lang={appearance.locale} className={`flex min-h-0 flex-col ${viewSurface(approvalView)}`}>
+      <ViewLanguage definition={task.approvalView as unknown as ViewDefinition|undefined} locale={appearance.locale} onChange={appearance.setLocale}/>
       <div className="space-y-5 p-5">
         <header>
           <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
@@ -253,7 +257,7 @@ export function TaskPanel({ taskId, onClaimed }: { taskId: string; onClaimed?: (
           <h3 id="task-request-heading" className="mb-2 text-sm text-muted-foreground uppercase">
             Request
           </h3>
-          <>{approvalView ? <ApprovalRequest task={task} /> : <dl className="divide-y divide-border rounded-card border border-border">
+          <>{approvalView ? <ApprovalRequest task={task} definition={approvalView} /> : <dl className="divide-y divide-border rounded-card border border-border">
             {fields.map((f) => (
               <div key={f.key} className="grid gap-1 px-4 py-2.5 sm:grid-cols-[10rem_1fr]">
                 <dt className="text-sm font-semibold text-muted-foreground">{f.label}</dt>

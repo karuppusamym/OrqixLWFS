@@ -21,7 +21,8 @@ public class RequestViewCheck {
 
     public List<ValidationIssue> issues(UUID workspace, JsonNode workflow) {
         var pin = workflow.path("inputUi").path("viewRef");
-        if (pin.isMissingNode()) return List.of();
+        if (pin.isMissingNode()) return workflow.path("inputUi").has("viewDefinition")
+                ? List.of(issue(AssetReferenceCheck.INVALID,"Copied request presentation requires an exact published view pin.")) : List.of();
         if (!pin.isObject() || !pin.path("id").isString() || !pin.path("version").isIntegralNumber()
                 || !pin.path("version").canConvertToInt() || pin.path("version").asInt() < 1)
             return List.of(issue(AssetReferenceCheck.INVALID, "The request view pin is invalid."));
@@ -82,6 +83,8 @@ public class RequestViewCheck {
         }
         if (!bound.equals(new HashSet<>(properties.propertyNames()))) return List.of("Every workflow input field must have exactly one view binding.");
         var ui = workflow.path("inputUi");
+        if((view.has("presentation") || ui.has("viewDefinition")) && !view.equals(ui.path("viewDefinition")))
+            return List.of("The copied request presentation differs from its pinned view. Reapply that version.");
         String submit = actions.isEmpty() ? "" : actions.get(0).path("label").asString();
         if (!order.equals(ui.path("order")) || !sections.equals(ui.path("layout").path("sections"))
                 || !widgets.equals(ui.path("widgets")) || !submit.equals(ui.path("submitLabel").asString("")))

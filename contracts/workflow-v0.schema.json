@@ -56,6 +56,7 @@
       "type": "object",
       "description": "Presentation hints for the request form. Never affects validation or execution.",
       "properties": {
+        "viewDefinition": { "type": "object", "description": "Exact published request-view snapshot when reusable presentation is configured; workspace and equality checked at publication." },
         "viewRef": {
           "type": "object",
           "additionalProperties": false,

@@ -1,3 +1,5 @@
+import { usePresentedView,ViewLanguage } from '@/features/views/ViewLanguage'
+import { viewSurface } from '@/features/views/presentation'
 import { Link } from 'react-router'
 import type { ViewDefinition } from '@/features/views/model'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -17,7 +19,8 @@ function DataEditor({ data, ws, instanceId, busy, onPending }: { data: component
   const [reason, setReason] = useState('')
   const [error, setError] = useState<string | null>(null)
   const id = useId(), client = useQueryClient()
-  const view = data.viewBinding?.definition as ViewDefinition | undefined
+  const appearance=usePresentedView(data.viewBinding?.definition as ViewDefinition | undefined)
+  const view=appearance.view
   const navigation = view?.actions.find(action => action.type === 'navigate')
   const save = async () => {
     if (!data || !reason.trim()) return
@@ -31,8 +34,9 @@ function DataEditor({ data, ws, instanceId, busy, onPending }: { data: component
       void client.invalidateQueries({ queryKey: ['ws', ws, 'case', instanceId], exact: true })
     } finally { onPending(false) }
   }
-  return <form className="space-y-4" onSubmit={event => { event.preventDefault(); void save() }}>
+  return <form lang={appearance.locale} className={`space-y-4 ${viewSurface(view)}`} onSubmit={event => { event.preventDefault(); void save() }}>
     {error ? <Alert tone="danger">{error}</Alert> : null}
+    <ViewLanguage definition={data.viewBinding?.definition as ViewDefinition|undefined} locale={appearance.locale} onChange={appearance.setLocale}/>
     <CaseDataFields view={view} fields={data.fields} values={values} onChange={setValues} disabled={busy} readOnly={!data.canEdit} />
     {data.canEdit ? <><Label htmlFor={`${id}-reason`}>Reason for data change</Label><Textarea id={`${id}-reason`} required maxLength={1000} value={reason} disabled={busy} onChange={event => setReason(event.target.value)} /><Button type="submit" disabled={busy || !reason.trim()} loading={busy}>{view?.actions.find(action => action.type === 'saveData')?.label ?? 'Save case data'}</Button></> : null}
     {navigation?.target ? <Link to={navigation.target}>{navigation.label}</Link> : null}

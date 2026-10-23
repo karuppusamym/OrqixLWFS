@@ -33,9 +33,9 @@ export function RequestViewPicker() {
     <p className="text-xs text-muted-foreground">Apply an exact published version to this form. Bindings and required flags must match every question. Later library changes keep the selected version pinned.</p>
     {pin ? <div className="space-y-2"><p className="text-sm">Pinned view {pin.id}, version {pin.version}</p><Button variant="secondary" disabled={readOnly || busy} onClick={() => store.getState().apply(current => {
       const next = structuredClone(current)
-      if (next.inputUi) delete next.inputUi.viewRef
+      if (next.inputUi) { delete next.inputUi.viewRef; delete next.inputUi.viewDefinition }
       return next
-    })}>Detach view and keep form</Button></div> : null}
+    })}>Detach view and keep form</Button><p className="text-xs text-muted-foreground">Detaching retains base form labels and layout. Language and theme settings require a published view.</p></div> : null}
     {!readOnly && !choosing ? <Button variant="secondary" onClick={() => setChoosing(true)}>Choose reusable view</Button> : null}
     {!readOnly && choosing ? <>
       <Label htmlFor="request-view-id">Published request view</Label>

@@ -1,3 +1,4 @@
+import { viewGrid } from '@/features/views/presentation'
 import type { ViewDefinition } from '@/features/views/model'
 import { useId } from 'react'
 import type { components } from '@/api/schema'
@@ -46,18 +47,18 @@ export function CaseDataFields({ fields, values, onChange, disabled = false, rea
   const prefix = useId()
   const groups = view ? view.sections.map(section => ({ id: section.id, label: section.label, columns: section.columns, fields: section.fields.flatMap(control => {
     const field = fields.find(item => `case.${item.key}` === control.binding)
-    return field ? [{ ...field, label: control.label }] : []
-  }) })) : [{ id: 'default', label: '', columns: 2, fields }]
+    return field ? [{ ...field, label: control.label,optionLabels:control.options?Object.fromEntries(control.options.map(option=>[option.value,option.label])):undefined }] : []
+  }) })) : [{ id: 'default', label: '', columns: 2, fields:fields.map(field=>({...field,optionLabels:undefined as Record<string,string>|undefined})) }]
   return <div className="space-y-5">{groups.map(group => <section key={group.id} aria-label={group.label || undefined} className="space-y-3">
     {group.label ? <h3 className="font-semibold">{group.label}</h3> : null}
-    <div className={`grid gap-4 ${group.columns === 2 ? 'sm:grid-cols-2' : ''}`}>{group.fields.map(field => {
+    <div className={viewGrid(view,group.columns)}>{group.fields.map(field => {
     const id = `${prefix}-${field.key}`
     const set = (value: string) => onChange({ ...values, [field.key]: value })
     return <div key={field.key} className="space-y-1">
       <Label htmlFor={id}>{field.label}{field.required ? ' (required)' : ''}</Label>
-      {readOnly ? <Input id={id} readOnly value={values[field.key] ?? 'No value'} />
+      {readOnly ? <Input id={id} readOnly value={field.optionLabels?.[values[field.key]??'']??values[field.key] ?? 'No value'} />
         : field.type === 'choice' || field.type === 'boolean' ? <select id={id} className="h-10 w-full rounded border bg-surface px-3" value={values[field.key] ?? ''} disabled={disabled} required={field.required} onChange={event => set(event.target.value)}>
-          <option value="">Choose a value</option>{field.type === 'boolean' ? <><option value="true">Yes</option><option value="false">No</option></> : field.options?.map(option => <option key={option} value={option}>{option}</option>)}
+          <option value="">Choose a value</option>{field.type === 'boolean' ? <><option value="true">Yes</option><option value="false">No</option></> : field.options?.map(option => <option key={option} value={option}>{field.optionLabels?.[option]??option}</option>)}
         </select> : <Input id={id} value={values[field.key] ?? ''} onChange={event => set(event.target.value)} disabled={disabled} required={field.required}
           type={field.type === 'date' ? 'date' : field.type === 'number' || field.type === 'integer' ? 'number' : 'text'}
           step={field.type === 'integer' ? 1 : 'any'} min={field.minimum ?? undefined} max={field.maximum ?? undefined} maxLength={field.type === 'text' ? field.maxLength ?? 2000 : undefined} />}

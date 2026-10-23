@@ -14,7 +14,8 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog } from '@/components/ui/dialog'
 import { Input, Select, Textarea } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { ACTION_TYPES, FIELD_TYPES, moveItem, uniqueId, validateView, type ViewAction, type ViewActionType, type ViewDefinition, type ViewField, type ViewFieldType, type ViewSection } from './model'
+import { ACTION_TYPES, FIELD_TYPES, pruneTranslations, moveItem, uniqueId, validateView, type ViewAction, type ViewActionType, type ViewDefinition, type ViewField, type ViewFieldType, type ViewSection } from './model'
+import { PresentationEditor } from './PresentationEditor'
 import { ViewPreview } from './ViewPreview'
 import { WorklistAssignment } from './WorklistAssignment'
 
@@ -52,7 +53,7 @@ function LoadedViewEditor({ detail }: { detail: ViewDetail }) {
     setDraft(transform(draft))
     setDirty(true)
   }
-  const changeDefinition = (transform: (current: ViewDefinition) => ViewDefinition) => edit(current => ({ ...current, definition: transform(current.definition) }))
+  const changeDefinition = (transform: (current: ViewDefinition) => ViewDefinition) => edit(current => ({ ...current, definition: pruneTranslations(transform(current.definition)) }))
   const changeSection = (index: number, transform: (section: ViewSection) => ViewSection) => changeDefinition(definition => ({ ...definition, sections: definition.sections.map((section, at) => at === index ? transform(section) : section) }))
   const changeField = (sectionIndex: number, fieldIndex: number, transform: (field: ViewField) => ViewField) => changeSection(sectionIndex, section => ({ ...section, fields: section.fields.map((field, at) => at === fieldIndex ? transform(field) : field) }))
   const changeAction = (index: number, transform: (action: ViewAction) => ViewAction) => changeDefinition(definition => ({ ...definition, actions: definition.actions.map((action, at) => at === index ? transform(action) : action) }))
@@ -152,6 +153,7 @@ function LoadedViewEditor({ detail }: { detail: ViewDetail }) {
           <p className="text-xs text-muted-foreground">Server validation is authoritative. A published workflow must pin a compatible version.</p>
           <ul className="space-y-1 text-xs">{draft.definition.sections.flatMap(section => section.fields.map(field => <li key={field.id}><strong>{field.label}</strong> → {field.binding || 'Unbound'}</li>))}</ul>
         </section>
+        <PresentationEditor definition={draft.definition} disabled={!editable||busy} onChange={presentation=>changeDefinition(view=>({...view,presentation}))}/>
         <section className="space-y-3" aria-label="Preview"><div className="flex flex-wrap items-center gap-2"><h2 className="mr-auto text-lg font-semibold"><Eye className="mr-1 inline size-4" aria-hidden="true" /> Preview</h2><Label htmlFor="preview-version" className="sr-only">Preview version</Label><Select id="preview-version" className="w-auto" value={version ?? 'draft'} onChange={event => setVersion(event.target.value === 'draft' ? null : Number(event.target.value))}><option value="draft">Current draft</option>{detail.versions.map(item => <option key={item.version} value={item.version}>Published v{item.version}</option>)}</Select><Button size="sm" variant="secondary" onClick={() => setNarrow(!narrow)}>{narrow ? 'Desktop' : 'Mobile'}</Button></div>
           {version !== null && published.isPending ? <LoadingBlock label="Loading published view" /> : version !== null && published.isError ? <QueryError error={published.error} onRetry={() => void published.refetch()} what="published view" /> : preview ? <ViewPreview definition={preview} narrow={narrow} /> : null}
         </section>
@@ -160,6 +162,7 @@ function LoadedViewEditor({ detail }: { detail: ViewDetail }) {
     <Dialog open={review} onClose={() => setReview(false)} title="Review publication" description="Publishing creates a fixed version that can be pinned by workflows or cases." footer={<><Button variant="secondary" onClick={() => setReview(false)} disabled={busy}>Cancel</Button><Button onClick={() => void publish()} disabled={dirty || issues.length > 0 || busy} loading={busy}>Publish version {(detail.publishedVersion ?? 0) + 1}</Button></>}>
       <p className="mb-2 font-medium">{draft.name} · {draft.definition.kind}</p>
       <p className="text-sm">{draft.definition.sections.length} sections, {draft.definition.sections.reduce((count, section) => count + section.fields.length, 0)} fields, {draft.definition.actions.length} actions.</p>
+      {draft.definition.presentation?<p className="mt-2 text-sm">Presentation: {draft.definition.presentation.baseLocale}; {draft.definition.presentation.breakpoint} breakpoint; {draft.definition.presentation.density}; {draft.definition.presentation.tone}. Translated languages: {Object.keys(draft.definition.presentation.translations).join(', ')||'none'}.</p>:null}
       <p className="mt-2 text-sm text-muted-foreground">Draft revision {detail.draftRevision}. {dirty ? 'Save the draft first.' : issues.length ? 'Fix the listed issues first.' : 'Local checks passed; the server will validate the definition and your permission.'}</p>
     </Dialog>
   </>

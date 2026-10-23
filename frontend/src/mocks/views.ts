@@ -1,4 +1,5 @@
 import { http, HttpResponse, type HttpHandler } from 'msw'
+import type { WorklistViewState } from '@/api/worklists'
 import type { ViewDefinition } from '@/features/views/model'
 import { blankView, validateView } from '@/features/views/model'
 import { clock, isMember, newId, permissionsOf, type MockUser, WS_PURCHASING } from './state'
@@ -17,6 +18,7 @@ interface StoredView {
 }
 
 const views = new Map<string, StoredView>()
+const worklists = new Map<string, WorklistViewState>()
 const clone = <T,>(value: T): T => structuredClone(value)
 const issue = (status: number, code: string, title: string) => HttpResponse.json({ status, code, title }, { status, headers: { 'Content-Type': 'application/problem+json' } })
 const notFound = () => issue(404, 'NOT_FOUND', 'Not found')
@@ -26,6 +28,7 @@ const base = '/api/v1/workspaces/:workspaceId/views'
 
 export function resetMockViews(): void {
   views.clear()
+  worklists.clear()
   const definition = blankView()
   definition.sections[0]!.fields[0] = { id: 'amount', label: 'Amount', type: 'number', binding: 'request.amount', required: true }
   definition.sections[0]!.fields.push({ id: 'purpose', label: 'Purpose', type: 'text', binding: 'request.purpose', required: true })
@@ -35,15 +38,21 @@ export function resetMockViews(): void {
 }
 
 export function snapshotMockViews(): string {
-  return JSON.stringify([...views.values()])
+  return JSON.stringify({ views: [...views.values()], worklists: [...worklists.entries()] })
 }
 
 export function restoreMockViews(value: unknown): boolean {
   let parsed: unknown
   try { parsed = typeof value === 'string' ? JSON.parse(value) : value } catch { return false }
+  const saved = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as {views?: unknown;worklists?: unknown} : null
+  if (saved) parsed=saved.views
   if (!Array.isArray(parsed) || !parsed.every(item => item && typeof item.id === 'string' && typeof item.ws === 'string' && item.definition && Array.isArray(item.versions))) return false
   views.clear()
   for (const item of parsed as StoredView[]) views.set(item.id, clone(item))
+  worklists.clear()
+  if (Array.isArray(saved?.worklists)) for (const entry of saved.worklists) {
+    if (Array.isArray(entry) && typeof entry[0]==='string' && entry[1] && Number.isInteger(entry[1].revision) && entry[1].revision>=0 && (entry[1].binding===null || entry[1].binding?.definition?.kind==='worklist' && !validateView(entry[1].binding.definition).length)) worklists.set(entry[0],clone(entry[1]))
+  }
   return true
 }
 
@@ -67,6 +76,30 @@ export function createViewHandlers(currentUser: () => MockUser): HttpHandler[] {
     return validateView(definition)[0] ?? null
   }
   return [
+    http.get('/api/v1/workspaces/:workspaceId/worklist-view', ({params}) => {
+      const ws=String(params.workspaceId), user=currentUser()
+      if(!isMember(user,ws))return notFound()
+      const permissions=permissionsOf(user,ws)
+      if(!permissions.includes('workflow.read')&&!permissions.includes('task.act'))return denied()
+      return HttpResponse.json(clone(worklists.get(ws)??{revision:0,binding:null}))
+    }),
+    http.put('/api/v1/workspaces/:workspaceId/worklist-view',async({params,request})=>{
+      const ws=String(params.workspaceId),failure=guard(ws,'workflow.publish')
+      if(failure)return failure
+      const body=await request.json() as {expectedRevision:number;viewRef?:{id:string;version:number}|null}
+      const current=worklists.get(ws)??{revision:0,binding:null}
+      if(!Number.isInteger(body.expectedRevision)||body.expectedRevision<0)return invalid('Supply a valid worklist revision.')
+      if(body.expectedRevision!==current.revision)return issue(409,'WORKFLOW_VERSION_CONFLICT','The worklist changed')
+      let binding:WorklistViewState['binding']=null
+      if(body.viewRef) {
+        const view=find(ws,body.viewRef.id),version=view?.versions.find(item=>item.version===body.viewRef!.version)
+        if(!version)return notFound()
+        if(version.definition.kind!=='worklist'||validateView(version.definition).length)return invalid('Choose a compatible published worklist view.')
+        binding={id:body.viewRef.id,version:version.version,definition:clone(version.definition)}
+      }
+      const next={revision:current.revision+1,binding};worklists.set(ws,next)
+      return HttpResponse.json(clone(next))
+    }),
     http.get(base, ({ params }) => {
       const ws = String(params.workspaceId)
       const failure = guard(ws, 'workflow.read')

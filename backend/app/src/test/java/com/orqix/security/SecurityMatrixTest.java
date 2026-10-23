@@ -319,8 +319,9 @@ class SecurityMatrixTest extends RuntimeTestBase {
     private Object sampleBody(String operationId, Map<String, String> ids) throws Exception {
         Map<String, Object> principal = Map.of("type", "idpGroup", "value", "orqix-foreign");
         return switch (operationId) {
+            case "assignWorklistView" -> Map.of("expectedRevision",0);
             case "suspendCaseInstance", "resumeCaseInstance", "closeCaseInstance", "startCasePlanItem", "enableCasePlanItem",
-                    "disableCasePlanItem", "activateCaseStage", "completeCaseStage", "terminateCasePlanItem" ->
+                    "occurCaseUserEvent", "disableCasePlanItem", "activateCaseStage", "completeCaseStage", "terminateCasePlanItem" ->
                     Map.of("expectedVersion",1,"reason","Foreign attempt");
             case "updateCaseData" -> Map.of("expectedVersion",1,"reason","Foreign attempt","values",Map.of());
             case "terminateCaseInstance" -> Map.of("expectedVersion", 1, "reason", "Foreign attempt");

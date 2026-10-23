@@ -14,6 +14,46 @@ const active = { id: instanceId, definitionId, definitionVersion: 1, status: 'ac
   tasks: [{ id: 'task-1', name: 'Collect evidence', status: 'available', candidateGroups: ['case-workers'], eligible: true }], createdAt: '2026-10-17T12:00:00Z' }
 
 describe('case workbench', () => {
+  it('triggers only a server-authorized user event after a reason and stops reads if the role grant ends',async()=>{
+    signInAs('fin.finance')
+    let sent:unknown
+    server.use(
+      http.get('*/api/v1/workspaces/:ws/cases/instances/:id',()=>HttpResponse.json({...active,tasks:[],canRead:true})),
+      http.get('*/api/v1/workspaces/:ws/cases/instances/:id/plan',()=>HttpResponse.json({items:[
+        {id:'release',elementId:'release',name:'Release review',type:'usereventlistener',state:'available',required:false,allowedActions:{occur:true},parentStageId:null,createdAt:active.createdAt,endedAt:null},
+      ],milestones:[],events:[],canClose:false})),
+      http.post('*/api/v1/workspaces/:ws/cases/instances/:id/plan-items/release/occur',async({request})=>{
+        expect(request.headers.get('Idempotency-Key')).toBeTruthy();sent=await request.json()
+        return HttpResponse.json({...active,tasks:[],version:2,canRead:false})
+      }),
+    )
+    const user=userEvent.setup();await renderAppReady(`/w/${ws}/cases/${instanceId}`)
+    await user.click(await screen.findByRole('button',{name:'Show case plan'}))
+    await user.click(await screen.findByRole('button',{name:'Trigger event'}))
+    expect(screen.getByRole('button',{name:'Confirm plan change'})).toBeDisabled()
+    await user.type(within(screen.getByRole('dialog')).getByLabelText('Reason'),'Release verified evidence')
+    await user.click(screen.getByRole('button',{name:'Confirm plan change'}))
+    expect(await screen.findByText('Your work is complete. Further case details require current case read access.')).toBeInTheDocument()
+    expect(sent).toEqual({expectedVersion:1,reason:'Release verified evidence'})
+  })
+  it('stops automatic reads when a successful command ends the worker read grant',async()=>{
+    signInAs('mani.manager')
+    let reads=0,planReads=0
+    server.use(
+      http.get('*/api/v1/workspaces/:ws/cases/instances/:id',()=>{reads++;return HttpResponse.json(active)}),
+      http.get('*/api/v1/workspaces/:ws/cases/instances/:id/plan',()=>{planReads++;return HttpResponse.json({items:[],milestones:[],events:[],canClose:false})}),
+      http.post('*/api/v1/workspaces/:ws/cases/instances/:id/tasks/:taskId/complete',()=>HttpResponse.json({...active,status:'completed',version:2,tasks:[],canRead:false})),
+    )
+    const user=userEvent.setup();await renderAppReady(`/w/${ws}/cases/${instanceId}`)
+    await user.click(await screen.findByRole('button',{name:'Show case plan'}))
+    await screen.findByText('No plan items have started.')
+    await user.click(screen.getByRole('button',{name:'Complete task'}))
+    expect(await screen.findByText('Your work is complete. Further case details require current case read access.')).toBeInTheDocument()
+    expect(screen.queryByRole('button',{name:'Show case plan'})).not.toBeInTheDocument()
+    expect(screen.queryByRole('button',{name:'Hide case plan'})).not.toBeInTheDocument()
+    expect(reads).toBe(1);expect(planReads).toBe(1)
+  })
+
   it('requires an operator confirmation and reason before terminating case work', async () => {
     signInAs('olga.operator')
     let body: unknown

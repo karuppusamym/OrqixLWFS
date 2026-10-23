@@ -144,6 +144,13 @@ public class CaseController {
         return response(service.planItem(callers.current(),workspaceId,instanceId,planItemId,"terminate",key,request));
     }
 
+    @PostMapping("/instances/{instanceId}/plan-items/{planItemId}/occur")
+    public ResponseEntity<CaseService.Instance> occurUserEvent(@PathVariable UUID workspaceId,@PathVariable UUID instanceId,
+            @PathVariable String planItemId,@RequestHeader(name=IdempotencyService.HEADER,required=false) String key,
+            @RequestBody CaseService.CaseCommand request) {
+        return response(service.planItem(callers.current(),workspaceId,instanceId,planItemId,"occur",key,request));
+    }
+
     private static ResponseEntity<CaseService.Instance> response(CaseService.Result<CaseService.Instance> result) {
         var response=ResponseEntity.ok();
         if(result.replayed()) response.header(IdempotencyService.REPLAYED_HEADER,"true");

@@ -4,6 +4,26 @@
  */
 
 export interface paths {
+    "/workspaces/{workspaceId}/worklist-view": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Read the pinned presentation for this workspace's authorized task list */
+        get: operations["getWorklistView"];
+        /** Pin a published worklist view or restore the standard layout */
+        put: operations["assignWorklistView"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/cases/definitions": {
         parameters: {
             query?: never;
@@ -219,6 +239,30 @@ export interface paths {
          * @description Requires current permission, current case version, a reason and an idempotency key. Human task controls also require current candidate-group eligibility. A held case refuses work changes; close/stage completion never bypass required or active work. Hold/resume freeze the admitted synchronous subset through the Orqix command boundary; they do not claim a native Flowable CMMN suspended plan-item state. Audit metadata excludes reasons.
          */
         post: operations["closeCaseInstance"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/occur": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+                planItemId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Trigger a native CMMN user event with current case-role eligibility
+         * @description Requires task.act and current membership of an authorized case role mapped to a workspace group. The listener must belong to this case and be available. Expected version, reason, idempotency and case hold checks apply. The native occur event evaluates sentries. Event-role eligibility grants plan metadata access, not protected case data access. Audit metadata excludes the reason.
+         */
+        post: operations["occurCaseUserEvent"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3948,6 +3992,10 @@ export interface components {
             canEdit: boolean;
             changes: components["schemas"]["CaseDataChange"][];
         };
+        WorklistViewState: {
+            revision: number;
+            binding: components["schemas"]["PinnedCaseView"] | null;
+        };
         CaseViewRef: {
             id: components["schemas"]["Uuid"];
             version: number;
@@ -4042,6 +4090,8 @@ export interface components {
             status: "active" | "suspended" | "completed" | "terminated";
             version: number;
             tasks: components["schemas"]["CaseTask"][];
+            /** @description Current read eligibility after this command. False tells clients to stop automatic detail and plan reads. Null or absent is retained for older idempotency snapshots. */
+            canRead?: boolean | null;
             createdAt: components["schemas"]["Timestamp"];
         };
         TerminateCase: {
@@ -4075,7 +4125,7 @@ export interface components {
             id: string;
             label: string;
             /** @enum {string} */
-            type: "submit" | "saveDraft" | "approve" | "reject" | "requestCorrection" | "navigate" | "saveData";
+            type: "submit" | "saveDraft" | "approve" | "reject" | "requestCorrection" | "navigate" | "saveData" | "openTask";
             /** @description Same-application route for navigate action only */
             target?: string;
         };
@@ -4083,7 +4133,7 @@ export interface components {
             /** @enum {integer} */
             schemaVersion: 1;
             /** @enum {string} */
-            kind: "request" | "approval" | "case";
+            kind: "request" | "approval" | "case" | "worklist";
             sections: components["schemas"]["ViewSection"][];
             actions: components["schemas"]["ViewAction"][];
         };
@@ -4092,7 +4142,7 @@ export interface components {
             name: string;
             description: string | null;
             /** @enum {string} */
-            kind: "request" | "approval" | "case";
+            kind: "request" | "approval" | "case" | "worklist";
             draftRevision: number;
             publishedVersion: number | null;
             createdAt: components["schemas"]["Timestamp"];
@@ -8333,6 +8383,66 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    getWorklistView: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Worklist presentation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorklistViewState"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    assignWorklistView: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    expectedRevision: number;
+                    viewRef?: components["schemas"]["CaseViewRef"] | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Updated worklist presentation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorklistViewState"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
     listCaseDefinitions: {
         parameters: {
             query?: never;
@@ -8681,6 +8791,43 @@ export interface operations {
             path: {
                 workspaceId: components["parameters"]["WorkspaceId"];
                 instanceId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CaseCommand"];
+            };
+        };
+        responses: {
+            /** @description Updated case or replay */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseInstance"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    occurCaseUserEvent: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+                planItemId: string;
             };
             cookie?: never;
         };

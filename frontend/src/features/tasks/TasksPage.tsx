@@ -1,3 +1,7 @@
+import { useQuery } from '@tanstack/react-query'
+import { getWorklistView } from '@/api/worklists'
+import type { ViewDefinition } from '@/features/views/model'
+import { ConfiguredWorklist } from './ConfiguredWorklist'
 import { CalendarClock, Inbox } from 'lucide-react'
 import { useEffect } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
@@ -47,6 +51,7 @@ function TaskInbox() {
   const [params, setParams] = useSearchParams()
   const desktop = useIsDesktop()
   const navigate = useNavigate()
+  const presentation=useQuery({ queryKey:['worklist-view',ws],queryFn:()=>getWorklistView(ws) })
   const counters = useTaskCounters(ws, true)
   // A link straight to a task (a notification, a bookmark) has no list in it: open the list the task belongs to, so the
   // panel never shows a task that is missing from the selected tab.
@@ -121,7 +126,7 @@ function TaskInbox() {
                 </EmptyState>
               ) : (
                 <>
-                  <TaskList tasks={tasks} ws={ws} view={view} taskId={taskId} desktop={desktop} onOpen={openTask} />
+                  <TaskList presentation={presentation.data?.binding?.definition as ViewDefinition | undefined} tasks={tasks} ws={ws} view={view} taskId={taskId} desktop={desktop} onOpen={openTask} />
                   {list.hasNextPage ? (
                     <div className="mt-4 flex justify-center">
                       <Button variant="secondary" onClick={() => void list.fetchNextPage()} loading={list.isFetchingNextPage}>
@@ -146,7 +151,7 @@ function TaskInbox() {
 }
 
 /** The task list: a table on desktop, cards below 1024 px so the Due and Action columns never scroll off screen. */
-function TaskList({ tasks, ws, view, taskId, desktop, onOpen }: { tasks: TaskSummary[]; ws: string; view: TaskView; taskId: string | undefined; desktop: boolean; onOpen: (id: string) => void }) {
+function TaskList({ tasks, ws, view, taskId, desktop, onOpen, presentation }: { presentation?:ViewDefinition; tasks: TaskSummary[]; ws: string; view: TaskView; taskId: string | undefined; desktop: boolean; onOpen: (id: string) => void }) {
   const [params] = useSearchParams()
   const query = new URLSearchParams(params); query.set('view',view)
   const label = VIEWS.find((v) => v.id === view)?.label
@@ -162,6 +167,7 @@ function TaskList({ tasks, ws, view, taskId, desktop, onOpen }: { tasks: TaskSum
     }
     return <span className="text-muted-foreground">No due date</span>
   }
+  if (presentation) return <ConfiguredWorklist tasks={tasks} definition={presentation} ws={ws} query={query.toString()} desktop={desktop} onOpen={onOpen} />
   if (!desktop) {
     return (
       <ul aria-label={label} className="space-y-3">

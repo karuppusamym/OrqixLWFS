@@ -89,3 +89,19 @@ The simple, medium and complex definitions in `examples/simple-review.json`, `ex
 For local setup and demo execution, use the repository README and [demo guide](demo-guide.md). Deployment validation belongs to the excluded infrastructure stream; customer source and tenant checks require the inputs above.
 
 The remaining competitive engineering gaps are now authorized and tracked in [the competitive gap delivery register](22-competitive-gap-delivery.md). Current slices are in progress; prior deferment no longer means these features are outside the build objective.
+
+
+## Worklist presentation and visual case-model authoring - 23 October 2026
+
+[S81](build/S81-full-non-infrastructure-completion.md) delivers UI02e and WM04g within bounded acceptance: exact published workspace worklist assignment/reset with immutable snapshots and authorized task navigation, plus visual authoring/export of admitted human tasks, nested stages, milestones and required/manual controls. Source export preserves the deployed XML. A browser-found worker read-access transition is corrected without changing the server read policy.
+
+Final selected backend verify passes 22/22 with coverage/packaging; all 956 frontend tests pass across 133 files. Types, lint, API drift, E2E types and 88 contracts pass. Two real Edge journeys pass authoring/publication/runtime/export/history and desktop/mobile accessibility. The source-identified local image is backed up, migrated through V113 and refreshed with retained dependencies/volumes and healthy readiness. This is local product verification; the full backend/compiler suites and production/customer qualification are not newly claimed.
+
+The user explicitly retained the full original non-infrastructure objective. Full CMMN planning, repetition, listeners/nested cases, normative suspension/case-file semantics, workflow case tasks, exchange/notation/conformance, and general application composition/actions/responsive-localized authoring/migration/sandboxed extensions remain open in S81. These deliveries do not close WM04 or UI02 or redefine the original scope.
+
+
+## Native case user events and sequential repetition - 23 October 2026
+
+[S82](build/S82-case-user-events-repetition.md) delivers WM04h within its stated boundary: role-authorized native user events, occurrence-triggered work, finite sequential human-task repetitions and visual authoring. Commands preserve current permission/eligibility, workspace scope, expected version, idempotency, holds and protected history. Required live repetitions block case/stage completion. Individual repeated-item cancellation is withheld because the pinned engine does not evaluate repetition on termination; full conformance remains open.
+
+Broad selected backend verify passes 35/35, plus a final targeted 8/8 rerun including the new nested-stage guard (36 unique tests). All 959 frontend tests, types/lint/API drift/E2E types and 88 contracts pass. Two real Edge journeys and an explicit application-restart continuation pass; exactly three task occurrences and seven history entries survive. The source-identified local stack is backed up, migrated through V114 and refreshed with retained dependencies/volumes and healthy readiness. Full backend/compiler suites and production/customer qualification are not newly claimed. Full original WM04/UI02 acceptance remains required.

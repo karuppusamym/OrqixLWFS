@@ -44,6 +44,30 @@ class CaseLifecycleApiTest extends IntegrationTestBase {
         return api("olga.operator").post(Map.of("expectedVersion",version,"reason","Protected operator note"),key,detail(instance)+"/"+action);
     }
 
+    @Test void visualDesignerModelExecutesManualWorkAndItsCompletionSentry() throws Exception {
+        String xml;
+        try(var input=getClass().getResourceAsStream("/cases/visual-designer.cmmn")) {
+            xml=new String(input.readAllBytes(),StandardCharsets.UTF_8);
+        }
+        var instance=start(xml.replace("visual-case","lifecycleCase"));
+        var initial=plan(instance,"mani.manager");
+        var review=item(initial,"node_review_item");
+        assertThat(review.path("state").asString()).isEqualTo("enabled");
+        assertThat(review.path("required").asBoolean()).isTrue();
+        assertThat(initial.path("milestones")).isEmpty();
+        var active=itemCommand(instance,review.path("id").asString(),"start",1,"visual-start-"+instance.path("id").asString(),"mani.manager");
+        assertThat(active.status()).as(active.toString()).isEqualTo(200);
+        var completed=api("mani.manager").post(Map.of("expectedVersion",2),"visual-complete-"+instance.path("id").asString(),
+                detail(instance)+"/tasks/"+active.body().path("tasks").get(0).path("id").asString()+"/complete");
+        assertThat(completed.status()).as(completed.toString()).isEqualTo(200);
+        var finalPlan=plan(instance,"olga.operator");
+        assertThat(finalPlan.path("milestones")).hasSize(1);
+        assertThat(completed.body().path("status").asString()).isEqualTo("completed");
+        assertThat(completed.body().path("canRead").asBoolean()).isFalse();
+        assertThat(api("rhea.requester").get(detail(instance)).body().path("canRead").asBoolean()).isTrue();
+        assertThat(finalPlan.path("canClose").asBoolean()).isFalse();
+    }
+
     @Test void requiredManualWorkBlocksCloseAndEligibleWorkersCanDisableEnableStartAndComplete() throws Exception {
         var instance=start(source()); assertThat(instance.path("tasks")).isEmpty();
         var initial=plan(instance,"mani.manager");

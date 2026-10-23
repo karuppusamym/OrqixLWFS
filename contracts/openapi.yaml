@@ -46,6 +46,33 @@ tags:
   - name: Views
 
 paths:
+  /workspaces/{workspaceId}/worklist-view:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [Views]
+      operationId: getWorklistView
+      summary: Read the pinned presentation for this workspace's authorized task list
+      x-orqix-permission: task.act
+      responses:
+        '200': { description: Worklist presentation, content: { application/json: { schema: { $ref: '#/components/schemas/WorklistViewState' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Views]
+      operationId: assignWorklistView
+      summary: Pin a published worklist view or restore the standard layout
+      x-orqix-permission: workflow.publish
+      x-orqix-audit: view.worklist-assigned
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: false, required: [expectedRevision], properties: { expectedRevision: { type: integer, minimum: 0 }, viewRef: { oneOf: [{ $ref: '#/components/schemas/CaseViewRef' }, { type: 'null' }] } } } } } }
+      responses:
+        '200': { description: Updated worklist presentation, content: { application/json: { schema: { $ref: '#/components/schemas/WorklistViewState' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
   /workspaces/{workspaceId}/cases/definitions:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
     get:
@@ -248,6 +275,32 @@ paths:
         boundary; they do not claim a native Flowable CMMN suspended plan-item state. Audit metadata excludes reasons.
       x-orqix-permission: run.operate
       x-orqix-audit: case.lifecycle.changed
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CaseCommand' } } } }
+      responses:
+        '200': { description: Updated case or replay, content: { application/json: { schema: { $ref: '#/components/schemas/CaseInstance' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/occur:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: instanceId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+      - { name: planItemId, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Cases]
+      operationId: occurCaseUserEvent
+      summary: Trigger a native CMMN user event with current case-role eligibility
+      description: >-
+        Requires task.act and current membership of an authorized case role mapped to a workspace group.
+        The listener must belong to this case and be available. Expected version, reason, idempotency and
+        case hold checks apply. The native occur event evaluates sentries. Event-role eligibility grants
+        plan metadata access, not protected case data access. Audit metadata excludes the reason.
+      x-orqix-permission: task.act
+      x-orqix-audit: case.planitem.changed
       parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CaseCommand' } } } }
       responses:
@@ -5601,6 +5654,13 @@ components:
         version: { type: integer, minimum: 1 }
         canEdit: { type: boolean }
         changes: { type: array, maxItems: 200, items: { $ref: '#/components/schemas/CaseDataChange' } }
+    WorklistViewState:
+      type: object
+      additionalProperties: false
+      required: [revision, binding]
+      properties:
+        revision: { type: integer, minimum: 0 }
+        binding: { oneOf: [{ $ref: '#/components/schemas/PinnedCaseView' }, { type: 'null' }] }
     CaseViewRef:
       type: object
       additionalProperties: false
@@ -5726,6 +5786,7 @@ components:
         status: { type: string, enum: [active, suspended, completed, terminated] }
         version: { type: integer, minimum: 1 }
         tasks: { type: array, items: { $ref: '#/components/schemas/CaseTask' } }
+        canRead: { type: [boolean, 'null'], description: Current read eligibility after this command. False tells clients to stop automatic detail and plan reads. Null or absent is retained for older idempotency snapshots. }
         createdAt: { $ref: '#/components/schemas/Timestamp' }
     TerminateCase:
       type: object
@@ -5775,7 +5836,7 @@ components:
       properties:
         id: { type: string, minLength: 1, maxLength: 80 }
         label: { type: string, minLength: 1, maxLength: 200 }
-        type: { type: string, enum: [submit, saveDraft, approve, reject, requestCorrection, navigate, saveData] }
+        type: { type: string, enum: [submit, saveDraft, approve, reject, requestCorrection, navigate, saveData, openTask] }
         target: { type: string, description: Same-application route for navigate action only }
     ViewDefinition:
       type: object
@@ -5783,7 +5844,7 @@ components:
       required: [schemaVersion, kind, sections, actions]
       properties:
         schemaVersion: { type: integer, enum: [1] }
-        kind: { type: string, enum: [request, approval, case] }
+        kind: { type: string, enum: [request, approval, case, worklist] }
         sections: { type: array, items: { $ref: '#/components/schemas/ViewSection' } }
         actions: { type: array, items: { $ref: '#/components/schemas/ViewAction' } }
     ViewSummary:
@@ -5794,7 +5855,7 @@ components:
         id: { $ref: '#/components/schemas/Uuid' }
         name: { type: string }
         description: { type: [string, 'null'] }
-        kind: { type: string, enum: [request, approval, case] }
+        kind: { type: string, enum: [request, approval, case, worklist] }
         draftRevision: { type: integer, minimum: 1 }
         publishedVersion: { type: [integer, 'null'], minimum: 1 }
         createdAt: { $ref: '#/components/schemas/Timestamp' }

@@ -37,7 +37,7 @@ public class CaseService {
     public record DefinitionDetail(UUID id, String key, String name, int version, Instant createdAt, String sourceXml, List<CaseDataModel.Field> dataFields, ApplicationViewQueries.Pinned viewBinding) {}
     public record Task(String id, String name, String status, List<String> candidateGroups, boolean eligible) {}
     public record Instance(UUID id, UUID definitionId, int definitionVersion, String status, int version,
-            List<Task> tasks, Instant createdAt) {}
+            List<Task> tasks, Instant createdAt, Boolean canRead) {}
     public record Result<T>(T value, boolean replayed) {}
     public record CreateDefinition(String key, String name, String sourceXml, List<CaseDataModel.Field> dataFields, ApplicationViewQueries.Pin viewRef) {
         public CreateDefinition(String key,String name,String sourceXml,List<CaseDataModel.Field> dataFields) { this(key,name,sourceXml,dataFields,null); }
@@ -92,6 +92,8 @@ public class CaseService {
     private final CaseDataModel dataModel;
     private final ApplicationViewQueries viewQueries;
     private final Map<UUID,Map<String,Set<String>>> groupsByDefinition = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Map<UUID,Map<String,Set<String>>> eventGroupsByDefinition = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Map<UUID,Set<String>> repeatedByDefinition = new java.util.concurrent.ConcurrentHashMap<>();
     private final Map<UUID,Set<String>> requiredByDefinition = new java.util.concurrent.ConcurrentHashMap<>();
 
     public CaseService(JdbcClient jdbc, PolicyService policy, CmmnSubsetValidator validator,
@@ -269,6 +271,9 @@ public class CaseService {
                     && humanGroups(row,access.workspaceId()).getOrDefault(item.getPlanItemDefinitionId(),Set.of()).stream().anyMatch(access.groupKeys()::contains))
                 return true;
         }
+        for (var listener : runtime.createUserEventListenerInstanceQuery().caseInstanceId(row.engineInstanceId()).list()) {
+            if (userEventGroups(row,access.workspaceId()).getOrDefault(listener.getPlanItemDefinitionId(),Set.of()).stream().anyMatch(access.groupKeys()::contains)) return true;
+        }
         return false;
     }
 
@@ -297,7 +302,7 @@ public class CaseService {
                         rs.getString("display_name"),access.has(Permission.RUN_READ_DATA)?rs.getString("reason"):null,
                         Sql.instant(rs,"occurred_at"))).list();
         return new PlanOverview(items, milestones, events, row.status().equals("active") && access.has(Permission.RUN_OPERATE)
-                && engine!=null && engine.isCompletable());
+                && engine!=null && engine.isCompletable() && !unresolvedRequired(row,ws,null));
     }
 
     private static Instant instant(java.util.Date date) { return date == null ? null : date.toInstant(); }
@@ -316,7 +321,7 @@ public class CaseService {
         }
         visibleTasks.sort(Comparator.comparing(Task::id));
         return new Instance(row.id(),row.definitionId(),row.definitionVersion(),row.status(),row.version(),
-                List.copyOf(visibleTasks),row.createdAt());
+                List.copyOf(visibleTasks),row.createdAt(),canRead(row,access));
     }
 
     private static boolean eligible(String assignee, List<String> groups, WorkspaceAccess access) {
@@ -416,6 +421,24 @@ public class CaseService {
         });
     }
 
+    private Map<String,Set<String>> userEventGroups(InstanceRow row,UUID ws) {
+        if(eventGroupsByDefinition.size()>=200 && !eventGroupsByDefinition.containsKey(row.definitionId())) eventGroupsByDefinition.clear();
+        return eventGroupsByDefinition.computeIfAbsent(row.definitionId(),ignored -> {
+            String source=jdbc.sql("SELECT source_xml FROM case_definition WHERE workspace_id=:ws AND id=:id")
+                    .param("ws",ws).param("id",row.definitionId()).query(String.class).single();
+            return validator.userEventGroups(source);
+        });
+    }
+
+    private boolean repeated(InstanceRow row,String elementId,UUID ws) {
+        if(repeatedByDefinition.size()>=200 && !repeatedByDefinition.containsKey(row.definitionId())) repeatedByDefinition.clear();
+        return repeatedByDefinition.computeIfAbsent(row.definitionId(),ignored -> {
+            String source=jdbc.sql("SELECT source_xml FROM case_definition WHERE workspace_id=:ws AND id=:id")
+                    .param("ws",ws).param("id",row.definitionId()).query(String.class).single();
+            return validator.repeatedPlanItems(source);
+        }).contains(elementId);
+    }
+
     private boolean required(InstanceRow row,String elementId,UUID ws) {
         if(requiredByDefinition.size()>=200 && !requiredByDefinition.containsKey(row.definitionId())) requiredByDefinition.clear();
         return requiredByDefinition.computeIfAbsent(row.definitionId(),ignored -> {
@@ -432,13 +455,33 @@ public class CaseService {
         boolean human=org.flowable.cmmn.api.runtime.PlanItemDefinitionType.HUMAN_TASK.equals(item.getPlanItemDefinitionType());
         boolean worker=human && access.has(Permission.TASK_ACT) && humanGroups(row,access.workspaceId())
                 .getOrDefault(item.getPlanItemDefinitionId(),Set.of()).stream().anyMatch(access.groupKeys()::contains);
+        boolean eventWorker=org.flowable.cmmn.api.runtime.PlanItemDefinitionType.USER_EVENT_LISTENER.equals(item.getPlanItemDefinitionType())
+                && access.has(Permission.TASK_ACT) && userEventGroups(row,access.workspaceId()).getOrDefault(item.getPlanItemDefinitionId(),Set.of()).stream().anyMatch(access.groupKeys()::contains);
         boolean operator=access.has(Permission.RUN_OPERATE);
-        return Map.of("start",worker && "enabled".equals(item.getState()),
+        return Map.of("occur",eventWorker && "available".equals(item.getState()),
+                "start",worker && "enabled".equals(item.getState()),
                 "enable",worker && "disabled".equals(item.getState()),
                 "disable",worker && "enabled".equals(item.getState()) && !required(row,item.getElementId(),access.workspaceId()),
                 "activateStage",operator && item.isStage() && "enabled".equals(item.getState()),
-                "completeStage",operator && item.isStage() && "active".equals(item.getState()) && item.isCompletable(),
-                "terminate",operator && (human || item.isStage()) && Set.of("active","enabled","disabled","available").contains(item.getState()));
+                "completeStage",operator && item.isStage() && "active".equals(item.getState()) && item.isCompletable() && !unresolvedRequired(row,access.workspaceId(),itemId),
+                "terminate",operator && (human || item.isStage()) && !repeated(row,item.getElementId(),access.workspaceId()) && Set.of("active","enabled","disabled","available").contains(item.getState()));
+    }
+
+    /** Required flags on repeated manual items are not fully reflected by the engine's completable flag. */
+    private boolean unresolvedRequired(InstanceRow row,UUID ws,String stageId) {
+        var items=runtime.createPlanItemInstanceQuery().caseInstanceId(row.engineInstanceId()).list();
+        var parents=new java.util.HashMap<String,String>();
+        for(var item:items) parents.put(item.getId(),item.getStageInstanceId());
+        for(var item:items) {
+            if(Set.of("completed","terminated","disabled","failed").contains(item.getState()) || !required(row,item.getElementId(),ws)) continue;
+            if(stageId==null) return true;
+            var parent=item.getStageInstanceId();
+            for(int depth=0;parent!=null && depth<6;depth++) {
+                if(stageId.equals(parent)) return true;
+                parent=parents.get(parent);
+            }
+        }
+        return false;
     }
 
     private static void requireActive(InstanceRow row) {
@@ -473,7 +516,7 @@ public class CaseService {
             requireActive(row);
             if(action.equals("close")) {
                 var engine=runtime.createCaseInstanceQuery().caseInstanceId(row.engineInstanceId()).singleResult();
-                if(engine==null || !engine.isCompletable()) throw new ApiException(ProblemCode.VALIDATION_FAILED,
+                if(engine==null || !engine.isCompletable() || unresolvedRequired(row,ws,null)) throw new ApiException(ProblemCode.VALIDATION_FAILED,
                         "Required or active work still prevents closing this case.");
                 runtime.completeCaseInstance(row.engineInstanceId()); status="completed";
             } else status="suspended";
@@ -493,12 +536,13 @@ public class CaseService {
             case "start" -> "startCasePlanItem";
             case "enable" -> "enableCasePlanItem";
             case "disable" -> "disableCasePlanItem";
+            case "occur" -> "occurCaseUserEvent";
             case "activateStage" -> "activateCaseStage";
             case "completeStage" -> "completeCaseStage";
             case "terminate" -> "terminateCasePlanItem";
             default -> throw ApiException.notFound();
         };
-        boolean worker=Set.of("start","enable","disable").contains(action);
+        boolean worker=Set.of("start","enable","disable","occur").contains(action);
         var access=access(caller,ws,worker?Permission.TASK_ACT:Permission.RUN_OPERATE,operation); validateCommand(request);
         var row=instanceRow(ws,id,true);
         var claim=idempotency.claim(ws,caller.subjectId(),operation,IdempotencyService.requireKey(key),
@@ -508,8 +552,10 @@ public class CaseService {
         requireActive(row);
         var item=runtime.createPlanItemInstanceQuery().caseInstanceId(row.engineInstanceId()).planItemInstanceId(itemId).singleResult();
         if(item==null) throw ApiException.notFound();
-        List<String> groups=worker?humanGroups(row,access.workspaceId()).getOrDefault(item.getPlanItemDefinitionId(),Set.of()).stream().sorted().toList():List.of();
-        if(worker && (!org.flowable.cmmn.api.runtime.PlanItemDefinitionType.HUMAN_TASK.equals(item.getPlanItemDefinitionType()) || groups.stream().noneMatch(access.groupKeys()::contains)))
+        var groupMap=action.equals("occur")?userEventGroups(row,ws):humanGroups(row,ws);
+        List<String> groups=worker?groupMap.getOrDefault(item.getPlanItemDefinitionId(),Set.of()).stream().sorted().toList():List.of();
+        String expectedType=action.equals("occur")?org.flowable.cmmn.api.runtime.PlanItemDefinitionType.USER_EVENT_LISTENER:org.flowable.cmmn.api.runtime.PlanItemDefinitionType.HUMAN_TASK;
+        if(worker && (!expectedType.equals(item.getPlanItemDefinitionType()) || groups.stream().noneMatch(access.groupKeys()::contains)))
             throw new ApiException(ProblemCode.NOT_ELIGIBLE);
         if(!Boolean.TRUE.equals(actions(row,itemId,access).get(action)))
             throw new ApiException(ProblemCode.TASK_NOT_OPEN,"That action is not available in the current plan-item state.");
@@ -517,6 +563,7 @@ public class CaseService {
             case "start","activateStage" -> runtime.startPlanItemInstance(itemId);
             case "enable" -> runtime.enablePlanItemInstance(itemId);
             case "disable" -> runtime.disablePlanItemInstance(itemId);
+            case "occur" -> runtime.completeUserEventListenerInstance(itemId);
             case "completeStage" -> runtime.completeStagePlanItemInstance(itemId);
             case "terminate" -> runtime.terminatePlanItemInstance(itemId);
             default -> throw new IllegalStateException();
@@ -623,7 +670,7 @@ public class CaseService {
                 .param("operation",claim.operation()).param("key",claim.key())
                 .query((rs,n)->Map.entry(rs.getString(1),rs.getString(2))).optional()
                 .orElseThrow(() -> new IllegalStateException("Case response snapshot missing"));
-        if (Set.of("completeCaseTask","startCasePlanItem","enableCasePlanItem","disableCasePlanItem").contains(claim.operation())) {
+        if (Set.of("completeCaseTask","startCasePlanItem","enableCasePlanItem","disableCasePlanItem","occurCaseUserEvent").contains(claim.operation())) {
             var groups=new ArrayList<String>();
             for (var node : json.parse(stored.getKey())) groups.add(node.asString());
             if (!groups.isEmpty() && groups.stream().noneMatch(access.groupKeys()::contains))

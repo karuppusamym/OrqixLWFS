@@ -31,7 +31,7 @@ final class ViewDefinition {
             fail("schemaVersion", "must be 1");
         }
         String kind = string(node, "kind", 20, "definition");
-        if (!kind.equals("request") && !kind.equals("approval") && !kind.equals("case")) fail("kind", "must be request, approval or case");
+        if (!kind.equals("request") && !kind.equals("approval") && !kind.equals("case") && !kind.equals("worklist")) fail("kind", "must be request, approval, case or worklist");
         JsonNode sections = node.path("sections");
         if (!sections.isArray() || sections.isEmpty() || sections.size() > 20) fail("sections", "must contain 1 to 20 sections");
         Set<String> ids = new HashSet<>();
@@ -60,9 +60,9 @@ final class ViewDefinition {
                 uniqueId(field, fp, ids);
                 string(field, "label", 120, fp);
                 String type = string(field, "type", 20, fp);
-                if (!FIELD_TYPES.contains(type) || type.equals("boolean") && !kind.equals("case")) fail(fp + "/type", "is not a supported control");
+                if (!FIELD_TYPES.contains(type) || type.equals("boolean") && !kind.equals("case") && !kind.equals("worklist")) fail(fp + "/type", "is not a supported control");
                 String binding = string(field, "binding", 72, fp);
-                if (!BINDING.matcher(binding).matches() || (kind.equals("request") && !binding.startsWith("request.")) || kind.equals("approval") && binding.startsWith("case.") || kind.equals("case") && !binding.startsWith("case.")) {
+                if (!BINDING.matcher(binding).matches() || (kind.equals("request") && !binding.startsWith("request.")) || kind.equals("approval") && binding.startsWith("case.") || kind.equals("case") && !binding.startsWith("case.") || kind.equals("worklist") && !binding.startsWith("task.")) {
                     fail(fp + "/binding", "must address a supported data field");
                 }
                 if (!bindings.add(binding)) fail(fp + "/binding", "is duplicated");
@@ -98,7 +98,7 @@ final class ViewDefinition {
             uniqueId(action, path, ids);
             string(action, "label", 80, path);
             String type = string(action, "type", 30, path);
-            if (!(kind.equals("request") ? REQUEST_ACTIONS : kind.equals("case") ? Set.of("saveData", "navigate") : APPROVAL_ACTIONS).contains(type)) {
+            if (!(kind.equals("request") ? REQUEST_ACTIONS : kind.equals("case") ? Set.of("saveData", "navigate") : kind.equals("worklist") ? Set.of("openTask") : APPROVAL_ACTIONS).contains(type)) {
                 fail(path + "/type", "is not allowed for this view kind");
             }
             if (type.equals("navigate")) {
@@ -108,6 +108,7 @@ final class ViewDefinition {
                 fail(path + "/target", "is only allowed for navigation");
             }
         }
+        if (kind.equals("worklist")) WorklistViews.validate(node);
         return kind;
     }
 

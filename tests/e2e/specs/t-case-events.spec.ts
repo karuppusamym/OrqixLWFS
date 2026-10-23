@@ -1,0 +1,98 @@
+import { readFile,writeFile } from 'node:fs/promises'
+import { expect,test } from '../support/fixtures'
+import { MOCK } from '../support/env'
+import { apiGet,workspaceId } from '../support/app'
+import { uniq } from '../support/api'
+import { expectNoSeriousViolations } from '../support/axe'
+
+const checkpoint=new URL('../../../evidence/case-events-restart.json',import.meta.url)
+
+test('native user event authoring enforces role access and activates a human task',async({sessions})=>{
+  test.skip(MOCK,'Requires native CMMN and current case roles.');test.setTimeout(180_000)
+  let page=await sessions.as('dana.designer');const ws=await workspaceId(page),key=uniq('event-case')
+  await page.goto(`/w/${ws}/cases`)
+  await page.getByLabel('Key',{exact:true}).fill(key);await page.getByLabel('Name',{exact:true}).fill(key)
+  await page.getByRole('button',{name:'Build a case model',exact:true}).click()
+  await page.getByLabel('Eligible group for task1').selectOption('managers')
+  await page.getByRole('button',{name:'Add user event',exact:true}).click()
+  await page.getByLabel('Name for item1',{exact:true}).fill('Release review')
+  await page.getByLabel('Eligible group for item1').selectOption('finance-approvers')
+  await page.getByRole('button',{name:'Move item1 up',exact:true}).click()
+  await page.getByLabel('Start after for task1').selectOption('item1')
+  await expectNoSeriousViolations(page,'User event authoring')
+  await page.getByRole('button',{name:'Use generated CMMN',exact:true}).click()
+  await expect(page.getByLabel('Generated CMMN preview')).toHaveValue(/authorizedRoleRefs="case_role_finance-approvers"/)
+  await page.getByRole('button',{name:'Create definition',exact:true}).click()
+  await expect(page.getByRole('cell',{name:key,exact:true}).first()).toBeVisible()
+  page=await sessions.as('rhea.requester');await page.goto(`/w/${ws}/cases`)
+  await page.getByRole('row').filter({has:page.getByRole('cell',{name:key,exact:true})}).getByRole('button',{name:'Start case',exact:true}).click()
+  await expect(page).toHaveURL(new RegExp(`/w/${ws}/cases/[^/]+$`));const url=page.url()
+  await page.getByRole('button',{name:'Show case plan',exact:true}).click()
+  await expect(page.getByRole('button',{name:'Trigger event',exact:true})).toHaveCount(0)
+  page=await sessions.as('fin.finance');await page.goto(url)
+  await page.getByRole('button',{name:'Show case plan',exact:true}).click()
+  await page.getByRole('button',{name:'Trigger event',exact:true}).click()
+  await page.getByRole('dialog').getByLabel('Reason',{exact:true}).fill('Release verified evidence')
+  await page.getByRole('button',{name:'Confirm plan change',exact:true}).click()
+  await expect(page.getByText('Your work is complete. Further case details require current case read access.',{exact:true})).toBeVisible()
+  page=await sessions.as('mani.manager');await page.goto(url)
+  await page.getByRole('button',{name:'Show case plan',exact:true}).click()
+  await page.getByRole('button',{name:'Start task',exact:true}).click()
+  await page.getByRole('dialog').getByLabel('Reason',{exact:true}).fill('Start released review')
+  await page.getByRole('button',{name:'Confirm plan change',exact:true}).click()
+  await page.getByRole('button',{name:'Complete task',exact:true}).click()
+  await expect(page.getByText('completed',{exact:true}).first()).toBeVisible()
+  page=await sessions.as('rhea.requester');await page.goto(url)
+  await page.getByRole('button',{name:'Show case plan',exact:true}).click()
+  await expect(page.getByText(/Version 2: Trigger event/)).toBeVisible()
+  await page.setViewportSize({width:390,height:844});await expectNoSeriousViolations(page,'Native user event history mobile')
+})
+
+test('repeatable human task authoring creates sequential required work',async({sessions})=>{
+  test.skip(MOCK,'Requires native repetition counters.');test.setTimeout(180_000)
+  let page=await sessions.as('dana.designer');const ws=await workspaceId(page),key=uniq('repeat-case')
+  await page.goto(`/w/${ws}/cases`)
+  await page.getByLabel('Key',{exact:true}).fill(key);await page.getByLabel('Name',{exact:true}).fill(key)
+  await page.getByRole('button',{name:'Build a case model',exact:true}).click()
+  await page.getByLabel('Eligible group for task1').selectOption('managers')
+  await page.getByLabel('Executions for task1').selectOption('3')
+  await page.getByRole('button',{name:'Use generated CMMN',exact:true}).click()
+  await expect(page.getByLabel('Generated CMMN preview')).toHaveValue(/repetitionCounter &lt; 3/)
+  await page.getByRole('button',{name:'Create definition',exact:true}).click()
+  await expect(page.getByRole('cell',{name:key,exact:true}).first()).toBeVisible()
+  page=await sessions.as('rhea.requester');await page.goto(`/w/${ws}/cases`)
+  await page.getByRole('row').filter({has:page.getByRole('cell',{name:key,exact:true})}).getByRole('button',{name:'Start case',exact:true}).click()
+  await expect(page).toHaveURL(new RegExp(`/w/${ws}/cases/[^/]+$`));const url=page.url(),id=url.split('/').at(-1)!
+  page=await sessions.as('mani.manager');await page.goto(url)
+  await page.getByRole('button',{name:'Show case plan',exact:true}).click()
+  const count=process.env.E2E_CASE_RESTART_PREPARE==='true'?2:3
+  for(let occurrence=1;occurrence<=count;occurrence++) {
+    await page.getByRole('button',{name:'Start task',exact:true}).click()
+    await page.getByRole('dialog').getByLabel('Reason',{exact:true}).fill(`Start occurrence ${occurrence}`)
+    await page.getByRole('button',{name:'Confirm plan change',exact:true}).click()
+    await page.getByRole('button',{name:'Complete task',exact:true}).click()
+    await expect(page.getByText(new RegExp(`Case version ${1+2*occurrence}$`))).toBeVisible()
+  }
+  if(count===2) {
+    await writeFile(checkpoint,JSON.stringify({ws,id}),'utf8')
+    await expect(page.getByRole('button',{name:'Start task',exact:true})).toBeVisible()
+  } else await expect(page.getByText('completed',{exact:true}).first()).toBeVisible()
+  await page.setViewportSize({width:390,height:844});await expectNoSeriousViolations(page,'Sequential repeated case work mobile')
+})
+
+test('restart retains the repetition counter and completes only the remaining work',async({sessions})=>{
+  test.skip(MOCK||process.env.E2E_CASE_RESTART_CHECK!=='true','Runs after the controlled application restart.');test.setTimeout(90_000)
+  const {ws,id}=JSON.parse(await readFile(checkpoint,'utf8')) as {ws:string;id:string}
+  let page=await sessions.as('mani.manager');await page.goto(`/w/${ws}/cases/${id}`)
+  await expect(page.getByText(/Case version 5$/)).toBeVisible()
+  await page.getByRole('button',{name:'Show case plan',exact:true}).click()
+  await page.getByRole('button',{name:'Start task',exact:true}).click()
+  await page.getByRole('dialog').getByLabel('Reason',{exact:true}).fill('Complete the remaining occurrence after restart')
+  await page.getByRole('button',{name:'Confirm plan change',exact:true}).click()
+  await page.getByRole('button',{name:'Complete task',exact:true}).click()
+  await expect(page.getByText('completed',{exact:true}).first()).toBeVisible()
+  page=await sessions.as('rhea.requester')
+  const result=await apiGet<{items:Array<{elementId:string;state:string}>;events:unknown[]}>(page,`/workspaces/${ws}/cases/instances/${id}/plan`)
+  const reviews=result.items.filter(item=>item.elementId==='node_task1_item'&&item.state==='completed')
+  expect(reviews).toHaveLength(3);expect(result.events).toHaveLength(7)
+})

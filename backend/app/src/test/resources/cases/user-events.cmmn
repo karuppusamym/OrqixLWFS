@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/CMMN/20151109/MODEL" xmlns:flowable="http://flowable.org/cmmn" targetNamespace="urn:orqix:events">
+  <case id="eventCase" name="Event review">
+    <casePlanModel id="plan" name="Event review" autoComplete="false">
+      <planItem id="release" name="Release review" definitionRef="releaseEvent"/>
+      <planItem id="review" name="Review evidence" definitionRef="reviewTask">
+        <itemControl><requiredRule/><manualActivationRule/></itemControl>
+        <entryCriterion id="reviewEntry" sentryRef="released"/>
+      </planItem>
+      <sentry id="released"><planItemOnPart sourceRef="release"><standardEvent>occur</standardEvent></planItemOnPart></sentry>
+      <userEventListener id="releaseEvent" name="Release review" authorizedRoleRefs="financeRole"/>
+      <humanTask id="reviewTask" name="Review evidence" flowable:candidateGroups="managers"/>
+    </casePlanModel>
+    <caseRoles><role id="financeRole" name="finance-approvers"/></caseRoles>
+  </case>
+</definitions>

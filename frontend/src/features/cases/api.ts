@@ -8,6 +8,10 @@ export const listCaseDefinitions = (ws: string) => call(api.GET('/workspaces/{wo
   params: { path: { workspaceId: ws } },
 }))
 
+export const getCaseDefinition = (ws: string, definitionId: string) => call(api.GET('/workspaces/{workspaceId}/cases/definitions/{definitionId}', {
+  params: { path: { workspaceId: ws, definitionId } },
+}))
+
 export const createCaseDefinition = (ws: string, body: S['CreateCaseDefinition']) => call(api.POST('/workspaces/{workspaceId}/cases/definitions', {
   params: { path: { workspaceId: ws } }, body,
 }))
@@ -41,7 +45,7 @@ export const getCasePlan = (ws: string, instanceId: string) => call(api.GET('/wo
 }))
 
 export type CaseLifecycleAction = 'suspend' | 'resume' | 'close'
-export type PlanItemAction = 'start' | 'enable' | 'disable' | 'activateStage' | 'completeStage' | 'terminate'
+export type PlanItemAction = 'start' | 'enable' | 'disable' | 'activateStage' | 'completeStage' | 'terminate' | 'occur'
 
 export const changeCaseLifecycle = (ws: string, instanceId: string, action: CaseLifecycleAction, expectedVersion: number, reason: string) => {
   const path = {
@@ -54,6 +58,7 @@ export const changeCaseLifecycle = (ws: string, instanceId: string, action: Case
 
 export const changeCasePlanItem = (ws: string, instanceId: string, planItemId: string, action: PlanItemAction, expectedVersion: number, reason: string) => {
   const path = {
+    occur: '/workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/occur',
     start: '/workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/start',
     enable: '/workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/enable',
     disable: '/workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/disable',

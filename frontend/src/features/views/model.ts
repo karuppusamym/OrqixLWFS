@@ -1,6 +1,6 @@
-export type ViewKind = 'request' | 'approval' | 'case'
+export type ViewKind = 'request' | 'approval' | 'case' | 'worklist'
 export type ViewFieldType = 'text' | 'number' | 'date' | 'choice' | 'file' | 'row' | 'boolean'
-export type ViewActionType = 'submit' | 'saveDraft' | 'approve' | 'reject' | 'requestCorrection' | 'navigate' | 'saveData'
+export type ViewActionType = 'submit' | 'saveDraft' | 'approve' | 'reject' | 'requestCorrection' | 'navigate' | 'saveData' | 'openTask'
 
 export interface ViewField {
   id: string
@@ -33,9 +33,10 @@ export interface ViewDefinition {
 }
 
 export const FIELD_TYPES: ViewFieldType[] = ['text', 'number', 'date', 'choice', 'file', 'row', 'boolean']
-export const ACTION_TYPES: ViewActionType[] = ['submit', 'saveDraft', 'approve', 'reject', 'requestCorrection', 'navigate', 'saveData']
+export const ACTION_TYPES: ViewActionType[] = ['submit', 'saveDraft', 'approve', 'reject', 'requestCorrection', 'navigate', 'saveData', 'openTask']
 
 export function blankView(kind: ViewKind = 'request'): ViewDefinition {
+  if (kind === 'worklist') return { schemaVersion: 1, kind, sections: [{ id: 'tasks', label: 'My work', columns: 1, fields: [{ id: 'title', label: 'Request', binding: 'task.requestTitle', type: 'text' }] }], actions: [{ id: 'open', label: 'Open task', type: 'openTask' }] }
   return { schemaVersion: 1, kind, sections: [{ id: 'section1', label: 'Details', columns: 1, fields: [{ id: 'field1', label: 'New question', type: 'text', binding: kind === 'request' ? 'request.field1' : kind === 'case' ? 'case.field1' : 'task.field1' }] }], actions: [] }
 }
 
@@ -69,7 +70,7 @@ export function validateView(definition: ViewDefinition): string[] {
       if (!/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(field.id) || ids.has(field.id)) problems.push(`Field ID ${field.id || '(empty)'} must be unique.`)
       ids.add(field.id)
       if (!field.label.trim() || field.label !== field.label.trim() || field.label.length > 120) problems.push(`Field ${field.id} needs a label.`)
-      if (!/^(request|task|case)\.[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(field.binding) || (definition.kind === 'request' && !field.binding.startsWith('request.')) || (definition.kind === 'approval' && field.binding.startsWith('case.')) || (definition.kind === 'case' && !field.binding.startsWith('case.'))) problems.push(`Field ${field.id} needs a binding matching this view kind.`)
+      if (!/^(request|task|case)\.[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(field.binding) || (definition.kind === 'request' && !field.binding.startsWith('request.')) || (definition.kind === 'approval' && field.binding.startsWith('case.')) || (definition.kind === 'case' && !field.binding.startsWith('case.')) || (definition.kind === 'worklist' && !field.binding.startsWith('task.'))) problems.push(`Field ${field.id} needs a binding matching this view kind.`)
       if (field.type === 'boolean' && definition.kind !== 'case') problems.push('Yes/no controls are supported on case views only.')
       if (bindings.has(field.binding)) problems.push(`Field ${field.id} duplicates a binding.`)
       bindings.add(field.binding)
@@ -83,9 +84,16 @@ export function validateView(definition: ViewDefinition): string[] {
     if (!/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(action.id) || ids.has(action.id)) problems.push(`Action ID ${action.id || '(empty)'} must be unique.`)
     ids.add(action.id)
     if (!action.label.trim() || action.label !== action.label.trim() || action.label.length > 80) problems.push(`Action ${action.id} needs a label.`)
-    if (!(definition.kind === 'request' ? ['submit', 'saveDraft', 'navigate'] : definition.kind === 'case' ? ['saveData', 'navigate'] : ['approve', 'reject', 'requestCorrection', 'navigate']).includes(action.type)) problems.push(`Action ${action.id} is not allowed on a ${definition.kind} view.`)
+    if (!(definition.kind === 'request' ? ['submit', 'saveDraft', 'navigate'] : definition.kind === 'case' ? ['saveData', 'navigate'] : definition.kind === 'worklist' ? ['openTask'] : ['approve', 'reject', 'requestCorrection', 'navigate']).includes(action.type)) problems.push(`Action ${action.id} is not allowed on a ${definition.kind} view.`)
     if (action.type === 'navigate' && (!action.target || !/^\/(?!\/)[A-Za-z0-9/_-]{1,199}$/.test(action.target) || action.target.includes('..'))) problems.push(`Navigation action ${action.id} needs a same-app path.`)
   }
   if (definition.actions.length > 10) problems.push('Use at most 10 actions.')
+  if (definition.kind === 'worklist') {
+    const fields=definition.sections.flatMap(section=>section.fields)
+    const text=['task.requestTitle','task.reference','task.label','task.workflowName','task.requester','task.createdAt','task.dueAt','task.status','task.candidateGroup']
+    if (definition.sections.length!==1 || fields.length>10) problems.push('A worklist needs one section with at most ten columns.')
+    if (fields.some(field=>field.required || !(field.type==='text'&&text.includes(field.binding) || field.type==='number'&&field.binding==='task.priority'))) problems.push('Use supported read-only task summary columns with matching types.')
+    if (!fields.some(field=>field.binding==='task.requestTitle') || definition.actions.length!==1 || definition.actions[0]?.type!=='openTask') problems.push('A worklist needs a request title column and one Open task action.')
+  }
   return problems
 }

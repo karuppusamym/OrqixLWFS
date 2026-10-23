@@ -21,7 +21,7 @@ export function CaseDetailPage() {
   const { workspace, can } = useWorkspace()
   const ws = workspace.id
   const queryClient = useQueryClient()
-  const instance = useQuery({ queryKey: ['ws', ws, 'case', instanceId], queryFn: () => getCaseInstance(ws, instanceId), enabled: can('run.read', 'workflow.start', 'task.act') && !!instanceId })
+  const instance = useQuery({ queryKey: ['ws', ws, 'case', instanceId], queryFn: () => getCaseInstance(ws, instanceId), enabled: query => can('run.read', 'workflow.start', 'task.act') && !!instanceId && query.state.data?.canRead !== false })
   const [pendingTask, setPendingTask] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [operation, setOperation] = useState<CaseLifecycleAction | 'terminate' | null>(null)
@@ -77,8 +77,9 @@ export function CaseDetailPage() {
         <div className="flex gap-2"><Button disabled={!reason.trim() || pendingTask !== null} loading={pendingTask === 'terminate'} onClick={() => void operate()}>{operation === 'terminate' ? 'Confirm termination' : 'Confirm change'}</Button><Button variant="secondary" disabled={pendingTask !== null} onClick={() => setOperation(null)}>Keep case open</Button></div>
       </div>
     </Dialog>
-    {can('run.read-data', 'workflow.start', 'task.act') ? <CaseDataPanel ws={ws} instanceId={instanceId} version={data.version} busy={pendingTask !== null} onPending={value => setPendingTask(value ? 'data' : null)} /> : null}
-    <CasePlan ws={ws} instanceId={instanceId} version={data.version} busy={pendingTask !== null} onPending={value => setPendingTask(value ? 'plan' : null)} />
+    {data.canRead === false ? <Alert tone="info">Your work is complete. Further case details require current case read access.</Alert> : null}
+    {data.canRead !== false && can('run.read-data', 'workflow.start', 'task.act') ? <CaseDataPanel ws={ws} instanceId={instanceId} version={data.version} busy={pendingTask !== null} onPending={value => setPendingTask(value ? 'data' : null)} /> : null}
+    {data.canRead !== false ? <CasePlan ws={ws} instanceId={instanceId} version={data.version} busy={pendingTask !== null} onPending={value => setPendingTask(value ? 'plan' : null)} /> : null}
     <section className="space-y-3" aria-label="Available case tasks"><h2>Available tasks</h2>
       {data.tasks.length ? <div className="grid gap-3 md:grid-cols-2">{data.tasks.map(task => <Card key={task.id}><CardHeader><h3>{task.name}</h3></CardHeader><CardContent className="space-y-3"><p className="text-sm text-muted-foreground">Eligible groups: {task.candidateGroups.length ? task.candidateGroups.join(', ') : 'None listed'}</p><Button variant="primary" disabled={!can('task.act') || !task.eligible || pendingTask !== null} loading={pendingTask === task.id} onClick={() => void complete(task.id, data.version)}>Complete task</Button>{!task.eligible && data.status !== 'suspended' ? <p className="text-sm text-muted-foreground">You are not eligible for this task.</p> : null}</CardContent></Card>)}</div> : <p className="text-sm text-muted-foreground">No tasks are currently available.</p>}
     </section>

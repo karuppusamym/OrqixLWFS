@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/CMMN/20151109/MODEL" xmlns:flowable="http://flowable.org/cmmn" targetNamespace="urn:orqix:repetition">
+  <case id="repeatCase" name="Repeated review">
+    <casePlanModel id="plan" autoComplete="false">
+      <planItem id="review" name="Review evidence" definitionRef="reviewTask">
+        <itemControl>
+          <repetitionRule><condition>${repetitionCounter &lt; 3}</condition></repetitionRule>
+          <requiredRule/><manualActivationRule/>
+        </itemControl>
+      </planItem>
+      <humanTask id="reviewTask" name="Review evidence" flowable:candidateGroups="managers"/>
+    </casePlanModel>
+  </case>
+</definitions>

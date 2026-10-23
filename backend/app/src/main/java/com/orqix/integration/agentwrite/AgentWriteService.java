@@ -9,7 +9,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -79,6 +82,9 @@ public class AgentWriteService implements AgentWriteTools {
     /** The stub answers at once; the lease only has to cover the journal writes. */
     static final Duration LEASE = Duration.ofSeconds(45);
 
+    /** Longest optional approval expiry (S79). No expiry stays the default. */
+    public static final int MAX_EXPIRY_DAYS = 90;
+
     // ------------------------------------------------------------------ API types
 
     public record ApproveRequest(
@@ -87,7 +93,8 @@ public class AgentWriteService implements AgentWriteTools {
             @NotNull @Min(1) Integer connectionVersion,
             @NotBlank @Size(max = 100) String operation,
             @NotBlank @Pattern(regexp = "^[a-z][a-z0-9_]{0,47}$") String toolName,
-            @NotNull @Size(max = 500) String reason) {
+            @NotNull @Size(max = 500) String reason,
+            @Min(1) @Max(MAX_EXPIRY_DAYS) Integer expiresInDays) {
     }
 
     public record RevokeRequest(@NotNull @Size(max = 500) String reason, @NotNull @Min(1) Integer expectedVersion) {
@@ -109,7 +116,8 @@ public class AgentWriteService implements AgentWriteTools {
 
     public record Approval(UUID id, String workflowKey, String connectionKey, int connectionVersion, String operation,
             String toolName, String adapterKey, String status, SubjectRef approvedBy, Instant approvedAt,
-            String approvalReason, SubjectRef revokedBy, Instant revokedAt, String revokeReason, int version) {
+            String approvalReason, SubjectRef revokedBy, Instant revokedAt, String revokeReason, Instant expiresAt,
+            int version) {
     }
 
     public record Overview(List<DeclaredTool> tools, List<Approval> approvals, boolean canApprove, boolean canRevoke) {
@@ -214,24 +222,37 @@ public class AgentWriteService implements AgentWriteTools {
         }
         UUID id = Ids.newId();
         Instant now = clock.instant();
+        Instant expiresAt = request.expiresInDays() == null ? null : now.plus(Duration.ofDays(request.expiresInDays()));
+        // An expired approval authorizes nothing; mark it so the one-active index lets the tool be approved again.
+        jdbc.sql("""
+                UPDATE agent_write_tool_approval SET status = 'expired', version = version + 1
+                WHERE workspace_id = :ws AND workflow_key = :wf AND connection_key = :ck AND connection_version = :cv
+                  AND operation = :op AND tool_name = :tool AND status = 'active' AND expires_at IS NOT NULL
+                  AND expires_at <= :now
+                """).param("ws", workspaceId).param("wf", request.workflowKey()).param("ck", request.connectionKey())
+                .param("cv", request.connectionVersion()).param("op", request.operation()).param("tool", tool.name())
+                .param("now", Sql.ts(now)).update();
         try {
             jdbc.sql("""
                     INSERT INTO agent_write_tool_approval (id, workspace_id, workflow_key, connection_key, connection_version,
-                        definition_hash, operation, tool_name, adapter_key, status, approved_by, approved_at, approval_reason)
-                    VALUES (:id, :ws, :wf, :ck, :cv, :hash, :op, :tool, :adapter, 'active', :by, :now, :reason)
+                        definition_hash, operation, tool_name, adapter_key, status, approved_by, approved_at, approval_reason,
+                        expires_at)
+                    VALUES (:id, :ws, :wf, :ck, :cv, :hash, :op, :tool, :adapter, 'active', :by, :now, :reason, :expires)
                     """).param("id", id).param("ws", workspaceId).param("wf", request.workflowKey())
                     .param("ck", request.connectionKey()).param("cv", request.connectionVersion())
                     .param("hash", record.definitionHash()).param("op", request.operation()).param("tool", tool.name())
                     .param("adapter", tool.adapter()).param("by", caller.subjectId()).param("now", Sql.ts(now))
-                    .param("reason", reason).update();
+                    .param("reason", reason).param("expires", expiresAt == null ? null : Sql.ts(expiresAt)).update();
         } catch (DuplicateKeyException e) {
             throw new ApiException(ProblemCode.DUPLICATE_KEY,
                     "This write tool is already approved for this workflow and connection version.");
         }
+        Map<String, Object> metadata = approvalMetadata(request.workflowKey(), request.connectionKey(),
+                request.connectionVersion(), request.operation(), tool.name(), tool.adapter());
+        metadata.put("expiresAt", expiresAt == null ? null : expiresAt.toString());
         audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.USER, caller.subjectId(),
                 "agent.write-tool.approved", "agentWriteToolApproval", id.toString(), AuditWriter.Outcome.SUCCESS,
-                approvalMetadata(request.workflowKey(), request.connectionKey(), request.connectionVersion(),
-                        request.operation(), tool.name(), tool.adapter())));
+                metadata));
         return approvals(workspaceId, id).get(0);
     }
 
@@ -248,19 +269,24 @@ public class AgentWriteService implements AgentWriteTools {
             throw new ApiException(ProblemCode.REASON_REQUIRED, "Say why the approval is revoked.");
         }
         record Current(String status, int version, String workflowKey, String connectionKey, int connectionVersion,
-                String operation, String toolName, String adapterKey) {
+                String operation, String toolName, String adapterKey, Instant expiresAt) {
         }
         Current current = jdbc.sql("""
-                SELECT status, version, workflow_key, connection_key, connection_version, operation, tool_name, adapter_key
+                SELECT status, version, workflow_key, connection_key, connection_version, operation, tool_name, adapter_key,
+                       expires_at
                 FROM agent_write_tool_approval WHERE workspace_id = :ws AND id = :id FOR UPDATE
                 """).param("ws", workspaceId).param("id", approvalId)
                 .query((rs, n) -> new Current(rs.getString("status"), rs.getInt("version"), rs.getString("workflow_key"),
                         rs.getString("connection_key"), rs.getInt("connection_version"), rs.getString("operation"),
-                        rs.getString("tool_name"), rs.getString("adapter_key")))
+                        rs.getString("tool_name"), rs.getString("adapter_key"), Sql.instant(rs, "expires_at")))
                 .optional().orElseThrow(ApiException::notFound);
         if (current.version() != request.expectedVersion()) {
             throw new ApiException(ProblemCode.CONFIGURATION_VERSION_CONFLICT,
                     "The approval changed since you loaded it (now version " + current.version() + ").");
+        }
+        if ("expired".equals(current.status()) || expired(current.expiresAt(), clock.instant())) {
+            throw new ApiException(ProblemCode.CONFIGURATION_VERSION_CONFLICT,
+                    "The approval has already expired; it authorizes nothing.");
         }
         if (!"active".equals(current.status())) {
             throw new ApiException(ProblemCode.CONFIGURATION_VERSION_CONFLICT, "The approval is already revoked.");
@@ -278,6 +304,11 @@ public class AgentWriteService implements AgentWriteTools {
         return approvals(workspaceId, approvalId).get(0);
     }
 
+    /** An approval with an expiry authorizes nothing from that instant on. */
+    static boolean expired(Instant expiresAt, Instant now) {
+        return expiresAt != null && !expiresAt.isAfter(now);
+    }
+
     private static Map<String, Object> approvalMetadata(String workflowKey, String connectionKey, int connectionVersion,
             String operation, String toolName, String adapterKey) {
         Map<String, Object> metadata = new LinkedHashMap<>();
@@ -293,23 +324,26 @@ public class AgentWriteService implements AgentWriteTools {
     private List<Approval> approvals(UUID workspaceId, UUID only) {
         return jdbc.sql("""
                 SELECT a.id, a.workflow_key, a.connection_key, a.connection_version, a.operation, a.tool_name, a.adapter_key,
-                       a.status, a.approved_by, ab.display_name AS approved_name, a.approved_at, a.approval_reason,
-                       a.revoked_by, rb.display_name AS revoked_name, a.revoked_at, a.revoke_reason, a.version
+                       CASE WHEN a.status = 'active' AND a.expires_at IS NOT NULL AND a.expires_at <= :now THEN 'expired'
+                            ELSE a.status END AS shown_status,
+                       a.approved_by, ab.display_name AS approved_name, a.approved_at, a.approval_reason,
+                       a.revoked_by, rb.display_name AS revoked_name, a.revoked_at, a.revoke_reason, a.expires_at, a.version
                 FROM agent_write_tool_approval a
                 JOIN subject ab ON ab.id = a.approved_by
                 LEFT JOIN subject rb ON rb.id = a.revoked_by
                 WHERE a.workspace_id = :ws AND (CAST(:only AS uuid) IS NULL OR a.id = CAST(:only AS uuid))
-                ORDER BY a.status, a.approved_at DESC
+                ORDER BY shown_status, a.approved_at DESC
                 LIMIT 500
-                """).param("ws", workspaceId).param("only", only)
+                """).param("ws", workspaceId).param("only", only).param("now", Sql.ts(clock.instant()))
                 .query((rs, n) -> new Approval(rs.getObject("id", UUID.class), rs.getString("workflow_key"),
                         rs.getString("connection_key"), rs.getInt("connection_version"), rs.getString("operation"),
-                        rs.getString("tool_name"), rs.getString("adapter_key"), rs.getString("status"),
+                        rs.getString("tool_name"), rs.getString("adapter_key"), rs.getString("shown_status"),
                         new SubjectRef(rs.getObject("approved_by", UUID.class), rs.getString("approved_name")),
                         Sql.instant(rs, "approved_at"), rs.getString("approval_reason"),
                         rs.getObject("revoked_by") == null ? null
                                 : new SubjectRef(rs.getObject("revoked_by", UUID.class), rs.getString("revoked_name")),
-                        Sql.instant(rs, "revoked_at"), rs.getString("revoke_reason"), rs.getInt("version")))
+                        Sql.instant(rs, "revoked_at"), rs.getString("revoke_reason"), Sql.instant(rs, "expires_at"),
+                        rs.getInt("version")))
                 .list();
     }
 
@@ -440,7 +474,8 @@ public class AgentWriteService implements AgentWriteTools {
         return jdbc.sql("""
                 SELECT workflow_key, connection_key, connection_version, operation, tool_name
                 FROM agent_write_tool_approval WHERE workspace_id = :ws AND status = 'active'
-                """).param("ws", workspaceId)
+                  AND (expires_at IS NULL OR expires_at > :now)
+                """).param("ws", workspaceId).param("now", Sql.ts(clock.instant()))
                 .query((rs, n) -> new ApprovalFact(rs.getString("workflow_key"), rs.getString("connection_key"),
                         rs.getInt("connection_version"), rs.getString("operation"), rs.getString("tool_name")))
                 .list();
@@ -448,10 +483,10 @@ public class AgentWriteService implements AgentWriteTools {
 
     @Override
     public Authorization authorize(Scope scope, WriteTool tool) {
-        record Found(UUID id, UUID approvedBy, String hash) {
+        record Found(UUID id, UUID approvedBy, String hash, Instant expiresAt) {
         }
         Optional<Found> found = jdbc.sql("""
-                SELECT a.id, a.approved_by, a.definition_hash
+                SELECT a.id, a.approved_by, a.definition_hash, a.expires_at
                 FROM agent_write_tool_approval a
                 JOIN workflow_run r ON r.workspace_id = a.workspace_id AND r.id = :run
                 JOIN workflow w ON w.workspace_id = r.workspace_id AND w.id = r.workflow_id AND w.key = a.workflow_key
@@ -461,10 +496,14 @@ public class AgentWriteService implements AgentWriteTools {
                 .param("ck", scope.definition().key()).param("cv", scope.definition().version())
                 .param("op", scope.operation()).param("tool", tool.name())
                 .query((rs, n) -> new Found(rs.getObject("id", UUID.class), rs.getObject("approved_by", UUID.class),
-                        rs.getString("definition_hash").trim()))
+                        rs.getString("definition_hash").trim(), Sql.instant(rs, "expires_at")))
                 .optional();
         if (found.isEmpty() || !found.get().hash().equals(scope.definition().definitionHash())) {
             return new Authorization(null, null, "WRITE_NOT_APPROVED");
+        }
+        if (expired(found.get().expiresAt(), clock.instant())) {
+            // Exactly like a missing approval (fail closed), with its own visible reason.
+            return new Authorization(null, null, "WRITE_APPROVAL_EXPIRED");
         }
         if (found.get().approvedBy().equals(scope.requestedBy())) {
             return new Authorization(found.get().id(), found.get().approvedBy(), "WRITE_SELF_APPROVAL");
@@ -581,24 +620,87 @@ public class AgentWriteService implements AgentWriteTools {
                 """).param("approval", authorization.approvalId()).param("approvedBy", authorization.approvedBy())
                 .param("digest", argumentDigest).param("chars", argumentChars).param("now", Sql.ts(clock.instant()))
                 .param("ws", ws).param("key", effectKey).update());
-        AdapterTransport.Result delivered;
+        // Approval fence (S79): the approval row is read again under FOR SHARE in one transaction that also performs the
+        // send. A revocation (which takes FOR UPDATE on the same row) that committed before this point is seen here and
+        // nothing is sent; one that arrives during the send waits until the send is over and applies to the next write.
+        // An expiry is evaluated at the instant the lock is taken. lock_timeout (10s) bounds how long either side waits.
+        AtomicReference<AdapterTransport.Result> delivered = new AtomicReference<>();
+        AtomicReference<String> fenceRefusal = new AtomicReference<>();
+        AtomicBoolean sending = new AtomicBoolean();
+        RuntimeException failure = null;
+        ObjectNode send = normalized;
+        JsonNode adapterConfig = adapter.config();
         try {
-            delivered = transport.execute(AdapterRules.Kind.of(tool.kind()), ws, tool.adapter(), adapter.config(),
-                    normalized);
+            independentTx.executeWithoutResult(status -> {
+                String refusal = fence(scope, authorization.approvalId());
+                if (refusal != null) {
+                    fenceRefusal.set(refusal);
+                    return;
+                }
+                sending.set(true);
+                delivered.set(transport.execute(AdapterRules.Kind.of(tool.kind()), ws, tool.adapter(), adapterConfig,
+                        send));
+            });
         } catch (RuntimeException e) {
+            failure = e;
+        }
+        if (delivered.get() == null && fenceRefusal.get() != null) {
+            String refusal = fenceRefusal.get();
+            journal.finish(ws, entry.id(), EffectJournal.PERMANENT_FAILURE, null, refusal,
+                    "The approval was revoked or expired before the message was sent; nothing was sent", null, null);
+            auditWrite(scope, tool, entry.id(), authorization.approvalId(), refusal, argumentChars);
+            return new WriteResult(Outcome.REFUSED, entry.id(), refusal, null);
+        }
+        if (delivered.get() == null && !sending.get()) {
+            // The fence itself failed (for example lock_timeout behind a revocation): the transport was never called.
+            log.warn("Agent write approval check failed: {}",
+                    failure == null ? "no result" : failure.getClass().getSimpleName());
+            journal.finish(ws, entry.id(), EffectJournal.RETRYABLE_FAILURE, null, "WRITE_NOT_SENT",
+                    "The approval could not be checked again; nothing was sent", null, null);
+            auditWrite(scope, tool, entry.id(), authorization.approvalId(), "notSent", argumentChars);
+            return new WriteResult(Outcome.REFUSED, entry.id(), "WRITE_NOT_SENT",
+                    "the approval could not be checked again just before sending.");
+        }
+        if (delivered.get() == null) {
             // We cannot tell whether it left: unknown, never repeated automatically.
-            log.warn("Agent write transport failed: {}", e.getClass().getSimpleName());
+            log.warn("Agent write transport failed: {}",
+                    failure == null ? "no result" : failure.getClass().getSimpleName());
             journal.finish(ws, entry.id(), EffectJournal.UNKNOWN, null, "ADAPTER_FAILED",
                     "The adapter transport failed; the outcome is unknown", null, null);
             auditWrite(scope, tool, entry.id(), authorization.approvalId(), "unknown", argumentChars);
             return new WriteResult(Outcome.UNKNOWN, entry.id(), "WRITE_OUTCOME_UNKNOWN", null);
         }
+        // Delivered (even if the fence transaction failed to commit afterwards: the transport accepted the message).
         ObjectNode result = json.object();
-        result.put("outcome", delivered.outcome());
-        result.set("detail", delivered.detail());
+        result.put("outcome", delivered.get().outcome());
+        result.set("detail", delivered.get().detail());
         journal.finish(ws, entry.id(), EffectJournal.SUCCEEDED, null, null, null, result, null);
         auditWrite(scope, tool, entry.id(), authorization.approvalId(), "succeeded", argumentChars);
         return new WriteResult(Outcome.SUCCEEDED, entry.id(), null, null);
+    }
+
+    /**
+     * Re-reads the approval that authorized this write under {@code FOR SHARE}, inside the transaction that sends. Must
+     * run in a transaction; the lock is held until that transaction ends. Under READ COMMITTED a revocation committed
+     * while this statement waited is seen (the row is re-read after the lock is granted).
+     *
+     * @return null when the same approval is still active and unexpired; otherwise the refusal code
+     */
+    private String fence(Scope scope, UUID approvalId) {
+        record Row(String status, Instant expiresAt) {
+        }
+        Optional<Row> row = jdbc.sql("""
+                SELECT status, expires_at FROM agent_write_tool_approval
+                WHERE workspace_id = :ws AND id = :id FOR SHARE
+                """).param("ws", scope.workspaceId()).param("id", approvalId)
+                .query((rs, n) -> new Row(rs.getString("status"), Sql.instant(rs, "expires_at"))).optional();
+        if (row.isEmpty() || "revoked".equals(row.get().status())) {
+            return "WRITE_NOT_APPROVED";
+        }
+        if ("expired".equals(row.get().status()) || expired(row.get().expiresAt(), clock.instant())) {
+            return "WRITE_APPROVAL_EXPIRED";
+        }
+        return "active".equals(row.get().status()) ? null : "WRITE_NOT_APPROVED";
     }
 
     /** System audit entry with ids, names and sizes only; survives a rollback of the job transaction. */

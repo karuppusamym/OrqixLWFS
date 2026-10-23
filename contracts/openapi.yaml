@@ -4423,7 +4423,9 @@ paths:
         Needs the grant-only permission agent.approve-write-tool (no role carries it). The approval covers exactly this
         workflow key, connection version (and its definition hash), operation and tool; a new connection version needs a
         new approval. The approver can never trigger a write through the tool: a run they started is refused. A reason is
-        required (422 REASON_REQUIRED). One active approval per combination (409 DUPLICATE_KEY).
+        required (422 REASON_REQUIRED). One active approval per combination (409 DUPLICATE_KEY). Optional expiresInDays
+        (1 to 90, docs/build/S79): from that instant the approval authorizes nothing, exactly like a revoked one; without
+        it the approval does not expire. Approving a tool whose earlier approval expired marks that one expired.
       x-orqix-permission: agent.approve-write-tool
       x-orqix-audit: agent.write-tool.approved
       requestBody:
@@ -4455,7 +4457,7 @@ paths:
       tags: [Agent write tools]
       operationId: revokeAgentWriteTool
       summary: Revoke an approval; the next write through the tool is refused
-      description: Needs agent.approve-write-tool or connection.manage. Reason required; expectedVersion must match (409 CONFIGURATION_VERSION_CONFLICT).
+      description: Needs agent.approve-write-tool or connection.manage. Reason required; expectedVersion must match (409 CONFIGURATION_VERSION_CONFLICT). An already revoked or expired approval is 409 CONFIGURATION_VERSION_CONFLICT.
       x-orqix-permission: agent.approve-write-tool | connection.manage
       x-orqix-audit: agent.write-tool.revoked
       requestBody:
@@ -4499,6 +4501,49 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/agent-write-retention:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [Agent write tools]
+      operationId: getAgentWriteRetention
+      summary: The workspace retention setting for agent write records and how many the next sweep would remove (S79)
+      x-orqix-permission: workspace.manage-access
+      responses:
+        '200':
+          description: The setting (retentionDays null means write records are kept)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentWriteRetention' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Agent write tools]
+      operationId: setAgentWriteRetention
+      summary: Set (1 to 3650 days) or clear how long agent write records are kept after their request ends
+      description: |
+        The hourly sweep deletes the write records (argument digest and size, approver, requester, reconciliation note) of
+        requests that ended longer ago than this. It never removes a record of a running request, nor any record of a request
+        that still has a write whose outcome is unknown or not final. Effect journal entries and audit events are kept.
+      x-orqix-permission: workspace.manage-access
+      x-orqix-audit: agent.write.retention.updated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetAgentWriteRetention' }
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentWriteRetention' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
 
   /workspaces/{workspaceId}/agent-writes/{writeId}/reconcile:
     parameters:
@@ -6718,7 +6763,7 @@ components:
         maxCalls: { type: integer, minimum: 1, maximum: 3 }
     AgentWriteToolApproval:
       type: object
-      required: [id, workflowKey, connectionKey, connectionVersion, operation, toolName, adapterKey, status, approvedBy, approvedAt, approvalReason, revokedBy, revokedAt, revokeReason, version]
+      required: [id, workflowKey, connectionKey, connectionVersion, operation, toolName, adapterKey, status, approvedBy, approvedAt, approvalReason, revokedBy, revokedAt, revokeReason, expiresAt, version]
       properties:
         id: { $ref: '#/components/schemas/Uuid' }
         workflowKey: { $ref: '#/components/schemas/Key' }
@@ -6727,13 +6772,14 @@ components:
         operation: { type: string }
         toolName: { type: string }
         adapterKey: { type: string }
-        status: { type: string, enum: [active, revoked] }
+        status: { type: string, enum: [active, revoked, expired], description: 'expired: past expiresAt; authorizes nothing, like revoked (S79)' }
         approvedBy: { $ref: '#/components/schemas/AgentWriteSubject' }
         approvedAt: { $ref: '#/components/schemas/Timestamp' }
         approvalReason: { type: string }
         revokedBy: { oneOf: [{ $ref: '#/components/schemas/AgentWriteSubject' }, { type: 'null' }] }
         revokedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
         revokeReason: { type: [string, 'null'] }
+        expiresAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }], description: 'Null when the approval does not expire' }
         version: { type: integer, minimum: 1 }
     AgentWriteToolOverview:
       type: object
@@ -6754,6 +6800,7 @@ components:
         operation: { type: string, minLength: 1, maxLength: 100 }
         toolName: { type: string, pattern: '^[a-z][a-z0-9_]{0,47}$' }
         reason: { type: string, maxLength: 500, description: Required (422 REASON_REQUIRED when blank) }
+        expiresInDays: { type: [integer, 'null'], minimum: 1, maximum: 90, description: 'Optional (S79): the approval expires this many days from now; omitted or null means no expiry' }
     AgentWriteToolRevokeRequest:
       type: object
       additionalProperties: false
@@ -6806,6 +6853,22 @@ components:
         reason: { type: string, maxLength: 500 }
         remoteReference: { type: [string, 'null'], maxLength: 200 }
         expectedVersion: { type: integer, minimum: 1 }
+    AgentWriteRetention:
+      type: object
+      additionalProperties: false
+      required: [version, eligibleNow]
+      properties:
+        retentionDays: { type: [integer, 'null'], minimum: 1, maximum: 3650 }
+        version: { type: integer, minimum: 0, description: '0 until a setting is saved' }
+        eligibleNow: { type: integer, minimum: 0, description: Write records the next sweep would remove under this setting }
+        updatedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+    SetAgentWriteRetention:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        retentionDays: { type: [integer, 'null'], minimum: 1, maximum: 3650 }
+        expectedVersion: { type: integer, minimum: 0 }
     WorkspaceRole:
       type: string
       enum: [WORKSPACE_ADMIN, WORKFLOW_DESIGNER, PUBLISHER, OPERATOR, VIEWER, APPROVER]

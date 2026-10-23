@@ -177,12 +177,15 @@ public class AuditWriter {
                     "outputTokens", "costUsd", "durationMs", "effectId")),
             // IN04 (S75): ids, names and sizes only; never the model's arguments or a reason text.
             Map.entry("agent.write-tool.approved", Set.of("workflowKey", "connectionKey", "connectionVersion", "operation",
-                    "toolName", "adapterKey")),
+                    "toolName", "adapterKey", "expiresAt")),
             Map.entry("agent.write-tool.revoked", Set.of("workflowKey", "connectionKey", "connectionVersion", "operation",
                     "toolName", "adapterKey")),
             Map.entry("agent.write", Set.of("runId", "agentEffectId", "effectId", "connectionKey", "connectionVersion",
                     "operation", "toolName", "adapterKey", "approvalId", "outcome", "argumentChars")),
-            Map.entry("agent.write.reconciled", Set.of("effectId", "runId", "outcome", "remoteReference")));
+            Map.entry("agent.write.reconciled", Set.of("effectId", "runId", "outcome", "remoteReference")),
+            // IN04 hardening (S79): retention of agent write records, as for files (DOC08).
+            Map.entry("agent.write.retention.updated", Set.of("retentionDays", "version")),
+            Map.entry("agent.write.purged", Set.of("runId", "writeId", "retentionDays")));
 
     private final JdbcClient jdbc;
     private final Json json;

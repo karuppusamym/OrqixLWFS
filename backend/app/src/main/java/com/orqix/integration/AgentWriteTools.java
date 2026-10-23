@@ -29,7 +29,8 @@ public interface AgentWriteTools {
     }
 
     /**
-     * @param refusal null when allowed; otherwise a stable code ({@code WRITE_NOT_APPROVED}, {@code WRITE_SELF_APPROVAL})
+     * @param refusal null when allowed; otherwise a stable code ({@code WRITE_NOT_APPROVED},
+     *                {@code WRITE_APPROVAL_EXPIRED}, {@code WRITE_SELF_APPROVAL})
      */
     record Authorization(UUID approvalId, UUID approvedBy, String refusal) {
 

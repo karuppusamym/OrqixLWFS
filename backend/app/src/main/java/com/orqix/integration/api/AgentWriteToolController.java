@@ -9,12 +9,14 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.orqix.identity.CallerResolver;
+import com.orqix.integration.agentwrite.AgentWriteRetention;
 import com.orqix.integration.agentwrite.AgentWriteService;
 
 /** Approved write-capable agent tools (IN04, docs/build/S75; contracts/openapi.yaml, tag Agent write tools). */
@@ -24,10 +26,12 @@ public class AgentWriteToolController {
 
     private final CallerResolver callers;
     private final AgentWriteService writes;
+    private final AgentWriteRetention retention;
 
-    public AgentWriteToolController(CallerResolver callers, AgentWriteService writes) {
+    public AgentWriteToolController(CallerResolver callers, AgentWriteService writes, AgentWriteRetention retention) {
         this.callers = callers;
         this.writes = writes;
+        this.retention = retention;
     }
 
     @GetMapping("/agent-write-tools")
@@ -57,5 +61,16 @@ public class AgentWriteToolController {
     public AgentWriteService.WriteCall reconcileAgentWrite(@PathVariable UUID workspaceId, @PathVariable UUID writeId,
             @Valid @RequestBody AgentWriteService.ReconcileRequest request) {
         return writes.reconcile(callers.current(), workspaceId, writeId, request);
+    }
+
+    @GetMapping("/agent-write-retention")
+    public AgentWriteRetention.Retention getAgentWriteRetention(@PathVariable UUID workspaceId) {
+        return retention.retention(callers.current(), workspaceId);
+    }
+
+    @PutMapping("/agent-write-retention")
+    public AgentWriteRetention.Retention setAgentWriteRetention(@PathVariable UUID workspaceId,
+            @Valid @RequestBody AgentWriteRetention.RetentionRequest request) {
+        return retention.setRetention(callers.current(), workspaceId, request);
     }
 }

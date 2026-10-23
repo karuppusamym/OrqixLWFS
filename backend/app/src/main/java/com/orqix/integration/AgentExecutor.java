@@ -229,6 +229,11 @@ public class AgentExecutor {
                     + "started it, and nobody writes through a tool they approved. Someone else must approve the tool "
                     + "(or the request must be made by another person), then an operator can retry.";
         }
+        if ("WRITE_APPROVAL_EXPIRED".equals(refusal)) {
+            return name + " may not use '" + tool.label() + "': its approval for this workflow has expired, and an "
+                    + "expired approval allows nothing. A person allowed to approve write tools must approve it again, "
+                    + "then an operator can retry.";
+        }
         return name + " may only use '" + tool.label() + "' after a person allowed to approve write tools approves it "
                 + "for this workflow and connection version. Once approved, an operator can retry.";
     }
@@ -483,6 +488,7 @@ public class AgentExecutor {
                     tools.add(new ToolLog(tool.name(), took, "refused"));
                     String code = written.errorCode() == null ? "WRITE_REFUSED" : written.errorCode();
                     String message = "WRITE_NOT_APPROVED".equals(code) || "WRITE_SELF_APPROVAL".equals(code)
+                            || "WRITE_APPROVAL_EXPIRED".equals(code)
                             ? notApprovedMessage(name, tool, code)
                             : "'" + tool.label() + "' of " + name + " could not send the message: "
                                     + (written.message() == null ? "it was refused." : written.message())

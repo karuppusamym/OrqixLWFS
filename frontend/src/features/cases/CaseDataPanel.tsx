@@ -1,3 +1,5 @@
+import { Link } from 'react-router'
+import type { ViewDefinition } from '@/features/views/model'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useId, useState } from 'react'
 import type { components } from '@/api/schema'
@@ -15,6 +17,8 @@ function DataEditor({ data, ws, instanceId, busy, onPending }: { data: component
   const [reason, setReason] = useState('')
   const [error, setError] = useState<string | null>(null)
   const id = useId(), client = useQueryClient()
+  const view = data.viewBinding?.definition as ViewDefinition | undefined
+  const navigation = view?.actions.find(action => action.type === 'navigate')
   const save = async () => {
     if (!data || !reason.trim()) return
     onPending(true); setError(null)
@@ -29,8 +33,9 @@ function DataEditor({ data, ws, instanceId, busy, onPending }: { data: component
   }
   return <form className="space-y-4" onSubmit={event => { event.preventDefault(); void save() }}>
     {error ? <Alert tone="danger">{error}</Alert> : null}
-    <CaseDataFields fields={data.fields} values={values} onChange={setValues} disabled={busy} readOnly={!data.canEdit} />
-    {data.canEdit ? <><Label htmlFor={`${id}-reason`}>Reason for data change</Label><Textarea id={`${id}-reason`} required maxLength={1000} value={reason} disabled={busy} onChange={event => setReason(event.target.value)} /><Button type="submit" disabled={busy || !reason.trim()} loading={busy}>Save case data</Button></> : null}
+    <CaseDataFields view={view} fields={data.fields} values={values} onChange={setValues} disabled={busy} readOnly={!data.canEdit} />
+    {data.canEdit ? <><Label htmlFor={`${id}-reason`}>Reason for data change</Label><Textarea id={`${id}-reason`} required maxLength={1000} value={reason} disabled={busy} onChange={event => setReason(event.target.value)} /><Button type="submit" disabled={busy || !reason.trim()} loading={busy}>{view?.actions.find(action => action.type === 'saveData')?.label ?? 'Save case data'}</Button></> : null}
+    {navigation?.target ? <Link to={navigation.target}>{navigation.label}</Link> : null}
   </form>
 }
 

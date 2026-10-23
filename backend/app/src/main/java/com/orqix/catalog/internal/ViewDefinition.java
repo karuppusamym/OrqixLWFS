@@ -14,9 +14,9 @@ import tools.jackson.databind.JsonNode;
 /** The bounded, data-only UI02 view format. No browser code, expressions or external actions are accepted. */
 final class ViewDefinition {
     private static final Pattern ID = Pattern.compile("[A-Za-z][A-Za-z0-9_-]{0,63}");
-    private static final Pattern BINDING = Pattern.compile("(?:request|task)\\.[A-Za-z][A-Za-z0-9_-]{0,63}");
+    private static final Pattern BINDING = Pattern.compile("(?:request|task|case)\\.[A-Za-z][A-Za-z0-9_-]{0,63}");
     private static final Pattern ROUTE = Pattern.compile("/(?!/)[A-Za-z0-9/_-]{1,199}");
-    private static final Set<String> FIELD_TYPES = Set.of("text", "number", "date", "choice", "file", "row");
+    private static final Set<String> FIELD_TYPES = Set.of("text", "number", "date", "choice", "file", "row", "boolean");
     private static final Set<String> REQUEST_ACTIONS = Set.of("submit", "saveDraft", "navigate");
     private static final Set<String> APPROVAL_ACTIONS = Set.of("approve", "reject", "requestCorrection", "navigate");
 
@@ -31,7 +31,7 @@ final class ViewDefinition {
             fail("schemaVersion", "must be 1");
         }
         String kind = string(node, "kind", 20, "definition");
-        if (!kind.equals("request") && !kind.equals("approval")) fail("kind", "must be request or approval");
+        if (!kind.equals("request") && !kind.equals("approval") && !kind.equals("case")) fail("kind", "must be request, approval or case");
         JsonNode sections = node.path("sections");
         if (!sections.isArray() || sections.isEmpty() || sections.size() > 20) fail("sections", "must contain 1 to 20 sections");
         Set<String> ids = new HashSet<>();
@@ -60,9 +60,9 @@ final class ViewDefinition {
                 uniqueId(field, fp, ids);
                 string(field, "label", 120, fp);
                 String type = string(field, "type", 20, fp);
-                if (!FIELD_TYPES.contains(type)) fail(fp + "/type", "is not a supported control");
+                if (!FIELD_TYPES.contains(type) || type.equals("boolean") && !kind.equals("case")) fail(fp + "/type", "is not a supported control");
                 String binding = string(field, "binding", 72, fp);
-                if (!BINDING.matcher(binding).matches() || (kind.equals("request") && binding.startsWith("task."))) {
+                if (!BINDING.matcher(binding).matches() || (kind.equals("request") && !binding.startsWith("request.")) || kind.equals("approval") && binding.startsWith("case.") || kind.equals("case") && !binding.startsWith("case.")) {
                     fail(fp + "/binding", "must address a supported data field");
                 }
                 if (!bindings.add(binding)) fail(fp + "/binding", "is duplicated");
@@ -98,7 +98,7 @@ final class ViewDefinition {
             uniqueId(action, path, ids);
             string(action, "label", 80, path);
             String type = string(action, "type", 30, path);
-            if (!(kind.equals("request") ? REQUEST_ACTIONS : APPROVAL_ACTIONS).contains(type)) {
+            if (!(kind.equals("request") ? REQUEST_ACTIONS : kind.equals("case") ? Set.of("saveData", "navigate") : APPROVAL_ACTIONS).contains(type)) {
                 fail(path + "/type", "is not allowed for this view kind");
             }
             if (type.equals("navigate")) {

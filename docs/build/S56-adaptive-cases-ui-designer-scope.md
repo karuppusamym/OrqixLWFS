@@ -48,3 +48,6 @@ Mark WM04 or UI02 Closed only after the chosen supported model, API, designer, r
 
 
 [S79](S79-pinned-approval-views.md) completes UI02c reusable approval presentation with exact workspace-local version pins, authoritative publication checks and the existing authorized task actions. This extends the first request/approval-view delivery; case/worklist pages, composed actions, localization, extensions and the full UI02 acceptance remain open.
+
+
+[S80](S80-reusable-case-views.md) adds UI02d case-data views: visual authoring, immutable version pins, compatibility checks, case start and permission-checked data corrections. This is case-data presentation, not a graphical case-model designer or whole-case page composer. Worklist pages, broader case/action composition, localization, extension sandboxing and the full UI02/WM04 acceptance above remain open.

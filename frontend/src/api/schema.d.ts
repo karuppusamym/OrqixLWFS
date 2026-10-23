@@ -3941,13 +3941,24 @@ export interface components {
             after: components["schemas"]["CaseDataValues"];
         };
         CaseData: {
+            viewBinding?: components["schemas"]["PinnedCaseView"] | null;
             fields: components["schemas"]["CaseDataField"][];
             values: components["schemas"]["CaseDataValues"];
             version: number;
             canEdit: boolean;
             changes: components["schemas"]["CaseDataChange"][];
         };
+        CaseViewRef: {
+            id: components["schemas"]["Uuid"];
+            version: number;
+        };
+        PinnedCaseView: {
+            id: components["schemas"]["Uuid"];
+            version: number;
+            definition: components["schemas"]["ViewDefinition"];
+        };
         CreateCaseDefinition: {
+            viewRef?: components["schemas"]["CaseViewRef"];
             key: string;
             name: string;
             /** @description Bounded CMMN 1.1 XML source (64 KiB UTF-8) */
@@ -3955,6 +3966,7 @@ export interface components {
             dataFields?: components["schemas"]["CaseDataField"][];
         };
         CaseDefinition: {
+            viewBinding?: components["schemas"]["PinnedCaseView"] | null;
             id: components["schemas"]["Uuid"];
             key: string;
             name: string;
@@ -3963,6 +3975,7 @@ export interface components {
             dataFields?: components["schemas"]["CaseDataField"][];
         };
         CaseDefinitionDetail: {
+            viewBinding?: components["schemas"]["PinnedCaseView"] | null;
             id: components["schemas"]["Uuid"];
             key: string;
             name: string;
@@ -4042,7 +4055,7 @@ export interface components {
             id: string;
             label: string;
             /** @enum {string} */
-            type: "text" | "number" | "date" | "choice" | "file" | "row";
+            type: "text" | "number" | "date" | "choice" | "file" | "row" | "boolean";
             /** @description Typed request or task data binding */
             binding: string;
             required?: boolean;
@@ -4062,7 +4075,7 @@ export interface components {
             id: string;
             label: string;
             /** @enum {string} */
-            type: "submit" | "saveDraft" | "approve" | "reject" | "requestCorrection" | "navigate";
+            type: "submit" | "saveDraft" | "approve" | "reject" | "requestCorrection" | "navigate" | "saveData";
             /** @description Same-application route for navigate action only */
             target?: string;
         };
@@ -4070,7 +4083,7 @@ export interface components {
             /** @enum {integer} */
             schemaVersion: 1;
             /** @enum {string} */
-            kind: "request" | "approval";
+            kind: "request" | "approval" | "case";
             sections: components["schemas"]["ViewSection"][];
             actions: components["schemas"]["ViewAction"][];
         };
@@ -4079,7 +4092,7 @@ export interface components {
             name: string;
             description: string | null;
             /** @enum {string} */
-            kind: "request" | "approval";
+            kind: "request" | "approval" | "case";
             draftRevision: number;
             publishedVersion: number | null;
             createdAt: components["schemas"]["Timestamp"];

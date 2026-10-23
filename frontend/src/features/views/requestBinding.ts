@@ -3,6 +3,7 @@ import { validateView, type ViewDefinition, type ViewField } from './model'
 
 export function compatible(field: ViewField, schema: FieldSchemaDoc): boolean {
   switch (field.type) {
+    case 'boolean': return false
     case 'text': return schema.type === 'string' && !schema.format && !schema.enum
     case 'number': return schema.type === 'number' || schema.type === 'integer'
     case 'date': return schema.type === 'string' && schema.format === 'date'

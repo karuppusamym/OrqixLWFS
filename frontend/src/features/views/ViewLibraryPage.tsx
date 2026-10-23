@@ -57,7 +57,7 @@ export function ViewLibraryPage() {
 
   if (!can('workflow.read')) return <p role="alert">You do not have permission to read views.</p>
   return <>
-    <PageHeader title="Views" description="Reusable request and approval screens owned by this workspace. Published versions stay fixed when a draft changes." actions={can('workflow.edit') ? <Button onClick={() => open('create')}><Plus aria-hidden="true" /> New view</Button> : undefined} />
+    <PageHeader title="Views" description="Reusable request, approval and case screens owned by this workspace. Published versions stay fixed when a draft changes." actions={can('workflow.edit') ? <Button onClick={() => open('create')}><Plus aria-hidden="true" /> New view</Button> : undefined} />
     {query.isPending ? <LoadingBlock label="Loading views" /> : query.isError ? <QueryError error={query.error} onRetry={() => void query.refetch()} what="views" /> : query.data.items.length === 0 ? <EmptyState icon={LayoutTemplate} title="No views yet">{can('workflow.edit') ? 'Create a view to design a reusable screen.' : 'Ask a designer to create a view.'}</EmptyState> : <div className="overflow-hidden rounded-card border border-border bg-surface"><Table>
       <caption className="sr-only">Workspace views</caption>
       <THead><TR><TH>Name</TH><TH>Kind</TH><TH>Version</TH><TH>Updated</TH><TH><span className="sr-only">Actions</span></TH></TR></THead>
@@ -72,7 +72,7 @@ export function ViewLibraryPage() {
     <Dialog open={!!dialog} onClose={() => setDialog(null)} title={dialog?.mode === 'copy' ? 'Copy view' : 'New view'} footer={<><Button variant="secondary" onClick={() => setDialog(null)} disabled={busy}>Cancel</Button><Button onClick={() => void submit()} disabled={!name.trim() || busy} loading={busy}>{dialog?.mode === 'copy' ? 'Copy view' : 'Create view'}</Button></>}>
       <div className="space-y-4">
         <div><Label htmlFor="view-name">Name</Label><Input id="view-name" value={name} onChange={event => setName(event.target.value)} maxLength={80} /></div>
-        {dialog?.mode === 'create' ? <><div><Label htmlFor="view-kind">View type</Label><Select id="view-kind" value={kind} onChange={event => setKind(event.target.value as ViewKind)}><option value="request">Request</option><option value="approval">Approval</option></Select></div><div><Label htmlFor="view-description">Description</Label><Textarea id="view-description" value={description} onChange={event => setDescription(event.target.value)} maxLength={300} /></div></> : <p className="text-sm text-muted-foreground">The copy starts as a new draft. Published versions stay with the original.</p>}
+        {dialog?.mode === 'create' ? <><div><Label htmlFor="view-kind">View type</Label><Select id="view-kind" value={kind} onChange={event => setKind(event.target.value as ViewKind)}><option value="request">Request</option><option value="approval">Approval</option><option value="case">Case</option></Select></div><div><Label htmlFor="view-description">Description</Label><Textarea id="view-description" value={description} onChange={event => setDescription(event.target.value)} maxLength={300} /></div></> : <p className="text-sm text-muted-foreground">The copy starts as a new draft. Published versions stay with the original.</p>}
         {error ? <ProblemAlert error={error} /> : null}
       </div>
     </Dialog>

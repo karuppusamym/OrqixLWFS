@@ -60,6 +60,8 @@ class DatabaseTest {
                     "UPDATE workflow_release SET release_note = 'x'",
                     "DELETE FROM workflow_draft_revision",
                     "UPDATE connection_definition SET version = 9",
+                    "UPDATE case_definition_view SET view_version = 99",
+                    "DELETE FROM case_definition_view",
                     "DELETE FROM release_artifact",
                     "INSERT INTO flyway_schema_history (installed_rank, description, type, script, installed_by, execution_time, success) VALUES (999, 'x', 'SQL', 'x', 'x', 0, true)",
                     "DELETE FROM flyway_schema_history",

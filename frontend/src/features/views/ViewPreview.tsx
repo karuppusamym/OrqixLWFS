@@ -7,7 +7,7 @@ function FieldPreview({ field }: { field: ViewField }) {
   const id = `preview-${field.id}`
   return <div className="min-w-0 space-y-1.5">
     <Label htmlFor={id}>{field.label || 'Untitled question'}{field.required ? ' *' : ''}</Label>
-    {field.type === 'choice' ? <Select id={id} disabled defaultValue=""><option value="">Choose an option</option>{field.options?.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</Select>
+    {field.type === 'boolean' ? <Select id={id} disabled><option>Yes or no</option></Select> : field.type === 'choice' ? <Select id={id} disabled defaultValue=""><option value="">Choose an option</option>{field.options?.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</Select>
       : field.type === 'row' ? <Textarea id={id} disabled placeholder="Rows will appear here" />
         : field.type === 'file' ? <Input id={id} type="file" disabled />
           : <Input id={id} type={field.type} disabled />}

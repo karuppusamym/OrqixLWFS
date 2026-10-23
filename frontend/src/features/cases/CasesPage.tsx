@@ -11,6 +11,10 @@ import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
 import { CaseDataFields, CaseDataFieldsEditor, typedValues, type DataField, type DataInputs } from './CaseDataFields'
 import type { components } from '@/api/schema'
+import { getPublishedView } from '@/api/views'
+import type { ViewDefinition } from '@/features/views/model'
+import { CaseViewPicker } from './CaseViewPicker'
+import { validateCaseView } from './caseView'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table'
@@ -24,6 +28,7 @@ export function CasesPage() {
   const queryClient = useQueryClient()
   const definitions = useQuery({ queryKey: ['ws', ws, 'case-definitions'], queryFn: () => listCaseDefinitions(ws), enabled: can('workflow.read', 'workflow.start') })
   const cases = useQuery({ queryKey: ['ws', ws, 'cases'], queryFn: () => listCaseInstances(ws), enabled: can('run.read', 'workflow.start', 'task.act') })
+  const [viewRef, setViewRef] = useState<{ id: string; version: number }>()
   const [dataFields, setDataFields] = useState<DataField[]>([])
   const [starting, setStarting] = useState<components['schemas']['CaseDefinition'] | null>(null)
   const [initialData, setInitialData] = useState<DataInputs>({})
@@ -38,8 +43,13 @@ export function CasesPage() {
     setPending(true); setError(null)
     try {
       if (file.size > 65_536) throw new Error('Choose a CMMN file of at most 64 KiB.')
-      await createCaseDefinition(ws, { key: key.trim(), name: name.trim(), sourceXml: await file.text(), dataFields })
-      setFile(null); setKey(''); setName(''); setDataFields([])
+      if (viewRef) {
+        if (!Number.isInteger(viewRef.version) || viewRef.version < 1) throw new Error('Choose a valid published case view version.')
+        const published = await getPublishedView(ws, viewRef.id, viewRef.version)
+        validateCaseView(dataFields, published.definition as ViewDefinition)
+      }
+      await createCaseDefinition(ws, { key: key.trim(), name: name.trim(), sourceXml: await file.text(), dataFields, viewRef })
+      setFile(null); setKey(''); setName(''); setDataFields([]); setViewRef(undefined)
       await queryClient.invalidateQueries({ queryKey: ['ws', ws, 'case-definitions'] })
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'The case definition could not be created.') }
     finally { setPending(false) }
@@ -66,6 +76,7 @@ export function CasesPage() {
       <div className="grid gap-3 sm:grid-cols-2"><div><Label htmlFor="case-key">Key</Label><Input id="case-key" value={key} onChange={event => setKey(event.target.value)} required /></div><div><Label htmlFor="case-name">Name</Label><Input id="case-name" value={name} onChange={event => setName(event.target.value)} required /></div></div>
       <Label htmlFor="case-file">CMMN file (maximum 64 KiB)</Label><Input id="case-file" type="file" accept=".cmmn,.xml" onChange={event => setFile(event.target.files?.[0] ?? null)} />
       <CaseDataFieldsEditor fields={dataFields} onChange={setDataFields} disabled={pending} />
+      <CaseViewPicker ws={ws} value={viewRef} onChange={setViewRef} disabled={pending} />
       <Button type="submit" variant="primary" loading={pending} disabled={!file || !key.trim() || !name.trim()}>Create definition</Button>
     </form> : null}
     {can('workflow.read', 'workflow.start') ? <section className="space-y-3" aria-label="Case definitions">
@@ -76,7 +87,7 @@ export function CasesPage() {
     </section> : null}
     <Dialog open={starting !== null} onClose={() => setStarting(null)} dismissible={!pending} title="Start case" description={starting?.name}>
       <form className="space-y-4" onSubmit={event => { event.preventDefault(); if (starting) void start(starting.id, starting.dataFields ?? []) }}>
-        {starting ? <CaseDataFields fields={starting.dataFields ?? []} values={initialData} onChange={setInitialData} disabled={pending} /> : null}
+        {starting ? <CaseDataFields view={starting.viewBinding?.definition as ViewDefinition | undefined} fields={starting.dataFields ?? []} values={initialData} onChange={setInitialData} disabled={pending} /> : null}
         {error ? <Alert tone="danger">{error}</Alert> : null}
         <Button type="submit" loading={pending} disabled={pending}>Start case with data</Button>
       </form>

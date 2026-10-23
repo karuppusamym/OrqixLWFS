@@ -1,3 +1,4 @@
+import type { ViewDefinition } from '@/features/views/model'
 import { useId } from 'react'
 import type { components } from '@/api/schema'
 import { Input, Textarea } from '@/components/ui/input'
@@ -41,9 +42,15 @@ export function typedValues(fields: DataField[], inputs: DataInputs): DataValues
   return result
 }
 
-export function CaseDataFields({ fields, values, onChange, disabled = false, readOnly = false }: { fields: DataField[]; values: DataInputs; onChange: (values: DataInputs) => void; disabled?: boolean; readOnly?: boolean }) {
+export function CaseDataFields({ fields, values, onChange, disabled = false, readOnly = false, view }: { view?: ViewDefinition; fields: DataField[]; values: DataInputs; onChange: (values: DataInputs) => void; disabled?: boolean; readOnly?: boolean }) {
   const prefix = useId()
-  return <div className="grid gap-4 sm:grid-cols-2">{fields.map(field => {
+  const groups = view ? view.sections.map(section => ({ id: section.id, label: section.label, columns: section.columns, fields: section.fields.flatMap(control => {
+    const field = fields.find(item => `case.${item.key}` === control.binding)
+    return field ? [{ ...field, label: control.label }] : []
+  }) })) : [{ id: 'default', label: '', columns: 2, fields }]
+  return <div className="space-y-5">{groups.map(group => <section key={group.id} aria-label={group.label || undefined} className="space-y-3">
+    {group.label ? <h3 className="font-semibold">{group.label}</h3> : null}
+    <div className={`grid gap-4 ${group.columns === 2 ? 'sm:grid-cols-2' : ''}`}>{group.fields.map(field => {
     const id = `${prefix}-${field.key}`
     const set = (value: string) => onChange({ ...values, [field.key]: value })
     return <div key={field.key} className="space-y-1">
@@ -55,7 +62,7 @@ export function CaseDataFields({ fields, values, onChange, disabled = false, rea
           type={field.type === 'date' ? 'date' : field.type === 'number' || field.type === 'integer' ? 'number' : 'text'}
           step={field.type === 'integer' ? 1 : 'any'} min={field.minimum ?? undefined} max={field.maximum ?? undefined} maxLength={field.type === 'text' ? field.maxLength ?? 2000 : undefined} />}
     </div>
-  })}</div>
+  })}</div></section>)}</div>
 }
 
 export function CaseDataFieldsEditor({ fields, onChange, disabled }: { fields: DataField[]; onChange: (fields: DataField[]) => void; disabled: boolean }) {

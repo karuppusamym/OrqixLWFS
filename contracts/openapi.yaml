@@ -5595,16 +5595,33 @@ components:
       additionalProperties: false
       required: [fields, values, version, canEdit, changes]
       properties:
+        viewBinding: { oneOf: [{ $ref: '#/components/schemas/PinnedCaseView' }, { type: 'null' }] }
         fields: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseDataField' } }
         values: { $ref: '#/components/schemas/CaseDataValues' }
         version: { type: integer, minimum: 1 }
         canEdit: { type: boolean }
         changes: { type: array, maxItems: 200, items: { $ref: '#/components/schemas/CaseDataChange' } }
+    CaseViewRef:
+      type: object
+      additionalProperties: false
+      required: [id, version]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        version: { type: integer, minimum: 1, maximum: 2147483647 }
+    PinnedCaseView:
+      type: object
+      additionalProperties: false
+      required: [id, version, definition]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        version: { type: integer, minimum: 1 }
+        definition: { $ref: '#/components/schemas/ViewDefinition' }
     CreateCaseDefinition:
       type: object
       additionalProperties: false
       required: [key, name, sourceXml]
       properties:
+        viewRef: { $ref: '#/components/schemas/CaseViewRef' }
         key: { type: string, pattern: '^[a-z][a-z0-9-]{1,62}$' }
         name: { type: string, minLength: 1, maxLength: 200 }
         sourceXml: { type: string, minLength: 1, maxLength: 65536, description: Bounded CMMN 1.1 XML source (64 KiB UTF-8) }
@@ -5614,6 +5631,7 @@ components:
       additionalProperties: false
       required: [id, key, name, version, createdAt]
       properties:
+        viewBinding: { oneOf: [{ $ref: '#/components/schemas/PinnedCaseView' }, { type: 'null' }] }
         id: { $ref: '#/components/schemas/Uuid' }
         key: { type: string }
         name: { type: string }
@@ -5625,6 +5643,7 @@ components:
       additionalProperties: false
       required: [id, key, name, version, createdAt, sourceXml]
       properties:
+        viewBinding: { oneOf: [{ $ref: '#/components/schemas/PinnedCaseView' }, { type: 'null' }] }
         id: { $ref: '#/components/schemas/Uuid' }
         key: { type: string }
         name: { type: string }
@@ -5728,7 +5747,7 @@ components:
       properties:
         id: { type: string, minLength: 1, maxLength: 80 }
         label: { type: string, minLength: 1, maxLength: 200 }
-        type: { type: string, enum: [text, number, date, choice, file, row] }
+        type: { type: string, enum: [text, number, date, choice, file, row, boolean] }
         binding: { type: string, description: Typed request or task data binding }
         required: { type: boolean }
         options:
@@ -5756,7 +5775,7 @@ components:
       properties:
         id: { type: string, minLength: 1, maxLength: 80 }
         label: { type: string, minLength: 1, maxLength: 200 }
-        type: { type: string, enum: [submit, saveDraft, approve, reject, requestCorrection, navigate] }
+        type: { type: string, enum: [submit, saveDraft, approve, reject, requestCorrection, navigate, saveData] }
         target: { type: string, description: Same-application route for navigate action only }
     ViewDefinition:
       type: object
@@ -5764,7 +5783,7 @@ components:
       required: [schemaVersion, kind, sections, actions]
       properties:
         schemaVersion: { type: integer, enum: [1] }
-        kind: { type: string, enum: [request, approval] }
+        kind: { type: string, enum: [request, approval, case] }
         sections: { type: array, items: { $ref: '#/components/schemas/ViewSection' } }
         actions: { type: array, items: { $ref: '#/components/schemas/ViewAction' } }
     ViewSummary:
@@ -5775,7 +5794,7 @@ components:
         id: { $ref: '#/components/schemas/Uuid' }
         name: { type: string }
         description: { type: [string, 'null'] }
-        kind: { type: string, enum: [request, approval] }
+        kind: { type: string, enum: [request, approval, case] }
         draftRevision: { type: integer, minimum: 1 }
         publishedVersion: { type: [integer, 'null'], minimum: 1 }
         createdAt: { $ref: '#/components/schemas/Timestamp' }

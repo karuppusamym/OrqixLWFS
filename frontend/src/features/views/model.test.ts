@@ -21,7 +21,7 @@ describe('reusable view model', () => {
     expect(validateView(definition)).toEqual(expect.arrayContaining([
       'Field ID section1 must be unique.',
       'Field section1 needs a label.',
-      'Field section1 needs a request or task binding.',
+      'Field section1 needs a binding matching this view kind.',
       'Choice field section1 needs labeled values.',
       'Navigation action action1 needs a same-app path.',
     ]))

@@ -18,6 +18,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.orqix.audit.AuditWriter;
+import com.orqix.catalog.ApplicationViewQueries;
 import com.orqix.identity.Caller;
 import com.orqix.identity.Permission;
 import com.orqix.identity.PolicyService;
@@ -32,14 +33,15 @@ import com.orqix.shared.web.Sql;
 /** Orqix authorization and persistence boundary for a deliberately restricted executable CMMN subset. */
 @Service
 public class CaseService {
-    public record Definition(UUID id, String key, String name, int version, Instant createdAt, List<CaseDataModel.Field> dataFields) {}
-    public record DefinitionDetail(UUID id, String key, String name, int version, Instant createdAt, String sourceXml, List<CaseDataModel.Field> dataFields) {}
+    public record Definition(UUID id, String key, String name, int version, Instant createdAt, List<CaseDataModel.Field> dataFields, ApplicationViewQueries.Pinned viewBinding) {}
+    public record DefinitionDetail(UUID id, String key, String name, int version, Instant createdAt, String sourceXml, List<CaseDataModel.Field> dataFields, ApplicationViewQueries.Pinned viewBinding) {}
     public record Task(String id, String name, String status, List<String> candidateGroups, boolean eligible) {}
     public record Instance(UUID id, UUID definitionId, int definitionVersion, String status, int version,
             List<Task> tasks, Instant createdAt) {}
     public record Result<T>(T value, boolean replayed) {}
-    public record CreateDefinition(String key, String name, String sourceXml, List<CaseDataModel.Field> dataFields) {
-        public CreateDefinition(String key,String name,String sourceXml) { this(key,name,sourceXml,null); }
+    public record CreateDefinition(String key, String name, String sourceXml, List<CaseDataModel.Field> dataFields, ApplicationViewQueries.Pin viewRef) {
+        public CreateDefinition(String key,String name,String sourceXml,List<CaseDataModel.Field> dataFields) { this(key,name,sourceXml,dataFields,null); }
+        public CreateDefinition(String key,String name,String sourceXml) { this(key,name,sourceXml,null,null); }
     }
     public record StartCase(tools.jackson.databind.JsonNode data) {
         @Override public String toString() { return "Start case [data redacted]"; }
@@ -50,7 +52,7 @@ public class CaseService {
     public record DataChange(int version,tools.jackson.databind.JsonNode before,tools.jackson.databind.JsonNode after) {
         @Override public String toString() { return "Case data change " + version + " [data redacted]"; }
     }
-    public record CaseData(List<CaseDataModel.Field> fields,tools.jackson.databind.JsonNode values,int version,boolean canEdit,List<DataChange> changes) {
+    public record CaseData(List<CaseDataModel.Field> fields,tools.jackson.databind.JsonNode values,int version,boolean canEdit,List<DataChange> changes, ApplicationViewQueries.Pinned viewBinding) {
         @Override public String toString() { return "Case data " + version + " [data redacted]"; }
     }
     public record CompleteTask(int expectedVersion) {}
@@ -70,9 +72,9 @@ public class CaseService {
     public record PlanOverview(List<PlanItem> items, List<Milestone> milestones, List<CaseEvent> events, boolean canClose) {}
 
     private record DefinitionRow(UUID id, UUID workspaceId, String key, String name, int version,
-            Instant createdAt, String sourceXml, String engineDefinitionId, List<CaseDataModel.Field> dataFields) {
-        Definition summary() { return new Definition(id, key, name, version, createdAt, dataFields); }
-        DefinitionDetail detail() { return new DefinitionDetail(id, key, name, version, createdAt, sourceXml, dataFields); }
+            Instant createdAt, String sourceXml, String engineDefinitionId, List<CaseDataModel.Field> dataFields, ApplicationViewQueries.Pinned viewBinding) {
+        Definition summary() { return new Definition(id, key, name, version, createdAt, dataFields, viewBinding); }
+        DefinitionDetail detail() { return new DefinitionDetail(id, key, name, version, createdAt, sourceXml, dataFields, viewBinding); }
     }
     private record InstanceRow(UUID id, UUID definitionId, int definitionVersion, String engineInstanceId,
             String status, int version, Instant createdAt, UUID startedBy) {}
@@ -88,15 +90,16 @@ public class CaseService {
     private final Json json;
     private final AuditWriter audit;
     private final CaseDataModel dataModel;
+    private final ApplicationViewQueries viewQueries;
     private final Map<UUID,Map<String,Set<String>>> groupsByDefinition = new java.util.concurrent.ConcurrentHashMap<>();
     private final Map<UUID,Set<String>> requiredByDefinition = new java.util.concurrent.ConcurrentHashMap<>();
 
     public CaseService(JdbcClient jdbc, PolicyService policy, CmmnSubsetValidator validator,
             CmmnRepositoryService repository, CmmnRuntimeService runtime, CmmnTaskService tasks,
-            CmmnHistoryService history, IdempotencyService idempotency, Json json, AuditWriter audit, CaseDataModel dataModel) {
+            CmmnHistoryService history, IdempotencyService idempotency, Json json, AuditWriter audit, CaseDataModel dataModel, ApplicationViewQueries viewQueries) {
         this.jdbc=jdbc; this.policy=policy; this.validator=validator; this.repository=repository;
         this.runtime=runtime; this.tasks=tasks; this.idempotency=idempotency; this.json=json; this.audit=audit;
-        this.history=history; this.dataModel=dataModel;
+        this.history=history; this.dataModel=dataModel; this.viewQueries=viewQueries;
     }
 
     private WorkspaceAccess access(Caller caller, UUID workspaceId, Permission permission, String operation) {
@@ -113,6 +116,8 @@ public class CaseService {
             throw new ApiException(ProblemCode.VALIDATION_FAILED, "Case key or name is invalid.");
         String xml = request.sourceXml();
         var dataFields=dataModel.fields(request.dataFields());
+        var view = request.viewRef() == null ? null : viewQueries.require(ws,request.viewRef());
+        if (view != null) CaseViewBinding.validate(dataFields,view.definition());
         Set<String> groups = validator.validate(xml, request.key());
         long found = jdbc.sql("SELECT count(*) FROM workspace_group WHERE workspace_id=:ws AND key IN (:groups)")
                 .param("ws",ws).param("groups",groups).query(Long.class).single();
@@ -148,6 +153,8 @@ public class CaseService {
                 .param("name",request.name().strip()).param("xml",xml).param("sha",sha)
                 .param("engine",engineDefinition.getId()).param("deployment",deployment.getId())
                 .param("actor",caller.subjectId()).param("fields",json.write(dataFields)).update();
+        if (view != null) jdbc.sql("INSERT INTO case_definition_view(definition_id,workspace_id,view_id,view_version,definition) VALUES(:id,:ws,:view,:version,CAST(:definition AS jsonb))")
+                .param("id",id).param("ws",ws).param("view",view.id()).param("version",view.version()).param("definition",json.write(view.definition())).update();
         jdbc.sql("UPDATE case_catalog SET current_version=:v WHERE id=:id")
                 .param("v",version).param("id",existing.getKey()).update();
         audit.write(new AuditWriter.Entry(ws,AuditWriter.ActorType.USER,caller.subjectId(),"case.definition.created",
@@ -161,8 +168,10 @@ public class CaseService {
         if (!membership.has(Permission.WORKFLOW_READ) && !membership.has(Permission.WORKFLOW_START))
             throw ApiException.forbidden();
         return jdbc.sql("""
-                SELECT d.id,d.workspace_id,c.key,d.name,d.version,d.created_at,d.source_xml,d.engine_definition_id,d.data_fields::text AS data_fields
+                SELECT d.id,d.workspace_id,c.key,d.name,d.version,d.created_at,d.source_xml,d.engine_definition_id,d.data_fields::text AS data_fields,
+                    CASE WHEN v.definition_id IS NULL THEN NULL ELSE jsonb_build_object('id',v.view_id,'version',v.view_version,'definition',v.definition)::text END AS view_binding
                 FROM case_definition d JOIN case_catalog c ON c.workspace_id=d.workspace_id AND c.id=d.catalog_id
+                LEFT JOIN case_definition_view v ON v.workspace_id=d.workspace_id AND v.definition_id=d.id
                 WHERE d.workspace_id=:ws ORDER BY d.created_at DESC,d.id DESC LIMIT 100
                 """).param("ws",ws).query(this::mapDefinition).list().stream().map(DefinitionRow::summary).toList();
     }
@@ -175,8 +184,10 @@ public class CaseService {
 
     private DefinitionRow definition(UUID ws, UUID id) {
         return jdbc.sql("""
-                SELECT d.id,d.workspace_id,c.key,d.name,d.version,d.created_at,d.source_xml,d.engine_definition_id,d.data_fields::text AS data_fields
+                SELECT d.id,d.workspace_id,c.key,d.name,d.version,d.created_at,d.source_xml,d.engine_definition_id,d.data_fields::text AS data_fields,
+                    CASE WHEN v.definition_id IS NULL THEN NULL ELSE jsonb_build_object('id',v.view_id,'version',v.view_version,'definition',v.definition)::text END AS view_binding
                 FROM case_definition d JOIN case_catalog c ON c.workspace_id=d.workspace_id AND c.id=d.catalog_id
+                LEFT JOIN case_definition_view v ON v.workspace_id=d.workspace_id AND v.definition_id=d.id
                 WHERE d.workspace_id=:ws AND d.id=:id
                 """).param("ws",ws).param("id",id).query(this::mapDefinition).optional().orElseThrow(ApiException::notFound);
     }
@@ -184,7 +195,8 @@ public class CaseService {
     private DefinitionRow mapDefinition(java.sql.ResultSet rs, int n) throws java.sql.SQLException {
         return new DefinitionRow(Sql.uuid(rs,"id"),Sql.uuid(rs,"workspace_id"),rs.getString("key"),
                 rs.getString("name"),rs.getInt("version"),Sql.instant(rs,"created_at"),
-                rs.getString("source_xml"),rs.getString("engine_definition_id"),dataModel.readFields(rs.getString("data_fields")));
+                rs.getString("source_xml"),rs.getString("engine_definition_id"),dataModel.readFields(rs.getString("data_fields")),
+                rs.getString("view_binding")==null ? null : json.convert(json.parse(rs.getString("view_binding")),ApplicationViewQueries.Pinned.class));
     }
 
     @Transactional
@@ -556,7 +568,7 @@ public class CaseService {
                 .param("ws",ws).param("id",id).query(String.class).single();
         var changes=access.has(Permission.RUN_READ_DATA)?jdbc.sql("SELECT version,before_values::text,after_values::text FROM case_data_event WHERE workspace_id=:ws AND case_id=:id ORDER BY version DESC LIMIT 200")
                 .param("ws",ws).param("id",id).query((rs,n)->new DataChange(rs.getInt(1),json.parse(rs.getString(2)),json.parse(rs.getString(3)))).list():List.<DataChange>of();
-        return new CaseData(definition.dataFields(),json.parse(values),row.version(),canEditData(row,access),changes);
+        return new CaseData(definition.dataFields(),json.parse(values),row.version(),canEditData(row,access),changes,definition.viewBinding());
     }
 
     @Transactional

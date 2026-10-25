@@ -31,10 +31,31 @@ const STATE_LABEL: Record<string, { label: string; tone: 'success' | 'warning' |
 const toolId = (t: { connectionKey: string; connectionVersion: number; operation: string; toolName: string }) =>
   `${t.connectionKey}|${t.connectionVersion}|${t.operation}|${t.toolName}`
 
+/** Latest expired approval per workflow key that has no active approval now (an expired one authorizes nothing). */
+function expiredWithoutSuccessor(approvals: AgentWriteToolApproval[]): AgentWriteToolApproval[] {
+  const active = new Set(approvals.filter((a) => a.status === 'active').map((a) => a.workflowKey))
+  const latest = new Map<string, AgentWriteToolApproval>()
+  for (const a of approvals) {
+    if (a.status !== 'expired' || active.has(a.workflowKey)) continue
+    const seen = latest.get(a.workflowKey)
+    if (!seen || seen.approvedAt < a.approvedAt) latest.set(a.workflowKey, a)
+  }
+  return [...latest.values()]
+}
+
+/** A validation message tied to its field (the field names it in aria-describedby and is aria-invalid). */
+function FieldError({ id, message }: { id: string; message: string | undefined }) {
+  return message ? <p id={id} role="alert" className="text-sm font-medium text-danger-foreground">{message}</p> : null
+}
+
+const describedBy = (...ids: Array<string | false | undefined>) => ids.filter(Boolean).join(' ') || undefined
+
 /**
- * Approved write-capable agent tools (IN04, docs/build/S75). People holding agent.approve-write-tool approve a tool for
- * one workflow and connection version, or revoke it; operators record what they found at the target for a write whose
- * outcome is unknown. Nothing here sends a message, and message text is never shown: Orqix does not keep it.
+ * Approved write-capable agent tools (IN04, docs/build/S75; expiry and retention docs/build/S85). People holding
+ * agent.approve-write-tool approve a tool for one workflow and connection version, optionally for a limited number of
+ * days, or revoke it; operators record what they found at the target for a write whose outcome is unknown. Workspace
+ * administrators choose how long write records are kept in Settings (AgentWriteRetentionPanel). Nothing here sends a
+ * message, and message text is never shown: Orqix does not keep it.
  */
 export function AgentWriteToolsPage() {
   const { workspace, can } = useWorkspace()
@@ -99,7 +120,9 @@ export function AgentWriteToolsPage() {
               </THead>
               <TBody>
                 {overview.data.tools.map((tool) => {
-                  const active = overview.data.approvals.filter((a) => a.status === 'active' && toolId(a) === toolId(tool))
+                  const forTool = overview.data.approvals.filter((a) => toolId(a) === toolId(tool))
+                  const active = forTool.filter((a) => a.status === 'active')
+                  const expired = expiredWithoutSuccessor(forTool)
                   return (
                     <TR key={toolId(tool)}>
                       <TD>
@@ -115,19 +138,30 @@ export function AgentWriteToolsPage() {
                         </span>
                       </TD>
                       <TD>
-                        {active.length === 0 ? (
+                        {active.length === 0 && expired.length === 0 ? (
                           <span className="text-sm text-muted-foreground">Not approved</span>
                         ) : (
                           <ul className="space-y-1">
                             {active.map((a) => (
                               <li key={a.id} className="flex flex-wrap items-center gap-2">
                                 <span>{a.workflowKey}</span>
-                                <span className="text-xs text-muted-foreground">by {a.approvedBy.displayName}</span>
+                                <span className="text-xs text-muted-foreground">
+                                  by {a.approvedBy.displayName}; {a.expiresAt ? `expires ${formatDateTime(a.expiresAt)}` : 'no end date'}
+                                </span>
                                 {overview.data.canRevoke ? (
                                   <Button size="sm" variant="secondary" onClick={() => setRevoking(a)} aria-label={`Revoke ${tool.label} for ${a.workflowKey}`}>
                                     Revoke
                                   </Button>
                                 ) : null}
+                              </li>
+                            ))}
+                            {expired.map((a) => (
+                              <li key={a.id} className="flex flex-wrap items-center gap-2" data-testid="expired-approval">
+                                <span>{a.workflowKey}</span>
+                                <Badge tone="warning">Expired</Badge>
+                                <span className="text-xs text-muted-foreground">
+                                  on {formatDateTime(a.expiresAt)}; allows nothing until approved again
+                                </span>
                               </li>
                             ))}
                           </ul>
@@ -248,15 +282,20 @@ function useSubmit(onDone: () => Promise<void>) {
 function ApproveDialog({ ws, tool, onDone, onCancel }: { ws: string; tool: AgentWriteToolDeclared; onDone: () => Promise<void>; onCancel: () => void }) {
   const [workflowKey, setWorkflowKey] = useState('')
   const [reason, setReason] = useState('')
-  const [missing, setMissing] = useState<string | null>(null)
+  const [expiry, setExpiry] = useState('')
+  const [errors, setErrors] = useState<{ workflowKey?: string; reason?: string; expiry?: string }>({})
   const { pending, error, submit } = useSubmit(onDone)
   const confirm = () => {
-    if (!/^[a-z][a-z0-9-]{0,62}[a-z0-9]$/.test(workflowKey.trim())) return setMissing('Enter the key of the workflow, such as vendor-onboarding-check.')
-    if (!reason.trim()) return setMissing('Say why this agent may send these messages.')
-    setMissing(null)
+    const next: typeof errors = {}
+    if (!/^[a-z][a-z0-9-]{0,62}[a-z0-9]$/.test(workflowKey.trim())) next.workflowKey = 'Enter the key of the workflow, such as vendor-onboarding-check.'
+    if (!reason.trim()) next.reason = 'Say why this agent may send these messages.'
+    const days = expiry.trim() === '' ? null : Number(expiry.trim())
+    if (days !== null && (!Number.isInteger(days) || days < 1 || days > 90)) next.expiry = 'Enter a whole number of days from 1 to 90, or leave it empty for no end date.'
+    setErrors(next)
+    if (Object.keys(next).length > 0) return
     void submit(() => endpoints.approveAgentWriteTool(ws, {
       workflowKey: workflowKey.trim(), connectionKey: tool.connectionKey, connectionVersion: tool.connectionVersion,
-      operation: tool.operation, toolName: tool.toolName, reason: reason.trim(),
+      operation: tool.operation, toolName: tool.toolName, reason: reason.trim(), ...(days === null ? {} : { expiresInDays: days }),
     }))
   }
   return (
@@ -268,10 +307,21 @@ function ApproveDialog({ ws, tool, onDone, onCancel }: { ws: string; tool: Agent
         not be able to send through it for requests you start yourself.
       </p>
       <Label htmlFor="approve-workflow">Workflow key</Label>
-      <Input id="approve-workflow" value={workflowKey} onChange={(e) => setWorkflowKey(e.target.value)} />
+      <Input id="approve-workflow" value={workflowKey} onChange={(e) => setWorkflowKey(e.target.value)}
+        aria-invalid={errors.workflowKey ? true : undefined} aria-describedby={describedBy(errors.workflowKey && 'approve-workflow-error')} />
+      <FieldError id="approve-workflow-error" message={errors.workflowKey} />
       <Label htmlFor="approve-reason">Reason</Label>
-      <Textarea id="approve-reason" value={reason} maxLength={500} onChange={(e) => setReason(e.target.value)} />
-      {missing ? <p className="text-sm text-danger-foreground">{missing}</p> : null}
+      <Textarea id="approve-reason" value={reason} maxLength={500} onChange={(e) => setReason(e.target.value)}
+        aria-invalid={errors.reason ? true : undefined} aria-describedby={describedBy(errors.reason && 'approve-reason-error')} />
+      <FieldError id="approve-reason-error" message={errors.reason} />
+      <Label htmlFor="approve-expiry">Expires after (days, optional)</Label>
+      <p id="approve-expiry-help" className="text-xs text-muted-foreground">
+        From 1 to 90 days. When it expires the approval allows nothing, exactly like a revoked one, until someone approves the
+        tool again. Leave empty for no end date.
+      </p>
+      <Input id="approve-expiry" inputMode="numeric" className="max-w-32" value={expiry} onChange={(e) => setExpiry(e.target.value)}
+        aria-invalid={errors.expiry ? true : undefined} aria-describedby={describedBy('approve-expiry-help', errors.expiry && 'approve-expiry-error')} />
+      <FieldError id="approve-expiry-error" message={errors.expiry} />
     </ConfirmDialog>
   )
 }
@@ -290,8 +340,9 @@ function RevokeDialog({ ws, approval, onDone, onCancel }: { ws: string; approval
       error={error ? <ProblemAlert error={toProblem(error)} context={{ action: 'revoke this approval' }} /> : null}>
       <p>The next write through this tool is refused and the request waits for a person.</p>
       <Label htmlFor="revoke-reason">Reason</Label>
-      <Textarea id="revoke-reason" value={reason} maxLength={500} onChange={(e) => { setReason(e.target.value); setMissing(false) }} aria-invalid={missing} />
-      {missing ? <p className="text-sm text-danger-foreground">Say why the approval is revoked.</p> : null}
+      <Textarea id="revoke-reason" value={reason} maxLength={500} onChange={(e) => { setReason(e.target.value); setMissing(false) }}
+        aria-invalid={missing ? true : undefined} aria-describedby={describedBy(missing && 'revoke-reason-error')} />
+      <FieldError id="revoke-reason-error" message={missing ? 'Say why the approval is revoked.' : undefined} />
     </ConfirmDialog>
   )
 }
@@ -300,12 +351,14 @@ function ReconcileDialog({ ws, call, onDone, onCancel }: { ws: string; call: Age
   const [outcome, setOutcome] = useState<'succeeded' | 'notApplied' | null>(null)
   const [reason, setReason] = useState('')
   const [reference, setReference] = useState('')
-  const [missing, setMissing] = useState<string | null>(null)
+  const [errors, setErrors] = useState<{ outcome?: string; reason?: string }>({})
   const { pending, error, submit } = useSubmit(onDone)
   const confirm = () => {
-    if (!outcome) return setMissing('Choose what you found at the target.')
-    if (!reason.trim()) return setMissing('Say what you checked.')
-    setMissing(null)
+    const next: typeof errors = {}
+    if (!outcome) next.outcome = 'Choose what you found at the target.'
+    if (!reason.trim()) next.reason = 'Say what you checked.'
+    setErrors(next)
+    if (!outcome || next.reason) return
     void submit(() => endpoints.reconcileAgentWrite(ws, call.id, {
       outcome, reason: reason.trim(), remoteReference: reference.trim() || null, expectedVersion: call.version,
     }))
@@ -317,8 +370,9 @@ function ReconcileDialog({ ws, call, onDone, onCancel }: { ws: string; call: Age
         Orqix cannot tell whether this message reached {call.adapterKey}. Check the target, then record what you found. Nothing
         is sent again until you do; afterwards, retrying the request is a separate step.
       </p>
-      <fieldset className="space-y-2">
-        <legend className="font-semibold">What did you find?</legend>
+      <fieldset className="space-y-2" role="radiogroup" aria-labelledby="reconcile-outcome-legend"
+        aria-invalid={errors.outcome ? true : undefined} aria-describedby={describedBy(errors.outcome && 'reconcile-outcome-error')}>
+        <legend id="reconcile-outcome-legend" className="font-semibold">What did you find?</legend>
         <label className="flex items-center gap-2">
           <input type="radio" name="outcome" checked={outcome === 'succeeded'} onChange={() => setOutcome('succeeded')} />
           It was delivered (it will not be sent again)
@@ -328,11 +382,13 @@ function ReconcileDialog({ ws, call, onDone, onCancel }: { ws: string; call: Age
           It was not delivered (a retry of the request may send it)
         </label>
       </fieldset>
+      <FieldError id="reconcile-outcome-error" message={errors.outcome} />
       <Label htmlFor="reconcile-reason">What you checked</Label>
-      <Textarea id="reconcile-reason" value={reason} maxLength={500} onChange={(e) => setReason(e.target.value)} />
+      <Textarea id="reconcile-reason" value={reason} maxLength={500} onChange={(e) => setReason(e.target.value)}
+        aria-invalid={errors.reason ? true : undefined} aria-describedby={describedBy(errors.reason && 'reconcile-reason-error')} />
+      <FieldError id="reconcile-reason-error" message={errors.reason} />
       <Label htmlFor="reconcile-reference">Reference at the target (optional)</Label>
       <Input id="reconcile-reference" value={reference} maxLength={200} onChange={(e) => setReference(e.target.value)} />
-      {missing ? <p className="text-sm text-danger-foreground">{missing}</p> : null}
     </ConfirmDialog>
   )
 }

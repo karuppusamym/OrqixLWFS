@@ -183,7 +183,7 @@ public class AuditWriter {
             Map.entry("agent.write", Set.of("runId", "agentEffectId", "effectId", "connectionKey", "connectionVersion",
                     "operation", "toolName", "adapterKey", "approvalId", "outcome", "argumentChars")),
             Map.entry("agent.write.reconciled", Set.of("effectId", "runId", "outcome", "remoteReference")),
-            // IN04 hardening (S79): retention of agent write records, as for files (DOC08).
+            // IN04 hardening (S85): retention of agent write records, as for files (DOC08).
             Map.entry("agent.write.retention.updated", Set.of("retentionDays", "version")),
             Map.entry("agent.write.purged", Set.of("runId", "writeId", "retentionDays")));
 

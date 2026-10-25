@@ -73,8 +73,9 @@ final class AgentWriteToolRules {
             if (!rc.workspace().writeToolApprovals().contains(needed)) {
                 rc.issues().blocker("WF_AGENT_WRITE_TOOL_UNAPPROVED", path, http.id(), null, RuleContext.q(http)
                         + " lets the agent send messages with " + RuleContext.q(label) + " (connection version " + version
-                        + "), which nobody has approved for this workflow. A person allowed to approve agent write tools"
-                        + " must approve it first.");
+                        + "), which has no current approval for this workflow: it was never approved, or its approval"
+                        + " was revoked or has expired. A person allowed to approve agent write tools must approve it"
+                        + " first.");
             }
         }
     }

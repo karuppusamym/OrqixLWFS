@@ -423,7 +423,8 @@ class SecurityMatrixTest extends RuntimeTestBase {
                     Map.of("title", "/text"), "enabled", false, "expectedVersion", 1);
             case "purgeInboundEvents" -> Map.of("olderThanDays", 1, "includeUnstarted", true);
             case "approveAgentWriteTool" -> Map.of("workflowKey", "foreign-flow", "connectionKey", "vendor-risk-assistant",
-                    "connectionVersion", 1, "operation", "assessVendor", "toolName", "notify_team", "reason", "Foreign");
+                    "connectionVersion", 1, "operation", "assessVendor", "toolName", "notify_team", "reason", "Foreign",
+                    "expiresInDays", 1);
             case "revokeAgentWriteTool" -> Map.of("reason", "Foreign", "expectedVersion", 1);
             case "reconcileAgentWrite" -> Map.of("outcome", "notApplied", "reason", "Foreign", "expectedVersion", 1);
             case "setAgentWriteRetention" -> Map.of("retentionDays", 1, "expectedVersion", 0);

@@ -24,7 +24,8 @@ import tools.jackson.databind.JsonNode;
  *                                  requests (S12); the active release of each is what a publish pins
  * @param adapters                  outbound adapters of the workspace by key (S73); a step may only send through one
  *                                  listed here, to recipients or topics its configuration approves
- * @param writeToolApprovals        active agent write-tool approvals of the workspace (IN04, S75); an agent step whose
+ * @param writeToolApprovals        active, unexpired agent write-tool approvals of the workspace (IN04, S75; expiry
+ *                                  S85); an agent step whose
  *                                  operation declares write tools can only be published when each is approved for
  *                                  this workflow. Empty means none is approved (fail closed).
  */

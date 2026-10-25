@@ -3,6 +3,7 @@ package com.orqix.integration.agentwrite;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -82,7 +83,7 @@ public class AgentWriteService implements AgentWriteTools {
     /** The stub answers at once; the lease only has to cover the journal writes. */
     static final Duration LEASE = Duration.ofSeconds(45);
 
-    /** Longest optional approval expiry (S79). No expiry stays the default. */
+    /** Longest optional approval expiry (S85). No expiry stays the default. */
     public static final int MAX_EXPIRY_DAYS = 90;
 
     // ------------------------------------------------------------------ API types
@@ -221,7 +222,9 @@ public class AgentWriteService implements AgentWriteTools {
             throw invalid("/toolName", "This agent operation declares no write tool with this name.");
         }
         UUID id = Ids.newId();
-        Instant now = clock.instant();
+        // PostgreSQL keeps microseconds (rounding); truncating first makes the stored, returned and audited expiry the
+        // same instant (S85 review: the audit used to carry the unrounded nanoseconds).
+        Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
         Instant expiresAt = request.expiresInDays() == null ? null : now.plus(Duration.ofDays(request.expiresInDays()));
         // An expired approval authorizes nothing; mark it so the one-active index lets the tool be approved again.
         jdbc.sql("""
@@ -620,7 +623,7 @@ public class AgentWriteService implements AgentWriteTools {
                 """).param("approval", authorization.approvalId()).param("approvedBy", authorization.approvedBy())
                 .param("digest", argumentDigest).param("chars", argumentChars).param("now", Sql.ts(clock.instant()))
                 .param("ws", ws).param("key", effectKey).update());
-        // Approval fence (S79): the approval row is read again under FOR SHARE in one transaction that also performs the
+        // Approval fence (S85): the approval row is read again under FOR SHARE in one transaction that also performs the
         // send. A revocation (which takes FOR UPDATE on the same row) that committed before this point is seen here and
         // nothing is sent; one that arrives during the send waits until the send is over and applies to the next write.
         // An expiry is evaluated at the instant the lock is taken. lock_timeout (10s) bounds how long either side waits.

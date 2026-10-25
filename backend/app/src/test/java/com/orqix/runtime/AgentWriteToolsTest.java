@@ -8,7 +8,14 @@ import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
+import java.sql.Statement;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -20,10 +27,24 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
+import com.orqix.audit.AuditWriter;
+import com.orqix.identity.PolicyService;
+import com.orqix.integration.AgentWriteTools;
+import com.orqix.integration.ConnectionDefinition;
+import com.orqix.integration.ConnectionDefinition.WriteTool;
+import com.orqix.integration.ConnectionService;
+import com.orqix.integration.EffectJournal;
+import com.orqix.integration.adapters.AdapterTransport;
 import com.orqix.integration.adapters.LocalStubTransport;
+import com.orqix.integration.agentwrite.AgentWriteRetention;
+import com.orqix.integration.agentwrite.AgentWriteService;
 import com.orqix.support.AgentLlmStub;
 import com.orqix.support.McpStub;
+import com.orqix.support.MutableClock;
 import com.orqix.support.RuntimeTestBase;
 import com.orqix.support.TestDatabase;
 
@@ -33,7 +54,8 @@ import tools.jackson.databind.node.ObjectNode;
 /**
  * IN04 (docs/build/S75) on the real stack (PostgreSQL, Flowable, WireMock model and MCP server, local stub transport):
  * approval before publish and before every write, separation of duties, closed arguments with fixed recipients, one
- * journaled delivery, revocation, an unknown outcome that is never resent and its version-checked reconciliation.
+ * journaled delivery, revocation, an unknown outcome that is never resent and its version-checked reconciliation;
+ * approval expiry, the pre-send approval fence and retention of write records (docs/build/S85).
  * Every API response is validated against openapi.yaml by the test client.
  */
 @ExtendWith(OutputCaptureExtension.class)
@@ -136,18 +158,30 @@ class AgentWriteToolsTest extends RuntimeTestBase {
     }
 
     private Response approve(String user, Draft draft, String reason) throws Exception {
-        return api(user).post(Map.of("workflowKey", draft.key(), "connectionKey", connection, "connectionVersion", 1,
-                "operation", "assessVendor", "toolName", "notify_procurement", "reason", reason),
-                "/workspaces/{ws}/agent-write-tools/approvals", PURCHASING);
+        return approve(user, draft, reason, null);
+    }
+
+    /** {@code expiresInDays} null leaves the member out (no expiry). */
+    private Response approve(String user, Draft draft, String reason, Integer expiresInDays) throws Exception {
+        Map<String, Object> body = new LinkedHashMap<>(Map.of("workflowKey", draft.key(), "connectionKey", connection,
+                "connectionVersion", 1, "operation", "assessVendor", "toolName", "notify_procurement", "reason", reason));
+        if (expiresInDays != null) {
+            body.put("expiresInDays", expiresInDays);
+        }
+        return api(user).post(body, "/workspaces/{ws}/agent-write-tools/approvals", PURCHASING);
     }
 
     private Draft approvedAndPublished(String approver) throws Exception {
+        return approvedAndPublished(approver, null);
+    }
+
+    private Draft approvedAndPublished(String approver, Integer expiresInDays) throws Exception {
         Draft draft = draft();
         Response refused = publish(draft);
         assertThat(refused.status()).as(refused.toString()).isNotEqualTo(201);
         assertThat(refused.toString()).contains("WF_AGENT_WRITE_TOOL_UNAPPROVED");
         grantApprover(approver);
-        Response approved = approve(approver, draft, "Procurement asked for high-risk notes");
+        Response approved = approve(approver, draft, "Procurement asked for high-risk notes", expiresInDays);
         assertThat(approved.status()).as(approved.toString()).isEqualTo(201);
         Response published = publish(draft);
         assertThat(published.status()).as(published.toString()).isEqualTo(201);
@@ -284,9 +318,8 @@ class AgentWriteToolsTest extends RuntimeTestBase {
     @Test
     void withoutAnActiveApprovalOrForTheApproverOwnRequestNothingIsAskedOrSent() throws Exception {
         Draft draft = approvedAndPublished("mani.manager");
-        JsonNode approval = api("mani.manager").get("/workspaces/{ws}/agent-write-tools", PURCHASING).body()
-                .path("approvals").get(0);
-        assertThat(approval.path("workflowKey").asString()).isEqualTo(draft.key());
+        JsonNode approval = approvalFor(draft.key(), "active");
+        assertThat(approval).isNotNull();
         UUID approvalId = UUID.fromString(approval.path("id").asString());
         // Revocation: reason and version checked; requesters may not revoke.
         Response denied = api("rhea.requester").post(Map.of("reason", "No", "expectedVersion", 1),
@@ -414,6 +447,413 @@ class AgentWriteToolsTest extends RuntimeTestBase {
         String toolCalls = jdbc.sql("SELECT tool_calls::text FROM agent_call WHERE run_id = :run ORDER BY created_at DESC LIMIT 1")
                 .param("run", run).query(String.class).single();
         assertThat(toolCalls).contains("reused");
+    }
+
+    // ------------------------------------------------------------------ S85: approval expiry and the pre-send fence
+
+    /** The approval of this workflow's tool shown with {@code status}, or null. */
+    private JsonNode approvalFor(String workflowKey, String status) throws Exception {
+        Response overview = api("mani.manager").get("/workspaces/{ws}/agent-write-tools", PURCHASING);
+        assertThat(overview.status()).as(overview.toString()).isEqualTo(200);
+        for (JsonNode approval : overview.body().path("approvals")) {
+            if (approval.path("workflowKey").asString().equals(workflowKey)
+                    && approval.path("status").asString().equals(status)) {
+                return approval;
+            }
+        }
+        return null;
+    }
+
+    /** Moves an approval's window into the past (the application clock is the system clock). */
+    private static void expire(UUID approvalId) throws Exception {
+        superuser("""
+                UPDATE orqix.agent_write_tool_approval
+                SET approved_at = now() - interval '31 days', expires_at = now() - interval '1 day' WHERE id = ?
+                """, approvalId);
+    }
+
+    private static Instant instant(JsonNode node, String member) {
+        return Instant.parse(node.path(member).asString());
+    }
+
+    @Test
+    void anApprovalMayExpireWithinNinetyDaysAndAnExpiredApprovalAuthorizesNothingUntilApprovedAgain() throws Exception {
+        grantApprover("mani.manager");
+        // Bounds: 0 and 91 days are refused and store nothing.
+        Draft probe = draft();
+        for (int days : new int[] {0, 91}) {
+            Response refused = approve("mani.manager", probe, "Bounded", days);
+            assertThat(refused.status()).as(days + " days: " + refused).isIn(400, 422);
+        }
+        assertThat(jdbc.sql("SELECT count(*) FROM agent_write_tool_approval WHERE workflow_key = :key")
+                .param("key", probe.key()).query(Integer.class).single()).isZero();
+        // Default unchanged: omitted or explicitly null means the approval never expires.
+        Map<String, Object> explicitNull = new HashMap<>(Map.of("workflowKey", probe.key(), "connectionKey", connection,
+                "connectionVersion", 1, "operation", "assessVendor", "toolName", "notify_procurement",
+                "reason", "No end date"));
+        explicitNull.put("expiresInDays", null);
+        Response open = api("mani.manager").post(explicitNull, "/workspaces/{ws}/agent-write-tools/approvals", PURCHASING);
+        assertThat(open.status()).as(open.toString()).isEqualTo(201);
+        assertThat(open.body().path("expiresAt").isNull()).isTrue();
+        assertThat(open.body().path("status").asString()).isEqualTo("active");
+        // 1 and 90 days are accepted: exactly that many 24-hour days after the approval; the audit records the instant.
+        Draft longest = draft();
+        Response ninety = approve("mani.manager", longest, "For the quarter", 90);
+        assertThat(ninety.status()).as(ninety.toString()).isEqualTo(201);
+        assertThat(Duration.between(instant(ninety.body(), "approvedAt"), instant(ninety.body(), "expiresAt")))
+                .isEqualTo(Duration.ofDays(90));
+        String audited = jdbc.sql("""
+                SELECT metadata ->> 'expiresAt' FROM audit_event WHERE action = 'agent.write-tool.approved' AND resource_id = :id
+                """).param("id", ninety.body().path("id").asString()).query(String.class).single();
+        assertThat(Instant.parse(audited)).isEqualTo(instant(ninety.body(), "expiresAt"));
+
+        Draft draft = draft();
+        Response approved = approve("mani.manager", draft, "Procurement pilot", 1);
+        assertThat(approved.status()).as(approved.toString()).isEqualTo(201);
+        assertThat(Duration.between(instant(approved.body(), "approvedAt"), instant(approved.body(), "expiresAt")))
+                .isEqualTo(Duration.ofDays(1));
+        Response published = publish(draft);
+        assertThat(published.status()).as(published.toString()).isEqualTo(201);
+        UUID approvalId = UUID.fromString(approved.body().path("id").asString());
+
+        // It expires: the list says so (the stored row is still 'active' until someone approves again).
+        expire(approvalId);
+        JsonNode shown = approvalFor(draft.key(), "expired");
+        assertThat(shown).isNotNull();
+        assertThat(shown.path("expiresAt").isNull()).isFalse();
+        assertThat(approvalFor(draft.key(), "active")).isNull();
+        // Nothing is left to revoke.
+        Response revoke = api("mani.manager").post(Map.of("reason", "Stop", "expectedVersion", shown.path("version").asInt()),
+                "/workspaces/{ws}/agent-write-tools/approvals/{id}/revoke", PURCHASING, approvalId);
+        assertThat(revoke.code()).as(revoke.toString()).isEqualTo("CONFIGURATION_VERSION_CONFLICT");
+        assertThat(revoke.toString()).contains("expired");
+
+        // The runtime refuses before the model is asked, with the reason; nothing is sent.
+        UUID run = start("rhea.requester", draft);
+        awaitLifecycle(PURCHASING, run, "needsAttention", "waiting", "completed");
+        JsonNode detail = run(PURCHASING, run);
+        assertThat(detail.path("lifecycle").asString()).as(detail.toString()).isEqualTo("needsAttention");
+        assertThat(detail.path("attention").path("reason").asString()).isEqualTo("CONNECTION_UNAVAILABLE");
+        assertThat(detail.path("attention").toString()).contains("Tell procurement").contains("expired");
+        assertThat(AgentLlmStub.requests()).isEmpty();
+        assertThat(sent()).isZero();
+
+        // Publishing a workflow whose only approval expired is refused, and the message names expiry.
+        Draft other = draft();
+        Response trial = approve("mani.manager", other, "Short trial", 1);
+        assertThat(trial.status()).as(trial.toString()).isEqualTo(201);
+        expire(UUID.fromString(trial.body().path("id").asString()));
+        Response refused = publish(other);
+        assertThat(refused.status()).as(refused.toString()).isNotEqualTo(201);
+        assertThat(refused.toString()).contains("WF_AGENT_WRITE_TOOL_UNAPPROVED").contains("expired");
+
+        // Approving again closes the old row as 'expired' and authorizes; an operator retry then writes once.
+        Response again = approve("mani.manager", draft, "Pilot extended", null);
+        assertThat(again.status()).as(again.toString()).isEqualTo(201);
+        assertThat(again.body().path("expiresAt").isNull()).isTrue();
+        Map<String, Object> old = jdbc.sql("SELECT status, version FROM agent_write_tool_approval WHERE id = :id")
+                .param("id", approvalId).query().singleRow();
+        assertThat(old).containsEntry("status", "expired").containsEntry("version", 2);
+        assertThat(approvalFor(draft.key(), "active").path("id").asString()).isEqualTo(again.body().path("id").asString());
+        AgentLlmStub.toolCall("c1", "notify_procurement", note("Note", "Body"), 0.0001);
+        AgentLlmStub.answer(HIGH, 0.0001);
+        Response retried = retry(run);
+        assertThat(retried.status()).as(retried.toString()).isEqualTo(200);
+        awaitLifecycle(PURCHASING, run, "waiting");
+        assertThat(sent()).isEqualTo(1);
+    }
+
+    @Autowired
+    private PolicyService policy;
+    @Autowired
+    private ConnectionService connections;
+    @Autowired
+    private AdapterTransport transport;
+    @Autowired
+    private AuditWriter auditWriter;
+    @Autowired
+    private PlatformTransactionManager transactions;
+
+    private interface Step {
+        void run() throws Exception;
+    }
+
+    /**
+     * The production service on a test clock, whose journal runs {@code afterBegin} steps once the write's slot is
+     * registered and its effect is in flight: after the authorization and before the fence and the send.
+     */
+    private AgentWriteService service(Clock clock, List<Step> afterBegin) {
+        TransactionTemplate tx = new TransactionTemplate(transactions);
+        tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        EffectJournal hooked = new EffectJournal(jdbc, json, Clock.systemUTC()) {
+            @Override
+            public BeginResult begin(EffectRequest request, String leaseOwner, Duration leaseDuration,
+                    String policyDenial) {
+                BeginResult result = tx.execute(status -> super.begin(request, leaseOwner, leaseDuration, policyDenial));
+                while (!afterBegin.isEmpty()) {
+                    try {
+                        afterBegin.remove(0).run();
+                    } catch (Exception e) {
+                        throw new IllegalStateException(e);
+                    }
+                }
+                return result;
+            }
+        };
+        return new AgentWriteService(policy, connections, hooked, transport, auditWriter, jdbc, json, clock,
+                transactions);
+    }
+
+    private ObjectNode arguments(String subject, String body) {
+        ObjectNode arguments = json.object();
+        arguments.put("subject", subject);
+        arguments.put("body", body);
+        return arguments;
+    }
+
+    @Test
+    void theExpiryInstantIsExactAndTheFenceStopsTheSendAfterARevocationOrExpiryThatFollowsAuthorization()
+            throws Exception {
+        Draft draft = approvedAndPublished("mani.manager", 10);
+        AgentLlmStub.toolCall("c1", "notify_procurement", note("Note", "Body"), 0.0001);
+        AgentLlmStub.answer(HIGH, 0.0001);
+        UUID run = start("rhea.requester", draft);
+        awaitLifecycle(PURCHASING, run, "waiting", "needsAttention");
+        assertThat(sent()).isEqualTo(1);
+        JsonNode approval = approvalFor(draft.key(), "active");
+        Instant expiresAt = instant(approval, "expiresAt");
+        UUID agentEffect = jdbc.sql("SELECT id FROM effect_journal WHERE run_id = :run AND node_id = 'assess'")
+                .param("run", run).query(UUID.class).single();
+        ConnectionDefinition definition = connections.definition(PURCHASING, connection, 1).orElseThrow().definition();
+        WriteTool tool = definition.operations().get("assessVendor").agent().writeTool("notify_procurement");
+        AgentWriteTools.Scope scope = new AgentWriteTools.Scope(PURCHASING, run, agentEffect, "assess",
+                subject("rhea.requester"), definition, "assessVendor");
+        MutableClock clock = new MutableClock(expiresAt.minus(1, ChronoUnit.MICROS));
+        List<Step> afterBegin = new ArrayList<>();
+        AgentWriteService service = service(clock, afterBegin);
+
+        // One microsecond before the expiry it authorizes; at the instant it does not, and the compiler's facts agree.
+        assertThat(service.authorize(scope, tool).allowed()).isTrue();
+        assertThat(service.activeApprovals(PURCHASING)).anyMatch(f -> f.workflowKey().equals(draft.key()));
+        clock.set(expiresAt);
+        assertThat(service.authorize(scope, tool).refusal()).isEqualTo("WRITE_APPROVAL_EXPIRED");
+        assertThat(service.activeApprovals(PURCHASING)).noneMatch(f -> f.workflowKey().equals(draft.key()));
+        // Every write checks again: at the instant nothing is registered or sent.
+        AgentWriteTools.WriteResult late = service.write(scope, tool, 2, arguments("Late", "Body"));
+        assertThat(late.outcome()).isEqualTo(AgentWriteTools.Outcome.REFUSED);
+        assertThat(late.errorCode()).isEqualTo("WRITE_APPROVAL_EXPIRED");
+        assertThat(late.effectId()).isNull();
+        assertThat(jdbc.sql("SELECT count(*) FROM agent_write_call WHERE run_id = :run").param("run", run)
+                .query(Integer.class).single()).isEqualTo(1);
+        assertThat(sent()).isEqualTo(1);
+
+        // Revoked after the authorization, before the send (the old S75 race): the fence sees it, nothing is sent.
+        clock.set(expiresAt.minus(1, ChronoUnit.DAYS));
+        UUID approvalId = UUID.fromString(approval.path("id").asString());
+        afterBegin.add(() -> assertThat(api("mani.manager").post(Map.of("reason", "Programme paused", "expectedVersion",
+                approval.path("version").asInt()), "/workspaces/{ws}/agent-write-tools/approvals/{id}/revoke", PURCHASING,
+                approvalId).status()).isEqualTo(200));
+        AgentWriteTools.WriteResult revoked = service.write(scope, tool, 2, arguments("Second", "Body"));
+        assertThat(afterBegin).isEmpty();
+        assertThat(revoked.outcome()).isEqualTo(AgentWriteTools.Outcome.REFUSED);
+        assertThat(revoked.errorCode()).isEqualTo("WRITE_NOT_APPROVED");
+        assertThat(revoked.effectId()).isNotNull();
+        assertThat(jdbc.sql("SELECT state, last_error_code FROM effect_journal WHERE id = :id").param("id", revoked.effectId())
+                .query().singleRow()).containsEntry("state", "permanentFailure")
+                .containsEntry("last_error_code", "WRITE_NOT_APPROVED");
+        assertThat(sent()).isEqualTo(1);
+        assertThat(jdbc.sql("""
+                SELECT outcome FROM audit_event WHERE action = 'agent.write' AND metadata ->> 'effectId' = :effect
+                """).param("effect", revoked.effectId().toString()).query(String.class).single()).isEqualTo("denied");
+
+        // Expired after the authorization, before the send: likewise.
+        Response renewed = approve("mani.manager", draft, "Renewed for a day", 1);
+        assertThat(renewed.status()).as(renewed.toString()).isEqualTo(201);
+        Instant renewedExpiry = instant(renewed.body(), "expiresAt");
+        clock.set(renewedExpiry.minus(1, ChronoUnit.HOURS));
+        afterBegin.add(() -> clock.set(renewedExpiry));
+        AgentWriteTools.WriteResult expired = service.write(scope, tool, 3, arguments("Third", "Body"));
+        assertThat(afterBegin).isEmpty();
+        assertThat(expired.outcome()).isEqualTo(AgentWriteTools.Outcome.REFUSED);
+        assertThat(expired.errorCode()).isEqualTo("WRITE_APPROVAL_EXPIRED");
+        assertThat(jdbc.sql("SELECT state, last_error_code FROM effect_journal WHERE id = :id").param("id", expired.effectId())
+                .query().singleRow()).containsEntry("state", "permanentFailure")
+                .containsEntry("last_error_code", "WRITE_APPROVAL_EXPIRED");
+        assertThat(sent()).isEqualTo(1);
+    }
+
+    @Test
+    void theNinetyDayBoundDoesNotDependOnTheSessionTimeZone() throws Exception {
+        grantApprover("mani.manager");
+        Response approved = approve("mani.manager", draft(), "For the quarter", 90);
+        assertThat(approved.status()).as(approved.toString()).isEqualTo(201);
+        String id = approved.body().path("id").asString();
+        // A (past) window across the US spring clock change, in a session using that zone (the JDBC driver sends the JVM's).
+        try (Connection c = DriverManager.getConnection(TestDatabase.jdbcUrl(), "postgres", "postgres");
+                Statement s = c.createStatement()) {
+            s.execute("SET TIME ZONE 'America/New_York'");
+            // The cause V122 removes: in this zone '90 days' is one hour shorter than 90 * 24 hours.
+            try (var rs = s.executeQuery("SELECT (timestamptz '2026-01-10 12:00+00' + interval '90 days')"
+                    + " < (timestamptz '2026-01-10 12:00+00' + interval '2160 hours')")) {
+                assertThat(rs.next()).isTrue();
+                assertThat(rs.getBoolean(1)).isTrue();
+            }
+            assertThat(s.executeUpdate("UPDATE orqix.agent_write_tool_approval SET approved_at = timestamptz "
+                    + "'2026-01-10 12:00+00', expires_at = timestamptz '2026-01-10 12:00+00' + interval '2160 hours' "
+                    + "WHERE id = '" + id + "'")).isEqualTo(1);
+            assertThatThrownBy(() -> s.executeUpdate("UPDATE orqix.agent_write_tool_approval SET expires_at = "
+                    + "approved_at + interval '2160 hours 1 second' WHERE id = '" + id + "'"))
+                    .hasMessageContaining("agent_write_tool_approval_expiry");
+        }
+    }
+
+    // ------------------------------------------------------------------ S85: retention of write records
+
+    @Autowired
+    private AgentWriteRetention retention;
+
+    /** A run whose agent wrote once (delivered); it waits at the manager task afterwards. */
+    private UUID writingRun(Draft draft) throws Exception {
+        AgentLlmStub.toolCall("c1", "notify_procurement", note("Note", "Body"), 0.0001);
+        AgentLlmStub.answer(HIGH, 0.0001);
+        UUID run = start("rhea.requester", draft);
+        awaitLifecycle(PURCHASING, run, "waiting", "needsAttention");
+        assertThat(lifecycle(PURCHASING, run)).isEqualTo("waiting");
+        return run;
+    }
+
+    private void endedDaysAgo(UUID run, int days) throws Exception {
+        Response cancelled = api("olga.operator").post(Map.of("reason", "No longer needed", "expectedVersion",
+                run(PURCHASING, run).path("version").asInt()), UUID.randomUUID().toString(),
+                "/workspaces/{ws}/runs/{id}/cancel", PURCHASING, run);
+        assertThat(cancelled.status()).as(cancelled.toString()).isEqualTo(200);
+        jdbc.sql("UPDATE workflow_run SET ended_at = now() - make_interval(days => :days) WHERE id = :id")
+                .param("days", days).param("id", run).update();
+    }
+
+    private int writeRecords(UUID run) {
+        return jdbc.sql("SELECT count(*) FROM agent_write_call WHERE run_id = :run").param("run", run)
+                .query(Integer.class).single();
+    }
+
+    private int journalEntries(UUID run) {
+        return jdbc.sql("SELECT count(*) FROM effect_journal WHERE run_id = :run").param("run", run)
+                .query(Integer.class).single();
+    }
+
+    @Test
+    void retentionIsAdministratorOnlyVersionedAndRemovesOnlyFinalWriteRecordsOfLongEndedRequests() throws Exception {
+        String settings = "/workspaces/{ws}/agent-write-retention";
+        try {
+            JsonNode initial = api("wade.admin").get(settings, PURCHASING).body();
+            int version = initial.path("version").asInt();
+            // Only holders of workspace.manage-access read or change it; the values are bounded.
+            for (String user : List.of("dana.designer", "olga.operator", "rhea.requester")) {
+                assertThat(api(user).get(settings, PURCHASING).status()).as(user).isEqualTo(403);
+                assertThat(api(user).put(Map.of("retentionDays", 30, "expectedVersion", version), null, settings,
+                        PURCHASING).status()).as(user).isEqualTo(403);
+            }
+            for (int days : new int[] {0, 3651}) {
+                assertThat(api("wade.admin").put(Map.of("retentionDays", days, "expectedVersion", version), null,
+                        settings, PURCHASING).status()).as(days + " days").isIn(400, 422);
+            }
+
+            Draft draft = approvedAndPublished("mani.manager");
+            UUID old = writingRun(draft); // ended 40 days ago, delivered: removed
+            UUID unknown = writingRun(draft); // ended 40 days ago, outcome unknown: kept until reconciled
+            UUID running = writingRun(draft); // still waiting: kept
+            UUID recent = writingRun(draft); // ended 5 days ago: kept
+            UUID unregistered = writingRun(draft); // ended 40 days ago, one slot never registered: kept
+            endedDaysAgo(old, 40);
+            endedDaysAgo(unknown, 40);
+            endedDaysAgo(recent, 5);
+            endedDaysAgo(unregistered, 40);
+            jdbc.sql("UPDATE effect_journal SET state = 'unknown' WHERE run_id = :run AND operation LIKE 'agentWrite.%'")
+                    .param("run", unknown).update();
+            Map<String, Object> slot = jdbc.sql("""
+                    SELECT agent_effect_id, approval_id, approved_by, requested_by FROM agent_write_call WHERE run_id = :run
+                    """).param("run", unregistered).query().singleRow();
+            superuser("""
+                    INSERT INTO orqix.agent_write_call (id, workspace_id, run_id, agent_effect_id, node_id, effect_key,
+                        connection_key, connection_version, operation, tool_name, call_index, adapter_key, kind, approval_id,
+                        approved_by, requested_by, argument_sha256, argument_chars)
+                    VALUES (?, ?, ?, ?, 'assess:write:notify_procurement:2', ?, ?, 1, 'assessVendor', 'notify_procurement',
+                        2, ?, 'email', ?, ?, ?, ?, 10)
+                    """, UUID.randomUUID(), PURCHASING, unregistered, slot.get("agent_effect_id"),
+                    "never-registered-" + UUID.randomUUID(), connection, mail, slot.get("approval_id"),
+                    slot.get("approved_by"), slot.get("requested_by"), "0".repeat(64));
+            int oldJournal = journalEntries(old);
+            UUID oldWrite = jdbc.sql("SELECT id FROM agent_write_call WHERE run_id = :run").param("run", old)
+                    .query(UUID.class).single();
+
+            Response saved = api("wade.admin").put(Map.of("retentionDays", 30, "expectedVersion", version), null,
+                    settings, PURCHASING);
+            assertThat(saved.status()).as(saved.toString()).isEqualTo(200);
+            assertThat(saved.body().path("retentionDays").asInt()).isEqualTo(30);
+            assertThat(saved.body().path("version").asInt()).isEqualTo(version + 1);
+            assertThat(saved.body().path("eligibleNow").asInt()).isEqualTo(1);
+            assertThat(jdbc.sql("""
+                    SELECT count(*) FROM audit_event WHERE action = 'agent.write.retention.updated' AND actor_type = 'user'
+                      AND metadata ->> 'retentionDays' = '30' AND resource_id = :ws
+                    """).param("ws", PURCHASING.toString()).query(Integer.class).single()).isGreaterThanOrEqualTo(1);
+            Response stale = api("wade.admin").put(Map.of("retentionDays", 10, "expectedVersion", version), null,
+                    settings, PURCHASING);
+            assertThat(stale.status()).as(stale.toString()).isEqualTo(409);
+
+            // The hourly sweep may have run in between; either way exactly the old request's record goes.
+            assertThat(retention.purgeExpired()).isLessThanOrEqualTo(1);
+            assertThat(retention.purgeExpired()).isZero();
+            assertThat(writeRecords(old)).isZero();
+            assertThat(writeRecords(unknown)).isEqualTo(1);
+            assertThat(writeRecords(running)).isEqualTo(1);
+            assertThat(writeRecords(recent)).isEqualTo(1);
+            assertThat(writeRecords(unregistered)).isEqualTo(2);
+            // The effect journal is untouched; the removal is audited by the system with ids only.
+            assertThat(journalEntries(old)).isEqualTo(oldJournal);
+            assertThat(jdbc.sql("SELECT state FROM effect_journal WHERE run_id = :run AND operation LIKE 'agentWrite.%'")
+                    .param("run", old).query(String.class).single()).isEqualTo("succeeded");
+            Map<String, Object> purged = jdbc.sql("""
+                    SELECT actor_type, metadata ->> 'runId' AS run_id, metadata ->> 'retentionDays' AS days
+                    FROM audit_event WHERE action = 'agent.write.purged' AND resource_id = :id
+                    """).param("id", oldWrite.toString()).query().singleRow();
+            assertThat(purged).containsEntry("actor_type", "system").containsEntry("run_id", old.toString())
+                    .containsEntry("days", "30");
+
+            // Once an operator records the unknown outcome, that request's record becomes eligible.
+            JsonNode item = null;
+            for (JsonNode candidate : api("olga.operator").get("/workspaces/{ws}/agent-writes?state=unknown", PURCHASING)
+                    .body().path("items")) {
+                if (candidate.path("runId").asString().equals(unknown.toString())) {
+                    item = candidate;
+                }
+            }
+            assertThat(item).isNotNull();
+            Response reconciled = api("olga.operator").post(Map.of("outcome", "notApplied", "reason",
+                    "Not in the mailbox", "expectedVersion", item.path("version").asInt()),
+                    "/workspaces/{ws}/agent-writes/{id}/reconcile", PURCHASING, UUID.fromString(item.path("id").asString()));
+            assertThat(reconciled.status()).as(reconciled.toString()).isEqualTo(200);
+            assertThat(api("wade.admin").get(settings, PURCHASING).body().path("eligibleNow").asInt()).isEqualTo(1);
+            assertThat(retention.purgeExpired()).isLessThanOrEqualTo(1);
+            assertThat(writeRecords(unknown)).isZero();
+            assertThat(writeRecords(unregistered)).isEqualTo(2);
+            assertThat(writeRecords(running)).isEqualTo(1);
+
+            // Clearing the setting (null days) stops removal.
+            Map<String, Object> clear = new HashMap<>();
+            clear.put("retentionDays", null);
+            clear.put("expectedVersion", version + 1);
+            Response cleared = api("wade.admin").put(clear, null, settings, PURCHASING);
+            assertThat(cleared.status()).as(cleared.toString()).isEqualTo(200);
+            assertThat(cleared.body().path("retentionDays").isNull()).isTrue();
+            assertThat(cleared.body().path("eligibleNow").asInt()).isZero();
+            jdbc.sql("UPDATE workflow_run SET ended_at = now() - interval '400 days' WHERE id = :id").param("id", recent)
+                    .update();
+            assertThat(retention.purgeExpired()).isZero();
+            assertThat(writeRecords(recent)).isEqualTo(1);
+        } finally {
+            jdbc.sql("UPDATE workspace_agent_write_policy SET retention_days = NULL WHERE workspace_id = :ws")
+                    .param("ws", PURCHASING).update();
+        }
     }
 
     private static void superuser(String sql, Object... params) throws Exception {

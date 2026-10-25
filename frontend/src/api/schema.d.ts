@@ -3239,7 +3239,7 @@ export interface paths {
          *     workflow key, connection version (and its definition hash), operation and tool; a new connection version needs a
          *     new approval. The approver can never trigger a write through the tool: a run they started is refused. A reason is
          *     required (422 REASON_REQUIRED). One active approval per combination (409 DUPLICATE_KEY). Optional expiresInDays
-         *     (1 to 90, docs/build/S79): from that instant the approval authorizes nothing, exactly like a revoked one; without
+         *     (1 to 90, docs/build/S85): from that instant the approval authorizes nothing, exactly like a revoked one; without
          *     it the approval does not expire. Approving a tool whose earlier approval expired marks that one expired.
          */
         post: operations["approveAgentWriteTool"];
@@ -3303,7 +3303,7 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** The workspace retention setting for agent write records and how many the next sweep would remove (S79) */
+        /** The workspace retention setting for agent write records and how many the next sweep would remove (S85) */
         get: operations["getAgentWriteRetention"];
         /**
          * Set (1 to 3650 days) or clear how long agent write records are kept after their request ends
@@ -4685,7 +4685,7 @@ export interface components {
             toolName: string;
             adapterKey: string;
             /**
-             * @description expired: past expiresAt; authorizes nothing, like revoked (S79)
+             * @description expired: past expiresAt; authorizes nothing, like revoked (S85)
              * @enum {string}
              */
             status: "active" | "revoked" | "expired";
@@ -4715,7 +4715,7 @@ export interface components {
             toolName: string;
             /** @description Required (422 REASON_REQUIRED when blank) */
             reason: string;
-            /** @description Optional (S79): the approval expires this many days from now; omitted or null means no expiry */
+            /** @description Optional (S85): the approval expires this many days from now; omitted or null means no expiry */
             expiresInDays?: number | null;
         };
         AgentWriteToolRevokeRequest: {

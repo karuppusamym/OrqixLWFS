@@ -1,4 +1,4 @@
--- IN04 hardening (docs/build/S79): optional expiry of an agent write-tool approval.
+-- IN04 hardening (docs/build/S85): optional expiry of an agent write-tool approval.
 -- expires_at is null for approvals without expiry (every approval made before this migration keeps behaving exactly as
 -- before). An approval past expires_at authorizes nothing: the runtime and the compiler treat it like a missing or
 -- revoked approval. 'expired' is only written when someone approves the same tool again (the one-active index would

@@ -217,6 +217,13 @@ export const listAgentWriteCalls = (ws: string, state?: 'unknown') =>
 export const reconcileAgentWrite = (ws: string, writeId: string, body: S['AgentWriteReconcileRequest']) =>
   call(api.POST('/workspaces/{workspaceId}/agent-writes/{writeId}/reconcile', { params: { path: { workspaceId: ws, writeId } }, body }))
 
+// Retention of agent write records (IN04 hardening, docs/build/S85)
+export const getAgentWriteRetention = (ws: string) =>
+  call(api.GET('/workspaces/{workspaceId}/agent-write-retention', { params: { path: { workspaceId: ws } } }))
+
+export const setAgentWriteRetention = (ws: string, retentionDays: number | null, expectedVersion: number) =>
+  call(api.PUT('/workspaces/{workspaceId}/agent-write-retention', { params: { path: { workspaceId: ws } }, body: { retentionDays, expectedVersion } }))
+
 // Runs
 export const getStartForm = (ws: string, workflowId: string) =>
   call(api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/start-form', { params: { path: { workspaceId: ws, workflowId } } }))

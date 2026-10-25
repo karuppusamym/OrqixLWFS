@@ -25,7 +25,7 @@ import com.orqix.shared.problem.ProblemCode;
 import com.orqix.shared.web.Sql;
 
 /**
- * Retention of agent write records (IN04 hardening, docs/build/S79), following the DOC08 file retention pattern
+ * Retention of agent write records (IN04 hardening, docs/build/S85), following the DOC08 file retention pattern
  * ({@code AttachmentLifecycle}): workspace administrators ({@code workspace.manage-access}) set a number of days after a
  * request ended; an hourly sweep deletes the {@code agent_write_call} rows (argument digest and size, approver, requester,
  * reconciliation note) of requests that ended longer ago than that.

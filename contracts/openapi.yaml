@@ -4424,7 +4424,7 @@ paths:
         workflow key, connection version (and its definition hash), operation and tool; a new connection version needs a
         new approval. The approver can never trigger a write through the tool: a run they started is refused. A reason is
         required (422 REASON_REQUIRED). One active approval per combination (409 DUPLICATE_KEY). Optional expiresInDays
-        (1 to 90, docs/build/S79): from that instant the approval authorizes nothing, exactly like a revoked one; without
+        (1 to 90, docs/build/S85): from that instant the approval authorizes nothing, exactly like a revoked one; without
         it the approval does not expire. Approving a tool whose earlier approval expired marks that one expired.
       x-orqix-permission: agent.approve-write-tool
       x-orqix-audit: agent.write-tool.approved
@@ -4507,7 +4507,7 @@ paths:
     get:
       tags: [Agent write tools]
       operationId: getAgentWriteRetention
-      summary: The workspace retention setting for agent write records and how many the next sweep would remove (S79)
+      summary: The workspace retention setting for agent write records and how many the next sweep would remove (S85)
       x-orqix-permission: workspace.manage-access
       responses:
         '200':
@@ -6772,7 +6772,7 @@ components:
         operation: { type: string }
         toolName: { type: string }
         adapterKey: { type: string }
-        status: { type: string, enum: [active, revoked, expired], description: 'expired: past expiresAt; authorizes nothing, like revoked (S79)' }
+        status: { type: string, enum: [active, revoked, expired], description: 'expired: past expiresAt; authorizes nothing, like revoked (S85)' }
         approvedBy: { $ref: '#/components/schemas/AgentWriteSubject' }
         approvedAt: { $ref: '#/components/schemas/Timestamp' }
         approvalReason: { type: string }
@@ -6800,7 +6800,7 @@ components:
         operation: { type: string, minLength: 1, maxLength: 100 }
         toolName: { type: string, pattern: '^[a-z][a-z0-9_]{0,47}$' }
         reason: { type: string, maxLength: 500, description: Required (422 REASON_REQUIRED when blank) }
-        expiresInDays: { type: [integer, 'null'], minimum: 1, maximum: 90, description: 'Optional (S79): the approval expires this many days from now; omitted or null means no expiry' }
+        expiresInDays: { type: [integer, 'null'], minimum: 1, maximum: 90, description: 'Optional (S85): the approval expires this many days from now; omitted or null means no expiry' }
     AgentWriteToolRevokeRequest:
       type: object
       additionalProperties: false

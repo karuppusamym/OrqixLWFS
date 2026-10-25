@@ -77,10 +77,10 @@ All runs in this worktree (JDK 21, Testcontainers PostgreSQL/Flowable, Docker up
 ## Not included (exclusions)
 
 - Any live transport, Kafka/JDBC/HTTP/MCP write tools, Teams cards, attachments, CC/BCC, or recipients from request data or model output.
-- Approval workflow around approvals (request/second approver/quorum), expiry, notifications to approvers, bulk approval; approval pinned to one workflow release (it is bound to the workflow key, see open questions).
-- Interrupting an agent step mid-write, compensation (undo) of agent writes, retention/purge of `agent_write_call`, rate limits beyond `maxCalls`/`maxToolCalls`.
+- Approval workflow around approvals (request/second approver/quorum), expiry (added later, [S85](S85-agent-write-expiry-and-retention.md)), notifications to approvers, bulk approval; approval pinned to one workflow release (it is bound to the workflow key, see open questions).
+- Interrupting an agent step mid-write, compensation (undo) of agent writes, retention/purge of `agent_write_call`, rate limits beyond `maxCalls`/`maxToolCalls`. (Retention was added later: [S85](S85-agent-write-expiry-and-retention.md).)
 - Real mock-mode data for the page (the mock double is empty), browser journeys, Docker stack runs and image refresh.
-- A small race remains between the final approval check and the stub send (milliseconds); a revocation in that window lets that one write through. Live transports would need the check and the send under one fence.
+- A small race remains between the final approval check and the stub send (milliseconds); a revocation in that window lets that one write through. Live transports would need the check and the send under one fence. (Closed in [S85](S85-agent-write-expiry-and-retention.md): the approval is re-read `FOR SHARE` in the transaction that sends.)
 
 ## Open questions for the user
 

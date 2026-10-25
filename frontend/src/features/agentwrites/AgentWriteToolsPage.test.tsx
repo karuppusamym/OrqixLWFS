@@ -89,7 +89,13 @@ describe('agent write tools page (IN04)', () => {
     expect(within(dialog).getByText(/Enter the key of the workflow/)).toBeVisible()
     await user.type(within(dialog).getByLabelText('Workflow key'), 'supplier-review')
     await user.click(within(dialog).getByRole('button', { name: 'Approve' }))
-    expect(within(dialog).getByText('Say why this agent may send these messages.')).toBeVisible()
+    // The missing reason is announced and tied to its field.
+    const reasonError = within(dialog).getByRole('alert')
+    expect(reasonError).toHaveTextContent('Say why this agent may send these messages.')
+    const reasonField = within(dialog).getByLabelText('Reason')
+    expect(reasonField).toHaveAttribute('aria-invalid', 'true')
+    expect(reasonField).toHaveAccessibleDescription('Say why this agent may send these messages.')
+    expect(within(dialog).getByLabelText('Workflow key')).not.toHaveAttribute('aria-invalid')
     expect(approved).toEqual([])
     await user.type(within(dialog).getByLabelText('Reason'), 'Supplier team asked for it')
     await user.click(within(dialog).getByRole('button', { name: 'Approve' }))
@@ -100,7 +106,9 @@ describe('agent write tools page (IN04)', () => {
     await user.click(await screen.findByRole('button', { name: 'Revoke Tell procurement for vendor-onboarding-check' }))
     dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: 'Revoke' }))
-    expect(within(dialog).getByText('Say why the approval is revoked.')).toBeVisible()
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('Say why the approval is revoked.')
+    expect(within(dialog).getByLabelText('Reason')).toHaveAttribute('aria-invalid', 'true')
+    expect(within(dialog).getByLabelText('Reason')).toHaveAccessibleDescription('Say why the approval is revoked.')
     await user.type(within(dialog).getByLabelText('Reason'), 'Paused')
     await user.click(within(dialog).getByRole('button', { name: 'Revoke' }))
     await waitFor(() => expect(revoked).toEqual([{ reason: 'Paused', expectedVersion: 3 }]))
@@ -130,15 +138,76 @@ describe('agent write tools page (IN04)', () => {
     await user.click(within(row).getByRole('button', { name: 'Record the outcome of notify_procurement use 1' }))
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: 'Record outcome' }))
-    expect(within(dialog).getByText('Choose what you found at the target.')).toBeVisible()
+    expect(within(dialog).getByText('Choose what you found at the target.')).toHaveAttribute('role', 'alert')
+    const group = within(dialog).getByRole('radiogroup', { name: 'What did you find?' })
+    expect(group).toHaveAttribute('aria-invalid', 'true')
+    expect(group).toHaveAccessibleDescription('Choose what you found at the target.')
+    expect(within(dialog).getByLabelText('What you checked')).toHaveAccessibleDescription('Say what you checked.')
     await user.click(within(dialog).getByLabelText(/It was delivered/))
     await user.click(within(dialog).getByRole('button', { name: 'Record outcome' }))
-    expect(within(dialog).getByText('Say what you checked.')).toBeVisible()
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('Say what you checked.')
+    expect(within(dialog).getByRole('radiogroup', { name: 'What did you find?' })).not.toHaveAttribute('aria-invalid')
+    expect(within(dialog).getByLabelText('What you checked')).toHaveAttribute('aria-invalid', 'true')
     expect(recorded).toEqual([])
     await user.type(within(dialog).getByLabelText('What you checked'), 'In the mailbox')
     await user.type(within(dialog).getByLabelText('Reference at the target (optional)'), 'MSG-1')
     await user.click(within(dialog).getByRole('button', { name: 'Record outcome' }))
     await waitFor(() => expect(recorded).toEqual([{ outcome: 'succeeded', reason: 'In the mailbox', remoteReference: 'MSG-1', expectedVersion: 2 }]))
     expect(await screen.findByText('No write needs checking.')).toBeVisible()
+  })
+
+  it('lets an approver set an optional expiry of 1 to 90 days, and shows expiry dates and expired approvals as Expired', async () => {
+    perms.granted = new Set(['agent.approve-write-tool'])
+    const approved: unknown[] = []
+    const limited: S['AgentWriteToolApproval'] = { ...approval, expiresAt: '2026-11-17T10:00:00Z' }
+    const expired: S['AgentWriteToolApproval'] = {
+      ...approval, id: '00000000-0000-7000-8000-0000000000a3', workflowKey: 'supplier-review', status: 'expired',
+      approvedAt: '2026-09-01T10:00:00Z', expiresAt: '2026-09-02T10:00:00Z', version: 1,
+    }
+    // An older expired approval of a workflow that was approved again is history, not an Expired state.
+    const replaced: S['AgentWriteToolApproval'] = {
+      ...approval, id: '00000000-0000-7000-8000-0000000000a4', status: 'expired', approvedAt: '2026-08-01T10:00:00Z',
+      expiresAt: '2026-08-02T10:00:00Z', version: 2,
+    }
+    server.use(
+      http.get('*/api/v1/workspaces/:ws/agent-write-tools', () => HttpResponse.json({ tools: [tool], approvals: [limited, expired, replaced], canApprove: true, canRevoke: true })),
+      http.get('*/api/v1/workspaces/:ws/agent-writes', () => HttpResponse.json({ items: [], canReconcile: false })),
+      http.post('*/api/v1/workspaces/:ws/agent-write-tools/approvals', async ({ request }) => {
+        approved.push(await request.json())
+        return HttpResponse.json({ ...expired, id: '00000000-0000-7000-8000-0000000000a5', status: 'active', expiresAt: '2026-11-24T10:00:00Z', version: 1 }, { status: 201 })
+      }),
+    )
+    const user = userEvent.setup()
+    mount()
+    const row = (await screen.findByText('Tell procurement')).closest('tr')!
+    expect(within(row).getByText(/by Mani Manager; expires 17 Nov 2026/)).toBeVisible()
+    // The expired approval is a state with its own text, not a colour, and offers nothing to revoke.
+    const expiredItem = within(row).getByTestId('expired-approval')
+    expect(within(expiredItem).getByText('supplier-review')).toBeVisible()
+    expect(within(expiredItem).getByText('Expired')).toBeVisible()
+    expect(within(expiredItem).getByText(/allows nothing until approved again/)).toHaveTextContent(/2026/)
+    expect(within(row).getAllByTestId('expired-approval')).toHaveLength(1)
+    expect(within(row).queryByRole('button', { name: 'Revoke Tell procurement for supplier-review' })).not.toBeInTheDocument()
+
+    await user.click(within(row).getByRole('button', { name: 'Approve Tell procurement for a workflow' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.type(within(dialog).getByLabelText('Workflow key'), 'supplier-review')
+    await user.type(within(dialog).getByLabelText('Reason'), 'Renewed for the pilot')
+    const expiry = within(dialog).getByLabelText('Expires after (days, optional)')
+    expect(expiry).toHaveAccessibleDescription(/From 1 to 90 days/)
+    for (const bad of ['0', '91', '2.5', 'soon']) {
+      await user.clear(expiry)
+      await user.type(expiry, bad)
+      await user.click(within(dialog).getByRole('button', { name: 'Approve' }))
+      expect(within(dialog).getByRole('alert')).toHaveTextContent('Enter a whole number of days from 1 to 90, or leave it empty for no end date.')
+      expect(expiry).toHaveAttribute('aria-invalid', 'true')
+      expect(expiry).toHaveAccessibleDescription(/Enter a whole number of days from 1 to 90/)
+    }
+    expect(approved).toEqual([])
+    await user.clear(expiry)
+    await user.type(expiry, '7')
+    await user.click(within(dialog).getByRole('button', { name: 'Approve' }))
+    await waitFor(() => expect(approved).toEqual([{ workflowKey: 'supplier-review', connectionKey: 'vendor-writer', connectionVersion: 1,
+      operation: 'assessVendor', toolName: 'notify_procurement', reason: 'Renewed for the pilot', expiresInDays: 7 }]))
   })
 })

@@ -1,4 +1,4 @@
--- PL01 shared assets (docs/build/S61): workspace decision tables that several workflows can use. A version is immutable;
+-- PL01 shared assets (docs/build/S57): workspace decision tables that several workflows can use. A version is immutable;
 -- changing a shared decision adds a version. A workflow keeps a pinned copy of one version plus a versioned reference
 -- (definition dependencies.assets) that is checked at validation and publish. The owner is a label: it grants nothing.
 CREATE TABLE decision_asset (

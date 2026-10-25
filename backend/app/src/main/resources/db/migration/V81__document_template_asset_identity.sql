@@ -1,4 +1,4 @@
--- PL01 shared assets (docs/build/S61): document templates become shared assets with a stable key (used by versioned
+-- PL01 shared assets (docs/build/S57): document templates become shared assets with a stable key (used by versioned
 -- workflow references, so a promoted workflow resolves by key, never by another workspace's id), an owner (a label that
 -- grants nothing) and a revision for compare-and-set owner/archive changes. Existing templates get a generated key and
 -- their creator as owner.

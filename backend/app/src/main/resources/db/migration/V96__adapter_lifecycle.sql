@@ -1,4 +1,4 @@
--- S73: editing and disabling adapters and inbound triggers (optimistic version), and inbound event retention.
+-- S68: editing and disabling adapters and inbound triggers (optimistic version), and inbound event retention.
 -- Kind, key, trigger source and target workflow stay fixed after creation; only the allowlists, mapping, name, secret
 -- reference and enabled flag change. The adapter version is recorded with every workflow send in effect_journal.
 ALTER TABLE adapter_config

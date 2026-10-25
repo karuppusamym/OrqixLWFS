@@ -1,4 +1,4 @@
--- IN04 hardening (docs/build/S85): retention of agent_write_call records, following the DOC08 attachment retention
+-- IN04 hardening (docs/build/S79): retention of agent_write_call records, following the DOC08 attachment retention
 -- pattern (V56). A per-workspace number of days after a request ended; the hourly sweep deletes the write records
 -- (argument digest and size, approver, requester, reconciliation note) of ended requests older than that. It never
 -- deletes a record of a running request, and never any record of a request that still has a write whose outcome is

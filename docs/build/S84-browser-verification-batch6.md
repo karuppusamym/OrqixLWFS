@@ -1,4 +1,4 @@
-# S76 - Browser and Docker-stack verification of the batch-5/6 features
+# S84 - Browser and Docker-stack verification of the batch-5/6 features
 
 Date: 19 October 2026. Branch `build/e2e-batch6`, cut from `723c94c`. Follows the convention of [S62](S62-browser-and-stack-verification.md). No migration was added; logs are in the git-ignored `evidence/s76/`.
 

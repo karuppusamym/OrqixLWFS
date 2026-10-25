@@ -3238,7 +3238,9 @@ export interface paths {
          * @description Needs the grant-only permission agent.approve-write-tool (no role carries it). The approval covers exactly this
          *     workflow key, connection version (and its definition hash), operation and tool; a new connection version needs a
          *     new approval. The approver can never trigger a write through the tool: a run they started is refused. A reason is
-         *     required (422 REASON_REQUIRED). One active approval per combination (409 DUPLICATE_KEY).
+         *     required (422 REASON_REQUIRED). One active approval per combination (409 DUPLICATE_KEY). Optional expiresInDays
+         *     (1 to 90, docs/build/S79): from that instant the approval authorizes nothing, exactly like a revoked one; without
+         *     it the approval does not expire. Approving a tool whose earlier approval expired marks that one expired.
          */
         post: operations["approveAgentWriteTool"];
         delete?: never;
@@ -3261,7 +3263,7 @@ export interface paths {
         put?: never;
         /**
          * Revoke an approval; the next write through the tool is refused
-         * @description Needs agent.approve-write-tool or connection.manage. Reason required; expectedVersion must match (409 CONFIGURATION_VERSION_CONFLICT).
+         * @description Needs agent.approve-write-tool or connection.manage. Reason required; expectedVersion must match (409 CONFIGURATION_VERSION_CONFLICT). An already revoked or expired approval is 409 CONFIGURATION_VERSION_CONFLICT.
          */
         post: operations["revokeAgentWriteTool"];
         delete?: never;
@@ -3285,6 +3287,31 @@ export interface paths {
          */
         get: operations["listAgentWriteCalls"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/agent-write-retention": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** The workspace retention setting for agent write records and how many the next sweep would remove (S79) */
+        get: operations["getAgentWriteRetention"];
+        /**
+         * Set (1 to 3650 days) or clear how long agent write records are kept after their request ends
+         * @description The hourly sweep deletes the write records (argument digest and size, approver, requester, reconciliation note) of
+         *     requests that ended longer ago than this. It never removes a record of a running request, nor any record of a request
+         *     that still has a write whose outcome is unknown or not final. Effect journal entries and audit events are kept.
+         */
+        put: operations["setAgentWriteRetention"];
         post?: never;
         delete?: never;
         options?: never;
@@ -4657,14 +4684,19 @@ export interface components {
             operation: string;
             toolName: string;
             adapterKey: string;
-            /** @enum {string} */
-            status: "active" | "revoked";
+            /**
+             * @description expired: past expiresAt; authorizes nothing, like revoked (S79)
+             * @enum {string}
+             */
+            status: "active" | "revoked" | "expired";
             approvedBy: components["schemas"]["AgentWriteSubject"];
             approvedAt: components["schemas"]["Timestamp"];
             approvalReason: string;
             revokedBy: components["schemas"]["AgentWriteSubject"] | null;
             revokedAt: components["schemas"]["Timestamp"] | null;
             revokeReason: string | null;
+            /** @description Null when the approval does not expire */
+            expiresAt: components["schemas"]["Timestamp"] | null;
             version: number;
         };
         AgentWriteToolOverview: {
@@ -4683,6 +4715,8 @@ export interface components {
             toolName: string;
             /** @description Required (422 REASON_REQUIRED when blank) */
             reason: string;
+            /** @description Optional (S79): the approval expires this many days from now; omitted or null means no expiry */
+            expiresInDays?: number | null;
         };
         AgentWriteToolRevokeRequest: {
             reason: string;
@@ -4732,6 +4766,18 @@ export interface components {
             outcome: "succeeded" | "notApplied";
             reason: string;
             remoteReference?: string | null;
+            expectedVersion: number;
+        };
+        AgentWriteRetention: {
+            retentionDays?: number | null;
+            /** @description 0 until a setting is saved */
+            version: number;
+            /** @description Write records the next sweep would remove under this setting */
+            eligibleNow: number;
+            updatedAt?: components["schemas"]["Timestamp"] | null;
+        };
+        SetAgentWriteRetention: {
+            retentionDays?: number | null;
             expectedVersion: number;
         };
         /** @enum {string} */
@@ -13882,6 +13928,62 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["Unprocessable"];
+        };
+    };
+    getAgentWriteRetention: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The setting (retentionDays null means write records are kept) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentWriteRetention"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    setAgentWriteRetention: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetAgentWriteRetention"];
+            };
+        };
+        responses: {
+            /** @description Saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentWriteRetention"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     reconcileAgentWrite: {

@@ -250,7 +250,7 @@ Full frontend: 882/882 pass. Compiler: 495/495 pass. Application: 803-case basel
 
 ## Batch 5 to 7 features - 17 to 19 October 2026
 
-Evidence for each row is in its build note; none of it is production acceptance. Unless stated, **Verified** means automated backend tests on real PostgreSQL and Flowable plus frontend component tests; rows marked *browser* were also driven on the real Docker stack with Edge and axe in [S76](build/S76-browser-verification-batch6.md) (private stack `orqix-verify-1018`; the final complete batch was not rerun in one go after the last spec edits). Customer, live-transport and infrastructure acceptance stays open. Operator and designer how-to: [user guide](user-guide.md) and [administrator guide](admin-guide.md). The older rows above are dated checkpoints and are not recounted here.
+Evidence for each row is in its build note; none of it is production acceptance. Unless stated, **Verified** means automated backend tests on real PostgreSQL and Flowable plus frontend component tests; rows marked *browser* were also driven on the real Docker stack with Edge and axe in [S84](build/S84-browser-verification-batch6.md) (private stack `orqix-verify-1018`; the final complete batch was not rerun in one go after the last spec edits). Customer, live-transport and infrastructure acceptance stays open. Operator and designer how-to: [user guide](user-guide.md) and [administrator guide](admin-guide.md). The older rows above are dated checkpoints and are not recounted here.
 
 | Capability | Note | Status | Limits (not built or not verified) |
 |---|---|---|---|

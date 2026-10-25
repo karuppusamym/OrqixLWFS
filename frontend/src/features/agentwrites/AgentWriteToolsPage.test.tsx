@@ -26,7 +26,7 @@ const approval: S['AgentWriteToolApproval'] = {
   id: '00000000-0000-7000-8000-0000000000a1', workflowKey: 'vendor-onboarding-check', connectionKey: 'vendor-writer',
   connectionVersion: 1, operation: 'assessVendor', toolName: 'notify_procurement', adapterKey: 'procurement-mail',
   status: 'active', approvedBy: mani, approvedAt: '2026-10-18T10:00:00Z', approvalReason: 'Asked by procurement',
-  revokedBy: null, revokedAt: null, revokeReason: null, version: 3,
+  revokedBy: null, revokedAt: null, revokeReason: null, expiresAt: null, version: 3,
 }
 const unknownWrite: S['AgentWriteCall'] = {
   id: '00000000-0000-7000-8000-0000000000c1', runId: '00000000-0000-7000-8000-0000000000b1',

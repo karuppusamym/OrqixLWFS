@@ -87,10 +87,12 @@ public class ConsistencyFindings {
                 """).param("ws", workspaceId).query(Long.class).single();
         long scanned = jdbc.sql("SELECT count(*) FROM run_consistency_scan WHERE workspace_id = :ws")
                 .param("ws", workspaceId).query(Long.class).single();
-        String last = jdbc.sql("SELECT max(checked_at) AS last FROM run_consistency_scan WHERE workspace_id = :ws")
+        // max() over no rows is one row holding NULL, and .single() rejects a null result, so read it as a list.
+        List<String> lastSeen = jdbc.sql("SELECT max(checked_at) AS last FROM run_consistency_scan WHERE workspace_id = :ws")
                 .param("ws", workspaceId)
-                .query((rs, n) -> rs.getTimestamp("last") == null ? null : Sql.instant(rs, "last").toString())
-                .single();
+                .query((rs, n) -> rs.getTimestamp("last") == null ? (String) null : Sql.instant(rs, "last").toString())
+                .list();
+        String last = lastSeen.isEmpty() ? null : lastSeen.get(0);
         return new RuntimeDtos.ConsistencyFindings(enabled, (int) scanned, last, (int) total, items);
     }
 }

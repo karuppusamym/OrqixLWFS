@@ -40,6 +40,20 @@ class RunConsistencyScanTest extends RuntimeTestBase {
     @Autowired Clock clock;
     @Autowired JdbcClient client;
 
+    /**
+     * Regression (found by the demo rehearsal on a fresh database): a workspace the scan has never looked at has no rows,
+     * so max(checked_at) is one row holding NULL. That used to make the endpoint answer 500 on every operator Runs load.
+     */
+    @Test
+    void aWorkspaceNeverScannedAnswersEmptyInsteadOfFailing() {
+        UUID neverScanned = UUID.randomUUID();
+        var result = findings.list(neverScanned, false, 50);
+        assertThat(result.scannedRuns()).isZero();
+        assertThat(result.total()).isZero();
+        assertThat(result.items()).isEmpty();
+        assertThat(result.lastCheckedAt()).isNull();
+    }
+
     private UUID startPurchase() throws Exception {
         UUID workflow = publishPurchase(PURCHASING, null);
         UUID run = UUID.fromString(start("rhea.requester", PURCHASING, workflow, BigDecimal.TEN).path("id").asString());

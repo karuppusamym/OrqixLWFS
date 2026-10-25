@@ -62,7 +62,10 @@ public class RuntimeMetrics {
 
     private double oldestExecutableJobAge() {
         try {
-            Timestamp oldest = jdbc.sql("SELECT min(create_time_) FROM act_ru_job").query(Timestamp.class).single();
+            // min() over no rows is one row holding NULL, and .single() rejects a null result (that used to report NaN
+            // instead of 0 when no job exists), so read it as a list.
+            java.util.List<Timestamp> found = jdbc.sql("SELECT min(create_time_) FROM act_ru_job").query(Timestamp.class).list();
+            Timestamp oldest = found.isEmpty() ? null : found.get(0);
             if (oldest == null) {
                 return 0;
             }

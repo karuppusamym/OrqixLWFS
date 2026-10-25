@@ -168,6 +168,7 @@ export function JobReview({ job, editable, project }: { job: Job; editable: bool
       {(report.elementCounts.review ?? 0) > 0 ? <Label className="flex items-start gap-2"><input type="checkbox" checked={ackReview} onChange={e => setAckReview(e.target.checked)} />I reviewed the {report.elementCounts.review} converted items marked review. Their original text is kept in the report and each can behave differently in the target.</Label> : null}
       <Label className="flex items-start gap-2"><input type="checkbox" checked={ack} onChange={e => setAck(e.target.checked)} />I reviewed the assumptions, manual mappings and explicitly excluded source behavior.</Label>
       <Alert tone="info" live="off">Conversion must pass compiler validation. A publisher must separately review and publish; no run starts here.</Alert>
+      {report.issues.some(i => i.severity === 'blocker') ? <Alert tone="warning">This report has blockers. Conversion is refused while any blocker remains; each one names the source element it comes from.</Alert> : null}
       {error ? <Alert tone="danger">{error}</Alert> : null}
       {failedItems.length ? <ul aria-label="Unresolved conversion issues" className="list-disc space-y-1 pl-5 text-sm">{failedItems.map((message, index) => <li key={index}>{message}</li>)}</ul> : null}
       <Button variant="primary" type="submit" loading={pending}>{project ? 'Convert next file' : 'Convert to draft'}</Button>

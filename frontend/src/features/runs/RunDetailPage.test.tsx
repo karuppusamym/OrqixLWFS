@@ -34,6 +34,21 @@ describe('run detail', () => {
     expect(screen.getByRole('button', { name: 'Retry step' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Reconcile outcome' })).toBeEnabled()
   })
+  it('shows the name of an attached file, not its id, for a file question', async () => {
+    signInAs('rhea.requester')
+    const run = runByKey('ORQ-1001')
+    const fileId = '01a1749f-3c2e-4a5b-9c1d-7e8f9a0b1c2d'
+    run.attachments = [{
+      id: fileId, fieldKey: 'photoId', name: 'passport-scan.pdf', description: null, contentType: 'application/pdf',
+      sizeBytes: 2048, sha256: 'a'.repeat(64), scanStatus: 'clean', uploadedById: run.initiatorId,
+      uploadedAt: '2026-10-01T10:00:00Z', removedAt: null, removedById: null,
+    }]
+    run.input = { ...run.input, photoId: fileId }
+    renderApp(at(run))
+    const values = await screen.findByTestId('request-values')
+    await waitFor(() => expect(values).toHaveTextContent('passport-scan.pdf'))
+    expect(values).not.toHaveTextContent(fileId)
+  })
   it('does not offer recovery controls to viewers', async () => {
     signInAs('vic.viewer')
     renderApp(`/w/${WS}/runs?lifecycle=needsAttention`)

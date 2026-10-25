@@ -117,7 +117,7 @@ export function userById(id: string): MockUser | undefined {
   return USERS.find((u) => u.id === id)
 }
 
-/** `${workspaceId}:${userId}` pairs that hold the explicit grant workflow.approve-promotion (PL02, docs/build/S69). */
+/** `${workspaceId}:${userId}` pairs that hold the explicit grant workflow.approve-promotion (PL02, docs/build/S74). */
 export const promotionApprovers = new Set<string>()
 
 export function permissionsOf(user: MockUser, wsId: string): Permission[] {

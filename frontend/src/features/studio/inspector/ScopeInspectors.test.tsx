@@ -23,7 +23,7 @@ function renderWith(ui: (store: ReturnType<typeof createStudioStore>) => React.R
   return store
 }
 
-describe('sections and handlers (S55)', () => {
+describe('sections and handlers (S59)', () => {
   it('adds a section with members, a time limit and an error route, and a handler on a signal', async () => {
     const store = renderWith(() => <SubprocessesInspector />)
     const user = userEvent.setup()
@@ -61,7 +61,7 @@ describe('sections and handlers (S55)', () => {
   })
 })
 
-describe('errors, signals and automatic undo (S55)', () => {
+describe('errors, signals and automatic undo (S59)', () => {
   it('edits the signal name and the error code with their formats', async () => {
     const added = addNode(normalizeDefinition(purchase), 'waitForSignal', {})
     const node = added.def.nodes.find((n) => n.id === added.id)!
@@ -106,7 +106,7 @@ describe('errors, signals and automatic undo (S55)', () => {
   })
 })
 
-describe('run diagram scopes (S55)', () => {
+describe('run diagram scopes (S59)', () => {
   it('says how a section was left and where the request continued', () => {
     render(<ScopeList path={{
       runId: 'r', lifecycle: 'completed', current: [], visited: [], historyTruncated: false,

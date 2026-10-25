@@ -17,7 +17,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.ObjectNode;
 
 /**
- * Sends a workflow step through an adapter with the effect journal (S68). The adapter row is read fresh for every attempt,
+ * Sends a workflow step through an adapter with the effect journal (S73). The adapter row is read fresh for every attempt,
  * so a disabled adapter or a narrowed allowlist stops later sends; widening an allowlist adds nothing, because recipients
  * and topics are fixed in the step. Database reads are {@code readOnly} and may be repeated; email, Teams and Kafka sends
  * are {@code nonIdempotent}, so an attempt that ended without a recorded outcome becomes {@code unknown} and needs an

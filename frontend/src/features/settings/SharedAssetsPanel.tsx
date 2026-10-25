@@ -31,7 +31,7 @@ function messageOf(error: unknown): string {
 const assetsKey = (ws: string) => ['ws', ws, 'shared-assets'] as const
 
 /**
- * Shared assets (PL01, docs/build/S57): one place to find the decision tables, document templates and connections that
+ * Shared assets (PL01, docs/build/S61): one place to find the decision tables, document templates and connections that
  * workflows reuse, by name, key or owner, and to see where each is used. Only the kinds you may read are searched.
  * Owners are labels: changing one, or a workflow referencing an asset, never gives anyone access.
  */

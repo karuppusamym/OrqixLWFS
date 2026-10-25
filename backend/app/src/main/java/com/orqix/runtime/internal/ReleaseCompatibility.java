@@ -107,7 +107,7 @@ public final class ReleaseCompatibility {
         }
         if (!source.path("subprocesses").isMissingNode() || !target.path("subprocesses").isMissingNode()) {
             // Sections and handlers hold engine scopes (subprocess executions, boundary timers, start subscriptions)
-            // that a move between releases does not carry over (S55).
+            // that a move between releases does not carry over (S59).
             findings.add(new Finding("SUBPROCESSES",
                     "One of the releases has sections or handlers; requests of such workflows cannot be moved.", null));
         }

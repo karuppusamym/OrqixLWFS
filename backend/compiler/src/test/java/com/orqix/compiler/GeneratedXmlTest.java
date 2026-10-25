@@ -55,7 +55,7 @@ class GeneratedXmlTest {
         list.add(Compilers.workflowCompiler().compile(TestSupport.onboardingJson(), TestSupport.onboardingContext()));
         list.add(Compilers.workflowCompiler().compile(TestSupport.read("examples/start-date-onboarding.json"),
                 TestSupport.defaultContext()));
-        // Sections, handlers, errors, signals and automatic undo (S55).
+        // Sections, handlers, errors, signals and automatic undo (S59).
         for (var scoped : List.of(ScopesAndEventsTest.section(), ScopesAndEventsTest.handlers(), ScopesAndEventsTest.undo())) {
             list.add(Compilers.workflowCompiler().compile(scoped.toString(), SimulatorFixtures.context().workspace()));
         }

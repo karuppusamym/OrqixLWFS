@@ -1,4 +1,4 @@
--- EX08 (S55): the automatic undo plan of an "Undo completed calls" step. The plan is fixed the first time the step runs:
+-- EX08 (S59): the automatic undo plan of an "Undo completed calls" step. The plan is fixed the first time the step runs:
 -- one row per call that completed in this request and has an automatic undo call, in the order the undo calls run
 -- (position 0 first: the most recent call). A retry after a failed undo call follows the same plan; an undo call that
 -- already succeeded is not sent again (its own effect journal entry is reused). Like effect_journal (TX-3), rows are

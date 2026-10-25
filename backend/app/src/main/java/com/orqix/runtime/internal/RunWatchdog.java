@@ -52,7 +52,7 @@ public class RunWatchdog {
     public void sweep() {
         try { inspect(); }
         catch (RuntimeException e) { LOG.warn("Run watchdog will retry ({})", e.getClass().getSimpleName()); }
-        // Opt-in, bounded, rate-limited and report-only (docs/build/S67); a failure here never affects the pass above.
+        // Opt-in, bounded, rate-limited and report-only (docs/build/S72); a failure here never affects the pass above.
         scan.sweep();
     }
 

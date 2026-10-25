@@ -449,7 +449,7 @@ export function createHandlers(): HttpHandler[] {
       const issues = [...validateDefinition(draft.definition, validationContext(wf.wsId)), ...assetIssues(wf.wsId, draft.definition)]
       return HttpResponse.json({ revision, compilerVersion: '0.1.0-mock', publishable: !issues.some((i) => i.severity === 'blocker'), semanticHash: null, issues })
     }),
-    // BPMN source (UI03, docs/build/S56): a simplified double, see ./bpmnSource.ts ---------------------------------
+    // BPMN source (UI03, docs/build/S60): a simplified double, see ./bpmnSource.ts ---------------------------------
     http.get(`${B}/workspaces/:ws/workflows/:id/draft/bpmn`, async ({ params, request }) => {
       await slow()
       const g = guard(params.ws, 'workflow.read')

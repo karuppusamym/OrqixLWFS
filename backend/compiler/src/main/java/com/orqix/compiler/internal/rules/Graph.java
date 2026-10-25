@@ -81,7 +81,7 @@ public final class Graph {
         this.dominators = starts.size() == 1 ? computeDominators(starts.get(0)) : null;
     }
 
-    // ---------------------------------------------------------------- scopes (S55)
+    // ---------------------------------------------------------------- scopes (S59)
 
     /**
      * Implied control flow of subprocesses and automatic undo calls, used for reachability and dominance only: a

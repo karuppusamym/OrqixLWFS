@@ -4,7 +4,7 @@ import type { Definition } from '@/features/studio/model/types'
 type BpmnCheck = components['schemas']['BpmnCheck']
 
 /**
- * Mock double of the BPMN source endpoints (UI03, docs/build/S56). It is deliberately much simpler than the server:
+ * Mock double of the BPMN source endpoints (UI03, docs/build/S60). It is deliberately much simpler than the server:
  * it writes a minimal BPMN shape (no extensions, no diagram) and only applies edits of step and connection names.
  * The real exactness checks (regenerating BPMN with the compiler, the round trip, blockers) live on the server.
  */

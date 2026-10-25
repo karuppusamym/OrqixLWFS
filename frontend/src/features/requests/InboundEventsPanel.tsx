@@ -21,7 +21,7 @@ export function eventSummary(input: Record<string, unknown>): string {
 }
 
 /**
- * Received events (docs/build/S68): signed events that inbound triggers accepted for workflows the person may start.
+ * Received events (docs/build/S73): signed events that inbound triggers accepted for workflows the person may start.
  * An event never starts a request by itself; starting one here uses the person's own start rights, so they become the
  * requester. The server lists only events for workflows the caller may start and starts each event at most once.
  */

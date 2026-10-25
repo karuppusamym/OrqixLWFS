@@ -94,7 +94,7 @@ public class CompileContextFactory {
                     row.activeReleaseId().toString(), row.releaseNumber(), row.semanticHash(), row.definitionJson(),
                     closure, manifest.path("callHeight").asInt(0)));
         }
-        // Adapter steps (S68) are checked against the workspace's current adapters; publishing pins nothing, the runtime
+        // Adapter steps (S73) are checked against the workspace's current adapters; publishing pins nothing, the runtime
         // checks the adapter again before every send.
         Map<String, CompileContext.AdapterInfo> adapterInfos = new LinkedHashMap<>();
         for (AdapterSteps.Fact fact : adapters.facts(workspace.id())) {

@@ -2,7 +2,7 @@ import { ViewportPortal, useNodes, type Node } from '@xyflow/react'
 import type { Definition, SubprocessDef } from './model/types'
 
 /**
- * Section and handler frames (docs/build/S66): a labelled rectangle drawn behind the steps of each section or handler,
+ * Section and handler frames (docs/build/S71): a labelled rectangle drawn behind the steps of each section or handler,
  * on the studio canvas and on the run diagram. Frames are decoration over the flat graph, not containers: they follow
  * the steps (also while a step is dragged), cannot be selected or dragged, and never nest (a step belongs to at most
  * one subprocess). Sections have a solid border, handlers a dashed one. Sections and handlers are edited in the

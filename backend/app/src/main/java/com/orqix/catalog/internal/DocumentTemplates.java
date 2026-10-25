@@ -145,7 +145,7 @@ public class DocumentTemplates {
                     "A workspace can have at most " + MAX_TEMPLATES + " document templates.");
         }
         UUID id = Ids.newId();
-        // The key identifies the template in versioned workflow references (S57). It is derived from the name when not
+        // The key identifies the template in versioned workflow references (S61). It is derived from the name when not
         // given; an explicit key that is taken is a conflict, a derived one gets a number.
         String key = request.key() != null ? request.key() : freeKey(ws, name);
         int inserted = jdbc.sql("""

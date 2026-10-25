@@ -339,7 +339,7 @@ function advanceFrom(run: MockRun, nodeId: string): void {
         break
       }
       case 'sendAdapter': {
-        // S68: the mock, like this build's server, only records a stub delivery; no message content is kept.
+        // S73: the mock, like this build's server, only records a stub delivery; no message content is kept.
         const kind = String(node.config.kind ?? '')
         run.steps[node.id] = kind === 'jdbc' ? { outcome: 'stubbed', rowCount: 0 } : { outcome: 'stubbed' }
         addEvent(run, 'EFFECT_SUCCEEDED', { nodeId: node.id, data: { label: node.label, adapterKey: String(node.config.adapter ?? ''), adapterKind: kind, attempt: 1, outcome: 'stubbed' } })

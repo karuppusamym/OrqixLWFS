@@ -28,7 +28,7 @@ const CONNECTION_STATUS = {
 } as const
 
 /**
- * Promote one release to a workspace at a later stage (PL02, docs/build/S54 and S69). The page runs the compatibility
+ * Promote one release to a workspace at a later stage (PL02, docs/build/S54 and S74). The page runs the compatibility
  * check against the target's own connections, groups and called workflows, then saves a draft there (or, when the
  * target requires approval, asks for it). It never publishes, and it copies no connection address, secret or group.
  */

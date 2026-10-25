@@ -17,7 +17,7 @@ export function documentPlaceholders(template: string): string[] {
 
 /**
  * Copies the latest version of a registry template (DOC08) into the step and links the step to that version (PL01,
- * docs/build/S57). The step keeps its own text: a later registry change never alters this workflow. Validation and
+ * docs/build/S61). The step keeps its own text: a later registry change never alters this workflow. Validation and
  * publish compare the step with the linked version, report a newer version and block an archived or missing template.
  */
 function TemplatePicker({ node, mapping, disabled }: { node: WorkflowNode; mapping: Record<string, string>; disabled: boolean }) {

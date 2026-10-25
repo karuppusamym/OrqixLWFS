@@ -62,7 +62,7 @@ public class EngineCommands {
         });
     }
 
-    /** @return the executions of this process instance subscribed to the signal, oldest first (S55) */
+    /** @return the executions of this process instance subscribed to the signal, oldest first (S59) */
     public List<String> signalSubscriptions(String processInstanceId, String signal) {
         return runtimeService.createEventSubscriptionQuery().processInstanceId(processInstanceId).eventType("signal")
                 .eventName(signal).list().stream()

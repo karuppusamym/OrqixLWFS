@@ -22,7 +22,7 @@ const finding = (runId: string, over: Record<string, unknown> = {}) => ({
   ...over,
 })
 
-describe('consistency scan findings (EX09, S67)', () => {
+describe('consistency scan findings (EX09, S72)', () => {
   it('lists drifted requests for operators with a link to review each, and says the scan only reports', async () => {
     signInAs('olga.operator')
     const run = runByKey('ORQ-1005')

@@ -21,7 +21,7 @@ import com.orqix.compiler.internal.model.WorkflowDefinition.Subprocess;
 import com.orqix.compiler.internal.model.WorkflowDefinition.Transition;
 
 /**
- * Subprocesses, business errors, signals and automatic undo (docs/build/S55).
+ * Subprocesses, business errors, signals and automatic undo (docs/build/S59).
  * <ul>
  * <li>An embedded subprocess (a "section") groups steps that are entered through exactly one entry step and left by
  * the ordinary paths of its members; it may have a time limit and an error route to a step outside it. Sections do not
@@ -406,7 +406,7 @@ final class ScopeRules {
         }
     }
 
-    // ---------------------------------------------------------------- call failures as errors (S66)
+    // ---------------------------------------------------------------- call failures as errors (S71)
 
     /**
      * A call with {@code raiseErrorOnFailure} turns its known failures into a business error for the error route of

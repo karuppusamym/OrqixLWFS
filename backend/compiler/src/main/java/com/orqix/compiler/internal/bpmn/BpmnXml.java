@@ -16,7 +16,7 @@ import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamReader;
 
 /**
- * Hardened reading of BPMN text supplied by a person (UI03 BPMN source, docs/build/S56). Same protections as the
+ * Hardened reading of BPMN text supplied by a person (UI03 BPMN source, docs/build/S60). Same protections as the
  * Camunda importer's {@code SafeXml} (S11 section 1), which lives in the application's migration module and cannot be
  * used from the compiler: size, element-count and depth limits, DTDs and external entities disabled and any DOCTYPE or
  * ENTITY declaration refused. Unlike the importer, comments and processing instructions are <em>reported</em> (the

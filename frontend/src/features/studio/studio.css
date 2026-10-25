@@ -119,7 +119,7 @@
 }
 
 /*
- * Section and handler frames (docs/build/S66), drawn behind the steps and routes (z-index -1 inside the viewport).
+ * Section and handler frames (docs/build/S71), drawn behind the steps and routes (z-index -1 inside the viewport).
  * They are decoration only: no pointer events, hidden from assistive technology (the inspector and the run diagram's
  * "Sections and handlers" list carry the same information as text). Sections are solid, handlers dashed.
  */

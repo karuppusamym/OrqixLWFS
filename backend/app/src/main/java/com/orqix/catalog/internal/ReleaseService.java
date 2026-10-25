@@ -139,7 +139,7 @@ public class ReleaseService {
             throw new ApiException(ProblemCode.WORKFLOW_INVALID, "Fix the blocking issues before publishing.")
                     .with("issues", WorkflowService.issues(report.issues()));
         }
-        // Shared asset references (S57): a missing, archived or differing asset blocks; a newer version must be
+        // Shared asset references (S61): a missing, archived or differing asset blocks; a newer version must be
         // acknowledged like any other warning. The release keeps the pinned copy, never the latest asset.
         List<ValidationIssue> assetIssues = assetCheck.issues(workspaceId, draft.definitionJson());
         if (AssetReferenceCheck.hasBlocker(assetIssues)) {
@@ -181,7 +181,7 @@ public class ReleaseService {
         manifest.put("reviewedAt", now.toString());
         if (definition.has("provenance")) manifest.set("provenance", definition.path("provenance"));
         if (definition.has("acceptanceProfile")) manifest.put("acceptanceProfile", definition.path("acceptanceProfile").asString());
-        // Provenance of shared asset copies (S57): which asset version each element was published from.
+        // Provenance of shared asset copies (S61): which asset version each element was published from.
         manifest.set("assets", json.parse(draft.definitionJson()).path("dependencies").path("assets").deepCopy());
         if (!manifest.path("assets").isArray()) {
             manifest.putArray("assets");

@@ -5,7 +5,7 @@ import { newId } from './state'
 type S = components['schemas']
 
 /**
- * Simplified UI double for the IN02/S68 adapter, inbound-trigger and inbound-event endpoints (mock mode and unit tests
+ * Simplified UI double for the IN02/S73 adapter, inbound-trigger and inbound-event endpoints (mock mode and unit tests
  * only). It keeps the lists in memory and mirrors the server's shapes and version checks; the real validation and
  * permission rules live in the backend and are tested there.
  */

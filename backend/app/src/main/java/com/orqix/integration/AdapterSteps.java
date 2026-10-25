@@ -6,7 +6,7 @@ import java.util.UUID;
 import tools.jackson.databind.node.ObjectNode;
 
 /**
- * What workflows may do with outbound adapters (S68): read the adapter facts the compiler checks a step against, and send
+ * What workflows may do with outbound adapters (S73): read the adapter facts the compiler checks a step against, and send
  * one step occurrence through the effect journal. Sending re-checks the adapter's current settings; an adapter being
  * available never authorizes a recipient or topic by itself, and this build delivers only to the local test stub.
  */

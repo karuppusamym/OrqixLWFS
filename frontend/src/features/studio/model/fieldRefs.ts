@@ -109,7 +109,7 @@ function stepOutputs(def: Definition, node: WorkflowNode, lookup?: ConnectionLoo
       return result.filter((p) => p.name).map((p) => base(p.name as string, p.type ?? 'string', p.title || humanize(p.name as string)))
     }
     case 'sendAdapter':
-      // S68: how the adapter took the message; a database read also reports its row count.
+      // S73: how the adapter took the message; a database read also reports its row count.
       return node.config.kind === 'jdbc' ? [base('outcome', 'string'), base('rowCount', 'integer', 'Row count')] : [base('outcome', 'string')]
     case 'startWorkflow': {
       const mapping = (node.config.resultMapping ?? {}) as Record<string, string>

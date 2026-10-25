@@ -1,4 +1,4 @@
--- PL01 shared assets (docs/build/S57): owner and archive state for a connection key. Connection definitions stay the
+-- PL01 shared assets (docs/build/S61): owner and archive state for a connection key. Connection definitions stay the
 -- immutable, versioned records of V1; this optional header is created on the first owner or archive change. Without a
 -- row the owner is the person who registered version 1 and the connection is not archived. Archiving never touches
 -- bindings or published releases; it makes validation and publish of workflows that still reference the key fail.

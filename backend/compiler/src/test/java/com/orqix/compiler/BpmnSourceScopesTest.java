@@ -15,7 +15,7 @@ import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
 /**
- * UI03 BPMN source for the S55/S66/S68 constructs (docs/build/S77): sections, handlers, raised errors, signals, the
+ * UI03 BPMN source for the S59/S71/S73 constructs (docs/build/S77): sections, handlers, raised errors, signals, the
  * Undo step and automatic undo calls, call failures raised as errors and adapter steps round-trip exactly and can be
  * edited in BPMN; what BPMN cannot carry exactly is still reported and refused.
  */
@@ -88,7 +88,7 @@ class BpmnSourceScopesTest {
             + "\"inputMapping\":{\"title\":\"/input/title\",\"amount\":\"/input/amount\"}}";
     static final String JDBC = "{\"adapter\":\"lookup\",\"kind\":\"jdbc\",\"inputMapping\":{\"costCenter\":\"/input/costCenter\"}}";
 
-    /** Every S55/S66/S68 construct, alone or combined, as a draft that compiles. */
+    /** Every S59/S71/S73 construct, alone or combined, as a draft that compiles. */
     static Map<String, ObjectNode> documents() {
         Map<String, ObjectNode> docs = new java.util.LinkedHashMap<>();
         docs.put("section (time limit, error route, raise error, two exits)", ScopesAndEventsTest.section());

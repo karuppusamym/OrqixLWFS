@@ -97,13 +97,13 @@ public sealed interface Node {
                     false, null);
         }
 
-        /** @return true for an automatic undo handler (S55): it has no paths and runs only from an Undo step */
+        /** @return true for an automatic undo handler (S59): it has no paths and runs only from an Undo step */
         public boolean undoHandler() {
             return automaticUndo && compensates != null;
         }
 
         /**
-         * @return the business error code this call raises when it fails for good with a known failure (S66 opt-in,
+         * @return the business error code this call raises when it fails for good with a known failure (S71 opt-in,
          *         {@code config.raiseErrorOnFailure}), or null for the S32 behavior (failed path or needs attention)
          */
         public String raiseOnFailure() {
@@ -138,7 +138,7 @@ public sealed interface Node {
     }
 
     /**
-     * Send through a configured adapter (S68). {@code adapterKind} must equal the adapter's kind. Recipients ({@code to})
+     * Send through a configured adapter (S73). {@code adapterKind} must equal the adapter's kind. Recipients ({@code to})
      * and the Kafka {@code topic} are literals of the step, never request data, and must be on the adapter's allowlist.
      * {@code subject}, {@code body}, {@code title}, {@code text} and {@code messageKey} may contain {@code {{name}}}
      * placeholders for {@code inputMapping} names; the Kafka value is the mapped values; database parameters are the
@@ -245,7 +245,7 @@ public sealed interface Node {
     /** A value a message may carry: {@code type} is a scalar kind (string, number, integer, boolean or date). */
     record PayloadField(String name, Enums.FieldKind type, String title, boolean required) { }
 
-    /** Raise a business error (S55): a terminal step whose error is caught by a section or an error handler. */
+    /** Raise a business error (S59): a terminal step whose error is caught by a section or an error handler. */
     record RaiseError(int index, String id, String label, String errorCode) implements Node {
         @Override
         public NodeKind kind() {
@@ -253,7 +253,7 @@ public sealed interface Node {
         }
     }
 
-    /** Send a signal to the steps of the same request that wait for it (S55). */
+    /** Send a signal to the steps of the same request that wait for it (S59). */
     record SendSignal(int index, String id, String label, String signal) implements Node {
         @Override
         public NodeKind kind() {
@@ -261,7 +261,7 @@ public sealed interface Node {
         }
     }
 
-    /** Wait until a signal is sent in the same request (S55). */
+    /** Wait until a signal is sent in the same request (S59). */
     record WaitForSignal(int index, String id, String label, String signal) implements Node {
         @Override
         public NodeKind kind() {
@@ -269,7 +269,7 @@ public sealed interface Node {
         }
     }
 
-    /** Run the automatic undo call of every call that completed in this request, most recent first (S55). */
+    /** Run the automatic undo call of every call that completed in this request, most recent first (S59). */
     record Compensate(int index, String id, String label) implements Node {
         @Override
         public NodeKind kind() {

@@ -53,7 +53,7 @@ R0 manages access through the API (`/api/v1`, see [OpenAPI](../contracts/openapi
 
 1. **Platform admin:** `POST /admin/organizations`, then `POST /admin/workspaces` with `initialAdmins` (principals of type `idpGroup` or `subject`). Mark test workspaces with `isTest: true`; only they may allow self-approval workflows.
 2. **Workspace admin:** map IdP groups to roles with `POST /workspaces/{id}/access/role-bindings` — `WORKFLOW_DESIGNER`, `PUBLISHER`, `OPERATOR`, `VIEWER`, `APPROVER`, `WORKSPACE_ADMIN`.
-3. Grant `workflow.start` (the requester capability) with `POST /workspaces/{id}/access/grants`, workspace-wide or for one workflow, and `connection.manage` to integration administrators.
+3. Grant `workflow.start` (the requester capability) with `POST /workspaces/{id}/access/grants`, workspace-wide or for one workflow, and `connection.manage` to integration administrators. Other grant-only permissions are listed under [Grant-only permissions](#grant-only-permissions---19-october-2026).
 4. Create approval groups with `PUT /workspaces/{id}/groups/{key}` (for example `managers`, `finance-approvers`) listing IdP groups or subjects. Workflows assign approval steps to these keys; publishing fails while a referenced group is missing.
 
 Administrator roles manage access only: they do not see request data, approve or publish unless granted those roles too.
@@ -165,3 +165,74 @@ Apply V85 before running callback-enabled application code. Provision a gateway 
 Choose **OAuth delegated consent** on a connection binding and save its mounted credential reference. Provision the provider endpoints, client ID/secret, approved scopes and exact connection-specific callback URI, plus the reserved `oauth-token-keyring`, as described in [S67](build/S67-delegated-oauth.md). Apply V86 before deployment. All nodes need the same keyring; key bytes stay in platform secrets and cannot be used as ordinary connection credentials.
 
 In the connection's **Workspace authorization** panel, choose **Authorize workspace connection**, continue to the approved provider and consent with the intended account. This authorizes the workspace connection, including its permitted workflow uses. The callback removes transient code/error data and returns to settings without showing tokens. **Disconnect authorization** erases local credentials and fences pending refresh/consent results; review the provider account when remote revocation is unconfirmed. An uncertain refresh or code exchange requires new consent instead of retrying an already-consumed credential. Retain prior encryption keys until all dependent grants and unexpired consent records have rotated or expired. Provider account/tenant registration and enterprise acceptance remain deployment work.
+
+## Grant-only permissions - 19 October 2026
+
+No role carries these; a workspace administrator grants them with `POST /workspaces/{id}/access/grants`. Except `workflow.start`, every one is workspace-wide (a `workflowId` is refused):
+
+| Permission | Allows | Notes |
+|---|---|---|
+| `workflow.start` | Start requests | Workspace-wide or for one workflow |
+| `connection.manage` | Register/bind connections, create and edit adapters and inbound triggers, purge received events, manage shared connection assets | Fresh check on every call |
+| `workflow.approve-promotion` | Approve or reject promotion requests into a production-stage workspace ([S74](build/S74-promotion-ui-approval-gate.md)) | Granted in the **target** workspace; never lets the requester decide their own request |
+| `agent.approve-write-tool` | Approve or revoke AI agent write tools ([S75](build/S75-approved-agent-write-tools.md)) | Revocation is also allowed to `connection.manage`; the approver can never trigger a write through the tool |
+| `message.send`, `document.browse`, `job.work`, `audit.read` | As before | |
+
+Run operators (`run.operate`) check consistency, send signals, quarantine files and record unknown agent writes. `workspace.manage-access` (administrators) sets the workspace stage, the promotion approval requirement and the file retention period. Promoting across workspaces needs `workflow.export` (designers, publishers) in the source and `workflow.edit` (designers) in the target. Migrations V99 and V110 recreate the grant check constraints; reconcile them with any concurrent migration that changes the list.
+
+## Adapters and inbound triggers - 19 October 2026
+
+[S47](build/S47-adapters-inbound-triggers.md), [S73](build/S73-adapter-step-inbound-events.md). Under **Settings → Connections** (`connection.manage` to change, `connection.read` to view; `secretRef` is hidden from non-managers) administrators define email, Teams, JDBC (one parameterized read-only `SELECT`/`WITH`) and Kafka adapters, edit or disable them (`PUT` with `expectedVersion`, `409 CONFIGURATION_VERSION_CONFLICT`) and test them. **There is no live transport: no SMTP, Teams, JDBC or Kafka client is linked, `secretRef` contents are not read, and every send and test goes to a local stub.** Live acceptance against real systems remains an external gate. Adapters cannot be deleted. Workflow steps check the allowlists (exact recipient domains, topics) again on every send.
+
+Inbound triggers (`POST /workspaces/{ws}/inbound/{triggerId}`) use no session or token. The sender signs `timestamp + "." + rawBody` with HMAC-SHA256 using the trigger's `secretRef` file (`X-Orqix-Signature: sha256=<hex>`, `X-Orqix-Timestamp` within 5 minutes, a unique `X-Orqix-Event-Id`). A customer relay must produce these calls; Orqix does not poll mailboxes or topics. Troubleshooting: 404 unknown or disabled trigger, 401 bad or stale signature, 503 secret file missing, 422 shape or sender filter refused, 429 when 1,000 events for the trigger are unstarted (start or purge some), 202 with `duplicate: true` for a repeat. Events are kept until purged: **Settings → Connections → Received event retention** or `POST /inbound-events/purge` (1 to 3,650 days; started events always, unstarted only with `includeUnstarted`; a purged event id is accepted again). Apply migrations V47 and V96 first. An adapter step with an unknown outcome is never resent automatically; an operator reconciles it as for any effect.
+
+## Promotion, environments and canary - 19 October 2026
+
+[S54](build/S54-promotion-canary-environments.md), [S74](build/S74-promotion-ui-approval-gate.md). Set each workspace stage (`development`, `test`, `staging`, `production`; default `test` for test workspaces, otherwise `production`) with `workspace.manage-access`, through the environment endpoint (`expectedVersion`) or the **Promotions** page. Promotion works only between workspaces of one organization and strictly forward in stage. For a production workspace, `requireApproval` can be switched on; it switches off by itself when the stage moves out of production. Promotion refusals:
+
+| Response | Cause |
+|---|---|
+| `404` | Target not visible to the caller, or in another organization |
+| `422` (stage) | Same workspace, or not a later stage |
+| `422 WORKFLOW_INVALID` | Target report not compatible: binding missing, definition missing or differing, a group or called workflow absent, or compiler blockers. Fix them in the target; bindings, groups and secrets are never copied |
+| `412 STALE_REVISION` or `422` | The target already has the workflow and its draft revision moved or was not supplied; run the check again |
+| `409 PROMOTION_APPROVAL_REQUIRED` | The production gate is on; use **Request approval** |
+| `409 DUPLICATE_KEY` | A pending request for this workflow and target exists; decide or cancel it |
+| `403 SELF_APPROVAL_DENIED` | The requester tried to approve or reject their own request |
+| `422 REASON_REQUIRED` | Rejection without a reason |
+
+An approved request whose target is no longer compatible, or whose draft moved, stays pending: cancel it and request again. Promotion never publishes. The canary (`workflow.publish`) sends 1 to 50 percent of new starts to one other release with an identical form; it is not evaluated or rolled back automatically. Apply V65 to V67 and V99.
+
+## Consistency scan and run repair - 19 October 2026
+
+[S49](build/S49-run-repair.md), [S72](build/S72-repair-waits-and-scan.md). **Check consistency** and **Rebuild steps** work per request (`GET /runs/{id}/diagnosis`, `POST /runs/{id}/repair`, `run.operate`) for approvals, duration and date waits, message waits and external-worker steps. A repair only rewrites the projection from state the engine holds; it never triggers or modifies the engine. The states and the operator wording are in the [user guide](user-guide.md#checking-a-request-against-the-engine-operators). `strandedToken`, `emptyRequest` and `engineMissing` are cancel-only. `unsupported` means the engine holds something the check cannot account for (an unknown timer or subscription, an in-flight, dead-letter or suspended job, a child, call, document or signal wait); resolve that first or cancel.
+
+The periodic scan is **off by default** and reports only; it never changes a request:
+
+| Setting | Default |
+|---|---|
+| `orqix.watchdog.consistency-scan.enabled` | `false` |
+| `...batch-size` (hard cap 25) | `10` requests per pass |
+| `...interval` | `5m` per instance |
+| `...recheck-after` (in-sync requests) | `6h` |
+| `...finding-recheck-after` (requests with a finding) | `30m` |
+
+It runs inside the watchdog sweep (`orqix.watchdog.poll-delay`, default 60 s), inspects each request under `FOR UPDATE SKIP LOCKED` and keeps one row per scanned request (migration V93). `GET /workspaces/{ws}/consistency-findings` (`run.operate`) feeds the **Runs** panel. A successful repair clears the finding at once, and findings of finished requests are purged. Consider an alert on a non-empty finding list if you enable it.
+
+## Request file quarantine, retention and OCR - 19 October 2026
+
+[S52](build/S52-document-lifecycle.md). Retention (`workspace.manage-access`, 1 to 3,650 days or none; **Settings → File retention** shows how many files are eligible now) is applied by an hourly sweep (`orqix.attachments.retention-delay`, 200 files per batch, safe on several pods). It deletes the bytes and extracted text of files of finished requests, keeps the metadata, and never touches running requests or quarantined files. It does not purge staged uploads, audit or timeline records, exports or database backups. Quarantine (`run.operate`) is manual and not tied to the virus scanner result. The OCR provider is a bean (`OcrProvider`); the shipped `local-stub` reads plain text and CSV only and reports images and PDFs as unsupported, so a real provider must be supplied by the deployment. Apply V55 to V57.
+
+## Agent write tools - 19 October 2026
+
+[S75](build/S75-approved-agent-write-tools.md). Writes are declared in the connection definition (`agentSpec.writeTools`, up to 4, email or Teams, fixed recipients) and need an active approval per workflow key, connection version and tool before publish and again at run time. Delivery goes to the local stub only. Troubleshooting:
+
+| Symptom | Cause and action |
+|---|---|
+| Publish fails with `WF_AGENT_WRITE_TOOL_UNAPPROVED` | No active approval for this workflow, connection version and tool. A holder of `agent.approve-write-tool` approves it on **Agent writes**; a new connection version needs a new approval |
+| `WF_AGENT_WRITE_TOOL_ADAPTER` or `_RECIPIENT` | The adapter is missing, disabled or of another kind, or a fixed recipient's domain is off the adapter allowlist |
+| Agent step needs attention, `WRITE_NOT_APPROVED` | The approval was revoked after publishing; approve again. The model is not called meanwhile |
+| Refused with `WRITE_SELF_APPROVAL` | The request was started by the tool's approver; another person must start it |
+| Needs attention with `WRITE_OUTCOME_UNKNOWN` or `EFFECT_UNKNOWN`; retry gives `EFFECT_NOT_RECONCILED` | A send may or may not have happened. Check the target, use **Record outcome** (delivered or not delivered, reason, optional reference) on **Agent writes** (`reconcileAgentWrite`, `run.operate`), then retry the request. The generic step reconcile refuses agent writes. Nothing is inferred or resent automatically |
+
+Known limits: approval is bound to the workflow key, not one release; a revocation in the milliseconds between the final check and the stub send lets that one write through; no approval expiry, quorum or compensation. Apply V110 and V111.

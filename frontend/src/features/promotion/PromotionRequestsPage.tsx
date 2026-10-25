@@ -23,7 +23,7 @@ import { STAGES, stageLabel } from './stages'
 const STATUS_TONE = { pending: 'warning', approved: 'success', rejected: 'danger', cancelled: 'neutral' } as const
 
 /**
- * Promotion approvals for this workspace (PL02, docs/build/S69): the stage and the approval requirement, and the
+ * Promotion approvals for this workspace (PL02, docs/build/S74): the stage and the approval requirement, and the
  * requests other people made to promote a release into it. A request is decided by a different person who holds the
  * explicit approval permission here; the person who asked can only withdraw it.
  */

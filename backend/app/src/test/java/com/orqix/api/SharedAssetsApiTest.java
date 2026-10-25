@@ -17,7 +17,7 @@ import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
 /**
- * PL01 shared assets (docs/build/S57): shared decisions, document templates and connections with owners, versioned
+ * PL01 shared assets (docs/build/S61): shared decisions, document templates and connections with owners, versioned
  * references from workflows that are checked (never silently resolved) at validation and publish, where-used and
  * search. References and owners never grant access.
  */

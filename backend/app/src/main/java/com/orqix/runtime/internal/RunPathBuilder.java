@@ -46,14 +46,14 @@ public final class RunPathBuilder {
     }
 
     /**
-     * A section or handler of the release (S55). {@code routes} are a section's time-limit and error routes, with ids
+     * A section or handler of the release (S59). {@code routes} are a section's time-limit and error routes, with ids
      * {@code <scope>__onTimeout} and {@code <scope>__onError} as used in {@code taken}.
      */
     public record Scope(String id, String label, String type, List<String> nodes, String trigger, Boolean interrupting,
             List<Transition> routes) {
     }
 
-    /** One time a section was entered or a handler started (S55); {@code how} is null while it is still open. */
+    /** One time a section was entered or a handler started (S59); {@code how} is null while it is still open. */
     public record ScopeVisit(String scopeId, Instant startedAt, Instant endedAt, String how) {
     }
 

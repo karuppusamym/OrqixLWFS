@@ -23,7 +23,7 @@ import com.orqix.shared.problem.ApiException;
 import com.orqix.shared.problem.ProblemCode;
 
 /**
- * BPMN source of a workflow draft (UI03, docs/build/S56). Permissions follow the YAML source mode of S53: anyone who
+ * BPMN source of a workflow draft (UI03, docs/build/S60). Permissions follow the YAML source mode of S53: anyone who
  * may read the draft sees its BPMN ({@code workflow.read}); checking and applying edited BPMN are editing
  * ({@code workflow.edit}), and applying saves a normal draft revision with the same If-Match rules, size limits and
  * audit event as the studio's autosave. Nothing is published or validated away: the saved draft still goes through

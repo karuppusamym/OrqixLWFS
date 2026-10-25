@@ -33,7 +33,7 @@ import tools.jackson.databind.node.ObjectNode;
 /**
  * Reads the BPMN dialect written by {@link BpmnGenerator} back into the process part of a workflow document: the
  * workflow name, {@code nodes}, {@code transitions}, {@code subprocesses} (sections and handlers, docs/build/S77) and
- * (when the diagram is present) {@code uiLayout.positions} (UI03, docs/build/S56). The order of steps and connections
+ * (when the diagram is present) {@code uiLayout.positions} (UI03, docs/build/S60). The order of steps and connections
  * comes from the diagram, which the generator writes in document order; the process body groups the elements of each
  * section and handler inside it. It is the exact inverse of the generator for what the generator writes from these
  * sections; anything else is reported as a {@link Finding}, never skipped. Values the generator derives from other
@@ -76,7 +76,7 @@ public final class BpmnReader {
     private final Map<String, El> byId = new LinkedHashMap<>();
     private final Map<String, String> types = new LinkedHashMap<>();
     private final Map<String, ObjectNode> nodes = new LinkedHashMap<>();
-    /** Sections and handlers (S55/S77): subprocess id to its document form, in BPMN order. */
+    /** Sections and handlers (S59/S77): subprocess id to its document form, in BPMN order. */
     private final Map<String, ObjectNode> scopes = new LinkedHashMap<>();
     /** Subprocess id to "embedded" or "event". */
     private final Map<String, String> scopeKinds = new LinkedHashMap<>();
@@ -490,7 +490,7 @@ public final class BpmnReader {
                 El outcome = ext == null ? null : ext.child(ORQIX_NS, "outcome");
                 type = raise != null ? "raiseError" : "end";
                 if (raise != null) {
-                    // "Raise an error" (S55): an error end event; the errorRef is compared after regeneration.
+                    // "Raise an error" (S59): an error end event; the errorRef is compared after regeneration.
                     putText(config, "errorCode", raise.attr("errorCode"));
                 } else if (outcome == null) {
                     unsupported(id, "End event '" + id + "' has no orqix:outcome (business outcome and kind) and is "
@@ -614,11 +614,11 @@ public final class BpmnReader {
                     config.put("timeoutSeconds", timeout);
                 }
                 putText(config, "compensates", x.attr("compensates"));
-                // An automatic undo call (S55) is a compensation handler; "manual" is the default (BpmnDefaults).
+                // An automatic undo call (S59) is a compensation handler; "manual" is the default (BpmnDefaults).
                 if ("true".equals(el.attr("isForCompensation"))) {
                     config.put("compensation", "automatic");
                 }
-                // Opt-in (S66): a known failure raises this business error for the section's error route.
+                // Opt-in (S71): a known failure raises this business error for the section's error route.
                 putText(config, "raiseErrorOnFailure", x.attr("raiseOnFailure"));
             }
             case "compensate" -> {
@@ -773,7 +773,7 @@ public final class BpmnReader {
         String type = types.get(owner);
         String scope = scopeKinds.get(owner);
         if (scope != null) {
-            // Generated parts of a section (embedded) or handler (event), S55. Their element types, attributes and
+            // Generated parts of a section (embedded) or handler (event), S59. Their element types, attributes and
             // places are checked when the BPMN is regenerated and compared.
             boolean section = scope.equals("embedded");
             boolean known = switch (suffix) {
@@ -815,7 +815,7 @@ public final class BpmnReader {
         }
         String container = containerOf.get(id);
         if (target.contains("__")) {
-            // A path leaving a section ends at the generated end event <section>__end__<step> inside it (S55).
+            // A path leaving a section ends at the generated end event <section>__end__<step> inside it (S59).
             int at = target.indexOf("__");
             String owner = target.substring(0, at);
             String step = target.substring(at).startsWith(BpmnGenerator.SCOPE_END)

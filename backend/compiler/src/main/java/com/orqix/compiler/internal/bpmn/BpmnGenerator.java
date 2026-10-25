@@ -50,23 +50,23 @@ public final class BpmnGenerator {
     /** Error code a delegate raises when a step fails for good and the workflow has a {@code failed} path. */
     public static final String FAILED_ERROR_CODE = "ORQIX_STEP_FAILED";
 
-    /** Prefix of the BPMN error definition generated for a business error code (S55). */
+    /** Prefix of the BPMN error definition generated for a business error code (S59). */
     public static final String ERROR_PREFIX = "error__";
-    /** Prefix of the BPMN signal definition generated for a signal name (S55). */
+    /** Prefix of the BPMN signal definition generated for a signal name (S59). */
     public static final String SIGNAL_PREFIX = "signal__";
-    /** Suffix of the start event generated inside a subprocess (S55). */
+    /** Suffix of the start event generated inside a subprocess (S59). */
     public static final String SCOPE_START = "__start";
-    /** Infix of the end event generated inside a section for each step it can be left to (S55). */
+    /** Infix of the end event generated inside a section for each step it can be left to (S59). */
     public static final String SCOPE_END = "__end__";
-    /** Suffix of the end event generated inside a handler that runs alongside the request (S55). */
+    /** Suffix of the end event generated inside a handler that runs alongside the request (S59). */
     public static final String SCOPE_DONE = "__end";
-    /** Suffix of the gateway after a section that can be left to several steps (S55). */
+    /** Suffix of the gateway after a section that can be left to several steps (S59). */
     public static final String SCOPE_EXIT = "__exit";
-    /** Suffix of the interrupting timer boundary of a section with a time limit (S55). */
+    /** Suffix of the interrupting timer boundary of a section with a time limit (S59). */
     public static final String SCOPE_TIMEOUT = "__timeout";
-    /** Suffix of the interrupting error boundary of a section with an error route (S55). */
+    /** Suffix of the interrupting error boundary of a section with an error route (S59). */
     public static final String SCOPE_ERROR = "__error";
-    /** Process variable prefix holding the step a section was left to (S55). */
+    /** Process variable prefix holding the step a section was left to (S59). */
     public static final String EXIT_VARIABLE = "orqix_exit_";
 
     /** Generated process plus its source map. */
@@ -119,7 +119,7 @@ public final class BpmnGenerator {
             x.leaf("", "error", BPMN_NS).attr("id", FAILED_ERROR).attr("errorCode", FAILED_ERROR_CODE);
         }
         Scopes scopes = new Scopes(definition);
-        // Business errors and signals (S55): one definition per code or name, sorted. Signals reach only the steps of
+        // Business errors and signals (S59): one definition per code or name, sorted. Signals reach only the steps of
         // the request that sends them (flowable:scope processInstance), never other requests.
         scopes.errorCodes().forEach(code ->
                 x.leaf("", "error", BPMN_NS).attr("id", ERROR_PREFIX + code).attr("errorCode", code));
@@ -162,7 +162,7 @@ public final class BpmnGenerator {
         map.node(n.id(), n.id());
         switch (n) {
             case Node.RaiseError r -> {
-                // An error end event: the section's error boundary or an error handler catches it (S55).
+                // An error end event: the section's error boundary or an error handler catches it (S59).
                 x.open("", "endEvent", BPMN_NS).attr("id", r.id()).attr("name", r.label());
                 x.open("", "extensionElements", BPMN_NS);
                 x.leaf("orqix", "raise", ORQIX_NS).attr("errorCode", r.errorCode());
@@ -188,7 +188,7 @@ public final class BpmnGenerator {
             }
             case Node.Compensate c -> {
                 // Orqix runs the undo calls itself, one after the other and journaled, most recent first; Flowable's
-                // compensation events do not wait for the handlers to finish (S55).
+                // compensation events do not wait for the handlers to finish (S59).
                 x.open("", "serviceTask", BPMN_NS)
                         .attr("id", c.id())
                         .attr("name", c.label())
@@ -295,7 +295,7 @@ public final class BpmnGenerator {
                         .attr("flowable", FLOWABLE_NS, "exclusive", "true")
                         .attr("flowable", FLOWABLE_NS, "delegateExpression", "${orqixHttpTask}");
                 if (h.undoHandler()) {
-                    // Never reached by a path: the Undo step reads this call's settings and runs it (S55).
+                    // Never reached by a path: the Undo step reads this call's settings and runs it (S59).
                     x.attr("isForCompensation", "true");
                 }
                 x.open("", "extensionElements", BPMN_NS);
@@ -314,7 +314,7 @@ public final class BpmnGenerator {
                     x.attr("compensates", h.compensates());
                 }
                 if (h.raiseOnFailure() != null) {
-                    // Opt-in (S66): a known failure becomes this business error for the section's error boundary.
+                    // Opt-in (S71): a known failure becomes this business error for the section's error boundary.
                     x.attr("raiseOnFailure", h.raiseOnFailure());
                 }
                 h.inputMapping().forEach((name, fieldRef) ->
@@ -370,7 +370,7 @@ public final class BpmnGenerator {
             }
             case Node.SendAdapter a -> {
                 // Like a call to a system: an async job whose delegate uses the effect journal, so a retry never resends
-                // a message whose outcome is unknown (S68). Texts are Base64 so line breaks survive the attribute.
+                // a message whose outcome is unknown (S73). Texts are Base64 so line breaks survive the attribute.
                 x.open("", "serviceTask", BPMN_NS)
                         .attr("id", a.id())
                         .attr("name", a.label())
@@ -534,7 +534,7 @@ public final class BpmnGenerator {
                         && d.nodes().stream().anyMatch(other -> other instanceof Node.ParallelSplit))
                         || scopes.sideHandlers())) {
                     // A rejection ends the whole request, including parallel branches that are still open (S12); a
-                    // finished request also stops handlers that run alongside it (S55).
+                    // finished request also stops handlers that run alongside it (S59).
                     x.leaf("", "terminateEventDefinition", BPMN_NS);
                 }
                 x.close();
@@ -543,7 +543,7 @@ public final class BpmnGenerator {
     }
 
     /**
-     * A subprocess (S55). A section becomes an embedded {@code subProcess}: a generated start event leads to its entry
+     * A subprocess (S59). A section becomes an embedded {@code subProcess}: a generated start event leads to its entry
      * step, every path leaving it ends at a generated end event named after the step it leads to, and after the
      * subprocess a generated gateway continues at that step (directly when there is only one). Its time limit and error
      * route are interrupting boundary events on the subprocess. A handler becomes an event subprocess whose start event
@@ -696,7 +696,7 @@ public final class BpmnGenerator {
         }
     }
 
-    /** Subprocess membership, entries and exits of a definition without blockers (S55). */
+    /** Subprocess membership, entries and exits of a definition without blockers (S59). */
     static final class Scopes {
         private final WorkflowDefinition d;
         private final Map<String, WorkflowDefinition.Subprocess> scopeOf = new HashMap<>();
@@ -980,7 +980,7 @@ public final class BpmnGenerator {
 
         private static final BigDecimal SCOPE_PADDING = new BigDecimal(40);
 
-        /** @return subprocess id to {left, top, right, bottom}; also places the generated subprocess helpers (S55) */
+        /** @return subprocess id to {left, top, right, bottom}; also places the generated subprocess helpers (S59) */
         private static Map<String, BigDecimal[]> scopeCentres(WorkflowDefinition d, Scopes scopes,
                 Map<String, BigDecimal[]> centre) {
             Map<String, BigDecimal[]> boxes = new HashMap<>();

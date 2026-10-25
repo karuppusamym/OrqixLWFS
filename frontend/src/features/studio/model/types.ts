@@ -49,7 +49,7 @@ export interface DecisionRow {
 }
 
 /**
- * A versioned reference to a shared workspace asset (PL01, docs/build/S57). `target` is the element of this workflow that
+ * A versioned reference to a shared workspace asset (PL01, docs/build/S61). `target` is the element of this workflow that
  * holds the pinned copy: a decision table key, or the id of a Generate a document step. The server checks the copy
  * against the pinned version at validation and publish; a newer version is never used silently.
  */
@@ -142,11 +142,11 @@ export interface Definition {
   uiLayout?: { positions: Record<string, Position>; viewport?: { x: number; y: number; zoom: number } }
   /** Case stages (docs/build/S17): a presentation and monitoring layer over the steps; adds no behavior. */
   stages?: StageDef[]
-  /** Sections and handlers (docs/build/S55): scopes over existing steps. */
+  /** Sections and handlers (docs/build/S59): scopes over existing steps. */
   subprocesses?: SubprocessDef[]
 }
 
-/** docs/build/S55: an embedded subprocess (section) or an event subprocess (handler). */
+/** docs/build/S59: an embedded subprocess (section) or an event subprocess (handler). */
 export interface SubprocessDef {
   id: string
   label: string

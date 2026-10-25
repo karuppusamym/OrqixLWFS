@@ -3,7 +3,7 @@ import type { components } from '@/api/schema'
 import { clock, db, GROUPS, groupMembers, isMember, newId, permissionsOf, promotionApprovers, userById, WORKSPACES, WS_FACILITIES, type MockUser } from './state'
 
 /**
- * Mock of the promotion API (PL02, docs/build/S54 and S69). A simplified double of the server: stages, a compatibility
+ * Mock of the promotion API (PL02, docs/build/S54 and S74). A simplified double of the server: stages, a compatibility
  * report from the release's own connection and group references, the approval gate with separation of duties, and
  * history. It does not compile the definition; the compiler is the authority on the real server.
  */

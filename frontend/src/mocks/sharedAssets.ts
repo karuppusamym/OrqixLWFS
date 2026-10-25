@@ -7,7 +7,7 @@ import { getCurrentUser } from './handlers'
 import { USERS, WORKSPACES, agentConnectionDefinition, clock, connectionDefinition, db, isMember, newId, permissionsOf, purchaseTemplate, userById, userByName, type MockUser } from './state'
 
 /**
- * Shared assets in mock mode (PL01, docs/build/S57): a simplified double of the server. Decisions live here, document
+ * Shared assets in mock mode (PL01, docs/build/S61): a simplified double of the server. Decisions live here, document
  * templates come from the document library mock, connections are the two seeded definitions (version 1). Rules kept:
  * per-kind read/manage permissions, revision compare-and-set, owner eligibility, archive, where-used and the reference
  * findings added to validation. Hashes are compared as key-sorted JSON, not SHA-256.

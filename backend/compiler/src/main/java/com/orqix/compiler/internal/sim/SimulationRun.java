@@ -91,7 +91,7 @@ final class SimulationRun {
     private final List<ObjectNode> warnings = new ArrayList<>();
     private String lane;
     private Node endNode;
-    /** Where a raised error continues (S55); consumed by the walk. */
+    /** Where a raised error continues (S59); consumed by the walk. */
     private Node jump;
     private ObjectNode attention;
 
@@ -192,7 +192,7 @@ final class SimulationRun {
             visited.add(node.id());
             Transition next = step(node);
             if (next == null && jump != null) {
-                // A raised error continues where its section or handler says (S55).
+                // A raised error continues where its section or handler says (S59).
                 node = jump;
                 jump = null;
                 continue;
@@ -750,7 +750,7 @@ final class SimulationRun {
     }
 
     /**
-     * A known failure of a call set to raise an error on failure (S66): the section holding it stops and the request
+     * A known failure of a call set to raise an error on failure (S71): the section holding it stops and the request
      * continues at the section's error route (the compiler guarantees the route catches the code).
      */
     private Transition raiseFromCall(Node.Http n, ObjectNode details, String description, String reason) {
@@ -826,7 +826,7 @@ final class SimulationRun {
 
     // ------------------------------------------------------------------ notification and wait
 
-    // ------------------------------------------------------------------ errors and undo (S55)
+    // ------------------------------------------------------------------ errors and undo (S59)
 
     private Transition raiseError(Node.RaiseError n) {
         ObjectNode d = F.objectNode().put("errorCode", n.errorCode());
@@ -973,7 +973,7 @@ final class SimulationRun {
     }
 
     /**
-     * An adapter step is not executed by a test (S68): the values it would use are checked and the message is described,
+     * An adapter step is not executed by a test (S73): the values it would use are checked and the message is described,
      * but nothing is sent. Like the local stub of this build, a database read returns no rows.
      */
     private Transition sendAdapter(Node.SendAdapter n) {

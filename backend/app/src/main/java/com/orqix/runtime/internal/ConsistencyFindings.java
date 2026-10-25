@@ -10,7 +10,7 @@ import org.springframework.stereotype.Repository;
 import com.orqix.runtime.api.RuntimeDtos;
 import com.orqix.shared.web.Sql;
 
-/** {@code run_consistency_scan} (EX09, docs/build/S67): what the periodic scan last found for a request. Scoped by workspace. */
+/** {@code run_consistency_scan} (EX09, docs/build/S72): what the periodic scan last found for a request. Scoped by workspace. */
 @Repository
 public class ConsistencyFindings {
     private final JdbcClient jdbc;

@@ -20,7 +20,7 @@ import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
 /**
- * EX06/EX08 slice on PostgreSQL and Flowable (docs/build/S55): sections with an error route and a time limit, handlers
+ * EX06/EX08 slice on PostgreSQL and Flowable (docs/build/S59): sections with an error route and a time limit, handlers
  * started by a signal or a timer, signals that stay inside one request, the operator signal API and its permission
  * boundary, and the automatic undo lifecycle on top of the HTTP failure route.
  */
@@ -159,7 +159,7 @@ class ScopesAndEventsRuntimeTest extends RuntimeTestBase {
         assertThat(path.path("visited").toString()).contains("\"outcome\":\"interrupted\"");
     }
 
-    // ---------------------------------------------------------------- call failures as section errors (S66)
+    // ---------------------------------------------------------------- call failures as section errors (S71)
 
     /** The purchase order and the confirmation are a section whose error route continues at the rejection notice. */
     private Consumer<ObjectNode> orderSection(boolean optIn) {

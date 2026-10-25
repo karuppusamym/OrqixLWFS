@@ -20,7 +20,7 @@ import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
 /**
- * BPMN as an editable source of a workflow draft (UI03, docs/build/S56).
+ * BPMN as an editable source of a workflow draft (UI03, docs/build/S60).
  * <p>
  * The BPMN is exactly what {@link WorkflowCompiler#compile} generates. It carries the process part of the document:
  * the workflow name, the steps ({@code nodes}), the connections ({@code transitions}), the sections and handlers
@@ -106,7 +106,7 @@ public final class BpmnSource {
         boolean diagram = read.graph() != null && read.graph().get("positions") != null
                 && !read.graph().get("positions").isNull();
         if (read.graph() != null) {
-            // Written defaults and field titles are not in the BPMN: compare with the draft's own spelling (S65).
+            // Written defaults and field titles are not in the BPMN: compare with the draft's own spelling (S70).
             BpmnDefaults.adopt(def.get("nodes"), read.graph().get("nodes"));
             BpmnDefaults.adoptScopes(def.get("subprocesses"), read.graph().get("subprocesses"));
             differences.addAll(order(def, read.graph(), diagram));
@@ -161,7 +161,7 @@ public final class BpmnSource {
         if (!problems.isEmpty()) {
             return refused(problems);
         }
-        // Unchanged defaults keep the draft's spelling and field titles are kept from the draft (S65).
+        // Unchanged defaults keep the draft's spelling and field titles are kept from the draft (S70).
         BpmnDefaults.adopt(base.get("nodes"), read.graph().get("nodes"));
         BpmnDefaults.adoptScopes(base.get("subprocesses"), read.graph().get("subprocesses"));
         ObjectNode candidate = merge(base, read.graph());

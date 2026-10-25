@@ -12,7 +12,7 @@ const B = '/api/v1'
 const PLACEHOLDER = /\{\{([A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)*)}}/g
 const templates = new Map<string, DocumentTemplate & { wsId: string }>()
 
-/** Templates of one workspace, for the shared asset index (PL01, docs/build/S57). Rows are live: edits apply. */
+/** Templates of one workspace, for the shared asset index (PL01, docs/build/S61). Rows are live: edits apply. */
 export function documentTemplatesOf(wsId: string): Array<DocumentTemplate & { wsId: string }> {
   seed()
   return [...templates.values()].filter((t) => t.wsId === wsId)

@@ -20,7 +20,7 @@ import com.orqix.identity.SubjectService.SubjectRef;
 
 import jakarta.validation.Valid;
 
-/** Shared reusable assets: search, detail, where-used, shared decisions, owners and archive (docs/build/S57). */
+/** Shared reusable assets: search, detail, where-used, shared decisions, owners and archive (docs/build/S61). */
 @RestController
 @RequestMapping("/api/v1/workspaces/{workspaceId}")
 public class SharedAssetsController {

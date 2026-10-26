@@ -554,7 +554,25 @@ public final class BpmnReader {
         jsonAttribute(id, a, "calendar", config);
         jsonAttribute(id, a, "escalation", config);
         El loop = el.child(BPMN_NS, "multiInstanceLoopCharacteristics");
-        if (loop != null) {
+        El perItem = ext == null ? null : ext.child(ORQIX_NS, "perItem");
+        if (perItem != null) {
+            // One task per list item (S88): the list and the item label are the source of truth; the generated
+            // collection, element variable and completion condition are compared after regeneration.
+            ObjectNode each = config.putObject("perItem");
+            putText(each, "itemsRef", perItem.attr("itemsRef"));
+            putText(each, "itemLabel", perItem.attr("itemLabel"));
+            if (perItem.attr("allowSamePerson") != null) {
+                // Only "true" exists in the document; "false" is regenerated without the attribute and reported.
+                Boolean same = bool(id, "allowSamePerson", perItem.attr("allowSamePerson"));
+                if (same != null) {
+                    each.put("allowSamePerson", same);
+                }
+            }
+            if (loop == null) {
+                unsupported(id, "The list approval '" + id + "' needs its multiInstanceLoopCharacteristics (one task "
+                        + "per list item).");
+            }
+        } else if (loop != null) {
             El cardinality = loop.child(BPMN_NS, "loopCardinality");
             Integer approvers = cardinality == null ? null : integer(id, "loopCardinality", cardinality.text());
             if (approvers == null) {

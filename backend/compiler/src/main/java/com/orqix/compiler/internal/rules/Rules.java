@@ -26,6 +26,7 @@ public final class Rules {
         AdapterStepRules.check(rc);
         AgentWriteToolRules.check(rc);
         MultiInstanceRules.check(rc);
+        PerItemRules.check(rc);
         TypeRules.check(rc);
         BindingRules.check(rc);
         ChildRules.check(rc);

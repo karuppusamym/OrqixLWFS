@@ -8343,6 +8343,8 @@ components:
       properties:
         nodeId: { type: string }
         occurrence: { type: integer, minimum: 1, description: 'Which time the request was at this step (repeats in loops).' }
+        itemIndex: { type: integer, minimum: 0, maximum: 19, description: 'List-driven approval only (S88): the 0-based list position of the item this task decided. Left out otherwise.' }
+        itemLabel: { type: string, description: 'List-driven approval only (S88): what the task showed for its item.' }
         enteredAt: { $ref: '#/components/schemas/Timestamp' }
         leftAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
         outcome:
@@ -8706,7 +8708,7 @@ components:
       additionalProperties: false
       required: [code, message]
       properties:
-        code: { type: string, enum: [STEP_COUNT, STEP_UNKNOWN, STEP_KIND, MULTI_INSTANCE, STEP_MISSING, STEP_CHANGED, HISTORY_CHANGED, PARALLEL_REGION, STAGES_CHANGED, SUBPROCESSES, INPUT_INVALID] }
+        code: { type: string, enum: [STEP_COUNT, STEP_UNKNOWN, STEP_KIND, MULTI_INSTANCE, PER_ITEM, STEP_MISSING, STEP_CHANGED, HISTORY_CHANGED, PARALLEL_REGION, STAGES_CHANGED, SUBPROCESSES, INPUT_INVALID] }
         message: { type: string }
         nodeId: { type: [string, 'null'] }
     MigrationOption:

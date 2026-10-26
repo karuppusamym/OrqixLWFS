@@ -401,6 +401,17 @@ class Run {
       t = this.next(n, 'approved')
       sentence += ' In this test they approve.'
     }
+    const perItem = n.config.perItem as { itemsRef?: string } | undefined
+    if (perItem?.itemsRef) {
+      // One task per list item (docs/build/S88), as the server simulator: the first item is the one rejected.
+      const list = this.resolve(perItem.itemsRef)
+      const items = Array.isArray(list) ? list.length : 0
+      d.items = items
+      const rejected = out.decision === 'rejected'
+      out.itemDecisions = Array.from({ length: items }, (_, i) => (rejected ? (i === 0 ? 'rejected' : 'cancelled') : 'approved'))
+      out.approvedCount = rejected ? 0 : items
+      sentence += ` It opens one task for each of the ${items} items.`
+    }
     if (out.decision !== 'timedOut') out.decidedBy = 'Test approver'
     d.decision = out.decision as string
     if ('reason' in out) d.reason = String(out.reason)

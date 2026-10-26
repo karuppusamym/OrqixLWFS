@@ -76,6 +76,11 @@ function stepOutputs(def: Definition, node: WorkflowNode, lookup?: ConnectionLoo
         base('comment', 'string', 'Comment'),
         base('decidedBy', 'string', 'Decided by'),
         base('decidedAt', 'string', 'Decided at'),
+        // A list-driven approval (S88) also counts approved items and keeps one decision per item.
+        ...(node.config.perItem ? [
+          base('approvedCount', 'integer', 'Approved items'),
+          base('itemDecisions', 'array', 'Decision per item'),
+        ] : []),
       ]
     case 'decision': {
       const table = def.decisions.find((d) => d.key === (node.config.decisionRef as string | undefined))

@@ -24,7 +24,7 @@ public final class Tier1Rules {
             for (var entry : c.path("notifications").properties()) validateMail(entry.getValue(), path + "/config/notifications/" + entry.getKey(), id, context, issues, false);
             if (!tier1) continue;
             if (!Set.of("start", "end", "approval", "decision", "branch", "http", "notification").contains(type)
-                    || c.has("multiInstance") || c.has("timeoutAfter") || c.has("correctable"))
+                    || c.has("multiInstance") || c.has("perItem") || c.has("timeoutAfter") || c.has("correctable"))
                 issues.blocker("WF_TIER1_CONSTRUCT", path, id, null, "This construct requires the broader platform profile.");
             if ("approval".equals(type)) {
                 roles.add(c.path("candidateGroupRef").asString());

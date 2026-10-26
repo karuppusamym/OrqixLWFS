@@ -51,6 +51,12 @@ public final class ReleaseCompatibility {
             findings.add(new Finding("MULTI_INSTANCE", "The step '" + label(sourceNode)
                     + "' asks several people to approve; a request waiting at it cannot be moved.", active));
         }
+        if (!sourceNode.path("config").path("perItem").isMissingNode()
+                && !sourceNode.path("config").path("perItem").isNull()) {
+            // One task per list item (S88): the open item tasks belong to this release's iteration.
+            findings.add(new Finding("PER_ITEM", "The step '" + label(sourceNode)
+                    + "' opens one approval per list item; a request waiting at it cannot be moved.", active));
+        }
         if (targetNode == null) {
             findings.add(new Finding("STEP_MISSING", "The target release no longer has the step '"
                     + label(sourceNode) + "' where the request is waiting.", active));

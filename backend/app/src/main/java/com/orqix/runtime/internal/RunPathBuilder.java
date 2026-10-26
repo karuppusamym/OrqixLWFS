@@ -57,7 +57,16 @@ public final class RunPathBuilder {
     public record ScopeVisit(String scopeId, Instant startedAt, Instant endedAt, String how) {
     }
 
-    public record Visit(String nodeId, int occurrence, Instant enteredAt, Instant leftAt, String outcome) {
+    /**
+     * One time the request was at a step. For a list-driven approval (S88) every item task is its own visit and
+     * {@code itemIndex} (0-based list position) and {@code itemLabel} name the item; both are left out otherwise.
+     */
+    public record Visit(String nodeId, int occurrence, Instant enteredAt, Instant leftAt, String outcome,
+            @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL) Integer itemIndex,
+            @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL) String itemLabel) {
+        public Visit(String nodeId, int occurrence, Instant enteredAt, Instant leftAt, String outcome) {
+            this(nodeId, occurrence, enteredAt, leftAt, outcome, null, null);
+        }
     }
 
     public record Current(String nodeId, String label, String kind, String status, Instant since, String candidateGroup,
@@ -86,6 +95,8 @@ public final class RunPathBuilder {
         final Instant enteredAt;
         Instant leftAt;
         String outcome;
+        Integer itemIndex;
+        String itemLabel;
 
         MutableVisit(String nodeId, int occurrence, Instant enteredAt) {
             this.nodeId = nodeId;
@@ -98,7 +109,7 @@ public final class RunPathBuilder {
         }
 
         Visit freeze() {
-            return new Visit(nodeId, occurrence, enteredAt, leftAt, outcome);
+            return new Visit(nodeId, occurrence, enteredAt, leftAt, outcome, itemIndex, itemLabel);
         }
     }
 
@@ -149,6 +160,12 @@ public final class RunPathBuilder {
                 case "TASK_CREATED", "WAIT_STARTED", "SIGNAL_WAIT_STARTED" -> {
                     if (node != null) {
                         open(visits, node, at);
+                        if (e.data().path("itemIndex").isNumber()) {
+                            // One visit per item of a list-driven approval (S88).
+                            MutableVisit v = latestOpen(visits, node);
+                            v.itemIndex = e.data().path("itemIndex").asInt();
+                            v.itemLabel = e.data().path("itemLabel").asString(null);
+                        }
                     }
                 }
                 case "SIGNAL_RECEIVED" -> {
@@ -191,8 +208,24 @@ public final class RunPathBuilder {
                 }
                 case "TASK_DECIDED" -> {
                     if (node != null) {
-                        close(visits, node, at, "reject".equals(e.data().path("action").asString(null)) ? "rejected"
-                                : "approved");
+                        String outcome = "reject".equals(e.data().path("action").asString(null)) ? "rejected" : "approved";
+                        MutableVisit item = e.data().path("itemIndex").isNumber()
+                                ? openItem(visits, node, e.data().path("itemIndex").asInt()) : null;
+                        if (item != null) {
+                            item.leftAt = at;
+                            item.outcome = outcome;
+                        } else {
+                            close(visits, node, at, outcome);
+                        }
+                        if (e.data().path("otherApproversCancelled").asInt(0) > 0) {
+                            // The first rejection of several approvers or list items cancels the other open tasks.
+                            for (MutableVisit v : visits.getOrDefault(node, List.of())) {
+                                if (v.isOpen()) {
+                                    v.leftAt = at;
+                                    v.outcome = "cancelled";
+                                }
+                            }
+                        }
                     }
                 }
                 case "TASK_TIMED_OUT" -> {
@@ -434,6 +467,18 @@ public final class RunPathBuilder {
         for (int i = list.size() - 1; i >= 0; i--) {
             if (list.get(i).isOpen()) {
                 return list.get(i);
+            }
+        }
+        return null;
+    }
+
+    /** The open visit of one item of a list-driven approval (S88), or null. */
+    private static MutableVisit openItem(Map<String, List<MutableVisit>> visits, String node, int itemIndex) {
+        List<MutableVisit> list = visits.getOrDefault(node, List.of());
+        for (int i = list.size() - 1; i >= 0; i--) {
+            MutableVisit v = list.get(i);
+            if (v.isOpen() && v.itemIndex != null && v.itemIndex == itemIndex) {
+                return v;
             }
         }
         return null;

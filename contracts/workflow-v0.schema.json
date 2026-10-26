@@ -1005,6 +1005,27 @@
               ],
               "additionalProperties": false
             },
+            "perItem": {
+              "description": "One approval task per item of a request list (docs/build/S88): itemsRef names a required, unconditional request list of at most 20 items; each task shows its item (the value, or the itemLabel column of a list of rows). All items must be approved; the first rejection rejects the step and cancels the open items. Extra outputs: approvedCount and itemDecisions (approved, rejected or cancelled per item, in list order). Each item needs a different person unless allowSamePerson is true. Not combined with several approvers, a time limit, escalation, correctable fields or (without allowSamePerson) dispatch.",
+              "type": "object",
+              "properties": {
+                "itemsRef": {
+                  "type": "string",
+                  "pattern": "^/input/[a-z][A-Za-z0-9]{0,63}$"
+                },
+                "itemLabel": {
+                  "$ref": "#/$defs/fieldKey"
+                },
+                "allowSamePerson": {
+                  "description": "Present (true) only when one person may decide several items; leave it out for one person per item.",
+                  "const": true
+                }
+              },
+              "required": [
+                "itemsRef"
+              ],
+              "additionalProperties": false
+            },
             "correctable": {
               "description": "Request fields the person holding this task may correct before deciding (docs/build/S42). Scalar request fields only. Publishing proves that no earlier step has used them, so a correction can never contradict work that already happened.",
               "type": "array",

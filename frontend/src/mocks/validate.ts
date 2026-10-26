@@ -140,6 +140,7 @@ export function validateDefinition(def: Definition, ctx: ValidationContext): Iss
         const group = c.candidateGroupRef as string | undefined
         if (!group) issues.push(issue('WF_SCHEMA_INVALID', 'blocker', `"${n.label}" needs an approver group.`, nodePath(n, '/config/candidateGroupRef'), n.id))
         else if (!ctx.groups.includes(group)) issues.push(issue('WF_GROUP_UNBOUND', 'blocker', `The group "${group}" does not exist in this workspace.`, nodePath(n, '/config/candidateGroupRef'), n.id))
+        checkPerItem(def, n, issues)
         break
       }
       case 'parallelSplit':
@@ -441,4 +442,30 @@ function checkCondition(def: Definition, at: WorkflowNode, c: Condition, path: s
   if (typeof c.value === 'string' && !/^[A-Za-z0-9 _.,:/-]{0,100}$/.test(c.value)) {
     issues.push(issue('WF_LITERAL_UNSAFE', 'blocker', 'The value contains characters that are not allowed.', `${path}/value`, at.id, transitionId))
   }
+}
+
+/** List-driven approval (docs/build/S88), the same rules as the compiler's PerItemRules. */
+function checkPerItem(def: Definition, n: WorkflowNode, issues: Issue[]): void {
+  const perItem = n.config.perItem as { itemsRef?: string; itemLabel?: string; allowSamePerson?: boolean } | undefined
+  if (!perItem) return
+  const index = def.nodes.findIndex((x) => x.id === n.id)
+  const path = `/nodes/${index}/config/perItem`
+  const key = (perItem.itemsRef ?? '').replace(/^\/input\//, '')
+  const list = def.inputSchema.properties[key]
+  const ui = def.inputUi as { visibleWhen?: Record<string, unknown>; requiredWhen?: Record<string, unknown>; sections?: Array<{ fields?: string[]; visibleWhen?: unknown }> } | undefined
+  const conditional = !!ui?.visibleWhen?.[key] || !!ui?.requiredWhen?.[key] || !!ui?.sections?.some((s) => s.visibleWhen && s.fields?.includes(key))
+  if (!list || list.type !== 'array') {
+    issues.push(issue('WF_PER_ITEM_LIST', 'blocker', `"${n.label}" opens one task per item, so choose a list from the request form.`, `${path}/itemsRef`, n.id))
+  } else if (!(def.inputSchema.required ?? []).includes(key) || conditional) {
+    issues.push(issue('WF_PER_ITEM_LIST', 'blocker', `"${list.title ?? key}" must be required and always asked for, so the step never meets an empty list.`, `${path}/itemsRef`, n.id))
+  } else {
+    if (typeof list.maxItems !== 'number' || list.maxItems > 20) issues.push(issue('WF_PER_ITEM_BOUND', 'blocker', `"${list.title ?? key}" may hold more than 20 items. Set its maximum to 20 or fewer.`, `${path}/itemsRef`, n.id))
+    const rows = list.items?.type === 'object'
+    const column = rows && perItem.itemLabel ? list.items?.properties?.[perItem.itemLabel] : undefined
+    if (!rows && perItem.itemLabel) issues.push(issue('WF_PER_ITEM_LABEL', 'blocker', `"${list.title ?? key}" is a list of single values, so each task shows the value itself. Remove the item label.`, `${path}/itemLabel`, n.id))
+    if (rows && (!column || column.type === 'boolean' || column.format === 'attachment')) issues.push(issue('WF_PER_ITEM_LABEL', 'blocker', `Choose the column of "${list.title ?? key}" that names each item on its task.`, `${path}/itemLabel`, n.id))
+  }
+  const c = n.config
+  const combined = [c.multiInstance && 'a number of approvers', c.timeoutAfter && 'a time limit', c.escalation && 'reminders or escalation', Array.isArray(c.correctable) && c.correctable.length > 0 && 'correction of request fields'].filter(Boolean)
+  for (const setting of combined) issues.push(issue('WF_PER_ITEM_UNSUPPORTED', 'blocker', `"${n.label}" opens one task per list item, so it cannot also have ${setting}.`, path, n.id))
 }

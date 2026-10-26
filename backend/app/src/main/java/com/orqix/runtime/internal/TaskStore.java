@@ -48,9 +48,21 @@ public class TaskStore {
     @Transactional(propagation = Propagation.MANDATORY)
     public void insert(String taskId, UUID workspaceId, UUID runId, String nodeId, String label, String candidateGroup,
             Instant dueAt, Instant createdAt) {
+        insert(taskId, workspaceId, runId, nodeId, label, candidateGroup, dueAt, createdAt, null, null, null);
+    }
+
+    /**
+     * As {@link #insert(String, UUID, UUID, String, String, String, Instant, Instant)}, for a task that decides one
+     * item of a list-driven approval (S88): {@code itemIndex} is its 0-based list position, {@code itemLabel} what it
+     * shows for the item and {@code itemScope} the engine execution holding all item tasks of this visit of the step (all null for every other task).
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void insert(String taskId, UUID workspaceId, UUID runId, String nodeId, String label, String candidateGroup,
+            Instant dueAt, Instant createdAt, Integer itemIndex, String itemLabel, String itemScope) {
         int inserted = jdbc.sql("""
                 INSERT INTO task_context (engine_task_id, workspace_id, run_id, node_id, label, candidate_group_key,
-                                          initiator_subject_id, self_approval_allowed, status, version, due_at, created_at, required_skills, separate_from)
+                                          initiator_subject_id, self_approval_allowed, status, version, due_at, created_at, required_skills, separate_from,
+                                          item_index, item_label, item_scope)
                 SELECT :task, run.workspace_id, run.id, :node, :label, :grp, run.initiator_subject_id,
                        (rel.definition -> 'security' ->> 'selfApproval' = 'allow' AND ws.allow_self_approval_workflows),
                        'open', 1, :due, :created,
@@ -61,7 +73,11 @@ public class TaskStore {
                        -- Several approvers (S51) are kept apart from each other: whoever decided one task of this
                        -- step cannot claim or decide another, through the same separation machinery.
                        || COALESCE((SELECT jsonb_build_array(n->>'id') FROM jsonb_array_elements(rel.definition->'nodes') n
-                           WHERE n->>'id'=:node AND n->'config'->'multiInstance' IS NOT NULL),'[]'::jsonb)
+                           WHERE n->>'id'=:node AND (n->'config'->'multiInstance' IS NOT NULL
+                               -- A list-driven approval (S88) keeps the same rule unless one person may decide several items.
+                               OR (n->'config'->'perItem' IS NOT NULL
+                                   AND COALESCE((n->'config'->'perItem'->>'allowSamePerson')::boolean, false) = false))),'[]'::jsonb),
+                       CAST(:item AS integer), CAST(:itemLabel AS text), CAST(:itemScope AS text)
                 FROM workflow_run run
                 JOIN workflow_release rel ON rel.workspace_id = run.workspace_id AND rel.id = run.release_id
                 JOIN workspace ws ON ws.id = run.workspace_id
@@ -69,7 +85,7 @@ public class TaskStore {
                 """)
                 .param("task", taskId).param("node", nodeId).param("label", label).param("grp", candidateGroup)
                 .param("due", Sql.ts(dueAt)).param("created", Sql.ts(createdAt)).param("ws", workspaceId)
-                .param("run", runId)
+                .param("run", runId).param("item", itemIndex).param("itemLabel", itemLabel).param("itemScope", itemScope)
                 .update();
         if (inserted != 1) {
             throw new IllegalStateException("Run " + runId + " not found for task " + taskId);
@@ -85,6 +101,38 @@ public class TaskStore {
                 .param("ws",workspaceId).param("task",taskId)
                 .param("deadline",Sql.ts(dueAt)).param("run",runId).param("node",nodeId)
                 .param("due",Sql.ts(createdAt.plus(reminders.after()))).update();
+    }
+
+    /** The item a task of a list-driven approval decides (S88). */
+    public record Item(int index, String label, String scope) {
+    }
+
+    /** One item of one visit of a list-driven approval with its result so far ({@code action} null until decided). */
+    public record ItemState(int index, String label, String status, String action) {
+    }
+
+    /** @return the item of this task, or empty for a task that is not one item of a list-driven approval */
+    @Transactional(readOnly = true)
+    public Optional<Item> item(UUID workspaceId, String taskId) {
+        return jdbc.sql("SELECT item_index, item_label, item_scope FROM task_context WHERE workspace_id=:ws AND engine_task_id=:task AND item_index IS NOT NULL")
+                .param("ws", workspaceId).param("task", taskId)
+                .query((rs, n) -> new Item(rs.getInt("item_index"), rs.getString("item_label"), rs.getString("item_scope")))
+                .optional();
+    }
+
+    /** Every item of one visit of a list-driven approval, in list order, with the decision taken on it so far. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public List<ItemState> items(UUID workspaceId, String itemScope) {
+        return jdbc.sql("""
+                SELECT t.item_index, t.item_label, t.status,
+                       (SELECT d.action FROM task_decision d WHERE d.workspace_id = t.workspace_id
+                           AND d.engine_task_id = t.engine_task_id) AS action
+                FROM task_context t WHERE t.workspace_id = :ws AND t.item_scope = :scope ORDER BY t.item_index
+                """)
+                .param("ws", workspaceId).param("scope", itemScope)
+                .query((rs, n) -> new ItemState(rs.getInt("item_index"), rs.getString("item_label"), rs.getString("status"),
+                        rs.getString("action")))
+                .list();
     }
 
     /** True when {@code subject} decided one of the earlier steps this task must be kept apart from (S41). */

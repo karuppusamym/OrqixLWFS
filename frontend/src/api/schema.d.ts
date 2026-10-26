@@ -5944,6 +5944,10 @@ export interface components {
             nodeId: string;
             /** @description Which time the request was at this step (repeats in loops). */
             occurrence: number;
+            /** @description List-driven approval only (S88): the 0-based list position of the item this task decided. Left out otherwise. */
+            itemIndex?: number;
+            /** @description List-driven approval only (S88): what the task showed for its item. */
+            itemLabel?: string;
             enteredAt: components["schemas"]["Timestamp"];
             leftAt: components["schemas"]["Timestamp"] | null;
             /** @description Null while the request is still at the step. */
@@ -6239,7 +6243,7 @@ export interface components {
         };
         MigrationFinding: {
             /** @enum {string} */
-            code: "STEP_COUNT" | "STEP_UNKNOWN" | "STEP_KIND" | "MULTI_INSTANCE" | "STEP_MISSING" | "STEP_CHANGED" | "HISTORY_CHANGED" | "PARALLEL_REGION" | "STAGES_CHANGED" | "SUBPROCESSES" | "INPUT_INVALID";
+            code: "STEP_COUNT" | "STEP_UNKNOWN" | "STEP_KIND" | "MULTI_INSTANCE" | "PER_ITEM" | "STEP_MISSING" | "STEP_CHANGED" | "HISTORY_CHANGED" | "PARALLEL_REGION" | "STAGES_CHANGED" | "SUBPROCESSES" | "INPUT_INVALID";
             message: string;
             nodeId?: string | null;
         };
@@ -7056,6 +7060,16 @@ export interface components {
                 multiInstance?: {
                     approvers: number;
                 };
+                /** @description One approval task per item of a request list (docs/build/S88): itemsRef names a required, unconditional request list of at most 20 items; each task shows its item (the value, or the itemLabel column of a list of rows). All items must be approved; the first rejection rejects the step and cancels the open items. Extra outputs: approvedCount and itemDecisions (approved, rejected or cancelled per item, in list order). Each item needs a different person unless allowSamePerson is true. Not combined with several approvers, a time limit, escalation, correctable fields or (without allowSamePerson) dispatch. */
+                perItem?: {
+                    itemsRef: string;
+                    itemLabel?: components["schemas"]["fieldKey"];
+                    /**
+                     * @description Present (true) only when one person may decide several items; leave it out for one person per item.
+                     * @constant
+                     */
+                    allowSamePerson?: true;
+                };
                 /** @description Request fields the person holding this task may correct before deciding (docs/build/S42). Scalar request fields only. Publishing proves that no earlier step has used them, so a correction can never contradict work that already happened. */
                 correctable?: components["schemas"]["fieldKey"][];
                 /** @description Separation of duties (docs/build/S41): ids of earlier approval steps that every path to this step passes through. Whoever decided one of them in the same request cannot claim, decide or be assigned this step. */
@@ -7667,6 +7681,16 @@ export interface components {
                         /** @description Several different people must each approve (docs/build/S51): the step creates this many parallel tasks for its candidate group and continues as approved only when all are approved; the first rejection rejects the step and cancels the others. Not combined with a time limit, escalation or correctable fields. */
                         multiInstance?: {
                             approvers: number;
+                        };
+                        /** @description One approval task per item of a request list (docs/build/S88): itemsRef names a required, unconditional request list of at most 20 items; each task shows its item (the value, or the itemLabel column of a list of rows). All items must be approved; the first rejection rejects the step and cancels the open items. Extra outputs: approvedCount and itemDecisions (approved, rejected or cancelled per item, in list order). Each item needs a different person unless allowSamePerson is true. Not combined with several approvers, a time limit, escalation, correctable fields or (without allowSamePerson) dispatch. */
+                        perItem?: {
+                            itemsRef: string;
+                            itemLabel?: components["schemas"]["fieldKey"];
+                            /**
+                             * @description Present (true) only when one person may decide several items; leave it out for one person per item.
+                             * @constant
+                             */
+                            allowSamePerson?: true;
                         };
                         /** @description Request fields the person holding this task may correct before deciding (docs/build/S42). Scalar request fields only. Publishing proves that no earlier step has used them, so a correction can never contradict work that already happened. */
                         correctable?: components["schemas"]["fieldKey"][];

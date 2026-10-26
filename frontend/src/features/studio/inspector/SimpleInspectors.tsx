@@ -11,6 +11,7 @@ import { Advanced, CommitInput, CommitNumber, CommitTextarea, DurationPreview, I
 import { StageEmailFields, Tier1Settings } from './StageEmailFields'
 import { WorkManagementFields } from './WorkManagementFields'
 import { ApprovalViewPicker } from './ApprovalViewPicker'
+import { ListApprovalFields } from './ListApprovalFields'
 
 /** Rename a step ID in Advanced: IDs are stable references, so the change is validated and applied everywhere. */
 export function StepIdField({ node }: { node: WorkflowNode }) {
@@ -94,10 +95,11 @@ export function ApprovalInspector({ node }: { node: WorkflowNode }) {
               value={cfg<{ approvers: number }>(node, 'multiInstance')?.approvers}
               disabled={readOnly}
               aria-describedby={ids.describedBy}
-              onCommit={(v) => store.getState().updateNodeConfig(node.id, { multiInstance: v === undefined || v < 2 ? undefined : { approvers: Math.min(5, v) } })}
+              onCommit={(v) => store.getState().updateNodeConfig(node.id, v === undefined || v < 2 ? { multiInstance: undefined } : { multiInstance: { approvers: Math.min(5, v) }, perItem: undefined })}
             />
           )}
         </FormField>
+        <ListApprovalFields node={node} />
         <div className="flex items-start gap-3">
           <Checkbox id={`approval-reason-${node.id}`} checked disabled aria-describedby={`approval-reason-${node.id}-help`} />
           <div>

@@ -32,6 +32,31 @@ public class OrqixRoute {
         return "rejected".equals(decision(execution, approvalNodeId));
     }
 
+    /**
+     * Item positions of a list-driven approval (S88): {@code 0..n-1} for the {@code n} items of the request list the
+     * step names in its {@code orqix:perItem} extension. The compiler guarantees a required, unconditional list of at
+     * most 20 items, and every list field has at least one item; should the stored list still be missing, empty or
+     * longer, the step fails (the request needs attention) instead of approving nothing or opening unbounded tasks.
+     */
+    public java.util.List<Integer> itemPositions(DelegateExecution execution, String approvalNodeId) {
+        FlowElement element = OrqixModel.flowElement(execution.getProcessDefinitionId(), approvalNodeId);
+        String itemsRef = OrqixModel.attribute(OrqixModel.requireExtension(element, "perItem"), "itemsRef");
+        tools.jackson.databind.JsonNode list = ProcessData.resolve(execution, json, itemsRef);
+        int size = list != null && list.isArray() ? list.size() : 0;
+        if (size < 1 || size > MAX_ITEMS) {
+            throw new IllegalStateException("WF_PER_ITEM_LIST: " + approvalNodeId + " needs 1 to " + MAX_ITEMS
+                    + " items in " + itemsRef + " but the request has " + size);
+        }
+        java.util.List<Integer> positions = new java.util.ArrayList<>(size);
+        for (int i = 0; i < size; i++) {
+            positions.add(i);
+        }
+        return positions;
+    }
+
+    /** Most tasks a list-driven approval opens (the compiler's bound, S88). */
+    static final int MAX_ITEMS = 20;
+
     public boolean condition(DelegateExecution execution, String transitionId) {
         FlowElement element = OrqixModel.flowElement(execution.getProcessDefinitionId(), transitionId);
         if (!(element instanceof SequenceFlow)) {

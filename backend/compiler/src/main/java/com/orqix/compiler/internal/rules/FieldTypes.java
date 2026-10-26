@@ -213,10 +213,30 @@ public final class FieldTypes {
         return new Resolved(new FieldType(field.type(), null, !field.required(), null, null), m, key);
     }
 
+    /** Extra outputs of a list-driven approval (S88). */
+    public static final List<String> PER_ITEM_OUTPUTS = List.of("approvedCount", "itemDecisions");
+    /** Values of {@code itemDecisions}: one per list item, in list order. */
+    public static final Set<String> ITEM_DECISIONS = Set.of("approved", "rejected", "cancelled");
+
     private Resolution approvalOutput(Node.Approval a, String key) {
+        if (a.listDriven() && PER_ITEM_OUTPUTS.contains(key)) {
+            FormSchema.Field list = definition.inputSchema().properties().get(a.perItem().listKey());
+            int max = list == null || list.maxItems() == null ? Node.PerItem.MAX_ITEMS : list.maxItems();
+            if (key.equals("approvedCount")) {
+                return new Resolved(new FieldType(FieldKind.INTEGER, null, false, BigDecimal.ZERO,
+                        BigDecimal.valueOf(max)), a, key);
+            }
+            FieldType item = new FieldType(FieldKind.STRING, Collections.unmodifiableSet(new TreeSet<>(ITEM_DECISIONS)),
+                    false, null, null);
+            return new Resolved(new FieldType(FieldKind.ARRAY, null, false, null, null, item), a, key);
+        }
         if (!APPROVAL_OUTPUTS.contains(key)) {
+            List<String> produced = new ArrayList<>(APPROVAL_OUTPUTS);
+            if (a.listDriven()) {
+                produced.addAll(PER_ITEM_OUTPUTS);
+            }
             return new Unknown("\"" + a.label() + "\" does not produce \"" + key + "\". It produces: "
-                    + String.join(", ", APPROVAL_OUTPUTS) + ".");
+                    + String.join(", ", produced) + ".");
         }
         boolean timeout = a.timeoutAfter() != null;
         if (key.equals("decision")) {

@@ -199,12 +199,18 @@ public class RuntimeProjectionListener implements FlowableEventListener {
                     return deadline;
                 })
                 .orElse(null);
-        String label = element.getName() == null ? element.getId() : element.getName();
+        String stepLabel = element.getName() == null ? element.getId() : element.getName();
         // The timer of an approval time limit was created just before the task (same command): S12 section 3.
         Object timesOut = Context.getCommandContext().getAttribute(TIMEOUT_ATTRIBUTE + task.getProcessInstanceId() + "."
                 + element.getId());
 
-        tasks.insert(task.getId(), workspaceId, runId, element.getId(), label, group, dueAt, now);
+        // A list-driven approval (S88): this task decides one item, which its label names.
+        ListItem item = OrqixModel.extension(element, "perItem").map(perItem -> listItem(task, perItem)).orElse(null);
+        String label = item == null ? stepLabel : stepLabel + ": " + item.label() + " (item " + (item.index() + 1)
+                + " of " + item.count() + ")";
+        tasks.insert(task.getId(), workspaceId, runId, element.getId(), label, group, dueAt, now,
+                item == null ? null : item.index(), item == null ? null : item.label(),
+                item == null ? null : item.scope());
         runs.mutate(workspaceId, runId, m -> {
             ObjectNode step = json.object();
             step.put("nodeId", element.getId());
@@ -219,6 +225,10 @@ public class RuntimeProjectionListener implements FlowableEventListener {
                 step.put("dueAt", dueAt.toString());
             }
             step.put("taskId", task.getId());
+            if (item != null) {
+                step.put("itemIndex", item.index());
+                step.put("itemLabel", item.label());
+            }
             if (timesOut instanceof Instant at) {
                 step.put("timesOutAt", at.toString());
             }
@@ -229,8 +239,45 @@ public class RuntimeProjectionListener implements FlowableEventListener {
         data.put("label", label);
         data.put("candidateGroup", group);
         data.put("dueAt", dueAt == null ? null : dueAt.toString());
+        if (item != null) {
+            data.put("itemIndex", item.index());
+            data.put("itemLabel", item.label());
+            data.put("itemCount", item.count());
+        }
         events.append(workspaceId, runId, "TASK_CREATED", element.getId(), null, data);
         dispatch(task, element.getId(), workspaceId, runId);
+    }
+
+    /** The list item of a task of a list-driven approval (S88); {@code scope} groups the item tasks of one visit. */
+    private record ListItem(int index, int count, String label, String scope) {
+    }
+
+    /** Longest item text a task shows (the rest is cut with an ellipsis). */
+    private static final int ITEM_LABEL_MAX = 120;
+
+    private ListItem listItem(TaskEntity task, ExtensionElement perItem) {
+        Object position = task.getVariable(ProcessData.ITEM_VARIABLE);
+        if (!(position instanceof Number number)) {
+            throw new IllegalStateException("List approval task " + task.getId() + " has no item position");
+        }
+        int index = number.intValue();
+        JsonNode list = ProcessData.resolve(task, json, OrqixModel.attribute(perItem, "itemsRef"));
+        JsonNode value = list.path(index);
+        String column = OrqixModel.attribute(perItem, "itemLabel");
+        if (column != null) {
+            value = value.path(column);
+        }
+        String text = value.isMissingNode() || value.isNull() ? "" : value.isNumber()
+                ? value.decimalValue().stripTrailingZeros().toPlainString() : value.asString("");
+        text = text.strip();
+        if (text.isEmpty()) {
+            text = "Item " + (index + 1);
+        } else if (text.length() > ITEM_LABEL_MAX) {
+            text = text.substring(0, ITEM_LABEL_MAX - 1) + "…";
+        }
+        ExecutionEntity execution = CommandContextUtil.getExecutionEntityManager().findById(task.getExecutionId());
+        String scope = execution == null || execution.getParentId() == null ? task.getExecutionId() : execution.getParentId();
+        return new ListItem(index, list.size(), text, scope);
     }
 
     /** Optional routing of the new task to one eligible person when the approval step declares a dispatch policy (S39). */

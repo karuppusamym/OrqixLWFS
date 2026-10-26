@@ -31,6 +31,8 @@ public final class BpmnGenerator {
 
     /** Suffix of the helper flow from an approval task to its outcome gateway. */
     public static final String APPROVAL_OUT = "__out";
+    /** Task-local variable holding the 0-based position of the list item of a list-driven approval task (S88). */
+    public static final String ITEM_VARIABLE = "orqix_item";
     /** Suffix of the outcome gateway generated after an approval task. */
     public static final String APPROVAL_ROUTE = "__route";
     /** Suffix of the interrupting timer boundary event generated for an approval with a time limit. */
@@ -227,8 +229,26 @@ public final class BpmnGenerator {
                 if (!a.requiredSkills().isEmpty()) x.attr("requiredSkills", String.join(",", a.requiredSkills()));
                 if (a.calendar() != null) x.attr("calendar", a.calendar().toString());
                 if (a.escalation() != null) x.attr("escalation", a.escalation().toString());
+                if (a.listDriven()) {
+                    x.leaf("orqix", "perItem", ORQIX_NS).attr("itemsRef", a.perItem().itemsRef());
+                    if (a.perItem().itemLabel() != null) x.attr("itemLabel", a.perItem().itemLabel());
+                    if (a.perItem().allowSamePerson()) x.attr("allowSamePerson", "true");
+                }
                 x.close();
-                if (a.multiInstance()) {
+                if (a.listDriven()) {
+                    // One task per list item (S88): Flowable iterates the item positions of the request list; the
+                    // step ends when every item is approved or at the first rejection, like several approvers (S51).
+                    x.open("", "multiInstanceLoopCharacteristics", BPMN_NS).attr("isSequential", "false")
+                            .attr("flowable", FLOWABLE_NS, "collection", "${orqixRoute.itemPositions(execution, '"
+                                    + a.id() + "')}")
+                            .attr("flowable", FLOWABLE_NS, "elementVariable", ITEM_VARIABLE);
+                    x.openInline("", "completionCondition", BPMN_NS)
+                            .attr("xsi", XSI_NS, "type", "tFormalExpression")
+                            .cdata("${nrOfCompletedInstances == nrOfInstances || orqixRoute.rejected(execution, '"
+                                    + a.id() + "')}")
+                            .closeInline();
+                    x.close();
+                } else if (a.multiInstance()) {
                     // One task per required approver; the step ends when all approved or at the first rejection (S51).
                     x.open("", "multiInstanceLoopCharacteristics", BPMN_NS).attr("isSequential", "false");
                     x.inline("", "loopCardinality", BPMN_NS, null, a.approvers().toString(), false);

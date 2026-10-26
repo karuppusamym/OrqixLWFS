@@ -267,6 +267,23 @@ public class TaskService {
         tasks.end(workspaceId, taskId, "completed", now);
         // A rejection ends a step with several approvers at once: the other approvers' open tasks are cancelled (S51).
         int cancelledSiblings = reject ? tasks.cancelOpenForNode(workspaceId, task.runId(), task.nodeId(), now) : 0;
+        // A list-driven approval (S88): once no item is open (all approved, or this rejection cancelled the rest), the
+        // step's output also carries the number of approved items and the decision of every item in list order.
+        TaskStore.Item item = tasks.item(workspaceId, taskId).orElse(null);
+        if (item != null) {
+            List<TaskStore.ItemState> items = tasks.items(workspaceId, item.scope());
+            if (items.stream().noneMatch(i -> "open".equals(i.status()))) {
+                var decisions = output.putArray("itemDecisions");
+                int approvedCount = 0;
+                for (TaskStore.ItemState i : items) {
+                    String value = "cancelled".equals(i.status()) ? "cancelled"
+                            : "reject".equals(i.action()) ? "rejected" : "approved";
+                    approvedCount += "approved".equals(value) ? 1 : 0;
+                    decisions.add(value);
+                }
+                output.put("approvedCount", approvedCount);
+            }
+        }
         runs.mutate(workspaceId, task.runId(), m -> {
             if (reject) {
                 m.removeStep(task.nodeId());
@@ -282,6 +299,10 @@ public class TaskService {
         decided.put("policyFlags", flags);
         if (cancelledSiblings > 0) {
             decided.put("otherApproversCancelled", cancelledSiblings);
+        }
+        if (item != null) {
+            decided.put("itemIndex", item.index());
+            decided.put("itemLabel", item.label());
         }
         events.append(workspaceId, task.runId(), "TASK_DECIDED", task.nodeId(), caller.subjectId(), decided);
         try {

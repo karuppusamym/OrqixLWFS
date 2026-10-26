@@ -36,6 +36,12 @@ public final class ProcessData {
         return UUID.fromString(required(scope, INITIATOR));
     }
 
+    /**
+     * Instance-local variable of a list-driven approval task (S88): the 0-based position of its list item. Must equal
+     * the element variable the compiler writes ({@code BpmnGenerator.ITEM_VARIABLE}).
+     */
+    public static final String ITEM_VARIABLE = "orqix_item";
+
     public static String stepVariable(String nodeId) {
         return STEP_PREFIX + nodeId;
     }

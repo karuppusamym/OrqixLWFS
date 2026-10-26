@@ -318,6 +318,24 @@ final class SimulationRun {
             sentence = Text.quote(n.label()) + " goes to " + n.approvers() + " different people in " + groupName
                     + ", and all of them must approve.";
         }
+        int items = 0;
+        int rejectedItem = 0;
+        if (n.listDriven()) {
+            // One task per list item (S88); the test request's list decides how many.
+            Object list = resolve(n.perItem().itemsRef());
+            items = list instanceof List<?> l ? l.size() : 0;
+            d.put("items", items);
+            if (items == 0) {
+                String message = "The list " + Text.quote(n.perItem().listKey()) + " of the test request is empty, so "
+                        + Text.quote(n.label()) + " has no item to approve. A real request always has at least one item.";
+                stallWith(n, message, d, "TEST_LIST_EMPTY", message);
+                return null;
+            }
+            sentence = Text.quote(n.label()) + " opens one task for each of the " + items + " items in " + groupName
+                    + (n.perItem().allowSamePerson() ? "; one person may decide several items"
+                    : "; each item needs a different person") + ", and every item must be approved.";
+            rejectedItem = Math.max(1, Math.min(items, s.path("rejectedItem").asInt(1)));
+        }
         String note = null;
         if ("timeout".equals(choice) && next(n, Route.TIMED_OUT) == null) {
             note = "This step has no time limit, so the test treats it as approved.";
@@ -331,9 +349,21 @@ final class SimulationRun {
                     out.put("reason", reason);
                 }
                 t = next(n, Route.REJECTED);
-                sentence += (n.multiInstance() ? " In this test the first approver rejects it, so the others are"
-                        + " cancelled" : " In this test they reject it") + (reason == null ? "." : " with the reason "
-                        + Text.quote(reason) + ".");
+                if (n.listDriven()) {
+                    List<String> decisions = new ArrayList<>();
+                    for (int i = 1; i <= items; i++) {
+                        decisions.add(i < rejectedItem ? "approved" : i == rejectedItem ? "rejected" : "cancelled");
+                    }
+                    out.put("approvedCount", rejectedItem - 1);
+                    out.put("itemDecisions", decisions);
+                    sentence += " In this test item " + rejectedItem + " is rejected" + (reason == null ? ""
+                            : " with the reason " + Text.quote(reason)) + (items > rejectedItem
+                            ? ", so the open items are cancelled." : ".");
+                } else {
+                    sentence += (n.multiInstance() ? " In this test the first approver rejects it, so the others are"
+                            + " cancelled" : " In this test they reject it") + (reason == null ? "." : " with the reason "
+                            + Text.quote(reason) + ".");
+                }
             }
             case "timeout" -> {
                 out.put("decision", "timedOut");
@@ -346,8 +376,14 @@ final class SimulationRun {
             default -> {
                 out.put("decision", "approved");
                 t = next(n, Route.APPROVED);
-                sentence += n.multiInstance() ? " In this test all " + n.approvers() + " approve."
-                        : " In this test they approve.";
+                if (n.listDriven()) {
+                    out.put("approvedCount", items);
+                    out.put("itemDecisions", java.util.Collections.nCopies(items, "approved"));
+                    sentence += " In this test all " + items + " items are approved.";
+                } else {
+                    sentence += n.multiInstance() ? " In this test all " + n.approvers() + " approve."
+                            : " In this test they approve.";
+                }
             }
         }
         if (!"timedOut".equals(out.get("decision"))) {

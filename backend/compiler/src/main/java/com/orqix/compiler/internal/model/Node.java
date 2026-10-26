@@ -38,15 +38,20 @@ public sealed interface Node {
                     Integer dueAfterHours, String timeoutAfter, java.util.List<String> requiredSkills,
                     tools.jackson.databind.JsonNode calendar, tools.jackson.databind.JsonNode escalation,
                     java.util.List<String> separateFrom, java.util.List<String> correctable,
-                    Integer approvers, Integer dueAfterMinutes) implements Node {
+                    Integer approvers, Integer dueAfterMinutes, PerItem perItem) implements Node {
         public Approval(int index, String id, String label, String candidateGroupRef, boolean rejectReasonRequired,
                 Integer dueAfterHours, String timeoutAfter) {
-            this(index,id,label,candidateGroupRef,rejectReasonRequired,dueAfterHours,timeoutAfter,java.util.List.of(),null,null,java.util.List.of(),java.util.List.of(),null,null);
+            this(index,id,label,candidateGroupRef,rejectReasonRequired,dueAfterHours,timeoutAfter,java.util.List.of(),null,null,java.util.List.of(),java.util.List.of(),null,null,null);
         }
 
         /** @return true when several different people must each approve (S51); null {@code approvers} means one */
         public boolean multiInstance() {
             return approvers != null && approvers > 1;
+        }
+
+        /** @return true when the step opens one task per item of a request list (S88) */
+        public boolean listDriven() {
+            return perItem != null;
         }
         @Override
         public NodeKind kind() {
@@ -223,6 +228,22 @@ public sealed interface Node {
     record Repeat(int maxIterations, String untilOutcome) { }
 
     record ForEach(String itemsRef, String itemInput, int maxItems, boolean parallel) { }
+
+    /**
+     * List-driven approval (S88, {@code config.perItem}): one task per item of the request list {@code itemsRef}.
+     * {@code itemLabel} is the column of a list of rows shown on each task (null for a list of single values, whose
+     * value is shown). {@code allowSamePerson} lets one person decide several items; by default each item needs a
+     * different person (the S51 rule).
+     */
+    record PerItem(String itemsRef, String itemLabel, boolean allowSamePerson) {
+        /** Most items a list-driven approval may open tasks for. */
+        public static final int MAX_ITEMS = 20;
+
+        /** @return the request field key of the list */
+        public String listKey() {
+            return itemsRef.startsWith("/input/") ? itemsRef.substring("/input/".length()) : itemsRef;
+        }
+    }
 
     /**
      * Wait for a named message from outside (S16). {@code correlationField} is a field reference whose value identifies

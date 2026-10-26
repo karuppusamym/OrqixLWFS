@@ -145,6 +145,34 @@ PostgreSQL: include it in the database sizing and backup plan. Removing a file d
 
 **Upgrades.** Run the new image's migration job before rolling out pods. Migrations are additive (expand/contract) so old and new pods can overlap during a rolling update. Rehearse Flowable engine schema upgrades on a restored copy first.
 
+## 8b. Scaling and capacity
+
+Evidence: [S92 scalability qualification](build/S92-scalability-qualification.md). Everything below about throughput was **measured on one shared laptop** and is relative guidance, not a production capacity statement.
+
+**Replicas.** Every replica is identical: it serves the UI and API and runs background jobs. Run **at least two replicas for availability**. Add more for throughput only when PostgreSQL has headroom (CPU below about 60 % at peak) and load is spread over several workspaces: request starts within one workspace are serialized by the gapless `ORQ-n` counter row (S92 F1), so more replicas do not start requests of one workspace faster. On the test machine the database saturated before two 1.5-CPU replicas did.
+
+**No sticky sessions.** Sessions live in PostgreSQL (Spring Session JDBC); any replica serves any request, including the login callback. Pass `Host`/`X-Forwarded-Host` and `X-Forwarded-Proto` from the load balancer; do not let it send an internal `X-Forwarded-Port` (it ends up in the OAuth redirect URI). A balancer must not re-send a request it already delivered (POSTs are protected by `Idempotency-Key` only for client retries). Local reference: `deploy/compose/docker-compose.scale.yml` and `deploy/compose/lb/nginx.conf`.
+
+**Settings that must be identical on all replicas:** database URL and credentials, `ORQIX_CURSOR_SECRET` (list cursors are signed and decoded by any replica), identity/OIDC settings, `ORQIX_SECRETS_DIR` content, egress allow-lists, `orqix.policy.cache-ttl` (bounds how long a revoked permission still works on other replicas: 50 s), `orqix.runtime.async-job-lock-time` / `reset-expired-jobs-interval`. Must differ: the Flowable lock owner (`orqix.runtime.lock-owner`, default the pod hostname - keep the default).
+
+**Background work is cluster-safe.** Run watchdog, consistency scan, stage overdue, reminders, stage mail and SLA, external-job lease recovery, staged-attachment cleanup, attachment retention and agent-write retention take bounded batches with `FOR UPDATE SKIP LOCKED`, so every replica can run them without double processing. The message sweeper runs unbatched statements every 5 s on every replica (correct, may wait on another replica's locks). Flowable jobs are locked per replica; a replica that dies holds its jobs until the lock time (60 s) plus the reset interval (15 s), then another replica takes them over and re-sends in-flight calls with the same idempotency key (measured: takeover 45-58 s after a SIGKILL, every request completed exactly once). Per-replica limits: workflow dry runs (30/min per person per replica) and the AI model circuit breaker.
+
+**Connection budget.** Each replica opens up to 15 connections (`SPRING_DATASOURCE_HIKARI_MAXIMUMPOOLSIZE`): `replicas x pool + 5 (migration) + 10 (operations) <= 0.8 x max_connections`. Under load the pool is the first queue; watch `hikaricp_connections_pending`. A larger pool helps only if the database has spare CPU.
+
+**Database settings shipped with the image.** Every pooled connection sets `plan_cache_mode = force_custom_plan` (`ORQIX_DB_PLAN_CACHE_MODE`, S92 F3); keep it, since the optional-filter queries can get generic plans that take more than a minute.
+
+**Growth.** R0 purges no request history, events, audit or idempotency records; database size grows linearly with traffic (measured: about 0.8 GB for 111,000 requests with 3 tasks and 8 events each). Insights recomputes its figures from that history on every view (0.5 s for 30 days and 1.2-1.3 s for 90 days on 111,000 requests, single user); many simultaneous Insights users are the most expensive read workload. Large open inboxes are expensive too: with 8,000 open claimable tasks the claimable list and its count cost 50-200 ms each.
+
+**Measured on this machine (8 logical CPUs, shared, Docker Desktop; one workspace; 150 active users with 1-3 s think time):**
+
+| Setup | Mixed requests/s | Starts/min | p95 reads / starts | Bottleneck |
+|---|---|---|---|---|
+| 1 replica (1.5 CPU), PostgreSQL 3 CPU | about 140 | about 420 | 1.1 s / 1.4 s | app CPU and connection pool |
+| 2 replicas (1.5 CPU each), PostgreSQL 3 CPU | about 123 | about 440 | 2.1 s / 4.3 s | PostgreSQL CPU, start counter lock |
+| same, database with 111,000 requests and 8,000 open tasks | about 58 | about 160 | 5.2 s / 6.4 s | PostgreSQL CPU: Insights aggregates, inbox counts, start counter lock |
+
+These figures do not transfer to other hardware, a network between app and database, or multi-workspace traffic. Size the database first, and repeat `tools/perf/scale.py` on the target environment before committing to a capacity.
+
 ## 9. Security notes
 
 - Never put credentials in workflows, connection definitions or exports; only secret references are stored.

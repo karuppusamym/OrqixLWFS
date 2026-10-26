@@ -21,7 +21,13 @@ spring:
       connection-timeout: 10000
       # One datasource for both schemas (spike S-6): application tables in orqix, engine tables in flowable.
       # TX-6: user transactions lock_timeout 10s / statement_timeout 30s (job transactions raise it with SET LOCAL).
-      connection-init-sql: "SET search_path TO orqix, flowable; SET lock_timeout = '10s'; SET statement_timeout = '30s'"
+      # plan_cache_mode (S92): the JDBC driver prepares a statement on the server after 5 executions and PostgreSQL may
+      # then reuse one generic plan for every parameter value. Many queries use optional filters
+      # ("CAST(:x AS uuid) IS NULL OR col = :x"), for which a generic plan can be catastrophic (measured: Insights
+      # "Steps" 0.09 s with a custom plan, > 60 s with the generic plan, on 100k requests). force_custom_plan plans
+      # with the actual values every time (a few ms of planning on the heaviest queries). Override with
+      # ORQIX_DB_PLAN_CACHE_MODE=auto to restore the PostgreSQL default.
+      connection-init-sql: "SET search_path TO orqix, flowable; SET lock_timeout = '10s'; SET statement_timeout = '30s'; SET plan_cache_mode = '${ORQIX_DB_PLAN_CACHE_MODE:force_custom_plan}'"
   flyway:
     # Pods never run DDL; the migration job (profile migrate) is the only writer.
     enabled: false

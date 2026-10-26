@@ -5,6 +5,7 @@
 
 import { validateView,type ViewDefinition } from '@/features/views/model'
 import { isCalendarDate } from '../dates'
+import { compiledPattern } from './pattern'
 import type { Condition } from '@/features/studio/model/types'
 
 export type FieldType = 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'object'
@@ -26,6 +27,9 @@ export interface FormFieldSchema {
   formatMaximum?: string
   minLength?: number
   maxLength?: number
+  /** Plain text only: the whole answer must match this safe pattern (docs/build/S90); patternMessage is plain text. */
+  pattern?: string
+  patternMessage?: string
   minimum?: number
   maximum?: number
   multipleOf?: number
@@ -90,6 +94,10 @@ export function parseFormSchema(raw: unknown): FormSchema {
       if (maxFileBytes !== undefined) field.maxFileBytes = maxFileBytes
     }
     if (Array.isArray(value.enum)) field.enum = value.enum.filter((v): v is string => typeof v === 'string')
+    if (field.type === 'string' && !field.format && !field.enum && typeof value.pattern === 'string' && compiledPattern(value.pattern) !== null) {
+      field.pattern = value.pattern
+      if (typeof value.patternMessage === 'string' && value.patternMessage.trim() && value.patternMessage.length <= 200) field.patternMessage = value.patternMessage
+    }
     const minLength = num(value.minLength)
     const maxLength = num(value.maxLength)
     const minimum = num(value.minimum)

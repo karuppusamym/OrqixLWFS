@@ -198,6 +198,12 @@ public class DraftAuthoring {
                 json.toTree(report));
     }
 
+    /** 404 unless the workflow exists in the workspace and the caller may read it (AI form suggestions, S90). */
+    @Transactional(readOnly = true)
+    public void requireWorkflow(Caller caller, UUID workspaceId, UUID workflowId) {
+        workflows.getWorkflow(caller, workspaceId, workflowId);
+    }
+
     /**
      * Canonical definition of a draft revision, or of the active release when {@code revision} is null. Needs
      * {@code workflow.read}; 404 when the workflow or revision is not visible, NO_ACTIVE_RELEASE when there is none.

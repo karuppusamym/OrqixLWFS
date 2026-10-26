@@ -48,6 +48,10 @@ class AiDisabledTest extends IntegrationTestBase {
         Response explain = api("dana.designer").post(Map.of("revision", 1), "/workspaces/{ws}/workflows/{id}/explain",
                 PURCHASING, created.body().path("id").asString());
         assertThat(explain.code()).as(explain.toString()).isEqualTo("AI_NOT_CONFIGURED");
+        Response form = api("dana.designer").post(Map.of("description", "Add a cost code question.", "inputSchema",
+                Map.of("type", "object", "properties", Map.of())), "/workspaces/{ws}/workflows/{id}/ai/form-suggestions",
+                PURCHASING, created.body().path("id").asString());
+        assertThat(form.code()).as(form.toString()).isEqualTo("AI_NOT_CONFIGURED");
         // Authorization still comes first.
         assertThat(api("vic.viewer").post(Map.of("description", "Purchase approval with finance review."),
                 UUID.randomUUID().toString(), "/workspaces/{ws}/ai/drafts", PURCHASING).status()).isEqualTo(403);

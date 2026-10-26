@@ -26,6 +26,7 @@ public class Generator {
 
     private static final double TEMPERATURE = 0.2;
     private static final int EXPLAIN_MAX_TOKENS = 4000;
+    private static final int FORM_MAX_TOKENS = 4000;
     private static final int MAX_ECHO_CHARS = 120_000;
 
     /** Metering of one generation (all attempts). */
@@ -306,6 +307,57 @@ public class Generator {
     }
 
     /**
+     * Form suggestions (S90): one call and one retry when the reply is not a JSON object. Returns the parsed reply (not
+     * yet validated: {@link FormSuggestions} does that) or null when no usable reply came back.
+     */
+    public JsonNode suggestForm(ModelPolicy.ResolvedProfile profile, String formJson, String description, Meter meter) {
+        List<OpenRouterClient.Message> messages = new ArrayList<>();
+        messages.add(new OpenRouterClient.Message("system", prompts.formSystem()));
+        messages.add(new OpenRouterClient.Message("user", PromptLibrary.formUser(formJson, description)));
+        Deadline deadline = new Deadline(properties.generationDeadline());
+        for (int attempt = 0; attempt < 2; attempt++) {
+            if (attempt > 0 && !deadline.allowsAnother()) {
+                break;
+            }
+            long started = System.nanoTime();
+            OpenRouterClient.ChatResult result = call(profile, messages, prompts.formSuggestionSchema(),
+                    "orqix_form_suggestion", FORM_MAX_TOKENS, deadline.callTimeout(properties.timeout()));
+            deadline.attempted(System.nanoTime() - started);
+            meter.add(result);
+            checkRouted(profile, result, meter);
+            JsonNode reply = jsonObject(result.content());
+            if (reply != null) {
+                return reply;
+            }
+            if (meter.costOrZero().compareTo(properties.budget().perRequestMaxUsd()) >= 0) {
+                break;
+            }
+            messages.add(new OpenRouterClient.Message("assistant", result.content() == null ? "" : result.content()));
+            messages.add(new OpenRouterClient.Message("user", "That reply cannot be used. Reply with only the JSON "
+                    + "object {\"changes\": [...], \"notes\": [...], \"notAForm\": null}."));
+        }
+        return null;
+    }
+
+    private JsonNode jsonObject(String content) {
+        if (content == null || content.isBlank()) {
+            return null;
+        }
+        String text = content.strip();
+        int start = text.indexOf('{');
+        int end = text.lastIndexOf('}');
+        if (start < 0 || end <= start) {
+            return null;
+        }
+        try {
+            JsonNode reply = json.parse(text.substring(start, end + 1));
+            return reply.isObject() ? reply : null;
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    /**
      * Checks the model a provider reports against the policy (a router may pick any model): the violation is recorded
      * on the generation and trips the circuit breaker of the profile for the rest of the UTC day.
      */
@@ -327,6 +379,11 @@ public class Generator {
             boolean draft, int maxTokens, Duration timeout) {
         JsonNode schema = draft ? prompts.draftEnvelopeSchema() : prompts.explanationSchema();
         String schemaName = draft ? "orqix_workflow_draft" : "orqix_workflow_explanation";
+        return call(profile, messages, schema, schemaName, maxTokens, timeout);
+    }
+
+    private OpenRouterClient.ChatResult call(ModelPolicy.ResolvedProfile profile, List<OpenRouterClient.Message> messages,
+            JsonNode schema, String schemaName, int maxTokens, Duration timeout) {
         OpenRouterClient.Format format = profile.structuredOutputs() ? OpenRouterClient.Format.JSON_SCHEMA
                 : OpenRouterClient.Format.JSON_OBJECT;
         try {

@@ -44,6 +44,18 @@ export const explainWorkflow = (ws: string, workflowId: string, body: { revision
     }),
   )
 
+export type AiFormSuggestion = components['schemas']['AiFormSuggestion']
+export type AiFormChange = components['schemas']['AiFormChange']
+
+/** Validated request-form suggestions (docs/build/S90). Nothing is applied: the designer reviews and applies them. */
+export const suggestFormChanges = (ws: string, workflowId: string, body: { description: string; inputSchema: Record<string, unknown>; profile?: string }) =>
+  call(
+    api.POST('/workspaces/{workspaceId}/workflows/{workflowId}/ai/form-suggestions', {
+      params: { path: { workspaceId: ws, workflowId } },
+      body: body as never,
+    }),
+  )
+
 /** Whether the signed-in person may read the AI status here (designers, readers, workspace administrators). */
 export function useCanSeeAi(): boolean {
   const { can } = useWorkspace()

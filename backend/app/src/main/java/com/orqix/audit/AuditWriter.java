@@ -130,6 +130,8 @@ public class AuditWriter {
                     "inputTokens", "outputTokens", "costUsd", "durationMs", "outcome", "workflowId")),
             Map.entry("ai.workflow.explained", Set.of("profile", "model", "promptVersion", "revision", "releaseNumber",
                     "inputTokens", "outputTokens", "costUsd", "durationMs", "outcome")),
+            Map.entry("ai.form.suggested", Set.of("profile", "model", "promptVersion", "attempts", "inputTokens",
+                    "outputTokens", "costUsd", "durationMs", "outcome", "changesSuggested", "changesRejected")),
             Map.entry("migration.uploaded", Set.of("migrationId", "sourceSystem", "sourceSha256", "adapterVersion",
                     "elementCount", "blockerCount", "actionCount")),
             Map.entry("migration.project.created", Set.of("fileCount", "issueCount")),

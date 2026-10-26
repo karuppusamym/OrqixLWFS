@@ -1,5 +1,6 @@
 import type { ValidationIssue } from '@/api/types'
 import { isCalendarDate } from '@/lib/dates'
+import { FormPattern } from '@/lib/form/pattern'
 import { allFields, availableFields, parseRef } from '@/features/studio/model/fieldRefs'
 import { hasCycle, incoming, nodeById, outgoing, reachableFrom, startNode } from '@/features/studio/model/graph'
 import { conditionTerms, isAtomicCondition, type Condition, type Definition, type DecisionTable, type Literal, type WorkflowNode } from '@/features/studio/model/types'
@@ -338,6 +339,11 @@ export function validateDefinition(def: Definition, ctx: ValidationContext): Iss
     if (!(key in def.inputSchema.properties)) issues.push(issue('WF_FORM_INVALID', 'blocker', `The required field "${key}" does not exist.`, '/inputSchema/required'))
   }
   for (const [key, f] of Object.entries(def.inputSchema.properties)) {
+    issues.push(...patternIssues(f, `/inputSchema/properties/${key}`))
+    if (f.items) {
+      issues.push(...patternIssues(f.items, `/inputSchema/properties/${key}/items`))
+      for (const [column, c] of Object.entries(f.items.properties ?? {})) issues.push(...patternIssues(c, `/inputSchema/properties/${key}/items/properties/${column}`))
+    }
     if (f.minLength !== undefined && f.maxLength !== undefined && f.minLength > f.maxLength) issues.push(issue('WF_FORM_INVALID', 'blocker', `"${f.title}" has a minimum length above its maximum.`, `/inputSchema/properties/${key}`))
     if (f.minimum !== undefined && f.maximum !== undefined && f.minimum > f.maximum) issues.push(issue('WF_FORM_INVALID', 'blocker', `"${f.title}" has a minimum above its maximum.`, `/inputSchema/properties/${key}`))
     for (const [member, text] of [['formatMinimum', f.formatMinimum], ['formatMaximum', f.formatMaximum]] as const) {
@@ -468,4 +474,17 @@ function checkPerItem(def: Definition, n: WorkflowNode, issues: Issue[]): void {
   const c = n.config
   const combined = [c.multiInstance && 'a number of approvers', c.timeoutAfter && 'a time limit', c.escalation && 'reminders or escalation', Array.isArray(c.correctable) && c.correctable.length > 0 && 'correction of request fields'].filter(Boolean)
   for (const setting of combined) issues.push(issue('WF_PER_ITEM_UNSUPPORTED', 'blocker', `"${n.label}" opens one task per list item, so it cannot also have ${setting}.`, path, n.id))
+}
+
+/** Mock of the compiler rule WF_FORM_PATTERN_INVALID (docs/build/S90), using the same safe engine. */
+function patternIssues(f: { title: string; type: string; format?: string; enum?: string[]; maxLength?: number; pattern?: string; patternMessage?: string }, base: string): Issue[] {
+  const found: Issue[] = []
+  if (f.patternMessage !== undefined && (/[$#]\{/.test(f.patternMessage) || [...f.patternMessage].some(ch => ch.charCodeAt(0) < 32 || ch.charCodeAt(0) === 127) || !f.patternMessage.trim())) found.push(issue('WF_FORM_PATTERN_INVALID', 'blocker', 'The pattern message must be one line of plain text without "${" or "#{".', `${base}/patternMessage`))
+  if (f.pattern === undefined) return found
+  if (f.type !== 'string' || f.format || f.enum) return [...found, issue('WF_FORM_PATTERN_INVALID', 'blocker', `"${f.title}" is not a plain text question, so it cannot have a pattern.`, `${base}/pattern`)]
+  const problem = FormPattern.problem(f.pattern)
+  if (problem) return [...found, issue('WF_FORM_PATTERN_INVALID', 'blocker', `The pattern of "${f.title}" cannot be used: ${problem}`, `${base}/pattern`)]
+  const shortest = [...(FormPattern.compile(f.pattern).example() ?? '')].length
+  if (f.maxLength !== undefined && shortest > f.maxLength) found.push(issue('WF_FORM_PATTERN_INVALID', 'blocker', `No answer to "${f.title}" can match its pattern within its longest length (${f.maxLength} characters).`, `${base}/pattern`))
+  return found
 }

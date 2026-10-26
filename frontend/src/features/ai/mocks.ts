@@ -5,6 +5,7 @@ import { getCurrentUser } from '@/mocks/handlers'
 import { GROUPS, WORKSPACES, clock, connectionDefinition, db, isMember, newId, permissionsOf, purchaseTemplate, userById, type MockWorkflow } from '@/mocks/state'
 import { validateDefinition, type ValidationContext } from '@/mocks/validate'
 import { DESCRIPTION_MAX, DESCRIPTION_MIN } from './limits'
+import { FormPattern } from '@/lib/form/pattern'
 
 /**
  * Mock-mode AI (S10): status (enabled), deterministic "generation" and "explanation" so the feature can be shown and
@@ -367,5 +368,44 @@ export function createAiHandlers(): HttpHandler[] {
       if (db.latencyMs > 0) await delay(Math.max(db.latencyMs, 900))
       return HttpResponse.json(explanation(def) as JsonBodyType)
     }),
+    http.post(`${B}/workspaces/:ws/workflows/:id/ai/form-suggestions`, async ({ params, request }) => {
+      const g = guard(params.ws, 'workflow.edit')
+      if (!g.ok) return g.res
+      const wf = db.workflows.get(String(params.id))
+      if (!wf || wf.wsId !== params.ws) return problem(404, 'NOT_FOUND', 'Not found')
+      const input = (await request.json().catch(() => ({}))) as { description?: string; inputSchema?: { properties?: Record<string, unknown>; required?: string[] } }
+      const description = (input.description ?? '').trim()
+      if (description.length < 10 || description.length > 2000 || typeof input.inputSchema?.properties !== 'object') {
+        return problem(400, 'MALFORMED_REQUEST', 'The request is malformed', { fieldErrors: [{ pointer: description.length < 10 ? '/description' : '/inputSchema', code: 'minLength', message: 'Invalid value' }] })
+      }
+      if (!aiMock.enabled) return problem(422, 'AI_NOT_CONFIGURED', 'AI assistance is not configured')
+      if (db.latencyMs > 0) await delay(Math.max(db.latencyMs, 600))
+      return HttpResponse.json(formSuggestion(description, input.inputSchema.properties ?? {}, input.inputSchema.required ?? []) as JsonBodyType)
+    }),
   ]
+}
+
+/** Deterministic mock of suggestFormChanges (S90): keyword-driven, validated with the same pattern engine. */
+function formSuggestion(description: string, properties: Record<string, unknown>, required: string[]) {
+  const text = description.toLowerCase()
+  const changes: Array<Record<string, unknown>> = []
+  const rejected: Array<{ op: string; key: string; reasons: string[] }> = []
+  const add = (key: string, field: Record<string, unknown>, isRequired: boolean, reason: string) => {
+    if (key in properties) rejected.push({ op: 'add', key, reasons: [`A question with the key "${key}" already exists.`] })
+    else if (typeof field.pattern === 'string' && FormPattern.problem(field.pattern)) rejected.push({ op: 'add', key, reasons: [`The pattern of "${String(field.title)}" cannot be used: ${FormPattern.problem(field.pattern)}`] })
+    else changes.push({ op: 'add', key, field, required: isRequired, reason })
+  }
+  if (text.includes('cost code')) add('costCode', { type: 'string', title: 'Cost code', maxLength: 7, pattern: '^[A-Z]{2}-\\d{4}$', patternMessage: 'Enter a code like AB-1234.' }, true, 'Finance books purchases by cost code.')
+  if (text.includes('phone')) add('phone', { type: 'string', title: 'Phone number', maxLength: 20, pattern: '^\\+?[0-9 ]{6,19}$', patternMessage: 'Enter digits and spaces, optionally starting with +.' }, false, 'A phone number lets approvers call back.')
+  if (text.includes('date') || text.includes('deadline')) add('neededBy', { type: 'string', title: 'Needed by', format: 'date' }, false, 'Approvers see when the purchase is needed.')
+  if (text.includes('backreference')) add('broken', { type: 'string', title: 'Broken', pattern: '^(a)\\1$' }, false, 'Shows a refused pattern.')
+  const removable = Object.keys(properties).find(key => text.includes(`remove ${key.toLowerCase()}`))
+  if (removable) changes.push({ op: 'remove', key: removable, required: false, reason: 'You asked to remove it.', before: properties[removable], wasRequired: required.includes(removable) })
+  if (changes.length === 0 && rejected.length === 0) add('additionalNotes', { type: 'string', title: 'Additional notes', maxLength: 2000 }, false, 'A free-text question for anything else.')
+  return {
+    changes, rejected,
+    notes: ['Mock suggestion: review every change before applying it.'],
+    notAForm: null,
+    generation: { profile: 'economy', model: 'deepseek/deepseek-v3.2', promptVersion: 'form-v1', attempts: 1, escalated: false, inputTokens: 900, outputTokens: 210, costUsd: 0.0003, durationMs: 1200 },
+  }
 }

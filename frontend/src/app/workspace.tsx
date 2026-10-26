@@ -36,6 +36,11 @@ export function useWorkspace(): WorkspaceContextValue {
   return ctx
 }
 
+/** True inside a workspace route (components that are also rendered stand-alone use it to skip workspace features). */
+export function useInWorkspace(): boolean {
+  return useContext(WorkspaceContext) !== null
+}
+
 /** The workspace id of the current route. */
 export function useWsId(): string {
   return useWorkspace().workspace.id

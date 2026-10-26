@@ -17,6 +17,8 @@ import { SubprocessesInspector } from './ScopeInspectors'
 import { RowColumnsEditor } from './RowColumnsEditor'
 import { FieldConditionsEditor, FormLayoutEditor } from './FormBehaviorEditor'
 import { RequestViewPicker } from './RequestViewPicker'
+import { FormAssistant } from '@/features/ai/FormAssistant'
+import { FormPattern, MAX_PATTERN_LENGTH } from '@/lib/form/pattern'
 
 const KIND_ORDER: FieldKind[] = ['text', 'longText', 'number', 'money', 'integer', 'date', 'yesNo', 'choice', 'collection', 'file']
 
@@ -80,6 +82,7 @@ export function StartInspector({ node }: { node: WorkflowNode }) {
             <Plus aria-hidden="true" /> Add a question
           </Button>
         ) : null}
+        <FormAssistant />
       </InspectorSection>
       <StagesInspector />
       <SubprocessesInspector />
@@ -274,7 +277,48 @@ function FieldCard({
             </FormField>
           </div>
         ) : null}
+        {textual ? <PatternFields field={f} readOnly={readOnly} onChange={onChange} /> : null}
       </Advanced>
     </li>
+  )
+}
+
+/** Answer pattern of a text question (docs/build/S90): checked as it is typed with the same safe engine as the server. */
+function PatternFields({ field: f, readOnly, onChange }: { field: FormFieldModel; readOnly: boolean; onChange: (patch: Partial<FormFieldModel>) => void }) {
+  const p = `field-${f.key}`
+  const pattern = f.pattern?.trim() ?? ''
+  const problem = pattern ? FormPattern.problem(pattern) : undefined
+  const example = pattern && !problem ? FormPattern.compile(pattern).example() : null
+  return (
+    <div className="space-y-3" data-testid={`pattern-options-${f.key}`}>
+      <FormField
+        label="Answer pattern"
+        optionalText
+        id={`${p}-pattern`}
+        error={problem}
+        description={problem ? undefined : example !== null ? `The whole answer must match, for example "${example}".` : 'For example ^[A-Z]{2}-\\d{4}$ for a code like AB-1234. Start with ^ and end with $.'}
+      >
+        {(ids) => (
+          <CommitInput
+            id={ids.input}
+            value={f.pattern ?? ''}
+            maxLength={MAX_PATTERN_LENGTH}
+            disabled={readOnly}
+            spellCheck={false}
+            autoComplete="off"
+            className="font-mono"
+            aria-invalid={problem ? true : undefined}
+            aria-describedby={ids.describedBy}
+            onCommit={(v) => onChange({ pattern: v.trim() || undefined, ...(v.trim() ? {} : { patternMessage: undefined }) })}
+          />
+        )}
+      </FormField>
+      {problem ? <p role="alert" className="sr-only">Answer pattern problem: {problem}</p> : null}
+      {pattern ? (
+        <FormField label="Message when the answer does not match" optionalText id={`${p}-pattern-message`} description="Plain text shown to the requester.">
+          {(ids) => <CommitInput id={ids.input} value={f.patternMessage ?? ''} maxLength={200} disabled={readOnly} aria-describedby={ids.describedBy} onCommit={(v) => onChange({ patternMessage: v.trim() || undefined })} />}
+        </FormField>
+      ) : null}
+    </div>
   )
 }

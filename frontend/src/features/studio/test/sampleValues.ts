@@ -1,5 +1,6 @@
 import type { FieldDef } from '@/lib/form/schema'
 import type { RawValue, RawValues } from '@/lib/form/values'
+import { compiledPattern } from '@/lib/form/pattern'
 
 function clamp(value: number, min?: number, max?: number): number {
   let v = value
@@ -28,6 +29,9 @@ function sampleOne(schema: FieldDef['schema'], isMoney: boolean, key: string, to
         if (schema.formatMaximum && iso > schema.formatMaximum) iso = schema.formatMaximum
         return iso
       }
+      // A pattern question starts with its shortest matching answer (docs/build/S90).
+      const example = schema.pattern ? compiledPattern(schema.pattern)?.example() : undefined
+      if (example) return example
       let text = `Sample ${key}`
       if (schema.maxLength !== undefined) text = text.slice(0, schema.maxLength)
       if (schema.minLength !== undefined && text.length < schema.minLength) text = text.padEnd(schema.minLength, 'x')

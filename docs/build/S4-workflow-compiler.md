@@ -100,6 +100,7 @@ Severity **B** = blocker (cannot publish), **W** = warning (publish requires `ac
 | `WF_BRANCH_MIXED_FIELDS` | B | All condition routes of a branch test the same `fieldRef` |
 | `WF_BRANCH_OVERLAP` | B | Conditions of one branch must be pairwise disjoint |
 | `WF_FORM_INVALID` | B | `required` names unknown fields; min > max; keyword not valid for the field type (e.g. `enum` on number, `multipleOf: 0.01` on integer); a date question whose `formatMinimum`/`formatMaximum` is not a real day or whose earliest date is after its latest |
+| `WF_FORM_PATTERN_INVALID` | B | A text answer `pattern` that is not plain text (choice, date, file, number), outside the safe linear-time subset, longer than 200 characters, too complex, matching nothing or nothing within `maxLength`; a `patternMessage` with `${`/`#{` or control characters ([S90](S90-form-pattern-and-ai-assistant.md)) |
 | `WF_WAIT_CHOICE` | B | A wait has exactly one of `duration` and `untilField` |
 | `WF_WAIT_FIELD_TYPE` | B | `untilField` must name a date field |
 | `WF_WAIT_FIELD_OPTIONAL` | B | A request-form date used by a wait must be required |

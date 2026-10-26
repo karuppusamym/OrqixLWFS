@@ -83,6 +83,9 @@ export interface FieldSchemaDoc {
   formatMaximum?: string
   minLength?: number
   maxLength?: number
+  /** Plain text only: safe answer pattern (^...$) and its plain-text message (docs/build/S90). */
+  pattern?: string
+  patternMessage?: string
   minimum?: number
   maximum?: number
   multipleOf?: number

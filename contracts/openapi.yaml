@@ -5311,6 +5311,53 @@ paths:
         '429': { $ref: '#/components/responses/TooManyRequests' }
         '503': { $ref: '#/components/responses/Unavailable' }
 
+  /workspaces/{workspaceId}/workflows/{workflowId}/ai/form-suggestions:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+    post:
+      tags: [AI]
+      operationId: suggestFormChanges
+      summary: Suggest request-form changes from a short description (reviewable, never applied by the server)
+      description: >-
+        S90 (G4). Sends the description and the request form as the editor shows it to the configured AI profile, then
+        validates every suggested change with the workflow compiler (types, keys, choices, bounds, pattern rules).
+        Valid changes are returned for review; invalid ones are listed under rejected with the reasons. Nothing is
+        stored or applied: the designer applies chosen changes in the studio. Not stored; metering and audit hold
+        counts only. One suggestion at a time per person (429).
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: ai.form.suggested
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [description, inputSchema]
+              properties:
+                description: { type: string, minLength: 10, maxLength: 2000 }
+                inputSchema:
+                  type: object
+                  description: The request form (workflow-v0 inputSchema) as currently shown in the editor, at most 30 questions
+                  required: [properties]
+                  properties:
+                    properties: { type: object, maxProperties: 30 }
+                profile: { type: string, pattern: '^[a-z][a-z0-9-]{0,31}$' }
+      responses:
+        '200':
+          description: Validated suggestions for review
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiFormSuggestion' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
   /workspaces/{workspaceId}/migrations:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
     post:
@@ -7107,7 +7154,7 @@ components:
       required: [pointer, code, message]
       properties:
         pointer: { type: string, description: 'JSON Pointer into the request body, e.g. /input/amount' }
-        code: { type: string, description: 'Keyword that failed: required, type, enum, minimum, maximum, maxLength, multipleOf, additionalProperties' }
+        code: { type: string, description: 'Keyword that failed: required, type, enum, minimum, maximum, maxLength, multipleOf, additionalProperties, pattern (message: the form author''s plain-text patternMessage)' }
         message: { type: string }
 
     SubjectRef:
@@ -9339,6 +9386,38 @@ components:
               nodeId: { type: string }
               text: { type: string }
         generation: { $ref: '#/components/schemas/AiGeneration' }
+    AiFormSuggestion:
+      type: object
+      description: S90 form suggestions. Every change already passed the compiler's form rules against the submitted form; apply only on an explicit user action.
+      required: [changes, rejected, notes, generation]
+      properties:
+        changes:
+          type: array
+          maxItems: 10
+          items: { $ref: '#/components/schemas/AiFormChange' }
+        rejected:
+          type: array
+          items:
+            type: object
+            required: [op, key, reasons]
+            properties:
+              op: { type: string }
+              key: { type: string }
+              reasons: { type: array, items: { type: string } }
+        notes: { type: array, maxItems: 5, items: { type: string } }
+        notAForm: { type: [string, 'null'], description: Why the description is not about a request form, when it is not }
+        generation: { $ref: '#/components/schemas/AiGeneration' }
+    AiFormChange:
+      type: object
+      required: [op, key, required, reason]
+      properties:
+        op: { type: string, enum: [add, update, remove] }
+        key: { type: string, pattern: '^[a-z][A-Za-z0-9]{0,63}$' }
+        field: { type: object, description: The complete question after the change (workflow-v0 formField); absent for remove }
+        required: { type: boolean, description: Whether the question is required after the change }
+        reason: { type: string, maxLength: 300 }
+        before: { type: object, description: The question as it is now (update and remove) }
+        wasRequired: { type: boolean, description: Whether the question is required now (update and remove) }
     CompatibilityIssue:
       type: object
       required: [sourceElementId, sourceKind, severity, reasonCode, explanation, resolutionStatus]

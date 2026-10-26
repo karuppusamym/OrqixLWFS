@@ -155,6 +155,9 @@ public final class DefaultFormValidator implements FormValidator {
                 errors.add(new FieldError(pointer, "maxLength", "Enter at most "
                         + schema.get("maxLength").asInt() + " characters."));
             }
+            if (schema.path("pattern").isString() && !schema.has("enum") && !patternMatches(schema, text)) {
+                errors.add(new FieldError(pointer, "pattern", patternMessage(schema)));
+            }
         }
         if (value.isNumber()) {
             BigDecimal number = value.decimalValue();
@@ -176,6 +179,38 @@ public final class DefaultFormValidator implements FormValidator {
                 }
             }
         }
+    }
+
+    /** Compiled patterns by source; bounded, cleared when full (patterns are at most 200 characters). */
+    private static final java.util.concurrent.ConcurrentHashMap<String, Object> PATTERNS =
+            new java.util.concurrent.ConcurrentHashMap<>();
+    private static final int PATTERN_CACHE = 512;
+
+    /**
+     * The safe linear-time pattern (docs/build/S90). A pattern that does not compile never matches: the compiler
+     * refuses such forms before publishing, so this only fails closed on a tampered or foreign schema.
+     */
+    private static boolean patternMatches(JsonNode schema, String text) {
+        String source = schema.get("pattern").stringValue();
+        Object compiled = PATTERNS.get(source);
+        if (compiled == null) {
+            try {
+                compiled = com.orqix.compiler.FormPattern.compile(source);
+            } catch (com.orqix.compiler.FormPattern.Invalid e) {
+                compiled = Boolean.FALSE;
+            }
+            if (PATTERNS.size() >= PATTERN_CACHE) {
+                PATTERNS.clear();
+            }
+            PATTERNS.put(source, compiled);
+        }
+        return compiled instanceof com.orqix.compiler.FormPattern pattern && pattern.matches(text);
+    }
+
+    /** The author's message (plain text, shown escaped), or a neutral default. */
+    private static String patternMessage(JsonNode schema) {
+        String message = schema.path("patternMessage").asString("").strip();
+        return message.isEmpty() ? "Enter the answer in the expected format." : message;
     }
 
     /** Calendar dates: YYYY-MM-DD, a day that exists, within formatMinimum and formatMaximum (inclusive). */

@@ -15,6 +15,7 @@ import { waitHorizonErrors } from './dateWait'
 import { validateDefinition, type ValidationContext } from './validate'
 import { mockCheckBpmn, mockDraftBpmn } from './bpmnSource'
 import { assetIssues } from './sharedAssets'
+import { exportCsv, parseCsv, templateCsv } from './decisionCsv'
 import { ScenarioError, simulateDefinition, type SimConnection, type SimContext, type SimulationScenario } from './simulator'
 import {
   GROUPS,
@@ -501,6 +502,71 @@ export function createHandlers(): HttpHandler[] {
       wf.drafts.push(next)
       wf.updatedAt = next.savedAt
       wf.name = next.definition.name || wf.name
+      return HttpResponse.json(
+        { workflowId: wf.id, revision: next.revision, savedAt: next.savedAt, savedBy: subjectRef(g.user), definition: next.definition },
+        { headers: { ETag: `"r${next.revision}"` } },
+      )
+    }),
+    // Decision table CSV (G3, docs/build/S89): a simplified double, see ./decisionCsv.ts ----------------------------
+    http.get(`${B}/workspaces/:ws/workflows/:id/decisions/:key/csv`, async ({ params }) => {
+      await slow()
+      const g = guard(params.ws, 'workflow.read')
+      if (!g.ok) return g.res
+      const wf = findWorkflow(str(params.ws), str(params.id))
+      const table = wf?.drafts.at(-1)?.definition.decisions.find((d) => d.key === str(params.key))
+      if (!wf || !table) return notFound()
+      const csv = exportCsv(table)
+      if (typeof csv !== 'string') {
+        return problem(422, 'VALIDATION_FAILED', 'Some values are not valid', {
+          detail: `This decision table cannot be written as CSV: ${csv.reasons[0]}`,
+          fieldErrors: csv.reasons.map((message) => ({ pointer: `/decisions/${table.key}`, code: 'notRepresentable', message })),
+        })
+      }
+      return new Response(csv, { headers: { 'Content-Type': 'text/csv; charset=UTF-8', 'Content-Disposition': `attachment; filename="${wf.key}-${table.key}.csv"` } })
+    }),
+    http.get(`${B}/workspaces/:ws/workflows/:id/decisions/:key/csv-template`, async ({ params }) => {
+      await slow()
+      const g = guard(params.ws, 'workflow.read')
+      if (!g.ok) return g.res
+      const wf = findWorkflow(str(params.ws), str(params.id))
+      const table = wf?.drafts.at(-1)?.definition.decisions.find((d) => d.key === str(params.key))
+      if (!wf || !table) return notFound()
+      return new Response(templateCsv(table), { headers: { 'Content-Type': 'text/csv; charset=UTF-8', 'Content-Disposition': `attachment; filename="${wf.key}-${table.key}-template.csv"` } })
+    }),
+    http.put(`${B}/workspaces/:ws/workflows/:id/decisions/:key/csv`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws, 'workflow.edit')
+      if (!g.ok) return g.res
+      const wf = findWorkflow(str(params.ws), str(params.id))
+      if (!wf) return notFound()
+      const ifMatch = request.headers.get('If-Match')
+      if (!ifMatch) return problem(428, 'PRECONDITION_REQUIRED', 'If-Match header required')
+      const latest = wf.drafts.at(-1)!
+      if (ifMatch !== `"r${latest.revision}"`) return problem(412, 'STALE_REVISION', 'The draft changed', { currentRevision: latest.revision })
+      const index = latest.definition.decisions.findIndex((d) => d.key === str(params.key))
+      if (index < 0) return notFound()
+      if (!(request.headers.get('Content-Type') ?? '').toLowerCase().startsWith('text/csv')) return problem(400, 'MALFORMED_REQUEST', 'Send the file as Content-Type: text/csv; charset=UTF-8.')
+      const bytes = await request.arrayBuffer()
+      if (bytes.byteLength > 128 * 1024) return problem(413, 'PAYLOAD_TOO_LARGE', 'The file is larger than 128 KiB.')
+      const refuse = (list: Array<{ line: number; column: number; code: string; message: string }>) =>
+        problem(422, 'VALIDATION_FAILED', 'Some values are not valid', {
+          detail: `The CSV file cannot be imported: line ${list[0]!.line}, column ${list[0]!.column}: ${list[0]!.message}`,
+          fieldErrors: list.slice(0, 100).map((p) => ({ pointer: `/csv/lines/${p.line}/columns/${p.column}`, code: p.code, message: p.message })),
+        })
+      const parsed = parseCsv(new TextDecoder('utf-8').decode(bytes))
+      if (!parsed.table) return refuse(parsed.problems)
+      const old = latest.definition.decisions[index]!
+      const definition = { ...latest.definition, decisions: latest.definition.decisions.map((d, i) => (i === index ? { key: old.key, version: old.version, ...parsed.table! } : d)) }
+      const blockers = validateDefinition(definition, validationContext(wf.wsId)).filter((i) => i.severity === 'blocker' && (i.path === `/decisions/${index}` || i.path?.startsWith(`/decisions/${index}/`)))
+      if (blockers.length) {
+        return refuse(blockers.map((b) => {
+          const row = /\/rows\/(\d+)/.exec(b.path ?? '')
+          return { line: row ? (parsed.ruleLines[Number(row[1])] ?? 1) : 1, column: row ? 4 : 1, code: b.code, message: b.message }
+        }))
+      }
+      const next = { revision: latest.revision + 1, savedAt: clock.iso(), savedById: g.user.id, definition: normalizeDefinition(definition) }
+      wf.drafts.push(next)
+      wf.updatedAt = next.savedAt
       return HttpResponse.json(
         { workflowId: wf.id, revision: next.revision, savedAt: next.savedAt, savedBy: subjectRef(g.user), definition: next.definition },
         { headers: { ETag: `"r${next.revision}"` } },

@@ -83,6 +83,22 @@ class SecurityMatrixTest extends RuntimeTestBase {
     }
 
     @Test
+    void decisionCsvOperationsAreInTheMatrixWithTheirPermissions() {
+        JsonNode paths = OpenApiContract.get().document().path("paths");
+        String base = "/workspaces/{workspaceId}/workflows/{workflowId}/decisions/{decisionKey}/";
+        assertThat(paths.path(base + "csv").path("get").path("operationId").asString()).isEqualTo("exportDecisionCsv");
+        assertThat(paths.path(base + "csv").path("get").path("x-orqix-permission").asString()).isEqualTo("workflow.read");
+        assertThat(paths.path(base + "csv-template").path("get").path("operationId").asString()).isEqualTo("getDecisionCsvTemplate");
+        assertThat(paths.path(base + "csv-template").path("get").path("x-orqix-permission").asString()).isEqualTo("workflow.read");
+        JsonNode put = paths.path(base + "csv").path("put");
+        assertThat(put.path("operationId").asString()).isEqualTo("importDecisionCsv");
+        assertThat(put.path("x-orqix-permission").asString()).isEqualTo("workflow.edit");
+        assertThat(put.path("x-orqix-audit").asString()).isEqualTo("workflow.draft.saved");
+        // tSec01 above calls all three as foreign principals against the real purchasing workflow (decisionKey
+        // amount-policy) and requires 404 and no state change.
+    }
+
+    @Test
     void tSec10_bearerTokensOnlyReachStartGetRunAndEvents() throws Exception {
         String machine = "machine-" + UUID.randomUUID().toString().substring(0, 8);
         UUID workflowId = publishPurchase(PURCHASING, null);

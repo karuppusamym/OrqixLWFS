@@ -15,6 +15,7 @@ import { renameDecisionKey, upsertDecision } from '../model/ops'
 import { outputsInWords } from '@/lib/events'
 import { conditionTerms, isAtomicCondition, type Condition, type DecisionTable, type Literal, type WorkflowNode } from '../model/types'
 import { Advanced, CommitInput, CommitNumber, InspectorSection } from './controls'
+import { DecisionCsvSection } from './DecisionCsvSection'
 import { SharedDecisionSection } from './SharedDecisionSection'
 import { ConditionEditor, defaultLiteral, LiteralInput } from './ConditionEditor'
 
@@ -203,6 +204,8 @@ export function DecisionInspector({ node }: { node: WorkflowNode }) {
       </InspectorSection>
 
       <SharedDecisionSection table={table} />
+
+      <DecisionCsvSection tableKey={table.key} />
 
       <Advanced>
         <FormField label="Table key" id={`dec-key-${node.id}`} error={keyError} description="Used in exports and in the compiled rule.">

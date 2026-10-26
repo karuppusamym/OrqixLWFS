@@ -89,6 +89,33 @@ export async function applyDraftBpmn(ws: string, workflowId: string, revision: n
   return { draft: data, etag: etagOf(response) ?? revisionEtag(data.revision) }
 }
 
+// Decision table CSV (G3, docs/build/S89)
+async function csvFile(promise: Promise<{ data?: unknown; error?: unknown; response: Response }>, fallback: string) {
+  const { data, response } = await callWithResponse(promise as Promise<{ data: string; error?: unknown; response: Response }>)
+  const disposition = response.headers.get('Content-Disposition') ?? ''
+  const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition)
+  return { text: data, filename: match?.[1] ? decodeURIComponent(match[1]) : fallback }
+}
+
+export const exportDecisionCsv = (ws: string, workflowId: string, decisionKey: string) =>
+  csvFile(api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/decisions/{decisionKey}/csv', { params: { path: { workspaceId: ws, workflowId, decisionKey } }, parseAs: 'text' }), `${decisionKey}.csv`)
+
+export const getDecisionCsvTemplate = (ws: string, workflowId: string, decisionKey: string) =>
+  csvFile(api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/decisions/{decisionKey}/csv-template', { params: { path: { workspaceId: ws, workflowId, decisionKey } }, parseAs: 'text' }), `${decisionKey}-template.csv`)
+
+/** Sends the file bytes as they are (the server checks the encoding); never publishes, saves the next draft revision. */
+export async function importDecisionCsv(ws: string, workflowId: string, decisionKey: string, revision: number, bytes: Uint8Array) {
+  const { data, response } = await callWithResponse(
+    api.PUT('/workspaces/{workspaceId}/workflows/{workflowId}/decisions/{decisionKey}/csv', {
+      params: { path: { workspaceId: ws, workflowId, decisionKey }, header: { 'If-Match': revisionEtag(revision) } },
+      body: bytes as unknown as string,
+      bodySerializer: (b: unknown) => b as BodyInit,
+      headers: { 'Content-Type': 'text/csv; charset=UTF-8' },
+    }),
+  )
+  return { draft: data, etag: etagOf(response) ?? revisionEtag(data.revision) }
+}
+
 export const validateDraft = (ws: string, workflowId: string, revision: number) =>
   call(
     api.POST('/workspaces/{workspaceId}/workflows/{workflowId}/validate', {

@@ -1353,6 +1353,97 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Unprocessable' }
 
+  /workspaces/{workspaceId}/workflows/{workflowId}/decisions/{decisionKey}/csv:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+      - $ref: '#/components/parameters/DecisionKey'
+    get:
+      tags: [Workflows]
+      operationId: exportDecisionCsv
+      summary: Download a decision table of a draft as CSV (spreadsheet-safe, imports back to the identical table)
+      description: |
+        Strict, documented column format (docs/build/S89-decision-csv-io.md). Any cell a spreadsheet could read as a
+        formula (first character = + - @ tab, carriage return or an apostrophe) is prefixed with an apostrophe, which
+        import removes again. A table that CSV cannot carry exactly (an OR row, mixed value kinds in one field, an empty
+        text result) is refused with 422 and the reasons; nothing is written approximately. Latest revision unless
+        `revision` is given.
+      x-orqix-permission: workflow.read
+      parameters:
+        - in: query
+          name: revision
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: The table as UTF-8 CSV
+          content:
+            text/csv:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    put:
+      tags: [Workflows]
+      operationId: importDecisionCsv
+      summary: Replace a decision table of the latest draft with the content of a CSV file (a draft change only)
+      description: |
+        The body is the CSV file, `Content-Type: text/csv` (UTF-8, with or without a byte order mark), at most 128 KiB.
+        The table key and version are kept; the hit policy, rows (in file order) and default are replaced. The file is
+        read strictly (no coercion): every problem is returned as a fieldError whose pointer is
+        `/csv/lines/<line>/columns/<column>` (1-based) with a code naming the kind, at most 100 of them. After parsing,
+        the compiler validates the draft with the new table (hit-policy overlap, field types, result shape, literal
+        safety, dates), and a blocker inside the table refuses the import with its line and column. On success a normal
+        draft revision is saved like saveDraft (If-Match, 412 on a stale revision, audit workflow.draft.saved with source
+        decisionCsv). Nothing is published; Check workflow and the publish gates still apply. Shared decisions are not
+        written by this operation.
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: workflow.draft.saved
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          text/csv:
+            schema: { type: string }
+      responses:
+        '200':
+          description: Saved; body is the new revision
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkflowDraft' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '428': { $ref: '#/components/responses/PreconditionRequired' }
+
+  /workspaces/{workspaceId}/workflows/{workflowId}/decisions/{decisionKey}/csv-template:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+      - $ref: '#/components/parameters/DecisionKey'
+    get:
+      tags: [Workflows]
+      operationId: getDecisionCsvTemplate
+      summary: Download a CSV template with the columns of a decision table, one example rule and the default line
+      x-orqix-permission: workflow.read
+      responses:
+        '200':
+          description: The template as UTF-8 CSV
+          content:
+            text/csv:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
   /workspaces/{workspaceId}/workflow-organization:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
     get:

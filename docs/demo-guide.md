@@ -23,7 +23,7 @@ Open <http://localhost:8080>. Sign-in passwords for the test users are in `deplo
 | `paul.publisher` | Publishes versions | Publish review, rollback |
 | `wade.admin` | Workspace administrator | Settings: access, groups, connections, AI |
 
-Optional AI: put `OPENROUTER_API_KEY` in `.env` before `docker compose up`. Without it every demo works except the AI parts: the **Describe it** button and the AI section in Settings are simply absent, with no message saying why, so tell the audience AI drafting is switched off in this environment. For a stack on other ports, run the seed with `ORQIX_BASE_URL` and `ORQIX_STUB_URL` set. Each AI call costs a fraction of a cent (economy profile: DeepSeek; costly models are excluded and a monthly budget applies).
+Optional AI: put `OPENROUTER_API_KEY` in `.env` before `docker compose up`. Without it every demo works except the AI parts: the **Describe it** button and the AI section in Settings are simply absent, with no message saying why, so tell the audience AI drafting is switched off in this environment. If `deploy/compose/.env` holds an `OPENROUTER_API_KEY` the stack picks it up and **Describe it** appears, so check which case you are in before the demo. For a stack on other ports, run the seed with `ORQIX_BASE_URL` and `ORQIX_STUB_URL` set. Each AI call costs a fraction of a cent (economy profile: DeepSeek; costly models are excluded and a monthly budget applies).
 
 ## A repeatable, isolated demo stack
 

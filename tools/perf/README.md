@@ -20,3 +20,18 @@ Targets: p95 list and task APIs < 1 s, p95 start < 2 s, no errors.
 module, a JVM test dependency set and its own scripting of the OIDC login; the Keycloak form login with PKCE is already
 scripted in `tools/api-e2e/orqix_client.py`. For this smoke Python threads against one instance are sufficient, and nothing
 is added to the product or its runtime. Latency is the client-side wall time of each call on the same host (loopback).
+
+## Scale qualification (S92)
+
+`docs/build/S92-scalability-qualification.md`. Two replicas behind nginx (`deploy/compose/docker-compose.scale.yml`), a mixed
+ramped load, volume seeding and plan checks:
+
+```bash
+python tools/perf/scale.py --base http://localhost:<lb-port> --stub http://localhost:<stub-port> --users 150 --ramp 120 \
+    --minutes 8 --out evidence/s92/run.json                       # add --kill-after 150 for the replica-failure test
+psql ... -v runs=100000 -v tasks_per_run=3 -f tools/perf/seed_large.sql   # qualification databases only
+psql ... -f tools/perf/explain_hot.sql                            # EXPLAIN (ANALYZE, BUFFERS) of the hot queries
+python tools/perf/probe_volume.py --base http://localhost:<port> --out evidence/s92/probe.json
+```
+
+`scale.py` reads container names and management ports from its options (defaults: the private `orqix-scale-1026` stack).

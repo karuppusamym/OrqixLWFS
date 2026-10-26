@@ -100,3 +100,5 @@ Gap follow-up slices: [mixed BPMN/DMN projects](S20-project-dmn.md), [permission
 When an IDE Java compiler is active, run coordinated verification with `./mvnw.cmd clean verify "-Dorqix.buildDirectory=target/verification" "-Dsurefire.useManifestOnlyJar=false"` from `backend/` (PowerShell). This leaves the IDE's default `target/classes` untouched; each module writes below its own ignored `target/verification`. The default build and Docker artifact path stay unchanged.
 
 Resume workstreams: [message events](S23-message-events.md), [run diagram and Insights](S24-run-diagram-insights.md), [attachments and stages](S25-attachments-stages.md), and [workflow simulation](S26-workflow-simulation.md). Camunda 8 import is documented in [S11](S11-camunda-import.md). Operator [suspend and resume](S37-suspend-resume.md) and [in-flight release migration](S38-release-migration.md) implement EX04.
+
+Scalability: [S92 scalability qualification](S92-scalability-qualification.md) (two replicas, load, failover, volume, V155).

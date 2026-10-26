@@ -1,0 +1,40 @@
+# Scale overlay (docs/build/S92): two application replicas behind an nginx load balancer, one PostgreSQL, one Keycloak.
+# DEVELOPMENT/QUALIFICATION ONLY. Use a private project name so no other stack is touched:
+#
+#   docker compose -p <project> -f docker-compose.yml -f docker-compose.scale.yml --profile app up -d
+#
+# Host ports (all overridable): LB 8088 (LB_HOST_PORT); the replicas keep their direct ports (orqix: ORQIX_HOST_PORT /
+# ORQIX_MANAGEMENT_HOST_PORT, orqix-2: ORQIX_2_HOST_PORT / ORQIX_2_MANAGEMENT_HOST_PORT) for per-replica probes.
+# Browser login through the LB needs http://localhost:${LB_HOST_PORT}/login/oauth2/code/orqix as redirect URI of the
+# orqix-web client: add it through the Keycloak admin API of THIS stack (the realm file only lists 8080/5173).
+#
+# No sticky sessions: sessions are stored in PostgreSQL (Spring Session JDBC). Both replicas use the same configuration;
+# only HOSTNAME (Flowable lock owner, orqix.runtime.lock-owner) differs. stop_grace_period 60 s = OpenShift
+# terminationGracePeriodSeconds so `docker compose stop` drains like a pod termination.
+name: orqix
+
+services:
+  orqix:
+    stop_grace_period: 60s
+
+  orqix-2:
+    extends:
+      file: docker-compose.yml
+      service: orqix
+    stop_grace_period: 60s
+    ports: !override
+      - "${ORQIX_2_HOST_PORT:-8082}:8080"
+      - "${ORQIX_2_MANAGEMENT_HOST_PORT:-8083}:8081"
+
+  lb:
+    profiles: ["app"]
+    image: ${LB_IMAGE:-nginx:1.27-alpine}
+    depends_on:
+      orqix:
+        condition: service_healthy
+      orqix-2:
+        condition: service_healthy
+    ports:
+      - "${LB_HOST_PORT:-8088}:8080"
+    volumes:
+      - ${LB_CONF:-./lb/nginx.conf}:/etc/nginx/nginx.conf:ro

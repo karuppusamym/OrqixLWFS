@@ -4,7 +4,7 @@ import path from 'node:path'
 import { expect, type Page } from '@playwright/test'
 
 /** Demo-rehearsal helpers (S86). Results are appended to evidence/demo-1025/results.jsonl; nothing here fails a test on axe. */
-const OUT = path.resolve('../../evidence/demo-1025')
+const OUT = path.resolve(process.env.REHEARSAL_OUT ?? '../../evidence/demo-1025')
 mkdirSync(path.join(OUT, 'shots'), { recursive: true })
 
 export function record(step: string, status: 'PASS' | 'FAIL' | 'INFO', note = ''): void {

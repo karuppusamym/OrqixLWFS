@@ -1921,6 +1921,39 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Unprocessable' }
 
+  /workspaces/{workspaceId}/workflows/{workflowId}/discussion/mention-candidates:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+    get:
+      tags: [Workflows]
+      operationId: listWorkflowMentionCandidates
+      summary: People who can be mentioned in this workflow's discussion (workflow.edit or workflow.publish to ask)
+      description: >-
+        CMP01 (docs/build/S87). Enabled people, other than the caller, who can read this workflow in this workspace today
+        (workflow.read, computed fresh). Never lists people of other workspaces. At most 10, matched on the display name
+        among the first 100 enabled people whose name contains q.
+      x-orqix-permission: workflow.edit
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema: { type: string, maxLength: 100 }
+      responses:
+        '200':
+          description: Up to 10 people
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, maxItems: 10, items: { $ref: '#/components/schemas/SubjectRef' } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /workspaces/{workspaceId}/workflows/{workflowId}/discussion/{commentId}/resolution:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -3805,6 +3838,26 @@ paths:
       x-orqix-permission: recipient
       responses:
         '204': { description: Marked read }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/me/notifications/read-all:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    post:
+      tags: [Notifications]
+      operationId: markAllNotificationsRead
+      summary: Idempotently mark every unread notification of the caller in this workspace read (CMP01)
+      x-orqix-permission: recipient
+      responses:
+        '200':
+          description: How many notifications changed from unread to read
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [markedRead]
+                properties:
+                  markedRead: { type: integer, minimum: 0 }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '404': { $ref: '#/components/responses/NotFound' }
 
@@ -7138,7 +7191,7 @@ components:
         expectedFolderVersion: { type: integer, minimum: 1, description: 'Required with a folder; omitted when folderId is null' }
     WorkflowComment:
       type: object
-      required: [id, elementId, body, authorId, authorName, createdAt, resolved]
+      required: [id, elementId, body, authorId, authorName, createdAt, resolved, mentions]
       properties:
         id: { $ref: '#/components/schemas/Uuid' }
         elementId: { type: string }
@@ -7151,6 +7204,11 @@ components:
         resolved: { type: boolean }
         resolvedAt: { type: [string, 'null'], format: date-time }
         resolvedByName: { type: [string, 'null'] }
+        mentions:
+          type: array
+          maxItems: 10
+          description: People mentioned in this comment (CMP01), with their current display names; each appears as "@Display Name" in body
+          items: { $ref: '#/components/schemas/SubjectRef' }
     WorkflowDiscussionThread:
       type: object
       required: [root, replies]
@@ -7172,6 +7230,13 @@ components:
         elementId: { type: string, minLength: 1, maxLength: 128, description: 'A step or connection ID of the current draft' }
         body: { type: string, minLength: 1, maxLength: 2000 }
         parentId: { $ref: '#/components/schemas/Uuid' }
+        mentions:
+          type: array
+          maxItems: 10
+          description: >-
+            People to mention (CMP01, docs/build/S87). A mention is kept only for an enabled person other than the author
+            who can read this workflow and whose "@Display Name" is in body; anything else is ignored without an error.
+          items: { $ref: '#/components/schemas/Uuid' }
     ResolveWorkflowThread:
       type: object
       additionalProperties: false
@@ -8914,10 +8979,12 @@ components:
         runId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }] }
         runReference: { type: [string, 'null'], description: 'Human request reference of runId, e.g. ORQ-1043' }
         requestTitle: { type: [string, 'null'], description: 'Title of the request runId (see Run.requestTitle); null when the recipient may not read the request data' }
-        kind: { type: string, enum: [workflowMessage, runAttention] }
-        message: { type: string }
+        kind: { type: string, enum: [workflowMessage, runAttention, discussionMention] }
+        message: { type: string, description: 'For discussionMention: who mentioned the recipient, on which step and workflow; never the comment text' }
         createdAt: { $ref: '#/components/schemas/Timestamp' }
         readAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+        workflowId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }], description: 'discussionMention only: the workflow whose discussion mentions the recipient' }
+        elementId: { type: [string, 'null'], description: 'discussionMention only: the step or connection ID of the discussion' }
 
     ConnectionSummary:
       type: object

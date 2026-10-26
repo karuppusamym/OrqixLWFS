@@ -158,7 +158,7 @@ public class AuditWriter {
             Map.entry("workflow.folder.deleted", Set.of("unfiledWorkflows")),
             Map.entry("workflow.folder.assigned", Set.of("folderId")),
             Map.entry("workflow.owner.changed", Set.of("from", "to")),
-            Map.entry("workflow.comment.created", Set.of("commentId", "reply")),
+            Map.entry("workflow.comment.created", Set.of("commentId", "reply", "mentionCount", "mentionsIgnored", "notified")),
             Map.entry("workflow.comment.resolved", Set.of("commentId")),
             Map.entry("workflow.comment.reopened", Set.of("commentId")),
             Map.entry("workflow.tests.run", Set.of("suiteVersion", "revision", "cases", "passed")),

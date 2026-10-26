@@ -219,6 +219,8 @@ export interface MockComment {
   createdAt: string
   resolvedAt: string | null
   resolvedById: string | null
+  /** CMP01: ids of the people mentioned (kept only when they can read the workflow and are named in the text). */
+  mentions?: string[]
 }
 
 /** A canary for a workflow (PL02, docs/build/S54). */
@@ -316,8 +318,11 @@ export interface MockNotification {
   wsId: string
   userId: string
   runId: string | null
-  kind: 'workflowMessage' | 'runAttention'
+  kind: 'workflowMessage' | 'runAttention' | 'discussionMention'
   message: string
+  /** CMP01: a discussion mention points at the workflow and element instead of a run. */
+  workflowId?: string | null
+  elementId?: string | null
   createdAt: string
   readAt: string | null
 }

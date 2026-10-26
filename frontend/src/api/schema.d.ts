@@ -1403,6 +1403,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/discussion/mention-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * People who can be mentioned in this workflow's discussion (workflow.edit or workflow.publish to ask)
+         * @description CMP01 (docs/build/S87). Enabled people, other than the caller, who can read this workflow in this workspace today (workflow.read, computed fresh). Never lists people of other workspaces. At most 10, matched on the display name among the first 100 enabled people whose name contains q.
+         */
+        get: operations["listWorkflowMentionCandidates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/workflows/{workflowId}/discussion/{commentId}/resolution": {
         parameters: {
             query?: never;
@@ -2773,6 +2796,25 @@ export interface paths {
         put?: never;
         /** Idempotently mark the caller's own notification read */
         post: operations["markNotificationRead"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/me/notifications/read-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Idempotently mark every unread notification of the caller in this workspace read (CMP01) */
+        post: operations["markAllNotificationsRead"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4943,6 +4985,8 @@ export interface components {
             /** Format: date-time */
             resolvedAt?: string | null;
             resolvedByName?: string | null;
+            /** @description People mentioned in this comment (CMP01), with their current display names; each appears as "@Display Name" in body */
+            mentions: components["schemas"]["SubjectRef"][];
         };
         WorkflowDiscussionThread: {
             root: components["schemas"]["WorkflowComment"];
@@ -4960,6 +5004,8 @@ export interface components {
             elementId: string;
             body: string;
             parentId?: components["schemas"]["Uuid"];
+            /** @description People to mention (CMP01, docs/build/S87). A mention is kept only for an enabled person other than the author who can read this workflow and whose "@Display Name" is in body; anything else is ignored without an error. */
+            mentions?: components["schemas"]["Uuid"][];
         };
         ResolveWorkflowThread: {
             resolved: boolean;
@@ -6355,10 +6401,15 @@ export interface components {
             /** @description Title of the request runId (see Run.requestTitle); null when the recipient may not read the request data */
             requestTitle?: string | null;
             /** @enum {string} */
-            kind: "workflowMessage" | "runAttention";
+            kind: "workflowMessage" | "runAttention" | "discussionMention";
+            /** @description For discussionMention: who mentioned the recipient, on which step and workflow; never the comment text */
             message: string;
             createdAt: components["schemas"]["Timestamp"];
             readAt: components["schemas"]["Timestamp"] | null;
+            /** @description discussionMention only: the workflow whose discussion mentions the recipient */
+            workflowId?: components["schemas"]["Uuid"] | null;
+            /** @description discussionMention only: the step or connection ID of the discussion */
+            elementId?: string | null;
         };
         ConnectionSummary: {
             key: components["schemas"]["Key"];
@@ -10918,6 +10969,37 @@ export interface operations {
             422: components["responses"]["Unprocessable"];
         };
     };
+    listWorkflowMentionCandidates: {
+        parameters: {
+            query?: {
+                q?: string;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Up to 10 people */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["SubjectRef"][];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     resolveWorkflowThread: {
         parameters: {
             query?: never;
@@ -13123,6 +13205,32 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    markAllNotificationsRead: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description How many notifications changed from unread to read */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        markedRead: number;
+                    };
+                };
             };
             401: components["responses"]["Unauthenticated"];
             404: components["responses"]["NotFound"];

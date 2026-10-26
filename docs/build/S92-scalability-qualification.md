@@ -168,4 +168,6 @@ Guidance that follows from the evidence (not from production measurements):
 - `tools/perf/scale.py`, `tools/perf/seed_large.sql`, `tools/perf/explain_hot.sql`, `tools/perf/probe_volume.py`.
 - `docs/admin-guide.md`: section "Scaling and capacity".
 
+Verification: `mvnw clean verify` (backend, run after the load tests, not concurrently): 899 tests, 4 skipped, 1 failure - the first version of `ScaleIndexesTest` asserted planner choices, which differ on the shared test database. It now asserts index keys, predicates and validity; re-run together with `DatabaseTest`: pass. `PlanCacheModeTest`, `InsightsApiTest`: pass. No frontend change, no frontend suite run.
+
 Note for merging: V155 was chosen from the reserved range V155-V159. Flyway `outOfOrder` is not enabled, so lower versions merged later (V123-V154) must be applied before V155 on any database, or the migration job will refuse them.

@@ -3845,6 +3845,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/migrations/blueprints": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload a Pega Blueprint PDF and transcribe it for review (docs/build/S91)
+         * @description The PDF (at most 25 MiB and 60 pages, starting with %PDF-) is read page by page in the isolated extraction worker; no JavaScript, form action or embedded file is executed or opened, and encrypted or damaged PDFs are refused. A generic outline layout proposes a structured transcription with source page references; every element starts as proposed and must be reviewed. Nothing is converted or published by this call. The layout is generic and does not claim compatibility with Pega's own Blueprint export layout.
+         */
+        post: operations["uploadBlueprintMigration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/migrations/{migrationId}/blueprint": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                migrationId: components["parameters"]["MigrationId"];
+            };
+            cookie?: never;
+        };
+        /** The current transcription of a blueprint migration with its source page texts and findings */
+        get: operations["getBlueprintTranscription"];
+        /**
+         * Save a reviewed or edited transcription as the next immutable revision
+         * @description Elements whose content differs from the extracted transcription cannot stay mapped and are stored as manuallyResolved. A converted blueprint can no longer change (409); a stale expectedRevision is 409.
+         */
+        put: operations["saveBlueprintTranscription"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/migrations/{migrationId}/blueprint/ai-proposal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                migrationId: components["parameters"]["MigrationId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Optional AI structuring of the stored page texts, returned for review and never applied
+         * @description Uses the workspace AI profiles, price caps and budget (docs/build/S10). Page texts are redacted and sent as untrusted data; the answer must be a valid transcription and every element is returned as proposed. Nothing is stored; the reviewer may save it as a new revision. 422 AI_NOT_CONFIGURED when AI is off.
+         */
+        post: operations["proposeBlueprintTranscription"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/document-sources": {
         parameters: {
             query?: never;
@@ -6725,6 +6794,141 @@ export interface components {
             /** @default 1 */
             definitionVersion: number;
         };
+        BlueprintElementId: string;
+        /**
+         * @description proposed = not yet reviewed; mapped = reviewed against its source page; manuallyResolved = edited or added by the reviewer; excluded = out of scope with a dispositionReason
+         * @enum {string}
+         */
+        BlueprintDisposition: "proposed" | "mapped" | "manuallyResolved" | "excluded";
+        /** @description Reviewed structured transcription of a blueprint (docs/build/S91); the single source of truth for conversion. */
+        BlueprintTranscription: {
+            /** @constant */
+            format: "orqix-blueprint-transcription-0.1";
+            caseType?: {
+                name: string;
+                sourcePage?: number | null;
+                sourceExcerpt?: string | null;
+                disposition: components["schemas"]["BlueprintDisposition"];
+                dispositionReason?: string | null;
+            } | null;
+            /** @description Id of the first step or decision */
+            start?: string | null;
+            stages?: components["schemas"]["BlueprintNamedElement"][];
+            roles?: components["schemas"]["BlueprintNamedElement"][];
+            fields?: {
+                id: string;
+                name: string;
+                /** @enum {string|null} */
+                type?: "string" | "number" | "integer" | "boolean" | "date" | null;
+                required?: boolean;
+                sourcePage?: number | null;
+                sourceExcerpt?: string | null;
+                disposition: components["schemas"]["BlueprintDisposition"];
+                dispositionReason?: string | null;
+            }[];
+            steps?: {
+                id: components["schemas"]["BlueprintElementId"];
+                name: string;
+                stage?: string | null;
+                /** @enum {string|null} */
+                type?: "approval" | "task" | "automated" | null;
+                role?: string | null;
+                /** @description Step, decision or outcome after approval (or completion) */
+                next?: string | null;
+                /** @description Target when an approver rejects */
+                onReject?: string | null;
+                sourcePage?: number | null;
+                sourceExcerpt?: string | null;
+                disposition: components["schemas"]["BlueprintDisposition"];
+                dispositionReason?: string | null;
+            }[];
+            decisions?: {
+                id: components["schemas"]["BlueprintElementId"];
+                name: string;
+                rules?: {
+                    field?: string | null;
+                    /** @enum {string|null} */
+                    operator?: ">=" | ">" | "<=" | "<" | "==" | "!=" | null;
+                    value?: string | null;
+                    target?: string | null;
+                }[];
+                otherwise?: string | null;
+                sourcePage?: number | null;
+                sourceExcerpt?: string | null;
+                disposition: components["schemas"]["BlueprintDisposition"];
+                dispositionReason?: string | null;
+            }[];
+            slas?: {
+                id: components["schemas"]["BlueprintElementId"];
+                name: string;
+                step?: string | null;
+                amount?: number | null;
+                /** @enum {string|null} */
+                unit?: "minutes" | "hours" | "days" | "workingDays" | null;
+                sourcePage?: number | null;
+                sourceExcerpt?: string | null;
+                disposition: components["schemas"]["BlueprintDisposition"];
+                dispositionReason?: string | null;
+            }[];
+            outcomes?: {
+                id: components["schemas"]["BlueprintElementId"];
+                name: string;
+                /** @enum {string|null} */
+                type?: "success" | "rejected" | null;
+                sourcePage?: number | null;
+                sourceExcerpt?: string | null;
+                disposition: components["schemas"]["BlueprintDisposition"];
+                dispositionReason?: string | null;
+            }[];
+            integrations?: {
+                id: components["schemas"]["BlueprintElementId"];
+                name: string;
+                target?: string | null;
+                step?: string | null;
+                sourcePage?: number | null;
+                sourceExcerpt?: string | null;
+                disposition: components["schemas"]["BlueprintDisposition"];
+                dispositionReason?: string | null;
+            }[];
+        };
+        BlueprintNamedElement: {
+            id: components["schemas"]["BlueprintElementId"];
+            name: string;
+            sourcePage?: number | null;
+            sourceExcerpt?: string | null;
+            disposition: components["schemas"]["BlueprintDisposition"];
+            dispositionReason?: string | null;
+        };
+        BlueprintTranscriptionView: {
+            migrationId: components["schemas"]["Uuid"];
+            /** @enum {string} */
+            status: "analyzed" | "converted" | "failed";
+            revision: number;
+            /** @description Send as transcriptionSha256 when converting this revision */
+            transcriptionSha256: string;
+            /** @enum {string} */
+            origin: "extracted" | "edited";
+            savedBy?: components["schemas"]["SubjectRef"] | null;
+            /** Format: date-time */
+            savedAt: string;
+            layout: {
+                id: string;
+                revision: string;
+            };
+            pageCount: number;
+            /** @description The PDF contained JavaScript or automatic actions; they were ignored */
+            javascript: boolean;
+            /** @description The PDF contained embedded files; they were not opened */
+            embeddedFiles: boolean;
+            pages: {
+                number: number;
+                text: string;
+                sha256: string;
+                unclassifiedLines: number;
+            }[];
+            transcription: components["schemas"]["BlueprintTranscription"];
+            report: components["schemas"]["CompatibilityReport"];
+        };
         MigrationJob: {
             id: components["schemas"]["Uuid"];
             fileName: string;
@@ -6778,6 +6982,8 @@ export interface components {
             };
             /** @description DMN migrations only: the decision to convert; optional when the file has exactly one decision */
             decisionId?: string;
+            /** @description Pega Blueprint PDF migrations only (required there): the transcriptionSha256 of the reviewed transcription revision being converted. Routes, request fields and steps come from that transcription, so approvalRoutes, inputSchema and other mappings except groupMappings are refused. */
+            transcriptionSha256?: string;
             /** @description Reviewed canonical request schema; otherwise inferred from BPMN comparisons and service input mappings */
             inputSchema?: {
                 [key: string]: unknown;
@@ -14778,6 +14984,144 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["Unprocessable"];
+        };
+    };
+    uploadBlueprintMigration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Job created with the findings of the proposed transcription */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MigrationJob"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getBlueprintTranscription: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                migrationId: components["parameters"]["MigrationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current transcription revision */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BlueprintTranscriptionView"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    saveBlueprintTranscription: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                migrationId: components["parameters"]["MigrationId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    expectedRevision: number;
+                    transcription: components["schemas"]["BlueprintTranscription"];
+                };
+            };
+        };
+        responses: {
+            /** @description Saved revision */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BlueprintTranscriptionView"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+        };
+    };
+    proposeBlueprintTranscription: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                migrationId: components["parameters"]["MigrationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    profile?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Proposal for review */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        transcription: components["schemas"]["BlueprintTranscription"];
+                        report: components["schemas"]["CompatibilityReport"];
+                        profile: string;
+                        model: string;
+                        basedOnRevision: number;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["Unavailable"];
         };
     };
     listDocumentSources: {

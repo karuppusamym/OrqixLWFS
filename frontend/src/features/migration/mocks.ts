@@ -71,6 +71,13 @@ export function createMigrationHandlers(): HttpHandler[] {
         throw cause
       }
     }),
+    // Mock mode cannot read PDFs: the Pega Blueprint import needs the real backend's isolated extraction worker.
+    http.post(`${B}/workspaces/:ws/migrations/blueprints`, async ({ params }) => {
+      await slow()
+      const g = guard(params.ws, 'workflow.edit')
+      if (!g.ok) return g.res
+      return problem(422, 'SOURCE_INVALID', 'Source not supported', { detail: 'Mock mode cannot read PDF files. Pega Blueprint import requires the real backend.' })
+    }),
     http.get(`${B}/workspaces/:ws/migrations/:id`, async ({ params }) => {
       await slow()
       const g = guard(params.ws, 'workflow.read')

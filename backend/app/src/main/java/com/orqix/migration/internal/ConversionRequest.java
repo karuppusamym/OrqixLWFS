@@ -9,7 +9,8 @@ import tools.jackson.databind.JsonNode;
 final class ConversionRequest {
     private static final String KEY = "^[a-z][a-z0-9-]{0,62}[a-z0-9]$";
     static void validate(JsonNode request) {
-        object(request, Set.of("workflowKey", "name", "groupMappings", "approvalRoutes", "serviceTaskMappings", "serviceGroupMappings", "childWorkflowMappings", "decisionMappings", "formMappings", "decisionId", "inputSchema", "acknowledgeInfo", "acknowledgeReview"), "request");
+        object(request, Set.of("workflowKey", "name", "groupMappings", "approvalRoutes", "serviceTaskMappings", "serviceGroupMappings", "childWorkflowMappings", "decisionMappings", "formMappings", "decisionId", "inputSchema", "acknowledgeInfo", "acknowledgeReview", "transcriptionSha256"), "request");
+        if (request.has("transcriptionSha256") && !request.path("transcriptionSha256").asString("").matches("^[0-9a-f]{64}$")) fail("transcriptionSha256", "must be a lowercase SHA-256 hex digest");
         if (Json.depth(request) > 64) fail("request", "must have at most 64 levels");
         key(request.path("workflowKey"), "workflowKey");
         text(request.path("name"), "name", 200);

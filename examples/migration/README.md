@@ -6,6 +6,8 @@ These files are hand-authored test fixtures, not customer exports. Camunda 7 and
 
 The synthetic Pega ZIP contains one placeholder `rules/process.xml`. It demonstrates archive inventory and the checksum-linked manual mapping workflow only. It does not reproduce a native Pega rules archive or demonstrate automatic Pega conversion. The browser/integration tests deliberately label their manual mapping as synthetic.
 
+`pega-blueprint/` holds a synthetic blueprint outline PDF and its expected transcription for the Pega Blueprint (PDF) import ([S91](../../docs/build/S91-pega-blueprint-pdf.md)); it is not a Pega export.
+
 See [migration strategy](../../docs/05-migration.md) and [migration workbench](../../docs/17-migration-workbench.md) for the supported subset and limitations.
 
 ## Expansion fixtures (all synthetic, hand-authored; none is a customer export)

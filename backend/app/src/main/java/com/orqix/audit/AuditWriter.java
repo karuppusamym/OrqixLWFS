@@ -131,7 +131,10 @@ public class AuditWriter {
             Map.entry("ai.workflow.explained", Set.of("profile", "model", "promptVersion", "revision", "releaseNumber",
                     "inputTokens", "outputTokens", "costUsd", "durationMs", "outcome")),
             Map.entry("migration.uploaded", Set.of("migrationId", "sourceSystem", "sourceSha256", "adapterVersion",
-                    "elementCount", "blockerCount", "actionCount")),
+                    "elementCount", "blockerCount", "actionCount", "pageCount", "transcriptionSha256")),
+            // Pega Blueprint PDF (docs/build/S91): ids, counts and hashes only; never page text, prompts or answers.
+            Map.entry("migration.blueprint.saved", Set.of("migrationId", "revision", "transcriptionSha256", "elementCount", "openFindings")),
+            Map.entry("migration.blueprint.ai.proposed", Set.of("migrationId", "profile", "model", "elementCount")),
             Map.entry("migration.project.created", Set.of("fileCount", "issueCount")),
             Map.entry("migration.converted", Set.of("migrationId", "workflowId", "workflowKey")),
             Map.entry("migration.policy.changed", Set.of("required", "version")),

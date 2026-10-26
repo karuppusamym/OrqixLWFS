@@ -25,6 +25,20 @@ Open <http://localhost:8080>. Sign-in passwords for the test users are in `deplo
 
 Optional AI: put `OPENROUTER_API_KEY` in `.env` before `docker compose up`. Without it every demo works except the AI parts: the **Describe it** button and the AI section in Settings are simply absent, with no message saying why, so tell the audience AI drafting is switched off in this environment. For a stack on other ports, run the seed with `ORQIX_BASE_URL` and `ORQIX_STUB_URL` set. Each AI call costs a fraction of a cent (economy profile: DeepSeek; costly models are excluded and a monthly budget applies).
 
+## A repeatable, isolated demo stack
+
+`tools/demo/demo-stack.sh` stands up a separate stack from the current checkout so a demo never depends on whatever else runs on the machine (its own Compose project, volume, image tags and ports; it refuses to start if a port is taken, and never touches another project):
+
+```bash
+tools/demo/demo-stack.sh up   demo-1026 38000   # builds the images if missing (REBUILD=1 forces), starts, waits, registers the sign-in redirect
+tools/demo/demo-stack.sh seed demo-1026 38000   # adds the demo requests (safe to repeat)
+tools/demo/demo-stack.sh stop demo-1026         # stop, keeping the data
+tools/demo/demo-stack.sh start demo-1026 38000  # start again
+tools/demo/demo-stack.sh down demo-1026         # remove the stack AND its database volume
+```
+
+With port base 38000 the app is http://localhost:38080 and Keycloak http://localhost:38180. Use a new tag for a clean database. Development credentials only; the demo users are in `deploy/compose/keycloak/orqix-dev-realm.json`.
+
 Reset the procurement stub between runs of demo 1 if you inject faults: `curl -X POST localhost:8095/__reset`.
 
 ## Demo 1 — Business approval (the core, 12 minutes)

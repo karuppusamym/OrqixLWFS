@@ -22,7 +22,9 @@ import com.orqix.shared.web.Sql;
 public class NotificationService {
 
     public enum Kind {
-        WORKFLOW_MESSAGE("workflowMessage"), RUN_ATTENTION("runAttention");
+        WORKFLOW_MESSAGE("workflowMessage"), RUN_ATTENTION("runAttention"),
+        /** CMP01 (docs/build/S87): someone mentioned the recipient in a step or connection discussion. */
+        DISCUSSION_MENTION("discussionMention");
 
         private final String value;
 
@@ -36,7 +38,7 @@ public class NotificationService {
     }
 
     public record NotificationRow(UUID id, UUID runId, String runReference, String kind, String message,
-            Instant createdAt, Instant readAt) {
+            Instant createdAt, Instant readAt, UUID workflowId, String elementId) {
     }
 
     private final JdbcClient jdbc;
@@ -62,12 +64,47 @@ public class NotificationService {
                 .update() == 1;
     }
 
+    /**
+     * CMP01: a discussion mention. Points at the workflow, element and comment (no run). Idempotent through the dedup
+     * key; the caller must have checked that the recipient may read the workflow, and the message must not contain the
+     * comment text.
+     *
+     * @return true when a new notification was created
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public boolean createMention(UUID workspaceId, UUID recipient, UUID workflowId, String elementId, UUID commentId,
+            String dedupKey, String message) {
+        String text = message.length() > 500 ? message.substring(0, 500) : message;
+        return jdbc.sql("""
+                INSERT INTO notification (id, workspace_id, recipient_subject_id, kind, dedup_key, message, created_at,
+                                          workflow_id, element_id, comment_id)
+                VALUES (:id, :ws, :recipient, :kind, :dedup, :message, :at, :wf, :el, :comment)
+                ON CONFLICT (dedup_key) DO NOTHING
+                """)
+                .param("id", Ids.newId()).param("ws", workspaceId).param("recipient", recipient)
+                .param("kind", Kind.DISCUSSION_MENTION.value()).param("dedup", dedupKey).param("message", text)
+                .param("at", Sql.ts(clock.instant())).param("wf", workflowId).param("el", elementId)
+                .param("comment", commentId)
+                .update() == 1;
+    }
+
+    /** Marks every unread notification of the recipient in the workspace read; returns how many changed. */
+    @Transactional
+    public int markAllRead(UUID workspaceId, UUID recipient) {
+        return jdbc.sql("""
+                UPDATE notification SET read_at = :at
+                WHERE workspace_id = :ws AND recipient_subject_id = :recipient AND read_at IS NULL
+                """)
+                .param("at", Sql.ts(clock.instant())).param("ws", workspaceId).param("recipient", recipient).update();
+    }
+
     /** Fetches up to {@code limit + 1} rows after {@code after} (keyset on created_at, id). */
     @Transactional(readOnly = true)
     public List<NotificationRow> list(UUID workspaceId, UUID recipient, boolean unreadOnly, CursorCodec.Position after,
             int limitPlusOne) {
         return jdbc.sql("""
-                SELECT n.id, n.run_id, r.reference AS run_reference, n.kind, n.message, n.created_at, n.read_at
+                SELECT n.id, n.run_id, r.reference AS run_reference, n.kind, n.message, n.created_at, n.read_at,
+                       n.workflow_id, n.element_id
                 FROM notification n
                 LEFT JOIN workflow_run r ON r.workspace_id = n.workspace_id AND r.id = n.run_id
                 WHERE n.workspace_id = :ws AND n.recipient_subject_id = :recipient
@@ -83,7 +120,8 @@ public class NotificationService {
                 .param("limit", limitPlusOne)
                 .query((rs, n) -> new NotificationRow(Sql.uuid(rs, "id"), Sql.uuid(rs, "run_id"),
                         rs.getString("run_reference"), rs.getString("kind"), rs.getString("message"),
-                        Sql.instant(rs, "created_at"), Sql.instant(rs, "read_at")))
+                        Sql.instant(rs, "created_at"), Sql.instant(rs, "read_at"), Sql.uuid(rs, "workflow_id"),
+                        rs.getString("element_id")))
                 .list();
     }
 

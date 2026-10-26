@@ -277,8 +277,16 @@ public class RuntimeController {
                 .map(NotificationService.NotificationRow::runId).filter(java.util.Objects::nonNull).distinct().toList());
         return new RuntimeDtos.NotificationPage(page.items().stream()
                 .map(n -> new RuntimeDtos.Notification(n.id(), n.runId(), n.runReference(), titles.get(n.runId()), n.kind(), n.message(),
-                        n.createdAt(), n.readAt()))
+                        n.createdAt(), n.readAt(), n.workflowId(), n.elementId()))
                 .toList(), page.nextCursor(), notifications.unreadCount(workspaceId, caller.subjectId()));
+    }
+
+    /** CMP01: marks every unread notification of the caller in this workspace read (idempotent). */
+    @PostMapping("/me/notifications/read-all")
+    public RuntimeDtos.NotificationsMarkedRead markAllNotificationsRead(@PathVariable UUID workspaceId) {
+        Caller caller = callers.current();
+        policy.requireVisible(caller, workspaceId);
+        return new RuntimeDtos.NotificationsMarkedRead(notifications.markAllRead(workspaceId, caller.subjectId()));
     }
 
     @PostMapping("/notifications/{notificationId}/read")

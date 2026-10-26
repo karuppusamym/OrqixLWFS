@@ -46,7 +46,11 @@ export const getWorkflowDiscussion = (ws: string, workflowId: string, elementId?
 export const postWorkflowComment = (ws: string, workflowId: string, body: S['PostWorkflowComment']) =>
   call(api.POST('/workspaces/{workspaceId}/workflows/{workflowId}/discussion', { params: { path: { workspaceId: ws, workflowId } }, body }))
 
-export const resolveWorkflowThread = (ws: string, workflowId: string, commentId: string, resolved: boolean) =>
+/** CMP01 (docs/build/S87): people who can be mentioned in this workflow's discussion (they can read it). */
+export const listWorkflowMentionCandidates = (ws: string, workflowId: string, q: string) =>
+  call(api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/discussion/mention-candidates', { params: { path: { workspaceId: ws, workflowId }, query: q ? { q } : {} } }))
+
+export const resolveWorkflowThread =(ws: string, workflowId: string, commentId: string, resolved: boolean) =>
   call(api.PUT('/workspaces/{workspaceId}/workflows/{workflowId}/discussion/{commentId}/resolution', { params: { path: { workspaceId: ws, workflowId, commentId } }, body: { resolved } }))
 
 export const createWorkflow = (ws: string, body: S['CreateWorkflowRequest']) =>
@@ -336,6 +340,9 @@ export const markNotificationRead = (ws: string, notificationId: string) =>
       params: { path: { workspaceId: ws, notificationId } },
     }),
   )
+
+export const markAllNotificationsRead = (ws: string) =>
+  call(api.POST('/workspaces/{workspaceId}/me/notifications/read-all', { params: { path: { workspaceId: ws } } }))
 
 // Tasks
 export const listTasks = (ws: string, view: TaskView, query: { cursor?: string; limit?: number; sort?: "priority" | "oldest" | "newest"; minPriority?: number } = {}) =>

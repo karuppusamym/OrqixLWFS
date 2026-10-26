@@ -86,6 +86,11 @@ function guard(wsId: string | readonly string[] | undefined, ...anyOf: Permissio
   return { ok: true, user, perms }
 }
 
+/** CMP01: mentioned people as API SubjectRefs (current display names). */
+function mentionRefs(ids: readonly string[] | undefined): { id: string; displayName: string }[] {
+  return (ids ?? []).map((id) => ({ id, displayName: userById(id)?.displayName ?? 'Unknown user' }))
+}
+
 function str(value: string | readonly string[] | undefined): string {
   return Array.isArray(value) ? (value[0] ?? '') : ((value as string | undefined) ?? '')
 }
@@ -706,6 +711,7 @@ export function createHandlers(): HttpHandler[] {
         id: c.id, elementId: c.elementId, parentId: c.parentId, body: c.body, authorId: c.authorId,
         authorName: userById(c.authorId)?.displayName ?? 'Unknown user', createdAt: c.createdAt, resolved: c.resolvedAt !== null,
         resolvedAt: c.resolvedAt, resolvedByName: c.resolvedById ? (userById(c.resolvedById)?.displayName ?? 'Unknown user') : null,
+        mentions: mentionRefs(c.mentions),
       })
       const threads = mine.filter((c) => !c.parentId && (!element || c.elementId === element)).map((c) => ({ root: view(c), replies: mine.filter((r) => r.parentId === c.id).map(view) }))
       const openByElement: Record<string, number> = {}
@@ -719,7 +725,7 @@ export function createHandlers(): HttpHandler[] {
       if (!g.perms.includes('workflow.edit') && !g.perms.includes('workflow.publish')) return forbidden()
       const wf = findWorkflow(str(params.ws), str(params.id))
       if (!wf) return notFound()
-      const input = await body<{ elementId?: string; body?: string; parentId?: string }>(request)
+      const input = await body<{ elementId?: string; body?: string; parentId?: string; mentions?: string[] }>(request)
       const text = (input.body ?? '').trim()
       if (!text || text.length > 2000 || !input.elementId) return problem(400, 'MALFORMED_REQUEST', 'The request is malformed', { fieldErrors: [{ pointer: '/body', code: 'Size', message: 'Use 1 to 2000 characters.' }] })
       const def = wf.drafts.at(-1)!.definition
@@ -729,9 +735,20 @@ export function createHandlers(): HttpHandler[] {
         if (!parent) return notFound()
         if (parent.parentId || parent.elementId !== input.elementId) return problem(422, 'VALIDATION_FAILED', 'Some values are not valid', { detail: 'Reply to the first comment of the thread.' })
       }
-      const comment = { id: newId(), wfId: wf.id, elementId: input.elementId, parentId: input.parentId ?? null, body: text, authorId: g.user.id, createdAt: clock.iso(), resolvedAt: null, resolvedById: null }
+      if ((input.mentions?.length ?? 0) > 10) return problem(400, 'MALFORMED_REQUEST', 'The request is malformed', { fieldErrors: [{ pointer: '/mentions', code: 'Size', message: 'At most 10 mentions.' }] })
+      const comment = { id: newId(), wfId: wf.id, elementId: input.elementId, parentId: input.parentId ?? null, body: text, authorId: g.user.id, createdAt: clock.iso(), resolvedAt: null, resolvedById: null, mentions: [] as string[] }
+      // CMP01 (docs/build/S87): keep only people who can read the workflow here, are not the author and are named in the text.
+      const lower = text.toLowerCase()
+      for (const id of new Set(input.mentions ?? [])) {
+        const person = userById(id)
+        if (!person || person.id === g.user.id || !permissionsOf(person, str(params.ws)).includes('workflow.read') || !lower.includes(`@${person.displayName.toLowerCase()}`)) continue
+        comment.mentions.push(person.id)
+        const node = def.nodes.find((n) => n.id === input.elementId)
+        const where = node ? (node.label ? `the step "${node.label}"` : 'a step') : 'a connection'
+        db.notifications.unshift({ id: newId(), wsId: str(params.ws), userId: person.id, runId: null, kind: 'discussionMention', message: `${g.user.displayName} mentioned you in the discussion on ${where} of "${wf.name}".`, createdAt: clock.iso(), readAt: null, workflowId: wf.id, elementId: input.elementId })
+      }
       db.workflowComments.push(comment)
-      return HttpResponse.json({ id: comment.id, elementId: comment.elementId, parentId: comment.parentId, body: text, authorId: g.user.id, authorName: g.user.displayName, createdAt: comment.createdAt, resolved: false, resolvedAt: null, resolvedByName: null }, { status: 201 })
+      return HttpResponse.json({ id: comment.id, elementId: comment.elementId, parentId: comment.parentId, body: text, authorId: g.user.id, authorName: g.user.displayName, createdAt: comment.createdAt, resolved: false, resolvedAt: null, resolvedByName: null, mentions: mentionRefs(comment.mentions) }, { status: 201 })
     }),
     http.put(`${B}/workspaces/:ws/workflows/:id/discussion/:cid/resolution`, async ({ params, request }) => {
       await slow()
@@ -745,7 +762,18 @@ export function createHandlers(): HttpHandler[] {
       const input = await body<{ resolved?: boolean }>(request)
       if (input.resolved && !comment.resolvedAt) { comment.resolvedAt = clock.iso(); comment.resolvedById = g.user.id }
       if (input.resolved === false) { comment.resolvedAt = null; comment.resolvedById = null }
-      return HttpResponse.json({ id: comment.id, elementId: comment.elementId, parentId: null, body: comment.body, authorId: comment.authorId, authorName: userById(comment.authorId)?.displayName ?? 'Unknown user', createdAt: comment.createdAt, resolved: comment.resolvedAt !== null, resolvedAt: comment.resolvedAt, resolvedByName: comment.resolvedById ? (userById(comment.resolvedById)?.displayName ?? 'Unknown user') : null })
+      return HttpResponse.json({ id: comment.id, elementId: comment.elementId, parentId: null, body: comment.body, authorId: comment.authorId, authorName: userById(comment.authorId)?.displayName ?? 'Unknown user', createdAt: comment.createdAt, resolved: comment.resolvedAt !== null, resolvedAt: comment.resolvedAt, resolvedByName: comment.resolvedById ? (userById(comment.resolvedById)?.displayName ?? 'Unknown user') : null, mentions: mentionRefs(comment.mentions) })
+    }),
+    http.get(`${B}/workspaces/:ws/workflows/:id/discussion/mention-candidates`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws, 'workflow.read')
+      if (!g.ok) return g.res
+      if (!g.perms.includes('workflow.edit') && !g.perms.includes('workflow.publish')) return forbidden()
+      if (!findWorkflow(str(params.ws), str(params.id))) return notFound()
+      const q = (new URL(request.url).searchParams.get('q') ?? '').trim().toLowerCase()
+      const items = USERS.filter((u) => u.id !== g.user.id && permissionsOf(u, str(params.ws)).includes('workflow.read') && u.displayName.toLowerCase().includes(q))
+        .sort((a, b) => a.displayName.localeCompare(b.displayName)).slice(0, 10).map((u) => ({ id: u.id, displayName: u.displayName }))
+      return HttpResponse.json({ items })
     }),
 
     // Canary and release analytics (PL02, docs/build/S54) --------------------------------------------------------------
@@ -1224,6 +1252,14 @@ export function createHandlers(): HttpHandler[] {
         const run = n.runId ? db.runs.get(n.runId) : undefined
         return { ...n, runReference: run?.reference ?? null, requestTitle: run && canSeeRunData(run, g.user) ? requestTitleOf(run) : null }
       }), nextCursor: page.nextCursor, unreadCount })
+    }),
+    http.post(`${B}/workspaces/:ws/me/notifications/read-all`, async ({ params }) => {
+      await slow()
+      const g = guard(params.ws)
+      if (!g.ok) return g.res
+      let markedRead = 0
+      for (const n of db.notifications) if (n.wsId === str(params.ws) && n.userId === g.user.id && !n.readAt) { n.readAt = clock.iso(); markedRead++ }
+      return HttpResponse.json({ markedRead })
     }),
     http.post(`${B}/workspaces/:ws/notifications/:id/read`, async ({ params }) => {
       await slow()

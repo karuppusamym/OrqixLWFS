@@ -37,6 +37,13 @@ public class DiscussionController {
         return service.list(callers.current(), workspaceId, workflowId, elementId);
     }
 
+    /** CMP01 (docs/build/S87): people who can be mentioned on this workflow (they can read it in this workspace). */
+    @GetMapping("/mention-candidates")
+    public DiscussionService.Candidates mentionCandidates(@PathVariable UUID workspaceId, @PathVariable UUID workflowId,
+            @RequestParam(required = false) String q) {
+        return service.mentionCandidates(callers.current(), workspaceId, workflowId, q);
+    }
+
     @PostMapping
     public ResponseEntity<DiscussionService.Comment> post(@PathVariable UUID workspaceId, @PathVariable UUID workflowId,
             @Valid @RequestBody DiscussionService.PostRequest request) {

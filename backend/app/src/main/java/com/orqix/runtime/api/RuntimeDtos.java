@@ -251,7 +251,12 @@ public final class RuntimeDtos {
 
     // ------------------------------------------------------------------ notifications
 
-    public record Notification(UUID id, UUID runId, String runReference, String requestTitle, String kind, String message, Instant createdAt, Instant readAt) {
+    /** {@code workflowId} and {@code elementId} are set for a discussion mention (CMP01, docs/build/S87). */
+    public record Notification(UUID id, UUID runId, String runReference, String requestTitle, String kind, String message, Instant createdAt, Instant readAt,
+            UUID workflowId, String elementId) {
+    }
+
+    public record NotificationsMarkedRead(int markedRead) {
     }
 
     public record NotificationPage(List<Notification> items, String nextCursor, int unreadCount) {

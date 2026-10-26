@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router'
+import { useNavigate, useParams, useSearchParams } from 'react-router'
 import * as endpoints from '@/api/endpoints'
 import { keys, useGroups } from '@/api/queries'
 import type { ValidationIssue } from '@/api/types'
@@ -135,6 +135,7 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
   const [addAfter, setAddAfter] = useState<string | null>(null)
   const [branchRequest, setBranchRequest] = useState<{ from: string; to: string | null } | null>(null)
   const focusRequest = useStudio((s) => s.focusRequest)
+  const linkNotice = useDiscussionLink(desktop, announce)
 
   // Focus the inspector field named by an issue path (Go to step) or a freshly added step.
   useEffect(() => {
@@ -236,6 +237,11 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
         testOpen={testOpen}
       />
       <ImportNotice workflowId={workflowId} />
+      {linkNotice ? (
+        <Alert tone="info" live="polite" className="m-3" data-testid="discussion-link-notice">
+          {linkNotice}
+        </Alert>
+      ) : null}
       <AiReviewPanel workflowId={workflowId} />
       {!canEdit ? (
         <Alert tone="info" live="off" className="m-3">
@@ -312,3 +318,45 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
   )
 }
 
+/**
+ * CMP01 (docs/build/S87): a mention notification opens the studio with ?element=<id>&discussion=1. Selects that step or
+ * connection once, then moves focus to its discussion. Returns a notice when the element is no longer in the draft or
+ * the screen is too narrow to show the discussion.
+ */
+function useDiscussionLink(desktop: boolean, announce: (m: string) => void): string | null {
+  const { store } = useStudioContext()
+  const [params, setParams] = useSearchParams()
+  const element = params.get('element')
+  const wantsDiscussion = params.get('discussion') === '1'
+  // Decided once from the link the studio was opened with (the link is removed from the URL below).
+  const [link] = useState(() => {
+    if (!element) return null
+    const def = store.getState().definition
+    const type: 'node' | 'edge' | null = def.nodes.some((n) => n.id === element) ? 'node' : def.transitions.some((t) => t.id === element) ? 'edge' : null
+    const notice = !type
+      ? 'The step or connection you were mentioned on is no longer in this draft. Its discussion is kept but cannot be shown here.'
+      : !desktop ? 'The discussion is shown next to the canvas on a screen at least 1024 px wide.' : null
+    return { notice, type, id: element }
+  })
+  useEffect(() => {
+    if (!element) return
+    // Consume the link once so later navigation inside the studio is not pulled back to it.
+    setParams((current) => {
+      const next = new URLSearchParams(current)
+      next.delete('element')
+      next.delete('discussion')
+      return next
+    }, { replace: true })
+    if (!link?.type || link.id !== element) return
+    store.getState().select({ type: link.type, id: element })
+    if (!desktop || !wantsDiscussion) return
+    // No cleanup: the link is consumed above, which re-runs this effect before the timer fires.
+    window.setTimeout(() => {
+      const heading = document.getElementById('discussion-heading')
+      heading?.scrollIntoView({ block: 'start' })
+      heading?.focus()
+      announce('Opened the discussion you were mentioned in.')
+    }, 120)
+  }, [element, wantsDiscussion, desktop, store, setParams, announce, link])
+  return link?.notice ?? null
+}

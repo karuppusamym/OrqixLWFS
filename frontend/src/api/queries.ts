@@ -324,3 +324,11 @@ export function useMarkNotificationRead(ws: string) {
     onSuccess: () => client.invalidateQueries({ queryKey: keys.notifications(ws) }),
   })
 }
+
+export function useMarkAllNotificationsRead(ws: string) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: () => endpoints.markAllNotificationsRead(ws),
+    onSuccess: () => client.invalidateQueries({ queryKey: keys.notifications(ws) }),
+  })
+}

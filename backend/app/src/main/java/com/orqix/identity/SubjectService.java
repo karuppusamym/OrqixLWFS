@@ -81,6 +81,24 @@ public class SubjectService {
                         rs.getString("display_name"),rs.getString("email"),false)).list();
     }
 
+    /**
+     * Bounded, name-filtered directory of enabled users (case-insensitive substring of the display name; blank matches
+     * everyone). Like {@link #knownSubjects(int)}, callers must apply workspace eligibility before returning it.
+     */
+    @Transactional(readOnly = true)
+    public List<Subject> searchByName(String text, int limit) {
+        String needle = text == null ? "" : text.strip().toLowerCase(java.util.Locale.ROOT);
+        String pattern = "%" + needle.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+        return jdbc.sql("""
+                SELECT id, issuer, external_subject, display_name, email FROM subject
+                WHERE disabled_at IS NULL AND lower(display_name) LIKE :pattern ESCAPE '\\'
+                ORDER BY display_name, id LIMIT :limit
+                """)
+                .param("pattern", pattern).param("limit", Math.min(500, Math.max(1, limit)))
+                .query((rs, n) -> new Subject(Sql.uuid(rs, "id"), rs.getString("issuer"), rs.getString("external_subject"),
+                        rs.getString("display_name"), rs.getString("email"), false)).list();
+    }
+
     @Transactional(readOnly = true)
     public Optional<Subject> find(String issuer, String externalSubject) {
         return jdbc.sql("""

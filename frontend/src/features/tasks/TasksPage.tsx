@@ -177,7 +177,7 @@ function TaskList({ tasks, ws, view, taskId, desktop, onOpen, presentation }: { 
               {taskTitle(t)}
             </Link>
             <p className="text-sm text-muted-foreground tabular-nums">{requestReference(t)}</p>
-            <p className="mt-2 text-sm">Priority {t.priority ?? 0} ? {t.status === 'open' ? taskAge(t.createdAt) + ' ? ' : ''}Created {formatDateTime(t.createdAt)}</p>
+            <p className="mt-2 text-sm">Priority {t.priority ?? 0} · {t.status === 'open' ? taskAge(t.createdAt) + ' · ' : ''}Created {formatDateTime(t.createdAt)}</p>
             <p className="mt-2 text-sm">
               {t.label} <span className="text-muted-foreground">&middot; requested by {t.requester.displayName}</span>
             </p>
@@ -217,7 +217,7 @@ function TaskList({ tasks, ws, view, taskId, desktop, onOpen, presentation }: { 
                   </Link>
                   <span className="block text-xs text-muted-foreground tabular-nums">{requestReference(t)}</span>
                 </TD>
-                <TD>{t.label}<TaskStage stage={t.stage} /></TD><TD><span>Priority {t.priority ?? 0}</span><span className="block text-xs text-muted-foreground">{t.status === 'open' ? taskAge(t.createdAt) + ' ? ' : ''}Created {formatDateTime(t.createdAt)}</span></TD>
+                <TD>{t.label}<TaskStage stage={t.stage} /></TD><TD><span>Priority {t.priority ?? 0}</span><span className="block text-xs text-muted-foreground">{t.status === 'open' ? taskAge(t.createdAt) + ' · ' : ''}Created {formatDateTime(t.createdAt)}</span></TD>
                 <TD>{t.requester.displayName}</TD>
                 <TD className="whitespace-nowrap">{dueText(t)}</TD>
                 <TD>

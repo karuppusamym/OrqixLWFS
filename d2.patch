@@ -1,0 +1,34 @@
+diff --git a/frontend/src/features/runs/RunDetailPage.tsx b/frontend/src/features/runs/RunDetailPage.tsx
+index fc58adc..7cc92ef 100644
+--- a/frontend/src/features/runs/RunDetailPage.tsx
++++ b/frontend/src/features/runs/RunDetailPage.tsx
+@@ -26,7 +26,7 @@ import { RunProgressPanel, type RunView } from './RunProgressPanel'
+ import { CancelDialog, MigrateDialog, ReassignDialog, RepairDialog, ReconcileDialog, ResumeDialog, RetryDialog, SuspendDialog } from './OperatorDialogs'
+ import { CaseControlsPanel } from './CaseControlsPanel'
+ import { RunCommentsPanel } from './RunCommentsPanel'
+-import { RunFiles } from './RunFiles'
++import { RunFiles, useRunFiles } from './RunFiles'
+ import { StageProgress } from './StageProgress'
+ import { SendTestMessage } from './SendTestMessage'
+ import { DecisionEvidence } from './DecisionEvidence'
+@@ -77,6 +77,7 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
+   const operator = can('run.operate') || run.effects !== undefined
+   const needsAttention = run.lifecycle === 'needsAttention'
+   const scanFinding = useConsistencyFindings(ws, can('run.operate')).data?.items.find((f) => f.runId === run.id)
++  const requestFiles = useRunFiles(ws, run.id, !!run.input)
+ 
+   const fields = useMemo<FieldDef[]>(
+     () => (releaseDefinition ? buildFields(parseFormSchema(releaseDefinition.inputSchema), parseFormUi(releaseDefinition.inputUi)) : []),
+@@ -100,7 +101,11 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
+   }, [run, events])
+ 
+   const input = run.input ? asRecord(run.input) : null
+-  const requestRows = input ? orderedRequestRows(input, fields, asRecord(run.inputLabels) as Record<string, string>) : []
++  const rawRequestRows = input ? orderedRequestRows(input, fields, asRecord(run.inputLabels) as Record<string, string>) : []
++  // A file question stores the id of the attached file; show the file's name instead (ids that are not known files stay as they are).
++  const fileNames = new Map((requestFiles.data?.items ?? []).map((f) => [f.id, f.name] as [string, string]))
++  const requestRows = fileNames.size === 0 ? rawRequestRows : rawRequestRows.map((row) =>
++    typeof row.value === 'string' ? { ...row, value: row.value.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, (id) => fileNames.get(id) ?? id) } : row)
+ 
+   const decisions = run.tasks.filter((t) => t.decision).sort((a, b) => (a.decision?.decidedAt ?? '').localeCompare(b.decision?.decidedAt ?? ''))
+   const openTasks = run.tasks.filter((t) => t.status === 'open')

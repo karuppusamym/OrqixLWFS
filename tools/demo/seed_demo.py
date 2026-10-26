@@ -13,6 +13,7 @@ It publishes the Purchase approval template if needed, then creates requests tha
   * needing attention: the procurement system answers 400 once, an operator can fix and retry.
 It is safe to run more than once (it only adds requests) and prints a short summary, never credentials.
 """
+import os
 import sys
 import time
 from pathlib import Path
@@ -22,7 +23,7 @@ import requests
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "api-e2e"))
 from orqix_client import Client  # noqa: E402
 
-STUB = "http://localhost:8095"
+STUB = os.environ.get("ORQIX_STUB_URL", "http://localhost:8095").rstrip("/")  # set for a stack on other ports
 
 REQUESTS = [
     # (title, purpose, cost center, amount, requester, journey)
@@ -128,7 +129,7 @@ def main():
         time.sleep(0.4)
 
     print()
-    print("Demo ready. Sign in at http://localhost:8080 as (passwords are in deploy/compose/keycloak/orqix-dev-realm.json):")
+    print(f"Demo ready. Sign in at {os.environ.get('ORQIX_BASE_URL', 'http://localhost:8080')} as (passwords are in deploy/compose/keycloak/orqix-dev-realm.json):")
     print("  rhea.requester   requests a purchase and tracks it")
     print("  mani.manager     approves or rejects the manager step (two requests are waiting)")
     print("  fin.finance      approves or rejects requests of USD 5,000 or more (two are waiting)")

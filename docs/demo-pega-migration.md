@@ -4,7 +4,7 @@ Scope is accepted under [ADR 0003](adr/0003-minimum-demo-pega-scope.md). No cust
 
 ## Before presenting
 
-- Build and run one identified commit of the application, identity service and database, including the XPDL source-format migration (currently V48). Use an isolated demo stack; do not delete an existing user's volumes.
+- Build and run one identified commit of the application, identity service and database, including every migration up to the current one (V122 at the time of writing; the XPDL source-format migration is V48). Use an isolated demo stack; do not delete an existing user's volumes.
 - Check sign-in for `dana.designer`, `paul.publisher`, `rhea.requester` and `mani.manager`.
 - Use the real backend. The frontend mock backend intentionally rejects Pega conversion.
 - Rehearse the cases below in the browser and record pass/fail against that commit/image. Existing focused tests are evidence for the implementation, not this final merged-stack rehearsal.

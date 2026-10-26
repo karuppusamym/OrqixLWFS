@@ -77,6 +77,9 @@ public class FlowableEngineConfiguration {
             configuration.setAsyncTaskExecutor(orqixJobTaskExecutor);
             // Generated BPMN is validated against the BPMN XSD at deployment (S4 section 10 step 5).
             configuration.setEnableSafeBpmnXml(true);
+            // The UI draws its own run diagram; Flowable's generated process image is never read. Skipping it avoids a font
+            // lookup on every deployment (the runtime image has no fontconfig, which logged a stack trace per publish).
+            configuration.setCreateDiagramOnDeploy(false);
         };
     }
 }

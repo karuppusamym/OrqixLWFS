@@ -73,6 +73,10 @@ Provider errors: 429/5xx/timeouts → `503 AI_PROVIDER_UNAVAILABLE` on the job's
 
 Permission `workflow.read`. Input: the canonical definition of the requested draft revision or release only. Output: `{summary, steps: [{nodeId, text}], model, profile}` in plain business language (≤ 1,500 characters summary). Not stored. Audit `ai.workflow.explained`.
 
+## 4a. Request-form suggestions
+
+`POST /workspaces/{ws}/workflows/{id}/ai/form-suggestions` (`suggestFormChanges`, `workflow.edit`, audit `ai.form.suggested`, metering kind `form`): validated, reviewable request-form changes that are never applied by the server. See [S90](S90-form-pattern-and-ai-assistant.md).
+
 ## 5. Status (`GET /workspaces/{ws}/ai/status`)
 
 Permission `workflow.read`, `workflow.edit` or `workspace.manage-access` (Settings → AI is for workspace admins and designers). Returns `{enabled, reason, defaultProfile, profiles: [{id, label, model, variablePrice}], budget: {monthlyUsd, spentUsd}, disabledProfiles: [{id, label, model, reason, until}]}` (profiles paused by the circuit breaker, section 1). The UI uses it to show or hide AI entry points.

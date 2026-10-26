@@ -1890,6 +1890,18 @@
           "minimum": 1,
           "maximum": 4000
         },
+        "pattern": {
+          "description": "Plain text answers only: the whole answer must match this pattern (docs/build/S90). A safe subset of ECMAScript regular expressions matched in linear time: it starts with ^ and ends with $; literals, ., classes [...] and [^...], \\d \\D \\w \\W \\s \\S, escaped syntax characters, groups (...) and (?:...), | inside a group, and the quantifiers * + ? {n} {n,} {n,m} (counts up to 100). The compiler refuses anything else with WF_FORM_PATTERN_INVALID and the reason.",
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 200
+        },
+        "patternMessage": {
+          "description": "Plain text shown when an answer does not match pattern, for example 'Enter a cost centre like CC-1234.'",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
         "minimum": {
           "type": "number"
         },
@@ -1957,6 +1969,9 @@
         ],
         "formatMaximum": [
           "format"
+        ],
+        "patternMessage": [
+          "pattern"
         ]
       },
       "required": [

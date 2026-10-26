@@ -119,6 +119,7 @@ public final class Pipeline {
         }
         RuleContext analysis = Rules.run(definition, workspace, schemas, issues);
         com.orqix.compiler.internal.rules.Tier1Rules.validate(root, workspace, issues);
+        com.orqix.compiler.internal.rules.FormPatternRules.validate(root, issues);
         return new Outcome(new ValidationReport(compilerVersion, issues.sorted(), semanticHash), definition,
                 analysis, sourceHash);
     }

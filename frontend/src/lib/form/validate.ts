@@ -1,4 +1,5 @@
 import { isCalendarDate } from '../dates'
+import { patternMatches } from './pattern'
 import { buildFields, type FormFieldSchema, type FormSchema, type FormUi } from './schema'
 import { fieldsForInput } from './visibility'
 
@@ -21,6 +22,7 @@ export type IssueKeyword =
   | 'formatMaximum'
   | 'minLength'
   | 'maxLength'
+  | 'pattern'
   | 'minimum'
   | 'maximum'
   | 'multipleOf'
@@ -121,6 +123,8 @@ export function validateJsonInput(schema: FormSchema, data: unknown): JsonIssue[
       const length = codePointLength(value)
       if (field.minLength !== undefined && length < field.minLength) issues.push({ pointer, keyword: 'minLength' })
       if (field.maxLength !== undefined && length > field.maxLength) issues.push({ pointer, keyword: 'maxLength' })
+      // Linear-time safe engine, never the backtracking RegExp (docs/build/S90); the server repeats this check.
+      if (field.pattern !== undefined && !field.enum && !patternMatches(field.pattern, value)) issues.push({ pointer, keyword: 'pattern' })
     }
     if (typeof value === 'number') {
       if (field.minimum !== undefined && value < field.minimum) issues.push({ pointer, keyword: 'minimum' })

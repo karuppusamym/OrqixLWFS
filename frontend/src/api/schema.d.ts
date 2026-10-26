@@ -3786,6 +3786,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/ai/form-suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Suggest request-form changes from a short description (reviewable, never applied by the server)
+         * @description S90 (G4). Sends the description and the request form as the editor shows it to the configured AI profile, then validates every suggested change with the workflow compiler (types, keys, choices, bounds, pattern rules). Valid changes are returned for review; invalid ones are listed under rejected with the reasons. Nothing is stored or applied: the designer applies chosen changes in the studio. Not stored; metering and audit hold counts only. One suggestion at a time per person (429).
+         */
+        post: operations["suggestFormChanges"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/migrations": {
         parameters: {
             query?: never;
@@ -4806,7 +4829,7 @@ export interface components {
         FieldError: {
             /** @description JSON Pointer into the request body, e.g. /input/amount */
             pointer: string;
-            /** @description Keyword that failed: required, type, enum, minimum, maximum, maxLength, multipleOf, additionalProperties */
+            /** @description Keyword that failed: required, type, enum, minimum, maximum, maxLength, multipleOf, additionalProperties, pattern (message: the form author's plain-text patternMessage) */
             code: string;
             message: string;
         };
@@ -6565,6 +6588,33 @@ export interface components {
             }[];
             generation: components["schemas"]["AiGeneration"];
         };
+        /** @description S90 form suggestions. Every change already passed the compiler's form rules against the submitted form; apply only on an explicit user action. */
+        AiFormSuggestion: {
+            changes: components["schemas"]["AiFormChange"][];
+            rejected: {
+                op: string;
+                key: string;
+                reasons: string[];
+            }[];
+            notes: string[];
+            /** @description Why the description is not about a request form */
+            notAForm?: string | null;
+            generation: components["schemas"]["AiGeneration"];
+        };
+        AiFormChange: {
+            /** @enum {string} */
+            op: "add" | "update" | "remove";
+            key: string;
+            /** @description The complete question after the change (workflow-v0 formField); absent for remove */
+            field?: Record<string, never>;
+            /** @description Whether the question is required after the change */
+            required: boolean;
+            reason: string;
+            /** @description The question as it is now (update and remove) */
+            before?: Record<string, never>;
+            /** @description Whether the question is required now (update and remove) */
+            wasRequired?: boolean;
+        };
         CompatibilityIssue: {
             sourceElementId: string;
             sourceName?: string | null;
@@ -6865,6 +6915,10 @@ export interface components {
             enum?: string[];
             minLength?: number;
             maxLength?: number;
+            /** @description Plain text answers only: the whole answer must match this pattern (docs/build/S90). A safe subset of ECMAScript regular expressions matched in linear time: it starts with ^ and ends with $; literals, ., classes [...] and [^...], \d \D \w \W \s \S, escaped syntax characters, groups (...) and (?:...), | inside a group, and the quantifiers * + ? {n} {n,} {n,m} (counts up to 100). The compiler refuses anything else with WF_FORM_PATTERN_INVALID and the reason. */
+            pattern?: string;
+            /** @description Plain text shown when an answer does not match pattern, for example 'Enter a cost centre like CC-1234.' */
+            patternMessage?: string;
             minimum?: number;
             maximum?: number;
             /** @enum {unknown} */
@@ -7885,6 +7939,10 @@ export interface components {
                     enum?: string[];
                     minLength?: number;
                     maxLength?: number;
+                    /** @description Plain text answers only: the whole answer must match this pattern (docs/build/S90). A safe subset of ECMAScript regular expressions matched in linear time: it starts with ^ and ends with $; literals, ., classes [...] and [^...], \d \D \w \W \s \S, escaped syntax characters, groups (...) and (?:...), | inside a group, and the quantifiers * + ? {n} {n,} {n,m} (counts up to 100). The compiler refuses anything else with WF_FORM_PATTERN_INVALID and the reason. */
+                    pattern?: string;
+                    /** @description Plain text shown when an answer does not match pattern, for example 'Enter a cost centre like CC-1234.' */
+                    patternMessage?: string;
                     minimum?: number;
                     maximum?: number;
                     /** @enum {unknown} */
@@ -14668,6 +14726,47 @@ export interface operations {
                     "application/json": components["schemas"]["WorkflowExplanation"];
                 };
             };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    suggestFormChanges: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    description: string;
+                    /** @description The request form (workflow-v0 inputSchema) as currently shown in the editor, at most 30 questions */
+                    inputSchema: {
+                        properties: Record<string, never>;
+                    };
+                    profile?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Validated suggestions for review */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiFormSuggestion"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];

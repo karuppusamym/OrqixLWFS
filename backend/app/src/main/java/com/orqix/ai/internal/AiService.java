@@ -55,6 +55,7 @@ public class AiService {
     private static final String EXPLAIN_OPERATION = "explainWorkflow";
     private static final String STATUS_OPERATION = "getAiStatus";
     private static final String GENERATION_OPERATION = "getAiGeneration";
+    private static final String FORM_OPERATION = "suggestFormChanges";
     public static final String REASON_BUDGET = "The monthly AI budget is used up.";
 
     /** An accepted generation: the job as it is now, and whether this response replays an earlier identical request. */
@@ -82,6 +83,9 @@ public class AiService {
     private final Json json;
     private final WorkflowCompiler compiler;
     private final Clock clock;
+    private final FormSuggestions formRules;
+    private final java.util.concurrent.ConcurrentHashMap<UUID, Boolean> formsInFlight =
+            new java.util.concurrent.ConcurrentHashMap<>();
 
     public AiService(AiProperties properties, ModelPolicy models, Generator generator, WorkflowCompiler compiler,
             WorkspaceFacts facts, AiLedger ledger, AiJobStore jobs, AiJobRunner runner, DraftAuthoring drafts,
@@ -104,6 +108,7 @@ public class AiService {
         this.json = json;
         this.compiler = compiler;
         this.clock = clock;
+        this.formRules = new FormSuggestions(json, compiler);
     }
 
     // ---------------------------------------------------------------- status
@@ -415,6 +420,77 @@ public class AiService {
             log.warn("Could not record a failed AI explanation: {}", e.getClass().getSimpleName());
         }
         observe("explain", meter, outcome);
+    }
+
+    // ---------------------------------------------------------------- form suggestions (S90, G4)
+
+    /**
+     * {@code suggestFormChanges}: workflow.edit on a visible workflow. Synchronous like an explanation (a form is small)
+     * and never stored: the suggestion is model output, which S10 never persists, so it is returned once for review.
+     * Every change is validated by {@link FormSuggestions}; nothing is applied to the draft. One suggestion at a time per
+     * person on a pod (429 RATE_LIMITED). Metering and audit hold counts only, never the description, form or fields.
+     */
+    public AiDtos.FormSuggestion suggestForm(Caller caller, UUID workspaceId, UUID workflowId, JsonNode body) {
+        WorkspaceAccess access = policy.requireVisible(caller, workspaceId);
+        policy.require(access, Permission.WORKFLOW_EDIT, FORM_OPERATION, false);
+        drafts.requireWorkflow(caller, workspaceId, workflowId);
+        AiDtos.FormSuggestRequest request = AiDtos.FormSuggestRequest.parse(body, json::write);
+        ensureEnabled();
+        ModelPolicy.ResolvedProfile profile = models.resolve(request.profile());
+        budgetLeft();
+        if (formsInFlight.putIfAbsent(caller.subjectId(), Boolean.TRUE) != null) {
+            throw rateLimited("A form suggestion is already being prepared for you. Wait for it to finish.");
+        }
+        try {
+            Generator.Meter meter = generator.meter(profile);
+            JsonNode current = formRules.normalized(request.inputSchema());
+            JsonNode reply;
+            try {
+                reply = generator.suggestForm(profile, json.write(current), request.description(), meter);
+            } catch (ProviderException e) {
+                ProviderFailure failure = classify(e);
+                recordForm(caller, workspaceId, workflowId, meter, failure.outcome(), 0, 0);
+                throw failure.problem();
+            }
+            if (reply == null) {
+                recordForm(caller, workspaceId, workflowId, meter, AiLedger.Outcome.INVALID_OUTPUT, 0, 0);
+                throw new ApiException(ProblemCode.AI_OUTPUT_INVALID,
+                        "The AI could not suggest form changes. Nothing was changed; try again.");
+            }
+            FormSuggestions.Result result = formRules.evaluate(reply, current);
+            recordForm(caller, workspaceId, workflowId, meter, AiLedger.Outcome.SUCCESS, result.changes().size(),
+                    result.rejected().size());
+            return new AiDtos.FormSuggestion(
+                    result.changes().stream().map(c -> new AiDtos.FormChange(c.op(), c.key(), c.field(), c.required(),
+                            c.reason(), c.before(), c.wasRequired())).toList(),
+                    result.rejected().stream().map(r -> new AiDtos.FormRejected(r.op(), r.key(), r.reasons())).toList(),
+                    result.notes(), result.notAForm(), generation(meter, PromptLibrary.FORM_VERSION));
+        } finally {
+            formsInFlight.remove(caller.subjectId());
+        }
+    }
+
+    private void recordForm(Caller caller, UUID workspaceId, UUID workflowId, Generator.Meter meter,
+            AiLedger.Outcome outcome, int accepted, int rejected) {
+        try {
+            tx.executeWithoutResult(status -> {
+                ledger.record(entry(caller, workspaceId, "form", meter, PromptLibrary.FORM_VERSION, outcome, workflowId,
+                        null, null));
+                AuditWriter.Entry base = auditEntry(caller, workspaceId, "ai.form.suggested", workflowId, meter,
+                        PromptLibrary.FORM_VERSION, outcome, null, null);
+                Map<String, Object> metadata = new LinkedHashMap<>(base.metadata());
+                metadata.put("changesSuggested", accepted);
+                metadata.put("changesRejected", rejected);
+                audit.write(new AuditWriter.Entry(base.workspaceId(), base.actorType(), base.actorSubject(),
+                        base.action(), base.resourceType(), base.resourceId(), base.outcome(), metadata));
+            });
+        } catch (RuntimeException e) {
+            if (outcome == AiLedger.Outcome.SUCCESS) {
+                throw e;
+            }
+            log.warn("Could not record a failed AI form suggestion: {}", e.getClass().getSimpleName());
+        }
+        observe("form", meter, outcome);
     }
 
     // ---------------------------------------------------------------- policy helpers

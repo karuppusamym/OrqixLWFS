@@ -22,12 +22,15 @@ public class PromptLibrary {
 
     public static final String DRAFT_VERSION = "draft-v1";
     public static final String EXPLAIN_VERSION = "explain-v2";
+    public static final String FORM_VERSION = "form-v1";
 
     private final Json json;
     private final String draftSystem;
     private final String explainSystem;
     private final ObjectNode draftEnvelopeSchema;
     private final ObjectNode explanationSchema;
+    private final String formSystem;
+    private final ObjectNode formSuggestionSchema;
 
     public PromptLibrary(Json json) {
         this.json = json;
@@ -40,6 +43,8 @@ public class PromptLibrary {
         this.explainSystem = load("ai/prompts/" + EXPLAIN_VERSION + ".md");
         this.draftEnvelopeSchema = buildDraftEnvelopeSchema(json);
         this.explanationSchema = buildExplanationSchema(json);
+        this.formSystem = load("ai/prompts/" + FORM_VERSION + ".md");
+        this.formSuggestionSchema = buildFormSuggestionSchema(json);
     }
 
     public String draftSystem() {
@@ -48,6 +53,21 @@ public class PromptLibrary {
 
     public String explainSystem() {
         return explainSystem;
+    }
+
+    public String formSystem() {
+        return formSystem;
+    }
+
+    /** Response format of form suggestions (S90). */
+    public JsonNode formSuggestionSchema() {
+        return formSuggestionSchema;
+    }
+
+    /** User turn of a form suggestion: the current request form, then the untrusted description in its own block. */
+    public static String formUser(String formJson, String description) {
+        return "<form>\n" + fence(formJson, "form") + "\n</form>\n\n<description>\n" + fence(description, "description")
+                + "\n</description>\n\nReply with the JSON object only.";
     }
 
     /** User turn of a draft generation: workspace facts, then the untrusted description in its own block. */
@@ -109,6 +129,27 @@ public class PromptLibrary {
         itemProperties.putObject("text").put("type", "string");
         item.putArray("required").add("nodeId").add("text");
         schema.putArray("required").add("summary").add("steps");
+        return schema;
+    }
+
+    private static ObjectNode buildFormSuggestionSchema(Json json) {
+        ObjectNode schema = json.object();
+        schema.put("type", "object");
+        ObjectNode properties = schema.putObject("properties");
+        ObjectNode changes = properties.putObject("changes");
+        changes.put("type", "array");
+        ObjectNode item = changes.putObject("items");
+        item.put("type", "object");
+        ObjectNode itemProperties = item.putObject("properties");
+        itemProperties.putObject("op").putArray("enum").add("add").add("update").add("remove");
+        itemProperties.putObject("key").put("type", "string");
+        itemProperties.putObject("field").putArray("type").add("object").add("null");
+        itemProperties.putObject("required").putArray("type").add("boolean").add("null");
+        itemProperties.putObject("reason").put("type", "string");
+        item.putArray("required").add("op").add("key").add("reason");
+        properties.putObject("notes").put("type", "array").putObject("items").put("type", "string");
+        properties.putObject("notAForm").putArray("type").add("string").add("null");
+        schema.putArray("required").add("changes").add("notes");
         return schema;
     }
 

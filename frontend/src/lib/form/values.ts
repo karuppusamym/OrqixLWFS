@@ -3,6 +3,7 @@ import { MONEY_PATTERN, formatUsd } from '../money'
 import type { FieldDef } from './schema'
 import { buildFields, type FormFieldSchema, type FormSchema, type FormUi } from './schema'
 import { validateJsonInput, type IssueKeyword } from './validate'
+import { DEFAULT_PATTERN_MESSAGE } from './pattern'
 import { visibleFields } from './visibility'
 
 /** What the user typed. Money and numbers stay strings until submission. */
@@ -156,6 +157,9 @@ function messageFor(f: FieldDef, keyword: IssueKeyword, typedLength: number): st
       return `Use at least ${s.minLength} character${s.minLength === 1 ? '' : 's'}.`
     case 'maxLength':
       return `Use at most ${s.maxLength} characters (you used ${typedLength}).`
+    case 'pattern':
+      // Plain text from the form author; React renders it as text, never as HTML.
+      return s.patternMessage?.trim() || DEFAULT_PATTERN_MESSAGE
     case 'minimum':
       return f.isMoney ? `Enter at least ${formatUsd(s.minimum)}.` : `Enter ${s.minimum} or more.`
     case 'maximum':

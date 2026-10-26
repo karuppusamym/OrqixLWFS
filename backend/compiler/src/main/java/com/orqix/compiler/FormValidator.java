@@ -17,7 +17,7 @@ public interface FormValidator {
     /**
      * @param pointer JSON Pointer such as /amount
      * @param code    failed keyword: required, type, enum, minimum, maximum, minLength, maxLength, multipleOf,
-     *                additionalProperties
+     *                additionalProperties, pattern (the message is then the field's patternMessage, plain text)
      */
     record FieldError(String pointer, String code, String message) {
     }

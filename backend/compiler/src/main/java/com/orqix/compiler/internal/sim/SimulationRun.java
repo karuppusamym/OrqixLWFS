@@ -815,6 +815,13 @@ final class SimulationRun {
                 if ("date".equals(schema.path("format").asString(""))) {
                     return F.stringNode("2026-01-15");
                 }
+                if (schema.path("pattern").isString()) {
+                    String example = com.orqix.compiler.FormPattern.problem(schema.get("pattern").asString()) == null
+                            ? com.orqix.compiler.FormPattern.compile(schema.get("pattern").asString()).example() : null;
+                    if (example != null) {
+                        return F.stringNode(example);
+                    }
+                }
                 String text = "sample-" + key;
                 if (schema.has("maxLength") && text.length() > schema.get("maxLength").asInt()) {
                     text = text.substring(0, Math.max(0, schema.get("maxLength").asInt()));

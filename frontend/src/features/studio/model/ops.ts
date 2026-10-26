@@ -502,6 +502,9 @@ export interface FormFieldModel {
   maximum?: number | undefined
   minLength?: number | undefined
   maxLength?: number | undefined
+  /** Text questions: the safe answer pattern and its plain-text message (docs/build/S90). */
+  pattern?: string | undefined
+  patternMessage?: string | undefined
   /** Earliest and latest date (YYYY-MM-DD) of a Date question. */
   minDate?: string | undefined
   maxDate?: string | undefined
@@ -541,6 +544,7 @@ export function fieldsFromDefinition(def: Definition): FormFieldModel[] {
       maximum: f.maximum,
       minLength: f.minLength,
       maxLength: f.maxLength,
+      pattern: f.pattern, patternMessage: f.patternMessage,
       minDate: f.formatMinimum, maxDate: f.formatMaximum,
       itemSchema: f.items, minItems: f.minItems, maxItems: f.maxItems,
       fileTypes: f.acceptTypes, maxFileMb: f.maxFileBytes === undefined ? undefined : Math.round((f.maxFileBytes / 1048576) * 10) / 10,
@@ -567,10 +571,12 @@ export function applyFields(def: Definition, fields: FormFieldModel[]): Definiti
       case 'text':
         schema.maxLength = f.maxLength ?? 200
         if (f.minLength !== undefined) schema.minLength = f.minLength
+        applyPattern(schema, f)
         break
       case 'longText':
         schema.maxLength = f.maxLength ?? 2000
         if (f.minLength !== undefined) schema.minLength = f.minLength
+        applyPattern(schema, f)
         widgets[f.key] = 'textarea'
         break
       case 'number':
@@ -620,6 +626,14 @@ export function applyFields(def: Definition, fields: FormFieldModel[]): Definiti
   for (const name of ['visibleWhen', 'requiredWhen'] as const) if (next.inputUi[name]) next.inputUi[name] = Object.fromEntries(Object.entries(next.inputUi[name]!).filter(([key]) => key in properties))
   if (next.inputUi.layout?.sections) next.inputUi.layout.sections = next.inputUi.layout.sections.map(section => ({ ...section, fields: section.fields.filter(key => key in properties) }))
   return sameJson(next.inputSchema, def.inputSchema) && sameJson(next.inputUi, def.inputUi) ? def : next
+}
+
+function applyPattern(schema: Definition['inputSchema']['properties'][string], f: FormFieldModel) {
+  const pattern = f.pattern?.trim()
+  if (!pattern) return
+  schema.pattern = pattern
+  const message = f.patternMessage?.trim()
+  if (message) schema.patternMessage = message
 }
 
 export function newFieldKey(def: Definition, label: string): string {

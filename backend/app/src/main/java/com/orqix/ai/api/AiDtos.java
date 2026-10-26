@@ -121,6 +121,48 @@ public final class AiDtos {
         }
     }
 
+    /** One reviewed change of a form suggestion (S90): {@code field} is null for remove. */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record FormChange(String op, String key, JsonNode field, boolean required, String reason, JsonNode before,
+            Boolean wasRequired) {
+    }
+
+    public record FormRejected(String op, String key, List<String> reasons) {
+    }
+
+    /** {@code AiFormSuggestion}: never applied by the server; the designer applies accepted changes in the studio. */
+    public record FormSuggestion(List<FormChange> changes, List<FormRejected> rejected, List<String> notes,
+            String notAForm, Generation generation) {
+    }
+
+    /** {@code suggestFormChanges} request body: the description and the request form as the editor shows it now. */
+    public record FormSuggestRequest(String description, JsonNode inputSchema, String profile) {
+
+        private static final int MAX_FORM_CHARS = 64_000;
+
+        public static FormSuggestRequest parse(JsonNode body, java.util.function.Function<JsonNode, String> write) {
+            List<ApiException.FieldError> errors = new ArrayList<>();
+            JsonNode node = object(body, Set.of("description", "inputSchema", "profile"));
+            String description = string(node, "description", true, 10, 2000, null, errors);
+            if (description != null && description.isBlank()) {
+                errors.add(new ApiException.FieldError("/description", "minLength", "Invalid value"));
+            }
+            String profile = string(node, "profile", false, 1, 32, PROFILE_PATTERN, errors);
+            JsonNode form = node.path("inputSchema");
+            if (form.isMissingNode()) {
+                errors.add(new ApiException.FieldError("/inputSchema", "required", "Invalid value"));
+            } else if (!form.isObject() || !form.path("properties").isObject()) {
+                errors.add(new ApiException.FieldError("/inputSchema", "type", "Invalid value"));
+            } else if (form.path("properties").size() > 30) {
+                errors.add(new ApiException.FieldError("/inputSchema/properties", "maxProperties", "Invalid value"));
+            } else if (write.apply(form).length() > MAX_FORM_CHARS) {
+                errors.add(new ApiException.FieldError("/inputSchema", "maxLength", "Invalid value"));
+            }
+            fail(errors);
+            return new FormSuggestRequest(description, form, profile);
+        }
+    }
+
     private static JsonNode object(JsonNode body, Set<String> allowed) {
         if (body == null || body.isMissingNode() || body.isNull()) {
             throw ApiException.malformed("A request body is required.");

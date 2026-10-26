@@ -79,3 +79,12 @@ it('renders a date question as a labelled native date input with its limits', as
   await user.type(input, '2026-10-14')
   expect(screen.getByLabelText('Payload')).toHaveTextContent('{"startDate":"2026-10-14"}')
 })
+
+it('shows a pattern message as plain text, never as markup (docs/build/S90)', async () => {
+  const schema = parseFormSchema({ properties: { code: { type: 'string', title: 'Cost code', pattern: '^[A-Z]{2}-\\d{4}$', patternMessage: 'Enter a code like <b>AB-1234</b>.' } } })
+  const errors = validateForm(schema, {}, { code: 'ab' }).errors
+  const { container } = render(<FormRenderer fields={buildFields(schema, {})} values={{ code: 'ab' }} errors={errors} onChange={() => undefined} />)
+  expect(screen.getByText('Enter a code like <b>AB-1234</b>.')).toBeInTheDocument()
+  expect(container.querySelector('b')).toBeNull()
+  expect(screen.getByRole('textbox', { name: /Cost code/ })).toHaveAttribute('aria-invalid', 'true')
+})

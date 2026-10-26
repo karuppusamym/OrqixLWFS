@@ -407,6 +407,86 @@ class AiApiTest extends IntegrationTestBase {
         assertThat(OpenRouterStub.requests()).hasSize(1);
     }
 
+    // ---------------------------------------------------------------- form suggestions (S90, G4)
+
+    private String formWorkflow() throws Exception {
+        Response created = api("dana.designer").post(Map.of("key", "form-" + UUID.randomUUID().toString()
+                .substring(0, 8), "name", "Form help", "templateId", "purchase-approval"), "/workspaces/{ws}/workflows",
+                PURCHASING);
+        assertThat(created.status()).as(created.toString()).isEqualTo(201);
+        return created.body().path("id").asString();
+    }
+
+    @Test
+    @Order(20)
+    void suggestsValidatedFormChangesWithoutApplyingStoringOrLoggingContent() throws Exception {
+        String workflowId = formWorkflow();
+        JsonNode form = example().get("inputSchema");
+        String before = api("dana.designer").get("/workspaces/{ws}/workflows/{id}/draft", PURCHASING, workflowId).body()
+                .path("definition").toString();
+        OpenRouterStub.reply("""
+                {"changes": [
+                  {"op": "add", "key": "costCode", "field": {"type": "string", "title": "Cost code", "maxLength": 7,
+                    "pattern": "^[A-Z]{2}-\\\\d{4}$", "patternMessage": "Enter a code like AB-1234."}, "required": true,
+                    "reason": "Finance books purchases by cost code."},
+                  {"op": "update", "key": "amount", "field": {"type": "number", "title": "Amount (USD)", "minimum": 10,
+                    "maximum": 1, "multipleOf": 0.01}, "required": null, "reason": "Raise the minimum."}],
+                 "notes": ["Assumed codes have two letters."], "notAForm": null}""", ECONOMY_MODEL, 0.0004);
+        String description = "Secret Falcon: add a cost code question like AB-1234 and raise the minimum amount.";
+        Response suggested = api("dana.designer").post(Map.of("description", description, "inputSchema", form),
+                "/workspaces/{ws}/workflows/{id}/ai/form-suggestions", PURCHASING, workflowId);
+        assertThat(suggested.status()).as(suggested.toString()).isEqualTo(200);
+        JsonNode body = suggested.body();
+        assertThat(body.path("changes")).hasSize(1);
+        assertThat(body.path("changes").get(0).path("key").asString()).isEqualTo("costCode");
+        assertThat(body.path("changes").get(0).path("field").path("pattern").asString()).isEqualTo("^[A-Z]{2}-\\d{4}$");
+        assertThat(body.path("rejected").get(0).path("key").asString()).isEqualTo("amount");
+        assertThat(body.path("rejected").get(0).path("reasons").toString()).contains("minimum greater than its maximum");
+        assertThat(body.path("notes").get(0).asString()).contains("two letters");
+        assertThat(body.path("generation").path("promptVersion").asString()).isEqualTo("form-v1");
+        // The prompt holds the form and the fenced description; nothing else from the workspace.
+        JsonNode sent = OpenRouterStub.requests().get(0);
+        String user = sent.path("messages").get(1).path("content").asString();
+        assertThat(user).contains("<form>", "costCenter", "<description>", "Secret Falcon");
+        // Never applied: the draft is unchanged.
+        assertThat(api("dana.designer").get("/workspaces/{ws}/workflows/{id}/draft", PURCHASING, workflowId).body()
+                .path("definition").toString()).isEqualTo(before);
+        // Metering and audit hold counts only, never the description, form or suggested fields.
+        String audit = jdbc.sql("SELECT metadata::text FROM audit_event WHERE action = 'ai.form.suggested' AND resource_id = :wf")
+                .param("wf", workflowId).query(String.class).single();
+        assertThat(audit).contains("\"changesSuggested\": 1", "\"changesRejected\": 1").doesNotContain("Falcon", "costCode",
+                "AB-1234");
+        assertThat(jdbc.sql("SELECT count(*) FROM ai_generation WHERE kind = 'form' AND workflow_id = :wf")
+                .param("wf", UUID.fromString(workflowId)).query(Long.class).single()).isEqualTo(1);
+    }
+
+    @Test
+    @Order(21)
+    void formSuggestionsNeedEditingAccessAndAValidBodyBeforeAnyProviderCall() throws Exception {
+        String workflowId = formWorkflow();
+        JsonNode form = example().get("inputSchema");
+        String path = "/workspaces/{ws}/workflows/{id}/ai/form-suggestions";
+        Map<String, Object> body = Map.of("description", "Add a cost code question.", "inputSchema", form);
+        assertThat(api("vic.viewer").post(body, path, PURCHASING, workflowId).status()).isEqualTo(403);
+        assertThat(api("otto.outsider").post(body, path, PURCHASING, workflowId).status()).isEqualTo(404);
+        assertThat(api("dana.designer").post(body, path, PURCHASING, UUID.randomUUID()).status()).isEqualTo(404);
+        assertThat(api("dana.designer").post(Map.of("description", "short", "inputSchema", form), path, PURCHASING,
+                workflowId).code()).isEqualTo("MALFORMED_REQUEST");
+        assertThat(api("dana.designer").post(Map.of("description", "Add a cost code question."), path, PURCHASING,
+                workflowId).code()).isEqualTo("MALFORMED_REQUEST");
+        assertThat(api("dana.designer").post(Map.of("description", "Add a cost code question.", "inputSchema", "x"),
+                path, PURCHASING, workflowId).code()).isEqualTo("MALFORMED_REQUEST");
+        assertThat(OpenRouterStub.requests()).isEmpty();
+        // Unusable model output twice: 422 AI_OUTPUT_INVALID, nothing changed; a provider outage: 503.
+        OpenRouterStub.reply("not json", ECONOMY_MODEL, 0.0001);
+        OpenRouterStub.reply("still not json", ECONOMY_MODEL, 0.0001);
+        assertThat(api("dana.designer").post(body, path, PURCHASING, workflowId).code()).isEqualTo("AI_OUTPUT_INVALID");
+        OpenRouterStub.fail(500, Map.of());
+        OpenRouterStub.fail(500, Map.of());
+        Response outage = api("dana.designer").post(body, path, PURCHASING, workflowId);
+        assertThat(outage.status()).as(outage.toString()).isEqualTo(503);
+    }
+
     @Test
     @Order(11)
     void permissionsAndRequestValidationComeBeforeAnyProviderCall() throws Exception {

@@ -41,6 +41,25 @@ With port base 38000 the app is http://localhost:38080 and Keycloak http://local
 
 Reset the procurement stub between runs of demo 1 if you inject faults: `curl -X POST localhost:8095/__reset`.
 
+## Sample data (four ready-made workflows)
+
+After the standard seed, `python tools/demo/seed_samples.py` adds four clearly named sample workflows and requests in finished and open states, all through the public API. Set `ORQIX_BASE_URL` (and `ORQIX_STUB_URL`) for a stack on other ports. It is safe to re-run: a workflow whose key exists is not imported again and a request whose reference text already exists is not started again, so a re-run only fills gaps. It never prints passwords and resets nothing.
+
+| Workflow (key) | Source | Finished requests | Open item |
+|---|---|---|---|
+| Sample - Pega XPDL: amount routing (`sample-pega-xpdl-routing`) | `medium.xpdl` | 4,999.99 ends Standard; 5,000 and 5,000.01 end Finance | none (see note) |
+| Sample - Pega XPDL: manager review (`sample-pega-xpdl-review`) | `review-branch.xpdl`, Managers mapped to `managers` | approved by `mani.manager` ends Finance; rejected ends Rejected | "27-inch monitors": sign in as `mani.manager` |
+| Sample - Pega Blueprint (synthetic PDF) (`sample-pega-blueprint-purchase`) | `synthetic-blueprint.pdf`, reviewed edits applied | 6,000 manager then finance, Approved; 4,999.99 manager only, Approved; one rejected by the manager | "Forklift battery" (cost centre Logistics): sign in as `mani.manager` |
+| Sample - Camunda 7 purchase (`sample-camunda-purchase`) | `camunda7-purchase.bpmn` | 4,999.99 and 5,000 (via finance) both Fulfilled with a purchase order | none |
+
+Notes:
+
+- The XPDL "amount routing" flow has no human step: "Finance" there is an ending, not a task, so no request can wait at Finance. For a request waiting at Finance use the seeded Purchase approval requests (ORQ-1003, ORQ-1004, `fin.finance`).
+- The Blueprint sample is built from a synthetic PDF written for Orqix, not a Pega export. The reader is generic; do not present it as compatibility with Pega's own Blueprint layout. Its transcription was edited and marked reviewed by the script exactly as the browser rehearsal does (Finance SLA unit set to hours, the purchase order integration excluded with a reason).
+- The Blueprint start form has no title field, so its list rows read as the cost centre (Lab, Warehouse, Facilities, Logistics); the script uses a different one for each request.
+- The Camunda requests show a purchase order reference (for example PO-3) in the run's history.
+- Run numbers (ORQ-...) depend on how many requests the stack already holds.
+
 ## Demo 1 — Business approval (the core, 12 minutes)
 
 Proves: forms, human tasks, rules, a real API call with honest outcomes, versioning, security, recovery.

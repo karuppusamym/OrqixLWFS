@@ -1,5 +1,6 @@
 import { api, call, callVoid, callWithResponse, etagOf, revisionEtag } from './client'
 import type { components } from './schema'
+import { uploadFile } from './attachments'
 import type { Lifecycle, OutcomeKind, TaskView } from './types'
 
 type S = components['schemas']
@@ -462,6 +463,16 @@ export const getMigration = (ws: string, migrationId: string) =>
   call(api.GET('/workspaces/{workspaceId}/migrations/{migrationId}', { params: { path: { workspaceId: ws, migrationId } } }))
 export const convertMigration = (ws: string, migrationId: string, body: S['ConvertMigrationRequest']) =>
   call(api.POST('/workspaces/{workspaceId}/migrations/{migrationId}/convert', { params: { path: { workspaceId: ws, migrationId } }, body }))
+
+// Pega Blueprint PDF (docs/build/S91): multipart upload, reviewed transcription revisions, optional AI proposal (never applied).
+export const uploadBlueprintMigration = (ws: string, file: File) =>
+  uploadFile<S['MigrationJob']>(`/workspaces/${ws}/migrations/blueprints`, file)
+export const getBlueprintTranscription = (ws: string, migrationId: string) =>
+  call(api.GET('/workspaces/{workspaceId}/migrations/{migrationId}/blueprint', { params: { path: { workspaceId: ws, migrationId } } }))
+export const saveBlueprintTranscription = (ws: string, migrationId: string, body: { expectedRevision: number; transcription: S['BlueprintTranscription'] }) =>
+  call(api.PUT('/workspaces/{workspaceId}/migrations/{migrationId}/blueprint', { params: { path: { workspaceId: ws, migrationId } }, body }))
+export const proposeBlueprintTranscription = (ws: string, migrationId: string) =>
+  call(api.POST('/workspaces/{workspaceId}/migrations/{migrationId}/blueprint/ai-proposal', { params: { path: { workspaceId: ws, migrationId } }, body: {} }))
 
 // Multi-file projects: child processes are converted before the parents that call them.
 export const uploadMigrationProject = (ws: string, body: S['UploadMigrationProjectRequest']) =>

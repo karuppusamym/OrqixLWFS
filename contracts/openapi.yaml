@@ -5443,6 +5443,138 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
 
+  /workspaces/{workspaceId}/migrations/blueprints:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    post:
+      tags: [Migration]
+      operationId: uploadBlueprintMigration
+      summary: Upload a Pega Blueprint PDF and transcribe it for review (docs/build/S91)
+      description: >-
+        The PDF (at most 25 MiB and 60 pages, starting with %PDF-) is read page by page in the isolated extraction worker;
+        no JavaScript, form action or embedded file is executed or opened, and encrypted or damaged PDFs are refused.
+        A generic outline layout proposes a structured transcription with source page references; every element starts
+        as proposed and must be reviewed. Nothing is converted or published by this call. The layout is generic and does
+        not claim compatibility with Pega's own Blueprint export layout.
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: migration.uploaded
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, contentEncoding: base64, contentMediaType: application/pdf }
+      responses:
+        '201':
+          description: Job created with the findings of the proposed transcription
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MigrationJob' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /workspaces/{workspaceId}/migrations/{migrationId}/blueprint:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/MigrationId'
+    get:
+      tags: [Migration]
+      operationId: getBlueprintTranscription
+      summary: The current transcription of a blueprint migration with its source page texts and findings
+      x-orqix-permission: workflow.read
+      responses:
+        '200':
+          description: Current transcription revision
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BlueprintTranscriptionView' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Migration]
+      operationId: saveBlueprintTranscription
+      summary: Save a reviewed or edited transcription as the next immutable revision
+      description: >-
+        Elements whose content differs from the extracted transcription cannot stay mapped and are stored as
+        manuallyResolved. A converted blueprint can no longer change (409); a stale expectedRevision is 409.
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: migration.blueprint.saved
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedRevision, transcription]
+              properties:
+                expectedRevision: { type: integer, minimum: 1 }
+                transcription: { $ref: '#/components/schemas/BlueprintTranscription' }
+      responses:
+        '200':
+          description: Saved revision
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BlueprintTranscriptionView' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+
+  /workspaces/{workspaceId}/migrations/{migrationId}/blueprint/ai-proposal:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/MigrationId'
+    post:
+      tags: [Migration]
+      operationId: proposeBlueprintTranscription
+      summary: Optional AI structuring of the stored page texts, returned for review and never applied
+      description: >-
+        Uses the workspace AI profiles, price caps and budget (docs/build/S10). Page texts are redacted and sent as
+        untrusted data; the answer must be a valid transcription and every element is returned as proposed. Nothing is
+        stored; the reviewer may save it as a new revision. 422 AI_NOT_CONFIGURED when AI is off.
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: migration.blueprint.ai.proposed
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                profile: { type: string, pattern: '^[a-z][a-z0-9-]{0,39}$' }
+      responses:
+        '200':
+          description: Proposal for review
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [transcription, report, profile, model, basedOnRevision]
+                properties:
+                  transcription: { $ref: '#/components/schemas/BlueprintTranscription' }
+                  report: { $ref: '#/components/schemas/CompatibilityReport' }
+                  profile: { type: string }
+                  model: { type: string }
+                  basedOnRevision: { type: integer }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
   /workspaces/{workspaceId}/document-sources:
     parameters:
     - $ref: '#/components/parameters/WorkspaceId'
@@ -9562,6 +9694,183 @@ components:
         resultMapping: { type: object, additionalProperties: { type: string } }
         timeoutSeconds: { type: integer, minimum: 1, maximum: 30 }
         definitionVersion: { type: integer, minimum: 1, default: 1 }
+    BlueprintElementId: { type: string, pattern: '^[A-Za-z][A-Za-z0-9_-]{0,63}$' }
+    BlueprintDisposition:
+      type: string
+      enum: [proposed, mapped, manuallyResolved, excluded]
+      description: 'proposed = not yet reviewed; mapped = reviewed against its source page; manuallyResolved = edited or added by the reviewer; excluded = out of scope with a dispositionReason'
+    BlueprintTranscription:
+      type: object
+      additionalProperties: false
+      description: Reviewed structured transcription of a blueprint (docs/build/S91); the single source of truth for conversion.
+      required: [format]
+      properties:
+        format: { type: string, const: orqix-blueprint-transcription-0.1 }
+        caseType:
+          type: [object, 'null']
+          additionalProperties: false
+          required: [name, disposition]
+          properties:
+            name: { type: string, minLength: 1, maxLength: 200 }
+            sourcePage: { type: [integer, 'null'], minimum: 1 }
+            sourceExcerpt: { type: [string, 'null'], maxLength: 500 }
+            disposition: { $ref: '#/components/schemas/BlueprintDisposition' }
+            dispositionReason: { type: [string, 'null'], maxLength: 500 }
+        start: { type: [string, 'null'], description: 'Id of the first step or decision' }
+        stages: { type: array, maxItems: 200, items: { $ref: '#/components/schemas/BlueprintNamedElement' } }
+        roles: { type: array, maxItems: 200, items: { $ref: '#/components/schemas/BlueprintNamedElement' } }
+        fields:
+          type: array
+          maxItems: 200
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, name, disposition]
+            properties:
+              id: { type: string, pattern: '^[a-z][A-Za-z0-9]{0,63}$' }
+              name: { type: string, minLength: 1, maxLength: 200 }
+              type: { type: [string, 'null'], enum: [string, number, integer, boolean, date, null] }
+              required: { type: boolean }
+              sourcePage: { type: [integer, 'null'], minimum: 1 }
+              sourceExcerpt: { type: [string, 'null'], maxLength: 500 }
+              disposition: { $ref: '#/components/schemas/BlueprintDisposition' }
+              dispositionReason: { type: [string, 'null'], maxLength: 500 }
+        steps:
+          type: array
+          maxItems: 200
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, name, disposition]
+            properties:
+              id: { $ref: '#/components/schemas/BlueprintElementId' }
+              name: { type: string, minLength: 1, maxLength: 200 }
+              stage: { type: [string, 'null'] }
+              type: { type: [string, 'null'], enum: [approval, task, automated, null] }
+              role: { type: [string, 'null'] }
+              next: { type: [string, 'null'], description: 'Step, decision or outcome after approval (or completion)' }
+              onReject: { type: [string, 'null'], description: 'Target when an approver rejects' }
+              sourcePage: { type: [integer, 'null'], minimum: 1 }
+              sourceExcerpt: { type: [string, 'null'], maxLength: 500 }
+              disposition: { $ref: '#/components/schemas/BlueprintDisposition' }
+              dispositionReason: { type: [string, 'null'], maxLength: 500 }
+        decisions:
+          type: array
+          maxItems: 200
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, name, disposition]
+            properties:
+              id: { $ref: '#/components/schemas/BlueprintElementId' }
+              name: { type: string, minLength: 1, maxLength: 200 }
+              rules:
+                type: array
+                maxItems: 20
+                items:
+                  type: object
+                  additionalProperties: false
+                  properties:
+                    field: { type: [string, 'null'] }
+                    operator: { type: [string, 'null'], enum: ['>=', '>', '<=', '<', '==', '!=', null] }
+                    value: { type: [string, 'null'], maxLength: 200 }
+                    target: { type: [string, 'null'] }
+              otherwise: { type: [string, 'null'] }
+              sourcePage: { type: [integer, 'null'], minimum: 1 }
+              sourceExcerpt: { type: [string, 'null'], maxLength: 500 }
+              disposition: { $ref: '#/components/schemas/BlueprintDisposition' }
+              dispositionReason: { type: [string, 'null'], maxLength: 500 }
+        slas:
+          type: array
+          maxItems: 200
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, name, disposition]
+            properties:
+              id: { $ref: '#/components/schemas/BlueprintElementId' }
+              name: { type: string, minLength: 1, maxLength: 200 }
+              step: { type: [string, 'null'] }
+              amount: { type: [integer, 'null'], minimum: 1, maximum: 100000 }
+              unit: { type: [string, 'null'], enum: [minutes, hours, days, workingDays, null] }
+              sourcePage: { type: [integer, 'null'], minimum: 1 }
+              sourceExcerpt: { type: [string, 'null'], maxLength: 500 }
+              disposition: { $ref: '#/components/schemas/BlueprintDisposition' }
+              dispositionReason: { type: [string, 'null'], maxLength: 500 }
+        outcomes:
+          type: array
+          maxItems: 200
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, name, disposition]
+            properties:
+              id: { $ref: '#/components/schemas/BlueprintElementId' }
+              name: { type: string, minLength: 1, maxLength: 200 }
+              type: { type: [string, 'null'], enum: [success, rejected, null] }
+              sourcePage: { type: [integer, 'null'], minimum: 1 }
+              sourceExcerpt: { type: [string, 'null'], maxLength: 500 }
+              disposition: { $ref: '#/components/schemas/BlueprintDisposition' }
+              dispositionReason: { type: [string, 'null'], maxLength: 500 }
+        integrations:
+          type: array
+          maxItems: 200
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, name, disposition]
+            properties:
+              id: { $ref: '#/components/schemas/BlueprintElementId' }
+              name: { type: string, minLength: 1, maxLength: 200 }
+              target: { type: [string, 'null'], maxLength: 200 }
+              step: { type: [string, 'null'] }
+              sourcePage: { type: [integer, 'null'], minimum: 1 }
+              sourceExcerpt: { type: [string, 'null'], maxLength: 500 }
+              disposition: { $ref: '#/components/schemas/BlueprintDisposition' }
+              dispositionReason: { type: [string, 'null'], maxLength: 500 }
+    BlueprintNamedElement:
+      type: object
+      additionalProperties: false
+      required: [id, name, disposition]
+      properties:
+        id: { $ref: '#/components/schemas/BlueprintElementId' }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        sourcePage: { type: [integer, 'null'], minimum: 1 }
+        sourceExcerpt: { type: [string, 'null'], maxLength: 500 }
+        disposition: { $ref: '#/components/schemas/BlueprintDisposition' }
+        dispositionReason: { type: [string, 'null'], maxLength: 500 }
+    BlueprintTranscriptionView:
+      type: object
+      required: [migrationId, status, revision, transcriptionSha256, origin, savedAt, layout, pageCount, javascript, embeddedFiles, pages, transcription, report]
+      properties:
+        migrationId: { $ref: '#/components/schemas/Uuid' }
+        status: { type: string, enum: [analyzed, converted, failed] }
+        revision: { type: integer, minimum: 1 }
+        transcriptionSha256: { type: string, pattern: '^[0-9a-f]{64}$', description: 'Send as transcriptionSha256 when converting this revision' }
+        origin: { type: string, enum: [extracted, edited] }
+        savedBy: { oneOf: [{ $ref: '#/components/schemas/SubjectRef' }, { type: 'null' }] }
+        savedAt: { type: string, format: date-time }
+        layout:
+          type: object
+          required: [id, revision]
+          properties:
+            id: { type: string }
+            revision: { type: string }
+        pageCount: { type: integer, minimum: 1, maximum: 60 }
+        javascript: { type: boolean, description: 'The PDF contained JavaScript or automatic actions; they were ignored' }
+        embeddedFiles: { type: boolean, description: 'The PDF contained embedded files; they were not opened' }
+        pages:
+          type: array
+          items:
+            type: object
+            required: [number, text, sha256, unclassifiedLines]
+            properties:
+              number: { type: integer, minimum: 1 }
+              text: { type: string }
+              sha256: { type: string }
+              unclassifiedLines: { type: integer, minimum: 0 }
+        transcription: { $ref: '#/components/schemas/BlueprintTranscription' }
+        report: { $ref: '#/components/schemas/CompatibilityReport' }
     MigrationJob:
       type: object
       required: [id, fileName, status, report, createdAt]
@@ -9626,6 +9935,7 @@ components:
             properties:
               migrationId: { $ref: '#/components/schemas/Uuid' }
         decisionId: { type: string, minLength: 1, maxLength: 128, description: 'DMN migrations only: the decision to convert; optional when the file has exactly one decision' }
+        transcriptionSha256: { type: string, pattern: '^[0-9a-f]{64}$', description: 'Pega Blueprint PDF migrations only (required there): the transcriptionSha256 of the reviewed transcription revision being converted. Routes, request fields and steps come from that transcription, so approvalRoutes, inputSchema and other mappings except groupMappings are refused.' }
         inputSchema:
           type: object
           description: Reviewed canonical request schema; otherwise inferred from BPMN comparisons and service input mappings

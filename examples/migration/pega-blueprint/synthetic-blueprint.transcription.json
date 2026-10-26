@@ -1,0 +1,158 @@
+{
+  "format" : "orqix-blueprint-transcription-0.1",
+  "caseType" : {
+    "name" : "Equipment Purchase Request",
+    "sourcePage" : 1,
+    "sourceExcerpt" : "Case type: Equipment Purchase Request",
+    "disposition" : "proposed"
+  },
+  "start" : "step-manager-approval",
+  "stages" : [ {
+    "id" : "stage-submission",
+    "name" : "Submission",
+    "sourcePage" : 1,
+    "sourceExcerpt" : "- Submission",
+    "disposition" : "proposed"
+  }, {
+    "id" : "stage-review",
+    "name" : "Review",
+    "sourcePage" : 1,
+    "sourceExcerpt" : "- Review",
+    "disposition" : "proposed"
+  }, {
+    "id" : "stage-fulfilment",
+    "name" : "Fulfilment",
+    "sourcePage" : 1,
+    "sourceExcerpt" : "- Fulfilment",
+    "disposition" : "proposed"
+  } ],
+  "roles" : [ {
+    "id" : "role-requester",
+    "name" : "Requester",
+    "sourcePage" : 1,
+    "sourceExcerpt" : "- Requester - submits purchase requests",
+    "disposition" : "proposed"
+  }, {
+    "id" : "role-line-manager",
+    "name" : "Line Manager",
+    "sourcePage" : 1,
+    "sourceExcerpt" : "- Line Manager - approves every request",
+    "disposition" : "proposed"
+  }, {
+    "id" : "role-finance-officer",
+    "name" : "Finance Officer",
+    "sourcePage" : 1,
+    "sourceExcerpt" : "- Finance Officer - approves requests of 5000 or more",
+    "disposition" : "proposed"
+  } ],
+  "fields" : [ {
+    "id" : "itemDescription",
+    "name" : "Item description",
+    "type" : "string",
+    "required" : true,
+    "sourcePage" : 2,
+    "sourceExcerpt" : "- Item description (text, required)",
+    "disposition" : "proposed"
+  }, {
+    "id" : "amount",
+    "name" : "Amount",
+    "type" : "number",
+    "required" : true,
+    "sourcePage" : 2,
+    "sourceExcerpt" : "- Amount (decimal, required)",
+    "disposition" : "proposed"
+  }, {
+    "id" : "costCenter",
+    "name" : "Cost center",
+    "type" : "string",
+    "required" : true,
+    "sourcePage" : 2,
+    "sourceExcerpt" : "- Cost center (text, required)",
+    "disposition" : "proposed"
+  }, {
+    "id" : "urgent",
+    "name" : "Urgent",
+    "type" : "boolean",
+    "required" : false,
+    "sourcePage" : 2,
+    "sourceExcerpt" : "- Urgent (boolean, optional)",
+    "disposition" : "proposed"
+  } ],
+  "steps" : [ {
+    "id" : "step-manager-approval",
+    "name" : "Manager approval",
+    "stage" : "stage-review",
+    "type" : "approval",
+    "role" : "role-line-manager",
+    "next" : "decision-amount-routing",
+    "onReject" : "outcome-rejected",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "1. Manager approval (approval) - role: Line Manager; stage: Review; on reject: Rejected",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-finance-approval",
+    "name" : "Finance approval",
+    "stage" : "stage-review",
+    "type" : "approval",
+    "role" : "role-finance-officer",
+    "next" : "outcome-approved",
+    "onReject" : "outcome-rejected",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "2. Finance approval (approval) - role: Finance Officer; stage: Review; then: Approved; on reject: Rejected",
+    "disposition" : "proposed"
+  } ],
+  "decisions" : [ {
+    "id" : "decision-amount-routing",
+    "name" : "Amount routing",
+    "rules" : [ {
+      "field" : "amount",
+      "operator" : ">=",
+      "value" : "5000",
+      "target" : "step-finance-approval"
+    } ],
+    "otherwise" : "outcome-approved",
+    "sourcePage" : 3,
+    "sourceExcerpt" : "- Amount routing - after: Manager approval; if Amount >= 5000 then Finance approval; otherwise Approved",
+    "disposition" : "proposed"
+  } ],
+  "slas" : [ {
+    "id" : "sla-manager-approval",
+    "name" : "Manager approval",
+    "step" : "step-manager-approval",
+    "amount" : 2,
+    "unit" : "days",
+    "sourcePage" : 3,
+    "sourceExcerpt" : "- Manager approval: 2 days",
+    "disposition" : "proposed"
+  }, {
+    "id" : "sla-finance-approval",
+    "name" : "Finance approval",
+    "step" : "step-finance-approval",
+    "amount" : 8,
+    "sourcePage" : 3,
+    "sourceExcerpt" : "- Finance approval: 8",
+    "disposition" : "proposed"
+  } ],
+  "outcomes" : [ {
+    "id" : "outcome-approved",
+    "name" : "Approved",
+    "type" : "success",
+    "sourcePage" : 3,
+    "sourceExcerpt" : "- Approved (success)",
+    "disposition" : "proposed"
+  }, {
+    "id" : "outcome-rejected",
+    "name" : "Rejected",
+    "type" : "rejected",
+    "sourcePage" : 3,
+    "sourceExcerpt" : "- Rejected (rejected)",
+    "disposition" : "proposed"
+  } ],
+  "integrations" : [ {
+    "id" : "integration-purchase-order-export",
+    "name" : "Purchase order export",
+    "sourcePage" : 3,
+    "sourceExcerpt" : "- Purchase order export - target: none",
+    "disposition" : "proposed"
+  } ]
+}

@@ -31,12 +31,12 @@ public class MigrationService {
     public record Job(UUID id, String fileName, String status, Report.CompatibilityReport report,
             UUID convertedWorkflowId, Instant createdAt, JsonNode sourceMap) { }
     public record Converted(JsonNode workflow, JsonNode draft, Report.CompatibilityReport report) { }
-    private record Stored(Job view, String format, byte[] source, String mappings) { }
+    private record Stored(Job view, String format, byte[] source, String mappings, String sourceHash) { }
     private final JdbcClient jdbc; private final Json json; private final PolicyService policy;
     private final DraftAuthoring drafts; private final AuditWriter audit;
-    private final ConnectionService connections;
-    public MigrationService(JdbcClient jdbc, Json json, PolicyService policy, DraftAuthoring drafts, AuditWriter audit, ConnectionService connections) {
-        this.jdbc=jdbc; this.json=json; this.policy=policy; this.drafts=drafts; this.audit=audit; this.connections=connections;
+    private final ConnectionService connections; private final BlueprintImports blueprints;
+    public MigrationService(JdbcClient jdbc, Json json, PolicyService policy, DraftAuthoring drafts, AuditWriter audit, ConnectionService connections, BlueprintImports blueprints) {
+        this.jdbc=jdbc; this.json=json; this.policy=policy; this.drafts=drafts; this.audit=audit; this.connections=connections; this.blueprints=blueprints;
     }
     private void authorize(Caller caller, UUID ws, boolean edit, String operation) {
         var access=policy.requireVisible(caller, ws);
@@ -47,6 +47,7 @@ public class MigrationService {
         authorize(caller,ws,true,"uploadMigration");
         try {
             String format=requestedFormat == null ? "bpmn" : requestedFormat;
+            if (format.equals(BlueprintImports.FORMAT)) throw SourceException.invalid("Upload a Pega Blueprint PDF as a file through the blueprint upload (multipart), not as text.");
             byte[] bytes;
             try { bytes="pegaArchive".equals(format) ? Base64.getDecoder().decode(content) : content.getBytes(StandardCharsets.UTF_8); }
             catch (IllegalArgumentException e) { throw SourceException.invalid("The archive content must be base64 encoded."); }
@@ -103,7 +104,10 @@ public class MigrationService {
             if (job.format.equals("pegaArchive")) throw new ApiException(ProblemCode.MIGRATION_BLOCKED,
                     "Native Pega archives are inventory-only. Upload a checksum-linked manual mapping package to create a draft.")
                     .with("openItems",job.view.report().issues());
-            if (job.format.equals("pegaXpdl")) {
+            if (job.format.equals(BlueprintImports.FORMAT)) {
+                var prepared=blueprints.prepare(ws,id,job.sourceHash,request);
+                definition=prepared.definition(); report=prepared.report(); sourceMap=prepared.sourceMap();
+            } else if (job.format.equals("pegaXpdl")) {
                 var model=PegaXpdl.analyze(new String(job.source,StandardCharsets.UTF_8));
                 if(model.blocked()) throw new ApiException(ProblemCode.MIGRATION_BLOCKED,"Unsupported XPDL behavior must be reconstructed before conversion.").with("openItems",model.report().issues());
                 var result=Converter.convert(model.analysis(),request,json,Map.of(),Map.of(),Map.of());
@@ -134,7 +138,7 @@ public class MigrationService {
                     .with("openItems",report.issues().stream().filter(i -> Report.OPEN.equals(i.resolutionStatus())).toList());
             var created=drafts.createFromDefinition(caller,ws,new DraftAuthoring.NewDraft(request.path("workflowKey").asString(null),
                     request.path("name").asString(null),"Imported source; review compatibility report and verify behavior.",definition,
-                    job.format.equals("pegaXpdl") ? DraftAuthoring.Source.PEGA_XPDL_IMPORT : job.format.equals("pegaMapping") ? DraftAuthoring.Source.PEGA_IMPORT : DraftAuthoring.Source.IMPORT,false));
+                    job.format.equals("pegaXpdl") ? DraftAuthoring.Source.PEGA_XPDL_IMPORT : job.format.equals(BlueprintImports.FORMAT) ? DraftAuthoring.Source.PEGA_BLUEPRINT_IMPORT : job.format.equals("pegaMapping") ? DraftAuthoring.Source.PEGA_IMPORT : DraftAuthoring.Source.IMPORT,false));
             if (!created.report().path("publishable").asBoolean(false)) {
                 throw new ApiException(ProblemCode.MIGRATION_BLOCKED,"The mapped draft did not pass compiler validation. No workflow was created.")
                         .with("issues",created.report().path("issues"));
@@ -227,11 +231,11 @@ public class MigrationService {
         catch (IllegalArgumentException e) { throw SourceException.invalid("Invalid JSON mapping package."); }
     }
     private Stored stored(UUID ws,UUID id,boolean lock) {
-        return jdbc.sql("SELECT id,file_name,status,report::text,converted_workflow_id,created_at,source_format,source,mappings::text,source_map::text FROM migration_job WHERE workspace_id=:ws AND id=:id"+(lock ? " FOR UPDATE" : ""))
+        return jdbc.sql("SELECT id,file_name,status,report::text,converted_workflow_id,created_at,source_format,source,mappings::text,source_map::text,source_sha256 FROM migration_job WHERE workspace_id=:ws AND id=:id"+(lock ? " FOR UPDATE" : ""))
             .param("ws",ws).param("id",id).query((rs,n) -> new Stored(new Job(Sql.uuid(rs,"id"),rs.getString("file_name"),rs.getString("status"),
                 json.convert(json.parse(rs.getString("report")),Report.CompatibilityReport.class),Sql.uuid(rs,"converted_workflow_id"),Sql.instant(rs,"created_at"),
                 rs.getString("source_map") == null ? json.toTree(null) : json.parse(rs.getString("source_map"))),
-                rs.getString("source_format"),rs.getBytes("source"),rs.getString("mappings"))).optional().orElseThrow(ApiException::notFound);
+                rs.getString("source_format"),rs.getBytes("source"),rs.getString("mappings"),rs.getString("source_sha256"))).optional().orElseThrow(ApiException::notFound);
     }
     private static ApiException sourceProblem(SourceException e) { return new ApiException(e.tooLarge() ? ProblemCode.PAYLOAD_TOO_LARGE : ProblemCode.SOURCE_INVALID,e.getMessage()); }
     private void audit(Caller caller,UUID ws,UUID id,String action,Map<String,Object> metadata) {

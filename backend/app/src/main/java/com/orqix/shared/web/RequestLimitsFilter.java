@@ -40,6 +40,10 @@ public class RequestLimitsFilter extends OncePerRequestFilter {
     /** Room for the multipart envelope (boundaries, part headers, the description) around a maximal file. */
     private static final int MULTIPART_ENVELOPE = 64 * 1024;
     private static final Pattern MIGRATION_UPLOAD_PATH = Pattern.compile("^/api/v1/workspaces/[^/]+/migrations$");
+    /** Pega Blueprint PDFs (docs/build/S91): up to 25 MiB, multipart; the edited transcription up to 1 MiB of JSON. */
+    private static final Pattern BLUEPRINT_UPLOAD_PATH = Pattern.compile("^/api/v1/workspaces/[^/]+/migrations/blueprints$");
+    private static final Pattern BLUEPRINT_TRANSCRIPTION_PATH = Pattern.compile("^/api/v1/workspaces/[^/]+/migrations/[^/]+/blueprint$");
+    static final long BLUEPRINT_MAX_FILE_BYTES = 25L * 1024 * 1024;
     private static final Pattern MIGRATION_CONVERT_PATH = Pattern.compile("^/api/v1/workspaces/[^/]+/migrations/[^/]+/convert$");
     /** Room for the {"definition": ...} wrapper around a maximal draft. */
     private static final int DRAFT_ENVELOPE = 1024;
@@ -65,6 +69,8 @@ public class RequestLimitsFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         boolean upload = "POST".equals(request.getMethod()) && ATTACHMENT_UPLOAD_PATH.matcher(request.getRequestURI()).matches();
         long limit = upload ? attachments.maxFileBytes() + MULTIPART_ENVELOPE
+                : BLUEPRINT_UPLOAD_PATH.matcher(request.getRequestURI()).matches() ? BLUEPRINT_MAX_FILE_BYTES + MULTIPART_ENVELOPE
+                : BLUEPRINT_TRANSCRIPTION_PATH.matcher(request.getRequestURI()).matches() ? 1_048_576
                 : OPENAPI_REVIEW_PATH.matcher(request.getRequestURI()).matches() ? 4_194_304
                 : MIGRATION_UPLOAD_PATH.matcher(request.getRequestURI()).matches() ? 2_097_152
                 : DRAFT_BPMN_PATH.matcher(request.getRequestURI()).matches() ? 2_097_152

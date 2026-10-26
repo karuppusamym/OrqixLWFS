@@ -28,6 +28,9 @@ public final class DocumentExtractionWorker {
     static final int MAX_EXPANDED_BYTES = 20 * 1024 * 1024;
     static final int MAX_ENTRIES = 256;
     static final int MAX_PAGES = 100;
+    /** Worker type for blueprint PDFs: one text block per page, separated by form feeds, after a header line. */
+    static final String PDF_PAGES = "pdfpages";
+    static final String PAGES_HEADER = "ORQIX-PDF-PAGES/1 ";
     private DocumentExtractionWorker() { }
 
     public static void main(String[] args) {
@@ -35,9 +38,10 @@ public final class DocumentExtractionWorker {
         try {
             if (args.length != 3) { System.exit(2); }
             Path source = Path.of(args[1]), output = Path.of(args[2]);
-            if (Files.size(source) > DocumentExtraction.MAX_FILE_BYTES) { throw new Limit(); }
-            String text = extract(Files.readAllBytes(source), args[0]);
-            if (text.isBlank()) { System.exit(5); }
+            boolean pages = PDF_PAGES.equals(args[0]);
+            if (Files.size(source) > (pages ? DocumentExtraction.BLUEPRINT_MAX_FILE_BYTES : DocumentExtraction.MAX_FILE_BYTES)) { throw new Limit(); }
+            String text = pages ? pdfPages(Files.readAllBytes(source)) : extract(Files.readAllBytes(source), args[0]);
+            if (!pages && text.isBlank()) { System.exit(5); }
             Files.writeString(output, text, StandardCharsets.UTF_8);
             return;
         } catch (Limit e) { exit = 3; }
@@ -85,6 +89,46 @@ public final class DocumentExtractionWorker {
                 if (sheets.isEmpty() || sheets.size() > MAX_PAGES) { throw new Limit(); }
                 for (String sheet : sheets) { sheet(parts.get(sheet), strings, text); }
             } else { throw new IOException(); }
+        }
+        return text.toString();
+    }
+
+    /**
+     * Blueprint PDFs: text only, page by page. JavaScript, open actions, forms and embedded files are never executed or
+     * extracted; their presence is only reported so the review can say they were ignored. Control characters other than
+     * line breaks and tabs are removed so a page cannot forge the page separator.
+     */
+    static String pdfPages(byte[] bytes) throws Exception {
+        if (bytes.length < 5 || !new String(bytes, 0, 5, StandardCharsets.US_ASCII).equals("%PDF-")) { throw new IOException(); }
+        BoundedWriter text = new BoundedWriter(DocumentExtraction.BLUEPRINT_MAX_TEXT_BYTES);
+        try (var document = Loader.loadPDF(bytes)) {
+            if (document.isEncrypted() || !document.getCurrentAccessPermission().canExtractContent()) { throw new Encrypted(); }
+            int count = document.getNumberOfPages();
+            if (count > DocumentExtraction.BLUEPRINT_MAX_PAGES) { throw new Limit(); }
+            if (count < 1) { throw new IOException(); }
+            var catalog = document.getDocumentCatalog();
+            var names = catalog.getNames();
+            boolean javascript = (names != null && names.getJavaScript() != null)
+                    || catalog.getCOSObject().containsKey(org.apache.pdfbox.cos.COSName.AA)
+                    || catalog.getCOSObject().getDictionaryObject(org.apache.pdfbox.cos.COSName.OPEN_ACTION) instanceof org.apache.pdfbox.cos.COSDictionary;
+            boolean embedded = names != null && names.getEmbeddedFiles() != null;
+            for (var page : document.getPages()) {
+                for (var annotation : page.getAnnotations()) {
+                    if (annotation instanceof org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationFileAttachment) { embedded = true; }
+                    if (annotation.getCOSObject().containsKey(org.apache.pdfbox.cos.COSName.A)
+                            || annotation.getCOSObject().containsKey(org.apache.pdfbox.cos.COSName.AA)) { javascript = true; }
+                }
+                if (page.getCOSObject().containsKey(org.apache.pdfbox.cos.COSName.AA)) { javascript = true; }
+            }
+            text.append(PAGES_HEADER).append(Integer.toString(count)).append(" javascript=").append(Boolean.toString(javascript))
+                    .append(" embedded=").append(Boolean.toString(embedded)).append("\n");
+            PDFTextStripper stripper = new PDFTextStripper();
+            stripper.setSortByPosition(true);
+            for (int page = 1; page <= count; page++) {
+                stripper.setStartPage(page);
+                stripper.setEndPage(page);
+                text.append(stripper.getText(document).replaceAll("[\\p{Cc}&&[^\\n\\t]]", "")).append("\f");
+            }
         }
         return text.toString();
     }
@@ -222,11 +266,14 @@ public final class DocumentExtractionWorker {
     static final class Encrypted extends IOException { }
     static final class BoundedWriter extends Writer {
         private final StringWriter delegate = new StringWriter();
+        private final int limit;
         private int bytes;
+        BoundedWriter() { this(DocumentExtraction.MAX_TEXT_BYTES); }
+        BoundedWriter(int limit) { this.limit = limit; }
         @Override public void write(char[] buffer, int offset, int count) throws IOException {
             String text = new String(buffer, offset, count);
             bytes += text.getBytes(StandardCharsets.UTF_8).length;
-            if (bytes > DocumentExtraction.MAX_TEXT_BYTES) { throw new Limit(); }
+            if (bytes > limit) { throw new Limit(); }
             delegate.write(buffer, offset, count);
         }
         @Override public void flush() { }

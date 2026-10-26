@@ -46,12 +46,13 @@ spring:
     timeout-per-shutdown-phase: 45s
   servlet:
     multipart:
-      # Attachment uploads (docs/build/S17): the container stops reading a file at 10 MiB (the platform maximum) and a
-      # request at 10 MiB + 64 KiB; RequestLimitsFilter also rejects a larger Content-Length before any byte is read.
+      # The container stops reading a file at 25 MiB and a request at 25 MiB + 64 KiB: the largest multipart upload is a
+      # Pega Blueprint PDF (docs/build/S91). RequestLimitsFilter enforces the per-path limits (attachments, docs/build/S17:
+      # 10 MiB + 64 KiB) on Content-Length and on the stream before a larger body is read.
       # Files above 256 KiB are spooled to the temp directory (spring.servlet.multipart.location), not held in memory.
       enabled: true
-      max-file-size: 10MB
-      max-request-size: 10304KB
+      max-file-size: 25MB
+      max-request-size: 25664KB
       file-size-threshold: 256KB
 
 server:

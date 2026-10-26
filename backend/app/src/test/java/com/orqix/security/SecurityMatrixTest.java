@@ -328,6 +328,13 @@ class SecurityMatrixTest extends RuntimeTestBase {
                     .with(TestUsers.as(user)).with(com.orqix.support.IntegrationTestBase::xsrf)
                     .header("Idempotency-Key", UUID.randomUUID().toString());
         }
+        if ("uploadBlueprintMigration".equals(operationId)) {
+            // Multipart Pega Blueprint PDF (docs/build/S91): a readable synthetic PDF, so a 404 cannot be explained by the body.
+            request = MockMvcRequestBuilders.multipart(HttpMethod.POST, "/api/v1" + path)
+                    .file(new org.springframework.mock.web.MockMultipartFile("file", "blueprint.pdf", "application/pdf",
+                            com.orqix.migration.blueprint.BlueprintPdfs.sample()))
+                    .with(TestUsers.as(user)).with(com.orqix.support.IntegrationTestBase::xsrf);
+        }
         var result = mvc.perform(request).andReturn();
         OpenApiContract.validate(result);
         return result.getResponse().getStatus();
@@ -360,6 +367,8 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "createWorkflow" -> Map.of("key", "foreign-wf", "name", "Foreign");
             case "uploadMigration" -> Map.of("fileName", "foreign.bpmn", "content", "<definitions/>", "sourceFormat", "bpmn");
             case "convertMigration" -> Map.of("key", "foreign-import", "name", "Foreign", "acknowledgeInfo", true);
+            case "saveBlueprintTranscription" -> Map.of("expectedRevision", 1, "transcription", Map.of("format", "orqix-blueprint-transcription-0.1"));
+            case "proposeBlueprintTranscription" -> Map.of();
             case "uploadMigrationProject" -> Map.of("name", "Foreign", "files",
                     List.of(Map.of("fileName", "foreign.bpmn", "content", "<definitions/>")));
             case "convertMigrationProjectNext" -> Map.of("expectedMigrationId", UUID.randomUUID().toString(),
@@ -461,7 +470,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
     private Map<String, Long> snapshot() {
         Map<String, Long> counts = new LinkedHashMap<>();
         for (String table : List.of("organization", "workspace", "subject", "role_binding", "permission_grant",
-                "workspace_group", "workspace_group_member", "migration_job", "migration_project", "migration_policy", "migration_review", "workflow", "workflow_folder", "workflow_folder_item", "document_template", "document_template_version", "decision_asset", "decision_asset_version", "connection_asset", "workspace_attachment_policy", "workspace_agent_write_policy", "agent_write_tool_approval", "agent_write_call", "attachment_ocr_result", "workflow_element_comment", "workflow_comment_mention", "workflow_draft_revision", "workflow_release",
+                "workspace_group", "workspace_group_member", "migration_job", "migration_blueprint_document", "migration_blueprint_page", "migration_blueprint_transcription", "migration_project", "migration_policy", "migration_review", "workflow", "workflow_folder", "workflow_folder_item", "document_template", "document_template_version", "decision_asset", "decision_asset_version", "connection_asset", "workspace_attachment_policy", "workspace_agent_write_policy", "agent_write_tool_approval", "agent_write_call", "attachment_ocr_result", "workflow_element_comment", "workflow_comment_mention", "workflow_draft_revision", "workflow_release",
                 "release_artifact", "case_catalog", "case_definition", "case_instance", "case_command_response", "case_termination", "case_event", "case_data_event", "connection_definition", "connection_binding", "oauth_grant", "oauth_consent", "external_job", "external_job_callback", "workflow_run", "task_context",
                 "run_attachment", "run_attachment_content", "run_stage", "workflow_test_suite", "workflow_test_result", "document_source",
                 "task_decision", "task_reminder", "inbound_message", "message_subscription", "document_snapshot", "adapter_config", "inbound_trigger", "inbound_event", "effect_journal", "run_event", "notification", "idempotency_record",

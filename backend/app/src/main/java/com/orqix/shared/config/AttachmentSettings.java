@@ -6,8 +6,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
 /**
- * Attachment limits (docs/build/S17 section 2). The per-file maximum cannot exceed 10 MiB: the database, the workflow
- * schema ({@code maxFileBytes}) and the multipart cap in application.yaml are all sized for it, so a larger value fails
+ * Attachment limits (docs/build/S17 section 2). The per-file maximum cannot exceed 10 MiB: the database and the workflow
+ * schema ({@code maxFileBytes}) are sized for it, and RequestLimitsFilter caps attachment requests at it (the container
+ * multipart cap is larger for blueprint PDFs), so a larger value fails
  * at startup instead of at the first upload.
  *
  * @param maxFileBytes        largest file

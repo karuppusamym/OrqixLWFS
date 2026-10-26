@@ -1,0 +1,231 @@
+{"t":"2026-10-26T07:13:40.878Z","step":"axe import form (Pega Blueprint selected)","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:13:58.149Z","step":"axe import form (Pega Blueprint selected)","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:14:04.972Z","step":"axe blueprint review (initial)","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:14:05.025Z","step":"blueprint: elements shown with source page text","status":"FAIL","note":"19 elements, 19 with source text, 19 highlighted excerpts"}
+{"t":"2026-10-26T07:14:20.563Z","step":"axe import form (Pega Blueprint selected)","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:14:26.121Z","step":"axe blueprint review (initial)","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:14:26.188Z","step":"blueprint: elements shown with source page text","status":"PASS","note":"19 elements, 19 with source text, 19 highlighted excerpts"}
+{"t":"2026-10-26T07:14:26.213Z","step":"blueprint: expected findings listed","status":"PASS","note":"BLUEPRINT_SLA_UNIT_MISSING, BLUEPRINT_INTEGRATION_UNSUPPORTED, BLUEPRINT_INTEGRATION_TARGET_MISSING, BLUEPRINT_TEXT_UNCLASSIFIED"}
+{"t":"2026-10-26T07:14:29.298Z","step":"axe blueprint review (edited, unsaved)","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:14:31.962Z","step":"axe blueprint review (saved, revision 2)","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:14:31.963Z","step":"blueprint: edit unit + exclude integration + mark reviewed + save -> revision 2, no blocking findings","status":"PASS","note":""}
+{"t":"2026-10-26T07:14:32.034Z","step":"blueprint: group options for Line Manager","status":"INFO","note":"[{\"v\":\"\",\"t\":\"Choose workspace group\"},{\"v\":\"compliance-reviewers\",\"t\":\"Compliance reviewers\"},{\"v\":\"facilities-team\",\"t\":\"Facilities team\"},{\"v\":\"finance-approvers\",\"t\":\"Finance approvers\"},{\"v\":\"it-desk\",\"t\":\"IT service desk\"},{\"v\":\"managers\",\"t\":\"Managers\"}]"}
+{"t":"2026-10-26T07:14:32.071Z","step":"blueprint: group options for Finance Officer","status":"INFO","note":"[{\"v\":\"\",\"t\":\"Choose workspace group\"},{\"v\":\"compliance-reviewers\",\"t\":\"Compliance reviewers\"},{\"v\":\"facilities-team\",\"t\":\"Facilities team\"},{\"v\":\"finance-approvers\",\"t\":\"Finance approvers\"},{\"v\":\"it-desk\",\"t\":\"IT service desk\"},{\"v\":\"managers\",\"t\":\"Managers\"}]"}
+{"t":"2026-10-26T07:14:35.223Z","step":"axe blueprint convert form","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:14:38.608Z","step":"axe studio after blueprint convert","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:14:38.609Z","step":"blueprint: convert to draft, studio opens","status":"PASS","note":"key rh26-bp-mvox8fx8js"}
+{"t":"2026-10-26T07:14:42.427Z","step":"axe publish review before migration review","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:14:42.450Z","step":"migration review: policy","status":"INFO","note":"not blocked"}
+{"t":"2026-10-26T07:15:43.582Z","step":"axe import form (Pega Blueprint selected)","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:15:47.921Z","step":"axe blueprint review (initial)","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:15:47.959Z","step":"blueprint: elements shown with source page text","status":"PASS","note":"19 elements, 19 with source text, 19 highlighted excerpts"}
+{"t":"2026-10-26T07:15:47.976Z","step":"blueprint: expected findings listed","status":"PASS","note":"BLUEPRINT_SLA_UNIT_MISSING, BLUEPRINT_INTEGRATION_UNSUPPORTED, BLUEPRINT_INTEGRATION_TARGET_MISSING, BLUEPRINT_TEXT_UNCLASSIFIED"}
+{"t":"2026-10-26T07:15:50.689Z","step":"axe blueprint review (edited, unsaved)","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:15:53.131Z","step":"axe blueprint review (saved, revision 2)","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:15:53.132Z","step":"blueprint: edit unit + exclude integration + mark reviewed + save -> revision 2, no blocking findings","status":"PASS","note":""}
+{"t":"2026-10-26T07:15:53.202Z","step":"blueprint: group options for Line Manager","status":"INFO","note":"[{\"v\":\"\",\"t\":\"Choose workspace group\"},{\"v\":\"compliance-reviewers\",\"t\":\"Compliance reviewers\"},{\"v\":\"facilities-team\",\"t\":\"Facilities team\"},{\"v\":\"finance-approvers\",\"t\":\"Finance approvers\"},{\"v\":\"it-desk\",\"t\":\"IT service desk\"},{\"v\":\"managers\",\"t\":\"Managers\"}]"}
+{"t":"2026-10-26T07:15:53.236Z","step":"blueprint: group options for Finance Officer","status":"INFO","note":"[{\"v\":\"\",\"t\":\"Choose workspace group\"},{\"v\":\"compliance-reviewers\",\"t\":\"Compliance reviewers\"},{\"v\":\"facilities-team\",\"t\":\"Facilities team\"},{\"v\":\"finance-approvers\",\"t\":\"Finance approvers\"},{\"v\":\"it-desk\",\"t\":\"IT service desk\"},{\"v\":\"managers\",\"t\":\"Managers\"}]"}
+{"t":"2026-10-26T07:15:56.279Z","step":"axe blueprint convert form","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:15:58.119Z","step":"axe studio after blueprint convert","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:15:58.120Z","step":"blueprint: convert to draft, studio opens","status":"PASS","note":"key rh26-bp-mvoxa6jxtv"}
+{"t":"2026-10-26T07:16:02.095Z","step":"axe publish review before migration review","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:16:02.109Z","step":"migration review: policy","status":"INFO","note":"not blocked"}
+{"t":"2026-10-26T07:16:02.117Z","step":"migration review: policy badge","status":"INFO","note":"review optional (default policy of this stack); paul publishes without an independent approval"}
+{"t":"2026-10-26T07:16:02.969Z","step":"axe publish review after migration review","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:16:03.511Z","step":"blueprint: publish","status":"PASS","note":""}
+{"t":"2026-10-26T07:16:05.361Z","step":"blueprint start form fields (6000)","status":"INFO","note":"req-amount,,req-costCenter,req-itemDescription"}
+{"t":"2026-10-26T07:16:06.615Z","step":"axe start form (blueprint workflow)","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:16:07.112Z","step":"blueprint start form fields (4999.99)","status":"INFO","note":"req-amount,,req-costCenter,req-itemDescription"}
+{"t":"2026-10-26T07:17:41.516Z","step":"axe import form (Pega Blueprint selected)","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:17:46.648Z","step":"axe blueprint review (initial)","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:17:46.699Z","step":"blueprint: elements shown with source page text","status":"PASS","note":"19 elements, 19 with source text, 19 highlighted excerpts"}
+{"t":"2026-10-26T07:17:46.720Z","step":"blueprint: expected findings listed","status":"PASS","note":"BLUEPRINT_SLA_UNIT_MISSING, BLUEPRINT_INTEGRATION_UNSUPPORTED, BLUEPRINT_INTEGRATION_TARGET_MISSING, BLUEPRINT_TEXT_UNCLASSIFIED"}
+{"t":"2026-10-26T07:17:49.494Z","step":"axe blueprint review (edited, unsaved)","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:17:51.959Z","step":"axe blueprint review (saved, revision 2)","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:17:51.960Z","step":"blueprint: edit unit + exclude integration + mark reviewed + save -> revision 2, no blocking findings","status":"PASS","note":""}
+{"t":"2026-10-26T07:17:52.057Z","step":"blueprint: group options for Line Manager","status":"INFO","note":"[{\"v\":\"\",\"t\":\"Choose workspace group\"},{\"v\":\"compliance-reviewers\",\"t\":\"Compliance reviewers\"},{\"v\":\"facilities-team\",\"t\":\"Facilities team\"},{\"v\":\"finance-approvers\",\"t\":\"Finance approvers\"},{\"v\":\"it-desk\",\"t\":\"IT service desk\"},{\"v\":\"managers\",\"t\":\"Managers\"}]"}
+{"t":"2026-10-26T07:17:52.107Z","step":"blueprint: group options for Finance Officer","status":"INFO","note":"[{\"v\":\"\",\"t\":\"Choose workspace group\"},{\"v\":\"compliance-reviewers\",\"t\":\"Compliance reviewers\"},{\"v\":\"facilities-team\",\"t\":\"Facilities team\"},{\"v\":\"finance-approvers\",\"t\":\"Finance approvers\"},{\"v\":\"it-desk\",\"t\":\"IT service desk\"},{\"v\":\"managers\",\"t\":\"Managers\"}]"}
+{"t":"2026-10-26T07:17:54.609Z","step":"axe blueprint convert form","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:17:57.330Z","step":"axe studio after blueprint convert","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:17:57.332Z","step":"blueprint: convert to draft, studio opens","status":"PASS","note":"key rh26-bp-mvoxcq8pwi"}
+{"t":"2026-10-26T07:18:00.148Z","step":"axe publish review before migration review","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:18:00.162Z","step":"migration review: policy","status":"INFO","note":"not blocked"}
+{"t":"2026-10-26T07:18:00.174Z","step":"migration review: policy badge","status":"INFO","note":"review optional (default policy of this stack); paul publishes without an independent approval"}
+{"t":"2026-10-26T07:18:01.042Z","step":"axe publish review after migration review","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:18:01.441Z","step":"blueprint: publish","status":"PASS","note":""}
+{"t":"2026-10-26T07:18:03.515Z","step":"blueprint start form fields (6000)","status":"INFO","note":"req-amount,,req-costCenter,req-itemDescription"}
+{"t":"2026-10-26T07:18:04.891Z","step":"axe start form (blueprint workflow)","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:18:05.616Z","step":"blueprint start form fields (4999.99)","status":"INFO","note":"req-amount,,req-costCenter,req-itemDescription"}
+{"t":"2026-10-26T07:18:10.660Z","step":"axe task manager-6000","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:18:12.901Z","step":"axe task manager-4999","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:18:13.769Z","step":"blueprint: 6,000 reaches finance, 4,999.99 does not","status":"PASS","note":"finance sees 4,999.99: 0"}
+{"t":"2026-10-26T07:18:15.098Z","step":"axe run 4999.99","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:18:15.099Z","step":"blueprint run 4999.99: outcome","status":"PASS","note":"Completed · Approved | Rhea Requester submitted the request (version 1) 26 Oct 2026, 03:18 Waiting for Managers: Manager approval 26 Oct 2026, 03:18 Mani Manager picked up Manager approval 26 Oct 2026, 03:18 Mani Manager approved Manager approval 26 Oct 2026, 03:18 Finished: Approved 26 Oct 2026, 03:18"}
+{"t":"2026-10-26T07:18:16.953Z","step":"axe task finance-6000","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:18:18.657Z","step":"axe run 6000","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:18:18.658Z","step":"blueprint run 6000: outcome","status":"PASS","note":"Completed · Approved | Rhea Requester submitted the request (version 1) 26 Oct 2026, 03:18 Waiting for Managers: Manager approval 26 Oct 2026, 03:18 Mani Manager picked up Manager approval 26 Oct 2026, 03:18 Mani Manager approved Manager approval 26 Oct 2026, 03:18 Waiting for Finance approvers: Finance approval 26 Oct 2026, 03:18 Fin Finance picked up Finance approval 26 Oct 2026, 03:18 Fin Finance approved Finance app"}
+{"t":"2026-10-26T07:18:20.713Z","step":"blueprint start form fields (6000)","status":"INFO","note":"req-amount,,req-costCenter,req-itemDescription"}
+{"t":"2026-10-26T07:18:24.120Z","step":"axe task manager-reject","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:18:25.867Z","step":"axe run rejected","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:18:25.869Z","step":"blueprint run rejected: outcome","status":"PASS","note":"Completed · Rejected | Rhea Requester submitted the request (version 1) 26 Oct 2026, 03:18 Waiting for Managers: Manager approval 26 Oct 2026, 03:18 Mani Manager picked up Manager approval 26 Oct 2026, 03:18 Mani Manager rejected Manager approval 26 Oct 2026, 03:18 Finished: Rejected 26 Oct 2026, 03:18"}
+{"t":"2026-10-26T07:18:28.926Z","step":"axe refused upload (an xml file)","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:18:28.928Z","step":"negative upload an xml file: refused with message","status":"PASS","note":"url http://localhost:39080/w/00000000-0000-7000-8000-000000000201/migrations message: The file is not a PDF document (it does not start with %PDF-)."}
+{"t":"2026-10-26T07:18:30.008Z","step":"axe refused upload (a text file renamed pdf)","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:18:30.009Z","step":"negative upload a text file renamed pdf: refused with message","status":"PASS","note":"url http://localhost:39080/w/00000000-0000-7000-8000-000000000201/migrations message: The file is not a PDF document (it does not start with %PDF-)."}
+{"t":"2026-10-26T07:18:30.265Z","step":"negative uploads: no migration job created","status":"PASS","note":"migration_job count before 5, after 5"}
+{"t":"2026-10-26T07:19:00.230Z","step":"axe small.xpdl compatibility report","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:19:01.341Z","step":"axe small.xpdl review form","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:19:03.544Z","step":"axe small.xpdl studio","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:19:03.545Z","step":"small.xpdl: convert to draft","status":"PASS","note":"key rh-small-mvoxe6x3je"}
+{"t":"2026-10-26T07:19:06.458Z","step":"axe small publish review","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:19:06.821Z","step":"small: publish","status":"PASS","note":""}
+{"t":"2026-10-26T07:19:09.301Z","step":"axe run small empty input","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:19:09.302Z","step":"small empty input: outcome","status":"PASS","note":"Completed · Done | Rhea Requester submitted the request (version 1) 26 Oct 2026, 03:19 Finished: Done 26 Oct 2026, 03:19"}
+{"t":"2026-10-26T07:19:09.315Z","step":"small: outcome text mentions Done","status":"PASS","note":"Completed · Done"}
+{"t":"2026-10-26T07:19:12.657Z","step":"axe medium.xpdl compatibility report","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:19:13.919Z","step":"axe medium.xpdl review form","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:19:15.869Z","step":"axe medium.xpdl studio","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:19:15.870Z","step":"medium.xpdl: convert to draft","status":"PASS","note":"key rh-medium-mvoxegiaf4"}
+{"t":"2026-10-26T07:19:18.977Z","step":"axe medium publish review","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:19:19.311Z","step":"medium: publish","status":"PASS","note":""}
+{"t":"2026-10-26T07:19:21.971Z","step":"axe run medium 4999.99 -> Standard","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:19:21.971Z","step":"medium 4999.99 -> Standard: outcome","status":"PASS","note":"Completed · Standard | Rhea Requester submitted the request (version 1) 26 Oct 2026, 03:19 Finished: Standard 26 Oct 2026, 03:19"}
+{"t":"2026-10-26T07:19:24.016Z","step":"axe run medium 5000 -> Finance","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:19:24.017Z","step":"medium 5000 -> Finance: outcome","status":"PASS","note":"Completed · Finance | Rhea Requester submitted the request (version 1) 26 Oct 2026, 03:19 Finished: Finance 26 Oct 2026, 03:19"}
+{"t":"2026-10-26T07:19:25.399Z","step":"axe run medium 5000.01 -> Finance","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:19:25.400Z","step":"medium 5000.01 -> Finance: outcome","status":"PASS","note":"Completed · Finance | Rhea Requester submitted the request (version 1) 26 Oct 2026, 03:19 Finished: Finance 26 Oct 2026, 03:19"}
+{"t":"2026-10-26T07:19:29.101Z","step":"axe review-branch.xpdl compatibility report","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:19:30.319Z","step":"axe review-branch.xpdl review form","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:19:31.985Z","step":"axe review-branch.xpdl studio","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:19:31.986Z","step":"review-branch.xpdl: convert to draft","status":"PASS","note":"key rh-review-mvoxet72uv"}
+{"t":"2026-10-26T07:19:35.292Z","step":"axe review publish review","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:19:35.615Z","step":"review: publish","status":"PASS","note":""}
+{"t":"2026-10-26T07:19:40.654Z","step":"axe review task approve","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:19:41.101Z","step":"review-branch manager approve","status":"PASS","note":""}
+{"t":"2026-10-26T07:19:42.600Z","step":"axe review task reject","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:19:43.211Z","step":"review-branch manager reject","status":"PASS","note":""}
+{"t":"2026-10-26T07:19:44.525Z","step":"axe run review approve -> Finance","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:19:44.526Z","step":"review approve -> Finance: outcome","status":"PASS","note":"Completed · Finance | Rhea Requester submitted the request (version 1) 26 Oct 2026, 03:19 Waiting for Managers: Review request 26 Oct 2026, 03:19 Mani Manager picked up Review request 26 Oct 2026, 03:19 Mani Manager approved Review request 26 Oct 2026, 03:19 Finished: Finance 26 Oct 2026, 03:19"}
+{"t":"2026-10-26T07:19:45.526Z","step":"axe run review reject -> Rejected","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:19:45.526Z","step":"review reject -> Rejected: outcome","status":"PASS","note":"Completed · Rejected | Rhea Requester submitted the request (version 1) 26 Oct 2026, 03:19 Waiting for Managers: Review request 26 Oct 2026, 03:19 Mani Manager picked up Review request 26 Oct 2026, 03:19 Mani Manager rejected Review request 26 Oct 2026, 03:19 Finished: Rejected 26 Oct 2026, 03:19"}
+{"t":"2026-10-26T07:19:49.430Z","step":"axe unsupported-trigger report","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:19:49.431Z","step":"unsupported-trigger: blocker shown","status":"PASS","note":"PEGA_XPDL_EVENT_UNSUPPORTED · /Package[1]/WorkflowProcesses[5]/WorkflowProcess[6]/Activities[7]/Activity[8] ; PEGA_XPDL_METADATA_EXCLUDED · /Package[1]/PackageHeader[2]/Vendor[4]"}
+{"t":"2026-10-26T07:19:49.445Z","step":"unsupported-trigger: Convert button offered despite blocker (UX)","status":"INFO","note":"button is visible"}
+{"t":"2026-10-26T07:19:52.881Z","step":"unsupported-trigger: Convert refused (no studio)","status":"PASS","note":"url http://localhost:39080/w/00000000-0000-7000-8000-000000000201/migrations/01a17714-64c9-7ff7-99f2-609a7465f362 alert [\"Unsupported XPDL behavior must be reconstructed before conversion.\"]"}
+{"t":"2026-10-26T07:19:53.648Z","step":"axe unsupported-trigger after refused convert","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:19:53.671Z","step":"unsupported-trigger: no workflow created","status":"PASS","note":"Import workflow Analyze source behavior, resolve mappings, then create a draft for review. Back to workflows Camunda 7/8 BPMN and DMN tables can be converted within the supported subset. CMMN 1.1 case"}
+{"t":"2026-10-26T07:19:57.114Z","step":"axe pega archive assessment","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:19:57.136Z","step":"pega archive small","status":"PASS","note":"manual mapping required, no Convert button"}
+{"t":"2026-10-26T07:19:57.824Z","step":"pega archive medium","status":"PASS","note":"manual mapping required, no Convert button"}
+{"t":"2026-10-26T07:19:58.781Z","step":"pega archive complex","status":"PASS","note":"manual mapping required, no Convert button"}
+{"t":"2026-10-26T07:20:08.081Z","step":"axe camunda compatibility report","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:20:09.658Z","step":"axe camunda mapping form","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:20:11.187Z","step":"axe camunda studio","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:20:11.188Z","step":"camunda import: convert to draft + studio banner","status":"PASS","note":""}
+{"t":"2026-10-26T07:20:13.464Z","step":"camunda import: publish","status":"PASS","note":""}
+{"t":"2026-10-26T07:20:15.061Z","step":"camunda start form fields (4999.99)","status":"INFO","note":"req-title,req-amount,req-costCenter"}
+{"t":"2026-10-26T07:20:15.770Z","step":"camunda start form fields (5000)","status":"INFO","note":"req-title,req-amount,req-costCenter"}
+{"t":"2026-10-26T07:20:21.317Z","step":"camunda: 5,000 reaches finance, 4,999.99 does not","status":"PASS","note":"finance sees 5000: 1, 4999.99: 0"}
+{"t":"2026-10-26T07:20:23.170Z","step":"axe camunda run 4999.99","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:20:23.170Z","step":"camunda 4,999.99 completes without finance","status":"PASS","note":"Completed · Fulfilled | Rhea Requester submitted the request (version 1) 26 Oct 2026, 03:20 Waiting for Managers: Manager review 26 Oct 2026, 03:20 Mani Manager picked up Manager review 26 Oct 2026, 03:20 Mani Manager approved Manager review 26 Oct 2026, 03:20 Create purchase order completed (reference PO-3) 26 Oct 2026, 03:20 Finished: Fulfilled 26 Oct 2026, 03:20"}
+{"t":"2026-10-26T07:20:27.943Z","step":"axe camunda unsupported-features report","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:20:27.944Z","step":"unsupported-features.bpmn: blockers listed","status":"PASS","note":"21 mentions; timers/scripts/parallel: true/true/true"}
+{"t":"2026-10-26T07:20:30.788Z","step":"unsupported-features.bpmn: conversion refused","status":"PASS","note":"[\"Resolve mappings and acknowledge documented losses before converting.\"]"}
+{"t":"2026-10-26T07:20:33.740Z","step":"xxe-attack.bpmn: rejected","status":"PASS","note":"[\"The file contains a DOCTYPE or ENTITY declaration. Document type definitions and external entities are not allowed.\"]"}
+{"t":"2026-10-26T07:20:34.326Z","step":"axe xxe rejected","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:20:37.814Z","step":"axe pega decision DMN report","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:20:37.831Z","step":"pega decision DMN: report","status":"INFO","note":"Source: Camunda DMN, version DMN 1.1 dmn · adapter dmn-0.1 · SHA-256 a938b65ba01a78f07db7ef63d7272b4ff1332409776b68fcc5343862f24db920 total: 7 supported: 1 info: 0 action: 0 blocker: 0 review: 6 Source detected as DMN 1.1 (Camunda DMN). Diagram layout (DMNDI) is not imported. Decision 'PurchaseRoute"}
+{"t":"2026-10-26T07:20:37.858Z","step":"pega decision DMN: controls","status":"INFO","note":"migration-format:SELECT,migration-file:INPUT,findings-kind:SELECT,findings-severity:SELECT,:INPUT,migration-key:INPUT,migration-name:INPUT,migration-decision-id:INPUT,:INPUT,:INPUT"}
+{"t":"2026-10-26T07:20:39.773Z","step":"axe pega decision DMN studio","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:20:39.774Z","step":"pega decision DMN: convert to draft","status":"PASS","note":""}
+{"t":"2026-10-26T07:20:46.045Z","step":"pega decision 4999.99 -> Standard","status":"PASS","note":"Completed · Decided |  request (version 1) 26 Oct 2026, 03:20 Synthetic purchase routing: Result is standard Decision evidence 26 Oct 2026, 03:20 Finished: Decided 26 Oct 2026, 03:20"}
+{"t":"2026-10-26T07:20:48.925Z","step":"pega decision 5000 -> Finance","status":"PASS","note":"Completed · Decided | e request (version 1) 26 Oct 2026, 03:20 Synthetic purchase routing: Result is finance Decision evidence 26 Oct 2026, 03:20 Finished: Decided 26 Oct 2026, 03:20"}
+{"t":"2026-10-26T07:20:51.568Z","step":"pega decision 5000.01 -> Finance","status":"PASS","note":"Completed · Decided | e request (version 1) 26 Oct 2026, 03:20 Synthetic purchase routing: Result is finance Decision evidence 26 Oct 2026, 03:20 Finished: Decided 26 Oct 2026, 03:20"}
+{"t":"2026-10-26T07:20:54.193Z","step":"pega decision 9999.99 -> Finance","status":"PASS","note":"Completed · Decided | e request (version 1) 26 Oct 2026, 03:20 Synthetic purchase routing: Result is finance Decision evidence 26 Oct 2026, 03:20 Finished: Decided 26 Oct 2026, 03:20"}
+{"t":"2026-10-26T07:20:56.750Z","step":"pega decision 10000 -> Director","status":"PASS","note":"Completed · Decided |  request (version 1) 26 Oct 2026, 03:20 Synthetic purchase routing: Result is director Decision evidence 26 Oct 2026, 03:20 Finished: Decided 26 Oct 2026, 03:20"}
+{"t":"2026-10-26T07:20:59.233Z","step":"pega decision 10000.01 -> Director","status":"PASS","note":"Completed · Decided |  request (version 1) 26 Oct 2026, 03:20 Synthetic purchase routing: Result is director Decision evidence 26 Oct 2026, 03:20 Finished: Decided 26 Oct 2026, 03:20"}
+{"t":"2026-10-26T07:21:02.129Z","step":"Describe it hidden without key","status":"FAIL","note":"Describe it is shown"}
+{"t":"2026-10-26T07:21:02.130Z","step":"UI says why (AI off message)","status":"PASS","note":"dialog text contains no statement that AI drafting is unavailable"}
+{"t":"2026-10-26T07:21:03.307Z","step":"axe new workflow dialog","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:21:05.411Z","step":"Settings has AI section","status":"INFO","note":"absent (hidden), no explanation"}
+{"t":"2026-10-26T07:21:12.281Z","step":"axe operator runs","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:21:17.257Z","step":"axe operator insights","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:21:17.257Z","step":"operator screens: 5xx responses","status":"PASS","note":""}
+{"t":"2026-10-26T07:21:17.443Z","step":"insights shows figures","status":"INFO","note":"Loading your workspace…"}
+{"t":"2026-10-26T07:21:28.221Z","step":"axe loan studio","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:21:28.223Z","step":"loan template: create draft","status":"PASS","note":""}
+{"t":"2026-10-26T07:21:30.021Z","step":"loan template: publish page","status":"INFO","note":"Publish Loan rehearsal Draft revision 1 will become version 1. Back to the studio Check results Checking the draft… What changed There is no published version yet. Added First version: every step, route and rule is new 8 steps, 9 routes, 0 rule tables What this version depends on APPROVER GROUPS Managers Finance approvers CONNECTIONS None RULE TABLES None Publish Make this the version used for new"}
+{"t":"2026-10-26T07:21:30.235Z","step":"loan template: publish","status":"PASS","note":""}
+{"t":"2026-10-26T07:21:32.279Z","step":"loan start form fields","status":"INFO","note":"req-applicant:text,req-loanAmount:text,req-purpose:select-one,req-idDocument:file,req-incomeProof:file,req-notes:textarea"}
+{"t":"2026-10-26T07:21:33.563Z","step":"axe loan start form with files","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:21:37.864Z","step":"axe loan run with attachments","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:21:37.876Z","step":"loan run page shows attachments","status":"PASS","note":"Rehearsal value Loan rehearsal · Request ORQ-1029 · Version 1 · submitted by Rhea Requester on 26 Oct 2026, 03:21 My requests Waiting Waiting for Managers: Check the documentsDue 26 Oct Updates automatically · last checked 03:21 Stage 1 of 3: Intake · due 26 Oct Intake (current) Credit assessment (not started) Decision (not started) Request Applicant Rehearsal value Loan amount (USD) $12,000.00 Purpose Home improvement Photo ID req-idDocument.png Proof of income req-incomeProof.png Notes for the"}
+{"t":"2026-10-26T07:22:09.398Z","step":"axe run needs attention (operator)","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:22:09.399Z","step":"fault 400: Needs attention with business message","status":"PASS","note":"Procurement service rejected the request (HTTP 400). An operator must fix the cause, then retry."}
+{"t":"2026-10-26T07:22:10.001Z","step":"axe retry dialog","status":"PASS","note":"no violations"}
+{"t":"2026-10-26T07:22:13.430Z","step":"fault 400: operator retry -> Fulfilled","status":"PASS","note":""}
+{"t":"2026-10-26T07:23:07.096Z","step":"commit-then-timeout: exactly one new order","status":"PASS","note":"Completed · Fulfilled; orders before 1, after 2"}
+{"t":"2026-10-26T07:23:40.730Z","step":"walk dana.designer > home","status":"PASS","note":"h1 \"Welcome, Dana\""}
+{"t":"2026-10-26T07:23:40.763Z","step":"walk dana.designer: sidebar","status":"INFO","note":"Home | My requests | Assistant | Workflows | Cases | Views | Promotions | Settings"}
+{"t":"2026-10-26T07:23:41.526Z","step":"walk dana.designer > My requests","status":"PASS","note":"h1 \"My requests\""}
+{"t":"2026-10-26T07:23:42.775Z","step":"walk dana.designer > Assistant","status":"PASS","note":"h1 \"Assistant\""}
+{"t":"2026-10-26T07:23:44.072Z","step":"walk dana.designer > Workflows","status":"PASS","note":"h1 \"Workflows\""}
+{"t":"2026-10-26T07:23:44.853Z","step":"walk dana.designer > Cases","status":"PASS","note":"h1 \"Cases\""}
+{"t":"2026-10-26T07:23:45.426Z","step":"walk dana.designer > Views","status":"PASS","note":"h1 \"Views\""}
+{"t":"2026-10-26T07:23:46.026Z","step":"walk dana.designer > Promotions","status":"PASS","note":"h1 \"Promotions\""}
+{"t":"2026-10-26T07:23:46.913Z","step":"walk dana.designer > Settings","status":"PASS","note":"h1 \"Settings\""}
+{"t":"2026-10-26T07:23:46.915Z","step":"walk dana.designer: HTTP >=400 on /api","status":"PASS","note":"none"}
+{"t":"2026-10-26T07:23:49.493Z","step":"walk paul.publisher > home","status":"PASS","note":"h1 \"Welcome, Paul\""}
+{"t":"2026-10-26T07:23:49.515Z","step":"walk paul.publisher: sidebar","status":"INFO","note":"Home | My requests | Assistant | Workflows | Cases | Views | Settings"}
+{"t":"2026-10-26T07:23:50.042Z","step":"walk paul.publisher > My requests","status":"PASS","note":"h1 \"My requests\""}
+{"t":"2026-10-26T07:23:50.598Z","step":"walk paul.publisher > Assistant","status":"PASS","note":"h1 \"Assistant\""}
+{"t":"2026-10-26T07:23:51.625Z","step":"walk paul.publisher > Workflows","status":"PASS","note":"h1 \"Workflows\""}
+{"t":"2026-10-26T07:23:52.201Z","step":"walk paul.publisher > Cases","status":"PASS","note":"h1 \"Cases\""}
+{"t":"2026-10-26T07:23:52.725Z","step":"walk paul.publisher > Views","status":"PASS","note":"h1 \"Views\""}
+{"t":"2026-10-26T07:23:53.667Z","step":"walk paul.publisher > Settings","status":"PASS","note":"h1 \"Settings\""}
+{"t":"2026-10-26T07:23:53.668Z","step":"walk paul.publisher: HTTP >=400 on /api","status":"PASS","note":"none"}
+{"t":"2026-10-26T07:23:56.424Z","step":"walk rhea.requester > home","status":"PASS","note":"h1 \"Welcome, Rhea\""}
+{"t":"2026-10-26T07:23:56.447Z","step":"walk rhea.requester: sidebar","status":"INFO","note":"Home | My requests | Assistant | Workflows | Cases"}
+{"t":"2026-10-26T07:23:57.406Z","step":"walk rhea.requester > My requests","status":"PASS","note":"h1 \"My requests\""}
+{"t":"2026-10-26T07:23:58.261Z","step":"walk rhea.requester > Assistant","status":"PASS","note":"h1 \"Assistant\""}
+{"t":"2026-10-26T07:23:59.068Z","step":"walk rhea.requester > Workflows","status":"PASS","note":"h1 \"Workflows\""}
+{"t":"2026-10-26T07:23:59.812Z","step":"walk rhea.requester > Cases","status":"PASS","note":"h1 \"Cases\""}
+{"t":"2026-10-26T07:23:59.813Z","step":"walk rhea.requester: HTTP >=400 on /api","status":"PASS","note":"none"}
+{"t":"2026-10-26T07:24:03.453Z","step":"walk mani.manager > home","status":"PASS","note":"h1 \"Welcome, Mani\""}
+{"t":"2026-10-26T07:24:03.475Z","step":"walk mani.manager: sidebar","status":"INFO","note":"Home | My requests | Assistant | My tasks | Workflows | Cases"}
+{"t":"2026-10-26T07:24:04.026Z","step":"walk mani.manager > My requests","status":"PASS","note":"h1 \"My requests\""}
+{"t":"2026-10-26T07:24:04.642Z","step":"walk mani.manager > Assistant","status":"PASS","note":"h1 \"Assistant\""}
+{"t":"2026-10-26T07:24:05.474Z","step":"walk mani.manager > My tasks","status":"PASS","note":"h1 \"My tasks\""}
+{"t":"2026-10-26T07:24:06.208Z","step":"walk mani.manager > Workflows","status":"PASS","note":"h1 \"Workflows\""}
+{"t":"2026-10-26T07:24:06.770Z","step":"walk mani.manager > Cases","status":"PASS","note":"h1 \"Cases\""}
+{"t":"2026-10-26T07:24:06.771Z","step":"walk mani.manager: HTTP >=400 on /api","status":"PASS","note":"none"}
+{"t":"2026-10-26T07:24:09.604Z","step":"walk fin.finance > home","status":"PASS","note":"h1 \"Welcome, Fin\""}
+{"t":"2026-10-26T07:24:09.635Z","step":"walk fin.finance: sidebar","status":"INFO","note":"Home | My requests | Assistant | My tasks | Cases"}
+{"t":"2026-10-26T07:24:10.152Z","step":"walk fin.finance > My requests","status":"PASS","note":"h1 \"My requests\""}
+{"t":"2026-10-26T07:24:10.703Z","step":"walk fin.finance > Assistant","status":"PASS","note":"h1 \"Assistant\""}
+{"t":"2026-10-26T07:24:11.407Z","step":"walk fin.finance > My tasks","status":"PASS","note":"h1 \"My tasks\""}
+{"t":"2026-10-26T07:24:12.242Z","step":"walk fin.finance > Cases","status":"PASS","note":"h1 \"Cases\""}
+{"t":"2026-10-26T07:24:12.243Z","step":"walk fin.finance: HTTP >=400 on /api","status":"PASS","note":"none"}
+{"t":"2026-10-26T07:24:14.986Z","step":"walk olga.operator > home","status":"PASS","note":"h1 \"Welcome, Olga\""}
+{"t":"2026-10-26T07:24:15.007Z","step":"walk olga.operator: sidebar","status":"INFO","note":"Home | My requests | Assistant | Workflows | Runs | Cases | Views | Insights | Agent writes | Settings"}
+{"t":"2026-10-26T07:24:15.765Z","step":"walk olga.operator > My requests","status":"PASS","note":"h1 \"My requests\""}
+{"t":"2026-10-26T07:24:16.655Z","step":"walk olga.operator > Assistant","status":"PASS","note":"h1 \"Assistant\""}
+{"t":"2026-10-26T07:24:17.748Z","step":"walk olga.operator > Workflows","status":"PASS","note":"h1 \"Workflows\""}
+{"t":"2026-10-26T07:24:18.901Z","step":"walk olga.operator > Runs","status":"PASS","note":"h1 \"Runs\""}
+{"t":"2026-10-26T07:24:19.518Z","step":"walk olga.operator > Cases","status":"PASS","note":"h1 \"Cases\""}
+{"t":"2026-10-26T07:24:20.029Z","step":"walk olga.operator > Views","status":"PASS","note":"h1 \"Views\""}
+{"t":"2026-10-26T07:24:21.192Z","step":"walk olga.operator > Insights","status":"PASS","note":"h1 \"Insights\""}
+{"t":"2026-10-26T07:24:21.860Z","step":"walk olga.operator > Agent writes","status":"PASS","note":"h1 \"Agent writes\""}
+{"t":"2026-10-26T07:24:22.621Z","step":"walk olga.operator > Settings","status":"PASS","note":"h1 \"Settings\""}
+{"t":"2026-10-26T07:24:24.715Z","step":"walk olga.operator > Runs list","status":"PASS","note":"h1 \"Runs\""}
+{"t":"2026-10-26T07:24:24.735Z","step":"walk olga: ORQ-1009 in runs list","status":"PASS","note":"1 rows"}
+{"t":"2026-10-26T07:24:25.786Z","step":"walk olga.operator > ORQ-1009 needs attention","status":"PASS","note":"h1 \"Label printer\""}
+{"t":"2026-10-26T07:24:25.787Z","step":"walk olga.operator: HTTP >=400 on /api","status":"PASS","note":"none"}
+{"t":"2026-10-26T07:24:25.788Z","step":"D1: consistency-findings 500 gone on operator screens","status":"PASS","note":"no consistency 4xx/5xx"}
+{"t":"2026-10-26T07:24:28.367Z","step":"walk wade.admin > home","status":"PASS","note":"h1 \"Welcome, Wade\""}
+{"t":"2026-10-26T07:24:28.388Z","step":"walk wade.admin: sidebar","status":"INFO","note":"Home | My requests | Assistant | Promotions | Settings"}
+{"t":"2026-10-26T07:24:28.956Z","step":"walk wade.admin > My requests","status":"PASS","note":"h1 \"My requests\""}
+{"t":"2026-10-26T07:24:29.548Z","step":"walk wade.admin > Assistant","status":"PASS","note":"h1 \"Assistant\""}
+{"t":"2026-10-26T07:24:30.074Z","step":"walk wade.admin > Promotions","status":"PASS","note":"h1 \"Promotions\""}
+{"t":"2026-10-26T07:24:30.952Z","step":"walk wade.admin > Settings","status":"PASS","note":"h1 \"Settings\""}
+{"t":"2026-10-26T07:24:30.953Z","step":"walk wade.admin: HTTP >=400 on /api","status":"PASS","note":"none"}

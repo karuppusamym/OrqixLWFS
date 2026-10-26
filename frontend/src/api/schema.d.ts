@@ -988,6 +988,67 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/decisions/{decisionKey}/csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+                decisionKey: components["parameters"]["DecisionKey"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Download a decision table of a draft as CSV (spreadsheet-safe, imports back to the identical table)
+         * @description Strict, documented column format (docs/build/S89-decision-csv-io.md). Any cell a spreadsheet could read as a
+         *     formula (first character = + - @ tab, carriage return or an apostrophe) is prefixed with an apostrophe, which
+         *     import removes again. A table that CSV cannot carry exactly (an OR row, mixed value kinds in one field, an empty
+         *     text result) is refused with 422 and the reasons; nothing is written approximately. Latest revision unless
+         *     `revision` is given.
+         */
+        get: operations["exportDecisionCsv"];
+        /**
+         * Replace a decision table of the latest draft with the content of a CSV file (a draft change only)
+         * @description The body is the CSV file, `Content-Type: text/csv` (UTF-8, with or without a byte order mark), at most 128 KiB.
+         *     The table key and version are kept; the hit policy, rows (in file order) and default are replaced. The file is
+         *     read strictly (no coercion): every problem is returned as a fieldError whose pointer is
+         *     `/csv/lines/<line>/columns/<column>` (1-based) with a code naming the kind, at most 100 of them. After parsing,
+         *     the compiler validates the draft with the new table (hit-policy overlap, field types, result shape, literal
+         *     safety, dates), and a blocker inside the table refuses the import with its line and column. On success a normal
+         *     draft revision is saved like saveDraft (If-Match, 412 on a stale revision, audit workflow.draft.saved with source
+         *     decisionCsv). Nothing is published; Check workflow and the publish gates still apply. Shared decisions are not
+         *     written by this operation.
+         */
+        put: operations["importDecisionCsv"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/decisions/{decisionKey}/csv-template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+                decisionKey: components["parameters"]["DecisionKey"];
+            };
+            cookie?: never;
+        };
+        /** Download a CSV template with the columns of a decision table, one example rule and the default line */
+        get: operations["getDecisionCsvTemplate"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/workflow-organization": {
         parameters: {
             query?: never;
@@ -10316,6 +10377,104 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    exportDecisionCsv: {
+        parameters: {
+            query?: {
+                revision?: number;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+                decisionKey: components["parameters"]["DecisionKey"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The table as UTF-8 CSV */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": string;
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    importDecisionCsv: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description ETag of the revision being replaced. */
+                "If-Match": components["parameters"]["IfMatch"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+                decisionKey: components["parameters"]["DecisionKey"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "text/csv": string;
+            };
+        };
+        responses: {
+            /** @description Saved; body is the new revision */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowDraft"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
+            428: components["responses"]["PreconditionRequired"];
+        };
+    };
+    getDecisionCsvTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+                decisionKey: components["parameters"]["DecisionKey"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The template as UTF-8 CSV */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": string;
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["Unprocessable"];
         };

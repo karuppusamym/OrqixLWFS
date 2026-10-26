@@ -1,0 +1,5 @@
+hitPolicy:FIRST,effectiveFrom,effectiveTo,in:number:/input/amount,in:text:/input/costCenter,out:text:route
+rule,,,gte 50000,,executiveReview
+rule,,,gte 5000,eq IT,itFinanceReview
+rule,,,gte 5000,,financeReview
+default,,,,,standard

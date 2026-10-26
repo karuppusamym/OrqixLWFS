@@ -3,6 +3,7 @@ package com.orqix.catalog.api;
 import java.net.URI;
 import java.util.UUID;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 
 import org.springframework.http.ContentDisposition;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.orqix.catalog.internal.BpmnSourceService;
+import com.orqix.catalog.internal.DecisionCsvService;
 import com.orqix.catalog.internal.ReleaseService;
 import com.orqix.catalog.internal.SimulationService;
 import com.orqix.catalog.internal.WorkflowService;
@@ -39,11 +41,13 @@ public class CatalogController {
     private final ReleaseService releases;
     private final SimulationService simulations;
     private final BpmnSourceService bpmn;
+    private final DecisionCsvService decisionCsv;
 
     public CatalogController(CallerResolver callers, WorkflowService workflows, ReleaseService releases,
-            SimulationService simulations, BpmnSourceService bpmn) {
+            SimulationService simulations, BpmnSourceService bpmn, DecisionCsvService decisionCsv) {
         this.simulations = simulations;
         this.bpmn = bpmn;
+        this.decisionCsv = decisionCsv;
         this.callers = callers;
         this.workflows = workflows;
         this.releases = releases;
@@ -121,6 +125,36 @@ public class CatalogController {
             @PathVariable UUID workflowId, @PathVariable String decisionKey,
             @Valid @RequestBody CatalogDtos.DecisionEvaluateRequest request) {
         return workflows.evaluateDecision(callers.current(), workspaceId, workflowId, decisionKey, request);
+    }
+
+    @GetMapping("/workflows/{workflowId}/decisions/{decisionKey}/csv")
+    public ResponseEntity<String> exportDecisionCsv(@PathVariable UUID workspaceId, @PathVariable UUID workflowId,
+            @PathVariable String decisionKey, @RequestParam(required = false) Integer revision) {
+        return csv(decisionCsv.export(callers.current(), workspaceId, workflowId, decisionKey, revision));
+    }
+
+    @GetMapping("/workflows/{workflowId}/decisions/{decisionKey}/csv-template")
+    public ResponseEntity<String> getDecisionCsvTemplate(@PathVariable UUID workspaceId, @PathVariable UUID workflowId,
+            @PathVariable String decisionKey) {
+        return csv(decisionCsv.template(callers.current(), workspaceId, workflowId, decisionKey));
+    }
+
+    @PutMapping("/workflows/{workflowId}/decisions/{decisionKey}/csv")
+    public ResponseEntity<CatalogDtos.WorkflowDraft> importDecisionCsv(@PathVariable UUID workspaceId,
+            @PathVariable UUID workflowId, @PathVariable String decisionKey,
+            @RequestHeader(name = HttpHeaders.IF_MATCH, required = false) String ifMatch, HttpServletRequest request)
+            throws java.io.IOException {
+        CatalogDtos.WorkflowDraft draft = decisionCsv.importCsv(callers.current(), workspaceId, workflowId, decisionKey,
+                ifMatch, request.getContentType(), request.getInputStream());
+        return ResponseEntity.ok().eTag(WorkflowService.etag(draft.revision())).body(draft);
+    }
+
+    private static ResponseEntity<String> csv(DecisionCsvService.CsvFile file) {
+        return ResponseEntity.ok()
+                .contentType(new MediaType("text", "csv", java.nio.charset.StandardCharsets.UTF_8))
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename(file.filename()).build().toString())
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .body(file.text());
     }
 
     @PostMapping("/workflows/{workflowId}/simulate")

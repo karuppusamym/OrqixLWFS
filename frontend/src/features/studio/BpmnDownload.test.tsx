@@ -30,9 +30,9 @@ describe('BPMN download', () => {
     expect(await screen.findByRole('menuitem', { name: /Case models: CMMN XML download/ })).toHaveAttribute('href', `/w/${WS}/cases`)
     await user.click(screen.getByRole('menuitem', { name: 'Download BPMN (.bpmn)' }))
     await waitFor(() => expect(downloads).toHaveLength(1))
-    expect(downloads[0].filename).toBe(`${workflow().key}-draft-${workflow().drafts.at(-1)!.revision}.bpmn`)
-    expect(downloads[0].text).toContain('BPMNDiagram')
-    expect(downloads[0].text).toContain(`<process id="${workflow().drafts.at(-1)!.definition.workflowKey}"`)
+    expect(downloads[0]!.filename).toBe(`${workflow().key}-draft-${workflow().drafts.at(-1)!.revision}.bpmn`)
+    expect(downloads[0]!.text).toContain('BPMNDiagram')
+    expect(downloads[0]!.text).toContain(`<process id="${workflow().drafts.at(-1)!.definition.workflowKey}"`)
   })
 
   it('lets a viewer (workflow.read) download the draft from the Source tab', async () => {
@@ -44,7 +44,7 @@ describe('BPMN download', () => {
     await user.click(screen.getByRole('button', { name: 'BPMN' }))
     await user.click(await screen.findByRole('button', { name: 'Download BPMN (.bpmn)' }))
     await waitFor(() => expect(downloads).toHaveLength(1))
-    expect(downloads[0].filename).toMatch(/\.bpmn$/)
+    expect(downloads[0]!.filename).toMatch(/\.bpmn$/)
   })
 
   it('offers a release download only with workflow.export', async () => {
@@ -52,10 +52,10 @@ describe('BPMN download', () => {
     await renderAppReady(`/w/${WS}/workflows/${PURCHASE_WORKFLOW_ID}`)
     const releases = workflow().releases
     expect(releases.length).toBeGreaterThan(0)
-    const button = await screen.findByRole('button', { name: `Download BPMN (.bpmn) of version ${releases[0].releaseNumber}` })
+    const button = await screen.findByRole('button', { name: `Download BPMN (.bpmn) of version ${releases[0]!.releaseNumber}` })
     await userEvent.setup().click(button)
     await waitFor(() => expect(downloads).toHaveLength(1))
-    expect(downloads[0].filename).toBe(`${workflow().key}-r${releases[0].releaseNumber}.bpmn`)
+    expect(downloads[0]!.filename).toBe(`${workflow().key}-r${releases[0]!.releaseNumber}.bpmn`)
   })
 
   it('does not offer the release download to someone without workflow.export', async () => {

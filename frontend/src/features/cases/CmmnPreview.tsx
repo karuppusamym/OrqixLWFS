@@ -8,7 +8,7 @@ import type { CaseModelItem } from './caseModel'
  * items), not a canvas, so the notation is shown beside it as a picture that follows every edit:
  *
  * - case plan model: folder shape with the case name on its tab
- * - stage: rounded rectangle with a collapse marker (minus: shown expanded) at the bottom
+ * - stage: rectangle with angled corners and a collapse marker (minus: shown expanded) at the bottom
  * - human task: rounded rectangle with a person icon
  * - milestone: stadium (fully rounded ends)
  * - user event listener: double circle with a person icon
@@ -19,7 +19,7 @@ import type { CaseModelItem } from './caseModel'
  * and the whole preview is a nested list a screen reader reads in order.
  */
 export const CMMN_KIND: Record<CaseModelItem['kind'], { label: string; symbol: string; element: string }> = {
-  stage: { label: 'Stage', symbol: 'Rounded rectangle with a collapse marker', element: 'stage' },
+  stage: { label: 'Stage', symbol: 'Rectangle with angled corners and a collapse marker', element: 'stage' },
   humanTask: { label: 'Human task', symbol: 'Rounded rectangle with a person icon', element: 'human task' },
   milestone: { label: 'Milestone', symbol: 'Stadium (rounded ends)', element: 'milestone' },
   userEventListener: { label: 'User event', symbol: 'Double circle with a person icon', element: 'user event listener' },
@@ -94,23 +94,32 @@ function ItemText({ item, lookup }: { item: CaseModelItem; lookup: Lookup }) {
   )
 }
 
+/** Angled corners (CMMN 1.1 stage): a rectangle with the four corners cut at 45 degrees. */
+const ANGLED = '[clip-path:polygon(14px_0,calc(100%-14px)_0,100%_14px,100%_calc(100%-14px),calc(100%-14px)_100%,14px_100%,0_calc(100%-14px),0_14px)]'
+
 function PlanItem({ item, lookup }: { item: CaseModelItem; lookup: Lookup }) {
   const sentry = item.after && lookup.has(item.after) ? <Sentry /> : null
   if (item.kind === 'stage')
     return (
-      <li className="relative rounded-xl border-2 border-foreground bg-surface px-4 pt-2 pb-6" data-cmmn="stage" data-testid={`cmmn-${item.id}`}>
-        {sentry}
-        <ItemText item={item} lookup={lookup} />
-        {item.children?.length ? (
-          <ol className="mt-2 flex flex-wrap items-start gap-4">
-            {item.children.map((child) => (
-              <PlanItem key={child.id} item={child} lookup={lookup} />
-            ))}
-          </ol>
-        ) : (
-          <p className="mt-1 text-sm text-muted-foreground">No plan items in this stage yet.</p>
-        )}
-        <Markers item={item} extra={<CollapseMarker />} />
+      <li className="relative px-5 pt-3 pb-7" data-cmmn="stage" data-testid={`cmmn-${item.id}`}>
+        {/* CMMN 1.1: a stage is a rectangle with angled corners. The outline and fill are two clipped layers behind the
+            content, so the sentry diamonds on the edge are not clipped. */}
+        <span aria-hidden="true" className={`absolute inset-0 bg-foreground ${ANGLED}`} />
+        <span aria-hidden="true" className={`absolute inset-[2px] bg-surface ${ANGLED}`} />
+        <div className="relative">
+          {sentry}
+          <ItemText item={item} lookup={lookup} />
+          {item.children?.length ? (
+            <ol className="mt-2 flex flex-wrap items-start gap-4">
+              {item.children.map((child) => (
+                <PlanItem key={child.id} item={child} lookup={lookup} />
+              ))}
+            </ol>
+          ) : (
+            <p className="mt-1 text-sm text-muted-foreground">No plan items in this stage yet.</p>
+          )}
+          <Markers item={item} extra={<CollapseMarker />} />
+        </div>
       </li>
     )
   if (item.kind === 'userEventListener')

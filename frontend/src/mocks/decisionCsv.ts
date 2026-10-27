@@ -136,7 +136,7 @@ export interface ParsedCsv {
 export function parseCsv(text: string): ParsedCsv {
   const problems: CsvProblem[] = []
   const ruleLines: number[] = []
-  const body = text.replace(/^﻿/, '')
+  const body = text.replace(/^\uFEFF/, '')
   if (!body) return { problems: [{ line: 1, column: 1, code: 'empty', message: 'The file is empty.' }], ruleLines }
   if (body.length > 128 * 1024) return { problems: [{ line: 1, column: 1, code: 'tooLarge', message: 'The file is larger than 128 KiB.' }], ruleLines }
   const recs = records(body, problems)

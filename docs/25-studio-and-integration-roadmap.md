@@ -28,7 +28,7 @@ Suggested order: STD01 (this document), then STU01, STU03 and STU04 in parallel 
 
 | Step kind | Shape | BPMN element it compiles to |
 |---|---|---|
-| Request form | thin circle, play marker | none event start |
+| Request form | thin circle (plain BPMN start event, no marker) | none event start |
 | Ask for approval | rounded rectangle, person icon | user task |
 | Make a decision | rounded rectangle, table icon | business rule task |
 | Choose a path | diamond, X | exclusive gateway |
@@ -46,7 +46,7 @@ Suggested order: STD01 (this document), then STU01, STU03 and STU04 in parallel 
 | Finish | thick circle | end event |
 | Sections and handlers | dashed rounded frame (existing frames) | sub-process and event sub-process |
 
-- CMMN notation for the case designer: stage as a rounded rectangle with a collapse marker, human task as a rounded rectangle with a person icon, milestone as a stadium, sentries as small diamonds on the edge, required and manual markers per CMMN 1.1.
+- CMMN notation for the case designer: stage as a rectangle with angled corners and a collapse marker (CMMN 1.1), human task as a rounded rectangle with a person icon, milestone as a stadium, sentries as small diamonds on the edge, required and manual markers per CMMN 1.1.
 - Accessibility is a requirement, not a polish step: every shape keeps an accessible name, keyboard focus and a visible focus ring, meaning is never carried by colour or shape alone, and contrast meets WCAG 2.2 AA.
 - A toggle keeps the current card view for dense workflows; the choice is remembered per person.
 - The run diagram uses the same shapes so a request's path reads in the same notation.

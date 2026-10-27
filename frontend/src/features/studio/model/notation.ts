@@ -38,7 +38,7 @@ export interface BpmnNotation {
 }
 
 export const BPMN_NOTATION: Record<NodeKind, BpmnNotation> = {
-  start: { shape: 'startEvent', sizeClass: 'event', element: 'none start event', symbol: 'Thin circle with a play marker' },
+  start: { shape: 'startEvent', sizeClass: 'event', element: 'none start event', symbol: 'Thin circle' },
   approval: { shape: 'userTask', sizeClass: 'task', element: 'user task', symbol: 'Rounded rectangle with a person icon' },
   decision: { shape: 'businessRuleTask', sizeClass: 'task', element: 'business rule task', symbol: 'Rounded rectangle with a table icon' },
   branch: { shape: 'exclusiveGateway', sizeClass: 'gateway', element: 'exclusive gateway', symbol: 'Diamond with an X' },

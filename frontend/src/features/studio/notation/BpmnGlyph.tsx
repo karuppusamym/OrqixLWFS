@@ -68,10 +68,7 @@ function body(shape: BpmnShape, w: number, h: number, c: GlyphColors, extra: num
   switch (shape) {
     case 'startEvent':
       return (
-        <>
-          <circle {...outline} cx={cx} cy={cy} r={22} strokeWidth={2 + extra} />
-          <polygon points="19,15 19,33 34,24" fill={c.marker} />
-        </>
+        <circle {...outline} cx={cx} cy={cy} r={22} strokeWidth={2 + extra} />
       )
     case 'endEvent':
       return <circle {...outline} cx={cx} cy={cy} r={20.5} strokeWidth={5 + extra} />

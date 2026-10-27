@@ -5,7 +5,7 @@ Date 2026-10-26. Branch `build/stu01-notation`, cut from `main` 57a8d7e. Fronten
 ## What was delivered
 
 - **BPMN 2.0 shapes for all 19 step kinds** on the Studio canvas and the run diagram ("Where is my request"), exactly per the docs/25 mapping table. The mapping is one record, `frontend/src/features/studio/model/notation.ts` (`BPMN_NOTATION`: shape, size class, BPMN element, symbol in words). Shapes are SVG (`notation/BpmnGlyph.tsx`), the step is `notation/BpmnStepNode.tsx`; `StepNode` draws it when `data.notation === 'bpmn'` and otherwise the unchanged card.
-  - Events: thin circle with play marker (Request form); thick circle (Finish); thick circle with lightning (Raise an error); double circle with clock / envelope / outlined triangle (Wait, Wait for a message, Wait for a signal); double circle with filled triangle (Send a signal) and filled double arrow (Undo completed calls).
+  - Events: thin circle with no marker (Request form; a plain BPMN start event has none); thick circle (Finish); thick circle with lightning (Raise an error); double circle with clock / envelope / outlined triangle (Wait, Wait for a message, Wait for a signal); double circle with filled triangle (Send a signal) and filled double arrow (Undo completed calls).
   - Gateways: diamond with X (Choose a path), diamond with plus (Run in parallel, Wait for all).
   - Tasks: rounded rectangle with a type icon - person (approval, user task), table (decision, business rule task), gear (call a system), filled envelope (notify, send through an adapter: send task), page (generate a document), gear and arrows (external worker); thick-bordered rounded rectangle with a [+] marker (Start another workflow, call activity).
   - Sections and handlers keep the existing frames (sub-process, event sub-process); the legend says so.
@@ -43,7 +43,7 @@ Screenshots in `evidence/stu01/`: `01-all-kinds-bpmn-fit.png`, `02a-all-kinds-zo
 1. **Saved card layouts in BPMN**: positions are top-left, so a row laid out for 296 px cards shows small vertical jogs between shapes of different heights (visible on the run diagram). Auto-layout fixes it in the studio; nothing is re-laid out automatically unless the layout overlaps.
 2. **Switching notation can trigger the one-time arrange on open**: a layout made in BPMN (compact) overlaps as cards, so opening the studio in Cards arranges it once (as today for any overlapping layout, counted as saved until the next edit). Toggling inside an open studio never moves steps.
 3. **Intermediate events are double circles** (BPMN-correct) where docs/25 says "circle"; the start marker is a play triangle as docs/25 asks (not standard BPMN, which has no marker on a none start event).
-4. **CMMN stage drawn as a rounded rectangle** as the brief asks; CMMN 1.1 strictly draws stages with angled (octagonal) corners. Easy to switch if STD01 wants strict conformance.
+4. **CMMN stage**: first drawn as a rounded rectangle as the brief said; corrected at integration to a rectangle with angled corners, as CMMN 1.1 draws stages (two clipped layers behind the content so the sentry diamonds on the edge are not clipped). The start event no longer carries a play marker, as a plain BPMN start event has none.
 5. **Approved/Rejected text moves onto the lines** in BPMN notation (the 200x80 task has no room for the card's chips).
 
 ## Not covered

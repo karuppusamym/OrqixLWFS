@@ -83,7 +83,7 @@ export function CasesPage() {
   if (!can('workflow.read', 'workflow.start', 'run.read', 'task.act')) return <Alert tone="warning">You need case access to view this page.</Alert>
   return <div className="space-y-6">
     <PageHeader title="Cases" description="Start and work on adaptive cases from validated CMMN definitions." />
-    <Alert tone="info" live="off">This case workbench currently executes a validated human-task, nested-stage, sentry and milestone subset. Full CMMN import and discretionary planning are still in development.</Alert>
+    <Alert tone="info" live="off">Cases support human tasks, stages, sentries and milestones. Full CMMN import is not available yet.</Alert>
     {error ? <Alert tone="danger">{error}</Alert> : null}
     {can('workflow.edit') ? <form className="space-y-3 rounded-card border border-border bg-surface p-5" onSubmit={event => { event.preventDefault(); void create() }}>
       <h2>Create case definition</h2>

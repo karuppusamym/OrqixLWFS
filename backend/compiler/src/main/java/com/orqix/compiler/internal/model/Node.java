@@ -249,9 +249,17 @@ public sealed interface Node {
      * Wait for a named message from outside (S16). {@code correlationField} is a field reference whose value identifies
      * the request; {@code timeoutAfter} (ISO-8601 duration, may be null) adds a {@code timedOut} route; {@code payload}
      * declares the values the message may carry (outputs of this step), in authored order.
+     * {@code callbackTokenValidFor} (S98, may be null) marks a wait answered by an external system through a callback
+     * token valid for that ISO-8601 duration.
      */
     record WaitForMessage(int index, String id, String label, String message, String correlationField,
-                          String timeoutAfter, java.util.List<PayloadField> payload) implements Node {
+                          String timeoutAfter, java.util.List<PayloadField> payload, String callbackTokenValidFor)
+            implements Node {
+
+        public WaitForMessage(int index, String id, String label, String message, String correlationField,
+                String timeoutAfter, java.util.List<PayloadField> payload) {
+            this(index, id, label, message, correlationField, timeoutAfter, payload, null);
+        }
         @Override
         public NodeKind kind() {
             return NodeKind.WAIT_FOR_MESSAGE;

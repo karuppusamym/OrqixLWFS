@@ -484,6 +484,10 @@ public final class BpmnGenerator {
                         .attr("node", m.id())
                         .attr("name", m.message())
                         .attr("correlationField", m.correlationField());
+                if (m.callbackTokenValidFor() != null) {
+                    // S98: only written when set, so BPMN of every other message wait is unchanged.
+                    x.attr("callbackTokenValidFor", m.callbackTokenValidFor());
+                }
                 for (Node.PayloadField f : m.payload()) {
                     x.leaf("orqix", "field", ORQIX_NS)
                             .attr("name", f.name())

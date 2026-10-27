@@ -182,6 +182,14 @@ export function validateDefinition(def: Definition, ctx: ValidationContext): Iss
           if (f.name && seen.has(f.name)) issues.push(issue('WF_MESSAGE_PAYLOAD_DUPLICATE', 'blocker', `"${n.label}" declares the message value "${f.name}" more than once.`, nodePath(n, `/config/payload/${i}/name`), n.id))
           if (f.name) seen.add(f.name)
         })
+        // S98: the external-system token validity, PT1M..P30D (mirrors WF_CALLBACK_TOKEN_VALIDITY).
+        const external = c.externalCallback as { tokenValidFor?: string } | undefined
+        if (external) {
+          const m = /^P(?=\d|T\d)(?:(\d{1,3})D)?(?:T(?=\d)(?:(\d{1,4})H)?(?:(\d{1,5})M)?)?$/.exec(String(external.tokenValidFor ?? ''))
+          const minutes = m ? Number(m[1] ?? 0) * 1440 + Number(m[2] ?? 0) * 60 + Number(m[3] ?? 0) : -1
+          if (minutes < 1 || minutes > 30 * 1440)
+            issues.push(issue('WF_CALLBACK_TOKEN_VALIDITY', 'blocker', `"${n.label}" lets an external system answer with a token valid for ${String(external.tokenValidFor ?? '')}. Choose a time from 1 minute (PT1M) to 30 days (P30D).`, nodePath(n, '/config/externalCallback/tokenValidFor'), n.id))
+        }
         break
       }
       case 'externalTask': {

@@ -84,6 +84,8 @@ const TABLE = {
   JOB_LEASE_LOST: { behavior: 'message', message: 'A worker job is no longer held by that worker.' },
   JOB_NOT_OPEN: { behavior: 'message', message: 'That worker job has already ended.' },
   SIGNAL_NOT_AWAITED: { behavior: 'operator-message', message: 'Nothing in this request is waiting for that signal now.' },
+  CALLBACK_ALREADY_RESUMED: { behavior: 'operator-message', message: 'The external system already answered this wait.' },
+  CALLBACK_NOT_WAITING: { behavior: 'operator-message', message: 'This wait is no longer open, so no callback token can be used or issued.' },
   RUN_NOT_MIGRATABLE: { behavior: 'operator-message', message: 'This request cannot move to that release. The reasons are listed in the dialog.' },
   RUN_NOT_SUSPENDED: { behavior: 'operator-message', message: 'This request is not suspended.' },
   RUN_NOT_REPAIRABLE: { behavior: 'operator-message', message: 'There is nothing here that can be repaired safely. Cancel the request if it cannot continue.' },

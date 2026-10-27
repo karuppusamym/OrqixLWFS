@@ -91,7 +91,16 @@ public class InboundService implements InboundEvents {
     public record TriggerList(List<TriggerView> items) {
     }
 
-    public record Accepted(UUID eventId, String status, boolean duplicate) {
+    /**
+     * @param eventId stored event, or null when the event resumed a wait (S99 A1: nothing is recorded then)
+     * @param status  {@code received}, {@code started} or {@code resumed}
+     * @param waitId  the resumed callback wait, only for {@code resumed}
+     */
+    public record Accepted(UUID eventId, String status, boolean duplicate, UUID waitId) {
+
+        public Accepted(UUID eventId, String status, boolean duplicate) {
+            this(eventId, status, duplicate, null);
+        }
     }
 
     public record EventView(UUID id, UUID triggerId, String triggerKey, UUID workflowId, String eventId, String status,
@@ -107,9 +116,11 @@ public class InboundService implements InboundEvents {
     private final JdbcClient jdbc;
     private final Json json;
     private final Clock clock;
+    private final org.springframework.beans.factory.ObjectProvider<com.orqix.integration.InboundCallbacks> callbacks;
 
     public InboundService(PolicyService policy, SecretStore secrets, AuditWriter audit, JdbcClient jdbc, Json json,
-            Clock clock) {
+            Clock clock, org.springframework.beans.factory.ObjectProvider<com.orqix.integration.InboundCallbacks> callbacks) {
+        this.callbacks = callbacks;
         this.policy = policy;
         this.secrets = secrets;
         this.audit = audit;
@@ -260,7 +271,13 @@ public class InboundService implements InboundEvents {
     // ---------------------------------------------------------------- receiving
 
     private record Trigger(UUID id, String key, AdapterRules.Kind source, String secretRef, JsonNode filter, JsonNode mapping,
-            boolean enabled) {
+            boolean enabled, UUID workflowId) {
+    }
+
+    /** Without a callback token (the S47 behaviour). */
+    public Accepted receive(UUID workspaceId, String triggerId, String eventId, String timestamp, String signature,
+            byte[] body) {
+        return receive(workspaceId, triggerId, eventId, timestamp, signature, null, body);
     }
 
     /**
@@ -269,18 +286,19 @@ public class InboundService implements InboundEvents {
      */
     @Transactional
     public Accepted receive(UUID workspaceId, String triggerId, String eventId, String timestamp, String signature,
-            byte[] body) {
+            String callbackToken, byte[] body) {
         UUID id = Ids.parseOrNull(triggerId);
         if (id == null || workspaceId == null) {
             throw ApiException.notFound();
         }
         Trigger trigger = jdbc.sql("""
-                SELECT id, key, source, secret_ref, filter::text AS filter, mapping::text AS mapping, enabled
+                SELECT id, key, source, secret_ref, filter::text AS filter, mapping::text AS mapping, enabled, workflow_id
                 FROM inbound_trigger WHERE id = :id AND workspace_id = :ws
                 """).param("id", id).param("ws", workspaceId)
                 .query((rs, n) -> new Trigger(rs.getObject("id", UUID.class), rs.getString("key"),
                         AdapterRules.Kind.of(rs.getString("source")), rs.getString("secret_ref"),
-                        json.parse(rs.getString("filter")), json.parse(rs.getString("mapping")), rs.getBoolean("enabled")))
+                        json.parse(rs.getString("filter")), json.parse(rs.getString("mapping")), rs.getBoolean("enabled"),
+                        rs.getObject("workflow_id", UUID.class)))
                 .optional().orElseThrow(ApiException::notFound);
         if (!trigger.enabled()) {
             throw ApiException.notFound();
@@ -308,6 +326,13 @@ public class InboundService implements InboundEvents {
             input = AdapterRules.mapInput(trigger.mapping(), payload);
         } catch (AdapterRules.Invalid e) {
             throw AdapterService.invalid(e);
+        }
+        if (callbackToken != null && !callbackToken.isBlank()) {
+            // S99 A1-A4: resume the token's wait (only of this trigger's workflow) instead of recording an event.
+            String key = "inbound:" + Json.sha256Hex(id + ":" + eventId).substring(0, 40);
+            com.orqix.integration.InboundCallbacks.Resumed resumed = callbacks.getObject()
+                    .resume(workspaceId, trigger.workflowId(), callbackToken.strip(), key, input);
+            return new Accepted(null, "resumed", resumed.replayed(), resumed.waitId());
         }
         Optional<UUID> existing = jdbc.sql("SELECT id FROM inbound_event WHERE trigger_id = :t AND event_id = :e")
                 .param("t", id).param("e", eventId).query(UUID.class).optional();

@@ -37,6 +37,7 @@ final class MessageRules {
             waits.add(m);
             correlation(rc, m);
             payload(rc, m);
+            callback(rc, m);
         }
         duplicates(rc, waits);
     }
@@ -85,6 +86,23 @@ final class MessageRules {
                         m.id(), null, q(m) + " declares the message value " + q(f.name())
                                 + " more than once. Give each value its own name.");
             }
+        }
+    }
+
+    /** Longest validity of an external-system callback token (S98). */
+    static final long CALLBACK_MAX_MINUTES = 30L * 24 * 60;
+
+    /** "Answered by an external system" (S98): the token validity is a duration from one minute to 30 days. */
+    private static void callback(RuleContext rc, Node.WaitForMessage m) {
+        String text = m.callbackTokenValidFor();
+        if (text == null) {
+            return;
+        }
+        long minutes = com.orqix.compiler.internal.model.Durations.minutes(text);
+        if (minutes < com.orqix.compiler.internal.model.Durations.MIN_MINUTES || minutes > CALLBACK_MAX_MINUTES) {
+            rc.issues().blocker("WF_CALLBACK_TOKEN_VALIDITY", m.configPath("externalCallback") + "/tokenValidFor",
+                    m.id(), null, q(m) + " lets an external system answer with a token valid for " + text
+                            + ". Choose a time from 1 minute (PT1M) to 30 days (P30D).");
         }
     }
 

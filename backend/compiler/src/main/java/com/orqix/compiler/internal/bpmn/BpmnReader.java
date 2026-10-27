@@ -774,6 +774,10 @@ public final class BpmnReader {
         putText(config, "message", message.attr("name"));
         putText(config, "correlationField", message.attr("correlationField"));
         config.set("payload", fields(id, message));
+        String callback = message.attr("callbackTokenValidFor");
+        if (callback != null) {
+            config.putObject("externalCallback").put("tokenValidFor", callback);
+        }
     }
 
     private static El ext(El el, String name) {

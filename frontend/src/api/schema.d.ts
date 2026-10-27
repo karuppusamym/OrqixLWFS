@@ -2099,6 +2099,181 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/callback-waits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Waits answered by an external system, newest first (docs/build/S98)
+         * @description Ids, states and token expiry only; never a token. At most 200 rows; filter by runId.
+         */
+        get: operations["listCallbackWaits"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/callback-waits/{waitId}/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                waitId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Issue the callback token of an open wait (shown once; replaces any earlier token)
+         * @description The clear token is in this answer only; Orqix keeps its SHA-256. Machine clients with a run.operate grant may
+         *     call it with a bearer token. Not to be confused with resumeRun, which lifts an operator suspension.
+         */
+        post: operations["issueCallbackToken"];
+        /** Revoke the current callback token; the wait goes on and a new token can be issued */
+        delete: operations["revokeCallbackToken"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/callbacks/wait": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Poll the wait a callback token belongs to (no session; the token is the credential)
+         * @description States waiting, resumed, expired or cancelled (with reason timedOut, requestEnded or answeredElsewhere). Send
+         *     the ETag back in If-None-Match to get 304 while nothing changed. An unknown, revoked or replaced token, or a
+         *     token of another workspace, is 404.
+         */
+        get: operations["pollCallbackWait"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/callbacks/wait/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume the wait with a result (once; a repeat with the same key and body returns the original answer)
+         * @description The result must match the waiting step's declared values (at most 16 KiB, flat scalars). It is delivered through
+         *     the same path as sendMessage. 409 CALLBACK_ALREADY_RESUMED for a different key or body after a resume,
+         *     CALLBACK_NOT_WAITING when the wait closed or the token expired, RUN_SUSPENDED while an operator suspended the
+         *     request (repeat it after resumeRun).
+         */
+        post: operations["resumeCallbackWait"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/webhook-subscriptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Outbound webhook subscriptions (docs/build/S99); secretRef only for connection managers */
+        get: operations["listWebhookSubscriptions"];
+        put?: never;
+        /** Subscribe an allow-listed HTTPS endpoint to request events (at most 10 per workspace) */
+        post: operations["createWebhookSubscription"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/webhook-subscriptions/{subscriptionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                subscriptionId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Edit or disable a subscription (expectedVersion must match) */
+        put: operations["updateWebhookSubscription"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/webhook-deliveries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Webhook deliveries by status (default dead letters), newest first, at most 200 */
+        get: operations["listWebhookDeliveries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/webhook-deliveries/{deliveryId}/replay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                deliveryId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Put one dead letter back in the queue for an immediate attempt */
+        post: operations["replayWebhookDelivery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/runs": {
         parameters: {
             query?: never;
@@ -4831,12 +5006,161 @@ export interface components {
             /** Format: date-time */
             receivedBefore: string;
         };
-        InboundAccepted: {
+        CallbackExpectedField: {
+            name: string;
+            type: string;
+            required: boolean;
+        };
+        CallbackWait: {
             /** Format: uuid */
-            eventId: string;
+            id: string;
+            /** Format: uuid */
+            runId: string;
+            runReference: string;
+            nodeId: string;
+            stepLabel: string;
+            messageName: string;
             /** @enum {string} */
-            status: "received" | "started";
+            state: "waiting" | "resumed" | "expired" | "cancelled";
+            /** @enum {string|null} */
+            reason?: "timedOut" | "requestEnded" | "answeredElsewhere" | null;
+            suspended: boolean;
+            tokenIssued: boolean;
+            /** Format: date-time */
+            tokenExpiresAt?: string | null;
+            tokensIssued: number;
+            /** @description ISO-8601 duration */
+            tokenValidFor: string;
+            /** Format: date-time */
+            resumedAt?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            fields: components["schemas"]["CallbackExpectedField"][];
+        };
+        CallbackWaitList: {
+            items: components["schemas"]["CallbackWait"][];
+        };
+        CallbackTokenIssued: {
+            /** Format: uuid */
+            waitId: string;
+            /** @description Shown once; Orqix keeps only its SHA-256 */
+            token: string;
+            /** Format: date-time */
+            expiresAt: string;
+            pollPath: string;
+            resumePath: string;
+            /** @constant */
+            header: "X-Orqix-Callback-Token";
+        };
+        CallbackWaitState: {
+            /** Format: uuid */
+            waitId: string;
+            /** Format: uuid */
+            runId: string;
+            runReference: string;
+            nodeId: string;
+            /** @enum {string} */
+            state: "waiting" | "resumed" | "expired" | "cancelled";
+            /** @enum {string|null} */
+            reason?: "timedOut" | "requestEnded" | "answeredElsewhere" | null;
+            suspended: boolean;
+            /** Format: date-time */
+            expiresAt?: string | null;
+            /** Format: date-time */
+            resumedAt?: string | null;
+            fields: components["schemas"]["CallbackExpectedField"][];
+            result?: components["schemas"]["CallbackResumed"] | null;
+        };
+        CallbackResumeRequest: {
+            result: Record<string, never>;
+        };
+        CallbackResumed: {
+            /** Format: uuid */
+            waitId: string;
+            /** Format: uuid */
+            runId: string;
+            runReference: string;
+            nodeId: string;
+            /** @constant */
+            state: "resumed";
+            /** Format: date-time */
+            resumedAt: string;
+            acceptedFields: string[];
+        };
+        /** @enum {string} */
+        WebhookEventType: "request.started" | "task.opened" | "request.completed" | "request.needs-attention" | "callback.waiting";
+        WebhookSubscription: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            url: string;
+            secretRef?: string | null;
+            events: components["schemas"]["WebhookEventType"][];
+            enabled: boolean;
+            version: number;
+            pending: number;
+            dead: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt?: string | null;
+        };
+        WebhookSubscriptionList: {
+            items: components["schemas"]["WebhookSubscription"][];
+        };
+        WebhookSubscriptionCreateRequest: {
+            name: string;
+            url: string;
+            secretRef: string;
+            events: components["schemas"]["WebhookEventType"][];
+            enabled?: boolean;
+        };
+        WebhookSubscriptionUpdateRequest: {
+            name: string;
+            url: string;
+            secretRef: string;
+            events: components["schemas"]["WebhookEventType"][];
+            enabled: boolean;
+            expectedVersion: number;
+        };
+        WebhookDelivery: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            subscriptionId: string;
+            subscriptionName: string;
+            eventType: components["schemas"]["WebhookEventType"];
+            /** Format: uuid */
+            runId?: string | null;
+            /** @enum {string} */
+            status: "pending" | "sending" | "delivered" | "dead";
+            attempts: number;
+            lastStatusCode?: number | null;
+            lastError?: string | null;
+            /** Format: date-time */
+            nextAttemptAt: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            deliveredAt?: string | null;
+            /** Format: date-time */
+            deadAt?: string | null;
+            replays: number;
+        };
+        WebhookDeliveryList: {
+            items: components["schemas"]["WebhookDelivery"][];
+        };
+        InboundAccepted: {
+            /**
+             * Format: uuid
+             * @description null when the event resumed a wait (nothing is recorded)
+             */
+            eventId: string | null;
+            /** @enum {string} */
+            status: "received" | "started" | "resumed";
             duplicate: boolean;
+            /** Format: uuid */
+            waitId?: string | null;
         };
         InboundEvent: {
             /** Format: uuid */
@@ -5115,7 +5439,7 @@ export interface components {
             detail?: string;
             instance?: string;
             /** @enum {string} */
-            code: "MALFORMED_REQUEST" | "IDEMPOTENCY_KEY_REQUIRED" | "INVALID_CURSOR" | "UNAUTHENTICATED" | "FORBIDDEN" | "CSRF_INVALID" | "SELF_APPROVAL_DENIED" | "SEPARATION_OF_DUTIES" | "NOT_ELIGIBLE" | "NOT_FOUND" | "IDEMPOTENCY_KEY_REUSED" | "DUPLICATE_KEY" | "WORKFLOW_VERSION_CONFLICT" | "PROMOTION_APPROVAL_REQUIRED" | "RELEASE_NOT_ACTIVE" | "TASK_VERSION_CONFLICT" | "TASK_ALREADY_CLAIMED" | "TASK_NOT_CLAIMED_BY_CALLER" | "TASK_NOT_OPEN" | "RUN_NOT_ACTIVE" | "RUN_HAS_OPEN_TASKS" | "RUN_BUSY" | "RUN_NOT_RECOVERABLE" | "RUN_SUSPENDED" | "RUN_NOT_SUSPENDED" | "RUN_NOT_SUSPENDABLE" | "RUN_NOT_REPAIRABLE" | "RUN_NOT_MIGRATABLE" | "SIGNAL_NOT_AWAITED" | "JOB_LEASE_LOST" | "JOB_NOT_OPEN" | "EFFECT_NOT_RECONCILED" | "EFFECT_STATE_CONFLICT" | "GROUP_REVISION_CONFLICT" | "CONFIGURATION_VERSION_CONFLICT" | "STALE_REVISION" | "PAYLOAD_TOO_LARGE" | "VALIDATION_FAILED" | "WORKFLOW_INVALID" | "WARNINGS_NOT_ACKNOWLEDGED" | "NO_ACTIVE_RELEASE" | "REASON_REQUIRED" | "CONNECTION_NOT_BOUND" | "EGRESS_NOT_ALLOWED" | "OPERATION_NOT_TESTABLE" | "PRECONDITION_REQUIRED" | "QUOTA_EXCEEDED" | "RATE_LIMITED" | "DEPENDENCY_UNAVAILABLE" | "AI_NOT_CONFIGURED" | "AI_MODEL_NOT_ALLOWED" | "AI_OUTPUT_INVALID" | "AI_PROVIDER_UNAVAILABLE" | "AI_BUDGET_EXCEEDED" | "SOURCE_INVALID" | "MIGRATION_BLOCKED" | "ATTACHMENT_BLOCKED" | "ATTACHMENT_LIMIT_REACHED" | "INTERNAL_ERROR";
+            code: "MALFORMED_REQUEST" | "IDEMPOTENCY_KEY_REQUIRED" | "INVALID_CURSOR" | "UNAUTHENTICATED" | "FORBIDDEN" | "CSRF_INVALID" | "SELF_APPROVAL_DENIED" | "SEPARATION_OF_DUTIES" | "NOT_ELIGIBLE" | "NOT_FOUND" | "IDEMPOTENCY_KEY_REUSED" | "DUPLICATE_KEY" | "WORKFLOW_VERSION_CONFLICT" | "PROMOTION_APPROVAL_REQUIRED" | "RELEASE_NOT_ACTIVE" | "TASK_VERSION_CONFLICT" | "TASK_ALREADY_CLAIMED" | "TASK_NOT_CLAIMED_BY_CALLER" | "TASK_NOT_OPEN" | "RUN_NOT_ACTIVE" | "RUN_HAS_OPEN_TASKS" | "RUN_BUSY" | "RUN_NOT_RECOVERABLE" | "RUN_SUSPENDED" | "RUN_NOT_SUSPENDED" | "RUN_NOT_SUSPENDABLE" | "RUN_NOT_REPAIRABLE" | "RUN_NOT_MIGRATABLE" | "SIGNAL_NOT_AWAITED" | "CALLBACK_ALREADY_RESUMED" | "CALLBACK_NOT_WAITING" | "JOB_LEASE_LOST" | "JOB_NOT_OPEN" | "EFFECT_NOT_RECONCILED" | "EFFECT_STATE_CONFLICT" | "GROUP_REVISION_CONFLICT" | "CONFIGURATION_VERSION_CONFLICT" | "STALE_REVISION" | "PAYLOAD_TOO_LARGE" | "VALIDATION_FAILED" | "WORKFLOW_INVALID" | "WARNINGS_NOT_ACKNOWLEDGED" | "NO_ACTIVE_RELEASE" | "REASON_REQUIRED" | "CONNECTION_NOT_BOUND" | "EGRESS_NOT_ALLOWED" | "OPERATION_NOT_TESTABLE" | "PRECONDITION_REQUIRED" | "QUOTA_EXCEEDED" | "RATE_LIMITED" | "DEPENDENCY_UNAVAILABLE" | "AI_NOT_CONFIGURED" | "AI_MODEL_NOT_ALLOWED" | "AI_OUTPUT_INVALID" | "AI_PROVIDER_UNAVAILABLE" | "AI_BUDGET_EXCEEDED" | "SOURCE_INVALID" | "MIGRATION_BLOCKED" | "ATTACHMENT_BLOCKED" | "ATTACHMENT_LIMIT_REACHED" | "INTERNAL_ERROR";
             correlationId: string;
             fieldErrors?: components["schemas"]["FieldError"][];
             issues?: components["schemas"]["ValidationIssue"][];
@@ -7916,6 +8240,10 @@ export interface components {
                 timeoutAfter?: components["schemas"]["duration"];
                 /** @description Values the message may carry. Each becomes an output of this step; a field that is not required may be missing. */
                 payload?: components["schemas"]["messagePayloadField"][];
+                /** @description Answered by an external system (docs/build/S98). When the request reaches this step an operator or a machine client with run.operate can issue a callback token, shown once; the external system polls the wait and resumes it with a result that must match the declared payload fields. tokenValidFor (PT1M to P30D) counts from issue. */
+                externalCallback?: {
+                    tokenValidFor: components["schemas"]["duration"];
+                };
             };
         } & components["schemas"]["nodeBase"];
         endNode: {
@@ -8540,6 +8868,10 @@ export interface components {
                         timeoutAfter?: components["schemas"]["duration"];
                         /** @description Values the message may carry. Each becomes an output of this step; a field that is not required may be missing. */
                         payload?: components["schemas"]["messagePayloadField"][];
+                        /** @description Answered by an external system (docs/build/S98). When the request reaches this step an operator or a machine client with run.operate can issue a callback token, shown once; the external system polls the wait and resumes it with a result that must match the declared payload fields. tokenValidFor (PT1M to P30D) counts from issue. */
+                        externalCallback?: {
+                            tokenValidFor: components["schemas"]["duration"];
+                        };
                     };
                 } & components["schemas"]["nodeBase"];
                 messagePayloadField: {
@@ -9155,6 +9487,8 @@ export interface components {
         };
     };
     parameters: {
+        /** @description The callback token issued once for this wait (docs/build/S98); never put it in a URL. */
+        CallbackToken: string;
         WorkspaceId: components["schemas"]["Uuid"];
         WorkflowId: components["schemas"]["Uuid"];
         GenerationId: components["schemas"]["Uuid"];
@@ -12740,6 +13074,301 @@ export interface operations {
             429: components["responses"]["TooManyRequests"];
         };
     };
+    listCallbackWaits: {
+        parameters: {
+            query?: {
+                runId?: string;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Callback waits */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CallbackWaitList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    issueCallbackToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                waitId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Token issued */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CallbackTokenIssued"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    revokeCallbackToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                waitId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revoked (or there was no token) */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    pollCallbackWait: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The callback token issued once for this wait (docs/build/S98); never put it in a URL. */
+                "X-Orqix-Callback-Token"?: components["parameters"]["CallbackToken"];
+                "If-None-Match"?: string;
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current state */
+            200: {
+                headers: {
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CallbackWaitState"];
+                };
+            };
+            /** @description Not modified since the given ETag */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    resumeCallbackWait: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description The callback token issued once for this wait (docs/build/S98); never put it in a URL. */
+                "X-Orqix-Callback-Token"?: components["parameters"]["CallbackToken"];
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CallbackResumeRequest"];
+            };
+        };
+        responses: {
+            /** @description Resumed (or the replay of the original resume, with Idempotent-Replayed true) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CallbackResumed"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listWebhookSubscriptions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Subscriptions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookSubscriptionList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createWebhookSubscription: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebhookSubscriptionCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookSubscription"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    updateWebhookSubscription: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                subscriptionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebhookSubscriptionUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookSubscription"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listWebhookDeliveries: {
+        parameters: {
+            query?: {
+                status?: "pending" | "sending" | "delivered" | "dead";
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deliveries */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookDeliveryList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    replayWebhookDelivery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                deliveryId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Queued again */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookDelivery"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
     listRuns: {
         parameters: {
             query?: {
@@ -14747,6 +15376,8 @@ export interface operations {
                 "X-Orqix-Event-Id": string;
                 "X-Orqix-Timestamp": string;
                 "X-Orqix-Signature": string;
+                /** @description S99 - resume the wait this token belongs to (only a request of the trigger's workflow) instead of recording an event. */
+                "X-Orqix-Callback-Token"?: string;
             };
             path: {
                 workspaceId: components["parameters"]["WorkspaceId"];

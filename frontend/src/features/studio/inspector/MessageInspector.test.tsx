@@ -90,4 +90,29 @@ describe('inspector: Wait for a message', () => {
     await waitFor(() => expect(savedConfig().timeoutAfter).toBeUndefined(), { timeout: 12000 })
     await waitFor(() => expect(draft().transitions.some((t) => t.from === 'manager' && t.on === 'timedOut')).toBe(false), { timeout: 12000 })
   }, 90000)
+
+  it('marks the wait as answered by an external system, shows the contract and removes the option again', async () => {
+    signInAs('dana.designer')
+    const node = draft().nodes.find((n) => n.id === 'manager')!
+    node.type = 'waitForMessage'
+    node.config = { message: 'payment-received', correlationField: '/input/costCenter', payload: [{ name: 'paymentReference', type: 'string', required: true }] }
+    const user = userEvent.setup()
+    renderApp(EDIT)
+    await openStep(user)
+
+    const toggle = await screen.findByRole('checkbox', { name: 'Answered by an external system' }, { timeout: 15000 })
+    expect(screen.queryByTestId('callback-contract')).toBeNull()
+    await user.click(toggle)
+    await waitFor(() => expect(savedConfig().externalCallback).toEqual({ tokenValidFor: 'P7D' }), { timeout: 12000 })
+    const contract = screen.getByTestId('callback-contract')
+    expect(contract).toHaveTextContent('X-Orqix-Callback-Token')
+    expect(contract).toHaveTextContent('paymentReference (Text, required)')
+    const ttl = screen.getByLabelText(/^Token is valid for/)
+    await user.clear(ttl)
+    await user.type(ttl, 'PT12H')
+    await user.tab()
+    await waitFor(() => expect(savedConfig().externalCallback).toEqual({ tokenValidFor: 'PT12H' }), { timeout: 12000 })
+    await user.click(screen.getByRole('checkbox', { name: 'Answered by an external system' }))
+    await waitFor(() => expect(savedConfig().externalCallback).toBeUndefined(), { timeout: 12000 })
+  }, 60000)
 })

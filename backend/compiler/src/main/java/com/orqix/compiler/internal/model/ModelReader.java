@@ -178,7 +178,8 @@ public final class ModelReader {
                     c.has("collectionMapping") ? stringMap(c.get("collectionMapping")) : Map.of());
             case WAIT_FOR_MESSAGE -> new Node.WaitForMessage(index, id, label, c.get("message").stringValue(),
                     c.get("correlationField").stringValue(),
-                    c.has("timeoutAfter") ? c.get("timeoutAfter").stringValue() : null, payloadFields(c.get("payload")));
+                    c.has("timeoutAfter") ? c.get("timeoutAfter").stringValue() : null, payloadFields(c.get("payload")),
+                    c.has("externalCallback") ? c.get("externalCallback").get("tokenValidFor").stringValue() : null);
             case END -> new Node.End(index, id, label, c.get("businessOutcome").stringValue(),
                     c.get("outcomeKind").stringValue());
             case RAISE_ERROR -> new Node.RaiseError(index, id, label, c.get("errorCode").stringValue());

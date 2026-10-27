@@ -92,8 +92,9 @@ public class AdapterController {
             @RequestHeader(name = "X-Orqix-Event-Id", required = false) String eventId,
             @RequestHeader(name = "X-Orqix-Timestamp", required = false) String timestamp,
             @RequestHeader(name = "X-Orqix-Signature", required = false) String signature,
+            @RequestHeader(name = "X-Orqix-Callback-Token", required = false) String callbackToken,
             @RequestBody(required = false) byte[] body) {
         return ResponseEntity.status(HttpStatus.ACCEPTED)
-                .body(inbound.receive(workspaceId, triggerId, eventId, timestamp, signature, body));
+                .body(inbound.receive(workspaceId, triggerId, eventId, timestamp, signature, callbackToken, body));
     }
 }

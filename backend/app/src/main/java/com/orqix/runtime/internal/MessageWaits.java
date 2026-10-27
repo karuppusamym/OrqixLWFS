@@ -30,9 +30,12 @@ public class MessageWaits {
     private final MessageDelivery delivery;
     private final Json json;
     private final Clock clock;
+    private final CallbackService callbacks;
 
     public MessageWaits(MessageStore store, RunStore runs, RunEvents events,
-            @org.springframework.context.annotation.Lazy MessageDelivery delivery, Json json, Clock clock) {
+            @org.springframework.context.annotation.Lazy MessageDelivery delivery, Json json, Clock clock,
+            @org.springframework.context.annotation.Lazy CallbackService callbacks) {
+        this.callbacks = callbacks;
         this.store = store;
         this.runs = runs;
         this.events = events;
@@ -56,7 +59,7 @@ public class MessageWaits {
                 deadline).isEmpty()) {
             return; // a repeated event of the same wait
         }
-        runs.mutate(workspaceId, runId, m -> {
+        RunStore.RunRow run = runs.mutate(workspaceId, runId, m -> {
             ObjectNode step = json.object();
             step.put("nodeId", nodeId);
             step.put("label", label);
@@ -79,6 +82,8 @@ public class MessageWaits {
         data.put("duration", null);
         data.put("until", deadline == null ? null : deadline.toString());
         events.append(workspaceId, runId, "WAIT_STARTED", nodeId, null, data);
+        // S98: a wait answered by an external system gets its callback row (no token yet) in the same transaction.
+        callbacks.waitStarted(run, nodeId, id);
         afterCommit(workspaceId, id);
     }
 

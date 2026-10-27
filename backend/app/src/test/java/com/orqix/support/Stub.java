@@ -59,6 +59,29 @@ public final class Stub {
         return server.port();
     }
 
+    /** A webhook POST received under {@code /webhooks/} (S99): headers (lower-case names) and the raw body. */
+    public record WebhookCall(String path, Map<String, String> headers, String body) {
+    }
+
+    private static final List<WebhookCall> WEBHOOKS = new java.util.concurrent.CopyOnWriteArrayList<>();
+    private static final Deque<Integer> WEBHOOK_STATUSES = new java.util.concurrent.ConcurrentLinkedDeque<>();
+
+    /** Received webhook calls, oldest first. */
+    public static List<WebhookCall> webhooks() {
+        return List.copyOf(WEBHOOKS);
+    }
+
+    /** The next webhook answers use these statuses (then 204). */
+    public static void webhookStatuses(Integer... statuses) {
+        WEBHOOK_STATUSES.clear();
+        WEBHOOK_STATUSES.addAll(List.of(statuses));
+    }
+
+    public static void resetWebhooks() {
+        WEBHOOKS.clear();
+        WEBHOOK_STATUSES.clear();
+    }
+
     public static String baseUrl() {
         return "http://localhost:" + port();
     }
@@ -100,6 +123,13 @@ public final class Stub {
     private static synchronized ResponseDefinition handle(Request request) {
         String path = request.getUrl();
         String method = request.getMethod().getName();
+        if (path.startsWith("/webhooks/") && "POST".equals(method)) {
+            Map<String, String> headers = new LinkedHashMap<>();
+            request.getHeaders().all().forEach(h -> headers.put(h.key().toLowerCase(), h.firstValue()));
+            WEBHOOKS.add(new WebhookCall(path, headers, request.getBodyAsString()));
+            Integer status = WEBHOOK_STATUSES.pollFirst();
+            return new ResponseDefinitionBuilder().withStatus(status == null ? 204 : status).build();
+        }
         if (path.startsWith("/graph/")) {
             return GraphStub.handle(request);
         }

@@ -1565,6 +1565,19 @@
               "items": {
                 "$ref": "#/$defs/messagePayloadField"
               }
+            },
+            "externalCallback": {
+              "description": "Answered by an external system (docs/build/S98). When the request reaches this step an operator or a machine client with run.operate can issue a callback token, shown once; the external system polls the wait and resumes it with a result that must match the declared payload fields. tokenValidFor (PT1M to P30D) counts from issue.",
+              "type": "object",
+              "properties": {
+                "tokenValidFor": {
+                  "$ref": "#/$defs/duration"
+                }
+              },
+              "required": [
+                "tokenValidFor"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [

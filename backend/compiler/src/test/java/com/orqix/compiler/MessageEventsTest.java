@@ -304,6 +304,42 @@ class MessageEventsTest {
                 + " \"waitPayment__timeout\", \"waitPayment__toMessage\", \"waitPayment__toTimeout\"]");
     }
 
+    // ---------------------------------------------------------------- S98: answered by an external system
+
+    @Test
+    void anExternalCallbackNeedsATokenValidityFromOneMinuteToThirtyDays() {
+        assertThat(issues(d -> config(d, 1).putObject("externalCallback").put("tokenValidFor", "P7D"))).isEmpty();
+        assertThat(issues(d -> config(d, 1).putObject("externalCallback").put("tokenValidFor", "PT1M"))).isEmpty();
+        assertThat(issues(d -> config(d, 1).putObject("externalCallback").put("tokenValidFor", "P30D"))).isEmpty();
+        assertThat(issues(d -> config(d, 1).putObject("externalCallback").put("tokenValidFor", "P31D")))
+                .containsExactly("B WF_CALLBACK_TOKEN_VALIDITY /nodes/1/config/externalCallback/tokenValidFor");
+        assertThat(issues(d -> config(d, 1).putObject("externalCallback").put("tokenValidFor", "PT0M")))
+                .containsExactly("B WF_CALLBACK_TOKEN_VALIDITY /nodes/1/config/externalCallback/tokenValidFor");
+        assertThat(issues(d -> config(d, 1).putObject("externalCallback")))
+                .containsExactly("B WF_SCHEMA_INVALID /nodes/1/config/externalCallback/tokenValidFor");
+        assertThat(issues(d -> config(d, 1).putObject("externalCallback").put("tokenValidFor", "P1D").put("url", "x")))
+                .singleElement().asString().startsWith("B WF_SCHEMA_INVALID /nodes/1/config/externalCallback");
+    }
+
+    @Test
+    void anExternalCallbackAddsOneExtensionAttributeAndRoundTripsThroughBpmn() throws Exception {
+        String plain = COMPILER.compile(TestSupport.read(SAMPLE), TestSupport.defaultContext()).bpmnXml();
+        assertThat(plain).doesNotContain("callbackTokenValidFor");
+        ObjectNode doc = sample();
+        config(doc, 1).putObject("externalCallback").put("tokenValidFor", "P7D");
+        String json = TestSupport.text(doc);
+        String xml = COMPILER.compile(json, TestSupport.defaultContext()).bpmnXml();
+        assertThat(xml).contains("<orqix:message node=\"waitPayment\" name=\"payment-received\""
+                + " correlationField=\"/input/orderNumber\" callbackTokenValidFor=\"P7D\">");
+        // Nothing else changes: the same BPMN with the attribute removed is the BPMN without the option.
+        assertThat(xml.replace(" callbackTokenValidFor=\"P7D\"", "").replaceAll("semanticHash=\"[0-9a-f]+\"", ""))
+                .isEqualTo(plain.replaceAll("semanticHash=\"[0-9a-f]+\"", ""));
+        BpmnSource.Check back = BpmnSource.check(xml, json, COMPILER, j -> TestSupport.defaultContext());
+        assertThat(back.problems()).isEmpty();
+        assertThat(StrictJson.parse(back.definitionJson()).path("nodes").get(1).path("config")
+                .path("externalCallback").path("tokenValidFor").asString()).isEqualTo("P7D");
+    }
+
     @Test
     void withoutALimitTheStepIsOneCatchEvent() throws Exception {
         ObjectNode doc = sample();

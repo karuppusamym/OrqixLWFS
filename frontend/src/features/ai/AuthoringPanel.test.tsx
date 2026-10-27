@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { cleanup, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -27,7 +27,7 @@ describe('conversational authoring panel (STU02, docs/build/S95)', () => {
     const before = structuredClone(latest())
     const send = within(panel).getByRole('button', { name: /Send/ })
     expect(send).toBeDisabled()
-    await user.type(within(panel).getByLabelText('Your instruction'), 'Add a finance review and rename the first one.')
+    await user.type(within(panel).getByLabelText('What should change?'), 'Add a finance review and rename the first one.')
     await user.click(send)
     expect(await within(panel).findByText('2 proposed changes to review. Nothing has been applied.')).toBeInTheDocument()
     const conversation = within(panel).getByRole('list', { name: 'Conversation' })
@@ -55,7 +55,7 @@ describe('conversational authoring panel (STU02, docs/build/S95)', () => {
     const bodies: Array<Record<string, unknown>> = []
     await renderAppReady(EDIT)
     const panel = await openPanel()
-    const input = within(panel).getByLabelText('Your instruction')
+    const input = within(panel).getByLabelText('What should change?')
     await user.type(input, 'Add a cost code question.')
     await user.keyboard('{Control>}{Enter}{/Control}')
     expect(await within(panel).findByText('1 proposed change to review. Nothing has been applied.')).toBeInTheDocument()
@@ -74,8 +74,8 @@ describe('conversational authoring panel (STU02, docs/build/S95)', () => {
     const user = userEvent.setup()
     await renderAppReady(EDIT)
     const panel = await openPanel()
-    await user.type(within(panel).getByLabelText('Your instruction'), 'Start again with a single review.')
-    await user.click(within(panel).getByRole('button', { name: /Regenerate from scratch/ }))
+    await user.type(within(panel).getByLabelText('What should change?'), 'Start again with a single review.')
+    await user.click(within(panel).getByRole('button', { name: /Start over with AI/ }))
     const dialog = await screen.findByRole('dialog', { name: /Regenerate this draft from scratch/ })
     await user.click(within(dialog).getByRole('button', { name: 'Ask for a new draft' }))
     expect(await within(panel).findByText('A new draft is proposed. Nothing has been changed yet.')).toBeInTheDocument()
@@ -96,7 +96,7 @@ describe('conversational authoring panel (STU02, docs/build/S95)', () => {
     const notice = await within(panel).findByTestId('authoring-not-configured')
     expect(notice).toHaveTextContent('AI is not configured')
     expect(notice).toHaveTextContent('no provider key is set')
-    expect(within(panel).queryByLabelText('Your instruction')).not.toBeInTheDocument()
+    expect(within(panel).queryByLabelText('What should change?')).not.toBeInTheDocument()
   })
 
   it('collapses to a narrow strip and opens again from the keyboard', async () => {
@@ -111,5 +111,52 @@ describe('conversational authoring panel (STU02, docs/build/S95)', () => {
     show.focus()
     await user.keyboard('{Enter}')
     expect(await screen.findByTestId('authoring-panel')).toBeInTheDocument()
+  })
+  it('can be pointed at the selected step, which is named in the request', async () => {
+    signInAs('dana.designer')
+    const user = userEvent.setup()
+    const bodies: Array<Record<string, unknown>> = []
+    server.events.on('request:start', async ({ request }) => {
+      if (request.url.includes('/ai/draft-edits')) bodies.push((await request.clone().json()) as Record<string, unknown>)
+    })
+    await renderAppReady(EDIT)
+    const panel = await openPanel()
+    expect(within(panel).getByText(/select a step on the canvas/i)).toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: 'Steps' }))
+    await user.click((await screen.findAllByRole('button', { name: /Review request/, pressed: false }))[0]!)
+    await user.click(await within(panel).findByTestId('authoring-ask-step'))
+    expect(within(panel).getByTestId('authoring-focus')).toHaveTextContent('Review request')
+    await user.type(within(panel).getByLabelText('What should change?'), 'Make it optional.')
+    await user.click(within(panel).getByRole('button', { name: /Send/ }))
+    await within(panel).findByText(/proposed change/)
+    expect(bodies[0]?.instruction).toBe('About the step “Review request” (id manager): Make it optional.')
+    server.events.removeAllListeners()
+  })
+
+  it('dictation fills the box without sending, and the button is absent where the browser cannot dictate', async () => {
+    signInAs('dana.designer')
+    const user = userEvent.setup()
+    class FakeRecognition {
+      lang = ''; continuous = false; interimResults = false
+      onresult: ((e: unknown) => void) | null = null; onerror = null; onend: (() => void) | null = null
+      static last: FakeRecognition | null = null
+      constructor() { FakeRecognition.last = this }
+      start() {}
+      stop() { this.onend?.() }
+    }
+    ;(window as unknown as Record<string, unknown>).webkitSpeechRecognition = FakeRecognition
+    try {
+      await renderAppReady(EDIT)
+      const panel = await openPanel()
+      await user.click(within(panel).getByTestId('authoring-mic'))
+      FakeRecognition.last!.onresult!({ resultIndex: 0, results: [{ isFinal: true, 0: { transcript: ' add a finance approval ' } }] })
+      expect(await within(panel).findByDisplayValue('add a finance approval')).toBeInTheDocument()
+      expect(within(panel).getByTestId('authoring-mic')).toHaveTextContent('Stop talking')
+    } finally {
+      delete (window as unknown as Record<string, unknown>).webkitSpeechRecognition
+    }
+    cleanup()
+    await renderAppReady(EDIT)
+    expect(within(await openPanel()).queryByTestId('authoring-mic')).not.toBeInTheDocument()
   })
 })

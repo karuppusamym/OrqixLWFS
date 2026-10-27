@@ -48,6 +48,8 @@ export function Shell() {
   const setNavOpen = (open: boolean) => setNavOpenPath(open ? pathname : null)
   const matches = useMatches()
   const fullBleed = matches.some((m) => (m.handle as RouteHandle | undefined)?.fullBleed)
+  // A full-bleed page (the studio) gives its width to the work: the menu moves behind the top-bar button there.
+  const rail = desktop && !fullBleed
   const base = `/w/${workspace.id}`
   const counters = useTaskCounters(workspace.id, can('task.act'))
   const navRef = useRef<HTMLElement>(null)
@@ -55,7 +57,7 @@ export function Shell() {
 
   // Drawer: Escape closes it and returns focus to the menu button; focus moves into it when opened.
   useEffect(() => {
-    if (!navOpen || desktop) return
+    if (!navOpen || rail) return
     navRef.current?.querySelector<HTMLElement>('a')?.focus()
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -65,7 +67,7 @@ export function Shell() {
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [navOpen, desktop])
+  }, [navOpen, rail])
 
   const assigned = counters.data?.assigned ?? 0
   const items: NavItem[] = [
@@ -83,7 +85,7 @@ export function Shell() {
     { to: `${base}/settings`, label: 'Settings', icon: Settings, visible: can('workspace.manage-access', 'connection.read') },
   ]
 
-  const navVisible = desktop || navOpen
+  const navVisible = rail || navOpen
 
   return (
     <div className={cn('flex flex-col', fullBleed ? 'h-dvh' : 'min-h-dvh')}>
@@ -103,7 +105,7 @@ export function Shell() {
       <TopBar
         homeHref={base}
         menuButton={
-          !desktop ? (
+          !rail ? (
             <Button
               ref={menuButtonRef}
               variant="ghost"
@@ -120,18 +122,18 @@ export function Shell() {
       />
 
       <div className="flex min-h-0 flex-1">
-        {!desktop && navOpen ? <div className="fixed inset-0 z-40 bg-overlay" aria-hidden="true" onClick={() => setNavOpen(false)} /> : null}
+        {!rail && navOpen ? <div className="fixed inset-0 z-40 bg-overlay" aria-hidden="true" onClick={() => setNavOpen(false)} /> : null}
 
         <nav
           ref={navRef}
           aria-label="Main"
           className={cn(
             'focus-on-nav z-50 flex w-56 shrink-0 flex-col border-r border-nav-border bg-nav text-nav-foreground',
-            desktop ? 'sticky top-[calc(3.5rem+var(--topbar-stripe-height))] h-[calc(100dvh-3.5rem-var(--topbar-stripe-height))] self-start' : 'fixed inset-y-0 left-0 shadow-xl',
+            rail ? 'sticky top-[calc(3.5rem+var(--topbar-stripe-height))] h-[calc(100dvh-3.5rem-var(--topbar-stripe-height))] self-start' : 'fixed inset-y-0 left-0 shadow-xl',
             !navVisible && 'hidden',
           )}
         >
-          {!desktop ? (
+          {!rail ? (
             <div className="flex items-center justify-between px-4 pt-3 pb-1">
               <p className="text-lg font-bold text-nav-active-foreground">Orqix</p>
               <Button variant="ghost" size="icon" className="text-nav-foreground hover:bg-nav-hover" aria-label="Close navigation" onClick={() => setNavOpen(false)}>

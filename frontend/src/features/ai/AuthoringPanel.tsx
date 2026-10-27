@@ -1,4 +1,4 @@
-import { MessageSquareText, PanelLeftClose, RefreshCcw, Send } from 'lucide-react'
+import { Mic, MicOff, MessageSquareText, PanelLeftClose, RefreshCcw, Send, X } from 'lucide-react'
 import { useId, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { ProblemAlert } from '@/components/common/ProblemAlert'
@@ -7,7 +7,9 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Textarea } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { useDictation } from '@/lib/useDictation'
 import { readStorage, writeStorage } from '@/lib/storage'
+import { useStore } from 'zustand'
 import { useStudioContext } from '@/features/studio/StudioContext'
 import { KINDS, ROUTE_LABEL } from '@/features/studio/model/kinds'
 import type { Definition, NodeKind, RouteKind } from '@/features/studio/model/types'
@@ -79,7 +81,7 @@ export function AuthoringPanel() {
   return (
     <aside className="flex w-80 shrink-0 flex-col border-r border-border bg-surface" aria-label="Authoring assistant" data-testid="authoring-panel">
       <div className="flex items-center justify-between border-b border-border px-3 py-2">
-        <h2 className="text-sm font-semibold" id="authoring-heading">Change this draft with AI</h2>
+        <h2 className="text-sm font-semibold" id="authoring-heading">Ask AI to change this</h2>
         <Button variant="ghost" size="icon" className="-mr-1 size-8" onClick={() => toggle(true)} aria-label="Hide the authoring assistant" aria-expanded={true} title="Hide the authoring assistant">
           <PanelLeftClose aria-hidden="true" />
         </Button>
@@ -124,10 +126,18 @@ function Conversation() {
   const nextId = useRef(1)
   const inputId = useId()
   const length = text.trim().length
+  // "Ask about this step": the selected step can be pinned as the subject of the next instruction.
+  const selectedId = useStore(store, (st) => (st.selection?.type === 'node' ? st.selection.id : null))
+  const selectedLabel = useStore(store, (st) => st.definition.nodes.find((n) => n.id === selectedId)?.label ?? null)
+  const [focusStep, setFocusStep] = useState<{ id: string; label: string } | null>(null)
+  const dictation = useDictation((spoken) => setText((t) => `${t}${t && !t.endsWith(' ') ? ' ' : ''}${spoken}`.slice(0, MAX)))
 
   const ask = async (mode: 'edit' | 'regenerate') => {
-    const instruction = text.trim()
-    if (instruction.length < MIN || instruction.length > MAX || busy) return
+    const typed = text.trim()
+    if (typed.length < MIN || typed.length > MAX || busy) return
+    dictation.stop()
+    const focus = mode === 'edit' && focusStep && store.getState().definition.nodes.some((n) => n.id === focusStep.id) ? focusStep : null
+    const instruction = focus ? `About the step “${focus.label}” (id ${focus.id}): ${typed}`.slice(0, MAX) : typed
     setBusy(true); setError(null); setStatus('')
     try {
       const saved = await saver.flush()
@@ -138,8 +148,9 @@ function Conversation() {
       const history = turns.slice(-HISTORY).map((t) => (t.role === 'author' ? { role: 'author' as const, text: t.text } : { role: 'assistant' as const, text: assistantText(t.proposal) }))
       const baseline = store.getState().definition
       const proposal = await proposeDraftEdits(wsId, workflowId, { instruction, revision: store.getState().revision, mode, history })
-      setTurns((all) => [...all, { id: nextId.current++, role: 'author', text: instruction, mode }, { id: nextId.current++, role: 'assistant', proposal, baseline, chosen: [], result: null }])
+      setTurns((all) => [...all, { id: nextId.current++, role: 'author', text: focus ? `${focus.label}: ${typed}` : typed, mode }, { id: nextId.current++, role: 'assistant', proposal, baseline, chosen: [], result: null }])
       setText('')
+      setFocusStep(null)
       const n = proposal.changes.length
       setStatus(mode === 'regenerate'
         ? (n > 0 ? 'A new draft is proposed. Nothing has been changed yet.' : 'No new draft could be proposed.')
@@ -193,7 +204,7 @@ function Conversation() {
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         {turns.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            Ask for a change to this draft, for example “Add a finance approval when the amount is 5,000 or more” or “Rename the first review to Manager review”. Every proposal is checked and nothing changes until you apply it.
+            Type or say what you want, for example “Add a finance approval when the amount is 5,000 or more”. You can then follow up, such as “make it 10,000”.
           </p>
         ) : (
           <ol className="space-y-3" aria-label="Conversation">
@@ -211,16 +222,34 @@ function Conversation() {
         <p role="status" aria-live="polite" className="text-sm">{busy ? 'Asking the AI. This can take up to a minute…' : status}</p>
         {error ? <ProblemAlert error={error} /> : null}
         <div className="space-y-1.5">
-          <Label htmlFor={inputId}>Your instruction</Label>
+          <Label htmlFor={inputId}>What should change?</Label>
+          {focusStep ? (
+            <p className="flex items-center justify-between gap-2 rounded-control bg-surface-muted px-2 py-1 text-sm" data-testid="authoring-focus">
+              <span className="min-w-0 truncate">About the step <strong title={focusStep.label}>{focusStep.label}</strong></span>
+              <Button variant="ghost" size="icon" className="size-6" onClick={() => setFocusStep(null)} aria-label="Stop asking about this step"><X aria-hidden="true" /></Button>
+            </p>
+          ) : selectedId && selectedLabel ? (
+            <Button variant="secondary" size="sm" className="max-w-full" onClick={() => setFocusStep({ id: selectedId, label: selectedLabel })} data-testid="authoring-ask-step">
+              <span className="truncate">Ask about “{selectedLabel}”</span>
+            </Button>
+          ) : (
+            <p className="text-xs text-muted-foreground">Tip: select a step on the canvas to ask about just that step.</p>
+          )}
           <Textarea id={inputId} rows={3} value={text} maxLength={MAX} disabled={busy} aria-describedby={`${inputId}-help`} onChange={(e) => setText(e.target.value)} onKeyDown={onKeyDown} />
-          <p id={`${inputId}-help`} className="text-xs text-muted-foreground">Press Ctrl+Enter (Cmd+Enter on Mac) to send. The AI sees a summary of the saved draft without secrets.</p>
+          <p id={`${inputId}-help`} className="text-xs text-muted-foreground">Ctrl+Enter sends. The AI sees the saved draft without secrets. You review every change before it is applied.</p>
+          {dictation.problem ? <p role="status" className="text-xs text-danger">{dictation.problem}</p> : null}
         </div>
         <div className="flex flex-wrap gap-2">
           <Button onClick={() => void ask('edit')} disabled={busy || length < MIN || length > MAX} loading={busy}>
             <Send aria-hidden="true" /> Send
           </Button>
+          {dictation.supported ? (
+            <Button variant="secondary" onClick={() => (dictation.listening ? dictation.stop() : dictation.start())} disabled={busy} aria-pressed={dictation.listening} data-testid="authoring-mic">
+              {dictation.listening ? <MicOff aria-hidden="true" /> : <Mic aria-hidden="true" />} {dictation.listening ? 'Stop talking' : 'Talk'}
+            </Button>
+          ) : null}
           <Button variant="secondary" onClick={() => setConfirmRegenerate(true)} disabled={busy || length < MIN || length > MAX}>
-            <RefreshCcw aria-hidden="true" /> Regenerate from scratch
+            <RefreshCcw aria-hidden="true" /> Start over with AI
           </Button>
           {turns.length > 0 ? <Button variant="ghost" onClick={() => { setTurns([]); setStatus('Conversation cleared.'); setError(null) }} disabled={busy}>Clear conversation</Button> : null}
         </div>

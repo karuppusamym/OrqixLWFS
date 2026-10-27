@@ -17,10 +17,13 @@ import { KIND_ACCENT, KIND_ICON } from './nodeMeta'
  */
 const COLLAPSED_KEY = 'orqix.studio.paletteCollapsed'
 
-export function Palette({ onAdd, disabled }: { onAdd: (kind: NodeKind) => void; disabled: boolean }) {
+export function Palette({ onAdd, disabled, defaultCollapsed = false }: { onAdd: (kind: NodeKind) => void; disabled: boolean; defaultCollapsed?: boolean }) {
   const [query, setQuery] = useState('')
   // A per-viewer convenience: collapsing the list gives the canvas the width of a long workflow.
-  const [collapsed, setCollapsed] = useState(() => readStorage(COLLAPSED_KEY) === 'true')
+  const [collapsed, setCollapsed] = useState(() => {
+    const stored = readStorage(COLLAPSED_KEY)
+    return stored === null ? defaultCollapsed : stored === 'true'
+  })
   const announce = useAnnounce()
   const searchId = useId()
   const q = query.trim().toLowerCase()
@@ -74,7 +77,7 @@ export function Palette({ onAdd, disabled }: { onAdd: (kind: NodeKind) => void; 
           <Input id={searchId} type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search steps" className="pl-9" autoComplete="off" />
         </div>
       </div>
-      <p className="text-xs text-muted-foreground">Choose a step to add it, or drag it onto the canvas. The request form (start) always exists.</p>
+      <p className="text-xs text-muted-foreground">Click a step to add it, or drag it onto the canvas.</p>
       <ul className="space-y-2" aria-label="Available steps">
         {items.map((info) => {
           const Icon = KIND_ICON[info.kind]

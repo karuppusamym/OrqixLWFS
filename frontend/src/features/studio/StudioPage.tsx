@@ -283,6 +283,7 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
           {showCanvas && currentTab === 'canvas' && canEdit ? (
             <Palette
               disabled={readOnly}
+              defaultCollapsed={!readOnly}
               onAdd={(kind) => {
                 const id = store.getState().addNode(kind)
                 store.getState().requestFocus(id, 'label')

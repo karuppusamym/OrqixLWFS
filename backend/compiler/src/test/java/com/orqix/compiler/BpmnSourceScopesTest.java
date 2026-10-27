@@ -34,7 +34,7 @@ class BpmnSourceScopesTest {
             "chat", new CompileContext.AdapterInfo("chat", "teams", "Team channel", true,
                     "{\"baseUrl\":\"https://teams.example.com\"}"));
 
-    private static final Function<String, CompileContext> CONTEXT =
+    static final Function<String, CompileContext> CONTEXT =
             json -> BpmnSourceTest.context(json).withAdapters(ADAPTERS);
 
     private static CompiledWorkflow compile(String json) throws CompilationException {

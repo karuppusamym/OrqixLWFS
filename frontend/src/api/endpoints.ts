@@ -81,6 +81,33 @@ export async function saveDraft(ws: string, workflowId: string, definition: obje
 export const getDraftBpmn = (ws: string, workflowId: string, revision?: number) =>
   call(api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/draft/bpmn', { params: { path: { workspaceId: ws, workflowId }, query: revision ? { revision } : {} } }))
 
+const filenameOf = (response: Response, fallback: string) => {
+  const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(response.headers.get('Content-Disposition') ?? '')
+  return match?.[1] ? decodeURIComponent(match[1]) : fallback
+}
+
+/** Standard .bpmn file of a draft revision with a complete diagram (STU04, docs/build/S97); workflow.read. */
+export async function exportDraftBpmn(ws: string, workflowId: string, revision?: number) {
+  const { data, response } = await callWithResponse(
+    api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/draft/bpmn/export', {
+      params: { path: { workspaceId: ws, workflowId }, query: revision ? { revision } : {} },
+      parseAs: 'blob',
+    }),
+  )
+  return { blob: data as unknown as Blob, filename: filenameOf(response, 'workflow-draft.bpmn') }
+}
+
+/** Standard .bpmn file of a published release (STU04); workflow.export. */
+export async function exportReleaseBpmn(ws: string, workflowId: string, releaseId: string) {
+  const { data, response } = await callWithResponse(
+    api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/releases/{releaseId}/export/bpmn', {
+      params: { path: { workspaceId: ws, workflowId, releaseId } },
+      parseAs: 'blob',
+    }),
+  )
+  return { blob: data as unknown as Blob, filename: filenameOf(response, 'workflow-release.bpmn') }
+}
+
 export const checkDraftBpmn = (ws: string, workflowId: string, revision: number, bpmn: string) =>
   call(api.POST('/workspaces/{workspaceId}/workflows/{workflowId}/draft/bpmn/check', { params: { path: { workspaceId: ws, workflowId } }, body: { revision, bpmn } }))
 

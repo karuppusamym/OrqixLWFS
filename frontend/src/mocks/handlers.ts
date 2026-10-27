@@ -13,7 +13,7 @@ import { buildFields, parseFormSchema, parseFormUi } from '@/lib/form/schema'
 import { validateJsonForm } from '@/lib/form/validate'
 import { waitHorizonErrors } from './dateWait'
 import { validateDefinition, type ValidationContext } from './validate'
-import { mockCheckBpmn, mockDraftBpmn } from './bpmnSource'
+import { mockBpmnFile, mockCheckBpmn, mockDraftBpmn } from './bpmnSource'
 import { assetIssues } from './sharedAssets'
 import { exportCsv, parseCsv, templateCsv } from './decisionCsv'
 import { ScenarioError, simulateDefinition, type SimConnection, type SimContext, type SimulationScenario } from './simulator'
@@ -471,6 +471,35 @@ export function createHandlers(): HttpHandler[] {
         revision: draft.revision, compilerVersion: '0.1.0-mock', available: blockers.length === 0,
         bpmn: blockers.length === 0 ? mockDraftBpmn(draft.definition) : null, diagram: false,
         roundTrip: { identical: blockers.length === 0, differences: [] }, keptFromDraft: [...kept, 'uiLayout.positions'], blockers,
+      })
+    }),
+    http.get(`${B}/workspaces/:ws/workflows/:id/draft/bpmn/export`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws, 'workflow.read')
+      if (!g.ok) return g.res
+      const wf = findWorkflow(str(params.ws), str(params.id))
+      if (!wf) return notFound()
+      const asked = Number(new URL(request.url).searchParams.get('revision') ?? '0')
+      const draft = asked ? wf.drafts.find((d) => d.revision === asked) : wf.drafts.at(-1)
+      if (!draft) return notFound()
+      if (validateDefinition(draft.definition, validationContext(wf.wsId)).some((i) => i.severity === 'blocker')) {
+        return problem(422, 'WORKFLOW_INVALID', 'The draft has blocking issues, so there is no BPMN to download.')
+      }
+      return new HttpResponse(mockBpmnFile(draft.definition, `draft revision ${draft.revision}`), {
+        status: 200,
+        headers: { 'Content-Type': 'application/xml', 'Content-Disposition': `attachment; filename="${wf.key}-draft-${draft.revision}.bpmn"` },
+      })
+    }),
+    http.get(`${B}/workspaces/:ws/workflows/:id/releases/:rid/export/bpmn`, async ({ params }) => {
+      await slow()
+      const g = guard(params.ws, 'workflow.export')
+      if (!g.ok) return g.res
+      const wf = findWorkflow(str(params.ws), str(params.id))
+      const rel = wf?.releases.find((r) => r.id === str(params.rid))
+      if (!wf || !rel) return notFound()
+      return new HttpResponse(mockBpmnFile(rel.definition, `release version ${rel.releaseNumber}`), {
+        status: 200,
+        headers: { 'Content-Type': 'application/xml', 'Content-Disposition': `attachment; filename="${wf.key}-r${rel.releaseNumber}.bpmn"` },
       })
     }),
     http.post(`${B}/workspaces/:ws/workflows/:id/draft/bpmn/check`, async ({ params, request }) => {

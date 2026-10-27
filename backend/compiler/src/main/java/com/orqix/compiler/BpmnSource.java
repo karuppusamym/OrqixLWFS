@@ -11,6 +11,7 @@ import java.util.function.Function;
 
 import com.orqix.compiler.internal.bpmn.BpmnCompare;
 import com.orqix.compiler.internal.bpmn.BpmnDefaults;
+import com.orqix.compiler.internal.bpmn.BpmnInterchange;
 import com.orqix.compiler.internal.bpmn.BpmnReader;
 import com.orqix.compiler.internal.bpmn.BpmnXml;
 import com.orqix.compiler.internal.json.StrictJson;
@@ -94,6 +95,19 @@ public final class BpmnSource {
         kept.addAll(BpmnDefaults.keptTitles(def));
         kept.addAll(BpmnDefaults.keptMemberOrder(def));
         return List.copyOf(kept);
+    }
+
+    /**
+     * The downloadable {@code .bpmn} file (STU04, docs/build/S97): the compiled BPMN unchanged, a header comment and a
+     * complete BPMN diagram (a shape for every element, an edge for every flow; the saved canvas positions when every step
+     * has one, otherwise a deterministic left-to-right layout). The deployed BPMN is not changed.
+     *
+     * @param bpmnXml        {@code process.bpmn20.xml} of the draft (compiled now) or of the release (as stored)
+     * @param definitionJson canonical document of the same draft revision or release
+     * @param sourceLabel    ids and numbers only, for the header (for example {@code release 0190... (version 2)})
+     */
+    public static String downloadFile(String bpmnXml, String definitionJson, String sourceLabel) {
+        return BpmnInterchange.export(bpmnXml, definitionJson, sourceLabel);
     }
 
     /** Round trip of a draft that compiled: reads {@code compiled.bpmnXml()} back and compares with the draft. */

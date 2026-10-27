@@ -939,6 +939,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/draft/bpmn/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Download the draft as a standard .bpmn file with a complete diagram (STU04, docs/build/S97)
+         * @description The BPMN 2.0 publishing would deploy for the draft revision (the latest when `revision` is omitted), as
+         *     `application/xml` with a safe file name in Content-Disposition. It has a header comment (Orqix version, draft id,
+         *     hash, what is carried as Orqix extensions) and a complete diagram interchange section (a shape with bounds for
+         *     every element, an edge with waypoints for every flow): the saved canvas positions when every step has one, else a
+         *     deterministic left-to-right layout. Orqix settings BPMN cannot express are carried only as the documented
+         *     `orqix:` extensions and `flowable:` attributes. A draft with blocking issues has no BPMN (422 WORKFLOW_INVALID).
+         *     Recorded as an export (audit workflow.exported with ids and the revision only). Anyone who can read the draft
+         *     may download it; outsiders get 404.
+         */
+        get: operations["exportDraftBpmn"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/workflows/{workflowId}/draft/bpmn/check": {
         parameters: {
             query?: never;
@@ -1919,6 +1949,33 @@ export interface paths {
         };
         /** Secret-free bundle (canonical JSON, BPMN, DMN, manifest, source map) */
         get: operations["exportRelease"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/releases/{releaseId}/export/bpmn": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+                releaseId: components["parameters"]["ReleaseId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Download a published release as a standard .bpmn file with a complete diagram (STU04, docs/build/S97)
+         * @description The BPMN of the release exactly as deployed, plus a header comment and a complete diagram interchange section,
+         *     as `application/xml` with a safe file name. The process itself is the stored artifact and is not changed.
+         *     Same permission and audit as the release bundle (`workflow.export`, audit workflow.exported with the release
+         *     number only); outsiders get 404.
+         */
+        get: operations["exportReleaseBpmn"];
         put?: never;
         post?: never;
         delete?: never;
@@ -10581,6 +10638,37 @@ export interface operations {
             428: components["responses"]["PreconditionRequired"];
         };
     };
+    exportDraftBpmn: {
+        parameters: {
+            query?: {
+                /** @description Draft revision; the latest when omitted. */
+                revision?: number;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The BPMN file */
+            200: {
+                headers: {
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/xml": string;
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
     checkDraftBpmn: {
         parameters: {
             query?: never;
@@ -12168,6 +12256,34 @@ export interface operations {
                 };
                 content: {
                     "application/zip": string;
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    exportReleaseBpmn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+                releaseId: components["parameters"]["ReleaseId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The BPMN file */
+            200: {
+                headers: {
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/xml": string;
                 };
             };
             401: components["responses"]["Unauthenticated"];

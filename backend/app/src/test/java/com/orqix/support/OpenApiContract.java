@@ -167,7 +167,7 @@ public final class OpenApiContract {
             return;
         }
         String schemaPointer = responsePointer + "/content/" + escape(mediaType) + "/schema";
-        validateBody(operation.id() + " " + status, schemaPointer, mediaType.startsWith("text/") ? JSON.writeValueAsString(body) : body);
+        validateBody(operation.id() + " " + status, schemaPointer, mediaType.startsWith("text/") || "application/xml".equals(mediaType) ? JSON.writeValueAsString(body) : body);
     }
 
     private void validateProblem(String what, String contentType, String body) {

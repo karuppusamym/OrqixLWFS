@@ -76,3 +76,23 @@ export function mockCheckBpmn(def: Definition, text: string): BpmnCheck & { defi
   if (next.name !== def.name) changes.unshift({ kind: 'changed', what: `Workflow name: "${def.name}" to "${next.name}"` })
   return { revision: 1, applicable: true, problems: [], notes: changes.length ? ['The release hash and compiler version are recomputed for the new document (1 value).'] : [], changes, definition: next }
 }
+
+/** Mock .bpmn download (STU04): the mock BPMN plus a header comment and a simple diagram (the real server computes the layout). */
+export function mockBpmnFile(def: Definition, source: string): string {
+  const base = mockDraftBpmn(def)
+  const shapes = def.nodes.map((n, i) => {
+    const size = n.type === 'start' || n.type === 'end' || n.type === 'wait' || n.type === 'waitForMessage' ? 48 : n.type === 'branch' || n.type.startsWith('parallel') ? 64 : null
+    const w = size ?? 200
+    const h = size ?? 80
+    return `    <bpmndi:BPMNShape id="${esc(n.id)}__di" bpmnElement="${esc(n.id)}"><omgdc:Bounds x="${40 + i * 280}" y="40" width="${w}" height="${h}"/></bpmndi:BPMNShape>`
+  })
+  const diagram = [
+    `  <bpmndi:BPMNDiagram id="${esc(def.workflowKey)}__diagram"><bpmndi:BPMNPlane id="${esc(def.workflowKey)}__plane" bpmnElement="${esc(def.workflowKey)}">`,
+    ...shapes,
+    '  </bpmndi:BPMNPlane></bpmndi:BPMNDiagram>',
+  ].join('\n')
+  const withNamespaces = base.replace('<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"', '<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC"')
+  return withNamespaces
+    .replace('<?xml version="1.0" encoding="UTF-8"?>', `<?xml version="1.0" encoding="UTF-8"?>\n<!-- Mock export. Source: ${source} -->`)
+    .replace('</definitions>', `${diagram}\n</definitions>`)
+}

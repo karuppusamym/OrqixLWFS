@@ -24,7 +24,7 @@ describe('pinned workflow shortcuts', () => {
     await screen.findByText('No workflows match your search')
     await user.click(await within(panel()).findByRole('link', { name: 'Purchase approval' }))
     await user.click(await screen.findByRole('button', { name: 'Unpin Purchase approval' }))
-    expect(JSON.parse(localStorage.getItem(stored)!).ids).toEqual([])
+    await waitFor(() => expect(JSON.parse(localStorage.getItem(stored)!).ids).toEqual([]))
     second.unmount()
     await renderAppReady(`/w/${WS}/workflows`)
     await screen.findByRole('region', { name: 'Pinned workflows' })

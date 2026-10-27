@@ -1,10 +1,12 @@
-import { Eye, FlaskConical, ListChecks, Redo2, Rocket, Undo2 } from 'lucide-react'
+import { Download, Eye, FlaskConical, ListChecks, Redo2, Rocket, Undo2 } from 'lucide-react'
 import { Link } from 'react-router'
 import { Button } from '@/components/ui/button'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { formatRelative } from '@/lib/dates'
 import { isDirty } from '@/stores/studioStore'
 import { ExplainWorkflowButton } from '@/features/ai/ExplainPanel'
 import { useCanUndo, useStudio, useStudioContext } from './StudioContext'
+import { useDownloadDraftBpmn } from './useDownloadBpmn'
 
 export function saveStateText(state: { saveStatus: string; dirty: boolean; savedAt: string | null }): string {
   switch (state.saveStatus) {
@@ -50,7 +52,8 @@ export function StudioHeader({
   onTest?: () => void
   testOpen?: boolean
 }) {
-  const { readOnly } = useStudioContext()
+  const { readOnly, wsId } = useStudioContext()
+  const bpmnDownload = useDownloadDraftBpmn()
   const name = useStudio((s) => s.definition.name)
   const revision = useStudio((s) => s.revision)
   const saveStatus = useStudio((s) => s.saveStatus)
@@ -114,6 +117,25 @@ export function StudioHeader({
           <Button variant="secondary" onClick={onTest} aria-pressed={testOpen}>
             <FlaskConical aria-hidden="true" /> Test workflow
           </Button>
+        ) : null}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="secondary" loading={bpmnDownload.busy}>
+              <Download aria-hidden="true" /> Export
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuLabel>Export this workflow</DropdownMenuLabel>
+            <DropdownMenuItem onSelect={() => void bpmnDownload.download()}>Download BPMN (.bpmn)</DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link to={`/w/${wsId}/cases`}>Case models: CMMN XML download</Link>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        {bpmnDownload.error ? (
+          <span role="alert" className="text-sm text-danger" data-testid="bpmn-download-error">
+            {bpmnDownload.error.detail ?? bpmnDownload.error.title}
+          </span>
         ) : null}
         <Button variant="secondary" onClick={onCheck} loading={checking}>
           <ListChecks aria-hidden="true" /> Check workflow

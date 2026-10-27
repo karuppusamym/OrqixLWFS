@@ -69,6 +69,20 @@ export function WorkflowOverviewPage() {
     }
   }
 
+  const exportReleaseBpmn = async (r: ReleaseSummary) => {
+    setExporting(`bpmn:${r.id}`)
+    setExportError(null)
+    try {
+      const { blob, filename } = await endpoints.exportReleaseBpmn(ws, workflowId, r.id)
+      downloadBlob(blob, filename)
+      announce(`Downloaded ${filename}`)
+    } catch (cause) {
+      setExportError(toProblem(cause))
+    } finally {
+      setExporting(null)
+    }
+  }
+
   const exportRelease = async (r: ReleaseSummary) => {
     setExporting(r.id)
     setExportError(null)
@@ -213,6 +227,11 @@ export function WorkflowOverviewPage() {
                           {can('workflow.export') ? (
                             <Button size="sm" variant="secondary" onClick={() => void exportRelease(r)} loading={exporting === r.id} aria-label={`Export version ${r.releaseNumber}`}>
                               <Download aria-hidden="true" /> Export
+                            </Button>
+                          ) : null}
+                          {can('workflow.export') ? (
+                            <Button size="sm" variant="secondary" onClick={() => void exportReleaseBpmn(r)} loading={exporting === `bpmn:${r.id}`} aria-label={`Download BPMN (.bpmn) of version ${r.releaseNumber}`}>
+                              <Download aria-hidden="true" /> BPMN
                             </Button>
                           ) : null}
                         </div>

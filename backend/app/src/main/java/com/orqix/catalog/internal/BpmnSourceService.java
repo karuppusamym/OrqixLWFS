@@ -1,11 +1,15 @@
 package com.orqix.catalog.internal;
 
+import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.orqix.audit.AuditWriter;
 import com.orqix.catalog.api.CatalogDtos;
 import com.orqix.compiler.BpmnSource;
 import com.orqix.compiler.CompilationException;
@@ -38,15 +42,17 @@ public class BpmnSourceService {
     private final WorkflowCompiler compiler;
     private final CompileContextFactory contexts;
     private final Json json;
+    private final AuditWriter audit;
 
     public BpmnSourceService(CatalogStore store, WorkflowService workflows, PolicyService policy,
-            WorkflowCompiler compiler, CompileContextFactory contexts, Json json) {
+            WorkflowCompiler compiler, CompileContextFactory contexts, Json json, AuditWriter audit) {
         this.store = store;
         this.workflows = workflows;
         this.policy = policy;
         this.compiler = compiler;
         this.contexts = contexts;
         this.json = json;
+        this.audit = audit;
     }
 
     /** The compiled BPMN of a draft revision (latest when {@code revision} is null) and its round-trip result. */
@@ -74,6 +80,73 @@ public class BpmnSourceService {
             return new CatalogDtos.DraftBpmn(rev, compiler.version(), false, null, false,
                     new CatalogDtos.BpmnRoundTrip(false, List.of()), List.of(), List.of());
         }
+    }
+
+    /** A downloadable file: a safe name and the bytes (UTF-8 BPMN). */
+    public record BpmnFile(String fileName, byte[] content) {
+    }
+
+    /**
+     * The {@code .bpmn} file of a draft revision (STU04, docs/build/S97): the BPMN publishing would deploy, with a complete
+     * diagram. Anyone who may read the draft ({@code workflow.read}) may download it; recorded as an export with ids only.
+     * A draft with blocking issues has no BPMN (422 {@code WORKFLOW_INVALID}).
+     */
+    @Transactional
+    public BpmnFile exportDraft(Caller caller, UUID workspaceId, UUID workflowId, Integer revision) {
+        WorkflowService.Visible visible = workflows.visible(caller, workspaceId, workflowId, "exportDraftBpmn");
+        policy.require(visible.access(), Permission.WORKFLOW_READ, "exportDraftBpmn", false);
+        int rev = revision == null ? visible.workflow().draftRevision() : revision;
+        CatalogStore.DraftRow draft = store.draft(workspaceId, workflowId, rev).orElseThrow(ApiException::notFound);
+        String definition = draft.definitionJson();
+        CompiledWorkflow compiled;
+        try {
+            compiled = compiler.compile(definition, contexts.create(visible.access().workspace(), definition));
+        } catch (CompilationException | IllegalArgumentException e) {
+            throw new ApiException(ProblemCode.WORKFLOW_INVALID,
+                    "The draft has blocking issues, so there is no BPMN to download. Run Check workflow to see them.");
+        }
+        String file = BpmnSource.downloadFile(compiled.bpmnXml(), definition,
+                "draft of workflow " + workflowId + ", revision " + rev + ", workspace " + workspaceId);
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("format", "bpmn");
+        metadata.put("revision", rev);
+        audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.USER, caller.subjectId(),
+                "workflow.exported", "workflow", workflowId.toString(), AuditWriter.Outcome.SUCCESS, metadata));
+        return new BpmnFile(safeName(visible.workflow().key()) + "-draft-" + rev + ".bpmn",
+                file.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * The {@code .bpmn} file of a published release: the BPMN exactly as deployed (the stored artifact), with a complete
+     * diagram. Needs {@code workflow.export} like the release bundle; recorded as an export with ids only.
+     */
+    @Transactional
+    public BpmnFile exportRelease(Caller caller, UUID workspaceId, UUID workflowId, UUID releaseId) {
+        WorkflowService.Visible visible = workflows.visible(caller, workspaceId, workflowId, "exportReleaseBpmn");
+        CatalogStore.ReleaseRow release = store.release(workspaceId, workflowId, releaseId)
+                .orElseThrow(ApiException::notFound);
+        policy.require(visible.access(), Permission.WORKFLOW_EXPORT, "exportReleaseBpmn", true);
+        byte[] stored = store.artifacts(releaseId).stream().filter(a -> "process.bpmn20.xml".equals(a.name()))
+                .findFirst().orElseThrow(ApiException::notFound).content();
+        String file = BpmnSource.downloadFile(new String(stored, StandardCharsets.UTF_8), release.definitionJson(),
+                "release " + releaseId + " (version " + release.releaseNumber() + ") of workflow " + workflowId
+                        + ", workspace " + workspaceId);
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("format", "bpmn");
+        metadata.put("releaseNumber", release.releaseNumber());
+        audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.USER, caller.subjectId(),
+                "workflow.exported", "release", releaseId.toString(), AuditWriter.Outcome.SUCCESS, metadata));
+        return new BpmnFile(safeName(visible.workflow().key()) + "-r" + release.releaseNumber() + ".bpmn",
+                file.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** Workflow keys are already restricted; the file name is cut to letters, digits, dot, dash and underscore anyway. */
+    static String safeName(String key) {
+        String safe = key == null ? "" : key.replaceAll("[^A-Za-z0-9._-]", "_");
+        if (safe.length() > 80) {
+            safe = safe.substring(0, 80);
+        }
+        return safe.isEmpty() || safe.startsWith(".") ? "workflow" + safe : safe;
     }
 
     /** Checks edited BPMN against a draft revision without saving anything. */

@@ -11,6 +11,7 @@ import { Textarea } from '@/components/ui/input'
 import { isDirty } from '@/stores/studioStore'
 import { useStudio, useStudioContext } from './StudioContext'
 import { normalizeDefinition } from './model/types'
+import { useDownloadDraftBpmn } from './useDownloadBpmn'
 
 type DraftBpmn = components['schemas']['DraftBpmn']
 type BpmnCheck = components['schemas']['BpmnCheck']
@@ -39,6 +40,7 @@ export function BpmnSourceView() {
   const revision = useStudio((s) => s.revision)
   const dirty = useStudio((s) => isDirty(s))
   const announce = useAnnounce()
+  const bpmnDownload = useDownloadDraftBpmn()
   const [nonce, setNonce] = useState(0)
   const query = useQuery({
     queryKey: ['draft-bpmn', wsId, workflowId, nonce],
@@ -165,6 +167,13 @@ export function BpmnSourceView() {
           The draft changed since this BPMN was compiled. <Button variant="secondary" onClick={reload}>Reload BPMN</Button>
         </Alert>
       ) : null}
+      {loaded.available ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="secondary" onClick={() => void bpmnDownload.download()} loading={bpmnDownload.busy}>Download BPMN (.bpmn)</Button>
+          <span className="text-xs text-muted">A standard BPMN 2.0 file with a complete diagram, for other modelling tools.</span>
+        </div>
+      ) : null}
+      {bpmnDownload.error ? <ProblemAlert error={bpmnDownload.error} /> : null}
       {loaded.available ? (
         <>
           <Textarea

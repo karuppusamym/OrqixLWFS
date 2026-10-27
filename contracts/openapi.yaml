@@ -1294,6 +1294,45 @@ paths:
         '422': { $ref: '#/components/responses/Unprocessable' }
         '428': { $ref: '#/components/responses/PreconditionRequired' }
 
+  /workspaces/{workspaceId}/workflows/{workflowId}/draft/bpmn/export:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+    get:
+      tags: [Workflows]
+      operationId: exportDraftBpmn
+      summary: Download the draft as a standard .bpmn file with a complete diagram (STU04, docs/build/S97)
+      description: |
+        The BPMN 2.0 publishing would deploy for the draft revision (the latest when `revision` is omitted), as
+        `application/xml` with a safe file name in Content-Disposition. It has a header comment (Orqix version, draft id,
+        hash, what is carried as Orqix extensions) and a complete diagram interchange section (a shape with bounds for
+        every element, an edge with waypoints for every flow): the saved canvas positions when every step has one, else a
+        deterministic left-to-right layout. Orqix settings BPMN cannot express are carried only as the documented
+        `orqix:` extensions and `flowable:` attributes. A draft with blocking issues has no BPMN (422 WORKFLOW_INVALID).
+        Recorded as an export (audit workflow.exported with ids and the revision only). Anyone who can read the draft
+        may download it; outsiders get 404.
+      x-orqix-permission: workflow.read
+      x-orqix-audit: workflow.exported
+      parameters:
+        - name: revision
+          in: query
+          required: false
+          description: Draft revision; the latest when omitted.
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: The BPMN file
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            application/xml:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
   /workspaces/{workspaceId}/workflows/{workflowId}/draft/bpmn/check:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -2656,6 +2695,35 @@ paths:
           content:
             application/zip:
               schema: { type: string, contentMediaType: application/zip }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/workflows/{workflowId}/releases/{releaseId}/export/bpmn:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+      - $ref: '#/components/parameters/ReleaseId'
+    get:
+      tags: [Releases]
+      operationId: exportReleaseBpmn
+      summary: Download a published release as a standard .bpmn file with a complete diagram (STU04, docs/build/S97)
+      description: |
+        The BPMN of the release exactly as deployed, plus a header comment and a complete diagram interchange section,
+        as `application/xml` with a safe file name. The process itself is the stored artifact and is not changed.
+        Same permission and audit as the release bundle (`workflow.export`, audit workflow.exported with the release
+        number only); outsiders get 404.
+      x-orqix-permission: workflow.export
+      x-orqix-audit: workflow.exported
+      responses:
+        '200':
+          description: The BPMN file
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            application/xml:
+              schema: { type: string }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }

@@ -100,6 +100,26 @@ public class CatalogController {
         return bpmn.getDraftBpmn(callers.current(), workspaceId, workflowId, revision);
     }
 
+    @GetMapping("/workflows/{workflowId}/draft/bpmn/export")
+    public ResponseEntity<byte[]> exportDraftBpmn(@PathVariable UUID workspaceId, @PathVariable UUID workflowId,
+            @RequestParam(required = false) Integer revision) {
+        return bpmnFile(bpmn.exportDraft(callers.current(), workspaceId, workflowId, revision));
+    }
+
+    @GetMapping("/workflows/{workflowId}/releases/{releaseId}/export/bpmn")
+    public ResponseEntity<byte[]> exportReleaseBpmn(@PathVariable UUID workspaceId, @PathVariable UUID workflowId,
+            @PathVariable UUID releaseId) {
+        return bpmnFile(bpmn.exportRelease(callers.current(), workspaceId, workflowId, releaseId));
+    }
+
+    private static ResponseEntity<byte[]> bpmnFile(BpmnSourceService.BpmnFile file) {
+        return ResponseEntity.ok().contentType(MediaType.APPLICATION_XML)
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment().filename(file.fileName()).build().toString())
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .body(file.content());
+    }
+
     @PostMapping("/workflows/{workflowId}/draft/bpmn/check")
     public CatalogDtos.BpmnCheck checkDraftBpmn(@PathVariable UUID workspaceId, @PathVariable UUID workflowId,
             @Valid @RequestBody CatalogDtos.BpmnCheckRequest request) {

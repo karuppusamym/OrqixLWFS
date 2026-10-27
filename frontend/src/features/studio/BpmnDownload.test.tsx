@@ -21,12 +21,12 @@ describe('BPMN download', () => {
     downloads.length = 0
   })
 
-  it('downloads the draft from the Export menu, which also links to the case-model XML download', async () => {
+  it('downloads the draft from the More menu, which also links to the case-model XML download', async () => {
     signInAs('dana.designer')
     const user = userEvent.setup()
     await renderAppReady(EDIT)
     await screen.findByText(/Draft revision/)
-    await user.click(screen.getByRole('button', { name: /Export/ }))
+    await user.click(screen.getByRole('button', { name: 'More actions' }))
     expect(await screen.findByRole('menuitem', { name: /Case models: CMMN XML download/ })).toHaveAttribute('href', `/w/${WS}/cases`)
     await user.click(screen.getByRole('menuitem', { name: 'Download BPMN (.bpmn)' }))
     await waitFor(() => expect(downloads).toHaveLength(1))

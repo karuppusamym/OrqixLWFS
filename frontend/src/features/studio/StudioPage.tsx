@@ -17,11 +17,11 @@ import { useStore } from 'zustand'
 import { createStudioStore, isDirty } from '@/stores/studioStore'
 import { CanvasView } from './CanvasView'
 import { CheckPanel } from './CheckPanel'
-import { DiscussionPanel } from './DiscussionPanel'
 import { LanesView } from './LanesView'
 import { SourceView } from './SourceView'
-import { Inspector } from './inspector/Inspector'
 import { Palette } from './Palette'
+import { SidePanel, type SideTab } from './SidePanel'
+import { StudioHint } from './StudioHint'
 import { StepsView } from './StepsView'
 import { StudioHeader } from './StudioHeader'
 import { AddStepDialog, BranchRouteDialog, ConflictDialog, DeleteNodeDialog, PreviewFormDialog } from './StudioDialogs'
@@ -35,7 +35,7 @@ import { ImportNotice } from '@/features/migration/ImportNotice'
 import { PlaybackProvider } from './test/PlaybackContext'
 import { TestPanel } from './test/TestPanel'
 import { AiReviewPanel } from '@/features/ai/AiReviewPanel'
-import { AuthoringPanel } from '@/features/ai/AuthoringPanel'
+import type { FocusStep } from '@/features/ai/AuthoringPanel'
 
 type StudioTab = 'canvas' | 'steps' | 'lanes' | 'source' | 'test'
 
@@ -129,6 +129,8 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
   const ws = workspace.id
   const { store, saver, wsId, workflowId, readOnly } = useStudioContext()
   const [tab, setTab] = useState<StudioTab>('canvas')
+  const [sideTab, setSideTab] = useState<SideTab>('details')
+  const [aiFocus, setAiFocus] = useState<FocusStep | null>(null)
   // The Test tab keeps its work (sample, settings, last run) while the person edits on another tab (STU03).
   const [testMounted, setTestMounted] = useState(false)
   const [checkOpen, setCheckOpen] = useState(false)
@@ -139,12 +141,13 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
   const [addAfter, setAddAfter] = useState<string | null>(null)
   const [branchRequest, setBranchRequest] = useState<{ from: string; to: string | null } | null>(null)
   const focusRequest = useStudio((s) => s.focusRequest)
-  const linkNotice = useDiscussionLink(desktop, announce)
+  const linkNotice = useDiscussionLink(desktop, announce, () => setSideTab('discussion'))
 
   // Focus the inspector field named by an issue path (Go to step) or a freshly added step.
   useEffect(() => {
     if (!focusRequest) return
     const timer = window.setTimeout(() => {
+      setSideTab('details')
       const root = document.querySelector<HTMLElement>('[data-testid="inspector"]') ?? document.body
       const wanted = focusRequest.fieldKey
       let target: HTMLElement | null = null
@@ -257,6 +260,7 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
         </Alert>
       ) : null}
       <AiReviewPanel workflowId={workflowId} />
+      {canEdit && desktop ? <StudioHint /> : null}
       {!canEdit ? (
         <Alert tone="info" live="off" className="m-3">
           You can look at this draft but not change it. You need permission to edit workflows.
@@ -279,7 +283,6 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
           </TabsList>
         </div>
         <div className="flex min-h-0 flex-1">
-          {!readOnly ? <AuthoringPanel /> : null}
           {showCanvas && currentTab === 'canvas' && canEdit ? (
             <Palette
               disabled={readOnly}
@@ -319,13 +322,17 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
             </TabsContent>
           </div>
           {desktop && !onTestTab ? (
-            <aside className="w-80 shrink-0 overflow-y-auto border-l border-border bg-surface" aria-label="Inspector">
-              <Inspector onDeleteNode={(id) => {
+            <SidePanel
+              tab={sideTab}
+              onTabChange={setSideTab}
+              showAi={!readOnly}
+              focus={aiFocus}
+              onFocusChange={setAiFocus}
+              onDeleteNode={(id) => {
                 store.getState().select({ type: 'node', id })
                 requestDelete()
-              }} />
-              <DiscussionPanel />
-            </aside>
+              }}
+            />
           ) : null}
         </div>
       </Tabs>
@@ -346,7 +353,7 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
  * connection once, then moves focus to its discussion. Returns a notice when the element is no longer in the draft or
  * the screen is too narrow to show the discussion.
  */
-function useDiscussionLink(desktop: boolean, announce: (m: string) => void): string | null {
+function useDiscussionLink(desktop: boolean, announce: (m: string) => void, openDiscussion: () => void): string | null {
   const { store } = useStudioContext()
   const [params, setParams] = useSearchParams()
   const element = params.get('element')
@@ -373,6 +380,7 @@ function useDiscussionLink(desktop: boolean, announce: (m: string) => void): str
     if (!link?.type || link.id !== element) return
     store.getState().select({ type: link.type, id: element })
     if (!desktop || !wantsDiscussion) return
+    openDiscussion()
     // No cleanup: the link is consumed above, which re-runs this effect before the timer fires.
     window.setTimeout(() => {
       const heading = document.getElementById('discussion-heading')
@@ -380,6 +388,6 @@ function useDiscussionLink(desktop: boolean, announce: (m: string) => void): str
       heading?.focus()
       announce('Opened the discussion you were mentioned in.')
     }, 120)
-  }, [element, wantsDiscussion, desktop, store, setParams, announce, link])
+  }, [element, wantsDiscussion, desktop, store, setParams, announce, link, openDiscussion])
   return link?.notice ?? null
 }

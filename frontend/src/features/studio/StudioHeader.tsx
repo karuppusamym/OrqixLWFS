@@ -1,10 +1,13 @@
-import { Download, Eye, FlaskConical, ListChecks, Redo2, Rocket, Undo2 } from 'lucide-react'
+import { BookOpenText, Download, Eye, FlaskConical, ListChecks, MoreHorizontal, Redo2, Rocket, Undo2 } from 'lucide-react'
+import { useState } from 'react'
 import { Link } from 'react-router'
 import { Button } from '@/components/ui/button'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { formatRelative } from '@/lib/dates'
 import { isDirty } from '@/stores/studioStore'
-import { ExplainWorkflowButton } from '@/features/ai/ExplainPanel'
+import { useWorkspace } from '@/app/workspace'
+import { useAiEnabled } from '@/features/ai/api'
+import { ExplainPanel } from '@/features/ai/ExplainPanel'
 import { useCanUndo, useStudio, useStudioContext } from './StudioContext'
 import { useDownloadDraftBpmn } from './useDownloadBpmn'
 
@@ -53,6 +56,9 @@ export function StudioHeader({
   testOpen?: boolean
 }) {
   const { readOnly, wsId } = useStudioContext()
+  const { can } = useWorkspace()
+  const aiOn = useAiEnabled()
+  const [explainOpen, setExplainOpen] = useState(false)
   const bpmnDownload = useDownloadDraftBpmn()
   const name = useStudio((s) => s.definition.name)
   const revision = useStudio((s) => s.revision)
@@ -109,10 +115,6 @@ export function StudioHeader({
             </Button>
           </div>
         ) : null}
-        <ExplainWorkflowButton />
-        <Button variant="secondary" onClick={onPreview}>
-          <Eye aria-hidden="true" /> Preview form
-        </Button>
         {onTest ? (
           <Button variant="secondary" onClick={onTest} aria-pressed={testOpen}>
             <FlaskConical aria-hidden="true" /> Test workflow
@@ -120,18 +122,30 @@ export function StudioHeader({
         ) : null}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="secondary" loading={bpmnDownload.busy}>
-              <Download aria-hidden="true" /> Export
+            <Button variant="secondary" loading={bpmnDownload.busy} aria-label="More actions">
+              <MoreHorizontal aria-hidden="true" /> More
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuLabel>Export this workflow</DropdownMenuLabel>
-            <DropdownMenuItem onSelect={() => void bpmnDownload.download()}>Download BPMN (.bpmn)</DropdownMenuItem>
+            <DropdownMenuItem onSelect={onPreview}>
+              <Eye className="size-4" aria-hidden="true" /> Preview the request form
+            </DropdownMenuItem>
+            {aiOn && can('workflow.read') ? (
+              <DropdownMenuItem onSelect={() => setExplainOpen(true)}>
+                <BookOpenText className="size-4" aria-hidden="true" /> Explain this workflow
+              </DropdownMenuItem>
+            ) : null}
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>Export</DropdownMenuLabel>
+            <DropdownMenuItem onSelect={() => void bpmnDownload.download()}>
+              <Download className="size-4" aria-hidden="true" /> Download BPMN (.bpmn)
+            </DropdownMenuItem>
             <DropdownMenuItem asChild>
               <Link to={`/w/${wsId}/cases`}>Case models: CMMN XML download</Link>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        {explainOpen ? <ExplainPanel onClose={() => setExplainOpen(false)} /> : null}
         {bpmnDownload.error ? (
           <span role="alert" className="text-sm text-danger" data-testid="bpmn-download-error">
             {bpmnDownload.error.detail ?? bpmnDownload.error.title}

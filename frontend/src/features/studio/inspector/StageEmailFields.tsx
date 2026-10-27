@@ -4,7 +4,7 @@ import { Select } from '@/components/ui/input'
 import type { StageEmail, WorkflowNode } from '../model/types'
 import { cfg } from '../model/types'
 import { useStudio, useStudioContext } from '../StudioContext'
-import { CommitInput, CommitNumber, CommitTextarea, InspectorSection } from './controls'
+import { Advanced, CommitInput, CommitNumber, CommitTextarea, InspectorSection } from './controls'
 
 const sample = (recipients: StageEmail['recipients']): StageEmail => ({ subject: '{{reference}}: {{stage}}', body: '{{workflow}} — {{stage}}\nStatus: {{outcome}}\nDue: {{dueAt}}\n{{link}}', recipients })
 export function EmailTemplateFields({ value, onChange, prefix, readOnly, terminal = false }: { value: StageEmail; onChange: (value: StageEmail) => void; prefix: string; readOnly: boolean; terminal?: boolean }) {
@@ -35,10 +35,10 @@ export function Tier1Settings() {
   const { store, readOnly } = useStudioContext(); const def = useStudio(s => s.definition)
   const assessment = def.tier1Assessment ?? { businessOwner: '', requirementsReviewed: false, regulatoryClassification: 'unclassified' as const, expectedDurationDays: 30, peakConcurrentUsers: 50, storedCases: 10000 }
   const assess = (changes: Partial<typeof assessment>) => store.getState().apply(d => ({ ...d, tier1Assessment: { ...assessment, ...changes } }))
-  return <InspectorSection title="Lightweight workflow profile">
-    <FormField label="Acceptance profile" id="tier1-profile" description="Tier-1 limits work to 10 states and 5 routing groups, with calendar SLAs and stage email.">{ids => <Select id={ids.input} value={def.acceptanceProfile ?? ''} disabled={readOnly} onChange={e => store.getState().apply(d => ({ ...d, acceptanceProfile: e.target.value === 'tier1' ? 'tier1' : undefined }))}><option value="">General platform</option><option value="tier1">Tier-1 hackathon</option></Select>}</FormField>
-    <FormField label="Manual closure policy" id="tier1-closure">{ids => <Select id={ids.input} value={def.closurePolicy ?? (def.acceptanceProfile ? 'REQUIRE_NO_OPEN_TASKS' : 'CANCEL_OPEN_TASKS')} disabled={readOnly} onChange={e => store.getState().apply(d => ({ ...d, closurePolicy: e.target.value as typeof d.closurePolicy }))}><option value="REQUIRE_NO_OPEN_TASKS">Require all tasks resolved</option><option value="CANCEL_OPEN_TASKS">Cancel remaining tasks with a reason</option></Select>}</FormField>
-    <FormField label="Reviewed source commit" id="tier1-git" description="Full Git hash required for Tier-1 publishing. Another person must publish the reviewed draft.">{ids => <CommitInput id={ids.input} value={def.provenance?.gitCommit ?? ''} disabled={readOnly} onCommit={gitCommit => store.getState().apply(d => ({ ...d, provenance: gitCommit ? { ...d.provenance, gitCommit } : undefined }))} />}</FormField>
+  return <Advanced label="Governance and rules (optional)">
+    <FormField label="Rules profile" id="tier1-profile" description="Standard has no extra limits. Lightweight (Tier-1) keeps a workflow small: at most 10 states and 5 routing groups.">{ids => <Select id={ids.input} value={def.acceptanceProfile ?? ''} disabled={readOnly} onChange={e => store.getState().apply(d => ({ ...d, acceptanceProfile: e.target.value === 'tier1' ? 'tier1' : undefined }))}><option value="">Standard</option><option value="tier1">Lightweight (Tier-1)</option></Select>}</FormField>
+    <FormField label="When someone closes a case by hand" id="tier1-closure">{ids => <Select id={ids.input} value={def.closurePolicy ?? (def.acceptanceProfile ? 'REQUIRE_NO_OPEN_TASKS' : 'CANCEL_OPEN_TASKS')} disabled={readOnly} onChange={e => store.getState().apply(d => ({ ...d, closurePolicy: e.target.value as typeof d.closurePolicy }))}><option value="REQUIRE_NO_OPEN_TASKS">Only when every task is done</option><option value="CANCEL_OPEN_TASKS">Cancel the open tasks (a reason is required)</option></Select>}</FormField>
+    <FormField label="Source reference (Git commit)" id="tier1-git" description="Needed only for Lightweight (Tier-1): the full Git commit that was reviewed. Another person must publish the reviewed draft.">{ids => <CommitInput id={ids.input} value={def.provenance?.gitCommit ?? ''} disabled={readOnly} onCommit={gitCommit => store.getState().apply(d => ({ ...d, provenance: gitCommit ? { ...d.provenance, gitCommit } : undefined }))} />}</FormField>
     {def.acceptanceProfile === 'tier1' ? <details><summary className="cursor-pointer">Eligibility assessment</summary>
       <FormField label="Business process owner" id="tier1-owner">{ids => <CommitInput id={ids.input} value={assessment.businessOwner} disabled={readOnly} onCommit={businessOwner => assess({ businessOwner })} />}</FormField>
       <FormField label="Classification" id="tier1-classification">{ids => <Select id={ids.input} value={assessment.regulatoryClassification} disabled={readOnly} onChange={e => assess({ regulatoryClassification: e.target.value as typeof assessment.regulatoryClassification })}><option value="unclassified">Needs owner review</option><option value="standard">Standard Tier-1 suitability confirmed</option><option value="requiresPega">Special controls: keep on PEGA</option></Select>}</FormField>
@@ -48,5 +48,5 @@ export function Tier1Settings() {
       <label className="flex gap-2 text-sm"><input type="checkbox" disabled={readOnly} checked={assessment.requirementsReviewed} onChange={e => assess({ requirementsReviewed: e.target.checked })} />Requirements and eligibility reviewed with the business owner</label>
     </details> : null}
     <details><summary className="cursor-pointer">Case terminal email</summary>{def.terminalNotification ? <EmailTemplateFields prefix="terminal-mail" value={def.terminalNotification} terminal readOnly={readOnly} onChange={value => store.getState().apply(d => ({ ...d, terminalNotification: value }))} /> : <Button disabled={readOnly} onClick={() => store.getState().apply(d => ({ ...d, terminalNotification: sample(['requester']) }))}>Configure terminal email</Button>}</details>
-  </InspectorSection>
+  </Advanced>
 }

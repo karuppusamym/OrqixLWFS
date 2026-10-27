@@ -233,7 +233,6 @@ export function WorkflowInspector() {
   return (
     <div className="space-y-5 p-4">
       <p className="text-sm text-muted-foreground">Select a step on the canvas or in the Steps tab to edit it.</p>
-      <Tier1Settings />
       <InspectorSection title="Workflow">
         <FormField label="Name" id="wf-settings-name">
           {(ids) => <CommitInput id={ids.input} data-field="workflow.name" value={def.name} maxLength={200} disabled={readOnly} onCommit={(v) => store.getState().apply((d) => (d.name === v ? d : { ...d, name: v }))} />}
@@ -280,6 +279,7 @@ export function WorkflowInspector() {
           </div>
         </div>
       </Advanced>
+      <Tier1Settings />
     </div>
   )
 }

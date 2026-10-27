@@ -99,19 +99,6 @@ describe('conversational authoring panel (STU02, docs/build/S95)', () => {
     expect(within(panel).queryByLabelText('What should change?')).not.toBeInTheDocument()
   })
 
-  it('collapses to a narrow strip and opens again from the keyboard', async () => {
-    signInAs('dana.designer')
-    const user = userEvent.setup()
-    await renderAppReady(EDIT)
-    await openPanel()
-    await user.click(screen.getByRole('button', { name: 'Hide the authoring assistant' }))
-    expect(screen.queryByTestId('authoring-panel')).not.toBeInTheDocument()
-    const show = screen.getByRole('button', { name: 'Show the authoring assistant' })
-    expect(show).toHaveAttribute('aria-expanded', 'false')
-    show.focus()
-    await user.keyboard('{Enter}')
-    expect(await screen.findByTestId('authoring-panel')).toBeInTheDocument()
-  })
   it('can be pointed at the selected step, which is named in the request', async () => {
     signInAs('dana.designer')
     const user = userEvent.setup()

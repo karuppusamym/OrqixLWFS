@@ -32,7 +32,7 @@ describe('lanes tab', () => {
     const first = draft().nodes.find((n) => n.type === 'approval')!
     await user.click(within(lanes).getByRole('button', { name: new RegExp(first.label) }))
     expect(within(lanes).getByRole('button', { name: new RegExp(first.label) })).toHaveAttribute('aria-pressed', 'true')
-    expect(await screen.findByLabelText('Discussion')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: /Discussion/ })).toBeInTheDocument()
   })
 })
 

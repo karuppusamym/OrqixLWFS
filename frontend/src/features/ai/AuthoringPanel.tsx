@@ -1,4 +1,4 @@
-import { Mic, MicOff, MessageSquareText, PanelLeftClose, RefreshCcw, Send, X } from 'lucide-react'
+import { Mic, MicOff, RefreshCcw, Send, X } from 'lucide-react'
 import { useId, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { ProblemAlert } from '@/components/common/ProblemAlert'
@@ -8,7 +8,6 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Textarea } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useDictation } from '@/lib/useDictation'
-import { readStorage, writeStorage } from '@/lib/storage'
 import { useStore } from 'zustand'
 import { useStudioContext } from '@/features/studio/StudioContext'
 import { KINDS, ROUTE_LABEL } from '@/features/studio/model/kinds'
@@ -16,7 +15,6 @@ import type { Definition, NodeKind, RouteKind } from '@/features/studio/model/ty
 import { proposeDraftEdits, useAiStatus, type AiDraftEditOperation, type AiDraftEditProposal } from './api'
 import { applyDraftChanges, applyRegeneration } from './draftEdits'
 
-const COLLAPSED_KEY = 'orqix.studio.assistantCollapsed'
 const MIN = 2
 const MAX = 2000
 /** Turns sent with each request (the server accepts at most 8). */
@@ -58,40 +56,23 @@ function assistantText(proposal: AiDraftEditProposal): string {
 }
 
 /**
- * Conversational authoring panel (STU02, docs/build/S95), docked left of the canvas next to the step list. Each turn
+ * Conversational authoring panel (STU02, docs/build/S95), shown as the "Ask AI" tab of the studio side panel. Each turn
  * asks the server for structured edits to the saved draft; every proposed change was validated by the compiler and is
  * shown as a reviewable list with unticked checkboxes. Nothing changes until the author applies the chosen changes,
  * which become one undoable edit. When AI is not available the panel says why instead of disappearing.
+ * `focus` is the step the next instruction is about; the side panel owns it so the Details tab can set it.
  */
-export function AuthoringPanel() {
-  const [collapsed, setCollapsed] = useState(() => readStorage(COLLAPSED_KEY) === 'true')
-  const toggle = (next: boolean) => {
-    setCollapsed(next)
-    writeStorage(COLLAPSED_KEY, String(next))
-  }
-  if (collapsed) {
-    return (
-      <aside className="flex w-12 shrink-0 flex-col items-center border-r border-border bg-surface py-3" aria-label="Authoring assistant">
-        <Button variant="ghost" size="icon" onClick={() => toggle(false)} aria-label="Show the authoring assistant" aria-expanded={false} title="Show the authoring assistant">
-          <MessageSquareText aria-hidden="true" />
-        </Button>
-      </aside>
-    )
-  }
+export function AuthoringPanel({ focus, onFocusChange }: { focus: FocusStep | null; onFocusChange: (next: FocusStep | null) => void }) {
   return (
-    <aside className="flex w-80 shrink-0 flex-col border-r border-border bg-surface" aria-label="Authoring assistant" data-testid="authoring-panel">
-      <div className="flex items-center justify-between border-b border-border px-3 py-2">
-        <h2 className="text-sm font-semibold" id="authoring-heading">Ask AI to change this</h2>
-        <Button variant="ghost" size="icon" className="-mr-1 size-8" onClick={() => toggle(true)} aria-label="Hide the authoring assistant" aria-expanded={true} title="Hide the authoring assistant">
-          <PanelLeftClose aria-hidden="true" />
-        </Button>
-      </div>
-      <AuthoringBody />
-    </aside>
+    <section className="flex min-h-0 flex-1 flex-col" aria-label="Ask AI to change this workflow" data-testid="authoring-panel">
+      <AuthoringBody focus={focus} onFocusChange={onFocusChange} />
+    </section>
   )
 }
 
-function AuthoringBody() {
+export interface FocusStep { id: string; label: string }
+
+function AuthoringBody({ focus, onFocusChange }: { focus: FocusStep | null; onFocusChange: (next: FocusStep | null) => void }) {
   const status = useAiStatus()
   if (status.isPending) return <p role="status" className="p-3 text-sm text-muted-foreground">Checking whether AI assistance is available…</p>
   if (status.isError) {
@@ -111,10 +92,10 @@ function AuthoringBody() {
       </div>
     )
   }
-  return <Conversation />
+  return <Conversation focus={focus} onFocusChange={onFocusChange} />
 }
 
-function Conversation() {
+function Conversation({ focus: focusStep, onFocusChange: setFocusStep }: { focus: FocusStep | null; onFocusChange: (next: FocusStep | null) => void }) {
   const { store, saver, wsId, workflowId } = useStudioContext()
   const [turns, setTurns] = useState<Turn[]>([])
   const [text, setText] = useState('')
@@ -129,7 +110,6 @@ function Conversation() {
   // "Ask about this step": the selected step can be pinned as the subject of the next instruction.
   const selectedId = useStore(store, (st) => (st.selection?.type === 'node' ? st.selection.id : null))
   const selectedLabel = useStore(store, (st) => st.definition.nodes.find((n) => n.id === selectedId)?.label ?? null)
-  const [focusStep, setFocusStep] = useState<{ id: string; label: string } | null>(null)
   const dictation = useDictation((spoken) => setText((t) => `${t}${t && !t.endsWith(' ') ? ' ' : ''}${spoken}`.slice(0, MAX)))
 
   const ask = async (mode: 'edit' | 'regenerate') => {

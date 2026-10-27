@@ -47,7 +47,16 @@ EOF
 OVERRIDE_FILE="$OVERRIDE_DIR/override.yml"
 if command -v cygpath >/dev/null 2>&1; then OVERRIDE_FILE="$(cygpath -m "$OVERRIDE_FILE")"; fi
 
-dc() { (cd "$COMPOSE_DIR" && MSYS_NO_PATHCONV=1 docker compose -p "$PROJECT" -f docker-compose.yml -f "$OVERRIDE_FILE" --profile app "$@"); }
+# EXTRA_COMPOSE=<file> adds one more Compose file (for example tools/demo/integration.override.yml: Kafka and a webhook sink).
+EXTRA_ARGS=()
+if [ -n "${EXTRA_COMPOSE:-}" ]; then
+  EXTRA_FILE="$(cd "$(dirname "$EXTRA_COMPOSE")" && pwd)/$(basename "$EXTRA_COMPOSE")"
+  if command -v cygpath >/dev/null 2>&1; then EXTRA_FILE="$(cygpath -m "$EXTRA_FILE")"; fi
+  EXTRA_ARGS=(-f "$EXTRA_FILE")
+fi
+export HOOKSINK_HOST_PORT="$((BASE + 99))"
+
+dc() { (cd "$COMPOSE_DIR" && MSYS_NO_PATHCONV=1 docker compose -p "$PROJECT" -f docker-compose.yml -f "$OVERRIDE_FILE" ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} --profile app "$@"); }
 
 port_free() {
   python - "$1" <<'PY'

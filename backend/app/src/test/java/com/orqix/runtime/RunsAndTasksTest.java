@@ -335,6 +335,17 @@ class RunsAndTasksTest extends RuntimeTestBase {
     }
 
     @Test
+    void tRun08b_quotaHoldsExactlyWhenStartsArriveAtTheSameTime() throws Exception {
+        // Starts of one workflow queue behind each other, so the limit is exact: not limit + (callers - 1).
+        UUID workflowId = publishPurchase(PURCHASING, d -> ((ObjectNode) d.path("execution")).put("maxConcurrentRuns", 3));
+        List<Response> starts = parallel(8, List.of("rhea.requester", "mani.manager", "max.manager", "rhea.requester",
+                "mani.manager", "max.manager", "rhea.requester", "mani.manager"), user -> api(user).post(Map.of("workflowId",
+                workflowId, "input", input(BigDecimal.ONE)), UUID.randomUUID().toString(), "/workspaces/{ws}/runs", PURCHASING));
+        assertThat(starts).extracting(Response::status).containsOnly(201, 429);
+        assertThat(starts.stream().filter(r -> r.status() == 201).count()).as(starts.toString()).isEqualTo(3);
+    }
+
+    @Test
     void tRun09_requestReferencesAreUniqueSequentialAndShownInEveryView() throws Exception {
         UUID workflowId = workflow();
         // Concurrent starts by different callers get distinct, gap-free numbers from the workspace counter.

@@ -141,12 +141,12 @@ public class ReleaseQueries {
                 .optional();
     }
 
-    /** Locks the workflow row (serializes starts against active-release changes and the quota check). */
+    /** Locks the workflow row: starts of one workflow queue behind each other (so the quota check is exact) and behind release changes; foreign-key checks of the new run still pass. */
     @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
     public Optional<WorkflowRef> lockWorkflow(UUID workspaceId, UUID workflowId) {
         return jdbc.sql("""
                 SELECT id, workspace_id, key, name, active_release_id FROM workflow
-                WHERE workspace_id = :ws AND id = :id AND archived_at IS NULL FOR SHARE
+                WHERE workspace_id = :ws AND id = :id AND archived_at IS NULL FOR NO KEY UPDATE
                 """)
                 .param("ws", workspaceId).param("id", workflowId)
                 .query((rs, n) -> new WorkflowRef(Sql.uuid(rs, "id"), Sql.uuid(rs, "workspace_id"), rs.getString("key"),

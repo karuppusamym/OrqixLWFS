@@ -1,0 +1,41 @@
+# Extra services for the integration end-to-end run (tools/api-e2e/e2e_integrations.py): a single-node Kafka broker
+# (KRaft, plain text, development only) and a webhook receiver that records what it is sent. Use with
+#   EXTRA_COMPOSE=tools/demo/integration.override.yml tools/demo/demo-stack.sh up <tag> <port-base>
+# It switches Kafka consumption to live mode for the cluster "local" and allows the receiver as an egress host.
+services:
+  kafka:
+    image: apache/kafka:3.9.1
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_NUM_PARTITIONS: 3
+  hooksink:
+    image: python:3.13-slim
+    command: ["python", "/hooksink.py"]
+    volumes:
+      - ../../tools/demo/hooksink.py:/hooksink.py:ro
+    ports:
+      - "${HOOKSINK_HOST_PORT:-41099}:9000"
+  orqix:
+    depends_on:
+      - kafka
+      - hooksink
+    environment:
+      ORQIX_KAFKA_MODE: live
+      ORQIX_KAFKA_CLUSTERS_LOCAL_BOOTSTRAPSERVERS: kafka:9092
+      ORQIX_KAFKA_CLUSTERS_LOCAL_SECURITYPROTOCOL: PLAINTEXT
+      ORQIX_KAFKA_CLUSTERS_LOCAL_ALLOWEDTOPICS_0: e2e-orders
+      ORQIX_KAFKA_CLUSTERS_LOCAL_ALLOWEDTOPICS_1: e2e-payments
+      ORQIX_KAFKA_CLUSTERS_LOCAL_ALLOWEDTOPICS_2: e2e-bulk
+      ORQIX_EGRESS_ALLOWED_HOSTS: procurement-stub:8090,hooksink:9000
+      ORQIX_EGRESS_ALLOWED_PRIVATE_HOSTS: procurement-stub:8090,hooksink:9000
+      ORQIX_EGRESS_PLAIN_HTTP_HOSTS: procurement-stub:8090,hooksink:9000

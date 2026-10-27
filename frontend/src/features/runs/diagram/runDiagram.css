@@ -64,3 +64,11 @@
     outline-color: Highlight;
   }
 }
+
+/* BPMN notation (STU01): the status outline follows the circle of an event; steps not used get a dashed shape. */
+.run-step:has([data-shape-class='event']) {
+  border-radius: 9999px;
+}
+.run-step[data-dim='true'] .bpmn-outline {
+  stroke-dasharray: 6 4;
+}

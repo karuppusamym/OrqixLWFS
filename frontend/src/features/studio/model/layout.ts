@@ -1,3 +1,4 @@
+import { bpmnSize, labelOutside, OUTSIDE_LABEL, type Notation } from './notation'
 import type { Definition, NodeKind, Position, Transition } from './types'
 
 /**
@@ -16,9 +17,21 @@ export const APPROVAL_HEIGHT = 160
 export const GAP_X = 96
 export const GAP_Y = 56
 
-export function nodeSize(kind: NodeKind): { width: number; height: number } {
+/** Canvas footprint of the step card. The BPMN shapes (STU01) are smaller and use `nodeSize(kind, 'bpmn')`. */
+export function cardSize(kind: NodeKind): { width: number; height: number } {
   return { width: NODE_WIDTH, height: kind === 'approval' ? APPROVAL_HEIGHT : NODE_HEIGHT }
 }
+
+/**
+ * Bounding box of a step in a notation. Collision checks and the placement of new steps (`collides`,
+ * `findFreePosition`, `placementFor`) always use the larger card footprint, so a placement is free in both notations.
+ */
+export function nodeSize(kind: NodeKind, notation: Notation = 'cards'): { width: number; height: number } {
+  return notation === 'bpmn' ? bpmnSize(kind) : cardSize(kind)
+}
+
+/** Layer spacing for BPMN layouts: room for the labels printed beneath events and gateways. */
+const BPMN_GAP_X = 128
 
 interface Rect {
   x: number
@@ -27,9 +40,9 @@ interface Rect {
   height: number
 }
 
-function rectOf(def: Definition, id: string, kind: NodeKind, pos?: Position): Rect | null {
+function rectOf(def: Definition, id: string, kind: NodeKind, pos?: Position, notation: Notation = 'cards'): Rect | null {
   const p = pos ?? def.uiLayout?.positions[id]
-  return p ? { x: p.x, y: p.y, ...nodeSize(kind) } : null
+  return p ? { x: p.x, y: p.y, ...nodeSize(kind, notation) } : null
 }
 
 function intersects(a: Rect, b: Rect, margin: number): boolean {
@@ -86,10 +99,10 @@ export function routeLabelWidth(text: string): number {
 }
 
 /** Steps without a stored position, or steps drawn on top of each other: the layout needs to be computed. */
-export function needsAutoLayout(def: Definition): boolean {
+export function needsAutoLayout(def: Definition, notation: Notation = 'cards'): boolean {
   const rects: Rect[] = []
   for (const n of def.nodes) {
-    const r = rectOf(def, n.id, n.type)
+    const r = rectOf(def, n.id, n.type, undefined, notation)
     if (!r) return true
     rects.push(r)
   }
@@ -100,13 +113,15 @@ export function needsAutoLayout(def: Definition): boolean {
 }
 
 /** A layout worth replacing: steps on top of each other, missing positions, or a route that runs backwards. */
-export function hasPoorLayout(def: Definition): boolean {
-  if (needsAutoLayout(def)) return true
+export function hasPoorLayout(def: Definition, notation: Notation = 'cards'): boolean {
+  if (needsAutoLayout(def, notation)) return true
   const positions = def.uiLayout?.positions ?? {}
   return def.transitions.some((t) => {
     const from = positions[t.from]
     const to = positions[t.to]
-    return !!from && !!to && to.x < from.x + NODE_WIDTH / 2
+    const kind = def.nodes.find((n) => n.id === t.from)?.type
+    const width = kind ? nodeSize(kind, notation).width : NODE_WIDTH
+    return !!from && !!to && to.x < from.x + width / 2
   })
 }
 
@@ -123,7 +138,8 @@ const portId = (nodeId: string, route: string) => `${nodeId}::${route}`
  * Layered left-to-right layout. Approval steps get two fixed ports on their right side, Approved above Rejected, so
  * the two routes leave in the same order as the handles on the card. Returns top-left positions, rounded.
  */
-export async function computeLayout(def: Definition, labelOf?: (t: Transition) => string): Promise<Record<string, Position>> {
+export async function computeLayout(def: Definition, labelOf?: (t: Transition) => string, notation: Notation = 'cards'): Promise<Record<string, Position>> {
+  const bpmn = notation === 'bpmn'
   const { default: ELK } = await import('elkjs/lib/elk.bundled.js')
   const elk = new ELK()
   const ids = new Set(def.nodes.map((n) => n.id))
@@ -133,7 +149,7 @@ export async function computeLayout(def: Definition, labelOf?: (t: Transition) =
       'elk.algorithm': 'layered',
       'elk.direction': 'RIGHT',
       'elk.edgeRouting': 'ORTHOGONAL',
-      'elk.layered.spacing.nodeNodeBetweenLayers': String(GAP_X - 12),
+      'elk.layered.spacing.nodeNodeBetweenLayers': String((bpmn ? BPMN_GAP_X : GAP_X) - 12),
       'elk.spacing.nodeNode': String(GAP_Y + 8),
       'elk.layered.spacing.edgeEdgeBetweenLayers': '16',
       'elk.edgeLabels.placement': 'CENTER',
@@ -143,11 +159,15 @@ export async function computeLayout(def: Definition, labelOf?: (t: Transition) =
       'elk.padding': '[top=0,left=0,bottom=0,right=0]',
     },
     children: def.nodes.map((n) => {
-      const { width, height } = nodeSize(n.type)
+      const { width, height } = nodeSize(n.type, notation)
       return {
         id: n.id,
         width,
         height,
+        // BPMN events and gateways print their name beneath the shape: an outside label reserves the room for it.
+        ...(bpmn && labelOutside(n.type)
+          ? { labels: [{ text: n.label, width: OUTSIDE_LABEL.width, height: OUTSIDE_LABEL.height, layoutOptions: { 'elk.nodeLabels.placement': 'OUTSIDE V_BOTTOM H_CENTER' } }] }
+          : {}),
         ...(n.type === 'approval'
           ? {
               layoutOptions: { 'elk.portConstraints': 'FIXED_ORDER' },
@@ -165,8 +185,8 @@ export async function computeLayout(def: Definition, labelOf?: (t: Transition) =
         const from = def.nodes.find((n) => n.id === t.from)
         const usesPort = from?.type === 'approval' && (t.on === 'approved' || t.on === 'rejected')
         // Labels that sit on the line (conditions, Otherwise) get room between the layers; Approved and Rejected are
-        // already printed on the approval card.
-        const text = t.on === 'approved' || t.on === 'rejected' ? '' : (labelOf?.(t) ?? '')
+        // already printed on the approval card (in BPMN notation they are printed on the line too).
+        const text = !bpmn && (t.on === 'approved' || t.on === 'rejected') ? '' : (labelOf?.(t) ?? '')
         return {
           id: t.id,
           sources: [usesPort ? portId(t.from, t.on) : t.from],

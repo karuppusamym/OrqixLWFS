@@ -30,11 +30,14 @@ import { ScopeFrames, framesOf } from './ScopeFrames'
 import { StepNode, type StepFlowNode, type StepNodeData } from './StepNode'
 import { countByNode } from './model/issues'
 import { nodeById } from './model/graph'
-import { computeLayout, hasPoorLayout, structureKey } from './model/layout'
+import { computeLayout, hasPoorLayout, nodeSize, structureKey } from './model/layout'
 import { canConnect, routeForHandle, sourceHandleForRoute } from './model/ops'
 import { nodeAriaLabel, nodeSubtitle, routeText } from './model/summary'
+import type { Notation } from './model/notation'
 import type { Definition, NodeKind, Position, RouteKind } from './model/types'
 import { KIND_VAR } from './nodeMeta'
+import { NotationLegend, NotationToggle } from './notation/NotationControls'
+import { useNotation } from './notation/useNotation'
 import { usePlayback } from './test/PlaybackContext'
 
 const nodeTypes = { step: StepNode }
@@ -82,22 +85,26 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
   const flow = useReactFlow()
   const nodesInitialized = useNodesInitialized()
   const { active: playActive, current: playCurrent, visited: playVisited, reached: playReached, edges: playEdges } = usePlayback()
+  const [notation, setNotation] = useNotation()
 
   const counts = useMemo(() => countByNode(def, issues), [def, issues])
   const key = useMemo(() => structureKey(def), [def])
 
   /** Text of a route that sits on a line (conditions, Otherwise, named routes). ELK reserves room for it. */
-  const labelOf = useCallback((d: Definition) => (t: Definition['transitions'][number]) => (t.on === 'approved' || t.on === 'rejected' ? '' : routeText(d, t, connections)), [connections])
+  const labelOf = useCallback(
+    (d: Definition) => (t: Definition['transitions'][number]) => (notation !== 'bpmn' && (t.on === 'approved' || t.on === 'rejected') ? '' : routeText(d, t, connections)),
+    [connections, notation],
+  )
 
   // A stored layout with steps on top of each other, missing positions or backwards routes is arranged once, when the
   // studio opens. It is an ordinary undoable change, but it counts as already saved, so nothing is autosaved until
   // the person edits something.
-  const [prepared, setPrepared] = useState(() => !hasPoorLayout(store.getState().definition))
+  const [prepared, setPrepared] = useState(() => !hasPoorLayout(store.getState().definition, notation))
   useEffect(() => {
     if (prepared) return
     let cancelled = false
     const current = store.getState().definition
-    computeLayout(current, labelOf(current))
+    computeLayout(current, labelOf(current), notation)
       .then((positions) => {
         if (!cancelled) store.getState().arrange(positions, { baseline: true })
       })
@@ -108,14 +115,15 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
     return () => {
       cancelled = true
     }
-  }, [prepared, store, labelOf])
+    // Runs only while not prepared (when the studio opens): a later notation change never moves steps by itself.
+  }, [prepared, store, labelOf, notation])
 
   const derivedNodes = useMemo<StepFlowNode[]>(
     () =>
       def.nodes.map((n) => {
         const c = counts[n.id]
         const total = (c?.blockers ?? 0) + (c?.warnings ?? 0)
-        const data: StepNodeData = { kind: n.type, label: n.label, subtitle: nodeSubtitle(def, n, groupNames), blockers: c?.blockers ?? 0, warnings: c?.warnings ?? 0 }
+        const data: StepNodeData = { kind: n.type, label: n.label, subtitle: nodeSubtitle(def, n, groupNames), blockers: c?.blockers ?? 0, warnings: c?.warnings ?? 0, notation }
         const stage = def.stages?.find((s) => s.nodes.includes(n.id))
         if (stage) data.stage = stage.label
         const scope = def.subprocesses?.find((s) => s.nodes.includes(n.id))
@@ -135,7 +143,7 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
           data,
         }
       }),
-    [def, counts, selection, groupNames, playActive, playCurrent, playVisited, playReached],
+    [def, counts, selection, groupNames, playActive, playCurrent, playVisited, playReached, notation],
   )
 
   const derivedEdges = useMemo<RouteFlowEdge[]>(
@@ -152,7 +160,7 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
             sourceHandle: sourceHandleForRoute(t.on),
             targetHandle: 'in',
             type: 'route',
-            data: { on: t.on, text },
+            data: { on: t.on, text, notation },
             selected: selection?.type === 'edge' && selection.id === t.id,
             ...(playActive ? { className: playEdges.has(t.id) ? 'sim-taken' : 'sim-untaken' } : {}),
             ariaLabel: `${text || 'Next'}: ${nodeById(def, t.from)?.label} to ${nodeById(def, t.to)?.label}`,
@@ -161,7 +169,7 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
             style: { stroke: color, strokeWidth: 2.5, ...(t.on === 'default' ? { strokeDasharray: '7 5' } : {}) },
           }
         }),
-    [def, selection, connections, playActive, playEdges],
+    [def, selection, connections, playActive, playEdges, notation],
   )
 
   // React Flow owns positions while a drag is in progress; the store receives them at drag end (one undo entry).
@@ -199,6 +207,22 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
     if (skipNextFit.current) skipNextFit.current = false
     else fitPending.current = true
   }, [key])
+  // Switching the notation refits the view; saved positions are not changed (they are the top-left of each shape).
+  const lastNotation = useRef(notation)
+  useEffect(() => {
+    if (lastNotation.current === notation) return
+    lastNotation.current = notation
+    fitPending.current = true
+  }, [notation])
+  const changeNotation = useCallback(
+    (value: Notation) => {
+      if (value === notation) return
+      setNotation(value)
+      const overlap = hasPoorLayout(store.getState().definition, value)
+      announce(`${value === 'bpmn' ? 'BPMN shapes' : 'Cards'} shown.${overlap && !readOnly ? ' Some steps overlap or run backwards in this view: use Auto-layout to arrange them.' : ''}`)
+    },
+    [announce, notation, readOnly, setNotation, store],
+  )
   useEffect(() => {
     if (!fitPending.current || !nodesInitialized || !prepared) return
     fitPending.current = false
@@ -237,7 +261,7 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
     setArranging(true)
     try {
       const current = store.getState().definition
-      const positions = await computeLayout(current, labelOf(current))
+      const positions = await computeLayout(current, labelOf(current), notation)
       const before = store.getState().definition
       store.getState().moveNodes(positions)
       fitPending.current = true
@@ -247,7 +271,7 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
     } finally {
       setArranging(false)
     }
-  }, [announce, labelOf, store])
+  }, [announce, labelOf, notation, store])
 
   const onNodesChange = useCallback(
     (changes: NodeChange<StepFlowNode>[]) => {
@@ -338,11 +362,13 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
       event.preventDefault()
       const kind = event.dataTransfer.getData(PALETTE_MIME) as NodeKind
       if (!kind || readOnly) return
-      const position = flow.screenToFlowPosition({ x: event.clientX - 148, y: event.clientY - 64 })
+      // The pointer is the centre of the new step (the card, or the BPMN shape).
+      const size = nodeSize(kind, notation)
+      const position = flow.screenToFlowPosition({ x: event.clientX - size.width / 2, y: event.clientY - size.height / 2 })
       skipNextFit.current = true
       store.getState().addNode(kind, { position: { x: Math.round(position.x), y: Math.round(position.y) } })
     },
-    [flow, readOnly, store],
+    [flow, notation, readOnly, store],
   )
 
   const onlyStart = def.nodes.length <= 1
@@ -393,13 +419,15 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
             position="bottom-right"
             style={{ width: 144, height: 88 }}
           />
-          {!readOnly ? (
-            <Panel position="top-left" className="m-3!">
+          <Panel position="top-left" className="m-3! flex max-w-[calc(100%-1.5rem)] flex-wrap items-start gap-2">
+            {!readOnly ? (
               <Button variant="secondary" onClick={() => void autoLayout()} loading={arranging} title="Arrange the steps from left to right. You can undo it.">
                 {arranging ? null : <Network aria-hidden="true" />} Auto-layout
               </Button>
-            </Panel>
-          ) : null}
+            ) : null}
+            <NotationToggle value={notation} onChange={changeNotation} />
+            {notation === 'bpmn' ? <NotationLegend className="w-80 max-w-full" /> : null}
+          </Panel>
         </ReactFlow>
       </div>
       {!prepared ? (

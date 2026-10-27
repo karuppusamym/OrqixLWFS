@@ -5,8 +5,10 @@ import type { OutcomeKind } from '@/api/types'
 import { cn } from '@/lib/cn'
 import { KINDS } from './model/kinds'
 import { APPROVAL_HEIGHT, NODE_HEIGHT } from './model/layout'
+import type { Notation } from './model/notation'
 import type { NodeKind } from './model/types'
 import { KIND_ACCENT, KIND_BADGE, KIND_ICON } from './nodeMeta'
+import { BpmnStepNode } from './notation/BpmnStepNode'
 
 export interface StepNodeData extends Record<string, unknown> {
   kind: NodeKind
@@ -21,6 +23,8 @@ export interface StepNodeData extends Record<string, unknown> {
   timeout?: boolean
   /** Case stage of the step (docs/build/S25): shown as a chip on the card; stages add no behavior. */
   stage?: string
+  /** STU01: drawn as a BPMN shape ('bpmn') or as the step card ('cards', also when unset). */
+  notation?: Notation
 }
 
 export type StepFlowNode = Node<StepNodeData, 'step'>
@@ -31,6 +35,7 @@ export type StepFlowNode = Node<StepNodeData, 'step'>
  * (Fulfilled green, Rejected slate) and always print the outcome as text with an icon.
  */
 function StepNodeComponent({ data, selected }: NodeProps<StepFlowNode>) {
+  if (data.notation === 'bpmn') return <BpmnStepNode data={data} selected={!!selected} />
   const info = KINDS[data.kind]
   const Icon = KIND_ICON[data.kind]
   const issues = data.blockers + data.warnings
@@ -100,12 +105,12 @@ function StepNodeComponent({ data, selected }: NodeProps<StepFlowNode>) {
           <span className="pointer-events-none absolute top-[78%] right-5 flex -translate-y-1/2 items-center gap-1.5 rounded-full bg-danger-soft px-2.5 py-0.5 text-[15px] leading-6 font-bold text-danger-foreground">
             <XCircle className="size-4" aria-hidden="true" /> Rejected
           </span>
-          {data.timeout ? <Handle type="source" position={Position.Bottom} id="timedOut" aria-label="Timed out route" /> : null}
+          {data.timeout ? <Handle type="source" position={Position.Bottom} id="timedOut" title="Timed out route" aria-hidden="true" /> : null}
         </>
       ) : data.kind === 'waitForMessage' && data.timeout ? (
         <>
           <Handle type="source" position={Position.Right} id="next" aria-hidden="true" />
-          <Handle type="source" position={Position.Bottom} id="timedOut" aria-label="Timed out route" />
+          <Handle type="source" position={Position.Bottom} id="timedOut" title="Timed out route" aria-hidden="true" />
         </>
       ) : data.kind === 'http' ? (
         <>

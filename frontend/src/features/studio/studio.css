@@ -160,3 +160,30 @@
 .orqix-flow .orqix-scope-frame-caption {
   color: var(--muted-foreground);
 }
+
+/*
+ * BPMN notation (STU01). The node box is the shape's bounding box, so the focus ring follows a circle for events and
+ * the box for gateways and tasks. The outline colour change for test playback applies to the shape's own stroke.
+ */
+.orqix-flow .react-flow__node:has([data-shape-class='event']) {
+  border-radius: 9999px;
+}
+.orqix-flow .react-flow__node.sim-current > div[data-notation='bpmn'],
+.orqix-flow .react-flow__node.sim-visited > div[data-notation='bpmn'] {
+  box-shadow: none;
+}
+.orqix-flow .react-flow__node.sim-current .bpmn-outline,
+.orqix-flow .react-flow__node.sim-visited .bpmn-outline {
+  stroke: var(--primary);
+}
+.orqix-flow .react-flow__node.sim-current .bpmn-outline {
+  stroke-width: 5px;
+}
+.orqix-flow .bpmn-selected {
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--primary) 45%, transparent));
+}
+@media (forced-colors: active) {
+  .orqix-flow [data-notation='bpmn'] .bpmn-outline {
+    stroke: CanvasText;
+  }
+}

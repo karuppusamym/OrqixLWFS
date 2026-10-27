@@ -1,13 +1,22 @@
 import { BaseEdge, EdgeLabelRenderer, useNodes, type Edge, type EdgeProps } from '@xyflow/react'
 import { cn } from '@/lib/cn'
 import { useStudioContext } from './StudioContext'
-import { APPROVAL_HEIGHT, LABEL_MAX_WIDTH, NODE_HEIGHT, NODE_WIDTH } from './model/layout'
-import type { RouteKind } from './model/types'
+import { LABEL_MAX_WIDTH, nodeSize } from './model/layout'
+import type { Notation } from './model/notation'
+import type { NodeKind, RouteKind } from './model/types'
 
 export interface RouteEdgeData extends Record<string, unknown> {
   on: RouteKind
   /** Route text such as "When Amount (USD) at least 5000" or "Otherwise". Empty for plain next-step routes. */
   text: string
+  /** STU01: in BPMN notation Approved and Rejected are printed on the line (the shape has only icons beside its handles). */
+  notation?: Notation
+}
+
+/** Size of a step for routing when React Flow has not measured it yet (cards or BPMN shapes). */
+export function fallbackNodeSize(data: Record<string, unknown> | undefined): { width: number; height: number } {
+  const card = (data?.card ?? data) as { kind?: NodeKind; notation?: Notation } | undefined
+  return nodeSize(card?.kind ?? 'notification', card?.notation === 'bpmn' ? 'bpmn' : 'cards')
 }
 
 export type RouteFlowEdge = Edge<RouteEdgeData, 'route'>
@@ -122,14 +131,14 @@ export function RouteEdge({ id, source, target, sourceX, sourceY, targetX, targe
     .map((n) => ({
       x: n.position.x,
       y: n.position.y,
-      width: n.measured?.width ?? NODE_WIDTH,
-      height: n.measured?.height ?? (n.data?.kind === 'approval' ? APPROVAL_HEIGHT : NODE_HEIGHT),
+      width: n.measured?.width ?? fallbackNodeSize(n.data).width,
+      height: n.measured?.height ?? fallbackNodeSize(n.data).height,
     }))
   const width = Math.min(LABEL_MAX_WIDTH, Math.round(text.length * 7.8) + 28)
   // Detours of different routes take lanes a few steps apart, so two of them never run on top of each other.
   const laneShift = ([...id].reduce((sum, ch) => sum + ch.charCodeAt(0), 0) % 3) * 22
   const geometry = routeGeometry({ x: sourceX, y: sourceY }, { x: targetX, y: targetY }, others, width, laneShift)
-  const showLabel = text !== '' && (on !== 'approved' && on !== 'rejected' ? true : geometry.detour || !!selected)
+  const showLabel = text !== '' && (on !== 'approved' && on !== 'rejected' ? true : data?.notation === 'bpmn' || geometry.detour || !!selected)
   return (
     <>
       <BaseEdge id={id} path={geometry.path} markerEnd={markerEnd} style={style} interactionWidth={interactionWidth} />

@@ -1,4 +1,5 @@
 import { AlertTriangle, Ban, CheckCircle2, Clock, Pause, Play, RefreshCw, Wrench, XCircle } from 'lucide-react'
+import { CallbackWaitsPanel } from './CallbackWaitsPanel'
 import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { asRecord, type Effect, type RunDetail, type RunEvent } from '@/api/types'
@@ -353,6 +354,7 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
             </Card>
           ) : null}
 
+          {can('run.operate') ? <CallbackWaitsPanel ws={ws} runId={run.id} /> : null}
           {input ? <RunFiles ws={ws} runId={run.id} /> : null}
           {input ? <RunCommentsPanel ws={ws} runId={run.id} canPost={run.initiator.id === me.data?.subject.id || can('run.operate') || can('task.act')} /> : null}
 

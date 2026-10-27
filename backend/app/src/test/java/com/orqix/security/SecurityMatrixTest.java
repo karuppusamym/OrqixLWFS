@@ -171,6 +171,30 @@ class SecurityMatrixTest extends RuntimeTestBase {
         assertThat(bearer(machine,HttpMethod.POST,base+"/fetch-and-lock",fetch)).isIn(403,404);
     }
 
+    /** S98: a relay may issue a callback token with a bearer token, only with run.operate; every other callback route stays closed. */
+    @Test
+    void machineClientsReachOnlyTheCallbackIssueRouteAndOnlyWithRunOperate() throws Exception {
+        String machine = "callback-relay-" + UUID.randomUUID().toString().substring(0, 8);
+        String issue = "/api/v1/workspaces/" + PURCHASING + "/callback-waits/" + UUID.randomUUID() + "/token";
+        assertThat(bearer(machine, HttpMethod.POST, issue, null)).isEqualTo(404);
+        UUID subject = jdbc.sql("SELECT id FROM subject WHERE external_subject = :s").param("s", machine).query(UUID.class).single();
+        Response binding = api("wade.admin").post(Map.of("role", "OPERATOR", "principal",
+                Map.of("type", "subject", "value", subject.toString())), "/workspaces/{ws}/access/role-bindings", PURCHASING);
+        assertThat(binding.status()).as(binding.toString()).isEqualTo(201);
+        try {
+            // Reachable and authorized: an unknown wait is a plain 404 from the service, not a 403 from the chain.
+            assertThat(bearer(machine, HttpMethod.POST, issue, null)).isEqualTo(404);
+            assertThat(bearer(machine, HttpMethod.DELETE, issue, null)).isEqualTo(403);
+            assertThat(bearer(machine, HttpMethod.GET, "/api/v1/workspaces/" + PURCHASING + "/callback-waits", null))
+                    .isEqualTo(403);
+            assertThat(bearer(machine, HttpMethod.GET, "/api/v1/workspaces/" + PURCHASING + "/webhook-deliveries", null))
+                    .isEqualTo(403);
+        } finally {
+            api("wade.admin").delete("/workspaces/{ws}/access/role-bindings/{id}", PURCHASING,
+                    binding.body().path("id").asString());
+        }
+    }
+
     @Test
     void tSec06_deployedBpmnContainsOnlyAllowedExpressions() throws Exception {
         UUID workflowId = publishPurchase(PURCHASING, null);
@@ -282,6 +306,14 @@ class SecurityMatrixTest extends RuntimeTestBase {
         ids.put("decisionKey", "amount-policy");
         ids.put("groupKey", "managers");
         ids.put("callbackId", UUID.randomUUID().toString());
+        // S98/S99: a callback wait id that is not visible to foreign principals, a real webhook subscription and a
+        // delivery id. The token routes are called without a token and must answer 404 like everything else.
+        ids.put("waitId", UUID.randomUUID().toString());
+        ids.put("deliveryId", UUID.randomUUID().toString());
+        ids.put("subscriptionId", api("wade.admin").post(Map.of("name", "Matrix", "url",
+                com.orqix.support.Stub.baseUrl() + "/webhooks/matrix", "secretRef", "matrix-webhook",
+                "events", List.of("request.completed"), "enabled", false), "/workspaces/{ws}/webhook-subscriptions",
+                PURCHASING).body().path("id").asString());
         ids.put("planItemId", UUID.randomUUID().toString());
         // IN04: the workspace is invisible to foreign principals, so unknown ids prove the 404 as well as real ones.
         ids.put("approvalId", UUID.randomUUID().toString());
@@ -344,6 +376,11 @@ class SecurityMatrixTest extends RuntimeTestBase {
         Map<String, Object> principal = Map.of("type", "idpGroup", "value", "orqix-foreign");
         return switch (operationId) {
             case "assignWorklistView" -> Map.of("expectedRevision",0);
+            case "createWebhookSubscription" -> Map.of("name", "Foreign", "url", "https://public.test.example/x",
+                    "secretRef", "foreign", "events", List.of("request.started"));
+            case "updateWebhookSubscription" -> Map.of("name", "Foreign", "url", "https://public.test.example/x",
+                    "secretRef", "foreign", "events", List.of("request.started"), "enabled", true, "expectedVersion", 1);
+            case "resumeCallbackWait" -> Map.of("result", Map.of());
             case "suspendCaseInstance", "resumeCaseInstance", "closeCaseInstance", "startCasePlanItem", "enableCasePlanItem",
                     "occurCaseUserEvent", "disableCasePlanItem", "activateCaseStage", "completeCaseStage", "terminateCasePlanItem" ->
                     Map.of("expectedVersion",1,"reason","Foreign attempt");

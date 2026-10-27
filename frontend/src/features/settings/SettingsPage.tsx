@@ -10,6 +10,7 @@ import { DocumentTemplatesPanel } from './DocumentTemplatesPanel'
 import { SharedAssetsPanel } from './SharedAssetsPanel'
 import { ConnectionsPanel } from './ConnectionsPanel'
 import { MigrationPolicyPanel } from './MigrationPolicyPanel'
+import { WebhooksPanel } from './WebhooksPanel'
 import { EmptyState } from '@/components/common/EmptyState'
 import { AiSettingsPanel, useShowAiSettings } from '@/features/ai/AiSettingsPanel'
 
@@ -21,12 +22,13 @@ export function SettingsPage() {
   const { can } = useWorkspace()
   const showAccess = can('workspace.manage-access')
   const showConnections = can('connection.read')
+  const showWebhooks = showConnections || can('run.operate')
   const showTemplates = can('workflow.read')
   const showAssets = showTemplates || showConnections
   const aiConfigured = useShowAiSettings()
   const showAi = aiConfigured && can('workspace.manage-access', 'workflow.edit')
 
-  if (!showAccess && !showConnections && !showTemplates) {
+  if (!showAccess && !showConnections && !showTemplates && !showWebhooks) {
     return (
       <>
         <PageHeader title="Settings" />
@@ -40,7 +42,7 @@ export function SettingsPage() {
   return (
     <>
       <PageHeader title="Settings" description="Who can do what in this workspace, and which systems it can reach." />
-      <Tabs defaultValue={showAccess ? 'access' : showConnections ? 'connections' : 'templates'}>
+      <Tabs defaultValue={showAccess ? 'access' : showConnections ? 'connections' : showTemplates ? 'templates' : 'webhooks'}>
         <TabsList aria-label="Settings sections">
           {showAccess ? (
             <TabsTrigger value="access">
@@ -57,6 +59,7 @@ export function SettingsPage() {
               <Plug className="size-4" aria-hidden="true" /> Connections
             </TabsTrigger>
           ) : null}
+          {showWebhooks ? <TabsTrigger value="webhooks">Webhooks</TabsTrigger> : null}
           {showAi ? (
             <TabsTrigger value="ai">
               <Sparkles className="size-4" aria-hidden="true" /> AI
@@ -88,6 +91,7 @@ export function SettingsPage() {
             <ConnectionsPanel />
           </TabsContent>
         ) : null}
+        {showWebhooks ? <TabsContent value="webhooks"><WebhooksPanel /></TabsContent> : null}
         {showAi ? (
           <TabsContent value="ai">
             <AiSettingsPanel />

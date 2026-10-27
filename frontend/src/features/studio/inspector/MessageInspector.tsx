@@ -98,6 +98,52 @@ export function MessageInspector({ node }: { node: WorkflowNode }) {
       </ul>
       {readOnly || payload.length >= 10 ? null : <Button variant="secondary" onClick={() => setPayload([...payload, { name: `value${payload.length + 1}`, type: 'string' }])}><Plus className="size-4" aria-hidden="true" /> Add a value</Button>}
     </InspectorSection>
+    <ExternalSystemSection node={node} payload={payload} />
     <Advanced><StepIdField node={node} /></Advanced>
   </>
+}
+
+/**
+ * EX10 (docs/build/S98): the wait may be answered by an external system with a one-time callback token. The panel shows
+ * the contract the external system gets; tokens themselves are issued on the request page by an operator.
+ */
+function ExternalSystemSection({ node, payload }: { node: WorkflowNode; payload: PayloadField[] }) {
+  const { store, readOnly } = useStudioContext()
+  const external = cfg<{ tokenValidFor?: string }>(node, 'externalCallback')
+  const validFor = external?.tokenValidFor ?? ''
+  const setExternal = (value: { tokenValidFor: string } | undefined) => store.getState().apply((d) => ({
+    ...d,
+    nodes: d.nodes.map((n) => {
+      if (n.id !== node.id) return n
+      const config = { ...n.config }
+      if (value) config.externalCallback = value
+      else delete config.externalCallback
+      return { ...n, config }
+    }),
+  }))
+  return (
+    <InspectorSection title="External system">
+      <div className="flex items-center gap-2">
+        <Checkbox id={`message-external-${node.id}`} checked={external !== undefined} disabled={readOnly}
+          onCheckedChange={(checked) => setExternal(checked === true ? { tokenValidFor: validFor || 'P7D' } : undefined)} />
+        <Label htmlFor={`message-external-${node.id}`}>Answered by an external system</Label>
+      </div>
+      {external === undefined ? <p className="text-sm text-muted-foreground">Turn this on when another system answers this wait directly with a callback token instead of sending a named message.</p> : <>
+        <FormField label="Token is valid for" required id={`message-external-ttl-${node.id}`} description="From 1 minute (PT1M) to 30 days (P30D), counted from when an operator issues the token.">
+          {(ids) => <CommitInput id={ids.input} value={validFor} disabled={readOnly} aria-describedby={ids.describedBy} onCommit={(v) => setExternal({ tokenValidFor: v.trim() })} />}
+        </FormField>
+        {validFor ? <DurationPreview text={validFor} verb="allows" /> : null}
+        <div className="space-y-1 rounded-control border border-border p-3 text-sm" data-testid="callback-contract" aria-label="Contract for the external system">
+          <p className="font-medium">What the external system gets</p>
+          <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
+            <li>A token, shown once to the operator who issues it on the request page. Orqix keeps only a hash.</li>
+            <li>Poll: <code>GET …/callbacks/wait</code> with the header <code>X-Orqix-Callback-Token</code>; the answer is waiting, resumed, expired or cancelled.</li>
+            <li>Resume once: <code>POST …/callbacks/wait/resume</code> with an <code>Idempotency-Key</code> and <code>{'{"result": {…}}'}</code>.</li>
+            <li>Result values: {payload.length === 0 ? 'none (an empty result)' : payload.map((f) => `${f.name} (${TYPE_LABEL[f.type]}${f.required ? ', required' : ''})`).join(', ')}.</li>
+          </ul>
+          <p className="text-muted-foreground">This is not the same as resuming a suspended request: a suspended request refuses the answer until an operator resumes it.</p>
+        </div>
+      </>}
+    </InspectorSection>
+  )
 }

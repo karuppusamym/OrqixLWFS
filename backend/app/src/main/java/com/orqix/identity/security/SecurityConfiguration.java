@@ -54,15 +54,25 @@ public class SecurityConfiguration {
     private static final java.util.regex.Pattern INBOUND = java.util.regex.Pattern
             .compile("^/api/v1/workspaces/[^/]+/inbound/[^/]+$");
 
+    /** Callback poll (GET) and resume (POST) of S98: authenticated by the callback token header alone. */
+    private static final java.util.regex.Pattern CALLBACK_POLL = java.util.regex.Pattern
+            .compile("^/api/v1/workspaces/[^/]+/callbacks/wait$");
+    private static final java.util.regex.Pattern CALLBACK_RESUME = java.util.regex.Pattern
+            .compile("^/api/v1/workspaces/[^/]+/callbacks/wait/resume$");
+
     /**
-     * Signed inbound events (S47): the only API route that needs neither a session nor a token. The controller verifies
-     * an HMAC over the body with a per-trigger secret; CSRF does not apply because there is no ambient credential.
+     * Signed inbound events (S47) and callback-token routes (S98): the only API routes that need neither a session nor
+     * a bearer token. The inbound controller verifies an HMAC over the body with a per-trigger secret; the callback
+     * routes resolve the {@code X-Orqix-Callback-Token} header to exactly one wait. CSRF does not apply because there
+     * is no ambient credential, and no session is created.
      */
     @Bean
     @Order(0)
     SecurityFilterChain inboundChain(HttpSecurity http) throws Exception {
         http.securityMatcher(request -> "POST".equals(request.getMethod())
-                        && INBOUND.matcher(request.getRequestURI()).matches())
+                        && (INBOUND.matcher(request.getRequestURI()).matches()
+                                || CALLBACK_RESUME.matcher(request.getRequestURI()).matches())
+                        || "GET".equals(request.getMethod()) && CALLBACK_POLL.matcher(request.getRequestURI()).matches())
                 .authorizeHttpRequests(a -> a.anyRequest().permitAll())
                 .csrf(c -> c.disable())
                 .requestCache(c -> c.disable())
@@ -100,6 +110,8 @@ public class SecurityConfiguration {
                                 "/api/v1/workspaces/*/external-jobs/*/await-callback",
                                 "/api/v1/workspaces/*/external-jobs/*/callbacks/*/complete",
                                 "/api/v1/workspaces/*/external-jobs/*/callbacks/*/fail").authenticated()
+                        // S98: a relay with an explicit run.operate grant may issue the one-time callback token.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/workspaces/*/callback-waits/*/token").authenticated()
                         .anyRequest().denyAll())
                 .oauth2ResourceServer(o -> o.jwt(Customizer.withDefaults())
                         .authenticationEntryPoint(problems)

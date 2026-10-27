@@ -2749,6 +2749,231 @@ paths:
         '422': { $ref: '#/components/responses/Unprocessable' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
 
+  /workspaces/{workspaceId}/callback-waits:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [Runs]
+      operationId: listCallbackWaits
+      summary: Waits answered by an external system, newest first (docs/build/S98)
+      description: Ids, states and token expiry only; never a token. At most 200 rows; filter by runId.
+      x-orqix-permission: run.operate
+      parameters:
+        - { name: runId, in: query, required: false, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Callback waits
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CallbackWaitList' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/callback-waits/{waitId}/token:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: waitId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [Runs]
+      operationId: issueCallbackToken
+      summary: Issue the callback token of an open wait (shown once; replaces any earlier token)
+      description: |
+        The clear token is in this answer only; Orqix keeps its SHA-256. Machine clients with a run.operate grant may
+        call it with a bearer token. Not to be confused with resumeRun, which lifts an operator suspension.
+      x-orqix-permission: run.operate
+      x-orqix-audit: callback.token-issued
+      responses:
+        '201':
+          description: Token issued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CallbackTokenIssued' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+    delete:
+      tags: [Runs]
+      operationId: revokeCallbackToken
+      summary: Revoke the current callback token; the wait goes on and a new token can be issued
+      x-orqix-permission: run.operate
+      x-orqix-audit: callback.token-revoked
+      responses:
+        '204': { description: Revoked (or there was no token) }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/callbacks/wait:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [Runs]
+      operationId: pollCallbackWait
+      summary: Poll the wait a callback token belongs to (no session; the token is the credential)
+      description: |
+        States waiting, resumed, expired or cancelled (with reason timedOut, requestEnded or answeredElsewhere). Send
+        the ETag back in If-None-Match to get 304 while nothing changed. An unknown, revoked or replaced token, or a
+        token of another workspace, is 404.
+      security: []
+      x-orqix-permission: callbackToken
+      parameters:
+        - $ref: '#/components/parameters/CallbackToken'
+        - { name: If-None-Match, in: header, required: false, schema: { type: string, maxLength: 200 } }
+      responses:
+        '200':
+          description: Current state
+          headers:
+            ETag: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CallbackWaitState' }
+        '304': { description: Not modified since the given ETag }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/callbacks/wait/resume:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    post:
+      tags: [Runs]
+      operationId: resumeCallbackWait
+      summary: Resume the wait with a result (once; a repeat with the same key and body returns the original answer)
+      description: |
+        The result must match the waiting step's declared values (at most 16 KiB, flat scalars). It is delivered through
+        the same path as sendMessage. 409 CALLBACK_ALREADY_RESUMED for a different key or body after a resume,
+        CALLBACK_NOT_WAITING when the wait closed or the token expired, RUN_SUSPENDED while an operator suspended the
+        request (repeat it after resumeRun).
+      security: []
+      x-orqix-permission: callbackToken
+      x-orqix-audit: callback.resumed
+      parameters:
+        - $ref: '#/components/parameters/CallbackToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CallbackResumeRequest' }
+      responses:
+        '200':
+          description: Resumed (or the replay of the original resume, with Idempotent-Replayed true)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CallbackResumed' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/webhook-subscriptions:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [Adapters]
+      operationId: listWebhookSubscriptions
+      summary: Outbound webhook subscriptions (docs/build/S99); secretRef only for connection managers
+      x-orqix-permission: connection.read
+      responses:
+        '200':
+          description: Subscriptions
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WebhookSubscriptionList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Adapters]
+      operationId: createWebhookSubscription
+      summary: Subscribe an allow-listed HTTPS endpoint to request events (at most 10 per workspace)
+      x-orqix-permission: connection.manage
+      x-orqix-audit: webhook.subscription-created
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WebhookSubscriptionCreateRequest' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WebhookSubscription' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/webhook-subscriptions/{subscriptionId}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: subscriptionId, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      tags: [Adapters]
+      operationId: updateWebhookSubscription
+      summary: Edit or disable a subscription (expectedVersion must match)
+      x-orqix-permission: connection.manage
+      x-orqix-audit: webhook.subscription-updated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WebhookSubscriptionUpdateRequest' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WebhookSubscription' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/webhook-deliveries:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [Adapters]
+      operationId: listWebhookDeliveries
+      summary: Webhook deliveries by status (default dead letters), newest first, at most 200
+      x-orqix-permission: run.operate
+      parameters:
+        - { name: status, in: query, required: false, schema: { type: string, enum: [pending, sending, delivered, dead] } }
+      responses:
+        '200':
+          description: Deliveries
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WebhookDeliveryList' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/webhook-deliveries/{deliveryId}/replay:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: deliveryId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [Adapters]
+      operationId: replayWebhookDelivery
+      summary: Put one dead letter back in the queue for an immediate attempt
+      x-orqix-permission: run.operate
+      x-orqix-audit: webhook.delivery-replayed
+      responses:
+        '200':
+          description: Queued again
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WebhookDelivery' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
   /workspaces/{workspaceId}/runs:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
     get:
@@ -4474,6 +4699,11 @@ paths:
         - { name: X-Orqix-Event-Id, in: header, required: true, schema: { type: string, maxLength: 100 } }
         - { name: X-Orqix-Timestamp, in: header, required: true, schema: { type: string } }
         - { name: X-Orqix-Signature, in: header, required: true, schema: { type: string } }
+        - name: X-Orqix-Callback-Token
+          in: header
+          required: false
+          description: S99 - resume the wait this token belongs to (only a request of the trigger's workflow) instead of recording an event.
+          schema: { type: string, maxLength: 100 }
       requestBody:
         required: true
         content:
@@ -5825,6 +6055,12 @@ components:
       description: Machine clients may start/read runs, read run events, correlate messages and POST external-worker lease/callback operations. Issuer and audience are validated; each operation requires its current workspace permission. Other routes remain denied.
 
   parameters:
+    CallbackToken:
+      name: X-Orqix-Callback-Token
+      in: header
+      required: false
+      description: The callback token issued once for this wait (docs/build/S98); never put it in a URL.
+      schema: { type: string, maxLength: 100 }
     WorkspaceId:
       name: workspaceId
       in: path
@@ -6776,14 +7012,167 @@ components:
       properties:
         deleted: { type: integer, minimum: 0 }
         receivedBefore: { type: string, format: date-time }
+    CallbackExpectedField:
+      type: object
+      additionalProperties: false
+      required: [name, type, required]
+      properties:
+        name: { type: string }
+        type: { type: string }
+        required: { type: boolean }
+    CallbackWait:
+      type: object
+      additionalProperties: false
+      required: [id, runId, runReference, nodeId, stepLabel, messageName, state, suspended, tokenIssued, tokensIssued, tokenValidFor, createdAt, fields]
+      properties:
+        id: { type: string, format: uuid }
+        runId: { type: string, format: uuid }
+        runReference: { type: string }
+        nodeId: { type: string }
+        stepLabel: { type: string }
+        messageName: { type: string }
+        state: { type: string, enum: [waiting, resumed, expired, cancelled] }
+        reason: { type: [string, 'null'], enum: [timedOut, requestEnded, answeredElsewhere, null] }
+        suspended: { type: boolean }
+        tokenIssued: { type: boolean }
+        tokenExpiresAt: { type: [string, 'null'], format: date-time }
+        tokensIssued: { type: integer, minimum: 0 }
+        tokenValidFor: { type: string, description: ISO-8601 duration }
+        resumedAt: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+        fields: { type: array, items: { $ref: '#/components/schemas/CallbackExpectedField' } }
+    CallbackWaitList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/CallbackWait' } }
+    CallbackTokenIssued:
+      type: object
+      additionalProperties: false
+      required: [waitId, token, expiresAt, pollPath, resumePath, header]
+      properties:
+        waitId: { type: string, format: uuid }
+        token: { type: string, pattern: '^ocb_[A-Za-z0-9_-]{43}$', description: Shown once; Orqix keeps only its SHA-256 }
+        expiresAt: { type: string, format: date-time }
+        pollPath: { type: string }
+        resumePath: { type: string }
+        header: { type: string, const: X-Orqix-Callback-Token }
+    CallbackWaitState:
+      type: object
+      additionalProperties: false
+      required: [waitId, runId, runReference, nodeId, state, suspended, fields]
+      properties:
+        waitId: { type: string, format: uuid }
+        runId: { type: string, format: uuid }
+        runReference: { type: string }
+        nodeId: { type: string }
+        state: { type: string, enum: [waiting, resumed, expired, cancelled] }
+        reason: { type: [string, 'null'], enum: [timedOut, requestEnded, answeredElsewhere, null] }
+        suspended: { type: boolean }
+        expiresAt: { type: [string, 'null'], format: date-time }
+        resumedAt: { type: [string, 'null'], format: date-time }
+        fields: { type: array, items: { $ref: '#/components/schemas/CallbackExpectedField' } }
+        result:
+          oneOf: [{ $ref: '#/components/schemas/CallbackResumed' }, { type: 'null' }]
+    CallbackResumeRequest:
+      type: object
+      additionalProperties: false
+      required: [result]
+      properties:
+        result: { type: object, maxProperties: 10 }
+    CallbackResumed:
+      type: object
+      additionalProperties: false
+      required: [waitId, runId, runReference, nodeId, state, resumedAt, acceptedFields]
+      properties:
+        waitId: { type: string, format: uuid }
+        runId: { type: string, format: uuid }
+        runReference: { type: string }
+        nodeId: { type: string }
+        state: { type: string, const: resumed }
+        resumedAt: { type: string, format: date-time }
+        acceptedFields: { type: array, items: { type: string } }
+    WebhookEventType:
+      type: string
+      enum: [request.started, task.opened, request.completed, request.needs-attention, callback.waiting]
+    WebhookSubscription:
+      type: object
+      additionalProperties: false
+      required: [id, name, url, events, enabled, version, pending, dead, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        url: { type: string }
+        secretRef: { type: [string, 'null'] }
+        events: { type: array, items: { $ref: '#/components/schemas/WebhookEventType' } }
+        enabled: { type: boolean }
+        version: { type: integer, minimum: 1 }
+        pending: { type: integer, minimum: 0 }
+        dead: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: [string, 'null'], format: date-time }
+    WebhookSubscriptionList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/WebhookSubscription' } }
+    WebhookSubscriptionCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [name, url, secretRef, events]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        url: { type: string, maxLength: 2000 }
+        secretRef: { type: string, pattern: '^[a-z0-9][a-z0-9-]{0,62}$' }
+        events: { type: array, minItems: 1, maxItems: 5, items: { $ref: '#/components/schemas/WebhookEventType' } }
+        enabled: { type: boolean }
+    WebhookSubscriptionUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [name, url, secretRef, events, enabled, expectedVersion]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        url: { type: string, maxLength: 2000 }
+        secretRef: { type: string, pattern: '^[a-z0-9][a-z0-9-]{0,62}$' }
+        events: { type: array, minItems: 1, maxItems: 5, items: { $ref: '#/components/schemas/WebhookEventType' } }
+        enabled: { type: boolean }
+        expectedVersion: { type: integer, minimum: 1 }
+    WebhookDelivery:
+      type: object
+      additionalProperties: false
+      required: [id, subscriptionId, subscriptionName, eventType, status, attempts, nextAttemptAt, createdAt, replays]
+      properties:
+        id: { type: string, format: uuid }
+        subscriptionId: { type: string, format: uuid }
+        subscriptionName: { type: string }
+        eventType: { $ref: '#/components/schemas/WebhookEventType' }
+        runId: { type: [string, 'null'], format: uuid }
+        status: { type: string, enum: [pending, sending, delivered, dead] }
+        attempts: { type: integer, minimum: 0 }
+        lastStatusCode: { type: [integer, 'null'] }
+        lastError: { type: [string, 'null'] }
+        nextAttemptAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+        deliveredAt: { type: [string, 'null'], format: date-time }
+        deadAt: { type: [string, 'null'], format: date-time }
+        replays: { type: integer, minimum: 0 }
+    WebhookDeliveryList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/WebhookDelivery' } }
     InboundAccepted:
       type: object
       additionalProperties: false
       required: [eventId, status, duplicate]
       properties:
-        eventId: { type: string, format: uuid }
-        status: { type: string, enum: [received, started] }
+        eventId: { type: [string, 'null'], format: uuid, description: null when the event resumed a wait (nothing is recorded) }
+        status: { type: string, enum: [received, started, resumed] }
         duplicate: { type: boolean }
+        waitId: { type: [string, 'null'], format: uuid }
     InboundEvent:
       type: object
       additionalProperties: false
@@ -7238,6 +7627,8 @@ components:
             - RUN_NOT_REPAIRABLE
             - RUN_NOT_MIGRATABLE
             - SIGNAL_NOT_AWAITED
+            - CALLBACK_ALREADY_RESUMED
+            - CALLBACK_NOT_WAITING
             - JOB_LEASE_LOST
             - JOB_NOT_OPEN
             - EFFECT_NOT_RECONCILED

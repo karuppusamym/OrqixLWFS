@@ -178,6 +178,15 @@ public class AuditWriter {
             Map.entry("adapter.updated", Set.of("kind", "key", "version", "enabled")),
             Map.entry("inbound.trigger-updated", Set.of("source", "key", "version", "enabled")),
             Map.entry("inbound.events-purged", Set.of("olderThanDays", "includeUnstarted", "deleted")),
+            // S98/S99 (EX10, IN05): ids, counts and codes only - never a token, its hash, a key or a payload value.
+            Map.entry("callback.token-issued", Set.of("waitId", "runId", "nodeId", "validForSeconds")),
+            Map.entry("callback.token-revoked", Set.of("waitId", "runId", "replaced")),
+            Map.entry("callback.token-expired", Set.of("waitId", "runId")),
+            Map.entry("callback.resumed", Set.of("waitId", "runId", "fieldCount", "channel")),
+            Map.entry("webhook.subscription-created", Set.of("events", "enabled")),
+            Map.entry("webhook.subscription-updated", Set.of("events", "enabled", "version")),
+            Map.entry("webhook.delivery-replayed", Set.of("subscriptionId", "eventType", "attempts")),
+            Map.entry("webhook.delivery-dead", Set.of("subscriptionId", "eventType", "attempts", "error", "statusCode")),
             Map.entry("agent.call", Set.of("key", "operation", "profile", "model", "outcome", "toolCalls", "inputTokens",
                     "outputTokens", "costUsd", "durationMs", "effectId")),
             // IN04 (S75): ids, names and sizes only; never the model's arguments or a reason text.

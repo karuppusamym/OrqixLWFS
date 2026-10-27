@@ -34,6 +34,7 @@ PERMISSION_QUALIFIERS = {
     "authenticated", "platform.admin", "workspace.member", "initiator", "taskParticipant", "taskEligible",
     "currentAssignee", "assignee", "candidate", "recipient", "conversation.author", "requester",
     "inboundSignature",  # IN02: HMAC over the body with a per-trigger secret; no session or token
+    "callbackToken",  # EX10 (S98): possession of a one-wait callback token; no session
 }
 # Free-text fragments allowed inside an x-orqix-permission value.
 PERMISSION_PHRASES = ("underlying action permission",)

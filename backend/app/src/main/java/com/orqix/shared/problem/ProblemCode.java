@@ -33,6 +33,8 @@ public enum ProblemCode {
     RUN_NOT_REPAIRABLE(409, "The run has nothing that can be repaired safely"),
     RUN_NOT_MIGRATABLE(409, "The run cannot move to that release"),
     SIGNAL_NOT_AWAITED(409, "Nothing in the request is waiting for that signal"),
+    CALLBACK_ALREADY_RESUMED(409, "The wait was already resumed with another request"),
+    CALLBACK_NOT_WAITING(409, "The wait is no longer open for this token"),
     JOB_LEASE_LOST(409, "You no longer hold this job"),
     JOB_NOT_OPEN(409, "The job has ended"),
     EFFECT_NOT_RECONCILED(409, "The outcome of the external call must be reconciled first"),

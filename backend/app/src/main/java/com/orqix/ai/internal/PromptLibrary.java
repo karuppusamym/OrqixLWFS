@@ -3,6 +3,7 @@ package com.orqix.ai.internal;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 import org.springframework.stereotype.Component;
 
@@ -23,6 +24,7 @@ public class PromptLibrary {
     public static final String DRAFT_VERSION = "draft-v1";
     public static final String EXPLAIN_VERSION = "explain-v2";
     public static final String FORM_VERSION = "form-v1";
+    public static final String DRAFT_EDIT_VERSION = "draft-edit-v1";
 
     private final Json json;
     private final String draftSystem;
@@ -31,6 +33,8 @@ public class PromptLibrary {
     private final ObjectNode explanationSchema;
     private final String formSystem;
     private final ObjectNode formSuggestionSchema;
+    private final String draftEditSystem;
+    private final ObjectNode draftEditSchema;
 
     public PromptLibrary(Json json) {
         this.json = json;
@@ -45,6 +49,36 @@ public class PromptLibrary {
         this.explanationSchema = buildExplanationSchema(json);
         this.formSystem = load("ai/prompts/" + FORM_VERSION + ".md");
         this.formSuggestionSchema = buildFormSuggestionSchema(json);
+        this.draftEditSystem = load("ai/prompts/" + DRAFT_EDIT_VERSION + ".md");
+        this.draftEditSchema = buildDraftEditSchema(json);
+    }
+
+    public String draftEditSystem() {
+        return draftEditSystem;
+    }
+
+    /** Response format of conversational draft edits (STU02). */
+    public JsonNode draftEditSchema() {
+        return draftEditSchema;
+    }
+
+    /** One earlier turn of an authoring conversation: {@code role} is "author" or "assistant". */
+    public record Turn(String role, String text) {
+    }
+
+    /**
+     * User turn of a conversational draft edit (STU02): the redacted draft summary, the last turns and the instruction,
+     * each in its own fenced block (all of it is untrusted text written by people), then the mode.
+     */
+    public static String draftEditUser(String draftSummary, List<Turn> history, String instruction, String mode) {
+        StringBuilder conversation = new StringBuilder();
+        for (Turn turn : history) {
+            conversation.append(turn.role()).append(": ").append(fence(turn.text(), "conversation")).append('\n');
+        }
+        return "<draft>\n" + fence(draftSummary, "draft") + "\n</draft>\n\n<conversation>\n"
+                + conversation.toString().strip() + "\n</conversation>\n\n<instruction>\n"
+                + fence(instruction, "instruction") + "\n</instruction>\n\n<mode>" + mode
+                + "</mode>\n\nReply with the JSON object only.";
     }
 
     public String draftSystem() {
@@ -149,6 +183,31 @@ public class PromptLibrary {
         item.putArray("required").add("op").add("key").add("reason");
         properties.putObject("notes").put("type", "array").putObject("items").put("type", "string");
         properties.putObject("notAForm").putArray("type").add("string").add("null");
+        schema.putArray("required").add("changes").add("notes");
+        return schema;
+    }
+
+    private static ObjectNode buildDraftEditSchema(Json json) {
+        ObjectNode schema = json.object();
+        schema.put("type", "object");
+        ObjectNode properties = schema.putObject("properties");
+        properties.putObject("message").putArray("type").add("string").add("null");
+        ObjectNode changes = properties.putObject("changes");
+        changes.put("type", "array");
+        ObjectNode change = changes.putObject("items");
+        change.put("type", "object");
+        ObjectNode changeProperties = change.putObject("properties");
+        changeProperties.putObject("summary").put("type", "string");
+        ObjectNode operations = changeProperties.putObject("operations");
+        operations.put("type", "array");
+        ObjectNode operation = operations.putObject("items");
+        operation.put("type", "object");
+        ArrayNode ops = operation.putObject("properties").putObject("op").putArray("enum");
+        DraftEdits.OPERATIONS.stream().sorted().forEach(ops::add);
+        operation.putArray("required").add("op");
+        change.putArray("required").add("summary").add("operations");
+        properties.putObject("notes").put("type", "array").putObject("items").put("type", "string");
+        properties.putObject("notAnEdit").putArray("type").add("string").add("null");
         schema.putArray("required").add("changes").add("notes");
         return schema;
     }

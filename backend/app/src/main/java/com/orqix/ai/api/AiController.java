@@ -61,6 +61,12 @@ public class AiController {
         return ai.suggestForm(callers.current(), workspaceId, workflowId, body);
     }
 
+    @PostMapping("/workflows/{workflowId}/ai/draft-edits")
+    public AiDtos.DraftEditProposal proposeDraftEdits(@PathVariable UUID workspaceId, @PathVariable UUID workflowId,
+            @RequestBody(required = false) JsonNode body) {
+        return ai.proposeDraftEdits(callers.current(), workspaceId, workflowId, body);
+    }
+
     @PostMapping("/workflows/{workflowId}/explain")
     public AiDtos.Explanation explainWorkflow(@PathVariable UUID workspaceId, @PathVariable UUID workflowId,
             @RequestBody(required = false) JsonNode body) {

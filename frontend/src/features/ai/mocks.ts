@@ -382,7 +382,95 @@ export function createAiHandlers(): HttpHandler[] {
       if (db.latencyMs > 0) await delay(Math.max(db.latencyMs, 600))
       return HttpResponse.json(formSuggestion(description, input.inputSchema.properties ?? {}, input.inputSchema.required ?? []) as JsonBodyType)
     }),
+    http.post(`${B}/workspaces/:ws/workflows/:id/ai/draft-edits`, async ({ params, request }) => {
+      const g = guard(params.ws, 'workflow.edit')
+      if (!g.ok) return g.res
+      const wf = db.workflows.get(String(params.id))
+      if (!wf || wf.wsId !== params.ws) return problem(404, 'NOT_FOUND', 'Not found')
+      const input = (await request.json().catch(() => ({}))) as { instruction?: string; revision?: number; mode?: string; history?: unknown[] }
+      const instruction = (input.instruction ?? '').trim()
+      if (instruction.length < 2 || instruction.length > 2000 || !Number.isInteger(input.revision) || (input.history?.length ?? 0) > 8 || (input.mode !== undefined && input.mode !== 'edit' && input.mode !== 'regenerate')) {
+        return problem(400, 'MALFORMED_REQUEST', 'The request is malformed', { fieldErrors: [{ pointer: '/instruction', code: 'minLength', message: 'Invalid value' }] })
+      }
+      if (!aiMock.enabled) return problem(422, 'AI_NOT_CONFIGURED', 'AI assistance is not configured', { detail: 'AI is not configured: no provider key is set.' })
+      const latest = wf.drafts.reduce((a, b) => (b.revision > a.revision ? b : a))
+      if (latest.revision !== input.revision) {
+        return problem(409, 'WORKFLOW_VERSION_CONFLICT', 'The workflow changed since you loaded it', { detail: `The draft was saved again (revision ${latest.revision}). Reload the studio, then ask again.`, currentRevision: latest.revision })
+      }
+      if (db.latencyMs > 0) await delay(Math.max(db.latencyMs, 800))
+      return HttpResponse.json(draftEditProposal(instruction, latest.definition, latest.revision, input.mode === 'regenerate' ? 'regenerate' : 'edit', String(params.ws)) as JsonBodyType)
+    }),
   ]
+}
+
+function freeTransitionId(def: Definition): string {
+  const used = new Set([...def.nodes.map((n) => n.id), ...def.transitions.map((t) => t.id)])
+  for (let i = def.transitions.length + 1; ; i++) if (!used.has(`t${i}`)) return `t${i}`
+}
+
+/**
+ * Deterministic mock of proposeDraftEdits (STU02, docs/build/S95): keyword-driven, applied to a candidate copy with the
+ * same operation shapes the server returns; changes the mock compiler would refuse are listed as rejected.
+ */
+function draftEditProposal(instruction: string, current: Definition, revision: number, mode: 'edit' | 'regenerate', wsId: string) {
+  const text = instruction.toLowerCase()
+  const generation = { profile: 'economy', model: 'deepseek/deepseek-v3.2', promptVersion: 'draft-edit-v1', attempts: 1, escalated: false, inputTokens: 3200, outputTokens: 520, costUsd: 0.0009, durationMs: 1500 }
+  const group = context(wsId).groups[0] ?? 'managers'
+  if (/\b(poem|joke|recipe|song|weather)\b/.test(text)) {
+    return { revision, mode, changes: [], rejected: [], notes: [], notAnEdit: 'This is not about the workflow, so nothing is proposed.', generation }
+  }
+  if (mode === 'regenerate') {
+    const def = structuredClone(current)
+    const start = def.nodes.find((n) => n.type === 'start') ?? { id: 'start', type: 'start' as const, label: 'Request submitted', config: {} }
+    def.nodes = [start, { id: 'review', type: 'approval', label: 'Review request', config: { candidateGroupRef: group, rejectReasonRequired: true } }, { id: 'approved', type: 'end', label: 'Approved', config: { businessOutcome: 'Approved', outcomeKind: 'success' } }, { id: 'declined', type: 'end', label: 'Declined', config: { businessOutcome: 'Declined', outcomeKind: 'rejected' } }]
+    def.transitions = [{ id: 't1', from: start.id, to: 'review', on: 'next' }, { id: 't2', from: 'review', to: 'approved', on: 'approved' }, { id: 't3', from: 'review', to: 'declined', on: 'rejected' }]
+    def.decisions = []
+    def.outputMapping = {}
+    def.outputSchema = { type: 'object', additionalProperties: false, properties: {} }
+    def.dependencies = { connections: [] }
+    delete def.stages
+    delete def.subprocesses
+    def.uiLayout = { positions: { [start.id]: { x: 80, y: 200 }, review: { x: 300, y: 200 }, approved: { x: 520, y: 140 }, declined: { x: 520, y: 340 } } }
+    const operations = [
+      ...def.nodes.slice(1).map((n) => ({ op: 'addStep', id: n.id, kind: n.type, label: n.label, config: n.config })),
+      ...def.transitions.map((t) => ({ op: 'connect', transitionId: t.id, from: t.from, to: t.to, on: t.on })),
+    ]
+    return { revision, mode, message: 'A new draft with one review, built from your request form.', changes: [{ id: 'c1', summary: 'One review with an approved and a declined outcome', operations, dependsOn: [] }], rejected: [], notes: ['Mock proposal: review it before replacing the draft.'], definition: def, generation }
+  }
+  const changes: Array<Record<string, unknown>> = []
+  const rejected: Array<{ summary: string; reasons: string[] }> = []
+  const candidate = structuredClone(current)
+  const approval = candidate.nodes.find((n) => n.type === 'approval')
+  if (/\b(review|approval|finance|legal)\b/.test(text) && approval) {
+    const onApproved = candidate.transitions.find((t) => t.from === approval.id && t.on === 'approved')
+    const onRejected = candidate.transitions.find((t) => t.from === approval.id && t.on === 'rejected')
+    if (onApproved && onRejected) {
+      const id = candidate.nodes.some((n) => n.id === 'secondReview') ? `secondReview${candidate.nodes.length}` : 'secondReview'
+      const operations: Array<Record<string, unknown>> = [{ op: 'disconnect', transitionId: onApproved.id, before: structuredClone(onApproved) }]
+      candidate.transitions = candidate.transitions.filter((t) => t.id !== onApproved.id)
+      const config = { candidateGroupRef: group, rejectReasonRequired: true }
+      operations.push({ op: 'addStep', id, kind: 'approval', label: 'Second review', config })
+      candidate.nodes.push({ id, type: 'approval', label: 'Second review', config })
+      for (const [from, to, on] of [[approval.id, id, 'approved'], [id, onApproved.to, 'approved'], [id, onRejected.to, 'rejected']] as const) {
+        const transitionId = freeTransitionId(candidate)
+        candidate.transitions.push({ id: transitionId, from, to, on })
+        operations.push({ op: 'connect', transitionId, from, to, on })
+      }
+      changes.push({ id: `c${changes.length + 1}`, summary: `A second review after “${approval.label}”`, operations, dependsOn: [] })
+    }
+  }
+  if (/\brename\b/.test(text) && approval) {
+    const before = structuredClone(candidate.nodes.find((n) => n.id === approval.id))
+    changes.push({ id: `c${changes.length + 1}`, summary: 'Clearer name for the first review', operations: [{ op: 'renameStep', id: approval.id, label: 'Manager review', before }], dependsOn: [] })
+  }
+  if (/\b(question|cost code|form)\b/.test(text)) {
+    if ('costCode' in candidate.inputSchema.properties) rejected.push({ summary: 'Ask for a cost code', reasons: ['A question with the key "costCode" already exists.'] })
+    else changes.push({ id: `c${changes.length + 1}`, summary: 'Ask for a cost code', operations: [{ op: 'changeFormField', action: 'add', key: 'costCode', field: { type: 'string', title: 'Cost code', maxLength: 20 }, required: true }], dependsOn: [] })
+  }
+  if (changes.length === 0 && rejected.length === 0) {
+    rejected.push({ summary: 'Add a step with no route', reasons: ['“New step” has no outgoing route. Connect it to the next step.'] })
+  }
+  return { revision, mode, message: changes.length > 0 ? 'Here is what I propose. Tick the changes you want.' : 'I could not find a change that passes the checks.', changes, rejected, notes: ['Mock proposal: review every change before applying it.'], generation }
 }
 
 /** Deterministic mock of suggestFormChanges (S90): keyword-driven, validated with the same pattern engine. */

@@ -163,6 +163,99 @@ public final class AiDtos {
         }
     }
 
+    /** One reviewable change of a conversational edit (STU02): normalized operations, applied together. */
+    public record DraftEditChange(String id, String summary, List<JsonNode> operations, List<String> dependsOn) {
+    }
+
+    public record DraftEditRejected(String summary, List<String> reasons) {
+    }
+
+    /**
+     * {@code AiDraftEditProposal}: never applied by the server. {@code definition} is the complete proposed draft of a
+     * regeneration (absent for edits).
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record DraftEditProposal(int revision, String mode, String message, List<DraftEditChange> changes,
+            List<DraftEditRejected> rejected, List<String> notes, String notAnEdit, JsonNode definition,
+            Generation generation) {
+    }
+
+    /** One earlier conversation turn sent with a draft-edit request. */
+    public record Turn(String role, String text) {
+    }
+
+    /** {@code proposeDraftEdits} request body (STU02). */
+    public record DraftEditRequest(String instruction, int revision, String mode, List<Turn> history, String profile) {
+
+        public static final int MAX_TURNS = 8;
+        public static final int MAX_TEXT = 2000;
+
+        public static DraftEditRequest parse(JsonNode body) {
+            List<ApiException.FieldError> errors = new ArrayList<>();
+            JsonNode node = object(body, Set.of("instruction", "revision", "mode", "history", "profile"));
+            String instruction = string(node, "instruction", true, 2, MAX_TEXT, null, errors);
+            if (instruction != null && instruction.isBlank()) {
+                errors.add(new ApiException.FieldError("/instruction", "minLength", "Invalid value"));
+            }
+            int revision = 0;
+            JsonNode value = node.path("revision");
+            if (value.isMissingNode()) {
+                errors.add(new ApiException.FieldError("/revision", "required", "Invalid value"));
+            } else if (!value.isIntegralNumber() || !value.canConvertToInt() || value.asInt() < 1) {
+                errors.add(new ApiException.FieldError("/revision", value.isIntegralNumber() ? "minimum" : "type",
+                        "Invalid value"));
+            } else {
+                revision = value.asInt();
+            }
+            String mode = string(node, "mode", false, 1, 16, "^(edit|regenerate)$", errors);
+            if (mode != null && !mode.matches("^(edit|regenerate)$")) {
+                mode = null;
+            }
+            String profile = string(node, "profile", false, 1, 32, PROFILE_PATTERN, errors);
+            List<Turn> history = new ArrayList<>();
+            JsonNode turns = node.path("history");
+            if (!turns.isMissingNode()) {
+                if (!turns.isArray()) {
+                    errors.add(new ApiException.FieldError("/history", "type", "Invalid value"));
+                } else if (turns.size() > MAX_TURNS) {
+                    errors.add(new ApiException.FieldError("/history", "maxItems", "Invalid value"));
+                } else {
+                    for (int i = 0; i < turns.size(); i++) {
+                        JsonNode turn = turns.get(i);
+                        String pointer = "/history/" + i;
+                        if (!turn.isObject()) {
+                            errors.add(new ApiException.FieldError(pointer, "type", "Invalid value"));
+                            continue;
+                        }
+                        for (String name : turn.propertyNames()) {
+                            if (!"role".equals(name) && !"text".equals(name)) {
+                                errors.add(new ApiException.FieldError(pointer, "additionalProperties",
+                                        "Invalid value"));
+                            }
+                        }
+                        String role = turn.path("role").isString() ? turn.path("role").stringValue() : null;
+                        if (!"author".equals(role) && !"assistant".equals(role)) {
+                            errors.add(new ApiException.FieldError(pointer + "/role", "enum", "Invalid value"));
+                        }
+                        String text = turn.path("text").isString() ? turn.path("text").stringValue() : null;
+                        int length = text == null ? 0 : text.codePointCount(0, text.length());
+                        if (text == null) {
+                            errors.add(new ApiException.FieldError(pointer + "/text", "required", "Invalid value"));
+                        } else if (length < 1 || length > MAX_TEXT) {
+                            errors.add(new ApiException.FieldError(pointer + "/text",
+                                    length < 1 ? "minLength" : "maxLength", "Invalid value"));
+                        } else {
+                            history.add(new Turn(role, text));
+                        }
+                    }
+                }
+            }
+            fail(errors);
+            return new DraftEditRequest(instruction, revision, mode == null ? "edit" : mode, List.copyOf(history),
+                    profile);
+        }
+    }
+
     private static JsonNode object(JsonNode body, Set<String> allowed) {
         if (body == null || body.isMissingNode() || body.isNull()) {
             throw ApiException.malformed("A request body is required.");

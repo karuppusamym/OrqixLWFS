@@ -35,6 +35,7 @@ import { ImportNotice } from '@/features/migration/ImportNotice'
 import { PlaybackProvider } from './test/PlaybackContext'
 import { TestPanel } from './test/TestPanel'
 import { AiReviewPanel } from '@/features/ai/AiReviewPanel'
+import { AuthoringPanel } from '@/features/ai/AuthoringPanel'
 
 type StudioTab = 'canvas' | 'steps' | 'lanes' | 'source' | 'test'
 
@@ -278,6 +279,7 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
           </TabsList>
         </div>
         <div className="flex min-h-0 flex-1">
+          {!readOnly ? <AuthoringPanel /> : null}
           {showCanvas && currentTab === 'canvas' && canEdit ? (
             <Palette
               disabled={readOnly}

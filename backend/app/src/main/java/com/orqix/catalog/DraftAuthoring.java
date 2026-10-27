@@ -206,6 +206,18 @@ public class DraftAuthoring {
     }
 
     /**
+     * The latest draft revision of a visible workflow (conversational authoring, STU02). 404 when the workflow is not
+     * visible to the caller.
+     */
+    @Transactional(readOnly = true)
+    public Definition latestDraft(Caller caller, UUID workspaceId, UUID workflowId) {
+        CatalogDtos.WorkflowView workflow = workflows.getWorkflow(caller, workspaceId, workflowId);
+        int revision = workflow.draftRevision();
+        CatalogStore.DraftRow row = store.draft(workspaceId, workflowId, revision).orElseThrow(ApiException::notFound);
+        return new Definition(workflowId, revision, null, json.parse(row.definitionJson()));
+    }
+
+    /**
      * Canonical definition of a draft revision, or of the active release when {@code revision} is null. Needs
      * {@code workflow.read}; 404 when the workflow or revision is not visible, NO_ACTIVE_RELEASE when there is none.
      */

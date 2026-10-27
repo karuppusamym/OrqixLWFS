@@ -136,6 +136,8 @@ logging:
   level:
     org.flowable.common.engine.impl.agenda: warn
     org.flowable.engine.impl.bpmn.deployer: warn
+    # Kafka client chatter (configs, rebalances) stays out of the log; never record keys or values (S99 K12).
+    org.apache.kafka: warn
 
 orqix:
   identity:
@@ -152,6 +154,10 @@ orqix:
     cache-ttl: 50s
   idempotency:
     retention: 30d
+  kafka:
+    # S99 (c): off by default. stub = no broker, test messages only (demo); live = real consumers.
+    mode: "off"
+    clusters: {}
   egress:
     allowed-hosts: []
     allowed-private-hosts: []

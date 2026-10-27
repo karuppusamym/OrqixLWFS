@@ -187,6 +187,10 @@ public class AuditWriter {
             Map.entry("webhook.subscription-updated", Set.of("events", "enabled", "version")),
             Map.entry("webhook.delivery-replayed", Set.of("subscriptionId", "eventType", "attempts")),
             Map.entry("webhook.delivery-dead", Set.of("subscriptionId", "eventType", "attempts", "error", "statusCode")),
+            Map.entry("kafka.trigger-created", Set.of("key", "action", "cluster")),
+            Map.entry("kafka.trigger-updated", Set.of("key", "version", "enabled")),
+            Map.entry("kafka.record-dead", Set.of("triggerId", "partition", "offset", "error")),
+            Map.entry("kafka.test-message", Set.of("triggerId", "outcome")),
             Map.entry("agent.call", Set.of("key", "operation", "profile", "model", "outcome", "toolCalls", "inputTokens",
                     "outputTokens", "costUsd", "durationMs", "effectId")),
             // IN04 (S75): ids, names and sizes only; never the model's arguments or a reason text.

@@ -30,7 +30,7 @@ public record WebhookSettings(
         if (initialBackoff == null || initialBackoff.isNegative() || initialBackoff.compareTo(Duration.ofHours(1)) > 0
                 || maxBackoff == null || maxBackoff.compareTo(initialBackoff) < 0 || maxBackoff.compareTo(Duration.ofDays(1)) > 0
                 || maxAttempts < 1 || maxAttempts > 20 || batch < 1 || batch > 500 || maxPending < 1 || maxPending > 1_000_000
-                || lease == null || lease.compareTo(Duration.ofSeconds(15)) < 0 || lease.compareTo(Duration.ofMinutes(10)) > 0) {
+                || lease == null || lease.compareTo(Duration.ofSeconds(30)) < 0 || lease.compareTo(Duration.ofMinutes(10)) > 0) {
             throw new IllegalArgumentException("Webhook settings exceed supported bounds");
         }
     }

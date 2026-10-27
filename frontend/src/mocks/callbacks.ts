@@ -13,11 +13,29 @@ const B = '/api/v1/workspaces/:ws'
 let waits: S['CallbackWait'][] = []
 let subscriptions: S['WebhookSubscription'][] = []
 let deliveries: S['WebhookDelivery'][] = []
+let kafkaMode: S['KafkaTriggerList']['mode'] = 'stub'
+let kafkaTriggers: S['KafkaTrigger'][] = []
+let kafkaDead: S['KafkaDeadLetter'][] = []
+const KAFKA_CLUSTERS: S['KafkaCluster'][] = [{ name: 'main', allowedTopics: ['orders.created', 'payments.received'] }]
+const emptyStatus = (): S['KafkaTriggerStatus'] => ({ lag: 0, handled: 0, duplicates: 0, dead: 0, lastError: null, lastErrorAt: null, replicas: [] })
 
 export function resetCallbackMocks(): void {
   waits = []
   subscriptions = []
   deliveries = []
+  kafkaMode = 'stub'
+  kafkaTriggers = []
+  kafkaDead = []
+}
+
+export function seedKafkaMocks(seed: { mode?: S['KafkaTriggerList']['mode']; triggers?: S['KafkaTrigger'][]; dead?: S['KafkaDeadLetter'][] }): void {
+  if (seed.mode) kafkaMode = seed.mode
+  if (seed.triggers) kafkaTriggers = [...seed.triggers]
+  if (seed.dead) kafkaDead = [...seed.dead]
+}
+
+export function mockKafkaTriggers(): S['KafkaTrigger'][] {
+  return kafkaTriggers
 }
 
 export function seedCallbackMocks(seed: { waits?: S['CallbackWait'][]; deliveries?: S['WebhookDelivery'][]; subscriptions?: S['WebhookSubscription'][] }): void {
@@ -72,10 +90,39 @@ export function createCallbackHandlers(): HttpHandler[] {
       waits = waits.map((w) => (w.id === wait.id ? { ...w, tokenIssued: false, tokenExpiresAt: null } : w))
       return new HttpResponse(null, { status: 204 })
     }),
+    http.get(`${B}/kafka-triggers`, () => HttpResponse.json({ mode: kafkaMode, clusters: KAFKA_CLUSTERS, items: kafkaTriggers } satisfies S['KafkaTriggerList'])),
+    http.post(`${B}/kafka-triggers`, async ({ request }) => {
+      const body = (await request.json()) as S['KafkaTriggerCreateRequest']
+      if (!KAFKA_CLUSTERS.some((c) => c.name === body.cluster && c.allowedTopics.includes(body.topic))) return problem(422, 'VALIDATION_FAILED', 'The topic is not on the allow-list of the cluster.')
+      const created: S['KafkaTrigger'] = { id: newId(), key: body.key, name: body.name, cluster: body.cluster, topic: body.topic, consumerGroup: body.consumerGroup ?? `orqix-${body.key}`, secretRef: body.secretRef ?? null, action: body.action, workflowId: body.workflowId ?? null, messageName: body.messageName ?? null, correlationPointer: body.correlationPointer ?? null, mapping: body.mapping, batchSize: body.batchSize ?? 50, maxPerSecond: body.maxPerSecond ?? 20, startFrom: body.startFrom ?? 'latest', runAs: newId(), enabled: true, version: 1, createdAt: new Date().toISOString(), updatedAt: null, status: emptyStatus() }
+      kafkaTriggers = [...kafkaTriggers, created]
+      return HttpResponse.json(created, { status: 201 })
+    }),
+    http.put(`${B}/kafka-triggers/:id`, async ({ params, request }) => {
+      const body = (await request.json()) as S['KafkaTriggerUpdateRequest']
+      const current = kafkaTriggers.find((t) => t.id === params.id)
+      if (!current) return problem(404, 'NOT_FOUND', 'Not found')
+      if (current.version !== body.expectedVersion) return problem(409, 'CONFIGURATION_VERSION_CONFLICT', 'The adapter or trigger changed since you loaded it')
+      const updated: S['KafkaTrigger'] = { ...current, name: body.name, mapping: body.mapping, batchSize: body.batchSize, maxPerSecond: body.maxPerSecond, enabled: body.enabled, version: current.version + 1, updatedAt: new Date().toISOString() }
+      kafkaTriggers = kafkaTriggers.map((t) => (t.id === current.id ? updated : t))
+      return HttpResponse.json(updated)
+    }),
+    http.post(`${B}/kafka-triggers/:id/test-message`, async ({ params, request }) => {
+      if (kafkaMode !== 'stub') return problem(422, 'VALIDATION_FAILED', 'Test messages are only accepted in stub mode.')
+      const current = kafkaTriggers.find((t) => t.id === params.id)
+      if (!current) return problem(404, 'NOT_FOUND', 'Not found')
+      const body = (await request.json()) as S['KafkaTestMessageRequest']
+      const mapped = Object.values(current.mapping).every((pointer) => (body.value as Record<string, unknown>)[pointer.replace(/^\//, '')] !== undefined)
+      const status = { ...current.status, handled: current.status.handled + (mapped ? 1 : 0), dead: current.status.dead + (mapped ? 0 : 1) }
+      kafkaTriggers = kafkaTriggers.map((t) => (t.id === current.id ? { ...t, status } : t))
+      return HttpResponse.json((mapped ? { outcome: 'started', code: null, runId: newId() } : { outcome: 'dead', code: 'unmapped', runId: null }) satisfies S['KafkaTestMessageResult'])
+    }),
+    http.get(`${B}/kafka-dead-letters`, () => HttpResponse.json({ items: kafkaDead })),
     http.get(`${B}/webhook-subscriptions`, () => HttpResponse.json({ items: subscriptions })),
     http.post(`${B}/webhook-subscriptions`, async ({ request }) => {
       const body = (await request.json()) as S['WebhookSubscriptionCreateRequest']
       if (!/^https:\/\//.test(body.url)) return problem(422, 'EGRESS_NOT_ALLOWED', 'The endpoint is not allowed by the egress policy')
+      if (!body.secretRef.startsWith('webhook-')) return problem(422, 'VALIDATION_FAILED', 'Webhook secret references start with webhook-.')
       const created: S['WebhookSubscription'] = { id: newId(), name: body.name, url: body.url, secretRef: body.secretRef, events: body.events, enabled: body.enabled ?? true, version: 1, pending: 0, dead: 0, createdAt: new Date().toISOString(), updatedAt: null }
       subscriptions = [...subscriptions, created]
       return HttpResponse.json(created, { status: 201 })

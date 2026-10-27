@@ -14,6 +14,9 @@ import java.util.UUID;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
@@ -33,6 +36,7 @@ import tools.jackson.databind.node.ObjectNode;
  * hash, poll with ETag, one resume with idempotent replay, expiry, revocation, suspension, cross-request and
  * cross-workspace misuse, the signed inbound route, permissions and audit content.
  */
+@ExtendWith(OutputCaptureExtension.class)
 class CallbackTokenApiTest extends RuntimeTestBase {
 
     private static final String SECRET = "ex10-inbound-secret-value";
@@ -382,5 +386,55 @@ class CallbackTokenApiTest extends RuntimeTestBase {
                 .param("id", waitId.toString()).query(String.class).single()).isEqualTo("inbound");
         // A different event after the resume conflicts.
         assertThat(signed(own, "evt-3", token, body).status()).isEqualTo(409);
+    }
+
+    // ---------------------------------------------------------------- review fixes (S98)
+
+    @Test
+    void revokingAfterAResumeIsRefusedSoTheReplayKeepsWorking() throws Exception {
+        UUID wf = publishExternalWait("P1D");
+        UUID run = startOrder(wf);
+        UUID waitId = UUID.fromString(waitOf(run).path("id").asString());
+        String token = issue(waitId).path("token").asString();
+        String key = UUID.randomUUID().toString();
+        Response resumed = resume(PURCHASING, token, key, paid());
+        assertThat(resumed.status()).isEqualTo(200);
+        Response revoke = api("olga.operator").delete("/workspaces/{ws}/callback-waits/{id}/token", PURCHASING, waitId);
+        assertThat(revoke.status()).isEqualTo(409);
+        assertThat(revoke.code()).isEqualTo("CALLBACK_ALREADY_RESUMED");
+        Response replay = resume(PURCHASING, token, key, paid());
+        assertThat(replay.status()).isEqualTo(200);
+        assertThat(replay.header("Idempotent-Replayed")).isEqualTo("true");
+        assertThat(replay.body()).isEqualTo(resumed.body());
+    }
+
+    @Test
+    void theTokenNeverAppearsInAuditRowsLogsOrProblemBodies(CapturedOutput output) throws Exception {
+        UUID wf = publishExternalWait("P1D");
+        UUID run = startOrder(wf);
+        UUID waitId = UUID.fromString(waitOf(run).path("id").asString());
+        String token = issue(waitId).path("token").asString();
+        String secretPart = token.substring(4);
+        List<String> bodies = new java.util.ArrayList<>();
+        bodies.add(poll(SANDBOX, token, null).toString());
+        bodies.add(resume(PURCHASING, token, null, paid()).toString());
+        bodies.add(resume(PURCHASING, token, UUID.randomUUID().toString(), Map.of("amountPaid", "lots")).toString());
+        bodies.add(resume(SANDBOX, token, UUID.randomUUID().toString(), paid()).toString());
+        // The signed inbound path with the token: a foreign trigger (404) and the own trigger (resume).
+        byte[] body = json.write(Map.of("topic", "payments", "value", Map.of("ref", "PAY-SECRET", "amount", 1)))
+                .getBytes(StandardCharsets.UTF_8);
+        bodies.add(signed(trigger(publishPurchase(PURCHASING, null)), "evt-s1", token, body).toString());
+        Response accepted = signed(trigger(wf), "evt-s2", token, body);
+        assertThat(accepted.status()).as(accepted.toString()).isEqualTo(202);
+        bodies.add(accepted.toString());
+        bodies.add(resume(PURCHASING, token, UUID.randomUUID().toString(), paid()).toString());
+        bodies.add(api("olga.operator").delete("/workspaces/{ws}/callback-waits/{id}/token", PURCHASING, waitId).toString());
+        bodies.add(api("olga.operator").get("/workspaces/{ws}/callback-waits?runId=" + run, PURCHASING).toString());
+        assertThat(bodies).allSatisfy(b -> assertThat(b).doesNotContain(secretPart));
+        assertThat(jdbc.sql("SELECT count(*) FROM audit_event WHERE metadata::text LIKE :t OR resource_id LIKE :t")
+                .param("t", "%" + secretPart.substring(0, 20) + "%").query(Long.class).single()).isZero();
+        assertThat(jdbc.sql("SELECT count(*) FROM audit_event WHERE metadata::text LIKE :t")
+                .param("t", "%" + com.orqix.shared.json.Json.sha256Hex(token) + "%").query(Long.class).single()).isZero();
+        assertThat(output.getAll()).doesNotContain(secretPart).doesNotContain("PAY-SECRET");
     }
 }

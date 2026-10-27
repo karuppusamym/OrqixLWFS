@@ -104,6 +104,7 @@ public class AdapterService {
         WorkspaceAccess access = policy.freshAccess(caller, workspaceId).filter(WorkspaceAccess::visible)
                 .orElseThrow(ApiException::notFound);
         policy.require(access, Permission.CONNECTION_MANAGE, "createAdapter", true);
+        com.orqix.integration.SecretNamespaces.refuseReserved(request.secretRef(), "/secretRef");
         AdapterRules.Kind kind = AdapterRules.Kind.of(request.kind());
         ObjectNode config;
         try {
@@ -143,6 +144,7 @@ public class AdapterService {
         WorkspaceAccess access = policy.freshAccess(caller, workspaceId).filter(WorkspaceAccess::visible)
                 .orElseThrow(ApiException::notFound);
         policy.require(access, Permission.CONNECTION_MANAGE, "updateAdapter", true);
+        com.orqix.integration.SecretNamespaces.refuseReserved(request.secretRef(), "/secretRef");
         record Current(UUID id, String kind, int version, Instant createdAt) {
         }
         Current current = jdbc.sql("""

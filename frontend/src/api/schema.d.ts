@@ -2036,7 +2036,7 @@ export interface paths {
          *     call it with a bearer token. Not to be confused with resumeRun, which lifts an operator suspension.
          */
         post: operations["issueCallbackToken"];
-        /** Revoke the current callback token; the wait goes on and a new token can be issued */
+        /** Revoke the current callback token; the wait goes on and a new token can be issued (409 after a resume) */
         delete: operations["revokeCallbackToken"];
         options?: never;
         head?: never;
@@ -2086,6 +2086,89 @@ export interface paths {
          *     request (repeat it after resumeRun).
          */
         post: operations["resumeCallbackWait"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/kafka-triggers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Kafka consumer triggers with their status, the environment's mode and its named clusters (docs/build/S99) */
+        get: operations["listKafkaTriggers"];
+        put?: never;
+        /**
+         * Consume an allow-listed topic of a named cluster to start a workflow or send a message (at most 5 per workspace)
+         * @description The creator becomes the run-as person and must hold workflow.start for the workflow (start) or message.send
+         *     (resume). Credentials are only a secret reference. Brokers come from deployment configuration, never from here.
+         */
+        post: operations["createKafkaTrigger"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/kafka-triggers/{kafkaTriggerId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                kafkaTriggerId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Edit, enable or disable a Kafka trigger (expectedVersion must match; enabling makes the caller the run-as person) */
+        put: operations["updateKafkaTrigger"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/kafka-triggers/{kafkaTriggerId}/test-message": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                kafkaTriggerId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stub mode only - push one JSON value through the trigger's record handler without a broker */
+        post: operations["sendKafkaTestMessage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/kafka-dead-letters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Kafka records that could not be handled, newest first, at most 200 (no message content) */
+        get: operations["listKafkaDeadLetters"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4961,6 +5044,130 @@ export interface components {
             resumedAt: string;
             acceptedFields: string[];
         };
+        KafkaCluster: {
+            name: string;
+            allowedTopics: string[];
+        };
+        KafkaReplicaStatus: {
+            instanceId: string;
+            partitions: number[];
+            lag: number;
+            running: boolean;
+            /** Format: date-time */
+            lastPollAt?: string | null;
+        };
+        KafkaTriggerStatus: {
+            /** @description Sum over replicas that reported in the last two minutes */
+            lag: number;
+            handled: number;
+            duplicates: number;
+            dead: number;
+            lastError?: string | null;
+            /** Format: date-time */
+            lastErrorAt?: string | null;
+            replicas: components["schemas"]["KafkaReplicaStatus"][];
+        };
+        KafkaTrigger: {
+            /** Format: uuid */
+            id: string;
+            key: string;
+            name: string;
+            cluster: string;
+            topic: string;
+            consumerGroup: string;
+            secretRef?: string | null;
+            /** @enum {string} */
+            action: "start" | "resume";
+            /** Format: uuid */
+            workflowId?: string | null;
+            messageName?: string | null;
+            correlationPointer?: string | null;
+            mapping: {
+                [key: string]: string;
+            };
+            batchSize: number;
+            maxPerSecond: number;
+            /** @enum {string} */
+            startFrom: "earliest" | "latest";
+            /** Format: uuid */
+            runAs: string;
+            enabled: boolean;
+            version: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt?: string | null;
+            status: components["schemas"]["KafkaTriggerStatus"];
+        };
+        KafkaTriggerList: {
+            /** @enum {string} */
+            mode: "off" | "stub" | "live";
+            clusters: components["schemas"]["KafkaCluster"][];
+            items: components["schemas"]["KafkaTrigger"][];
+        };
+        KafkaTriggerCreateRequest: {
+            key: string;
+            name: string;
+            cluster: string;
+            topic: string;
+            consumerGroup?: string;
+            secretRef?: string;
+            /** @enum {string} */
+            action: "start" | "resume";
+            /** Format: uuid */
+            workflowId?: string;
+            messageName?: string;
+            correlationPointer?: string;
+            mapping: {
+                [key: string]: string;
+            };
+            batchSize?: number;
+            maxPerSecond?: number;
+            /** @enum {string} */
+            startFrom?: "earliest" | "latest";
+        };
+        KafkaTriggerUpdateRequest: {
+            name: string;
+            secretRef?: string | null;
+            mapping: {
+                [key: string]: string;
+            };
+            batchSize: number;
+            maxPerSecond: number;
+            enabled: boolean;
+            expectedVersion: number;
+        };
+        KafkaTestMessageRequest: {
+            key?: string;
+            value: Record<string, never>;
+        };
+        KafkaTestMessageResult: {
+            /** @enum {string} */
+            outcome: "started" | "resumed" | "buffered" | "duplicate" | "dead" | "retry";
+            code?: string | null;
+            /** Format: uuid */
+            runId?: string | null;
+        };
+        KafkaDeadLetter: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            triggerId: string;
+            triggerKey: string;
+            partition: number;
+            offset: number;
+            /** @description First 16 hex digits of the SHA-256 of the dedupe key */
+            keyDigest: string;
+            errorCode: string;
+            valueBytes: number;
+            valueSha256?: string | null;
+            attempts: number;
+            /** Format: date-time */
+            receivedAt: string;
+        };
+        KafkaDeadLetterList: {
+            items: components["schemas"]["KafkaDeadLetter"][];
+        };
         /** @enum {string} */
         WebhookEventType: "request.started" | "task.opened" | "request.completed" | "request.needs-attention" | "callback.waiting";
         WebhookSubscription: {
@@ -4985,6 +5192,7 @@ export interface components {
         WebhookSubscriptionCreateRequest: {
             name: string;
             url: string;
+            /** @description A secret file of its own, in the webhook- name space */
             secretRef: string;
             events: components["schemas"]["WebhookEventType"][];
             enabled?: boolean;
@@ -4992,6 +5200,7 @@ export interface components {
         WebhookSubscriptionUpdateRequest: {
             name: string;
             url: string;
+            /** @description A secret file of its own, in the webhook- name space */
             secretRef: string;
             events: components["schemas"]["WebhookEventType"][];
             enabled: boolean;
@@ -12685,6 +12894,7 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     pollCallbackWait: {
@@ -12756,6 +12966,153 @@ export interface operations {
             409: components["responses"]["Conflict"];
             413: components["responses"]["PayloadTooLarge"];
             422: components["responses"]["Unprocessable"];
+        };
+    };
+    listKafkaTriggers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Triggers */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KafkaTriggerList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createKafkaTrigger: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KafkaTriggerCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KafkaTrigger"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    updateKafkaTrigger: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                kafkaTriggerId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KafkaTriggerUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KafkaTrigger"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    sendKafkaTestMessage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                kafkaTriggerId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KafkaTestMessageRequest"];
+            };
+        };
+        responses: {
+            /** @description Handled */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KafkaTestMessageResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listKafkaDeadLetters: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Dead letters */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KafkaDeadLetterList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     listWebhookSubscriptions: {
@@ -12900,6 +13257,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
         };
     };
     listRuns: {

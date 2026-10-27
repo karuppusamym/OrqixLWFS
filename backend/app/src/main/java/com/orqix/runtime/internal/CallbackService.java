@@ -179,6 +179,11 @@ public class CallbackService implements InboundCallbacks {
                 .orElseThrow(ApiException::notFound);
         policy.require(access, Permission.RUN_OPERATE, "revokeCallbackToken", true);
         CallbackStore.Row row = store.lock(workspaceId, waitId).orElseThrow(ApiException::notFound);
+        if (row.resumedAt() != null) {
+            // The token now only replays the original answer; revoking it would turn a safe replay into a 404.
+            throw new ApiException(ProblemCode.CALLBACK_ALREADY_RESUMED,
+                    "The wait was already resumed; its token only replays the original answer and stays as it is.");
+        }
         if (row.tokenSha256() == null) {
             return;
         }

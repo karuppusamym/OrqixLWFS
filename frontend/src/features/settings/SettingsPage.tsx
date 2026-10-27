@@ -11,6 +11,7 @@ import { SharedAssetsPanel } from './SharedAssetsPanel'
 import { ConnectionsPanel } from './ConnectionsPanel'
 import { MigrationPolicyPanel } from './MigrationPolicyPanel'
 import { WebhooksPanel } from './WebhooksPanel'
+import { KafkaTriggersPanel } from './KafkaTriggersPanel'
 import { EmptyState } from '@/components/common/EmptyState'
 import { AiSettingsPanel, useShowAiSettings } from '@/features/ai/AiSettingsPanel'
 
@@ -60,6 +61,7 @@ export function SettingsPage() {
             </TabsTrigger>
           ) : null}
           {showWebhooks ? <TabsTrigger value="webhooks">Webhooks</TabsTrigger> : null}
+          {showWebhooks ? <TabsTrigger value="kafka">Kafka</TabsTrigger> : null}
           {showAi ? (
             <TabsTrigger value="ai">
               <Sparkles className="size-4" aria-hidden="true" /> AI
@@ -92,6 +94,7 @@ export function SettingsPage() {
           </TabsContent>
         ) : null}
         {showWebhooks ? <TabsContent value="webhooks"><WebhooksPanel /></TabsContent> : null}
+        {showWebhooks ? <TabsContent value="kafka"><KafkaTriggersPanel /></TabsContent> : null}
         {showAi ? (
           <TabsContent value="ai">
             <AiSettingsPanel />

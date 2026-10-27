@@ -24,7 +24,7 @@ export const EVENT_LABEL: Record<EventType, string> = {
   'callback.waiting': 'A request waits for an external system',
 }
 const EVENTS = Object.keys(EVENT_LABEL) as EventType[]
-const SECRET = /^[a-z0-9][a-z0-9-]{0,62}$/
+const SECRET = /^webhook-[a-z0-9-]{1,55}$/
 
 /**
  * Outbound webhooks (IN05, docs/build/S99): subscriptions (connection.manage edits, connection.read sees them) and the
@@ -92,7 +92,7 @@ export function WebhooksPanel() {
       <div>
         <h2 id="webhooks-heading" className="text-base font-semibold">Outbound webhooks</h2>
         <p className="text-sm text-muted-foreground">
-          Orqix posts request events to these endpoints, signed with <code>X-Orqix-Signature</code>. Each delivery carries
+          Orqix posts request events to these endpoints, signed with <code>X-Orqix-Signature: v1=…</code>. Each delivery carries
           ids and states only, never request data. Failed deliveries are retried with growing waits and end up below as dead letters.
         </p>
       </div>
@@ -132,7 +132,7 @@ export function WebhooksPanel() {
           <div className="space-y-1">
             <Label htmlFor="webhook-secret">Signing secret reference</Label>
             <Input id="webhook-secret" value={secretRef} maxLength={63} aria-describedby="webhook-secret-help" onChange={(e) => setSecretRef(e.target.value)} />
-            <p id="webhook-secret-help" className="text-xs text-muted-foreground">The name of a secret file on the server. The secret itself is never entered here.</p>
+            <p id="webhook-secret-help" className="text-xs text-muted-foreground">The name of a secret file on the server that starts with webhook-, used for nothing else. The secret itself is never entered here.</p>
           </div>
           <fieldset className="space-y-2">
             <legend className="text-sm font-medium">Events</legend>

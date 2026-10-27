@@ -142,7 +142,7 @@ public class AuditWriter {
             Map.entry("migration.policy.changed", Set.of("required", "version")),
             Map.entry("migration.review.approved", Set.of("revision", "definitionHash", "reviewVersion")),
             Map.entry("conversation.message", Set.of("stage", "version")),
-            Map.entry("workflow.simulated", Set.of("revision", "releaseNumber", "steps", "warnings", "status")),
+            Map.entry("workflow.simulated", Set.of("revision", "releaseNumber", "steps", "warnings", "status", "cases", "passed")),
             Map.entry("workflow.tests.saved", Set.of("suiteVersion", "cases")),
             Map.entry("document.template.created", Set.of("version", "placeholders")),
             Map.entry("document.template.versioned", Set.of("version", "placeholders")),

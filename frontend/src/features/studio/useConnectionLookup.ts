@@ -50,6 +50,11 @@ export function useConnectionLookup(ws: string, connectionKeys: string[], enable
         const ops = record?.definition.operations as Ops | undefined
         return responsePointerType(ops?.[operation]?.responseSchema, pointer)
       },
+      responseSchema(connectionKey, version, operation) {
+        const record = connectionDefinition(byKey.get(connectionKey), version)
+        const schema = (record?.definition.operations as Record<string, { responseSchema?: unknown }> | undefined)?.[operation]?.responseSchema
+        return schema && typeof schema === 'object' ? (schema as Record<string, unknown>) : undefined
+      },
       workflowOutputType(workflowKey, output) {
         return children[workflowKeys.indexOf(workflowKey)]?.properties[output]?.type as FieldType | undefined
       },

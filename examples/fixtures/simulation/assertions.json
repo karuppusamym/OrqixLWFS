@@ -1,0 +1,251 @@
+{
+  "note" : "Assertions of test cases (STU03, docs/build/S96). Each case evaluates its assertions over the golden trace <trace>.trace.json; the Java evaluator (SimulationAssertionsTest) and the studio mock port (frontend/src/mocks/assertions.test.ts) must both produce <expected> exactly. Regenerate expected with -Dorqix.updateGolden=true after an intentional change, and review the diff.",
+  "cases" : [ {
+    "id" : "all-pass",
+    "trace" : "purchase-5000",
+    "assertions" : {
+      "outcome" : "Fulfilled",
+      "outputs" : [ {
+        "field" : "procurementId",
+        "op" : "contains",
+        "value" : "sample"
+      }, {
+        "field" : "/steps/amountPolicy/route",
+        "op" : "equals",
+        "value" : "financeReview"
+      } ],
+      "path" : {
+        "steps" : [ "start", "manager", "amountPolicy", "route", "finance", "procure", "notify", "fulfilled" ],
+        "match" : "exact"
+      },
+      "rules" : [ {
+        "stepId" : "amountPolicy",
+        "rule" : 1
+      } ],
+      "approvals" : [ {
+        "stepId" : "manager",
+        "decision" : "approved"
+      }, {
+        "stepId" : "finance",
+        "decision" : "approved"
+      } ]
+    },
+    "expected" : {
+      "passed" : true,
+      "results" : [ {
+        "kind" : "outcome",
+        "label" : "Final outcome",
+        "passed" : true,
+        "expected" : "Fulfilled",
+        "actual" : "Fulfilled"
+      }, {
+        "kind" : "output",
+        "label" : "Output procurementId",
+        "passed" : true,
+        "expected" : "contains \"sample\"",
+        "actual" : "\"sample-id\""
+      }, {
+        "kind" : "output",
+        "label" : "Value route of \"Check purchase amount\"",
+        "passed" : true,
+        "expected" : "equals \"financeReview\"",
+        "actual" : "\"financeReview\""
+      }, {
+        "kind" : "path",
+        "label" : "Steps visited",
+        "passed" : true,
+        "expected" : "Request submitted → Review request → Check purchase amount → Finance review needed? → Finance review → Create purchase order → Tell requester it is ordered → Fulfilled",
+        "actual" : "Request submitted → Review request → Check purchase amount → Finance review needed? → Finance review → Create purchase order → Tell requester it is ordered → Fulfilled"
+      }, {
+        "kind" : "rule",
+        "label" : "Decision \"Check purchase amount\"",
+        "passed" : true,
+        "expected" : "rule 1",
+        "actual" : "rule 1"
+      }, {
+        "kind" : "approval",
+        "label" : "Approval \"Review request\"",
+        "passed" : true,
+        "expected" : "approved",
+        "actual" : "approved"
+      }, {
+        "kind" : "approval",
+        "label" : "Approval \"Finance review\"",
+        "passed" : true,
+        "expected" : "approved",
+        "actual" : "approved"
+      } ]
+    }
+  }, {
+    "id" : "all-fail",
+    "trace" : "purchase-1800",
+    "assertions" : {
+      "outcome" : "Rejected",
+      "outputs" : [ {
+        "field" : "procurementId",
+        "op" : "equals",
+        "value" : "PO-1"
+      }, {
+        "field" : "missing",
+        "op" : "range",
+        "min" : 1,
+        "max" : 10
+      }, {
+        "field" : "/steps/amountPolicy/route",
+        "op" : "range",
+        "min" : 5000
+      } ],
+      "path" : {
+        "steps" : [ "start", "manager", "amountPolicy", "route", "finance", "procure" ],
+        "match" : "exact"
+      },
+      "rules" : [ {
+        "stepId" : "amountPolicy",
+        "rule" : 1
+      }, {
+        "stepId" : "nowhere",
+        "rule" : "otherwise"
+      } ],
+      "approvals" : [ {
+        "stepId" : "finance",
+        "decision" : "approved"
+      } ]
+    },
+    "expected" : {
+      "passed" : false,
+      "results" : [ {
+        "kind" : "outcome",
+        "label" : "Final outcome",
+        "passed" : false,
+        "expected" : "Rejected",
+        "actual" : "Fulfilled"
+      }, {
+        "kind" : "output",
+        "label" : "Output procurementId",
+        "passed" : false,
+        "expected" : "equals \"PO-1\"",
+        "actual" : "\"sample-id\""
+      }, {
+        "kind" : "output",
+        "label" : "Output missing",
+        "passed" : false,
+        "expected" : "between 1 and 10",
+        "actual" : "no value"
+      }, {
+        "kind" : "output",
+        "label" : "Value route of \"Check purchase amount\"",
+        "passed" : false,
+        "expected" : "at least 5000",
+        "actual" : "\"standard\""
+      }, {
+        "kind" : "path",
+        "label" : "Steps visited",
+        "passed" : false,
+        "expected" : "Request submitted → Review request → Check purchase amount → Finance review needed? → Finance review → Create purchase order",
+        "actual" : "Request submitted → Review request → Check purchase amount → Finance review needed? → Create purchase order → Tell requester it is ordered → Fulfilled",
+        "detail" : "Step 5: expected \"Finance review\" but the run went to \"Create purchase order\"."
+      }, {
+        "kind" : "rule",
+        "label" : "Decision \"Check purchase amount\"",
+        "passed" : false,
+        "expected" : "rule 1",
+        "actual" : "otherwise"
+      }, {
+        "kind" : "rule",
+        "label" : "Decision \"nowhere\"",
+        "passed" : false,
+        "expected" : "otherwise",
+        "actual" : "not reached"
+      }, {
+        "kind" : "approval",
+        "label" : "Approval \"Finance review\"",
+        "passed" : false,
+        "expected" : "approved",
+        "actual" : "not reached"
+      } ]
+    }
+  }, {
+    "id" : "in-order-and-attention",
+    "trace" : "purchase-mock-422",
+    "assertions" : {
+      "outcome" : "__needsAttention__",
+      "path" : {
+        "steps" : [ "manager", "procure" ],
+        "match" : "inOrder"
+      },
+      "rules" : [ {
+        "stepId" : "amountPolicy",
+        "rule" : "otherwise"
+      } ]
+    },
+    "expected" : {
+      "passed" : true,
+      "results" : [ {
+        "kind" : "outcome",
+        "label" : "Final outcome",
+        "passed" : true,
+        "expected" : "Needs attention",
+        "actual" : "Needs attention at \"Create purchase order\""
+      }, {
+        "kind" : "path",
+        "label" : "Steps visited, in this order",
+        "passed" : true,
+        "expected" : "Review request → Create purchase order",
+        "actual" : "Request submitted → Review request → Check purchase amount → Finance review needed? → Create purchase order"
+      }, {
+        "kind" : "rule",
+        "label" : "Decision \"Check purchase amount\"",
+        "passed" : true,
+        "expected" : "otherwise",
+        "actual" : "otherwise"
+      } ]
+    }
+  }, {
+    "id" : "in-order-wrong-order",
+    "trace" : "purchase-1800",
+    "assertions" : {
+      "path" : {
+        "steps" : [ "procure", "manager" ],
+        "match" : "inOrder"
+      }
+    },
+    "expected" : {
+      "passed" : false,
+      "results" : [ {
+        "kind" : "path",
+        "label" : "Steps visited, in this order",
+        "passed" : false,
+        "expected" : "Create purchase order → Review request",
+        "actual" : "Request submitted → Review request → Check purchase amount → Finance review needed? → Create purchase order → Tell requester it is ordered → Fulfilled",
+        "detail" : "\"Review request\" was visited, but not in the expected order."
+      } ]
+    }
+  }, {
+    "id" : "path-too-short",
+    "trace" : "purchase-mock-422",
+    "assertions" : {
+      "outcome" : "Fulfilled",
+      "path" : {
+        "steps" : [ "start", "manager", "amountPolicy", "route", "procure", "notify", "fulfilled" ],
+        "match" : "exact"
+      }
+    },
+    "expected" : {
+      "passed" : false,
+      "results" : [ {
+        "kind" : "outcome",
+        "label" : "Final outcome",
+        "passed" : false,
+        "expected" : "Fulfilled",
+        "actual" : "Needs attention at \"Create purchase order\""
+      }, {
+        "kind" : "path",
+        "label" : "Steps visited",
+        "passed" : false,
+        "expected" : "Request submitted → Review request → Check purchase amount → Finance review needed? → Create purchase order → Tell requester it is ordered → Fulfilled",
+        "actual" : "Request submitted → Review request → Check purchase amount → Finance review needed? → Create purchase order",
+        "detail" : "The run stopped before \"Tell requester it is ordered\" (step 6)."
+      } ]
+    }
+  } ]
+}

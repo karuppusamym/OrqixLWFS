@@ -1,4 +1,5 @@
 import { isCalendarDate } from '@/lib/dates'
+import { schemaProblems } from '@/lib/jsonSchemaLite'
 import { resolveInputAggregate } from '@/lib/form/aggregates'
 import { conditionTerms, isAtomicCondition, type AtomicCondition, type Condition, type Definition, type Literal, type Transition, type WorkflowNode } from '@/features/studio/model/types'
 
@@ -15,9 +16,11 @@ import { conditionTerms, isAtomicCondition, type AtomicCondition, type Condition
 
 export interface SimulationScenario {
   approvals?: Record<string, { outcome?: 'approve' | 'reject' | 'timeout'; reason?: string }>
-  calls?: Record<string, { failure?: 'rejected' | 'unavailable' | 'unknownOutcome'; result?: Record<string, unknown> }>
+  calls?: Record<string, { failure?: 'rejected' | 'unavailable' | 'unknownOutcome' | 'timeout'; result?: Record<string, unknown>; status?: number; body?: unknown; delaySeconds?: number }>
   children?: Record<string, { outcomes?: string[]; results?: Record<string, unknown> }>
-  messages?: Record<string, 'arrives' | 'timeout'>
+  messages?: Record<string, 'arrives' | 'timeout' | { outcome?: 'arrives' | 'timeout'; payload?: Record<string, unknown>; delaySeconds?: number }>
+  workers?: Record<string, { result?: Record<string, unknown>; failure?: 'failed'; delaySeconds?: number }>
+  adapters?: Record<string, { failure?: 'unavailable' | 'unknownOutcome'; rowCount?: number }>
   simulateChildren?: boolean
   childScenarios?: Record<string, SimulationScenario>
 }
@@ -592,7 +595,8 @@ class Run {
   private http(n: WorkflowNode): Transition | null {
     const s = this.scenario.calls?.[n.id] ?? {}
     const failure = s.failure ?? null
-    if (failure !== null && !['rejected', 'unavailable', 'unknownOutcome'].includes(failure)) throw new ScenarioError(`calls.${n.id}.failure must be rejected, unavailable or unknownOutcome`)
+    if (failure !== null && !['rejected', 'unavailable', 'unknownOutcome', 'timeout'].includes(failure)) throw new ScenarioError(`calls.${n.id}.failure must be rejected, unavailable, unknownOutcome or timeout`)
+    if ('status' in s || 'body' in s || 'delaySeconds' in s || failure === 'timeout') return this.mockedHttp(n, s)
     const connKey = String(n.config.connectionRef ?? '')
     const operation = String(n.config.operation ?? '')
     const conn = this.ctx.connection(connKey)
@@ -666,6 +670,123 @@ class Run {
     return t
   }
 
+  /** Twin of SimulationRun.mockedHttp (STU03): a full mock answer, classified like the runtime classifies a real one. */
+  private mockedHttp(n: WorkflowNode, s: NonNullable<SimulationScenario['calls']>[string]): Transition | null {
+    const status0 = s.status
+    if (status0 !== undefined && (typeof status0 !== 'number' || !Number.isInteger(status0) || status0 < 200 || status0 > 599)) throw new ScenarioError(`calls.${n.id}.status must be an HTTP status from 200 to 599`)
+    if (s.body !== undefined && (s.body === null || typeof s.body !== 'object')) throw new ScenarioError(`calls.${n.id}.body must be a JSON object or array`)
+    const delay = mockDelay(`calls.${n.id}`, s)
+    const failure = s.failure ?? null
+    const connKey = String(n.config.connectionRef ?? '')
+    const operation = String(n.config.operation ?? '')
+    const conn = this.ctx.connection(connKey)
+    const op = conn?.operations[operation] as (SimConnection['operations'][string] & { successStatuses?: number[] }) | undefined
+    const connName = conn ? conn.name : connKey
+    const agent = conn?.kind === 'agent'
+    const opLabel = op ? (op.label ?? operation) : operation
+    const effect = op ? (op.effectClass ?? 'nonIdempotent') : 'nonIdempotent'
+    const readOnly = effect === 'readOnly'
+    const nonIdempotent = effect === 'nonIdempotent'
+    const d: Entry = { connection: connKey, connectionName: connName, operation, operationLabel: opLabel, agent, effectClass: effect }
+    const request: Entry = {}
+    const inputMapping = (n.config.inputMapping ?? {}) as Record<string, string>
+    for (const field of Object.keys(inputMapping).sort()) request[field] = (this.resolve(inputMapping[field] as string) ?? null) as Json
+    d.request = request
+    d.mocked = true
+    const callText = `${quote(n.label)}${agent ? ' asks the assistant ' : ' calls '}${connName} (${opLabel}).`
+    const limit = typeof n.config.timeoutSeconds === 'number' && n.config.timeoutSeconds > 0 ? n.config.timeoutSeconds : 30
+    if (delay !== null) d.delaySeconds = delay
+    const retry = `Orqix would try ${count(this.def.execution.maxAttempts, 'time')}, ${count(this.def.execution.retryDelaySeconds, 'second')} apart, and then the request needs attention until someone retries.`
+    const checkText = 'The request needs attention. Someone must check the other system before retrying.'
+    const fix = 'The request needs attention. Someone must fix the connection and retry.'
+    const rejected = 'Nothing was done, so the request stops here and needs attention. Someone must fix the cause and retry.'
+    let reason: string | null = null
+    let what = ''
+    let consequence = ''
+    let status: number | null = null
+    if (failure === 'timeout' || (delay !== null && delay > limit)) {
+      what = `In this test the system takes longer than the time limit of ${count(limit, 'second')}.`
+      reason = nonIdempotent ? 'EFFECT_UNKNOWN' : 'RETRIES_EXHAUSTED'
+      consequence = nonIdempotent ? `Nobody knows whether it was done. ${checkText}` : retry
+      d.failure = 'timeout'
+    } else if (failure !== null) {
+      if (failure === 'rejected') [reason, what, consequence] = ['EFFECT_REJECTED', 'In this test the system refuses the request.', rejected]
+      else if (failure === 'unavailable') [reason, what, consequence] = ['RETRIES_EXHAUSTED', 'In this test the system does not answer.', retry]
+      else [reason, what, consequence] = readOnly ? ['RESPONSE_INVALID', 'In this test the system answers with something that cannot be used.', fix] : ['EFFECT_UNKNOWN', 'In this test the answer is lost, so nobody knows whether it was done.', checkText]
+      d.failure = failure
+    } else {
+      const success = Array.isArray(op?.successStatuses) ? op.successStatuses : []
+      status = status0 ?? success[0] ?? 200
+      d.httpStatus = status
+      if (status === 429) [reason, what, consequence] = ['RETRIES_EXHAUSTED', 'In this test the system answers HTTP 429 (too many requests).', retry]
+      else if (status === 408 || status >= 500) [reason, what, consequence] = [nonIdempotent ? 'EFFECT_UNKNOWN' : 'RETRIES_EXHAUSTED', `In this test the system answers HTTP ${status}.`, nonIdempotent ? `Nobody knows whether it was done. ${checkText}` : retry]
+      else if (status >= 400) [reason, what, consequence] = ['EFFECT_REJECTED', `In this test the system refuses the request with HTTP ${status}.`, rejected]
+      else if (status >= 300) [reason, what, consequence] = [readOnly ? 'RESPONSE_INVALID' : 'EFFECT_UNKNOWN', `In this test the system answers HTTP ${status}, a redirect, which Orqix does not follow.`, readOnly ? fix : checkText]
+      else if (success.length > 0 && !success.includes(status)) [reason, what, consequence] = [readOnly ? 'RESPONSE_INVALID' : 'EFFECT_UNKNOWN', `In this test the system answers HTTP ${status}, which is not a success status of this operation.`, readOnly ? fix : checkText]
+      else if (s.body !== undefined && op?.responseSchema && typeof op.responseSchema === 'object') {
+        const problems = schemaProblems(op.responseSchema, s.body)
+        if (problems.length > 0) {
+          d.schemaProblems = problems as unknown as Json
+          reason = readOnly ? 'RESPONSE_INVALID' : 'EFFECT_UNKNOWN'
+          what = `In this test the system answers with a body that does not match the response schema of the operation (${count(problems.length, 'problem')}).`
+          consequence = readOnly ? fix : checkText
+        }
+      }
+      if (reason !== null) d.failure = reason === 'EFFECT_REJECTED' ? 'rejected' : reason === 'RETRIES_EXHAUSTED' ? 'unavailable' : 'unknownOutcome'
+    }
+    if (reason !== null) {
+      if ((reason === 'EFFECT_REJECTED' || reason === 'RESPONSE_INVALID') && this.next(n, 'failed')) return this.knownFailure(n, d, `${callText} ${what}`, reason, status)
+      this.stallWith(n, `${callText} ${what} ${consequence}`, d, reason, `${what} ${consequence}`)
+      return null
+    }
+    let response: unknown = s.body !== undefined ? s.body : s.result && typeof s.result === 'object' ? s.result : null
+    const synthesized = response === null
+    if (synthesized) response = op?.responseSchema && typeof op.responseSchema === 'object' ? sample(op.responseSchema, '') : null
+    const out: Record<string, unknown> = {}
+    let missing = false
+    const resultMapping = (n.config.resultMapping ?? {}) as Record<string, string>
+    for (const key of Object.keys(resultMapping).sort()) {
+      if (response === null) {
+        out[key] = `sample-${key}`
+        continue
+      }
+      const value = pointer(response, resultMapping[key] as string)
+      if (value === undefined || value === null || typeof value === 'object') missing = true
+      else out[key] = value
+    }
+    if (missing) {
+      const w = 'In this test the system answers without all the information this step needs.'
+      d.failure = 'unknownOutcome'
+      if (readOnly && this.next(n, 'failed')) return this.knownFailure(n, d, `${callText} ${w}`, 'RESPONSE_INVALID', status)
+      const c = readOnly ? fix : checkText
+      this.stallWith(n, `${callText} ${w} ${c}`, d, readOnly ? 'RESPONSE_INVALID' : 'EFFECT_UNKNOWN', `${w} ${c}`)
+      return null
+    }
+    d.sampleAnswer = synthesized
+    d.result = out as Json
+    this.steps.set(n.id, out)
+    const t = this.next(n, 'next')
+    let returns = Object.keys(out).length === 0 ? 'It succeeds.' : `In this test it succeeds and returns ${outputsTextOf(out)}.`
+    if (delay !== null && delay > 0) returns += ` It answers after ${count(delay, 'second')}; the test does not wait.`
+    this.add(n, `${callText} ${returns}`, d, out, t)
+    return t
+  }
+
+  /** Twin of SimulationRun.knownFailure: a known rejection or unusable read-only answer takes the failure route. */
+  private knownFailure(n: WorkflowNode, d: Entry, description: string, reason: string, httpStatus: number | null): Transition | null {
+    const kind = reason === 'EFFECT_REJECTED' ? 'rejected' : 'invalidResponse'
+    const out: Record<string, unknown> = {
+      failureKind: kind,
+      failureHttpStatus: httpStatus ?? (kind === 'rejected' ? 400 : 0),
+      failureMessage: kind === 'rejected' ? 'The external system rejected this request.' : 'The read-only system returned an invalid response.',
+    }
+    this.steps.set(n.id, out)
+    d.routed = true
+    const route = this.next(n, 'failed')
+    this.add(n, `${description} The workflow takes its authored failure path.`, d, out, route)
+    return route
+  }
+
   // -------------------------------------------------------------------------------------------- wait
 
   private wait(n: WorkflowNode): Transition | null {
@@ -709,41 +830,116 @@ class Run {
     const to = Array.isArray(n.config.to) ? n.config.to.length : 0
     const what = kind === 'email' ? `an email to ${to} fixed ${to === 1 ? 'recipient' : 'recipients'}` : kind === 'teams' ? 'a Teams message'
       : kind === 'kafka' ? `a message to the topic ${quote(String(n.config.topic ?? ''))}` : 'a database read'
-    const out: Record<string, unknown> = kind === 'jdbc' ? { outcome: 'stubbed', rowCount: 0 } : { outcome: 'stubbed' }
+    const setting = this.scenario.adapters?.[n.id] ?? {}
+    const failure = setting.failure ?? null
+    if (failure !== null && failure !== 'unavailable' && failure !== 'unknownOutcome') throw new ScenarioError(`adapters.${n.id}.failure must be unavailable or unknownOutcome`)
+    const rows = setting.rowCount
+    if (rows !== undefined && (typeof rows !== 'number' || !Number.isInteger(rows) || rows < 0 || rows > 10000)) throw new ScenarioError(`adapters.${n.id}.rowCount must be a whole number from 0 to 10000`)
+    const intro = `${quote(n.label)} would send ${what} through the adapter ${quote(adapter)}.`
+    const d: Entry = { adapter, adapterKind: kind }
+    if (failure !== null) {
+      d.mocked = true
+      d.failure = failure
+      const message = failure === 'unavailable'
+        ? `In this test the adapter cannot deliver. Orqix would try ${count(this.def.execution.maxAttempts, 'time')}, ${count(this.def.execution.retryDelaySeconds, 'second')} apart, and then the request needs attention until someone retries.`
+        : 'In this test the delivery result is lost, so nobody knows whether it was sent. The request needs attention. Someone must check before retrying.'
+      this.stallWith(n, `${intro} ${message}`, d, failure === 'unavailable' ? 'RETRIES_EXHAUSTED' : 'EFFECT_UNKNOWN', message)
+      return null
+    }
+    const out: Record<string, unknown> = kind === 'jdbc' ? { outcome: 'stubbed', rowCount: rows ?? 0 } : { outcome: 'stubbed' }
+    if (rows !== undefined) d.mocked = true
+    d.result = { ...out } as Json
     const t = this.next(n, 'next')
     this.steps.set(n.id, out)
-    this.add(n, `${quote(n.label)} would send ${what} through the adapter ${quote(adapter)}. This test sends nothing; in this build adapters deliver only to a local test stub.`, { adapter, adapterKind: kind, result: { ...out } as Json }, out, t)
+    this.add(n, `${intro} This test sends nothing; in this build adapters deliver only to a local test stub.`, d, out, t)
     return t
   }
 
   /** A worker is not simulated: the test settings may give its result, otherwise declared fields get sample values. */
   private externalTask(n: WorkflowNode): Transition | null {
-    const given = ((this.scenario as { workers?: Record<string, { result?: Record<string, unknown> }> }).workers ?? {})[n.id]?.result
-    const out: Record<string, unknown> = {}
-    for (const field of (n.config.result ?? []) as Array<{ name: string; type: string }>) {
-      const supplied = given?.[field.name]
-      out[field.name] = supplied !== undefined && supplied !== null ? supplied
-        : field.type === 'number' || field.type === 'integer' ? 1 : field.type === 'boolean' ? false : field.type === 'date' ? '2026-01-15' : `sample-${field.name}`
+    const inputs: Entry = {}
+    const mapping = (n.config.inputMapping ?? {}) as Record<string, string>
+    for (const key of Object.keys(mapping).sort()) {
+      const value = this.resolve(mapping[key] as string)
+      if (value === null || value === undefined) {
+        this.stall(n, 'TEST_EXTERNAL_INPUT_MISSING', 'A value sent to the worker is missing from this sample request.')
+        return null
+      }
+      inputs[key] = value as Json
     }
+    const setting = this.scenario.workers?.[n.id] ?? {}
+    const given = setting.result
+    const failure = setting.failure ?? null
+    if (failure !== null && failure !== 'failed') throw new ScenarioError(`workers.${n.id}.failure must be failed`)
+    const delay = mockDelay(`workers.${n.id}`, setting)
     const topic = String(n.config.topic ?? '')
+    const d: Entry = { topic, input: inputs }
+    if (delay !== null) d.delaySeconds = delay
+    const intro = `${quote(n.label)}: a worker for the topic ${quote(topic)} takes the job`
+    const fields = (n.config.result ?? []) as Array<{ name: string; type: string }>
+    if (failure === 'failed') {
+      d.mocked = true
+      d.failure = 'failed'
+      const message = 'In this test the worker reports a failure on every attempt. The request needs attention until someone retries.'
+      this.stallWith(n, `${intro}. ${message}`, d, 'RETRIES_EXHAUSTED', message)
+      return null
+    }
+    if (given !== undefined && given !== null) {
+      if (typeof given !== 'object' || Array.isArray(given)) throw new ScenarioError(`workers.${n.id}.result must be an object`)
+      const problem = fieldProblem(fields, given)
+      if (problem) {
+        d.mocked = true
+        const message = `The test result of this worker does not fit its declared result: ${problem}. A real worker would be refused with this result, so the request would keep waiting.`
+        this.stallWith(n, `${intro}. ${message}`, d, 'TEST_MOCK_INVALID', message)
+        return null
+      }
+    }
+    const out: Record<string, unknown> = {}
+    for (const field of fields) {
+      const supplied = given?.[field.name]
+      out[field.name] = supplied !== undefined && supplied !== null ? supplied : sampleField(field)
+    }
+    d.result = { ...out } as Json
     const t = this.next(n, 'next')
     this.steps.set(n.id, out)
-    this.add(n, `${quote(n.label)}: a worker for the topic ${quote(topic)} takes the job and returns its result. This test calls no worker; the result ${given ? 'comes from the test settings' : 'uses sample values'}.`, { topic, result: { ...out } as Json }, out, t)
+    this.add(n, `${intro} and returns its result. This test calls no worker; the result ${given ? 'comes from the test settings.' : 'uses sample values.'}${delay !== null && delay > 0 ? ` It finishes after ${count(delay, 'second')}; the test does not wait.` : ''}`, d, out, t)
     return t
   }
 
   private waitForMessage(n: WorkflowNode): Transition | null {
-    let choice = this.scenario.messages?.[n.id] ?? 'arrives'
+    const setting = this.scenario.messages?.[n.id]
+    const mock = setting !== null && typeof setting === 'object' ? setting : null
+    let choice: string = mock ? (mock.outcome ?? 'arrives') : setting === undefined || setting === null ? 'arrives' : String(setting)
     if (choice !== 'arrives' && choice !== 'timeout') throw new ScenarioError(`messages.${n.id} must be arrives or timeout`)
+    const payloadMock = mock?.payload
+    if (payloadMock !== undefined && (payloadMock === null || typeof payloadMock !== 'object' || Array.isArray(payloadMock))) throw new ScenarioError(`messages.${n.id}.payload must be an object`)
+    const delay = mock ? mockDelay(`messages.${n.id}`, mock) : null
     const message = String(n.config.message ?? '')
+    const limitMinutes = durationMinutes(n.config.timeoutAfter as string | undefined)
+    let lateNote: string | null = null
+    if (choice === 'arrives' && delay !== null && limitMinutes > 0 && delay > limitMinutes * 60) {
+      choice = 'timeout'
+      lateNote = `In this test the message comes after ${count(delay, 'second')}, later than the time limit.`
+    }
+    const payloadFields = (n.config.payload ?? []) as Array<{ name: string; type: string }>
+    if (payloadMock) {
+      const problem = fieldProblem(payloadFields, payloadMock)
+      if (problem) {
+        const text = `The test payload of the message ${quote(message)} does not fit its declared fields: ${problem}. A real message like this would be refused, so the request would keep waiting.`
+        this.stallWith(n, `${quote(n.label)}: ${text}`, { message, mocked: true }, 'TEST_MOCK_INVALID', text)
+        return null
+      }
+    }
     const correlationField = String(n.config.correlationField ?? '')
     const f = this.info(correlationField)
     const key = this.resolve(correlationField)
     const correlation = `${f.label} (${key === null || key === undefined ? 'no value' : text.value(key, f.money)})`
     const d: Entry = { message, correlationField, correlation }
-    let note: string | null = null
+    if (mock) d.mocked = true
+    if (delay !== null) d.delaySeconds = delay
+    let note: string | null = lateNote
     if (choice === 'timeout' && !this.next(n, 'timedOut')) {
-      note = 'This step has no time limit, so the test treats the message as arrived.'
+      note = `${lateNote === null ? '' : `${lateNote} `}This step has no time limit, so the test treats the message as arrived.`
       choice = 'arrives'
     }
     const out: Record<string, unknown> = {}
@@ -755,8 +951,9 @@ class Run {
       t = this.next(n, 'timedOut')
       sentence = `${quote(n.label)}: the message ${quote(message)} does not arrive within ${minutes > 0 ? describeMinutes(minutes) : 'the time limit'}, so the time limit fires and the request takes the timed-out route.`
     } else {
-      for (const field of (n.config.payload ?? []) as Array<{ name: string; type: string }>) {
-        out[field.name] = field.type === 'number' || field.type === 'integer' ? 1 : field.type === 'boolean' ? false : field.type === 'date' ? '2026-01-15' : `sample-${field.name}`
+      for (const field of payloadFields) {
+        const supplied = payloadMock?.[field.name]
+        out[field.name] = supplied !== undefined && supplied !== null ? supplied : sampleField(field)
       }
       d.arrived = true
       d.payload = { ...out } as Json
@@ -1067,7 +1264,8 @@ class Run {
       ['calls', 'http'],
       ['children', 'startWorkflow'],
       ['messages', 'waitForMessage'],
-      ['workers' as keyof SimulationScenario, 'externalTask'],
+      ['workers', 'externalTask'],
+      ['adapters', 'sendAdapter'],
     ]
     for (const [group, kind] of groups) {
       for (const id of Object.keys((this.scenario[group] as Record<string, unknown> | undefined) ?? {})) {
@@ -1162,10 +1360,41 @@ function pointer(body: unknown, ref: string): unknown {
   return current
 }
 
+// ------------------------------------------------------------------------------------------------ mocks (STU03)
+
+const MAX_DELAY_SECONDS = 2_592_000
+
+function mockDelay(where: string, s: { delaySeconds?: unknown }): number | null {
+  if (!('delaySeconds' in s) || s.delaySeconds === undefined) return null
+  const v = s.delaySeconds
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v > MAX_DELAY_SECONDS) throw new ScenarioError(`${where}.delaySeconds must be a whole number of seconds from 0 to ${MAX_DELAY_SECONDS}`)
+  return v
+}
+
+const TYPE_WORD: Record<string, string> = { number: 'a number', integer: 'a whole number', boolean: 'true or false', date: 'a date (YYYY-MM-DD)' }
+
+/** Twin of Mocks.fieldProblem: only declared fields, each of the declared type. */
+function fieldProblem(fields: Array<{ name: string; type: string }>, given: Record<string, unknown>): string | null {
+  const declared = new Set(fields.map((f) => f.name))
+  for (const name of Object.keys(given).sort()) if (!declared.has(name)) return `${quote(name)} is not a declared field`
+  for (const f of fields) {
+    const v = given[f.name]
+    if (v === undefined || v === null) continue
+    const ok = f.type === 'number' ? typeof v === 'number' : f.type === 'integer' ? typeof v === 'number' && Number.isInteger(v) : f.type === 'boolean' ? typeof v === 'boolean'
+      : f.type === 'date' ? typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) : typeof v === 'string'
+    if (!ok) return `${quote(f.name)} must be ${TYPE_WORD[f.type] ?? 'text'}`
+  }
+  return null
+}
+
+function sampleField(field: { name: string; type: string }): unknown {
+  return field.type === 'number' || field.type === 'integer' ? 1 : field.type === 'boolean' ? false : field.type === 'date' ? '2026-01-15' : `sample-${field.name}`
+}
+
 /** A scenario member of the wrong type; the API answers 422 with the message. */
 function validateScenario(scenario:SimulationScenario,level=0):void {
   if(!scenario || typeof scenario!=='object' || Array.isArray(scenario) || Object.keys(scenario).length>20 || level>MAX_CHILD_DEPTH || new TextEncoder().encode(JSON.stringify(scenario)).length>64*1024) throw new ScenarioError('Scenario settings exceed their bounded shape')
-  for(const group of ['approvals','calls','children','messages','childScenarios'] as const) {
+  for(const group of ['approvals','calls','children','messages','childScenarios','workers','adapters'] as const) {
     const entries=scenario[group]
     if(entries===undefined) continue
     if(!entries || typeof entries!=='object' || Array.isArray(entries) || Object.keys(entries).length>100) throw new ScenarioError(`${group} must contain at most 100 step settings`)

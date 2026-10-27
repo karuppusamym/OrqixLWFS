@@ -100,6 +100,21 @@ class SecurityMatrixTest extends RuntimeTestBase {
     }
 
     @Test
+    void testTabOperationsAreInTheMatrixWithTheirPermissions() {
+        JsonNode paths = OpenApiContract.get().document().path("paths");
+        String base = "/workspaces/{workspaceId}/workflows/{workflowId}/";
+        JsonNode cases = paths.path(base + "simulate-cases").path("post");
+        assertThat(cases.path("operationId").asString()).isEqualTo("simulateWorkflowCases");
+        assertThat(cases.path("x-orqix-permission").asString()).isEqualTo("workflow.read");
+        assertThat(cases.path("x-orqix-audit").asString()).isEqualTo("workflow.simulated");
+        JsonNode summary = paths.path(base + "test-suite/summary").path("get");
+        assertThat(summary.path("operationId").asString()).isEqualTo("getWorkflowTestSummary");
+        assertThat(summary.path("x-orqix-permission").asString()).isEqualTo("workflow.read");
+        // tSec01 above calls both as foreign principals against the real purchasing workflow and requires 404 and no
+        // state change.
+    }
+
+    @Test
     void tSec10_bearerTokensOnlyReachStartGetRunAndEvents() throws Exception {
         String machine = "machine-" + UUID.randomUUID().toString().substring(0, 8);
         UUID workflowId = publishPurchase(PURCHASING, null);
@@ -381,6 +396,10 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "applyDraftBpmn" -> Map.of("bpmn", "<definitions/>");
             case "evaluateDecision" -> Map.of("revision", 1, "values", Map.of("/input/amount", 1));
             case "simulateWorkflow" -> Map.of("revision", 1, "input", Map.of("amount", 1));
+            case "simulateWorkflowCases" -> Map.of("revision", 1, "cases", List.of(Map.of("id", "c1",
+                    "input", Map.of("amount", 1), "scenario", Map.of("calls", Map.of("procure",
+                            Map.of("status", 201, "body", Map.of("id", "PO-1", "status", "CREATED")))),
+                    "assertions", Map.of("outcome", "Fulfilled"))));
             case "createDocumentTemplate" -> Map.of("name", "Foreign template", "format", "pdf", "body", "Hello {{name}}");
             case "addDocumentTemplateVersion" -> Map.of("expectedVersion", 1, "format", "pdf", "body", "Foreign {{name}}");
             case "setDocumentTemplateArchived" -> Map.of("archived", true);

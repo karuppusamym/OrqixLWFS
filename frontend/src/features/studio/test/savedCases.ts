@@ -1,15 +1,24 @@
 import { readStorage, writeStorage } from '@/lib/storage'
 import type { RawValues } from '@/lib/form/values'
-import { emptySettings, type TestSettings } from './scenarioModel'
+import { emptyAssertions, emptySettings, type CaseAssertions, type TestSettings } from './scenarioModel'
+
+/**
+ * Version of a saved case. 2: answers, step settings and the expected outcome (S7). 3 (STU03): mocks for integration
+ * points and assertions. Older cases are migrated when read (no assertions, mocks empty), so they keep working.
+ */
+export const CASE_VERSION = 3
 
 /** A named test case: the answers typed into the sample form, what should happen at each step, what is expected. */
 export interface SavedCase {
+  version: number
   id: string
   name: string
   values: RawValues
   settings: TestSettings
   /** A business outcome, {@link NEEDS_ATTENTION}, or null for "no expectation". */
   expect: string | null
+  /** What else the case checks (STU03). */
+  assertions: CaseAssertions
 }
 
 export const MAX_CASES = 10
@@ -39,21 +48,50 @@ export function parseCase(raw: unknown): SavedCase | null {
   if (isRecord(s.approvals)) for (const [k, v] of Object.entries(s.approvals)) if (isRecord(v) && (v.outcome === 'approve' || v.outcome === 'reject' || v.outcome === 'timeout')) settings.approvals[k] = { outcome: v.outcome, reason: typeof v.reason === 'string' ? v.reason : '' }
   if (isRecord(s.calls))
     for (const [k, v] of Object.entries(s.calls))
-      if (isRecord(v) && (v.result === 'works' || v.result === 'rejected' || v.result === 'unavailable' || v.result === 'unknownOutcome')) {
-        const answers: Record<string, string> = {}
-        if (isRecord(v.answers)) for (const [a, t] of Object.entries(v.answers)) if (typeof t === 'string') answers[a] = t
-        settings.calls[k] = { result: v.result, answers }
+      if (isRecord(v) && (v.result === 'works' || v.result === 'rejected' || v.result === 'unavailable' || v.result === 'unknownOutcome' || v.result === 'timeout')) {
+        const mock = isRecord(v.mock) ? { status: text(v.mock.status, 3), body: text(v.mock.body, 32 * 1024), delaySeconds: text(v.mock.delaySeconds, 7) } : undefined
+        settings.calls[k] = { result: v.result, answers: strings(v.answers), ...(mock ? { mock } : {}) }
       }
   if (isRecord(s.children)) for (const [k, v] of Object.entries(s.children)) if (isRecord(v) && Array.isArray(v.outcomes)) settings.children[k] = { outcomes: v.outcomes.filter((o): o is string => typeof o === 'string') }
   if (isRecord(s.messages)) for (const [k, v] of Object.entries(s.messages)) if (v === 'arrives' || v === 'timeout') settings.messages[k] = v
+  if (isRecord(s.messageMocks)) for (const [k, v] of Object.entries(s.messageMocks)) if (isRecord(v)) settings.messageMocks[k] = { answers: strings(v.answers), delaySeconds: text(v.delaySeconds, 7) }
+  if (isRecord(s.workers)) for (const [k, v] of Object.entries(s.workers)) if (isRecord(v) && (v.result === 'works' || v.result === 'failed')) settings.workers[k] = { result: v.result, answers: strings(v.answers), delaySeconds: text(v.delaySeconds, 7) }
+  if (isRecord(s.adapters)) for (const [k, v] of Object.entries(s.adapters)) if (isRecord(v) && (v.result === 'works' || v.result === 'unavailable' || v.result === 'unknownOutcome')) settings.adapters[k] = { result: v.result, rowCount: text(v.rowCount, 5) }
   settings.simulateChildren = s.simulateChildren === true
   return {
+    version: CASE_VERSION,
     id: typeof raw.id === 'string' && raw.id !== '' ? raw.id : `case-${Math.random().toString(36).slice(2, 10)}`,
     name: raw.name.trim().slice(0, 80),
     values,
     settings,
     expect: typeof raw.expect === 'string' ? raw.expect : null,
+    // Version 2 cases (before STU03) have no assertions: they keep checking only the outcome.
+    assertions: parseAssertions(raw.assertions),
   }
+}
+
+const text = (v: unknown, max: number): string => (typeof v === 'string' ? v.slice(0, max) : '')
+
+function strings(v: unknown): Record<string, string> {
+  const out: Record<string, string> = {}
+  if (isRecord(v)) for (const [a, t] of Object.entries(v).slice(0, 50)) if (typeof t === 'string') out[a] = t.slice(0, 1000)
+  return out
+}
+
+function parseAssertions(raw: unknown): CaseAssertions {
+  const a = emptyAssertions()
+  if (!isRecord(raw)) return a
+  if (Array.isArray(raw.outputs))
+    for (const o of raw.outputs.slice(0, 20))
+      if (isRecord(o) && typeof o.field === 'string' && (o.op === 'equals' || o.op === 'contains' || o.op === 'range')) a.outputs.push({ field: o.field.slice(0, 200), op: o.op, value: text(o.value, 200), min: text(o.min, 30), max: text(o.max, 30) })
+  if (isRecord(raw.path) && Array.isArray(raw.path.steps)) {
+    const steps = raw.path.steps.filter((x): x is string => typeof x === 'string').slice(0, 100)
+    if (steps.length > 0) a.path = { steps, match: raw.path.match === 'inOrder' ? 'inOrder' : 'exact' }
+  }
+  if (Array.isArray(raw.rules)) for (const r of raw.rules.slice(0, 20)) if (isRecord(r) && typeof r.stepId === 'string' && typeof r.rule === 'string') a.rules.push({ stepId: r.stepId, rule: r.rule })
+  if (Array.isArray(raw.approvals))
+    for (const r of raw.approvals.slice(0, 20)) if (isRecord(r) && typeof r.stepId === 'string' && (r.decision === 'approved' || r.decision === 'rejected' || r.decision === 'timedOut')) a.approvals.push({ stepId: r.stepId, decision: r.decision })
+  return a
 }
 
 export function loadCases(ws: string, workflowId: string, subjectId: string): SavedCase[] {
@@ -84,7 +122,7 @@ export function upsertCase(cases: SavedCase[], next: SavedCase): SavedCase[] | n
 }
 
 export function exportCases(workflowKey: string, cases: SavedCase[]): string {
-  return JSON.stringify({ format: FORMAT, version: 1, workflow: workflowKey, cases }, null, 2)
+  return JSON.stringify({ format: FORMAT, version: 2, workflow: workflowKey, cases }, null, 2)
 }
 
 export interface ImportResult {
@@ -103,7 +141,7 @@ export function importCases(text: string, current: SavedCase[]): ImportResult {
   } catch {
     return { cases: current, skipped: 0, error: 'This file is not a list of saved test cases.' }
   }
-  const list = isRecord(parsed) && parsed.format === FORMAT && (parsed.version === undefined || parsed.version === 1) && Array.isArray(parsed.cases) && parsed.cases.length <= 100 ? parsed.cases : null
+  const list = isRecord(parsed) && parsed.format === FORMAT && (parsed.version === undefined || parsed.version === 1 || parsed.version === 2) && Array.isArray(parsed.cases) && parsed.cases.length <= 100 ? parsed.cases : null
   if (!list) return { cases: current, skipped: 0, error: 'This file is not a list of saved test cases.' }
   let cases = current
   let skipped = 0

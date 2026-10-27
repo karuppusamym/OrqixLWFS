@@ -1834,6 +1834,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/test-suite/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * How many shared tests passed in the latest recorded run (counts only; informational, STU03)
+         * @description For everyone who can read the workflow. No sample, name or expected value is returned. lastRun is the most recent run of the current suite version (any draft revision), or null. Publishing is still decided by the shared-test gate of publishDraft; this summary never blocks anything.
+         */
+        get: operations["getWorkflowTestSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/simulate-cases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run up to 20 test cases (sample request, scenario with mocks, assertions) as dry runs in one action (STU03)
+         * @description Same evaluation as simulateWorkflow for each case, counted as one dry run for the rate limit and audited once with counts only. Nothing is started, called or stored. A case whose sample request or settings do not fit is reported with status invalid; blocking workflow problems answer 422 WORKFLOW_INVALID. No trace is returned.
+         */
+        post: operations["simulateWorkflowCases"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/workflows/{workflowId}/test-suite/run": {
         parameters: {
             query?: never;
@@ -5478,6 +5524,107 @@ export interface components {
             scenario?: components["schemas"]["SimulationScenario"];
             /** @description Expected business outcome, or __needsAttention__ */
             expect: string;
+            assertions?: components["schemas"]["SimulationAssertions"];
+        };
+        WorkflowTestSummary: {
+            suiteVersion: number;
+            cases: number;
+            lastRun: {
+                revision: number;
+                passed: boolean;
+                passedCases: number;
+                totalCases: number;
+                /** Format: date-time */
+                testedAt: string;
+            } | null;
+        };
+        /** @description What a test case checks after its dry run (STU03). Every item must hold for the case to pass. */
+        SimulationAssertions: {
+            /** @description Expected business outcome, or __needsAttention__ */
+            outcome?: string;
+            outputs?: {
+                /** @description Output key, or /steps/<stepId>/<name> for a value a step wrote */
+                field: string;
+                /** @enum {string} */
+                op: "equals" | "contains" | "range";
+                /** @description For equals and contains */
+                value?: string | number | boolean;
+                min?: number;
+                max?: number;
+            }[];
+            path?: {
+                steps: string[];
+                /**
+                 * @description exact - the steps visited, in order of first visit; inOrder - these steps are visited in this order, others may come between
+                 * @default exact
+                 * @enum {string}
+                 */
+                match: "exact" | "inOrder";
+            };
+            rules?: {
+                stepId: string;
+                rule: number | "otherwise";
+            }[];
+            approvals?: {
+                stepId: string;
+                /** @enum {string} */
+                decision: "approved" | "rejected" | "timedOut";
+            }[];
+        };
+        SimulationAssertionResults: {
+            passed: boolean;
+            results: components["schemas"]["SimulationAssertionResult"][];
+        };
+        SimulationAssertionResult: {
+            /** @enum {string} */
+            kind: "outcome" | "output" | "path" | "rule" | "approval";
+            label: string;
+            passed: boolean;
+            /** @description What the case expects, in words */
+            expected: string;
+            /** @description What the dry run did, in words */
+            actual: string;
+            /** @description For a path: the first difference */
+            detail?: string;
+        };
+        SimulateCasesRequest: {
+            revision?: number;
+            useActiveRelease?: boolean;
+            cases: {
+                id: string;
+                input: {
+                    [key: string]: unknown;
+                };
+                scenario?: components["schemas"]["SimulationScenario"];
+                assertions?: components["schemas"]["SimulationAssertions"];
+            }[];
+        };
+        SimulateCasesResult: {
+            source: {
+                revision: number | null;
+                releaseNumber: number | null;
+            };
+            passed: number;
+            total: number;
+            results: {
+                id: string;
+                /** @enum {string} */
+                status: "finished" | "needsAttention" | "invalid";
+                passed: boolean;
+                outcome?: {
+                    status?: string;
+                    businessOutcome?: string | null;
+                    outcomeKind?: string | null;
+                    summary?: string;
+                };
+                assertions?: components["schemas"]["SimulationAssertionResults"];
+                problem?: string;
+                fieldErrors?: {
+                    pointer?: string;
+                    code?: string;
+                    message?: string;
+                }[];
+            }[];
         };
         WorkflowTestSuite: {
             version: number;
@@ -5500,6 +5647,8 @@ export interface components {
                 passed: boolean;
                 /** @enum {string} */
                 status: "finished" | "needsAttention" | "invalid";
+                /** @description Failed assertions with expected and actual (returned to the designer, never stored) */
+                failures?: components["schemas"]["SimulationAssertionResult"][];
             }[];
         };
         SimulateRequest: {
@@ -5512,6 +5661,7 @@ export interface components {
                 [key: string]: unknown;
             };
             scenario?: components["schemas"]["SimulationScenario"];
+            assertions?: components["schemas"]["SimulationAssertions"];
         };
         /** @description What happens at the steps a person or another system would decide. Everything defaults to the happy path. */
         SimulationScenario: {
@@ -5523,15 +5673,42 @@ export interface components {
                     reason?: string;
                 };
             };
-            /** @description By step ID of a Call a system step. Default is success with a sample answer built from the response schema of the operation. */
+            /** @description By step ID of a Call a system step (also an agent step). Default is success with a sample answer built from the response schema of the operation. A mock (status, body, delaySeconds, or failure timeout) is classified like the runtime classifies a real answer; nothing is sent. */
             calls?: {
                 [key: string]: {
                     /** @enum {string} */
-                    failure?: "rejected" | "unavailable" | "unknownOutcome";
-                    /** @description The answer (response body) of the system */
+                    failure?: "rejected" | "unavailable" | "unknownOutcome" | "timeout";
+                    /** @description Partial answer with only the mapped fields (not checked against the response schema) */
                     result?: {
                         [key: string]: unknown;
                     };
+                    /** @description HTTP status of the mocked answer; default the first success status */
+                    status?: number;
+                    /** @description The full mocked response body, checked against the response schema of the operation */
+                    body?: Record<string, never> | unknown[];
+                    /** @description How long the answer takes; above the step time limit it is a timeout */
+                    delaySeconds?: number;
+                };
+            };
+            /** @description By step ID of a Work by an external worker step. Default is a sample result. */
+            workers?: {
+                [key: string]: {
+                    /** @description The result fields (checked against the declared fields) */
+                    result?: {
+                        [key: string]: unknown;
+                    };
+                    /** @enum {string} */
+                    failure?: "failed";
+                    delaySeconds?: number;
+                };
+            };
+            /** @description By step ID of a Send through an adapter step. Default is delivered to the local stub. */
+            adapters?: {
+                [key: string]: {
+                    /** @enum {string} */
+                    failure?: "unavailable" | "unknownOutcome";
+                    /** @description Rows a database read returns */
+                    rowCount?: number;
                 };
             };
             /** @description By step ID of a Start another workflow step. */
@@ -5545,9 +5722,18 @@ export interface components {
                     };
                 };
             };
-            /** @description By step ID of a Wait for a message step. arrives (default) or timeout. */
+            /** @description By step ID of a Wait for a message step. arrives (default) or timeout, or a mock with the payload and a delay. */
             messages?: {
-                [key: string]: "arrives" | "timeout";
+                [key: string]: ("arrives" | "timeout") | {
+                    /** @enum {string} */
+                    outcome?: "arrives" | "timeout";
+                    /** @description Payload fields (checked against the declared fields) */
+                    payload?: {
+                        [key: string]: unknown;
+                    };
+                    /** @description Later than the time limit means a timeout */
+                    delaySeconds?: number;
+                };
             };
             /** @description Run the active release of each child workflow too (at most 3 levels) */
             simulateChildren?: boolean;
@@ -5613,6 +5799,7 @@ export interface components {
             };
             /** @description What a dry run cannot prove */
             limits: string;
+            assertions?: components["schemas"]["SimulationAssertionResults"];
         };
         SimulationStep: {
             seq: number;
@@ -12058,6 +12245,67 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getWorkflowTestSummary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Summary */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowTestSummary"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    simulateWorkflowCases: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SimulateCasesRequest"];
+            };
+        };
+        responses: {
+            /** @description Pass or fail per case */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimulateCasesResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             413: components["responses"]["PayloadTooLarge"];
             422: components["responses"]["Unprocessable"];
             429: components["responses"]["TooManyRequests"];

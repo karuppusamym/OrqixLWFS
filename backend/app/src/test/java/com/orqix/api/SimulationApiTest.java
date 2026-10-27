@@ -139,10 +139,84 @@ class SimulationApiTest extends IntegrationTestBase {
         assertThat(metadata).doesNotContain("secret").doesNotContain("Laptop").doesNotContain("1800");
     }
 
+    @Test
+    void mockedCallsAreAnsweredWithoutAnyCallOrJournalEntryAndAssertionsAreChecked() throws Exception {
+        UUID id = createFromTemplate();
+        int posts = com.orqix.support.Stub.postCount();
+        Map<String, Long> before = counts();
+        Map<String, Object> mock = Map.of("status", 201, "body", Map.of("id", "PO-MOCK-1", "status", "CREATED"),
+                "delaySeconds", 3);
+        Response response = simulate("dana.designer", id, Map.of("input", input(1800),
+                "scenario", Map.of("calls", Map.of("procure", mock)),
+                "assertions", Map.of("outcome", "Fulfilled",
+                        "outputs", List.of(Map.of("field", "/steps/procure/procurementId", "op", "equals", "value", "PO-MOCK-1")),
+                        "path", Map.of("steps", List.of("start", "manager", "amountPolicy", "route", "procure"), "match", "inOrder"),
+                        "rules", List.of(Map.of("stepId", "amountPolicy", "rule", "otherwise")),
+                        "approvals", List.of(Map.of("stepId", "manager", "decision", "approved")))));
+        assertThat(response.status()).as(response.toString()).isEqualTo(200);
+        assertThat(response.body().path("assertions").path("passed").asBoolean()).as(response.body().path("assertions").toString()).isTrue();
+        JsonNode procure = response.body().path("trace").valueStream()
+                .filter(e -> "procure".equals(e.path("stepId").asString())).findFirst().orElseThrow();
+        assertThat(procure.path("details").path("mocked").asBoolean()).isTrue();
+        assertThat(procure.path("summary").asString()).contains("after 3 seconds");
+
+        Response failing = simulate("dana.designer", id, Map.of("input", input(1800),
+                "scenario", Map.of("calls", Map.of("procure", Map.of("status", 503))),
+                "assertions", Map.of("outcome", "Fulfilled")));
+        assertThat(failing.body().path("assertions").path("passed").asBoolean()).isFalse();
+        assertThat(failing.body().path("assertions").path("results").get(0).path("actual").asString())
+                .startsWith("Needs attention");
+
+        Map<String, Long> expected = new java.util.LinkedHashMap<>(before);
+        expected.put("audit_event", before.get("audit_event") + 2);
+        assertThat(counts()).isEqualTo(expected);
+        assertThat(com.orqix.support.Stub.postCount()).as("no real call reached the procurement system").isEqualTo(posts);
+
+        Response badAssertions = simulate("dana.designer", id, Map.of("input", input(10),
+                "assertions", Map.of("rules", List.of(Map.of("stepId", "x", "rule", 0)))));
+        assertThat(badAssertions.status()).isEqualTo(422);
+        assertThat(badAssertions.body().path("fieldErrors").findValues("pointer").toString()).contains("/assertions");
+    }
+
+    @Test
+    void aReaderRunsSeveralCasesInOneActionAndTheAuditHoldsOnlyCounts() throws Exception {
+        UUID id = createFromTemplate();
+        Map<String, Long> before = counts();
+        Response response = api("vic.viewer").post(Map.of("cases", List.of(
+                Map.of("id", "ok", "input", input(1800), "assertions", Map.of("outcome", "Fulfilled")),
+                Map.of("id", "rejected", "input", input(1800), "scenario", Map.of("calls", Map.of("procure",
+                        Map.of("status", 422))), "assertions", Map.of("outcome", "Fulfilled")),
+                Map.of("id", "bad", "input", input(0.001)))), "/workspaces/{ws}/workflows/{id}/simulate-cases",
+                PURCHASING, id);
+        assertThat(response.status()).as(response.toString()).isEqualTo(200);
+        JsonNode body = response.body();
+        assertThat(body.path("total").asInt()).isEqualTo(3);
+        assertThat(body.path("passed").asInt()).isEqualTo(1);
+        assertThat(body.path("results").get(0).path("passed").asBoolean()).isTrue();
+        assertThat(body.path("results").get(1).path("status").asString()).isEqualTo("needsAttention");
+        assertThat(body.path("results").get(1).path("assertions").path("results").get(0).path("expected").asString())
+                .isEqualTo("Fulfilled");
+        assertThat(body.path("results").get(2).path("status").asString()).isEqualTo("invalid");
+        assertThat(body.has("trace")).isFalse();
+        Map<String, Long> expected = new java.util.LinkedHashMap<>(before);
+        expected.put("audit_event", before.get("audit_event") + 1);
+        assertThat(counts()).isEqualTo(expected);
+        String metadata = jdbc.sql("SELECT metadata::text FROM audit_event WHERE action = 'workflow.simulated' "
+                + "AND resource_id = :id").param("id", id.toString()).query(String.class).single();
+        assertThat(json.parse(metadata).propertyNames()).containsExactlyInAnyOrder("revision", "cases", "passed");
+        assertThat(metadata).doesNotContain("Laptop").doesNotContain("1800");
+        // Duplicate IDs and foreign workspaces are refused.
+        assertThat(api("vic.viewer").post(Map.of("cases", List.of(Map.of("id", "a", "input", input(1)),
+                Map.of("id", "a", "input", input(1)))), "/workspaces/{ws}/workflows/{id}/simulate-cases", PURCHASING, id)
+                .status()).isEqualTo(422);
+        assertThat(api("fred.facilities").post(Map.of("cases", List.of(Map.of("id", "a", "input", input(1)))),
+                "/workspaces/{ws}/workflows/{id}/simulate-cases", PURCHASING, id).status()).isEqualTo(404);
+    }
+
     private Map<String, Long> counts() {
         Map<String, Long> counts = new java.util.LinkedHashMap<>();
         for (String table : List.of("workflow", "workflow_draft_revision", "workflow_release", "workflow_run",
-                "audit_event", "run_event")) {
+                "audit_event", "run_event", "effect_journal", "external_job", "notification", "message_subscription")) {
             counts.put(table, jdbc.sql("SELECT count(*) FROM " + table).query(Long.class).single());
         }
         return counts;

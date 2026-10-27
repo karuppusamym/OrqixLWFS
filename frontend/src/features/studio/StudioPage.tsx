@@ -36,6 +36,8 @@ import { PlaybackProvider } from './test/PlaybackContext'
 import { TestPanel } from './test/TestPanel'
 import { AiReviewPanel } from '@/features/ai/AiReviewPanel'
 
+type StudioTab = 'canvas' | 'steps' | 'lanes' | 'source' | 'test'
+
 /** Studio route: loads the draft once, then hands it to the editor (docs/build/S7-frontend.md section 5). */
 export function StudioPage() {
   const { workflowId = '' } = useParams()
@@ -125,12 +127,13 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
   const { workspace, can } = useWorkspace()
   const ws = workspace.id
   const { store, saver, wsId, workflowId, readOnly } = useStudioContext()
-  const [tab, setTab] = useState<'canvas' | 'steps' | 'lanes' | 'source'>('canvas')
+  const [tab, setTab] = useState<StudioTab>('canvas')
+  // The Test tab keeps its work (sample, settings, last run) while the person edits on another tab (STU03).
+  const [testMounted, setTestMounted] = useState(false)
   const [checkOpen, setCheckOpen] = useState(false)
   const [checking, setChecking] = useState(false)
   const [checkError, setCheckError] = useState<unknown>(null)
   const [previewOpen, setPreviewOpen] = useState(false)
-  const [testOpen, setTestOpen] = useState(false)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [addAfter, setAddAfter] = useState<string | null>(null)
   const [branchRequest, setBranchRequest] = useState<{ from: string; to: string | null } | null>(null)
@@ -220,7 +223,17 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
   }
 
   const showCanvas = desktop
-  const currentTab = showCanvas ? tab : 'steps'
+  const currentTab: StudioTab = showCanvas || tab === 'test' ? tab : 'steps'
+  const onTestTab = currentTab === 'test'
+  const openTab = (next: StudioTab) => {
+    if (next === 'test') setTestMounted(true)
+    setTab(next)
+  }
+  const goToStep = (id: string) => {
+    store.getState().select({ type: 'node', id })
+    store.getState().requestFocus(id, 'label')
+  }
+  const testPanel = testMounted ? <TestPanel groupNames={groupNames} active={onTestTab} onCheck={() => void runCheck()} onGoToStep={goToStep} /> : null
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="studio">
@@ -233,8 +246,8 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
         checking={checking}
         canPublish={can('workflow.publish')}
         onPublish={() => void publish()}
-        onTest={() => setTestOpen((open) => !open)}
-        testOpen={testOpen}
+        onTest={() => openTab(onTestTab ? (desktop ? 'canvas' : 'steps') : 'test')}
+        testOpen={onTestTab}
       />
       <ImportNotice workflowId={workflowId} />
       {linkNotice ? (
@@ -252,13 +265,16 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
           The studio needs a screen at least 1024 px wide to edit. You can read the steps here.
         </Alert>
       ) : null}
-      <Tabs value={currentTab} onValueChange={(v) => setTab(v as 'canvas' | 'steps' | 'lanes' | 'source')} className="flex min-h-0 flex-1 flex-col">
+      <Tabs value={currentTab} onValueChange={(v) => openTab(v as StudioTab)} className="flex min-h-0 flex-1 flex-col">
         <div className="border-b border-border bg-surface px-4 py-2">
           <TabsList aria-label="Studio views">
             {showCanvas ? <TabsTrigger value="canvas">Canvas</TabsTrigger> : null}
             <TabsTrigger value="steps">Steps</TabsTrigger>
             {showCanvas ? <TabsTrigger value="lanes">Lanes</TabsTrigger> : null}
             {showCanvas ? <TabsTrigger value="source">Source</TabsTrigger> : null}
+            <TabsTrigger value="test" data-testid="test-tab">
+              Test
+            </TabsTrigger>
           </TabsList>
         </div>
         <div className="flex min-h-0 flex-1">
@@ -287,15 +303,19 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
             <TabsContent value="source" className="m-0 h-full overflow-y-auto">
               <SourceView />
             </TabsContent>
+            <TabsContent value="test" className="m-0 h-full" forceMount={testMounted ? true : undefined} hidden={!onTestTab} data-testid="test-tabpanel">
+              {desktop ? (
+                <div className="flex h-full min-h-0">
+                  {/* The canvas follows the playback of the run; the test itself sits beside it. */}
+                  <div className="relative min-w-0 flex-1">{onTestTab ? <CanvasView groupNames={groupNames} onBranchConnect={(from, to) => setBranchRequest({ from, to })} /> : null}</div>
+                  <div className="w-[28rem] shrink-0 border-l border-border bg-surface">{testPanel}</div>
+                </div>
+              ) : (
+                <div className="h-full bg-surface">{testPanel}</div>
+              )}
+            </TabsContent>
           </div>
-          {desktop && testOpen ? (
-            <aside className="w-[26rem] shrink-0 border-l border-border bg-surface" aria-label="Test this workflow">
-              <TestPanel groupNames={groupNames} onClose={() => setTestOpen(false)} onCheck={() => void runCheck()} onGoToStep={(id) => {
-                store.getState().select({ type: 'node', id })
-                store.getState().requestFocus(id, 'label')
-              }} />
-            </aside>
-          ) : desktop ? (
+          {desktop && !onTestTab ? (
             <aside className="w-80 shrink-0 overflow-y-auto border-l border-border bg-surface" aria-label="Inspector">
               <Inspector onDeleteNode={(id) => {
                 store.getState().select({ type: 'node', id })

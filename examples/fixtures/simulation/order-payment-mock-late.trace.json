@@ -1,0 +1,98 @@
+{
+  "outcome" : {
+    "status" : "finished",
+    "businessOutcome" : "Cancelled no payment",
+    "outcomeKind" : "rejected",
+    "endStepId" : "cancelled",
+    "attention" : null,
+    "summary" : "The request would finish with the outcome \"Cancelled no payment\" (rejected)."
+  },
+  "outputs" : { },
+  "trace" : [ {
+    "seq" : 1,
+    "stepId" : "start",
+    "stepLabel" : "Order placed",
+    "kind" : "start",
+    "kindLabel" : "Request form",
+    "summary" : "The request is submitted with the answers you entered.",
+    "details" : { },
+    "transitionId" : "t1",
+    "nextStepId" : "waitPayment"
+  }, {
+    "seq" : 2,
+    "stepId" : "waitPayment",
+    "stepLabel" : "Wait for the payment",
+    "kind" : "waitForMessage",
+    "kindLabel" : "Wait for a message",
+    "summary" : "\"Wait for the payment\": the message \"payment-received\" does not arrive within 2 days, so the time limit fires and the request takes the timed-out route. In this test the message comes after 200000 seconds, later than the time limit.",
+    "details" : {
+      "message" : "payment-received",
+      "correlationField" : "/input/orderNumber",
+      "correlation" : "Order number (ORD-1001)",
+      "mocked" : true,
+      "delaySeconds" : 200000,
+      "arrived" : false,
+      "note" : "In this test the message comes after 200000 seconds, later than the time limit."
+    },
+    "transitionId" : "t3",
+    "nextStepId" : "notifyCancelled"
+  }, {
+    "seq" : 3,
+    "stepId" : "notifyCancelled",
+    "stepLabel" : "Tell requester the order was cancelled",
+    "kind" : "notification",
+    "kindLabel" : "Notify someone",
+    "summary" : "\"Tell requester the order was cancelled\": the requester would get this in-app message: \"No payment arrived within two days, so your order was cancelled.\"",
+    "details" : {
+      "channel" : "inApp",
+      "recipient" : "initiator",
+      "message" : "No payment arrived within two days, so your order was cancelled."
+    },
+    "transitionId" : "t5",
+    "nextStepId" : "cancelled"
+  }, {
+    "seq" : 4,
+    "stepId" : "cancelled",
+    "stepLabel" : "Cancelled, no payment",
+    "kind" : "end",
+    "kindLabel" : "Finish",
+    "summary" : "The request finishes: \"Cancelled no payment\" (rejected).",
+    "details" : {
+      "businessOutcome" : "Cancelled no payment",
+      "outcomeKind" : "rejected"
+    },
+    "transitionId" : null,
+    "nextStepId" : null
+  } ],
+  "warnings" : [ ],
+  "coverage" : {
+    "steps" : {
+      "visited" : 4,
+      "total" : 6,
+      "notVisited" : [ {
+        "id" : "notifyPaid",
+        "label" : "Tell requester the payment arrived"
+      }, {
+        "id" : "fulfilled",
+        "label" : "Order paid"
+      } ]
+    },
+    "routes" : {
+      "notTaken" : [ {
+        "transitionId" : "t2",
+        "from" : "waitPayment",
+        "to" : "notifyPaid",
+        "description" : "Wait for the payment, next, goes to Tell requester the payment arrived"
+      } ],
+      "taken" : 1,
+      "total" : 2
+    },
+    "rules" : {
+      "notMatched" : [ ],
+      "matched" : 0,
+      "total" : 0
+    },
+    "summary" : "Tested 4 of 6 steps, 1 of 2 routes and 0 of 0 decision rules."
+  },
+  "limits" : "This is a dry run of the workflow as designed, not the workflow engine. It does not call real systems, check that connections work, that people are in the groups, or how long anything takes."
+}

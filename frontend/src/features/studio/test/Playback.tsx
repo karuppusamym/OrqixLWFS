@@ -3,6 +3,7 @@ import { useEffect, useRef, type KeyboardEvent } from 'react'
 import type { SimulationResult, SimulationStep } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/cn'
+import { describeProblem } from '@/lib/jsonSchemaLite'
 
 type Obj = Record<string, unknown>
 const asObj = (v: unknown): Obj => (typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Obj) : {})
@@ -95,7 +96,34 @@ export function StepDetails({ entry }: { entry: SimulationStep }) {
       )
       break
     case 'http':
+      if (d.mocked === true) {
+        blocks.push(
+          <p key="mock" data-testid="mocked-answer">
+            Mocked answer{typeof d.httpStatus === 'number' ? `: HTTP ${d.httpStatus}` : ''}
+            {typeof d.delaySeconds === 'number' ? `, after ${d.delaySeconds} seconds` : ''}. Nothing was sent.
+          </p>,
+        )
+      }
+      if (asArr(d.schemaProblems).length > 0) {
+        blocks.push(
+          <div key="schema">
+            <p className="font-semibold">Does not match the response schema</p>
+            <ul className="mt-1 list-disc pl-5">
+              {asArr(d.schemaProblems).map((p, i) => (
+                <li key={i}>{describeProblem({ at: String(asObj(p).at ?? ''), keyword: String(asObj(p).keyword ?? '') })}</li>
+              ))}
+            </ul>
+          </div>,
+        )
+      }
       blocks.push(<Facts key="req" title="Sent to the system" values={asObj(d.request)} />, <Facts key="res" title={d.sampleAnswer === true ? 'Kept from the sample answer' : 'Kept from the answer'} values={asObj(d.result)} />)
+      break
+    case 'externalTask':
+    case 'sendAdapter':
+      blocks.push(<Facts key="res" title={d.mocked === true ? 'Mocked result' : 'Result'} values={asObj(d.result)} />)
+      break
+    case 'waitForMessage':
+      blocks.push(<Facts key="payload" title={d.mocked === true ? 'Mocked message' : 'Message'} values={asObj(d.payload)} />)
       break
     case 'notification':
       blocks.push(
@@ -132,7 +160,7 @@ export function StepDetails({ entry }: { entry: SimulationStep }) {
       </p>,
     )
   }
-  if (entry.wrote && Object.keys(entry.wrote).length > 0 && entry.kind !== 'decision' && entry.kind !== 'http') {
+  if (entry.wrote && Object.keys(entry.wrote).length > 0 && !['decision', 'http', 'externalTask', 'sendAdapter', 'waitForMessage'].includes(entry.kind)) {
     blocks.push(<Facts key="wrote" title="Saved for later steps" values={asObj(entry.wrote)} />)
   }
   if (blocks.length === 0) return null

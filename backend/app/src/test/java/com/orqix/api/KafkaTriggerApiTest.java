@@ -131,6 +131,41 @@ class KafkaTriggerApiTest extends RuntimeTestBase {
     }
 
     @Test
+    void onlyTriggersThatAreSwitchedOnCountTowardTheLimitBecauseTriggersCannotBeDeleted() throws Exception {
+        UUID workflowId = publishPurchase(PURCHASING, null);
+        grant("workflow.start", workflowId);
+        List<String> ids = new java.util.ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            Response created = api("wade.admin").post(startTrigger(key("cap"), workflowId), "/workspaces/{ws}/kafka-triggers", PURCHASING);
+            assertThat(created.status()).as(created.toString()).isEqualTo(201);
+            ids.add(created.body().path("id").asString());
+        }
+        Response sixth = api("wade.admin").post(startTrigger(key("cap"), workflowId), "/workspaces/{ws}/kafka-triggers", PURCHASING);
+        assertThat(sixth.status()).isEqualTo(422);
+        assertThat(sixth.body().path("detail").asString()).contains("switched on");
+
+        // Switching one off makes room for another; switching it back on is refused while five are on.
+        JsonNode first = api("wade.admin").get("/workspaces/{ws}/kafka-triggers", PURCHASING).body().path("items").get(0);
+        String offId = first.path("id").asString();
+        Map<String, Object> off = new LinkedHashMap<>();
+        off.put("name", first.path("name").asString());
+        off.put("mapping", Map.of("title", "/title", "purpose", "/purpose", "costCenter", "/costCenter", "amount", "/amount"));
+        off.put("batchSize", first.path("batchSize").asInt());
+        off.put("maxPerSecond", first.path("maxPerSecond").asInt());
+        off.put("enabled", false);
+        off.put("expectedVersion", first.path("version").asInt());
+        Response disabled = api("wade.admin").put(off, null, "/workspaces/{ws}/kafka-triggers/{id}", PURCHASING, offId);
+        assertThat(disabled.status()).as(disabled.toString()).isEqualTo(200);
+        Response replacement = api("wade.admin").post(startTrigger(key("cap"), workflowId), "/workspaces/{ws}/kafka-triggers", PURCHASING);
+        assertThat(replacement.status()).as(replacement.toString()).isEqualTo(201);
+        Map<String, Object> on = new LinkedHashMap<>(off);
+        on.put("enabled", true);
+        on.put("expectedVersion", disabled.body().path("version").asInt());
+        Response reenabled = api("wade.admin").put(on, null, "/workspaces/{ws}/kafka-triggers/{id}", PURCHASING, offId);
+        assertThat(reenabled.status()).isEqualTo(422);
+    }
+
+    @Test
     void stubMessagesStartRequestsOnceDropDuplicatesAndDeadLetterBadRecordsWithoutContent() throws Exception {
         UUID workflowId = publishPurchase(PURCHASING, null);
         grant("workflow.start", workflowId);

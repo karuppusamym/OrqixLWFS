@@ -177,12 +177,7 @@ public class KafkaTriggerService {
         } else {
             throw invalid("/action", "Choose start or resume.");
         }
-        long count = jdbc.sql("SELECT count(*) FROM kafka_trigger WHERE workspace_id = :ws").param("ws", workspaceId)
-                .query(Long.class).single();
-        if (count >= MAX_TRIGGERS_PER_WORKSPACE) {
-            throw new ApiException(ProblemCode.VALIDATION_FAILED,
-                    "A workspace can have at most " + MAX_TRIGGERS_PER_WORKSPACE + " Kafka triggers.");
-        }
+        requireRoom(workspaceId, true);
         UUID id = Ids.newId();
         Instant now = clock.instant();
         try {
@@ -210,6 +205,22 @@ public class KafkaTriggerService {
         return view(workspaceId, id, true);
     }
 
+    /**
+     * At most {@link #MAX_TRIGGERS_PER_WORKSPACE} triggers are switched on at once, so a trigger that is switched off
+     * (triggers cannot be deleted) never blocks a new one; switched-off rows are bounded too, so the table cannot grow
+     * without limit.
+     */
+    private void requireRoom(UUID workspaceId, boolean enabling) {
+        long on = jdbc.sql("SELECT count(*) FROM kafka_trigger WHERE workspace_id = :ws AND enabled").param("ws", workspaceId)
+                .query(Long.class).single();
+        long all = jdbc.sql("SELECT count(*) FROM kafka_trigger WHERE workspace_id = :ws").param("ws", workspaceId)
+                .query(Long.class).single();
+        if ((enabling && on >= MAX_TRIGGERS_PER_WORKSPACE) || all >= MAX_TRIGGERS_PER_WORKSPACE * 5) {
+            throw new ApiException(ProblemCode.VALIDATION_FAILED, "A workspace can have at most " + MAX_TRIGGERS_PER_WORKSPACE
+                    + " Kafka triggers switched on (and " + MAX_TRIGGERS_PER_WORKSPACE * 5 + " in all). Switch one off first.");
+        }
+    }
+
     @Transactional
     public TriggerView update(Caller caller, UUID workspaceId, UUID id, UpdateTrigger r) {
         WorkspaceAccess access = manage(caller, workspaceId, "updateKafkaTrigger");
@@ -225,6 +236,9 @@ public class KafkaTriggerService {
             throw policy.deny(workspaceId, caller.subjectId(), "start".equals(current.action()) ? "workflow.start"
                     : "message.send", "updateKafkaTrigger", true, new ApiException(ProblemCode.FORBIDDEN,
                             "An enabled trigger acts as you; you need the right to do what it does."));
+        }
+        if (r.enabled() && !current.enabled()) {
+            requireRoom(workspaceId, true);
         }
         int version = current.version() + 1;
         jdbc.sql("""

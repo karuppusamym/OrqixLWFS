@@ -156,12 +156,7 @@ public class WebhookService implements OutboundWebhooks {
                 .orElseThrow(ApiException::notFound);
         policy.require(access, Permission.CONNECTION_MANAGE, "createWebhookSubscription", true);
         List<String> events = validate(request.url(), request.events(), request.secretRef());
-        long existing = jdbc.sql("SELECT count(*) FROM webhook_subscription WHERE workspace_id = :ws")
-                .param("ws", workspaceId).query(Long.class).single();
-        if (existing >= MAX_SUBSCRIPTIONS_PER_WORKSPACE) {
-            throw new ApiException(ProblemCode.VALIDATION_FAILED,
-                    "A workspace can have at most " + MAX_SUBSCRIPTIONS_PER_WORKSPACE + " webhook subscriptions.");
-        }
+        requireRoom(workspaceId, !Boolean.FALSE.equals(request.enabled()));
         boolean enabled = !Boolean.FALSE.equals(request.enabled());
         UUID id = Ids.newId();
         Instant now = clock.instant();
@@ -178,6 +173,18 @@ public class WebhookService implements OutboundWebhooks {
         return find(workspaceId, id, true);
     }
 
+    /** At most {@link #MAX_SUBSCRIPTIONS_PER_WORKSPACE} subscriptions are switched on at once; switched-off ones are bounded too. */
+    private void requireRoom(UUID workspaceId, boolean enabling) {
+        long on = jdbc.sql("SELECT count(*) FROM webhook_subscription WHERE workspace_id = :ws AND enabled")
+                .param("ws", workspaceId).query(Long.class).single();
+        long all = jdbc.sql("SELECT count(*) FROM webhook_subscription WHERE workspace_id = :ws")
+                .param("ws", workspaceId).query(Long.class).single();
+        if ((enabling && on >= MAX_SUBSCRIPTIONS_PER_WORKSPACE) || all >= MAX_SUBSCRIPTIONS_PER_WORKSPACE * 5) {
+            throw new ApiException(ProblemCode.VALIDATION_FAILED, "A workspace can have at most " + MAX_SUBSCRIPTIONS_PER_WORKSPACE
+                    + " webhook subscriptions switched on (and " + MAX_SUBSCRIPTIONS_PER_WORKSPACE * 5 + " in all). Switch one off first.");
+        }
+    }
+
     @Transactional
     public SubscriptionView update(Caller caller, UUID workspaceId, UUID id, UpdateSubscription request) {
         WorkspaceAccess access = policy.freshAccess(caller, workspaceId).filter(WorkspaceAccess::visible)
@@ -191,6 +198,11 @@ public class WebhookService implements OutboundWebhooks {
                     "The subscription changed since you loaded it (now version " + version + ").");
         }
         List<String> events = validate(request.url(), request.events(), request.secretRef());
+        boolean wasEnabled = Boolean.TRUE.equals(jdbc.sql("SELECT enabled FROM webhook_subscription WHERE id = :id")
+                .param("id", id).query(Boolean.class).optional().orElse(null));
+        if (request.enabled() && !wasEnabled) {
+            requireRoom(workspaceId, true);
+        }
         if (!request.enabled()) {
             // Paused (S99 B9): what was waiting is dead-lettered now, so resuming never floods the receiver with a
             // backlog; operators replay what they still want.

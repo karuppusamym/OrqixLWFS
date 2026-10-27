@@ -3912,6 +3912,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/ai/draft-edits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Propose structured, validated edits to the current draft from a conversation turn (never applied by the server)
+         * @description STU02 (docs/build/S95). Sends a bounded, redacted summary of the latest draft revision, the last conversation turns and the author's instruction to the configured AI profile. The reply is a list of changes, each made of structured operations (addStep, updateStep, renameStep, removeStep, connect, disconnect, changeFormField). Every operation is applied in order to a candidate copy of the draft and every change is validated by the workflow compiler; a change that adds a blocker is listed under rejected with the compiler's reasons and is not offered. In regenerate mode the draft is rebuilt from the request form and the start step, and the complete proposed draft is returned as definition. 409 WORKFLOW_VERSION_CONFLICT (with currentRevision) when revision is not the latest draft revision; nothing is sent to the provider then. Not stored; metering and audit hold counts only. One proposal at a time per person (429).
+         */
+        post: operations["proposeDraftEdits"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/migrations": {
         parameters: {
             query?: never;
@@ -6798,6 +6821,86 @@ export interface components {
             /** @description The question as it is now (update and remove) */
             before?: Record<string, never>;
             /** @description Whether the question is required now (update and remove) */
+            wasRequired?: boolean;
+        };
+        /** @description STU02 conversation turn. revision must be the latest draft revision (save the draft first). */
+        AiDraftEditRequest: {
+            instruction: string;
+            /** @description The draft revision the author is looking at */
+            revision: number;
+            /**
+             * @description regenerate rebuilds the draft from the request form and the start step
+             * @default edit
+             * @enum {string}
+             */
+            mode: "edit" | "regenerate";
+            /** @description The last turns of this conversation, oldest first; kept only in the browser */
+            history?: {
+                /** @enum {string} */
+                role: "author" | "assistant";
+                text: string;
+            }[];
+            profile?: string;
+        };
+        /** @description STU02 proposal. Every change already passed the compiler against the draft revision; apply only on an explicit user action. */
+        AiDraftEditProposal: {
+            /** @description The draft revision the proposal was validated against */
+            revision: number;
+            /** @enum {string} */
+            mode: "edit" | "regenerate";
+            /** @description The assistant's short reply to the author */
+            message?: string;
+            changes: components["schemas"]["AiDraftEditChange"][];
+            rejected: {
+                summary: string;
+                reasons: string[];
+            }[];
+            notes: string[];
+            /** @description Why the instruction is not about this workflow */
+            notAnEdit?: string;
+            /** @description regenerate only: the complete proposed draft (workflow-v0 document with layout) */
+            definition?: {
+                [key: string]: unknown;
+            };
+            generation: components["schemas"]["AiGeneration"];
+        };
+        AiDraftEditChange: {
+            /** @description c1 */
+            id: string;
+            summary: string;
+            operations: components["schemas"]["AiDraftEditOperation"][];
+            /** @description Earlier changes that create or modify something this change relies on */
+            dependsOn: string[];
+        };
+        /** @description One normalized edit operation. addStep {id, kind, label, config (complete)}; updateStep {id, config (patch; null removes a setting), before}; renameStep {id, label, before}; removeStep {id, before}; connect {transitionId (chosen by the server), from, to, on, label?, condition?}; disconnect {transitionId, before}; changeFormField {action, key, field?, required, before?, wasRequired?}. before is the element as it was when the operation was validated; the studio skips a change whose targets differ from it. */
+        AiDraftEditOperation: {
+            /** @enum {string} */
+            op: "addStep" | "updateStep" | "renameStep" | "removeStep" | "connect" | "disconnect" | "changeFormField";
+            id?: string;
+            /** @enum {string} */
+            kind?: "approval" | "branch" | "notification" | "wait" | "end";
+            label?: string;
+            config?: {
+                [key: string]: unknown;
+            };
+            transitionId?: string;
+            from?: string;
+            to?: string;
+            /** @enum {string} */
+            on?: "next" | "approved" | "rejected" | "timedOut" | "failed" | "condition" | "default";
+            condition?: {
+                [key: string]: unknown;
+            };
+            /** @enum {string} */
+            action?: "add" | "update" | "remove";
+            key?: string;
+            field?: {
+                [key: string]: unknown;
+            };
+            required?: boolean;
+            before?: {
+                [key: string]: unknown;
+            };
             wasRequired?: boolean;
         };
         CompatibilityIssue: {
@@ -15267,6 +15370,41 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    proposeDraftEdits: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiDraftEditRequest"];
+            };
+        };
+        responses: {
+            /** @description Validated changes for review */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiDraftEditProposal"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             422: components["responses"]["Unprocessable"];
             429: components["responses"]["TooManyRequests"];
             503: components["responses"]["Unavailable"];

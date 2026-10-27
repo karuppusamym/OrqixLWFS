@@ -100,6 +100,18 @@ class SecurityMatrixTest extends RuntimeTestBase {
     }
 
     @Test
+    void conversationalDraftEditsAreInTheMatrixWithEditPermissionAndAudit() {
+        JsonNode post = OpenApiContract.get().document().path("paths")
+                .path("/workspaces/{workspaceId}/workflows/{workflowId}/ai/draft-edits").path("post");
+        assertThat(post.path("operationId").asString()).isEqualTo("proposeDraftEdits");
+        assertThat(post.path("x-orqix-permission").asString()).isEqualTo("workflow.edit");
+        assertThat(post.path("x-orqix-audit").asString()).isEqualTo("ai.draft.edits.proposed");
+        assertThat(post.path("responses").has("409")).isTrue();
+        // tSec01 above calls it as foreign principals against the real purchasing workflow and requires 404 and no
+        // state change (no provider call, no metering, no audit).
+    }
+
+    @Test
     void tSec10_bearerTokensOnlyReachStartGetRunAndEvents() throws Exception {
         String machine = "machine-" + UUID.randomUUID().toString().substring(0, 8);
         UUID workflowId = publishPurchase(PURCHASING, null);

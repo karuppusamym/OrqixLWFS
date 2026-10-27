@@ -5358,6 +5358,46 @@ paths:
         '429': { $ref: '#/components/responses/TooManyRequests' }
         '503': { $ref: '#/components/responses/Unavailable' }
 
+  /workspaces/{workspaceId}/workflows/{workflowId}/ai/draft-edits:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+    post:
+      tags: [AI]
+      operationId: proposeDraftEdits
+      summary: Propose structured, validated edits to the current draft from a conversation turn (never applied by the server)
+      description: >-
+        STU02 (docs/build/S95). Sends a bounded, redacted summary of the latest draft revision, the last conversation
+        turns and the author's instruction to the configured AI profile. The reply is a list of changes, each made of
+        structured operations (addStep, updateStep, renameStep, removeStep, connect, disconnect, changeFormField). Every
+        operation is applied in order to a candidate copy of the draft and every change is validated by the workflow
+        compiler; a change that adds a blocker is listed under rejected with the compiler's reasons and is not offered.
+        In regenerate mode the draft is rebuilt from the request form and the start step, and the complete proposed
+        draft is returned as definition. 409 WORKFLOW_VERSION_CONFLICT (with currentRevision) when revision is not the
+        latest draft revision; nothing is sent to the provider then. Not stored; metering and audit hold counts only.
+        One proposal at a time per person (429).
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: ai.draft.edits.proposed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiDraftEditRequest' }
+      responses:
+        '200':
+          description: Validated changes for review
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiDraftEditProposal' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
   /workspaces/{workspaceId}/migrations:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
     post:
@@ -9550,6 +9590,89 @@ components:
         reason: { type: string, maxLength: 300 }
         before: { type: object, description: The question as it is now (update and remove) }
         wasRequired: { type: boolean, description: Whether the question is required now (update and remove) }
+    AiDraftEditRequest:
+      type: object
+      description: STU02 conversation turn. revision must be the latest draft revision (save the draft first).
+      additionalProperties: false
+      required: [instruction, revision]
+      properties:
+        instruction: { type: string, minLength: 2, maxLength: 2000 }
+        revision: { type: integer, minimum: 1, description: The draft revision the author is looking at }
+        mode: { type: string, enum: [edit, regenerate], default: edit, description: 'regenerate rebuilds the draft from the request form and the start step' }
+        history:
+          type: array
+          maxItems: 8
+          description: The last turns of this conversation, oldest first; kept only in the browser
+          items:
+            type: object
+            additionalProperties: false
+            required: [role, text]
+            properties:
+              role: { type: string, enum: [author, assistant] }
+              text: { type: string, minLength: 1, maxLength: 2000 }
+        profile: { type: string, pattern: '^[a-z][a-z0-9-]{0,31}$' }
+    AiDraftEditProposal:
+      type: object
+      description: STU02 proposal. Every change already passed the compiler against the draft revision; apply only on an explicit user action.
+      required: [revision, mode, changes, rejected, notes, generation]
+      properties:
+        revision: { type: integer, description: The draft revision the proposal was validated against }
+        mode: { type: string, enum: [edit, regenerate] }
+        message: { type: string, maxLength: 300, description: The assistant's short reply to the author }
+        changes:
+          type: array
+          maxItems: 8
+          items: { $ref: '#/components/schemas/AiDraftEditChange' }
+        rejected:
+          type: array
+          items:
+            type: object
+            required: [summary, reasons]
+            properties:
+              summary: { type: string }
+              reasons: { type: array, items: { type: string } }
+        notes: { type: array, maxItems: 5, items: { type: string } }
+        notAnEdit: { type: string, description: Why the instruction is not about this workflow, when it is not }
+        definition: { type: object, additionalProperties: true, description: 'regenerate only: the complete proposed draft (workflow-v0 document with layout)' }
+        generation: { $ref: '#/components/schemas/AiGeneration' }
+    AiDraftEditChange:
+      type: object
+      required: [id, summary, operations, dependsOn]
+      properties:
+        id: { type: string, description: c1, c2, ... in proposal order }
+        summary: { type: string, maxLength: 300 }
+        operations:
+          type: array
+          minItems: 1
+          maxItems: 60
+          items: { $ref: '#/components/schemas/AiDraftEditOperation' }
+        dependsOn: { type: array, items: { type: string }, description: Earlier changes that create or modify something this change relies on }
+    AiDraftEditOperation:
+      type: object
+      description: >-
+        One normalized edit operation. addStep {id, kind, label, config (complete)}; updateStep {id, config (patch; null
+        removes a setting), before}; renameStep {id, label, before}; removeStep {id, before}; connect {transitionId
+        (chosen by the server), from, to, on, label?, condition?}; disconnect {transitionId, before};
+        changeFormField {action, key, field?, required, before?, wasRequired?}. before is the element as it was when
+        the operation was validated; the studio skips a change whose targets differ from it.
+      required: [op]
+      properties:
+        op: { type: string, enum: [addStep, updateStep, renameStep, removeStep, connect, disconnect, changeFormField] }
+        id: { type: string }
+        kind: { type: string, enum: [approval, branch, notification, wait, end] }
+        label: { type: string }
+        config: { type: object, additionalProperties: true }
+        transitionId: { type: string }
+        from: { type: string }
+        to: { type: string }
+        'on': { type: string, enum: [next, approved, rejected, timedOut, failed, condition, default] }
+        condition: { type: object, additionalProperties: true }
+        action: { type: string, enum: [add, update, remove] }
+        key: { type: string, pattern: '^[a-z][A-Za-z0-9]{0,63}$' }
+        field: { type: object, additionalProperties: true }
+        required: { type: boolean }
+        before: { type: object, additionalProperties: true }
+        wasRequired: { type: boolean }
     CompatibilityIssue:
       type: object
       required: [sourceElementId, sourceKind, severity, reasonCode, explanation, resolutionStatus]

@@ -56,6 +56,20 @@ export const suggestFormChanges = (ws: string, workflowId: string, body: { descr
     }),
   )
 
+export type AiDraftEditRequest = components['schemas']['AiDraftEditRequest']
+export type AiDraftEditProposal = components['schemas']['AiDraftEditProposal']
+export type AiDraftEditChange = components['schemas']['AiDraftEditChange']
+export type AiDraftEditOperation = components['schemas']['AiDraftEditOperation']
+
+/** Validated draft edits from one conversation turn (STU02, docs/build/S95). Nothing is applied by the server. */
+export const proposeDraftEdits = (ws: string, workflowId: string, body: AiDraftEditRequest) =>
+  call(
+    api.POST('/workspaces/{workspaceId}/workflows/{workflowId}/ai/draft-edits', {
+      params: { path: { workspaceId: ws, workflowId } },
+      body,
+    }),
+  )
+
 /** Whether the signed-in person may read the AI status here (designers, readers, workspace administrators). */
 export function useCanSeeAi(): boolean {
   const { can } = useWorkspace()

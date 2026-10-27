@@ -27,6 +27,7 @@ public class Generator {
     private static final double TEMPERATURE = 0.2;
     private static final int EXPLAIN_MAX_TOKENS = 4000;
     private static final int FORM_MAX_TOKENS = 4000;
+    private static final int DRAFT_EDIT_MAX_TOKENS = 6000;
     private static final int MAX_ECHO_CHARS = 120_000;
 
     /** Metering of one generation (all attempts). */
@@ -335,6 +336,39 @@ public class Generator {
             messages.add(new OpenRouterClient.Message("assistant", result.content() == null ? "" : result.content()));
             messages.add(new OpenRouterClient.Message("user", "That reply cannot be used. Reply with only the JSON "
                     + "object {\"changes\": [...], \"notes\": [...], \"notAForm\": null}."));
+        }
+        return null;
+    }
+
+    /**
+     * Conversational draft edits (STU02): one call and one retry when the reply is not a JSON object. Returns the
+     * parsed reply (validated afterwards by {@link DraftEdits}) or null when no usable reply came back.
+     */
+    public JsonNode editDraft(ModelPolicy.ResolvedProfile profile, String userTurn, Meter meter) {
+        List<OpenRouterClient.Message> messages = new ArrayList<>();
+        messages.add(new OpenRouterClient.Message("system", prompts.draftEditSystem()));
+        messages.add(new OpenRouterClient.Message("user", userTurn));
+        Deadline deadline = new Deadline(properties.generationDeadline());
+        for (int attempt = 0; attempt < 2; attempt++) {
+            if (attempt > 0 && !deadline.allowsAnother()) {
+                break;
+            }
+            long started = System.nanoTime();
+            OpenRouterClient.ChatResult result = call(profile, messages, prompts.draftEditSchema(),
+                    "orqix_draft_edits", DRAFT_EDIT_MAX_TOKENS, deadline.callTimeout(properties.timeout()));
+            deadline.attempted(System.nanoTime() - started);
+            meter.add(result);
+            checkRouted(profile, result, meter);
+            JsonNode reply = jsonObject(result.content());
+            if (reply != null) {
+                return reply;
+            }
+            if (meter.costOrZero().compareTo(properties.budget().perRequestMaxUsd()) >= 0) {
+                break;
+            }
+            messages.add(new OpenRouterClient.Message("assistant", result.content() == null ? "" : result.content()));
+            messages.add(new OpenRouterClient.Message("user", "That reply cannot be used. Reply with only the JSON "
+                    + "object {\"message\": \"...\", \"changes\": [...], \"notes\": [...], \"notAnEdit\": null}."));
         }
         return null;
     }

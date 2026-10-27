@@ -56,6 +56,7 @@ public class AiService {
     private static final String STATUS_OPERATION = "getAiStatus";
     private static final String GENERATION_OPERATION = "getAiGeneration";
     private static final String FORM_OPERATION = "suggestFormChanges";
+    private static final String DRAFT_EDIT_OPERATION = "proposeDraftEdits";
     public static final String REASON_BUDGET = "The monthly AI budget is used up.";
 
     /** An accepted generation: the job as it is now, and whether this response replays an earlier identical request. */
@@ -86,6 +87,9 @@ public class AiService {
     private final FormSuggestions formRules;
     private final java.util.concurrent.ConcurrentHashMap<UUID, Boolean> formsInFlight =
             new java.util.concurrent.ConcurrentHashMap<>();
+    private final DraftEdits editRules;
+    private final java.util.concurrent.ConcurrentHashMap<UUID, Boolean> editsInFlight =
+            new java.util.concurrent.ConcurrentHashMap<>();
 
     public AiService(AiProperties properties, ModelPolicy models, Generator generator, WorkflowCompiler compiler,
             WorkspaceFacts facts, AiLedger ledger, AiJobStore jobs, AiJobRunner runner, DraftAuthoring drafts,
@@ -109,6 +113,7 @@ public class AiService {
         this.compiler = compiler;
         this.clock = clock;
         this.formRules = new FormSuggestions(json, compiler);
+        this.editRules = new DraftEdits(json, compiler);
     }
 
     // ---------------------------------------------------------------- status
@@ -491,6 +496,98 @@ public class AiService {
             log.warn("Could not record a failed AI form suggestion: {}", e.getClass().getSimpleName());
         }
         observe("form", meter, outcome);
+    }
+
+    // ---------------------------------------------------------------- conversational draft edits (STU02)
+
+    /**
+     * {@code proposeDraftEdits}: workflow.edit on a visible workflow. Synchronous like a form suggestion and never
+     * stored. The model sees a bounded, redacted summary of the latest draft revision (which must be the revision the
+     * author is looking at: otherwise 409), the last turns and the instruction; it answers with structured edit
+     * operations that {@link DraftEdits} applies to a candidate copy and validates with the real compiler. Nothing is
+     * applied to the draft. One proposal at a time per person on a pod (429). Metering and audit hold counts only.
+     */
+    public AiDtos.DraftEditProposal proposeDraftEdits(Caller caller, UUID workspaceId, UUID workflowId,
+            JsonNode body) {
+        WorkspaceAccess access = policy.requireVisible(caller, workspaceId);
+        policy.require(access, Permission.WORKFLOW_EDIT, DRAFT_EDIT_OPERATION, false);
+        DraftAuthoring.Definition latest = drafts.latestDraft(caller, workspaceId, workflowId);
+        AiDtos.DraftEditRequest request = AiDtos.DraftEditRequest.parse(body);
+        ensureEnabled();
+        ModelPolicy.ResolvedProfile profile = models.resolve(request.profile());
+        budgetLeft();
+        if (latest.revision() != request.revision()) {
+            throw new ApiException(ProblemCode.WORKFLOW_VERSION_CONFLICT, "The draft was saved again (revision "
+                    + latest.revision() + ") since revision " + request.revision()
+                    + ". Reload the studio, then ask again. Nothing was sent to the AI.")
+                    .with("currentRevision", latest.revision());
+        }
+        if (editsInFlight.putIfAbsent(caller.subjectId(), Boolean.TRUE) != null) {
+            throw rateLimited("A proposal is already being prepared for you. Wait for it to finish.");
+        }
+        DraftEdits.Mode mode = "regenerate".equals(request.mode()) ? DraftEdits.Mode.REGENERATE : DraftEdits.Mode.EDIT;
+        try {
+            DraftRules.Workspace workspace = facts.load(access.workspace());
+            Generator.Meter meter = generator.meter(profile);
+            List<PromptLibrary.Turn> history = request.history().stream()
+                    .map(t -> new PromptLibrary.Turn(t.role(), t.text())).toList();
+            String user = PromptLibrary.draftEditUser(editRules.summary(latest.definition(), workspace.groups()),
+                    history, request.instruction(), mode.value());
+            JsonNode reply;
+            try {
+                reply = generator.editDraft(profile, user, meter);
+            } catch (ProviderException e) {
+                ProviderFailure failure = classify(e);
+                recordEdits(caller, workspaceId, workflowId, meter, failure.outcome(), latest.revision(), mode,
+                        history.size(), null);
+                throw failure.problem();
+            }
+            if (reply == null) {
+                recordEdits(caller, workspaceId, workflowId, meter, AiLedger.Outcome.INVALID_OUTPUT,
+                        latest.revision(), mode, history.size(), null);
+                throw new ApiException(ProblemCode.AI_OUTPUT_INVALID,
+                        "The AI could not propose changes. Nothing was changed; try again or rephrase.");
+            }
+            DraftEdits.Result result = editRules.evaluate(reply, latest.definition(), mode,
+                    workspace.compileContext());
+            recordEdits(caller, workspaceId, workflowId, meter, AiLedger.Outcome.SUCCESS, latest.revision(), mode,
+                    history.size(), result);
+            return new AiDtos.DraftEditProposal(latest.revision(), mode.value(), result.message(),
+                    result.changes().stream().map(c -> new AiDtos.DraftEditChange(c.id(), c.summary(),
+                            c.operations().stream().map(o -> (JsonNode) o).toList(), c.dependsOn())).toList(),
+                    result.rejected().stream().map(r -> new AiDtos.DraftEditRejected(r.summary(), r.reasons()))
+                            .toList(),
+                    result.notes(), result.notAnEdit(), result.definition(),
+                    generation(meter, PromptLibrary.DRAFT_EDIT_VERSION));
+        } finally {
+            editsInFlight.remove(caller.subjectId());
+        }
+    }
+
+    private void recordEdits(Caller caller, UUID workspaceId, UUID workflowId, Generator.Meter meter,
+            AiLedger.Outcome outcome, int revision, DraftEdits.Mode mode, int turns, DraftEdits.Result result) {
+        try {
+            tx.executeWithoutResult(status -> {
+                ledger.record(entry(caller, workspaceId, "draft-edit", meter, PromptLibrary.DRAFT_EDIT_VERSION, outcome,
+                        workflowId, revision, null));
+                AuditWriter.Entry base = auditEntry(caller, workspaceId, "ai.draft.edits.proposed", workflowId, meter,
+                        PromptLibrary.DRAFT_EDIT_VERSION, outcome, revision, null);
+                Map<String, Object> metadata = new LinkedHashMap<>(base.metadata());
+                metadata.put("mode", mode.value());
+                metadata.put("turns", turns);
+                metadata.put("changesSuggested", result == null ? 0 : result.changes().size());
+                metadata.put("changesRejected", result == null ? 0 : result.rejected().size());
+                metadata.put("operationsSuggested", result == null ? 0 : result.operationCount());
+                audit.write(new AuditWriter.Entry(base.workspaceId(), base.actorType(), base.actorSubject(),
+                        base.action(), base.resourceType(), base.resourceId(), base.outcome(), metadata));
+            });
+        } catch (RuntimeException e) {
+            if (outcome == AiLedger.Outcome.SUCCESS) {
+                throw e;
+            }
+            log.warn("Could not record a failed AI draft-edit proposal: {}", e.getClass().getSimpleName());
+        }
+        observe("draft-edit", meter, outcome);
     }
 
     // ---------------------------------------------------------------- policy helpers

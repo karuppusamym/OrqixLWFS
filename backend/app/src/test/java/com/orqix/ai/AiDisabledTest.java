@@ -52,6 +52,12 @@ class AiDisabledTest extends IntegrationTestBase {
                 Map.of("type", "object", "properties", Map.of())), "/workspaces/{ws}/workflows/{id}/ai/form-suggestions",
                 PURCHASING, created.body().path("id").asString());
         assertThat(form.code()).as(form.toString()).isEqualTo("AI_NOT_CONFIGURED");
+        // STU02: the conversational panel reports why it cannot help (the browser shows this reason).
+        Response edits = api("dana.designer").post(Map.of("instruction", "Add a legal review.", "revision", 1),
+                "/workspaces/{ws}/workflows/{id}/ai/draft-edits", PURCHASING, created.body().path("id").asString());
+        assertThat(edits.status()).as(edits.toString()).isEqualTo(422);
+        assertThat(edits.code()).isEqualTo("AI_NOT_CONFIGURED");
+        assertThat(edits.body().path("detail").asString()).contains("not configured");
         // Authorization still comes first.
         assertThat(api("vic.viewer").post(Map.of("description", "Purchase approval with finance review."),
                 UUID.randomUUID().toString(), "/workspaces/{ws}/ai/drafts", PURCHASING).status()).isEqualTo(403);

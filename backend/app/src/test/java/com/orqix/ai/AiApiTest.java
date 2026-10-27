@@ -487,6 +487,133 @@ class AiApiTest extends IntegrationTestBase {
         assertThat(outage.status()).as(outage.toString()).isEqualTo(503);
     }
 
+    // ---------------------------------------------------------------- conversational draft edits (STU02, S95)
+
+    private static final String EDITS = "/workspaces/{ws}/workflows/{id}/ai/draft-edits";
+
+    private static final String LEGAL_REVIEW = """
+            {"message": "Adds a second review by the managers after finance.", "changes": [
+              {"summary": "Second review after finance", "operations": [
+                {"op": "disconnect", "transitionId": "t7"},
+                {"op": "addStep", "id": "secondReview", "kind": "approval", "label": "Second review",
+                 "config": {"candidateGroupRef": "managers"}},
+                {"op": "connect", "from": "finance", "to": "secondReview", "on": "approved"},
+                {"op": "connect", "from": "secondReview", "to": "procure", "on": "approved"},
+                {"op": "connect", "from": "secondReview", "to": "notifyRejected", "on": "rejected"}]},
+              {"summary": "A dangling step", "operations": [
+                {"op": "addStep", "id": "orphan", "kind": "notification", "label": "Orphan Kestrel",
+                 "config": {"message": "Hello"}}]}],
+             "notes": ["Assumed the managers group."], "notAnEdit": null}""";
+
+    @Test
+    @Order(22)
+    @org.junit.jupiter.api.extension.ExtendWith(org.springframework.boot.test.system.OutputCaptureExtension.class)
+    void proposesValidatedDraftEditsWithoutApplyingStoringOrLoggingContent(
+            org.springframework.boot.test.system.CapturedOutput output) throws Exception {
+        String workflowId = formWorkflow();
+        String before = api("dana.designer").get("/workspaces/{ws}/workflows/{id}/draft", PURCHASING, workflowId).body()
+                .path("definition").toString();
+        OpenRouterStub.reply(LEGAL_REVIEW, ECONOMY_MODEL, 0.0006);
+        Response proposed = api("dana.designer").post(Map.of("instruction",
+                "Secret Falcon: add a second review after finance.", "revision", 1, "history", List.of(
+                        Map.of("role", "author", "text", "Earlier Heron turn about the form."),
+                        Map.of("role", "assistant", "text", "Proposed 1 change."))), EDITS, PURCHASING, workflowId);
+        assertThat(proposed.status()).as(proposed.toString()).isEqualTo(200);
+        JsonNode body = proposed.body();
+        assertThat(body.path("revision").asInt()).isEqualTo(1);
+        assertThat(body.path("mode").asString()).isEqualTo("edit");
+        assertThat(body.path("changes")).hasSize(1);
+        JsonNode change = body.path("changes").get(0);
+        assertThat(change.path("id").asString()).isEqualTo("c1");
+        assertThat(change.path("operations")).hasSize(5);
+        assertThat(change.path("operations").get(0).path("before").path("from").asString()).isEqualTo("finance");
+        assertThat(change.path("operations").get(2).path("transitionId").asString()).startsWith("t");
+        assertThat(body.path("rejected")).hasSize(1);
+        assertThat(body.path("rejected").get(0).path("summary").asString()).isEqualTo("A dangling step");
+        assertThat(body.path("notes").get(0).asString()).contains("managers");
+        assertThat(body.has("definition")).isFalse();
+        assertThat(body.path("generation").path("promptVersion").asString()).isEqualTo("draft-edit-v1");
+        // The prompt holds the fenced draft summary, the turns and the instruction, in that order.
+        String user = OpenRouterStub.requests().get(0).path("messages").get(1).path("content").asString();
+        assertThat(user).contains("<draft>", "\"finance-approvers\"", "<conversation>", "author: Earlier Heron",
+                "<instruction>", "Secret Falcon", "<mode>edit</mode>");
+        assertThat(user.indexOf("<draft>")).isLessThan(user.indexOf("<conversation>"));
+        assertThat(user).doesNotContain("uiLayout");
+        // Never applied: the draft is unchanged.
+        assertThat(api("dana.designer").get("/workspaces/{ws}/workflows/{id}/draft", PURCHASING, workflowId).body()
+                .path("definition").toString()).isEqualTo(before);
+        // Metering and audit hold counts only; logs hold no instruction, turn or proposal text.
+        String audit = jdbc.sql("SELECT metadata::text FROM audit_event WHERE action = 'ai.draft.edits.proposed' "
+                + "AND resource_id = :wf").param("wf", workflowId).query(String.class).single();
+        assertThat(audit).contains("\"changesSuggested\": 1", "\"changesRejected\": 1", "\"operationsSuggested\": 5",
+                "\"turns\": 2", "\"mode\": \"edit\"", "\"revision\": 1")
+                .doesNotContain("Falcon", "Heron", "secondReview", "Second review", "Kestrel");
+        assertThat(jdbc.sql("SELECT count(*) FROM ai_generation WHERE kind = 'draft-edit' AND workflow_id = :wf")
+                .param("wf", UUID.fromString(workflowId)).query(Long.class).single()).isEqualTo(1);
+        assertThat(output.getAll()).contains("AI draft-edit generation").doesNotContain("Falcon", "Heron", "Kestrel",
+                "secondReview");
+    }
+
+    @Test
+    @Order(23)
+    void draftEditsCheckAccessBodyAndRevisionBeforeAnyProviderCall() throws Exception {
+        String workflowId = formWorkflow();
+        Map<String, Object> body = Map.of("instruction", "Add a legal review.", "revision", 1);
+        assertThat(api("vic.viewer").post(body, EDITS, PURCHASING, workflowId).status()).isEqualTo(403);
+        assertThat(api("otto.outsider").post(body, EDITS, PURCHASING, workflowId).status()).isEqualTo(404);
+        assertThat(api("dana.designer").post(body, EDITS, PURCHASING, UUID.randomUUID()).status()).isEqualTo(404);
+        for (Map<String, Object> bad : List.<Map<String, Object>>of(
+                Map.of("instruction", "Add a legal review."),
+                Map.of("instruction", "x", "revision", 1),
+                Map.of("instruction", "Add a legal review.", "revision", 0),
+                Map.of("instruction", "Add a legal review.", "revision", 1, "mode", "rewrite"),
+                Map.of("instruction", "Add a legal review.", "revision", 1, "history",
+                        List.of(Map.of("role", "system", "text", "x"))),
+                Map.of("instruction", "Add a legal review.", "revision", 1, "history",
+                        java.util.Collections.nCopies(9, Map.of("role", "author", "text", "x"))),
+                Map.of("instruction", "Add a legal review.", "revision", 1, "extra", true))) {
+            Response response = api("dana.designer").post(bad, EDITS, PURCHASING, workflowId);
+            assertThat(response.code()).as(bad + " -> " + response).isEqualTo("MALFORMED_REQUEST");
+        }
+        Response stale = api("dana.designer").post(Map.of("instruction", "Add a legal review.", "revision", 2), EDITS,
+                PURCHASING, workflowId);
+        assertThat(stale.status()).as(stale.toString()).isEqualTo(409);
+        assertThat(stale.code()).isEqualTo("WORKFLOW_VERSION_CONFLICT");
+        assertThat(stale.body().path("currentRevision").asInt()).isEqualTo(1);
+        assertThat(OpenRouterStub.requests()).isEmpty();
+        // Regenerate: one change from the request form and the start step; the complete laid-out draft comes back.
+        OpenRouterStub.reply("""
+                {"message": "One manager approval.", "changes": [{"summary": "Rebuild", "operations": [
+                  {"op": "addStep", "id": "review", "kind": "approval", "label": "Manager review",
+                   "config": {"candidateGroupRef": "managers"}},
+                  {"op": "addStep", "id": "done", "kind": "end", "label": "Approved", "config": {"businessOutcome": "Approved"}},
+                  {"op": "addStep", "id": "declined", "kind": "end", "label": "Declined",
+                   "config": {"businessOutcome": "Declined", "outcomeKind": "rejected"}},
+                  {"op": "connect", "from": "start", "to": "review", "on": "next"},
+                  {"op": "connect", "from": "review", "to": "done", "on": "approved"},
+                  {"op": "connect", "from": "review", "to": "declined", "on": "rejected"}]}], "notes": []}""",
+                ECONOMY_MODEL, 0.0005);
+        Response regenerated = api("dana.designer").post(Map.of("instruction", "Start again with one approval.",
+                "revision", 1, "mode", "regenerate"), EDITS, PURCHASING, workflowId);
+        assertThat(regenerated.status()).as(regenerated.toString()).isEqualTo(200);
+        assertThat(regenerated.body().path("mode").asString()).isEqualTo("regenerate");
+        assertThat(regenerated.body().path("changes")).hasSize(1);
+        JsonNode definition = regenerated.body().path("definition");
+        assertThat(definition.path("nodes").findValuesAsString("id")).containsExactly("start", "review", "done",
+                "declined");
+        assertThat(definition.path("uiLayout").path("positions").has("review")).isTrue();
+        assertThat(OpenRouterStub.requests().get(0).path("messages").get(1).path("content").asString())
+                .contains("<mode>regenerate</mode>");
+        // Unusable model output twice: 422 AI_OUTPUT_INVALID; a provider outage: 503.
+        OpenRouterStub.reply("not json", ECONOMY_MODEL, 0.0001);
+        OpenRouterStub.reply("still not json", ECONOMY_MODEL, 0.0001);
+        assertThat(api("dana.designer").post(body, EDITS, PURCHASING, workflowId).code()).isEqualTo("AI_OUTPUT_INVALID");
+        OpenRouterStub.fail(500, Map.of());
+        OpenRouterStub.fail(500, Map.of());
+        Response outage = api("dana.designer").post(body, EDITS, PURCHASING, workflowId);
+        assertThat(outage.status()).as(outage.toString()).isEqualTo(503);
+    }
+
     @Test
     @Order(11)
     void permissionsAndRequestValidationComeBeforeAnyProviderCall() throws Exception {

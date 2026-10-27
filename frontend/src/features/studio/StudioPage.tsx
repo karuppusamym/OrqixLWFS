@@ -35,6 +35,7 @@ import { ImportNotice } from '@/features/migration/ImportNotice'
 import { PlaybackProvider } from './test/PlaybackContext'
 import { TestPanel } from './test/TestPanel'
 import { AiReviewPanel } from '@/features/ai/AiReviewPanel'
+import { AuthoringPanel } from '@/features/ai/AuthoringPanel'
 
 /** Studio route: loads the draft once, then hands it to the editor (docs/build/S7-frontend.md section 5). */
 export function StudioPage() {
@@ -262,6 +263,7 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
           </TabsList>
         </div>
         <div className="flex min-h-0 flex-1">
+          {!readOnly ? <AuthoringPanel /> : null}
           {showCanvas && currentTab === 'canvas' && canEdit ? (
             <Palette
               disabled={readOnly}

@@ -1,0 +1,86 @@
+{
+  "outcome" : {
+    "status" : "needsAttention",
+    "businessOutcome" : null,
+    "outcomeKind" : null,
+    "endStepId" : null,
+    "attention" : {
+      "stepId" : "waitPayment",
+      "stepLabel" : "Wait for the payment",
+      "reason" : "TEST_MOCK_INVALID",
+      "message" : "The test payload of the message \"payment-received\" does not fit its declared fields: \"amountPaid\" must be a number. A real message like this would be refused, so the request would keep waiting."
+    },
+    "summary" : "The request would stop and need attention at \"Wait for the payment\"."
+  },
+  "outputs" : { },
+  "trace" : [ {
+    "seq" : 1,
+    "stepId" : "start",
+    "stepLabel" : "Order placed",
+    "kind" : "start",
+    "kindLabel" : "Request form",
+    "summary" : "The request is submitted with the answers you entered.",
+    "details" : { },
+    "transitionId" : "t1",
+    "nextStepId" : "waitPayment"
+  }, {
+    "seq" : 2,
+    "stepId" : "waitPayment",
+    "stepLabel" : "Wait for the payment",
+    "kind" : "waitForMessage",
+    "kindLabel" : "Wait for a message",
+    "summary" : "\"Wait for the payment\": The test payload of the message \"payment-received\" does not fit its declared fields: \"amountPaid\" must be a number. A real message like this would be refused, so the request would keep waiting.",
+    "details" : {
+      "message" : "payment-received",
+      "mocked" : true,
+      "attention" : {
+        "reason" : "TEST_MOCK_INVALID",
+        "message" : "The test payload of the message \"payment-received\" does not fit its declared fields: \"amountPaid\" must be a number. A real message like this would be refused, so the request would keep waiting."
+      }
+    },
+    "transitionId" : null,
+    "nextStepId" : null
+  } ],
+  "warnings" : [ ],
+  "coverage" : {
+    "steps" : {
+      "visited" : 2,
+      "total" : 6,
+      "notVisited" : [ {
+        "id" : "notifyPaid",
+        "label" : "Tell requester the payment arrived"
+      }, {
+        "id" : "fulfilled",
+        "label" : "Order paid"
+      }, {
+        "id" : "notifyCancelled",
+        "label" : "Tell requester the order was cancelled"
+      }, {
+        "id" : "cancelled",
+        "label" : "Cancelled, no payment"
+      } ]
+    },
+    "routes" : {
+      "notTaken" : [ {
+        "transitionId" : "t2",
+        "from" : "waitPayment",
+        "to" : "notifyPaid",
+        "description" : "Wait for the payment, next, goes to Tell requester the payment arrived"
+      }, {
+        "transitionId" : "t3",
+        "from" : "waitPayment",
+        "to" : "notifyCancelled",
+        "description" : "Wait for the payment, when the time limit fires, goes to Tell requester the order was cancelled"
+      } ],
+      "taken" : 0,
+      "total" : 2
+    },
+    "rules" : {
+      "notMatched" : [ ],
+      "matched" : 0,
+      "total" : 0
+    },
+    "summary" : "Tested 2 of 6 steps, 0 of 2 routes and 0 of 0 decision rules."
+  },
+  "limits" : "This is a dry run of the workflow as designed, not the workflow engine. It does not call real systems, check that connections work, that people are in the groups, or how long anything takes."
+}

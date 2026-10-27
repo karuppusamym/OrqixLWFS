@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { emptySettings } from './scenarioModel'
+import { emptyAssertions, emptySettings } from './scenarioModel'
 import { exportCases, importCases, loadCases, MAX_CASES, parseCase, storeCases, upsertCase, type SavedCase } from './savedCases'
 
-const make = (name: string, expectOutcome: string | null = 'Fulfilled'): SavedCase => ({ id: `id-${name}`, name, values: { amount: '1800', rush: false, items: ['a'] }, settings: emptySettings(), expect: expectOutcome })
+const make = (name: string, expectOutcome: string | null = 'Fulfilled'): SavedCase => ({ version: 3, id: `id-${name}`, name, values: { amount: '1800', rush: false, items: ['a'] }, settings: emptySettings(), expect: expectOutcome, assertions: emptyAssertions() })
 
 describe('saved test cases', () => {
   beforeEach(() => window.localStorage.clear())
@@ -70,6 +70,35 @@ describe('saved test cases', () => {
     expect(parsed?.settings.approvals).toEqual({ f: { outcome: 'reject', reason: 'r' } })
     expect(parsed?.settings.calls.p).toEqual({ result: 'rejected', answers: { k: 'v' } })
     expect(parsed?.expect).toBeNull()
+  })
+})
+
+describe('saved case versions (STU03)', () => {
+  it('migrates a version 2 case from storage: same answers, settings and outcome, no extra checks', () => {
+    const v2 = { id: 'old', name: 'Old case', values: { amount: '1800' }, settings: { approvals: { manager: { outcome: 'reject', reason: 'r' } }, calls: { procure: { result: 'unavailable', answers: {} } }, children: {}, messages: { wait: 'timeout' }, simulateChildren: false }, expect: 'Rejected' }
+    window.localStorage.setItem('orqix.testCases.v2.p.ws.wf', JSON.stringify([v2]))
+    const [c] = loadCases('ws', 'wf', 'p')
+    expect(c).toMatchObject({ version: 3, id: 'old', name: 'Old case', expect: 'Rejected', values: { amount: '1800' } })
+    expect(c?.settings.approvals.manager).toEqual({ outcome: 'reject', reason: 'r' })
+    expect(c?.settings.calls.procure).toEqual({ result: 'unavailable', answers: {} })
+    expect(c?.settings.messages.wait).toBe('timeout')
+    expect(c?.settings.workers).toEqual({})
+    expect(c?.assertions).toEqual(emptyAssertions())
+  })
+
+  it('keeps mocks and assertions through storage, export and import of version 1 and 2 files', () => {
+    const c: SavedCase = {
+      ...make('Mocked'),
+      settings: { ...emptySettings(), calls: { procure: { result: 'works', answers: {}, mock: { status: '201', body: '{"id":"PO-1","status":"CREATED"}', delaySeconds: '3' } } }, workers: { w: { result: 'failed', answers: {}, delaySeconds: '' } }, adapters: { a: { result: 'works', rowCount: '2' } }, messageMocks: { m: { answers: { ref: 'X' }, delaySeconds: '10' } } },
+      assertions: { outputs: [{ field: 'procurementId', op: 'equals', value: 'PO-1', min: '', max: '' }], path: { steps: ['start', 'procure'], match: 'inOrder' }, rules: [{ stepId: 'amountPolicy', rule: 'otherwise' }], approvals: [{ stepId: 'manager', decision: 'approved' }] },
+    }
+    storeCases('ws', 'wf', [c], 'p')
+    expect(loadCases('ws', 'wf', 'p')[0]).toEqual(c)
+    const text = exportCases('purchase', [c])
+    expect(JSON.parse(text).version).toBe(2)
+    expect(importCases(text, []).cases[0]).toMatchObject({ settings: c.settings, assertions: c.assertions })
+    const v1 = JSON.stringify({ format: 'orqix-test-cases', version: 1, cases: [{ name: 'V1', values: {}, settings: {}, expect: 'Fulfilled' }] })
+    expect(importCases(v1, []).cases[0]).toMatchObject({ version: 3, name: 'V1', assertions: emptyAssertions() })
   })
 })
 

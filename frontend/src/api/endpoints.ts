@@ -146,6 +146,19 @@ export const simulateWorkflow = (ws: string, workflowId: string, body: S['Simula
     }),
   )
 
+/** STU03: up to 20 test cases in one dry-run action. */
+export const simulateWorkflowCases = (ws: string, workflowId: string, body: S['SimulateCasesRequest']) =>
+  call(
+    api.POST('/workspaces/{workspaceId}/workflows/{workflowId}/simulate-cases', {
+      params: { path: { workspaceId: ws, workflowId } },
+      body,
+    }),
+  )
+
+/** STU03: "N of M shared tests pass", counts only, for every reader. */
+export const getWorkflowTestSummary = (ws: string, workflowId: string) =>
+  call(api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/test-suite/summary', { params: { path: { workspaceId: ws, workflowId } } }))
+
 // Releases
 export const publishDraft = (ws: string, workflowId: string, body: S['PublishRequest'], idempotencyKey: string) =>
   callWithResponse(

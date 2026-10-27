@@ -660,9 +660,13 @@ final class SimulationRun {
     private Transition http(Node.Http n) {
         JsonNode s = scenario.path("calls").path(n.id());
         String failure = s.path("failure").asString(null);
-        if (failure != null && !Set.of("rejected", "unavailable", "unknownOutcome").contains(failure)) {
-            throw new IllegalArgumentException("calls." + n.id() + ".failure must be rejected, unavailable or"
-                    + " unknownOutcome");
+        if (failure != null && !Set.of("rejected", "unavailable", "unknownOutcome", "timeout").contains(failure)) {
+            throw new IllegalArgumentException("calls." + n.id() + ".failure must be rejected, unavailable,"
+                    + " unknownOutcome or timeout");
+        }
+        Mocks.CallMock mock = Mocks.call(n.id(), s);
+        if (mock != null || "timeout".equals(failure)) {
+            return mockedHttp(n, s, failure, mock);
         }
         Connections.Pinned pinned = connections.pinned(n.connectionRef());
         boolean registered = pinned != null && pinned.status() == Connections.Status.OK;
@@ -769,14 +773,188 @@ final class SimulationRun {
         return t;
     }
 
+    /**
+     * A call with a full mock answer (STU03): an HTTP status, a body checked against the operation's response schema,
+     * a delay, or a timeout. The answer is classified exactly like the runtime classifies a real one (HttpExecutor,
+     * S5 section 6.2), then continues like any other answer: the authored failure route, a raised error, a stop that
+     * needs attention, or success. Nothing is sent.
+     */
+    private Transition mockedHttp(Node.Http n, JsonNode s, String failure, Mocks.CallMock mock) {
+        Connections.Pinned pinned = connections.pinned(n.connectionRef());
+        boolean registered = pinned != null && pinned.status() == Connections.Status.OK;
+        JsonNode op = connections.operation(n.connectionRef(), n.operation());
+        String connName = registered ? pinned.definition().path("name").asString(n.connectionRef())
+                : n.connectionRef();
+        boolean agent = registered && "agent".equals(pinned.definition().path("kind").asString(""));
+        String opLabel = op == null ? n.operation() : op.path("label").asString(n.operation());
+        String effect = op == null ? "nonIdempotent" : op.path("effectClass").asString("nonIdempotent");
+        boolean readOnly = "readOnly".equals(effect);
+        boolean nonIdempotent = "nonIdempotent".equals(effect);
+        ObjectNode d = F.objectNode();
+        d.put("connection", n.connectionRef());
+        d.put("connectionName", connName);
+        d.put("operation", n.operation());
+        d.put("operationLabel", opLabel);
+        d.put("agent", agent);
+        d.put("effectClass", effect);
+        ObjectNode request = d.putObject("request");
+        new TreeMap<>(n.inputMapping()).forEach((field, ref) -> request.set(field,
+                DefaultWorkflowSimulator.json(resolve(ref))));
+        d.put("mocked", true);
+        String callText = Text.quote(n.label()) + (agent ? " asks the assistant " : " calls ") + connName + " ("
+                + opLabel + ").";
+        int limit = n.timeoutSeconds() > 0 ? n.timeoutSeconds() : 30;
+        Integer delay = mock == null ? null : mock.delaySeconds();
+        if (delay != null) {
+            d.put("delaySeconds", delay);
+        }
+        String retry = "Orqix would try " + Text.count(def.execution().maxAttempts(), "time") + ", "
+                + Text.count(def.execution().retryDelaySeconds(), "second") + " apart, and then the request needs"
+                + " attention until someone retries.";
+        String check = "The request needs attention. Someone must check the other system before retrying.";
+        String fix = "The request needs attention. Someone must fix the connection and retry.";
+        String rejected = "Nothing was done, so the request stops here and needs attention. Someone must fix the cause"
+                + " and retry.";
+        String reason = null;
+        String what = null;
+        String consequence = null;
+        Integer status = null;
+        if ("timeout".equals(failure) || (delay != null && delay > limit)) {
+            what = "In this test the system takes longer than the time limit of " + Text.count(limit, "second") + ".";
+            reason = nonIdempotent ? "EFFECT_UNKNOWN" : "RETRIES_EXHAUSTED";
+            consequence = nonIdempotent ? "Nobody knows whether it was done. " + check : retry;
+            d.put("failure", "timeout");
+        } else if (failure != null) {
+            // A legacy failure kind combined with a delay: same wording as without the mock.
+            switch (failure) {
+                case "rejected" -> {
+                    reason = "EFFECT_REJECTED";
+                    what = "In this test the system refuses the request.";
+                    consequence = rejected;
+                }
+                case "unavailable" -> {
+                    reason = "RETRIES_EXHAUSTED";
+                    what = "In this test the system does not answer.";
+                    consequence = retry;
+                }
+                default -> {
+                    reason = readOnly ? "RESPONSE_INVALID" : "EFFECT_UNKNOWN";
+                    what = readOnly ? "In this test the system answers with something that cannot be used."
+                            : "In this test the answer is lost, so nobody knows whether it was done.";
+                    consequence = readOnly ? fix : check;
+                }
+            }
+            d.put("failure", failure);
+        } else {
+            List<Integer> success = new ArrayList<>();
+            if (op != null) {
+                op.path("successStatuses").forEach(v -> success.add(v.asInt()));
+            }
+            status = mock.status() != null ? mock.status() : success.isEmpty() ? 200 : success.get(0);
+            d.put("httpStatus", status);
+            if (status == 429) {
+                reason = "RETRIES_EXHAUSTED";
+                what = "In this test the system answers HTTP 429 (too many requests).";
+                consequence = retry;
+            } else if (status == 408 || status >= 500) {
+                reason = nonIdempotent ? "EFFECT_UNKNOWN" : "RETRIES_EXHAUSTED";
+                what = "In this test the system answers HTTP " + status + ".";
+                consequence = nonIdempotent ? "Nobody knows whether it was done. " + check : retry;
+            } else if (status >= 400) {
+                reason = "EFFECT_REJECTED";
+                what = "In this test the system refuses the request with HTTP " + status + ".";
+                consequence = rejected;
+            } else if (status >= 300) {
+                reason = readOnly ? "RESPONSE_INVALID" : "EFFECT_UNKNOWN";
+                what = "In this test the system answers HTTP " + status + ", a redirect, which Orqix does not follow.";
+                consequence = readOnly ? fix : check;
+            } else if (!success.isEmpty() && !success.contains(status)) {
+                reason = readOnly ? "RESPONSE_INVALID" : "EFFECT_UNKNOWN";
+                what = "In this test the system answers HTTP " + status + ", which is not a success status of this"
+                        + " operation.";
+                consequence = readOnly ? fix : check;
+            } else if (mock.body() != null && op != null && op.path("responseSchema").isObject()) {
+                ArrayNode problems = Mocks.schemaProblems(op.path("responseSchema"), mock.body());
+                if (!problems.isEmpty()) {
+                    d.set("schemaProblems", problems);
+                    reason = readOnly ? "RESPONSE_INVALID" : "EFFECT_UNKNOWN";
+                    what = "In this test the system answers with a body that does not match the response schema of"
+                            + " the operation (" + Text.count(problems.size(), "problem") + ").";
+                    consequence = readOnly ? fix : check;
+                }
+            }
+            if (reason != null) {
+                d.put("failure", "EFFECT_REJECTED".equals(reason) ? "rejected" : "RETRIES_EXHAUSTED".equals(reason)
+                        ? "unavailable" : "unknownOutcome");
+            }
+        }
+        if (reason != null) {
+            if (("EFFECT_REJECTED".equals(reason) || "RESPONSE_INVALID".equals(reason)) && next(n, Route.FAILED) != null) {
+                return knownFailure(n, d, callText + " " + what, reason, status);
+            }
+            if (("EFFECT_REJECTED".equals(reason) || "RESPONSE_INVALID".equals(reason)) && n.raiseOnFailure() != null) {
+                return raiseFromCall(n, d, callText + " " + what, reason);
+            }
+            stallWith(n, callText + " " + what + " " + consequence, d, reason, what + " " + consequence);
+            return null;
+        }
+        JsonNode response = mock.body() != null ? mock.body() : s.path("result").isObject() ? s.path("result") : null;
+        boolean synthesized = response == null;
+        if (synthesized) {
+            response = op != null && op.path("responseSchema").isObject() ? sample(op.path("responseSchema"), "")
+                    : null;
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        boolean missing = false;
+        for (Map.Entry<String, String> e : n.resultMapping().entrySet()) {
+            JsonNode value = response == null ? null : pointer(response, e.getValue());
+            if (response == null) {
+                out.put(e.getKey(), "sample-" + e.getKey());
+            } else if (value == null || value.isNull() || value.isObject() || value.isArray()) {
+                missing = true;
+            } else {
+                out.put(e.getKey(), DefaultWorkflowSimulator.plain(value));
+            }
+        }
+        if (missing) {
+            String w = "In this test the system answers without all the information this step needs.";
+            d.put("failure", "unknownOutcome");
+            if (readOnly && next(n, Route.FAILED) != null) {
+                return knownFailure(n, d, callText + " " + w, "RESPONSE_INVALID", status);
+            }
+            if (readOnly && n.raiseOnFailure() != null) {
+                return raiseFromCall(n, d, callText + " " + w, "RESPONSE_INVALID");
+            }
+            String c = readOnly ? fix : check;
+            stallWith(n, callText + " " + w + " " + c, d, readOnly ? "RESPONSE_INVALID" : "EFFECT_UNKNOWN", w + " " + c);
+            return null;
+        }
+        d.put("sampleAnswer", synthesized);
+        d.set("result", DefaultWorkflowSimulator.json(out));
+        steps.put(n.id(), out);
+        Transition t = next(n, Route.NEXT);
+        String returns = out.isEmpty() ? "It succeeds." : "In this test it succeeds and returns "
+                + outputsText(out) + ".";
+        if (delay != null && delay > 0) {
+            returns += " It answers after " + Text.count(delay, "second") + "; the test does not wait.";
+        }
+        add(n, callText + " " + returns, d, out, t);
+        return t;
+    }
+
     /** Only known rejections and unusable read-only answers take the authored failure route. */
     private Transition knownFailure(Node.Http n, ObjectNode details, String description, String reason) {
+        return knownFailure(n, details, description, reason, null);
+    }
+
+    private Transition knownFailure(Node.Http n, ObjectNode details, String description, String reason,
+                                    Integer httpStatus) {
         String kind = "EFFECT_REJECTED".equals(reason) ? "rejected" : "invalidResponse";
         String message = "rejected".equals(kind) ? "The external system rejected this request."
                 : "The read-only system returned an invalid response.";
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("failureKind", kind);
-        out.put("failureHttpStatus", "rejected".equals(kind) ? 400 : 0);
+        out.put("failureHttpStatus", httpStatus != null ? httpStatus : "rejected".equals(kind) ? 400 : 0);
         out.put("failureMessage", message);
         steps.put(n.id(), out);
         details.put("routed", true);
@@ -988,30 +1166,53 @@ final class SimulationRun {
             }
             inputs.set(entry.getKey(), DefaultWorkflowSimulator.json(value));
         }
-        JsonNode given = scenario.path("workers").path(n.id()).path("result");
-        Map<String, Object> out = new LinkedHashMap<>();
-        for (Node.PayloadField field : n.result()) {
-            JsonNode supplied = given.path(field.name());
-            if (!supplied.isMissingNode() && !supplied.isNull()) {
-                out.put(field.name(), supplied.isNumber() ? supplied.decimalValue() : supplied.isBoolean() ? (Object) supplied.booleanValue()
-                        : supplied.asString());
-                continue;
-            }
-            out.put(field.name(), switch (field.type()) {
-                case NUMBER, INTEGER -> BigDecimal.ONE;
-                case BOOLEAN -> Boolean.FALSE;
-                case DATE -> "2026-01-15";
-                default -> "sample-" + field.name();
-            });
+        JsonNode setting = scenario.path("workers").path(n.id());
+        JsonNode given = setting.path("result");
+        String failure = setting.path("failure").asString(null);
+        if (failure != null && !"failed".equals(failure)) {
+            throw new IllegalArgumentException("workers." + n.id() + ".failure must be failed");
         }
+        Integer delay = setting.isObject() ? Mocks.delay("workers." + n.id(), setting) : null;
         ObjectNode d = F.objectNode();
         d.put("topic", n.topic());
         d.set("input", inputs);
+        if (delay != null) {
+            d.put("delaySeconds", delay);
+        }
+        String intro = Text.quote(n.label()) + ": a worker for the topic " + Text.quote(n.topic()) + " takes the job";
+        if ("failed".equals(failure)) {
+            d.put("mocked", true);
+            d.put("failure", "failed");
+            String message = "In this test the worker reports a failure on every attempt. The request needs attention"
+                    + " until someone retries.";
+            stallWith(n, intro + ". " + message, d, "RETRIES_EXHAUSTED", message);
+            return null;
+        }
+        if (given.isObject()) {
+            String problem = Mocks.fieldProblem(n.result(), given);
+            if (problem != null) {
+                d.put("mocked", true);
+                String message = "The test result of this worker does not fit its declared result: " + problem
+                        + ". A real worker would be refused with this result, so the request would keep waiting.";
+                stallWith(n, intro + ". " + message, d, "TEST_MOCK_INVALID", message);
+                return null;
+            }
+        } else if (!given.isMissingNode() && !given.isNull()) {
+            throw new IllegalArgumentException("workers." + n.id() + ".result must be an object");
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        for (Node.PayloadField field : n.result()) {
+            JsonNode supplied = given.path(field.name());
+            out.put(field.name(), !supplied.isMissingNode() && !supplied.isNull() ? Mocks.plainField(supplied)
+                    : Mocks.sampleField(field));
+        }
         d.set("result", DefaultWorkflowSimulator.json(out));
+        steps.put(n.id(), out);
         Transition t = next(n, Route.NEXT);
-        add(n, Text.quote(n.label()) + ": a worker for the topic " + Text.quote(n.topic())
-                + " takes the job and returns its result. This test calls no worker; the result "
-                + (given.isObject() ? "comes from the test settings." : "uses sample values."), d, null, t);
+        add(n, intro + " and returns its result. This test calls no worker; the result "
+                + (given.isObject() ? "comes from the test settings." : "uses sample values.")
+                + (delay != null && delay > 0 ? " It finishes after " + Text.count(delay, "second")
+                + "; the test does not wait." : ""), d, out, t);
         return t;
     }
 
@@ -1048,23 +1249,76 @@ final class SimulationRun {
                 yield "a database read";
             }
         };
+        JsonNode setting = scenario.path("adapters").path(n.id());
+        String failure = setting.path("failure").asString(null);
+        if (failure != null && !Set.of("unavailable", "unknownOutcome").contains(failure)) {
+            throw new IllegalArgumentException("adapters." + n.id() + ".failure must be unavailable or unknownOutcome");
+        }
+        JsonNode rows = setting.path("rowCount");
+        if (!rows.isMissingNode() && (!rows.isIntegralNumber() || rows.asLong() < 0 || rows.asLong() > 10_000)) {
+            throw new IllegalArgumentException("adapters." + n.id() + ".rowCount must be a whole number from 0 to 10000");
+        }
+        String intro = Text.quote(n.label()) + " would send " + what + " through the adapter "
+                + Text.quote(n.adapterRef()) + ".";
+        if (failure != null) {
+            d.put("mocked", true);
+            d.put("failure", failure);
+            String message = "unavailable".equals(failure)
+                    ? "In this test the adapter cannot deliver. Orqix would try " + Text.count(def.execution()
+                    .maxAttempts(), "time") + ", " + Text.count(def.execution().retryDelaySeconds(), "second")
+                    + " apart, and then the request needs attention until someone retries."
+                    : "In this test the delivery result is lost, so nobody knows whether it was sent. The request"
+                    + " needs attention. Someone must check before retrying.";
+            stallWith(n, intro + " " + message, d, "unavailable".equals(failure) ? "RETRIES_EXHAUSTED"
+                    : "EFFECT_UNKNOWN", message);
+            return null;
+        }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("outcome", "stubbed");
         if ("jdbc".equals(n.adapterKind())) {
-            out.put("rowCount", BigDecimal.ZERO);
+            out.put("rowCount", rows.isMissingNode() ? BigDecimal.ZERO : BigDecimal.valueOf(rows.asLong()));
+        }
+        if (!rows.isMissingNode()) {
+            d.put("mocked", true);
         }
         steps.put(n.id(), out);
         d.set("result", DefaultWorkflowSimulator.json(out));
         Transition t = next(n, Route.NEXT);
-        add(n, Text.quote(n.label()) + " would send " + what + " through the adapter " + Text.quote(n.adapterRef())
-                + ". This test sends nothing; in this build adapters deliver only to a local test stub.", d, out, t);
+        add(n, intro + " This test sends nothing; in this build adapters deliver only to a local test stub.", d, out, t);
         return t;
     }
 
     private Transition waitForMessage(Node.WaitForMessage n) {
-        String choice = scenario.path("messages").path(n.id()).asString("arrives");
+        JsonNode setting = scenario.path("messages").path(n.id());
+        // "arrives" / "timeout", or a mock {outcome, payload, delaySeconds} (STU03).
+        JsonNode payloadMock = setting.isObject() ? setting.path("payload") : F.missingNode();
+        Integer delay = setting.isObject() ? Mocks.delay("messages." + n.id(), setting) : null;
+        String choice = setting.isObject() ? setting.path("outcome").asString("arrives") : setting.asString("arrives");
         if (!Set.of("arrives", "timeout").contains(choice)) {
             throw new IllegalArgumentException("messages." + n.id() + " must be arrives or timeout");
+        }
+        if (!payloadMock.isMissingNode() && !payloadMock.isObject()) {
+            throw new IllegalArgumentException("messages." + n.id() + ".payload must be an object");
+        }
+        long limitMinutes = Durations.minutes(n.timeoutAfter());
+        String lateNote = null;
+        if ("arrives".equals(choice) && delay != null && limitMinutes > 0 && delay > limitMinutes * 60) {
+            choice = "timeout";
+            lateNote = "In this test the message comes after " + Text.count(delay, "second") + ", later than the"
+                    + " time limit.";
+        }
+        if (payloadMock.isObject()) {
+            String problem = Mocks.fieldProblem(n.payload(), payloadMock);
+            if (problem != null) {
+                ObjectNode bad = F.objectNode();
+                bad.put("message", n.message());
+                bad.put("mocked", true);
+                String message = "The test payload of the message " + Text.quote(n.message())
+                        + " does not fit its declared fields: " + problem + ". A real message like this would be"
+                        + " refused, so the request would keep waiting.";
+                stallWith(n, Text.quote(n.label()) + ": " + message, bad, "TEST_MOCK_INVALID", message);
+                return null;
+            }
         }
         FieldInfo f = info(n.correlationField());
         Object key = resolve(n.correlationField());
@@ -1072,9 +1326,16 @@ final class SimulationRun {
         d.put("message", n.message());
         d.put("correlationField", n.correlationField());
         d.put("correlation", f.label() + " (" + (key == null ? "no value" : Text.value(key, f.money())) + ")");
-        String note = null;
+        if (setting.isObject()) {
+            d.put("mocked", true);
+        }
+        if (delay != null) {
+            d.put("delaySeconds", delay);
+        }
+        String note = lateNote;
         if ("timeout".equals(choice) && next(n, Route.TIMED_OUT) == null) {
-            note = "This step has no time limit, so the test treats the message as arrived.";
+            note = (lateNote == null ? "" : lateNote + " ")
+                    + "This step has no time limit, so the test treats the message as arrived.";
             choice = "arrives";
         }
         Map<String, Object> out = new LinkedHashMap<>();
@@ -1089,12 +1350,9 @@ final class SimulationRun {
                     + ", so the time limit fires and the request takes the timed-out route.";
         } else {
             for (Node.PayloadField field : n.payload()) {
-                out.put(field.name(), switch (field.type()) {
-                    case NUMBER, INTEGER -> BigDecimal.ONE;
-                    case BOOLEAN -> Boolean.FALSE;
-                    case DATE -> "2026-01-15";
-                    default -> "sample-" + field.name();
-                });
+                JsonNode supplied = payloadMock.path(field.name());
+                out.put(field.name(), !supplied.isMissingNode() && !supplied.isNull() ? Mocks.plainField(supplied)
+                        : Mocks.sampleField(field));
             }
             d.put("arrived", true);
             d.set("payload", DefaultWorkflowSimulator.json(out));
@@ -1603,7 +1861,7 @@ final class SimulationRun {
     }
 
     private void scenarioWarnings() {
-        for (String group : List.of("approvals", "calls", "children", "messages", "workers")) {
+        for (String group : List.of("approvals", "calls", "children", "messages", "workers", "adapters")) {
             for (String id : scenario.path(group).propertyNames()) {
                 Node n = graph.node(id);
                 boolean right = n != null && switch (group) {
@@ -1611,6 +1869,7 @@ final class SimulationRun {
                     case "calls" -> n.kind() == NodeKind.HTTP;
                     case "messages" -> n.kind() == NodeKind.WAIT_FOR_MESSAGE;
                     case "workers" -> n.kind() == NodeKind.EXTERNAL_TASK;
+                    case "adapters" -> n.kind() == NodeKind.SEND_ADAPTER;
                     default -> n.kind() == NodeKind.START_WORKFLOW;
                 };
                 if (!right) {

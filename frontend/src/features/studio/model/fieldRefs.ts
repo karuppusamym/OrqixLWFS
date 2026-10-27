@@ -22,6 +22,8 @@ export interface ConnectionLookup {
   /** Type of the response property addressed by a JSON Pointer, if known. */
   responseType(connectionKey: string, version: number | undefined, operation: string, pointer: string): FieldType | undefined
   workflowOutputType?(workflowKey: string, output: string): FieldType | undefined
+  /** The response schema of an operation, for mocked answers in tests (STU03); undefined when not known. */
+  responseSchema?(connectionKey: string, version: number | undefined, operation: string): Record<string, unknown> | undefined
 }
 
 export const REQUEST_GROUP = 'Request'

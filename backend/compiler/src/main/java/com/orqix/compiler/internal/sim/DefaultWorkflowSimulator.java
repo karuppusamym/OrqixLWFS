@@ -112,7 +112,7 @@ public final class DefaultWorkflowSimulator implements WorkflowSimulator {
     private static void validateScenario(JsonNode scenario, int level) {
         if (!scenario.isObject() || scenario.size()>20 || level>MAX_CHILD_DEPTH)
             throw new IllegalArgumentException("Scenario settings exceed their bounded shape");
-        for(String group:List.of("approvals","calls","children","messages","childScenarios")) {
+        for(String group:List.of("approvals","calls","children","messages","childScenarios","workers","adapters")) {
             JsonNode entries=scenario.path(group);
             if (entries.isMissingNode()) continue;
             if (!entries.isObject() || entries.size()>100)

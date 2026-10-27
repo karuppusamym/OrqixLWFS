@@ -23,6 +23,10 @@ public class TestSuiteController {
             @Valid @RequestBody TestSuiteService.Save request) {
         return service.save(callers.current(), workspaceId, workflowId, request);
     }
+    @GetMapping("/summary")
+    public TestSuiteService.Summary summary(@PathVariable UUID workspaceId, @PathVariable UUID workflowId) {
+        return service.summary(callers.current(), workspaceId, workflowId);
+    }
     @PostMapping("/run")
     public TestSuiteService.Report run(@PathVariable UUID workspaceId, @PathVariable UUID workflowId,
             @Valid @RequestBody TestSuiteService.Run request) {

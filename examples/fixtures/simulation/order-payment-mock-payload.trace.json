@@ -1,0 +1,106 @@
+{
+  "outcome" : {
+    "status" : "finished",
+    "businessOutcome" : "Order paid",
+    "outcomeKind" : "success",
+    "endStepId" : "fulfilled",
+    "attention" : null,
+    "summary" : "The request would finish with the outcome \"Order paid\" (successful)."
+  },
+  "outputs" : {
+    "paymentReference" : "PAY-77"
+  },
+  "trace" : [ {
+    "seq" : 1,
+    "stepId" : "start",
+    "stepLabel" : "Order placed",
+    "kind" : "start",
+    "kindLabel" : "Request form",
+    "summary" : "The request is submitted with the answers you entered.",
+    "details" : { },
+    "transitionId" : "t1",
+    "nextStepId" : "waitPayment"
+  }, {
+    "seq" : 2,
+    "stepId" : "waitPayment",
+    "stepLabel" : "Wait for the payment",
+    "kind" : "waitForMessage",
+    "kindLabel" : "Wait for a message",
+    "summary" : "\"Wait for the payment\": the message \"payment-received\" arrives for Order number (ORD-1001). In this test it carries paymentReference = PAY-77, amountPaid = 99.5.",
+    "details" : {
+      "message" : "payment-received",
+      "correlationField" : "/input/orderNumber",
+      "correlation" : "Order number (ORD-1001)",
+      "mocked" : true,
+      "arrived" : true,
+      "payload" : {
+        "paymentReference" : "PAY-77",
+        "amountPaid" : 99.5
+      }
+    },
+    "wrote" : {
+      "paymentReference" : "PAY-77",
+      "amountPaid" : 99.5
+    },
+    "transitionId" : "t2",
+    "nextStepId" : "notifyPaid"
+  }, {
+    "seq" : 3,
+    "stepId" : "notifyPaid",
+    "stepLabel" : "Tell requester the payment arrived",
+    "kind" : "notification",
+    "kindLabel" : "Notify someone",
+    "summary" : "\"Tell requester the payment arrived\": the requester would get this in-app message: \"The payment for your order arrived. It is now being fulfilled.\"",
+    "details" : {
+      "channel" : "inApp",
+      "recipient" : "initiator",
+      "message" : "The payment for your order arrived. It is now being fulfilled."
+    },
+    "transitionId" : "t4",
+    "nextStepId" : "fulfilled"
+  }, {
+    "seq" : 4,
+    "stepId" : "fulfilled",
+    "stepLabel" : "Order paid",
+    "kind" : "end",
+    "kindLabel" : "Finish",
+    "summary" : "The request finishes: \"Order paid\" (successful).",
+    "details" : {
+      "businessOutcome" : "Order paid",
+      "outcomeKind" : "success"
+    },
+    "transitionId" : null,
+    "nextStepId" : null
+  } ],
+  "warnings" : [ ],
+  "coverage" : {
+    "steps" : {
+      "visited" : 4,
+      "total" : 6,
+      "notVisited" : [ {
+        "id" : "notifyCancelled",
+        "label" : "Tell requester the order was cancelled"
+      }, {
+        "id" : "cancelled",
+        "label" : "Cancelled, no payment"
+      } ]
+    },
+    "routes" : {
+      "notTaken" : [ {
+        "transitionId" : "t3",
+        "from" : "waitPayment",
+        "to" : "notifyCancelled",
+        "description" : "Wait for the payment, when the time limit fires, goes to Tell requester the order was cancelled"
+      } ],
+      "taken" : 1,
+      "total" : 2
+    },
+    "rules" : {
+      "notMatched" : [ ],
+      "matched" : 0,
+      "total" : 0
+    },
+    "summary" : "Tested 4 of 6 steps, 1 of 2 routes and 0 of 0 decision rules."
+  },
+  "limits" : "This is a dry run of the workflow as designed, not the workflow engine. It does not call real systems, check that connections work, that people are in the groups, or how long anything takes."
+}

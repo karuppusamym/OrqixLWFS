@@ -163,6 +163,12 @@ public class CatalogController {
         return simulations.simulate(callers.current(), workspaceId, workflowId, request);
     }
 
+    @PostMapping("/workflows/{workflowId}/simulate-cases")
+    public JsonNode simulateWorkflowCases(@PathVariable UUID workspaceId, @PathVariable UUID workflowId,
+            @Valid @RequestBody CatalogDtos.SimulateCasesRequest request) {
+        return simulations.simulateCases(callers.current(), workspaceId, workflowId, request);
+    }
+
     @PostMapping("/workflows/{workflowId}/publish")
     public ResponseEntity<CatalogDtos.ReleaseView> publishDraft(@PathVariable UUID workspaceId,
             @PathVariable UUID workflowId,

@@ -17,6 +17,7 @@ import { mockCheckBpmn, mockDraftBpmn } from './bpmnSource'
 import { assetIssues } from './sharedAssets'
 import { exportCsv, parseCsv, templateCsv } from './decisionCsv'
 import { ScenarioError, simulateDefinition, type SimConnection, type SimContext, type SimulationScenario } from './simulator'
+import { AssertionError, evaluateAssertions, validateAssertions, type Assertions } from './assertions'
 import {
   GROUPS,
   TEMPLATES,
@@ -619,15 +620,51 @@ export function createHandlers(): HttpHandler[] {
       if (!wf.drafts.some(d => d.revision === input.revision)) return notFound()
       const results = []
       for (const c of suite.cases) {
-        const response = await fetch(new URL(`/api/v1/workspaces/${wf.wsId}/workflows/${wf.id}/simulate`, request.url), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ revision: input.revision, input: c.input, scenario: c.scenario }) })
-        const output = await response.json() as { outcome?: { status: string; businessOutcome?: string } }
-        const status = output.outcome?.status ?? 'invalid'
-        const actual = status === 'needsAttention' ? '__needsAttention__' : output.outcome?.businessOutcome
-        results.push({ id: c.id, passed: response.ok && c.expect === actual, status })
+        const assertions = { ...(c.assertions ?? {}), outcome: c.expect }
+        const response = await fetch(new URL(`/api/v1/workspaces/${wf.wsId}/workflows/${wf.id}/simulate`, request.url), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ revision: input.revision, input: c.input, scenario: c.scenario, assertions }) })
+        const output = await response.json() as { outcome?: { status: string }; assertions?: { passed: boolean; results: Array<{ passed: boolean }> } }
+        const status = response.ok ? (output.outcome?.status ?? 'invalid') : 'invalid'
+        const failures = (output.assertions?.results ?? []).filter((r) => !r.passed)
+        results.push({ id: c.id, passed: response.ok && output.assertions?.passed === true, status, ...(failures.length > 0 ? { failures } : {}) })
       }
       const passed = results.length > 0 && results.every(r => r.passed)
-      wf.testPass = { version: suite.version, revision: input.revision, passed, dependencies: childPins(wf.wsId, wf.id) }
+      wf.testPass = { version: suite.version, revision: input.revision, passed, dependencies: childPins(wf.wsId, wf.id), passedCases: results.filter((r) => r.passed).length, totalCases: results.length, testedAt: clock.now().toISOString() }
       return HttpResponse.json({ suiteVersion: suite.version, revision: input.revision, passed, results })
+    }),
+    http.get(`${B}/workspaces/:ws/workflows/:id/test-suite/summary`, ({ params }) => {
+      const g = guard(params.ws, 'workflow.read'); if (!g.ok) return g.res
+      const wf = findWorkflow(str(params.ws), str(params.id)); if (!wf) return notFound()
+      const suite = wf.testSuite ?? { version: 0, cases: [] }
+      const last = wf.testPass && wf.testPass.version === suite.version && suite.version > 0 ? wf.testPass : null
+      return HttpResponse.json({
+        suiteVersion: suite.version,
+        cases: suite.cases.length,
+        lastRun: last ? { revision: last.revision, passed: last.passed, passedCases: last.passedCases ?? (last.passed ? suite.cases.length : 0), totalCases: last.totalCases ?? suite.cases.length, testedAt: last.testedAt ?? clock.now().toISOString() } : null,
+      })
+    }),
+    // STU03 "Run all": every case through the simulate handler, one result list.
+    http.post(`${B}/workspaces/:ws/workflows/:id/simulate-cases`, async ({ params, request }) => {
+      const g = guard(params.ws, 'workflow.read'); if (!g.ok) return g.res
+      const wf = findWorkflow(str(params.ws), str(params.id)); if (!wf) return notFound()
+      const input = await body<{ revision?: number; useActiveRelease?: boolean; cases?: Array<{ id: string; input: Record<string, unknown>; scenario?: unknown; assertions?: unknown }> }>(request)
+      const cases = input.cases ?? []
+      if (!Array.isArray(cases) || cases.length === 0 || cases.length > 20) return problem(422, 'VALIDATION_FAILED', 'Give 1 to 20 cases.')
+      if (new Set(cases.map((c) => c.id)).size !== cases.length) return problem(422, 'VALIDATION_FAILED', 'Every case needs its own ID.', { fieldErrors: [{ pointer: '/cases', code: 'unique', message: 'This ID is used by another case.' }] })
+      const results = []
+      let source: unknown = null
+      for (const c of cases) {
+        const response = await fetch(new URL(`/api/v1/workspaces/${wf.wsId}/workflows/${wf.id}/simulate`, request.url), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ revision: input.revision, useActiveRelease: input.useActiveRelease, input: c.input, scenario: c.scenario, assertions: c.assertions }) })
+        const output = await response.json() as { code?: string; detail?: string; title?: string; fieldErrors?: unknown[]; source?: unknown; outcome?: { status: string; businessOutcome?: string | null; outcomeKind?: string | null; summary: string }; assertions?: { passed: boolean } }
+        if (!response.ok && output.code !== 'VALIDATION_FAILED') return HttpResponse.json(output as JsonBodyType, { status: response.status })
+        if (!response.ok) {
+          results.push({ id: c.id, status: 'invalid', passed: false, problem: output.detail ?? output.title ?? 'Not valid', fieldErrors: output.fieldErrors ?? [] })
+          continue
+        }
+        source = output.source
+        const o = output.outcome as NonNullable<typeof output.outcome>
+        results.push({ id: c.id, status: o.status, passed: output.assertions ? output.assertions.passed : true, outcome: { status: o.status, businessOutcome: o.businessOutcome ?? null, outcomeKind: o.outcomeKind ?? null, summary: o.summary }, ...(output.assertions ? { assertions: output.assertions } : {}) })
+      }
+      return HttpResponse.json({ source: source ?? { revision: input.revision ?? null, releaseNumber: null }, passed: results.filter((r) => r.passed).length, total: results.length, results } as JsonBodyType)
     }),
     // "Test this workflow": a dry run with the mock-side port of the simulator (mocks/simulator.ts).
     http.post(`${B}/workspaces/:ws/workflows/:id/simulate`, async ({ params, request }) => {
@@ -636,9 +673,15 @@ export function createHandlers(): HttpHandler[] {
       if (!g.ok) return g.res
       const wf = findWorkflow(str(params.ws), str(params.id))
       if (!wf) return notFound()
-      const input = await body<{ revision?: number; useActiveRelease?: boolean; input?: Record<string, unknown>; scenario?: SimulationScenario }>(request)
+      const input = await body<{ revision?: number; useActiveRelease?: boolean; input?: Record<string, unknown>; scenario?: SimulationScenario; assertions?: Assertions }>(request)
       if (!input.input || typeof input.input !== 'object' || Array.isArray(input.input)) {
         return problem(422, 'VALIDATION_FAILED', 'Some values are not valid', { fieldErrors: [{ pointer: '/input', code: 'type', message: 'Give the answers to the request form as an object.' }] })
+      }
+      try {
+        validateAssertions(input.assertions)
+      } catch (cause) {
+        if (cause instanceof AssertionError) return problem(422, 'VALIDATION_FAILED', 'The assertions are not valid', { fieldErrors: [{ pointer: '/assertions', code: 'type', message: cause.message }] })
+        throw cause
       }
       let def: Definition
       let source: { revision: number | null; releaseNumber: number | null }
@@ -680,7 +723,8 @@ export function createHandlers(): HttpHandler[] {
         const result = simulateDefinition(def, input.input, input.scenario ?? {}, ctx)
         if (result.status === 'invalidInput') return problem(422, 'VALIDATION_FAILED', 'Some values are not valid', { fieldErrors: result.errors })
         if (result.status === 'cannotRun') return problem(422, 'WORKFLOW_INVALID', 'The workflow has blocking problems', { issues: result.issues })
-        return HttpResponse.json({ source, ...result.body } as JsonBodyType)
+        const checked = input.assertions ? { assertions: evaluateAssertions(result.body as never, input.assertions) } : {}
+        return HttpResponse.json({ source, ...result.body, ...checked } as JsonBodyType)
       } catch (cause) {
         if (cause instanceof ScenarioError) return problem(422, 'VALIDATION_FAILED', 'The test settings are not valid', { fieldErrors: [{ pointer: '/scenario', code: 'type', message: cause.message }] })
         throw cause

@@ -343,6 +343,196 @@
           "waitPayment": "timeout"
         }
       }
+    },
+    {
+      "id": "purchase-mock-201-body",
+      "definition": "examples/purchase-approval.json",
+      "input": {
+        "title": "Laptop",
+        "purpose": "Replacement.",
+        "costCenter": "IT",
+        "amount": 1800
+      },
+      "scenario": {
+        "calls": {
+          "procure": {
+            "status": 201,
+            "body": {
+              "id": "PO-9",
+              "status": "CREATED"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "purchase-mock-422",
+      "definition": "examples/purchase-approval.json",
+      "input": {
+        "title": "Laptop",
+        "purpose": "Replacement.",
+        "costCenter": "IT",
+        "amount": 1800
+      },
+      "scenario": {
+        "calls": {
+          "procure": {
+            "status": 422,
+            "body": {
+              "error": "bad"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "purchase-mock-503",
+      "definition": "examples/purchase-approval.json",
+      "input": {
+        "title": "Laptop",
+        "purpose": "Replacement.",
+        "costCenter": "IT",
+        "amount": 1800
+      },
+      "scenario": {
+        "calls": {
+          "procure": {
+            "status": 503
+          }
+        }
+      }
+    },
+    {
+      "id": "purchase-mock-202-undeclared",
+      "definition": "examples/purchase-approval.json",
+      "input": {
+        "title": "Laptop",
+        "purpose": "Replacement.",
+        "costCenter": "IT",
+        "amount": 1800
+      },
+      "scenario": {
+        "calls": {
+          "procure": {
+            "status": 202,
+            "body": {
+              "id": "PO-9",
+              "status": "CREATED"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "purchase-mock-body-invalid",
+      "definition": "examples/purchase-approval.json",
+      "input": {
+        "title": "Laptop",
+        "purpose": "Replacement.",
+        "costCenter": "IT",
+        "amount": 1800
+      },
+      "scenario": {
+        "calls": {
+          "procure": {
+            "status": 201,
+            "body": {
+              "status": "PENDING",
+              "extra": 1
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "purchase-mock-timeout",
+      "definition": "examples/purchase-approval.json",
+      "input": {
+        "title": "Laptop",
+        "purpose": "Replacement.",
+        "costCenter": "IT",
+        "amount": 1800
+      },
+      "scenario": {
+        "calls": {
+          "procure": {
+            "delaySeconds": 25
+          }
+        }
+      }
+    },
+    {
+      "id": "purchase-mock-slow-ok",
+      "definition": "examples/purchase-approval.json",
+      "input": {
+        "title": "Laptop",
+        "purpose": "Replacement.",
+        "costCenter": "IT",
+        "amount": 1800
+      },
+      "scenario": {
+        "calls": {
+          "procure": {
+            "delaySeconds": 5,
+            "body": {
+              "id": "PO-5",
+              "status": "CREATED"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "order-payment-mock-payload",
+      "definition": "examples/order-payment-wait.json",
+      "input": {
+        "orderNumber": "ORD-1001",
+        "customerName": "Sam Rivera"
+      },
+      "scenario": {
+        "messages": {
+          "waitPayment": {
+            "outcome": "arrives",
+            "payload": {
+              "paymentReference": "PAY-77",
+              "amountPaid": 99.5
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "order-payment-mock-late",
+      "definition": "examples/order-payment-wait.json",
+      "input": {
+        "orderNumber": "ORD-1001",
+        "customerName": "Sam Rivera"
+      },
+      "scenario": {
+        "messages": {
+          "waitPayment": {
+            "outcome": "arrives",
+            "delaySeconds": 200000
+          }
+        }
+      }
+    },
+    {
+      "id": "order-payment-mock-bad-payload",
+      "definition": "examples/order-payment-wait.json",
+      "input": {
+        "orderNumber": "ORD-1001",
+        "customerName": "Sam Rivera"
+      },
+      "scenario": {
+        "messages": {
+          "waitPayment": {
+            "payload": {
+              "amountPaid": "a lot"
+            }
+          }
+        }
+      }
     }
   ]
 }

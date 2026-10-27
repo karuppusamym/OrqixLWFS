@@ -28,6 +28,26 @@ import { MigrationReviewPanel, useMigrationReview } from '@/features/migration/M
 import { publishBlock } from '@/features/migration/reviewGate'
 import { diffDefinitions, type Change } from './diff'
 
+/**
+ * STU03: "N of M shared tests passed" next to the check, for information only. Whether publishing needs passing shared
+ * tests is decided by the server's existing shared-test gate, never by this line.
+ */
+function TestSummaryLine({ ws, workflowId, revision }: { ws: string; workflowId: string; revision: number }) {
+  const summary = useQuery({ queryKey: ['ws', ws, 'workflow', workflowId, 'test-summary'], queryFn: () => endpoints.getWorkflowTestSummary(ws, workflowId), staleTime: 10_000, retry: false })
+  const s = summary.data
+  if (!s || s.cases === 0) return null
+  const last = s.lastRun
+  return (
+    <p className="text-sm text-muted-foreground" data-testid="test-summary-line">
+      Tests:{' '}
+      {last
+        ? `${last.passedCases} of ${last.totalCases} shared tests passed${last.revision === revision ? ' on this draft' : ` on draft revision ${last.revision}, not this one`}.`
+        : `${s.cases} shared tests, not run yet.`}{' '}
+      Run them from the Test tab of the studio.
+    </p>
+  )
+}
+
 const KIND_LABEL = { added: 'Added', removed: 'Removed', changed: 'Changed' } as const
 const KIND_TONE = { added: 'success', removed: 'danger', changed: 'warning' } as const
 
@@ -210,6 +230,7 @@ export function PublishReviewPage() {
                 {blockers.length > 0 ? <p className="text-sm text-muted-foreground">Fix the blockers in the studio, then come back to publish.</p> : null}
               </>
             )}
+            <TestSummaryLine ws={ws} workflowId={workflowId} revision={requested} />
           </CardContent>
         </Card>
 

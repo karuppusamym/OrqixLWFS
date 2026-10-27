@@ -108,7 +108,20 @@ public final class CatalogDtos {
 
     /** Dry run of a draft revision (default: the current draft) or of the active release. */
     public record SimulateRequest(@Min(1) Integer revision, Boolean useActiveRelease, @NotNull JsonNode input,
-            JsonNode scenario) {
+            JsonNode scenario, JsonNode assertions) {
+        public SimulateRequest(Integer revision, Boolean useActiveRelease, JsonNode input, JsonNode scenario) {
+            this(revision, useActiveRelease, input, scenario, null);
+        }
+    }
+
+    /** One case of a suite run (STU03): a sample request, its scenario and what it asserts. */
+    public record SimulateCase(@jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Size(max = 80) String id,
+            @NotNull JsonNode input, JsonNode scenario, JsonNode assertions) {
+    }
+
+    /** Runs up to 20 cases against one draft revision (or the active release) in one dry run. */
+    public record SimulateCasesRequest(@Min(1) Integer revision, Boolean useActiveRelease,
+            @NotNull @jakarta.validation.constraints.Size(min = 1, max = 20) java.util.List<@jakarta.validation.Valid SimulateCase> cases) {
     }
 
     public record PublishRequest(@NotNull @Min(1) Integer draftRevision, Boolean acknowledgeWarnings, Boolean activate,

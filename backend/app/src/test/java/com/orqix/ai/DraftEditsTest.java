@@ -290,4 +290,16 @@ class DraftEditsTest {
         assertThat(summary).doesNotContain("x".repeat(250));
         assertThat(summary.length()).isLessThanOrEqualTo(DraftEdits.MAX_SUMMARY_CHARS);
     }
+
+    @Test
+    void credentialsEmbeddedInUrlsAndQueryStringsAreRedacted() throws Exception {
+        ObjectNode draft = purchase();
+        ObjectNode config = (ObjectNode) ((ObjectNode) draft.path("nodes").get(5)).get("config");
+        config.put("path", "/v1/orders?api_key=9f8e7d6c5b4a39281716151413121110abcdef&page=2");
+        config.put("hook", "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX1a");
+        config.put("dsn", "https://deploy:hunter2@example.com/db");
+        String summary = rules.summary(draft, List.of(new DraftRules.GroupFact("managers", "Managers")));
+        assertThat(summary).doesNotContain("9f8e7d6c5b4a39281716151413121110abcdef", "XXXXXXXXXXXXXXXXXXXXXXXX1a", "hunter2")
+                .contains("page=2", "example.com", "[redacted]");
+    }
 }

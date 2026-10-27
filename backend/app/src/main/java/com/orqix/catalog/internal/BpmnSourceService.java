@@ -123,9 +123,10 @@ public class BpmnSourceService {
     @Transactional
     public BpmnFile exportRelease(Caller caller, UUID workspaceId, UUID workflowId, UUID releaseId) {
         WorkflowService.Visible visible = workflows.visible(caller, workspaceId, workflowId, "exportReleaseBpmn");
+        // Permission first, then the release: a caller without workflow.export learns nothing about which releases exist.
+        policy.require(visible.access(), Permission.WORKFLOW_EXPORT, "exportReleaseBpmn", true);
         CatalogStore.ReleaseRow release = store.release(workspaceId, workflowId, releaseId)
                 .orElseThrow(ApiException::notFound);
-        policy.require(visible.access(), Permission.WORKFLOW_EXPORT, "exportReleaseBpmn", true);
         byte[] stored = store.artifacts(releaseId).stream().filter(a -> "process.bpmn20.xml".equals(a.name()))
                 .findFirst().orElseThrow(ApiException::notFound).content();
         String file = BpmnSource.downloadFile(new String(stored, StandardCharsets.UTF_8), release.definitionJson(),

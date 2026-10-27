@@ -17,8 +17,13 @@ describe('pinned workflow shortcuts', () => {
     const first = await renderAppReady(`/w/${WS}/workflows`)
     await user.click(await screen.findByRole('button', { name: 'Pin Purchase approval' }))
     expect(await within(panel()).findByRole('link', { name: 'Purchase approval' })).toBeInTheDocument()
-    const stored = Object.keys(localStorage).find(key => key.startsWith('orqix.workflowPins.v1:'))!
-    expect(JSON.parse(localStorage.getItem(stored)!).ids).toEqual([PURCHASE_WORKFLOW_ID])
+    // The store writes after the panel renders; under load the write can land a moment later, so wait for it.
+    let stored = ''
+    await waitFor(() => {
+      stored = Object.keys(localStorage).find(key => key.startsWith('orqix.workflowPins.v1:')) ?? ''
+      expect(stored).not.toBe('')
+      expect(JSON.parse(localStorage.getItem(stored)!).ids).toEqual([PURCHASE_WORKFLOW_ID])
+    })
     first.unmount()
     const second = await renderAppReady(`/w/${WS}/workflows?q=no-such-workflow`)
     await screen.findByText('No workflows match your search')

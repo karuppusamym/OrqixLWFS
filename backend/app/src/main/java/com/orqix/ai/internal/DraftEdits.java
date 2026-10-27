@@ -191,7 +191,7 @@ public final class DraftEdits {
         if (value.isObject()) {
             ObjectNode out = json.object();
             if (depth >= 3) {
-                out.put("â€¦", value.size() + " settings");
+                out.put("…", value.size() + " settings");
                 return out;
             }
             int count = 0;
@@ -232,12 +232,33 @@ public final class DraftEdits {
         if (SECRET_VALUE.matcher(text.strip()).matches()) {
             return json.toTree("[redacted]");
         }
-        return json.toTree(clipped(text));
+        return json.toTree(clipped(scrubEmbeddedSecrets(text)));
+    }
+
+    /** Credentials in URLs and query strings: "user:pass@host", "?api_key=...", and long opaque path segments. */
+    private static final Pattern URL_USERINFO = Pattern.compile("(?i)(://)[^/@\s]+@");
+    private static final Pattern SENSITIVE_PARAM = Pattern.compile(
+            "(?i)([?&;])([^=&#\s]*(secret|password|passwd|token|apikey|api_key|key|authorization|credential|signature|sig|auth)[^=&#\s]*)=[^&#\s]*");
+    private static final Pattern OPAQUE_SEGMENT = Pattern.compile("[A-Za-z0-9_-]{24,}");
+
+    static String scrubEmbeddedSecrets(String text) {
+        String out = URL_USERINFO.matcher(text).replaceAll("$1[redacted]@");
+        out = SENSITIVE_PARAM.matcher(out).replaceAll("$1$2=[redacted]");
+        // A long run of letters and digits mixed together is a token (for example the secret part of a webhook path).
+        java.util.regex.Matcher m = OPAQUE_SEGMENT.matcher(out);
+        StringBuilder sb = new StringBuilder();
+        while (m.find()) {
+            String run = m.group();
+            boolean mixed = run.chars().anyMatch(Character::isDigit) && run.chars().anyMatch(Character::isLetter);
+            m.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(mixed ? "[redacted]" : run));
+        }
+        m.appendTail(sb);
+        return sb.toString();
     }
 
     private static String clipped(String text) {
         String line = text.replaceAll("[\\p{Cntrl}\\s]+", " ").strip();
-        return line.length() > MAX_STRING_IN_SUMMARY ? line.substring(0, MAX_STRING_IN_SUMMARY - 1) + "â€¦" : line;
+        return line.length() > MAX_STRING_IN_SUMMARY ? line.substring(0, MAX_STRING_IN_SUMMARY - 1) + "…" : line;
     }
 
     // ---------------------------------------------------------------- validation of the reply

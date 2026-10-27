@@ -19,7 +19,12 @@ export function useDownloadDraftBpmn() {
     setBusy(true)
     setError(null)
     try {
-      if (!readOnly) await saver.flush()
+      if (!readOnly) {
+        // flush() answers false when the draft could not be saved (conflict or validation); downloading then would hand
+        // out the previous revision while the canvas shows edits that were not saved.
+        const saved = await saver.flush()
+        if (!saved) throw new Error('The draft could not be saved, so no file was downloaded. Fix the save problem and try again.')
+      }
       const { blob, filename } = await endpoints.exportDraftBpmn(wsId, workflowId, store.getState().revision)
       downloadBlob(blob, filename)
       announce(`Downloaded ${filename}`)

@@ -41,6 +41,11 @@ export function useInWorkspace(): boolean {
   return useContext(WorkspaceContext) !== null
 }
 
+/** The workspace context when inside a workspace route, otherwise null (for per-person preferences outside one). */
+export function useOptionalWorkspace(): WorkspaceContextValue | null {
+  return useContext(WorkspaceContext)
+}
+
 /** The workspace id of the current route. */
 export function useWsId(): string {
   return useWorkspace().workspace.id

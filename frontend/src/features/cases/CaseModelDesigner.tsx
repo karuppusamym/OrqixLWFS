@@ -6,6 +6,7 @@ import { Input,Select,Textarea } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Alert } from '@/components/ui/alert'
 import { caseItems,caseModelXml,type CaseModelItem } from './caseModel'
+import { CmmnPreview } from './CmmnPreview'
 
 export function CaseModelDesigner({ws,caseKey,name,onApply,disabled}:{ws:string;caseKey:string;name:string;onApply:(xml:string|null)=>void;disabled:boolean}) {
   const groups=useGroups(ws)
@@ -52,5 +53,6 @@ export function CaseModelDesigner({ws,caseKey,name,onApply,disabled}:{ws:string;
     {render(items)}
     <div className="flex flex-wrap gap-2">{(['humanTask','stage','milestone','userEventListener'] as const).map(kind=><Button type="button" key={kind} variant="secondary" disabled={caseItems(items).length>=30} onClick={()=>add(kind)}>Add {kind==='humanTask'?'human task':kind==='userEventListener'?'user event':kind}</Button>)}<Button type="button" variant="secondary" disabled={!history.length} onClick={()=>{setItems(history.at(-1)!);setHistory(history.slice(0,-1));setXml('');onApply(null)}}>Undo model change</Button><Button type="button" onClick={()=>{try { const generated=caseModelXml(caseKey,name,items);setXml(generated);onApply(generated);setError(undefined) } catch(cause) { setError(cause instanceof Error?cause.message:'The case model is invalid.') }}}>Use generated CMMN</Button></div>
     {error?<Alert tone="danger">{error}</Alert>:null}{xml?<div><Label htmlFor="case-generated-xml">Generated CMMN preview</Label><Textarea id="case-generated-xml" rows={8} readOnly value={xml}/><Button type="button" variant="secondary" onClick={()=>downloadBlob(new Blob([xml],{type:'application/xml'}),`${caseKey}.cmmn`)}>Download generated CMMN</Button></div>:null}
+    <CmmnPreview name={name} items={items}/>
   </fieldset>
 }

@@ -30,6 +30,9 @@ import { computeLayout, hasPoorLayout, structureKey } from '@/features/studio/mo
 import { normalizeDefinition, type Definition, type NodeKind, type Position as StudioPosition, type RouteKind } from '@/features/studio/model/types'
 import type { StepNodeData } from '@/features/studio/StepNode'
 import { ScopeFrames, type FrameSpec } from '@/features/studio/ScopeFrames'
+import { labelOutside } from '@/features/studio/model/notation'
+import { NotationLegend, NotationToggle } from '@/features/studio/notation/NotationControls'
+import { useNotation } from '@/features/studio/notation/useNotation'
 import { cn } from '@/lib/cn'
 import { useRunPath, type PathNode, type RunPath } from './api'
 import { RunEdge, type RunFlowEdge } from './RunEdge'
@@ -88,9 +91,13 @@ function routeColor(on: RouteKind): string {
   return `var(--edge-${on === 'failed' ? 'rejected' : on === 'timedOut' ? 'condition' : on === 'default' ? 'default' : on})`
 }
 
+/** Source handle of a route; the same ids as the studio's step (a failed call leaves from the call's Failed handle). */
 function handleFor(on: RouteKind): string {
-  return on === 'approved' ? 'approved' : on === 'rejected' || on === 'failed' ? 'rejected' : on === 'timedOut' ? 'timedOut' : on === 'condition' || on === 'default' ? 'route' : 'next'
+  return on === 'approved' ? 'approved' : on === 'rejected' ? 'rejected' : on === 'failed' ? 'failed' : on === 'timedOut' ? 'timedOut' : on === 'condition' || on === 'default' ? 'route' : 'next'
 }
+
+/** In BPMN notation outcome routes are printed on their lines (the shapes carry only icons beside the handles). */
+const OUTCOME_ROUTE: Partial<Record<RouteKind, string>> = { approved: 'Approved', rejected: 'Rejected', failed: 'Failed', timedOut: 'Timed out' }
 
 interface Props {
   ws: string
@@ -137,15 +144,16 @@ function DiagramInner({ ws, run, operator, path }: Props & { path: RunPath }) {
   const views = useMemo(() => buildStepViews(path), [path])
   const taken = useMemo(() => takenRoutes(path), [path])
   const definition = useMemo(() => toDefinition(path), [path])
-  const key = useMemo(() => structureKey(definition), [definition])
-  const needsLayout = useMemo(() => hasPoorLayout(definition), [definition])
+  const [notation, setNotation] = useNotation()
+  const key = useMemo(() => `${structureKey(definition)}|${notation}`, [definition, notation])
+  const needsLayout = useMemo(() => hasPoorLayout(definition, notation), [definition, notation])
 
   // Without a saved layout (a workflow nobody arranged in the studio) the studio's layout code arranges the steps.
   const [arranged, setArranged] = useState<{ key: string; positions: Record<string, StudioPosition> } | null>(null)
   useEffect(() => {
     if (!needsLayout) return
     let cancelled = false
-    computeLayout(definition)
+    computeLayout(definition, undefined, notation)
       .then((positions) => {
         if (!cancelled) setArranged({ key, positions })
       })
@@ -155,7 +163,7 @@ function DiagramInner({ ws, run, operator, path }: Props & { path: RunPath }) {
     return () => {
       cancelled = true
     }
-  }, [needsLayout, definition, key])
+  }, [needsLayout, definition, key, notation])
   const positions = useMemo<Record<string, StudioPosition> | null>(
     () => (needsLayout ? (arranged?.key === key ? arranged.positions : null) : (definition.uiLayout?.positions ?? {})),
     [needsLayout, arranged, key, definition],
@@ -169,7 +177,7 @@ function DiagramInner({ ws, run, operator, path }: Props & { path: RunPath }) {
     return path.diagram.nodes.map((n, index) => {
       const view = views.get(n.id) as StepView
       const kind = knownKind(n.kind)
-      const card: StepNodeData = { kind, label: n.label, subtitle: subtitleOf(n, run), blockers: 0, warnings: 0 }
+      const card: StepNodeData = { kind, label: n.label, subtitle: subtitleOf(n, run), blockers: 0, warnings: 0, notation }
       if (kind === 'approval' || kind === 'waitForMessage') card.timeout = n.hasTimeout === true
       if (kind === 'end') {
         card.outcomeKind = n.outcomeKind === 'failed' ? 'failed' : n.outcomeKind === 'rejected' ? 'rejected' : 'success'
@@ -189,7 +197,7 @@ function DiagramInner({ ws, run, operator, path }: Props & { path: RunPath }) {
         data: { card, status: view.status, operator, descriptionId, description: stepAriaDescription(view, ctx), occurrences: view.visits.length },
       } satisfies RunFlowNode
     })
-  }, [positions, path, views, run, operator, ctx, selectedId])
+  }, [positions, path, views, run, operator, ctx, selectedId, notation])
 
   const derivedEdges = useMemo<RunFlowEdge[]>(
     () =>
@@ -205,14 +213,14 @@ function DiagramInner({ ws, run, operator, path }: Props & { path: RunPath }) {
           sourceHandle: handleFor(on),
           targetHandle: 'in',
           type: 'runRoute',
-          data: { taken: used, text: t.label ?? '' },
+          data: { taken: used, text: t.label ?? (notation === 'bpmn' ? (OUTCOME_ROUTE[on] ?? '') : '') },
           focusable: false,
           selectable: false,
           markerEnd: { type: MarkerType.ArrowClosed, color, width: 16, height: 16 },
           style: { stroke: color, strokeWidth: used ? 5 : 2, ...(used ? {} : { strokeDasharray: '7 6' }) },
         } satisfies RunFlowEdge
       }),
-    [path, taken],
+    [path, taken, notation],
   )
 
   // React Flow keeps the measured sizes in its copy of the nodes; the derived list replaces it when the data changes.
@@ -293,6 +301,11 @@ function DiagramInner({ ws, run, operator, path }: Props & { path: RunPath }) {
         </li>
       </ul>
 
+      <div className="flex flex-wrap items-start gap-3">
+        <NotationToggle value={notation} onChange={setNotation} />
+        {notation === 'bpmn' ? <NotationLegend className="min-w-0 flex-1 basis-72" /> : null}
+      </div>
+
       <div
         ref={rootRef}
         className="orqix-flow orqix-flow-run relative h-[26rem] min-w-0 max-w-full overflow-hidden rounded-card border border-border"
@@ -323,7 +336,7 @@ function DiagramInner({ ws, run, operator, path }: Props & { path: RunPath }) {
             <Background variant={BackgroundVariant.Dots} gap={22} size={1.5} color="var(--canvas-dot)" />
             <ScopeFrames frames={frames} />
             <Controls showInteractive={false} position="bottom-left" fitViewOptions={{ ...FIT, minZoom: 0.1, duration: prefersReducedMotion() ? 0 : 200 }} />
-            {selected ? <StepPopover view={selected} run={run} operator={operator} /> : null}
+            {selected ? <StepPopover view={selected} run={run} operator={operator} below={notation === 'bpmn' && labelOutside(knownKind(selected.kind))} /> : null}
           </ReactFlow>
         ) : (
           <p role="status" className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
@@ -387,10 +400,11 @@ function DiagramInner({ ws, run, operator, path }: Props & { path: RunPath }) {
 }
 
 /** The popover on the step: text only (the details panel under the canvas holds the links). */
-function StepPopover({ view, run, operator }: { view: StepView; run: RunDetail; operator: boolean }) {
+function StepPopover({ view, run, operator, below }: { view: StepView; run: RunDetail; operator: boolean; below?: boolean }) {
   const d = describeStep(view, { run, operator })
   return (
-    <NodeToolbar nodeId={view.id} isVisible position={Position.Bottom} offset={14}>
+    // Below a BPMN event or gateway the popover clears the step's name printed beneath the shape.
+    <NodeToolbar nodeId={view.id} isVisible position={Position.Bottom} offset={below ? 76 : 14}>
       <div aria-hidden="true" className="pointer-events-none max-w-72 rounded-control border border-border bg-surface px-3 py-2 text-sm shadow-card" data-testid="step-popover">
         <p className="font-semibold">{statusLabel(view.status, operator)}</p>
         <p>{d.summary}</p>

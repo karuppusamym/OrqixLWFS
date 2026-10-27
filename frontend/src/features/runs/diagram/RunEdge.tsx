@@ -1,7 +1,7 @@
 import { BaseEdge, EdgeLabelRenderer, useNodes, type Edge, type EdgeProps } from '@xyflow/react'
 import { cn } from '@/lib/cn'
-import { routeGeometry } from '@/features/studio/RouteEdge'
-import { APPROVAL_HEIGHT, LABEL_MAX_WIDTH, NODE_HEIGHT, NODE_WIDTH } from '@/features/studio/model/layout'
+import { fallbackNodeSize, routeGeometry } from '@/features/studio/RouteEdge'
+import { LABEL_MAX_WIDTH } from '@/features/studio/model/layout'
 
 export interface RunEdgeData extends Record<string, unknown> {
   /** The request used this route: drawn thick. Routes not used are thin and dashed. */
@@ -24,8 +24,8 @@ export function RunEdge({ id, source, target, sourceX, sourceY, targetX, targetY
     .map((n) => ({
       x: n.position.x,
       y: n.position.y,
-      width: n.measured?.width ?? NODE_WIDTH,
-      height: n.measured?.height ?? (n.data?.kind === 'approval' ? APPROVAL_HEIGHT : NODE_HEIGHT),
+      width: n.measured?.width ?? fallbackNodeSize(n.data).width,
+      height: n.measured?.height ?? fallbackNodeSize(n.data).height,
     }))
   const width = Math.min(LABEL_MAX_WIDTH, Math.round(text.length * 7.8) + 28)
   const laneShift = ([...id].reduce((sum, ch) => sum + ch.charCodeAt(0), 0) % 3) * 22

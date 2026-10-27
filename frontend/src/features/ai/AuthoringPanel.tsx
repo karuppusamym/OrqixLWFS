@@ -181,7 +181,7 @@ function Conversation({ focus: focusStep, onFocusChange: setFocusStep }: { focus
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="max-h-64 min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-2">
+      <div className="max-h-56 min-h-0 space-y-3 overflow-y-auto px-3 py-2">
         {turns.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             Type or say what you want, for example “Add a finance approval when the amount is 5,000 or more”, then follow up with “make it 10,000”.

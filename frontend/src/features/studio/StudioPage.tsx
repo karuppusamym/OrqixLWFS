@@ -302,7 +302,7 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
             />
           ) : null}
           <div className="flex min-w-0 flex-1 flex-col">
-          <div className="relative min-h-0 min-w-0 flex-1 bg-canvas">
+          <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-canvas">
             <TabsContent value="canvas" className="m-0 h-full">
               <CanvasView groupNames={groupNames} onBranchConnect={(from, to) => setBranchRequest({ from, to })} />
             </TabsContent>

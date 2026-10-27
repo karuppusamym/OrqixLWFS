@@ -155,7 +155,7 @@ public class WebhookService implements OutboundWebhooks {
         WorkspaceAccess access = policy.freshAccess(caller, workspaceId).filter(WorkspaceAccess::visible)
                 .orElseThrow(ApiException::notFound);
         policy.require(access, Permission.CONNECTION_MANAGE, "createWebhookSubscription", true);
-        List<String> events = validate(request.url(), request.events());
+        List<String> events = validate(request.url(), request.events(), request.secretRef());
         long existing = jdbc.sql("SELECT count(*) FROM webhook_subscription WHERE workspace_id = :ws")
                 .param("ws", workspaceId).query(Long.class).single();
         if (existing >= MAX_SUBSCRIPTIONS_PER_WORKSPACE) {
@@ -190,7 +190,15 @@ public class WebhookService implements OutboundWebhooks {
             throw new ApiException(ProblemCode.CONFIGURATION_VERSION_CONFLICT,
                     "The subscription changed since you loaded it (now version " + version + ").");
         }
-        List<String> events = validate(request.url(), request.events());
+        List<String> events = validate(request.url(), request.events(), request.secretRef());
+        if (!request.enabled()) {
+            // Paused (S99 B9): what was waiting is dead-lettered now, so resuming never floods the receiver with a
+            // backlog; operators replay what they still want.
+            jdbc.sql("""
+                    UPDATE webhook_delivery SET status = 'dead', dead_at = :now, lease_until = NULL, last_error = 'subscription_paused'
+                    WHERE subscription_id = :id AND status IN ('pending', 'sending')
+                    """).param("now", Sql.ts(clock.instant())).param("id", id).update();
+        }
         jdbc.sql("""
                 UPDATE webhook_subscription SET name = :name, url = :url, secret_ref = :ref, events = CAST(:events AS text[]),
                        enabled = :enabled, version = version + 1, updated_by = :by, updated_at = :now
@@ -229,12 +237,48 @@ public class WebhookService implements OutboundWebhooks {
     private SubscriptionView subscription(ResultSet rs, boolean manager) throws SQLException {
         Array events = rs.getArray("events");
         List<String> list = new ArrayList<>(List.of((String[]) events.getArray()));
-        return new SubscriptionView(rs.getObject("id", UUID.class), rs.getString("name"), rs.getString("url"),
+        String url = rs.getString("url");
+        return new SubscriptionView(rs.getObject("id", UUID.class), rs.getString("name"), manager ? url : masked(url),
                 manager ? rs.getString("secret_ref") : null, list, rs.getBoolean("enabled"), rs.getInt("version"),
                 rs.getLong("pending"), rs.getLong("dead"), Sql.instant(rs, "created_at"), Sql.instant(rs, "updated_at"));
     }
 
-    private List<String> validate(String url, List<String> requested) {
+    /** Readers see {@code scheme://host[:port]/…} only: a webhook path often carries a credential (S99 B1). */
+    static String masked(String url) {
+        try {
+            java.net.URI uri = new java.net.URI(url);
+            String path = uri.getRawPath() == null || uri.getRawPath().length() <= 1 ? "" : "/…";
+            return uri.getScheme() + "://" + uri.getHost() + (uri.getPort() == -1 ? "" : ":" + uri.getPort()) + path;
+        } catch (java.net.URISyntaxException | RuntimeException e) {
+            return "…";
+        }
+    }
+
+    /**
+     * Signing secrets live in their own name space and are never shared with an inbound trigger, adapter, connection or
+     * Kafka trigger, so a webhook can never be used to produce another configuration's signatures (S99 B4).
+     */
+    private void secret(String secretRef) {
+        if (secretRef == null || !secretRef.startsWith(com.orqix.integration.SecretNamespaces.WEBHOOK)) {
+            throw new ApiException(ProblemCode.VALIDATION_FAILED, "Webhook secret references start with webhook-.")
+                    .withFieldErrors(List.of(new ApiException.FieldError("/secretRef", "namespace",
+                            "Name a secret file that starts with webhook-, for example webhook-ops-feed.")));
+        }
+        boolean used = Boolean.TRUE.equals(jdbc.sql("""
+                SELECT EXISTS (SELECT 1 FROM inbound_trigger WHERE secret_ref = :r)
+                    OR EXISTS (SELECT 1 FROM adapter_config WHERE secret_ref = :r)
+                    OR EXISTS (SELECT 1 FROM connection_binding WHERE secret_ref = :r)
+                    OR EXISTS (SELECT 1 FROM kafka_trigger WHERE secret_ref = :r)
+                """).param("r", secretRef).query(Boolean.class).single());
+        if (used) {
+            throw new ApiException(ProblemCode.VALIDATION_FAILED, "This secret reference is used by another kind of configuration.")
+                    .withFieldErrors(List.of(new ApiException.FieldError("/secretRef", "inUse",
+                            "Use a secret file of its own for each webhook subscription.")));
+        }
+    }
+
+    private List<String> validate(String url, List<String> requested, String secretRef) {
+        secret(secretRef);
         Set<String> events = new LinkedHashSet<>();
         for (String e : requested) {
             if (e == null || !EVENT_TYPES.contains(e)) {
@@ -300,6 +344,17 @@ public class WebhookService implements OutboundWebhooks {
                         rs.getString("status"), rs.getInt("attempts"))).optional().orElseThrow(ApiException::notFound);
         if (!"dead".equals(current.status())) {
             throw new ApiException(ProblemCode.VALIDATION_FAILED, "Only a dead letter can be replayed.");
+        }
+        boolean enabled = Boolean.TRUE.equals(jdbc.sql("SELECT enabled FROM webhook_subscription WHERE id = :s")
+                .param("s", current.subscriptionId()).query(Boolean.class).single());
+        if (!enabled) {
+            throw new ApiException(ProblemCode.VALIDATION_FAILED, "Resume the subscription before replaying its deliveries.");
+        }
+        long pending = jdbc.sql("SELECT count(*) FROM webhook_delivery WHERE subscription_id = :s AND status IN ('pending', 'sending')")
+                .param("s", current.subscriptionId()).query(Long.class).single();
+        if (pending >= settings.maxPending()) {
+            throw new ApiException(ProblemCode.RATE_LIMITED, "This subscription already has " + settings.maxPending()
+                    + " deliveries waiting.").withHeader("Retry-After", "60");
         }
         jdbc.sql("""
                 UPDATE webhook_delivery SET status = 'pending', attempts = 0, next_attempt_at = :now, lease_until = NULL,

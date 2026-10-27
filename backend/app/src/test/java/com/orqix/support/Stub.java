@@ -77,9 +77,18 @@ public final class Stub {
         WEBHOOK_STATUSES.addAll(List.of(statuses));
     }
 
+    private static final Deque<Integer> WEBHOOK_DELAYS = new java.util.concurrent.ConcurrentLinkedDeque<>();
+
+    /** The next webhook answers are delayed by these milliseconds (then none). */
+    public static void webhookDelays(Integer... millis) {
+        WEBHOOK_DELAYS.clear();
+        WEBHOOK_DELAYS.addAll(List.of(millis));
+    }
+
     public static void resetWebhooks() {
         WEBHOOKS.clear();
         WEBHOOK_STATUSES.clear();
+        WEBHOOK_DELAYS.clear();
     }
 
     public static String baseUrl() {
@@ -128,7 +137,12 @@ public final class Stub {
             request.getHeaders().all().forEach(h -> headers.put(h.key().toLowerCase(), h.firstValue()));
             WEBHOOKS.add(new WebhookCall(path, headers, request.getBodyAsString()));
             Integer status = WEBHOOK_STATUSES.pollFirst();
-            return new ResponseDefinitionBuilder().withStatus(status == null ? 204 : status).build();
+            Integer delay = WEBHOOK_DELAYS.pollFirst();
+            ResponseDefinitionBuilder answer = new ResponseDefinitionBuilder().withStatus(status == null ? 204 : status);
+            if (delay != null && delay > 0) {
+                answer.withFixedDelay(delay);
+            }
+            return answer.build();
         }
         if (path.startsWith("/graph/")) {
             return GraphStub.handle(request);

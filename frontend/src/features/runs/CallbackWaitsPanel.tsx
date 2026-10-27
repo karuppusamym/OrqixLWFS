@@ -38,6 +38,7 @@ export function CallbackWaitsPanel({ ws, runId }: { ws: string; runId: string })
   const [error, setError] = useState<ProblemError | null>(null)
   const [notice, setNotice] = useState('')
   const [pending, setPending] = useState(false)
+  const [copied, setCopied] = useState('')
   const items = query.data?.items ?? []
   if (items.length === 0) return null
 
@@ -48,7 +49,17 @@ export function CallbackWaitsPanel({ ws, runId }: { ws: string; runId: string })
   const issue = (w: CallbackWait) => act(async () => {
     const result = await call(api.POST('/workspaces/{workspaceId}/callback-waits/{waitId}/token', { params: { path: { workspaceId: ws, waitId: w.id } } }))
     setIssued(result)
+    setCopied('')
   })
+  const copy = async (token: string) => {
+    try {
+      if (!navigator.clipboard) throw new Error('no clipboard')
+      await navigator.clipboard.writeText(token)
+      setCopied('Copied.')
+    } catch {
+      setCopied('Copying failed. Select the token and copy it yourself.')
+    }
+  }
   const revoke = (w: CallbackWait) => act(async () => {
     await callVoid(api.DELETE('/workspaces/{workspaceId}/callback-waits/{waitId}/token', { params: { path: { workspaceId: ws, waitId: w.id } } }))
     if (issued?.waitId === w.id) setIssued(null)
@@ -86,11 +97,13 @@ export function CallbackWaitsPanel({ ws, runId }: { ws: string; runId: string })
                 </div>
               ) : null}
               {issued?.waitId === w.id ? (
-                <div role="status" className="space-y-1 rounded-control border border-border p-3" data-testid="callback-token-once">
-                  <p className="font-medium">Copy this token now. It will not be shown again.</p>
+                <div className="space-y-1 rounded-control border border-border p-3" data-testid="callback-token-once">
+                  {/* Only this sentence is announced; the secret itself is never read out by a live region. */}
+                  <p role="status" className="font-medium">Token issued. Copy it now: it will not be shown again.</p>
                   <code className="block break-all" aria-label="Callback token">{issued.token}</code>
                   <p className="text-muted-foreground">Send it in the <code>{issued.header}</code> header. Poll <code>{issued.pollPath}</code>, resume with <code>{issued.resumePath}</code>. Valid until {formatDateTime(issued.expiresAt)}.</p>
-                  <Button variant="secondary" onClick={() => { void navigator.clipboard?.writeText(issued.token) }}>Copy token</Button>
+                  <Button variant="secondary" onClick={() => { void copy(issued.token) }}>Copy token</Button>
+                  <p role="status" aria-live="polite" data-testid="callback-token-copied" className="text-sm text-muted-foreground">{copied}</p>
                 </div>
               ) : null}
             </li>

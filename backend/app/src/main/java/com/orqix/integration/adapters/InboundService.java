@@ -136,6 +136,7 @@ public class InboundService implements InboundEvents {
         WorkspaceAccess access = policy.freshAccess(caller, workspaceId).filter(WorkspaceAccess::visible)
                 .orElseThrow(ApiException::notFound);
         policy.require(access, Permission.CONNECTION_MANAGE, "createInboundTrigger", true);
+        com.orqix.integration.SecretNamespaces.refuseReserved(request.secretRef(), "/secretRef");
         AdapterRules.Kind kind = AdapterRules.Kind.of(request.source());
         ObjectNode filter;
         ObjectNode mapping;
@@ -183,6 +184,7 @@ public class InboundService implements InboundEvents {
         WorkspaceAccess access = policy.freshAccess(caller, workspaceId).filter(WorkspaceAccess::visible)
                 .orElseThrow(ApiException::notFound);
         policy.require(access, Permission.CONNECTION_MANAGE, "updateInboundTrigger", true);
+        com.orqix.integration.SecretNamespaces.refuseReserved(request.secretRef(), "/secretRef");
         record Current(String key, String source, UUID workflowId, int version, Instant createdAt) {
         }
         Current current = jdbc.sql("""

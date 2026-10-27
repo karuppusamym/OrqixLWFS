@@ -46,6 +46,8 @@ bpmn-js has its own license text, including retention of its visible bpmn.io wat
 
 The official MCP Java SDK is MIT licensed and offers Java client/server support. Select a released version and compatible transport; do not build against an evolving draft protocol implicitly. [MCP Java SDK](https://github.com/modelcontextprotocol/java-sdk)
 
+Apache Kafka's Java client `org.apache.kafka:kafka-clients` 4.1.2 (version from the Spring Boot 4.0.8 BOM; Kafka consumer triggers, [S99](build/S99-webhooks-and-kafka-triggers.md)) is Apache License 2.0. Its runtime dependencies are `com.github.luben:zstd-jni` 1.5.6-10 (BSD-2-Clause, bundles native zstd under BSD), `at.yawk.lz4:lz4-java` 1.10.1 (Apache 2.0) and `org.xerial.snappy:snappy-java` 1.1.10.7 (Apache 2.0); `slf4j-api` was already present (MIT). Keep the BSD-2-Clause notice of zstd-jni in the third-party notices of the image. Tests only: `org.testcontainers:testcontainers-kafka` 2.0.5 (MIT) with the `apache/kafka:3.9.1` image (Apache 2.0); neither ships. The CI CycloneDX Maven SBOM (`makeAggregateBom`) lists these jars from this change on. [Apache Kafka licence](https://github.com/apache/kafka/blob/trunk/LICENSE), [zstd-jni licence](https://github.com/luben/zstd-jni/blob/master/LICENSE)
+
 These checks cover the major decision points, not a complete transitive license audit. Produce an SBOM and inspect exact shipped packages/images before release.
 
 ## Alternatives and why they are not the primary choice

@@ -40,11 +40,11 @@ describe('outbound webhooks panel', () => {
     expect(save).toBeDisabled()
     await user.type(screen.getByLabelText('Name'), 'Ops feed')
     await user.type(screen.getByLabelText('Endpoint URL'), 'https://hooks.example.com/orqix')
-    await user.type(screen.getByLabelText('Signing secret reference'), 'ops-hook')
+    await user.type(screen.getByLabelText('Signing secret reference'), 'webhook-ops')
     await user.click(screen.getByRole('checkbox', { name: 'A request needs attention' }))
     await user.click(save)
     await waitFor(() => expect(bodies).toHaveLength(1))
-    expect(bodies[0]).toEqual({ name: 'Ops feed', url: 'https://hooks.example.com/orqix', secretRef: 'ops-hook', events: ['request.completed', 'request.needs-attention'] })
+    expect(bodies[0]).toEqual({ name: 'Ops feed', url: 'https://hooks.example.com/orqix', secretRef: 'webhook-ops', events: ['request.completed', 'request.needs-attention'] })
     expect(await screen.findByText('Subscription Ops feed saved.')).toBeVisible()
   })
 

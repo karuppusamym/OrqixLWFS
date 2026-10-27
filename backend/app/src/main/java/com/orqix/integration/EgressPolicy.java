@@ -56,8 +56,20 @@ public class EgressPolicy {
         this.resolver = resolver == null ? InetAddress::getAllByName : resolver;
     }
 
+    /**
+     * A URL that passed the policy, with the addresses it resolved to at that moment (S99 B5). A sender that connects to
+     * exactly these addresses cannot be redirected by a second, different DNS answer (rebinding).
+     */
+    public record Checked(String scheme, String host, int port, String hostPort, java.util.List<InetAddress> addresses) {
+    }
+
     /** Validates {@code baseUrl}; returns the normalized {@code host:port}. */
     public String check(String baseUrl) throws EgressDeniedException {
+        return checkAndResolve(baseUrl).hostPort();
+    }
+
+    /** Validates {@code baseUrl} and returns the vetted addresses, resolved exactly once. */
+    public Checked checkAndResolve(String baseUrl) throws EgressDeniedException {
         URI uri;
         try {
             uri = new URI(baseUrl);
@@ -107,7 +119,7 @@ public class EgressPolicy {
                 }
             }
         }
-        return hostPort;
+        return new Checked(scheme, host, port, hostPort, java.util.List.of(addresses));
     }
 
     /** False for loopback, link-local (incl. 169.254.169.254), private, CGNAT, multicast, unspecified and ULA. */
@@ -144,6 +156,19 @@ public class EgressPolicy {
             }
             if (first == 0xfe && ((b[1] & 0xc0) == 0x80 || (b[1] & 0xc0) == 0xc0)) {
                 return false; // link-local fe80::/10, deprecated site-local fec0::/10
+            }
+            if (first == 0x20 && (b[1] & 0xff) == 0x02) {
+                return false; // 6to4 2002::/16 embeds an IPv4 address that may be private
+            }
+            if (first == 0x20 && b[1] == 0x01 && b[2] == 0 && b[3] == 0) {
+                return false; // Teredo 2001::/32
+            }
+            boolean nat64 = first == 0x00 && (b[1] & 0xff) == 0x64 && (b[2] & 0xff) == 0xff && (b[3] & 0xff) == 0x9b;
+            for (int i = 4; nat64 && i < 12; i++) {
+                nat64 &= b[i] == 0;
+            }
+            if (nat64) {
+                return false; // NAT64 64:ff9b::/96 reaches IPv4 space through a translator
             }
             boolean mapped = true;
             for (int i = 0; i < 10; i++) {

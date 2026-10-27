@@ -337,8 +337,11 @@ class SecurityMatrixTest extends RuntimeTestBase {
         // delivery id. The token routes are called without a token and must answer 404 like everything else.
         ids.put("waitId", UUID.randomUUID().toString());
         ids.put("deliveryId", UUID.randomUUID().toString());
+        // S99 (c): Kafka triggers need a cluster from deployment configuration, which this context has none of, so
+        // the matrix addresses an id that does not exist for anyone; foreign principals must still get 404.
+        ids.put("kafkaTriggerId", UUID.randomUUID().toString());
         ids.put("subscriptionId", api("wade.admin").post(Map.of("name", "Matrix", "url",
-                com.orqix.support.Stub.baseUrl() + "/webhooks/matrix", "secretRef", "matrix-webhook",
+                com.orqix.support.Stub.baseUrl() + "/webhooks/matrix", "secretRef", "webhook-matrix",
                 "events", List.of("request.completed"), "enabled", false), "/workspaces/{ws}/webhook-subscriptions",
                 PURCHASING).body().path("id").asString());
         ids.put("planItemId", UUID.randomUUID().toString());
@@ -404,10 +407,15 @@ class SecurityMatrixTest extends RuntimeTestBase {
         return switch (operationId) {
             case "assignWorklistView" -> Map.of("expectedRevision",0);
             case "createWebhookSubscription" -> Map.of("name", "Foreign", "url", "https://public.test.example/x",
-                    "secretRef", "foreign", "events", List.of("request.started"));
+                    "secretRef", "webhook-foreign", "events", List.of("request.started"));
             case "updateWebhookSubscription" -> Map.of("name", "Foreign", "url", "https://public.test.example/x",
-                    "secretRef", "foreign", "events", List.of("request.started"), "enabled", true, "expectedVersion", 1);
+                    "secretRef", "webhook-foreign", "events", List.of("request.started"), "enabled", true, "expectedVersion", 1);
             case "resumeCallbackWait" -> Map.of("result", Map.of());
+            case "createKafkaTrigger" -> Map.of("key", "foreign-feed", "name", "Foreign", "cluster", "main", "topic", "orders",
+                    "action", "start", "workflowId", ids.get("workflowId"), "mapping", Map.of("title", "/title"));
+            case "updateKafkaTrigger" -> Map.of("name", "Foreign", "mapping", Map.of("title", "/title"), "batchSize", 1,
+                    "maxPerSecond", 1, "enabled", false, "expectedVersion", 1);
+            case "sendKafkaTestMessage" -> Map.of("value", Map.of("title", "x"));
             case "suspendCaseInstance", "resumeCaseInstance", "closeCaseInstance", "startCasePlanItem", "enableCasePlanItem",
                     "occurCaseUserEvent", "disableCasePlanItem", "activateCaseStage", "completeCaseStage", "terminateCasePlanItem" ->
                     Map.of("expectedVersion",1,"reason","Foreign attempt");

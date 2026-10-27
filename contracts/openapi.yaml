@@ -2922,7 +2922,7 @@ paths:
     delete:
       tags: [Runs]
       operationId: revokeCallbackToken
-      summary: Revoke the current callback token; the wait goes on and a new token can be issued
+      summary: Revoke the current callback token; the wait goes on and a new token can be issued (409 after a resume)
       x-orqix-permission: run.operate
       x-orqix-audit: callback.token-revoked
       responses:
@@ -2930,6 +2930,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
 
   /workspaces/{workspaceId}/callbacks/wait:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
@@ -2990,6 +2991,121 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
         '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/kafka-triggers:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [Adapters]
+      operationId: listKafkaTriggers
+      summary: Kafka consumer triggers with their status, the environment's mode and its named clusters (docs/build/S99)
+      x-orqix-permission: connection.read
+      responses:
+        '200':
+          description: Triggers
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KafkaTriggerList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Adapters]
+      operationId: createKafkaTrigger
+      summary: Consume an allow-listed topic of a named cluster to start a workflow or send a message (at most 5 per workspace)
+      description: |
+        The creator becomes the run-as person and must hold workflow.start for the workflow (start) or message.send
+        (resume). Credentials are only a secret reference. Brokers come from deployment configuration, never from here.
+      x-orqix-permission: connection.manage
+      x-orqix-audit: kafka.trigger-created
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/KafkaTriggerCreateRequest' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KafkaTrigger' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/kafka-triggers/{kafkaTriggerId}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: kafkaTriggerId, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      tags: [Adapters]
+      operationId: updateKafkaTrigger
+      summary: Edit, enable or disable a Kafka trigger (expectedVersion must match; enabling makes the caller the run-as person)
+      x-orqix-permission: connection.manage
+      x-orqix-audit: kafka.trigger-updated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/KafkaTriggerUpdateRequest' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KafkaTrigger' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/kafka-triggers/{kafkaTriggerId}/test-message:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: kafkaTriggerId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [Adapters]
+      operationId: sendKafkaTestMessage
+      summary: Stub mode only - push one JSON value through the trigger's record handler without a broker
+      x-orqix-permission: connection.manage
+      x-orqix-audit: kafka.test-message
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/KafkaTestMessageRequest' }
+      responses:
+        '200':
+          description: Handled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KafkaTestMessageResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/kafka-dead-letters:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [Adapters]
+      operationId: listKafkaDeadLetters
+      summary: Kafka records that could not be handled, newest first, at most 200 (no message content)
+      x-orqix-permission: run.operate
+      responses:
+        '200':
+          description: Dead letters
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KafkaDeadLetterList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /workspaces/{workspaceId}/webhook-subscriptions:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
@@ -3098,6 +3214,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
 
   /workspaces/{workspaceId}/runs:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
@@ -7258,6 +7375,137 @@ components:
         state: { type: string, const: resumed }
         resumedAt: { type: string, format: date-time }
         acceptedFields: { type: array, items: { type: string } }
+    KafkaCluster:
+      type: object
+      additionalProperties: false
+      required: [name, allowedTopics]
+      properties:
+        name: { type: string }
+        allowedTopics: { type: array, items: { type: string } }
+    KafkaReplicaStatus:
+      type: object
+      additionalProperties: false
+      required: [instanceId, partitions, lag, running]
+      properties:
+        instanceId: { type: string }
+        partitions: { type: array, items: { type: integer, minimum: 0 } }
+        lag: { type: integer, minimum: 0 }
+        running: { type: boolean }
+        lastPollAt: { type: [string, 'null'], format: date-time }
+    KafkaTriggerStatus:
+      type: object
+      additionalProperties: false
+      required: [lag, handled, duplicates, dead, replicas]
+      properties:
+        lag: { type: integer, minimum: 0, description: Sum over replicas that reported in the last two minutes }
+        handled: { type: integer, minimum: 0 }
+        duplicates: { type: integer, minimum: 0 }
+        dead: { type: integer, minimum: 0 }
+        lastError: { type: [string, 'null'] }
+        lastErrorAt: { type: [string, 'null'], format: date-time }
+        replicas: { type: array, items: { $ref: '#/components/schemas/KafkaReplicaStatus' } }
+    KafkaTrigger:
+      type: object
+      additionalProperties: false
+      required: [id, key, name, cluster, topic, consumerGroup, action, mapping, batchSize, maxPerSecond, startFrom, runAs, enabled, version, createdAt, status]
+      properties:
+        id: { type: string, format: uuid }
+        key: { type: string }
+        name: { type: string }
+        cluster: { type: string }
+        topic: { type: string }
+        consumerGroup: { type: string }
+        secretRef: { type: [string, 'null'] }
+        action: { type: string, enum: [start, resume] }
+        workflowId: { type: [string, 'null'], format: uuid }
+        messageName: { type: [string, 'null'] }
+        correlationPointer: { type: [string, 'null'] }
+        mapping: { type: object, additionalProperties: { type: string } }
+        batchSize: { type: integer, minimum: 1, maximum: 100 }
+        maxPerSecond: { type: integer, minimum: 1, maximum: 200 }
+        startFrom: { type: string, enum: [earliest, latest] }
+        runAs: { type: string, format: uuid }
+        enabled: { type: boolean }
+        version: { type: integer, minimum: 1 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: [string, 'null'], format: date-time }
+        status: { $ref: '#/components/schemas/KafkaTriggerStatus' }
+    KafkaTriggerList:
+      type: object
+      additionalProperties: false
+      required: [mode, clusters, items]
+      properties:
+        mode: { type: string, enum: ['off', stub, live] }
+        clusters: { type: array, items: { $ref: '#/components/schemas/KafkaCluster' } }
+        items: { type: array, items: { $ref: '#/components/schemas/KafkaTrigger' } }
+    KafkaTriggerCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [key, name, cluster, topic, action, mapping]
+      properties:
+        key: { type: string, pattern: '^[a-z][a-z0-9-]{0,62}[a-z0-9]$' }
+        name: { type: string, minLength: 1, maxLength: 100 }
+        cluster: { type: string }
+        topic: { type: string }
+        consumerGroup: { type: string, pattern: '^[A-Za-z0-9._-]{1,200}$' }
+        secretRef: { type: string, pattern: '^[a-z0-9][a-z0-9-]{0,62}$' }
+        action: { type: string, enum: [start, resume] }
+        workflowId: { type: string, format: uuid }
+        messageName: { type: string }
+        correlationPointer: { type: string, maxLength: 200 }
+        mapping: { type: object, maxProperties: 20, additionalProperties: { type: string } }
+        batchSize: { type: integer, minimum: 1, maximum: 100 }
+        maxPerSecond: { type: integer, minimum: 1, maximum: 200 }
+        startFrom: { type: string, enum: [earliest, latest] }
+    KafkaTriggerUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [name, mapping, batchSize, maxPerSecond, enabled, expectedVersion]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        secretRef: { type: [string, 'null'], pattern: '^[a-z0-9][a-z0-9-]{0,62}$' }
+        mapping: { type: object, maxProperties: 20, additionalProperties: { type: string } }
+        batchSize: { type: integer, minimum: 1, maximum: 100 }
+        maxPerSecond: { type: integer, minimum: 1, maximum: 200 }
+        enabled: { type: boolean }
+        expectedVersion: { type: integer, minimum: 1 }
+    KafkaTestMessageRequest:
+      type: object
+      additionalProperties: false
+      required: [value]
+      properties:
+        key: { type: string, maxLength: 200 }
+        value: { type: object }
+    KafkaTestMessageResult:
+      type: object
+      additionalProperties: false
+      required: [outcome]
+      properties:
+        outcome: { type: string, enum: [started, resumed, buffered, duplicate, dead, retry] }
+        code: { type: [string, 'null'] }
+        runId: { type: [string, 'null'], format: uuid }
+    KafkaDeadLetter:
+      type: object
+      additionalProperties: false
+      required: [id, triggerId, triggerKey, partition, offset, keyDigest, errorCode, valueBytes, attempts, receivedAt]
+      properties:
+        id: { type: string, format: uuid }
+        triggerId: { type: string, format: uuid }
+        triggerKey: { type: string }
+        partition: { type: integer, minimum: 0 }
+        offset: { type: integer, minimum: 0 }
+        keyDigest: { type: string, description: First 16 hex digits of the SHA-256 of the dedupe key }
+        errorCode: { type: string }
+        valueBytes: { type: integer, minimum: 0 }
+        valueSha256: { type: [string, 'null'] }
+        attempts: { type: integer, minimum: 1 }
+        receivedAt: { type: string, format: date-time }
+    KafkaDeadLetterList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/KafkaDeadLetter' } }
     WebhookEventType:
       type: string
       enum: [request.started, task.opened, request.completed, request.needs-attention, callback.waiting]
@@ -7290,7 +7538,7 @@ components:
       properties:
         name: { type: string, minLength: 1, maxLength: 100 }
         url: { type: string, maxLength: 2000 }
-        secretRef: { type: string, pattern: '^[a-z0-9][a-z0-9-]{0,62}$' }
+        secretRef: { type: string, pattern: '^webhook-[a-z0-9-]{1,55}$', description: 'A secret file of its own, in the webhook- name space' }
         events: { type: array, minItems: 1, maxItems: 5, items: { $ref: '#/components/schemas/WebhookEventType' } }
         enabled: { type: boolean }
     WebhookSubscriptionUpdateRequest:
@@ -7300,7 +7548,7 @@ components:
       properties:
         name: { type: string, minLength: 1, maxLength: 100 }
         url: { type: string, maxLength: 2000 }
-        secretRef: { type: string, pattern: '^[a-z0-9][a-z0-9-]{0,62}$' }
+        secretRef: { type: string, pattern: '^webhook-[a-z0-9-]{1,55}$', description: 'A secret file of its own, in the webhook- name space' }
         events: { type: array, minItems: 1, maxItems: 5, items: { $ref: '#/components/schemas/WebhookEventType' } }
         enabled: { type: boolean }
         expectedVersion: { type: integer, minimum: 1 }

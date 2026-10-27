@@ -18,6 +18,11 @@ function stepButton(id: string): HTMLElement {
   return button
 }
 
+async function openDiscussionCard(user: ReturnType<typeof userEvent.setup>) {
+  const toggle = await screen.findByRole('button', { name: 'Discussion' })
+  if (toggle.getAttribute('aria-expanded') === 'false') await user.click(toggle)
+}
+
 describe('lanes tab', () => {
   it('groups steps by responsibility, lists handoffs and selects a step for the inspector', async () => {
     signInAs('dana.designer')
@@ -98,6 +103,7 @@ describe('threaded discussion', () => {
     await open(user, 'Steps')
     const target = draft().nodes.find((n) => n.type === 'approval')!
     await user.click(stepButton(target.id))
+    await openDiscussionCard(user)
     const panel = await screen.findByTestId('discussion')
     expect(await within(panel).findByText('No comments yet.')).toBeInTheDocument()
     await user.type(within(panel).getByLabelText('New comment'), 'Is the limit right?')
@@ -131,6 +137,7 @@ describe('threaded discussion', () => {
     const view = await renderAppReady(EDIT)
     await open(user, 'Steps')
     await user.click(stepButton(target.id))
+    await openDiscussionCard(user)
     const panel = await screen.findByTestId('discussion')
     expect(await within(panel).findByText('Please review the threshold')).toBeInTheDocument()
     expect(within(panel).queryByLabelText('New comment')).not.toBeInTheDocument()
@@ -143,6 +150,7 @@ describe('threaded discussion', () => {
     await renderAppReady(EDIT)
     await open(user, 'Steps')
     await user.click(stepButton(target.id))
+    await openDiscussionCard(user)
     const publisherPanel = await screen.findByTestId('discussion')
     expect(await within(publisherPanel).findByLabelText('New comment')).toBeInTheDocument()
     expect(within(publisherPanel).getAllByRole('button', { name: 'Resolve' }).length).toBeGreaterThan(0)

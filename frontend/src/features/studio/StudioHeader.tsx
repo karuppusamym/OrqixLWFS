@@ -10,6 +10,7 @@ import { useAiEnabled } from '@/features/ai/api'
 import { ExplainPanel } from '@/features/ai/ExplainPanel'
 import { useCanUndo, useStudio, useStudioContext } from './StudioContext'
 import { useDownloadDraftBpmn } from './useDownloadBpmn'
+import { ViewMenu } from './ViewMenu'
 
 export function saveStateText(state: { saveStatus: string; dirty: boolean; savedAt: string | null }): string {
   switch (state.saveStatus) {
@@ -120,6 +121,7 @@ export function StudioHeader({
             <FlaskConical aria-hidden="true" /> Test workflow
           </Button>
         ) : null}
+        <ViewMenu canEdit={!readOnly} />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="secondary" loading={bpmnDownload.busy} aria-label="More actions">

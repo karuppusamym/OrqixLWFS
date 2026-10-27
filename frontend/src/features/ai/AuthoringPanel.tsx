@@ -181,10 +181,10 @@ function Conversation({ focus: focusStep, onFocusChange: setFocusStep }: { focus
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+      <div className="max-h-64 min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-2">
         {turns.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            Type or say what you want, for example “Add a finance approval when the amount is 5,000 or more”. You can then follow up, such as “make it 10,000”.
+            Type or say what you want, for example “Add a finance approval when the amount is 5,000 or more”, then follow up with “make it 10,000”.
           </p>
         ) : (
           <ol className="space-y-3" aria-label="Conversation">
@@ -215,7 +215,7 @@ function Conversation({ focus: focusStep, onFocusChange: setFocusStep }: { focus
           ) : (
             <p className="text-xs text-muted-foreground">Tip: select a step on the canvas to ask about just that step.</p>
           )}
-          <Textarea id={inputId} rows={3} value={text} maxLength={MAX} disabled={busy} aria-describedby={`${inputId}-help`} onChange={(e) => setText(e.target.value)} onKeyDown={onKeyDown} />
+          <Textarea id={inputId} rows={2} value={text} maxLength={MAX} disabled={busy} aria-describedby={`${inputId}-help`} onChange={(e) => setText(e.target.value)} onKeyDown={onKeyDown} />
           <p id={`${inputId}-help`} className="text-xs text-muted-foreground">Ctrl+Enter sends. The AI sees the saved draft without secrets. You review every change before it is applied.</p>
           {dictation.problem ? <p role="status" className="text-xs text-danger">{dictation.problem}</p> : null}
         </div>

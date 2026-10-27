@@ -4,7 +4,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/cn'
-import { readStorage, writeStorage } from '@/lib/storage'
+import { usePersistedFlag } from '@/lib/usePersistedFlag'
+import { STEPS_COLLAPSED_KEY } from './viewKeys'
 import { useAnnounce } from '@/components/common/Announcer'
 import { PALETTE_MIME } from './CanvasView'
 import { KINDS, PALETTE_KINDS } from './model/kinds'
@@ -15,23 +16,16 @@ import { KIND_ACCENT, KIND_ICON } from './nodeMeta'
  * Step palette with business labels (docs/build/S7-frontend.md section 5). Searchable; each item has a one-line
  * explanation. Items are buttons (activate with Enter or Space to add a step) and can also be dragged onto the canvas.
  */
-const COLLAPSED_KEY = 'orqix.studio.paletteCollapsed'
 
 export function Palette({ onAdd, disabled, defaultCollapsed = false }: { onAdd: (kind: NodeKind) => void; disabled: boolean; defaultCollapsed?: boolean }) {
   const [query, setQuery] = useState('')
   // A per-viewer convenience: collapsing the list gives the canvas the width of a long workflow.
-  const [collapsed, setCollapsed] = useState(() => {
-    const stored = readStorage(COLLAPSED_KEY)
-    return stored === null ? defaultCollapsed : stored === 'true'
-  })
+  const [collapsed, setCollapsed] = usePersistedFlag(STEPS_COLLAPSED_KEY, defaultCollapsed)
   const announce = useAnnounce()
   const searchId = useId()
   const q = query.trim().toLowerCase()
   const items = PALETTE_KINDS.map((k) => KINDS[k]).filter((i) => !q || i.paletteLabel.toLowerCase().includes(q) || i.description.toLowerCase().includes(q))
-  const toggle = (next: boolean) => {
-    setCollapsed(next)
-    writeStorage(COLLAPSED_KEY, String(next))
-  }
+  const toggle = setCollapsed
 
   if (collapsed) {
     return (

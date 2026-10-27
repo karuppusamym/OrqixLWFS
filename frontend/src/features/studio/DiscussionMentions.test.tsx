@@ -13,6 +13,11 @@ function stepButton(id: string): HTMLElement {
   return button
 }
 
+async function openDiscussionCard(user: ReturnType<typeof userEvent.setup>) {
+  const toggle = await screen.findByRole('button', { name: 'Discussion' })
+  if (toggle.getAttribute('aria-expanded') === 'false') await user.click(toggle)
+}
+
 describe('discussion @mentions (CMP01)', () => {
   it('suggests only people who can read the workflow, posts the mention and notifies that person once', async () => {
     signInAs('dana.designer')
@@ -22,6 +27,7 @@ describe('discussion @mentions (CMP01)', () => {
     await user.click(screen.getByRole('tab', { name: 'Steps' }))
     const target = draft().nodes.find((n) => n.type === 'approval')!
     await user.click(stepButton(target.id))
+    await openDiscussionCard(user)
     const panel = await screen.findByTestId('discussion')
     const box = within(panel).getByLabelText('New comment')
     await user.type(box, 'Please check @')

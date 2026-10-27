@@ -20,7 +20,10 @@ import { CheckPanel } from './CheckPanel'
 import { LanesView } from './LanesView'
 import { SourceView } from './SourceView'
 import { Palette } from './Palette'
-import { SidePanel, type SideTab } from './SidePanel'
+import { SidePanel, type SideCard } from './SidePanel'
+import { AskDock } from './AskDock'
+import { AI_DOCK_KEY, SIDE_PANEL_KEY } from './viewKeys'
+import { usePersistedFlag } from '@/lib/usePersistedFlag'
 import { StudioHint } from './StudioHint'
 import { StepsView } from './StepsView'
 import { StudioHeader } from './StudioHeader'
@@ -129,7 +132,10 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
   const ws = workspace.id
   const { store, saver, wsId, workflowId, readOnly } = useStudioContext()
   const [tab, setTab] = useState<StudioTab>('canvas')
-  const [sideTab, setSideTab] = useState<SideTab>('details')
+  const [cards, setCards] = useState<Record<SideCard, boolean>>({ details: true, discussion: false })
+  const openCard = useCallback((card: SideCard, next = true) => setCards((c) => ({ ...c, [card]: next })), [])
+  const [aiOpen, setAiOpen] = usePersistedFlag(AI_DOCK_KEY, true)
+  const [sideOpen, setSideOpen] = usePersistedFlag(SIDE_PANEL_KEY, true)
   const [aiFocus, setAiFocus] = useState<FocusStep | null>(null)
   // The Test tab keeps its work (sample, settings, last run) while the person edits on another tab (STU03).
   const [testMounted, setTestMounted] = useState(false)
@@ -141,13 +147,15 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
   const [addAfter, setAddAfter] = useState<string | null>(null)
   const [branchRequest, setBranchRequest] = useState<{ from: string; to: string | null } | null>(null)
   const focusRequest = useStudio((s) => s.focusRequest)
-  const linkNotice = useDiscussionLink(desktop, announce, () => setSideTab('discussion'))
+  const showDiscussion = useCallback(() => { setSideOpen(true); openCard('discussion') }, [setSideOpen, openCard])
+  const linkNotice = useDiscussionLink(desktop, announce, showDiscussion)
 
   // Focus the inspector field named by an issue path (Go to step) or a freshly added step.
   useEffect(() => {
     if (!focusRequest) return
     const timer = window.setTimeout(() => {
-      setSideTab('details')
+      setSideOpen(true)
+      openCard('details')
       const root = document.querySelector<HTMLElement>('[data-testid="inspector"]') ?? document.body
       const wanted = focusRequest.fieldKey
       let target: HTMLElement | null = null
@@ -162,7 +170,7 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
       target.scrollIntoView({ block: 'center' })
     }, 60)
     return () => window.clearTimeout(timer)
-  }, [focusRequest])
+  }, [focusRequest, openCard, setSideOpen])
 
   const requestDelete = useCallback(() => {
     const state = store.getState()
@@ -293,7 +301,8 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
               }}
             />
           ) : null}
-          <div className="relative min-w-0 flex-1 bg-canvas">
+          <div className="flex min-w-0 flex-1 flex-col">
+          <div className="relative min-h-0 min-w-0 flex-1 bg-canvas">
             <TabsContent value="canvas" className="m-0 h-full">
               <CanvasView groupNames={groupNames} onBranchConnect={(from, to) => setBranchRequest({ from, to })} />
             </TabsContent>
@@ -321,13 +330,14 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
               )}
             </TabsContent>
           </div>
-          {desktop && !onTestTab ? (
+          {!readOnly && aiOpen ? <AskDock focus={aiFocus} onFocusChange={setAiFocus} onHide={() => setAiOpen(false)} /> : null}
+          </div>
+          {desktop && !onTestTab && sideOpen ? (
             <SidePanel
-              tab={sideTab}
-              onTabChange={setSideTab}
+              open={cards}
+              onOpenChange={openCard}
               showAi={!readOnly}
-              focus={aiFocus}
-              onFocusChange={setAiFocus}
+              onAskAbout={(focus) => { setAiFocus(focus); setAiOpen(true) }}
               onDeleteNode={(id) => {
                 store.getState().select({ type: 'node', id })
                 requestDelete()

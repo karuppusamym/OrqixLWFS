@@ -1,6 +1,8 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { Link } from 'react-router'
+import { Link, useLocation } from 'react-router'
+import { Mic, MicOff } from 'lucide-react'
+import { useDictation } from '@/lib/useDictation'
 import { useWorkspace } from '@/app/workspace'
 import { PageHeader } from '@/components/common/PageHeader'
 import { LoadingBlock } from '@/components/common/LoadingBlock'
@@ -66,7 +68,12 @@ function ConversationScreen({ ws, subject }: { ws: string; subject: string }) {
   const [id, setId] = useState<string | null>(() => {
     try { return sessionStorage.getItem(storage) } catch { return null }
   })
-  const [text, setText] = useState('')
+  const location = useLocation()
+  const [text, setText] = useState(() => {
+    const ask = (location.state as { ask?: unknown } | null)?.ask
+    return typeof ask === 'string' ? ask.slice(0, 4000) : ''
+  })
+  const dictation = useDictation((spoken) => setText((t) => `${t}${t && !t.endsWith(' ') ? ' ' : ''}${spoken}`.slice(0, 4000)))
   const [latest, setLatest] = useState<Conversation | null>(null)
   const [history, setHistory] = useState<Entry[]>([])
   const [rejecting, setRejecting] = useState(false)
@@ -136,7 +143,8 @@ function ConversationScreen({ ws, subject }: { ws: string; subject: string }) {
   const expired = isProblemError(sendError) && sendError.code === 'NOT_FOUND' && !!current
   const showStarters = !current || stage === 'completed' || (stage === 'idle' && current.choices.length === 0)
 
-  return <div className="mx-auto w-full max-w-3xl">
+  return <div className="mx-auto grid w-full max-w-6xl gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
+    <div className="min-w-0">
     <PageHeader title="Assistant" description="Start a request, decide a task that is waiting for you, or check on a request. The Assistant asks one question at a time, and nothing is submitted or decided until you confirm." actions={<Button variant="secondary" onClick={startNew} disabled={busy}>New conversation</Button>} />
 
     {resume.isPending && id && !current ? <LoadingBlock rows={2} label="Loading your conversation" /> : null}
@@ -209,12 +217,32 @@ function ConversationScreen({ ws, subject }: { ws: string; subject: string }) {
       </div>
     </div> : null}
 
-    <form className="mt-6 space-y-2" onSubmit={(event) => { event.preventDefault(); send(text) }}>
+    <form className="sticky bottom-0 mt-6 space-y-2 border-t border-border bg-background pt-3 pb-3" onSubmit={(event) => { event.preventDefault(); send(text) }}>
       <Label htmlFor="conversation-message">{field?.title ? `Your answer: ${String(field.title)}` : 'Message'}</Label>
       <Textarea id="conversation-message" ref={answerRef} maxLength={4000} value={text} readOnly={busy} aria-busy={busy} onKeyDown={onKeyDown} onChange={(event) => setText(event.target.value)} aria-describedby="conversation-help" />
       <p id="conversation-help" className="text-sm text-muted-foreground">{answerHint(field)} Press Enter to send, or Shift and Enter for a new line.</p>
       <p className="text-sm text-muted-foreground">If you describe what you need in your own words, your message and the names of the request types you can use may be sent to your organization’s AI service to find the right one. You always review before anything is submitted.</p>
-      <Button variant="primary" type="submit" disabled={!text.trim() || busy}>{busy ? 'Sending…' : 'Send'}</Button>
+      <div className="flex flex-wrap gap-2">
+        <Button variant="primary" type="submit" disabled={!text.trim() || busy}>{busy ? 'Sending…' : 'Send'}</Button>
+        {dictation.supported ? <Button type="button" variant="secondary" onClick={() => (dictation.listening ? dictation.stop() : dictation.start())} disabled={busy} aria-pressed={dictation.listening}>{dictation.listening ? <MicOff aria-hidden="true" /> : <Mic aria-hidden="true" />} {dictation.listening ? 'Stop talking' : 'Talk'}</Button> : null}
+      </div>
+      {dictation.problem ? <p role="status" className="text-sm text-danger">{dictation.problem}</p> : null}
     </form>
+    </div>
+
+    <aside className="space-y-3 lg:pt-2" aria-label="About this conversation">
+      <section className="rounded-card border border-border bg-surface p-3" aria-labelledby="assistant-card-request">
+        <h2 id="assistant-card-request" className="mb-1 text-sm">This request</h2>
+        {review ? <p className="text-sm"><span className="font-semibold">{review.workflowName}</span><br />{rows.length} {rows.length === 1 ? 'answer' : 'answers'} so far. Check them in the review before you submit.</p> : reviewingTask ? <p className="text-sm">A task is open for your decision. Nothing is recorded until you confirm.</p> : <p className="text-sm text-muted-foreground">Nothing started yet. Choose an option or describe what you need.</p>}
+      </section>
+      <section className="rounded-card border border-border bg-surface p-3" aria-labelledby="assistant-card-tips">
+        <h2 id="assistant-card-tips" className="mb-1 text-sm">Tips</h2>
+        <ul className="list-disc space-y-1 pl-4 text-sm text-muted-foreground">
+          <li>Enter sends, Shift+Enter adds a line.</li>
+          <li>{dictation.supported ? 'Press Talk to dictate; you still press Send.' : 'Dictation is not available in this browser.'}</li>
+          <li>Ctrl+K opens Ask Orqix from any page.</li>
+        </ul>
+      </section>
+    </aside>
   </div>
 }

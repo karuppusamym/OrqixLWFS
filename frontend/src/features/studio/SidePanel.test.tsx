@@ -7,18 +7,38 @@ import { renderAppReady, signInAs, WS } from '@/test/utils'
 const EDIT = `/w/${WS}/workflows/${PURCHASE_WORKFLOW_ID}/edit`
 
 describe('studio side panel and header', () => {
-  it('shows Details, Ask AI and Discussion as tabs of one panel, with Details first', async () => {
+  it('shows Details and Discussion as collapsible cards, with Ask AI docked under the canvas', async () => {
     signInAs('dana.designer')
     const user = userEvent.setup()
     await renderAppReady(EDIT)
     await screen.findByText(/Draft revision 1/)
-    const panel = screen.getByRole('complementary', { name: 'Side panel' })
-    const tabs = within(panel).getAllByRole('tab').map((t) => t.textContent)
-    expect(tabs).toEqual(['Details', 'Ask AI', 'Discussion'])
-    expect(within(panel).getByRole('tab', { name: 'Details' })).toHaveAttribute('aria-selected', 'true')
-    await user.click(within(panel).getByRole('tab', { name: 'Ask AI' }))
-    expect(within(panel).getByRole('tab', { name: 'Ask AI' })).toHaveAttribute('aria-selected', 'true')
-    expect(within(panel).getByLabelText('What should change?')).toBeVisible()
+    const side = screen.getByRole('complementary', { name: 'Details and discussion' })
+    const details = within(side).getByRole('button', { name: 'Details' })
+    const discussion = within(side).getByRole('button', { name: 'Discussion' })
+    expect(details).toHaveAttribute('aria-expanded', 'true')
+    expect(discussion).toHaveAttribute('aria-expanded', 'false')
+    await user.click(discussion)
+    expect(discussion).toHaveAttribute('aria-expanded', 'true')
+    const dock = screen.getByTestId('ask-dock')
+    expect(within(dock).getByLabelText('What should change?')).toBeVisible()
+  })
+
+  it('hides and restores the panes from the View menu, and remembers the choice', async () => {
+    signInAs('dana.designer')
+    window.localStorage.removeItem('orqix.studio.view.ai')
+    window.localStorage.removeItem('orqix.studio.view.side')
+    const user = userEvent.setup()
+    await renderAppReady(EDIT)
+    await screen.findByText(/Draft revision 1/)
+    await user.click(screen.getByRole('button', { name: /View: show or hide panels/ }))
+    await user.click(await screen.findByRole('menuitemcheckbox', { name: 'Ask AI' }))
+    expect(screen.queryByTestId('ask-dock')).not.toBeInTheDocument()
+    expect(window.localStorage.getItem('orqix.studio.view.ai')).toBe('false')
+    await user.click(screen.getByRole('button', { name: /View: show or hide panels/ }))
+    await user.click(await screen.findByRole('menuitemcheckbox', { name: 'Details and discussion' }))
+    expect(screen.queryByRole('complementary', { name: 'Details and discussion' })).not.toBeInTheDocument()
+    window.localStorage.removeItem('orqix.studio.view.ai')
+    window.localStorage.removeItem('orqix.studio.view.side')
   })
 
   it('keeps the main actions in the header and the rest under More', async () => {

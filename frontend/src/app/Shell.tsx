@@ -17,6 +17,7 @@ import { AiJobToasts } from '@/features/ai/AiJobToasts'
 import { cn } from '@/lib/cn'
 import { initials } from '@/lib/text'
 import { useIsDesktop } from '@/lib/useMediaQuery'
+import { CommandPalette } from './CommandPalette'
 import { useWorkspace } from './workspace'
 
 interface RouteHandle {
@@ -102,6 +103,7 @@ export function Shell() {
         Skip to main content
       </a>
 
+      <CommandPalette destinations={items.filter((i) => i.visible).map((i) => ({ to: i.to, label: i.label }))} assistantPath={`${base}/assistant`} />
       <TopBar
         homeHref={base}
         menuButton={

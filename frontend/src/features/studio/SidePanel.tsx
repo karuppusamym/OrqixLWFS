@@ -1,56 +1,57 @@
-import { Sparkles } from 'lucide-react'
+import { ChevronDown, ChevronRight, Sparkles } from 'lucide-react'
+import { useId, type ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { AuthoringPanel, type FocusStep } from '@/features/ai/AuthoringPanel'
+import { type FocusStep } from '@/features/ai/AuthoringPanel'
 import { DiscussionPanel } from './DiscussionPanel'
 import { Inspector } from './inspector/Inspector'
 import { useStudio } from './StudioContext'
 
-export type SideTab = 'details' | 'ai' | 'discussion'
+export type SideCard = 'details' | 'discussion'
+
+function Card({ title, open, onToggle, children }: { title: string; open: boolean; onToggle: () => void; children: ReactNode }) {
+  const bodyId = useId()
+  const Chevron = open ? ChevronDown : ChevronRight
+  return (
+    <section className="rounded-card border border-border bg-surface" aria-label={title}>
+      <h2 className="m-0 text-sm">
+        <button type="button" className="flex min-h-10 w-full items-center gap-2 rounded-card px-3 py-2 text-left font-semibold hover:bg-surface-muted" aria-expanded={open} aria-controls={bodyId} onClick={onToggle}>
+          <Chevron className="size-4" aria-hidden="true" /> {title}
+        </button>
+      </h2>
+      {/* Stays mounted when closed so a half-written comment is kept. */}
+      <div id={bodyId} hidden={!open} className="border-t border-border">{children}</div>
+    </section>
+  )
+}
 
 /**
- * One panel on the right of the canvas instead of three: Details (the selected step, or the workflow itself),
- * Ask AI and Discussion. The AI and Discussion tabs stay mounted so a half-written instruction or comment survives
- * a tab switch.
+ * Details and Discussion as two collapsible cards on the right of the canvas (the Ask AI conversation is docked under
+ * the canvas instead). Details shows the selected step or the workflow itself.
  */
-export function SidePanel({ tab, onTabChange, showAi, focus, onFocusChange, onDeleteNode }: {
-  tab: SideTab
-  onTabChange: (tab: SideTab) => void
+export function SidePanel({ open, onOpenChange, showAi, onAskAbout, onDeleteNode }: {
+  open: Record<SideCard, boolean>
+  onOpenChange: (card: SideCard, next: boolean) => void
   showAi: boolean
-  focus: FocusStep | null
-  onFocusChange: (next: FocusStep | null) => void
+  onAskAbout: (focus: FocusStep) => void
   onDeleteNode: (nodeId: string) => void
 }) {
   const selectedId = useStudio((s) => (s.selection?.type === 'node' ? s.selection.id : null))
   const selectedLabel = useStudio((s) => s.definition.nodes.find((n) => n.id === selectedId)?.label ?? null)
-  const current: SideTab = tab === 'ai' && !showAi ? 'details' : tab
   return (
-    <aside className="flex w-80 shrink-0 flex-col border-l border-border bg-surface" aria-label="Side panel">
-      <Tabs value={current} onValueChange={(v) => onTabChange(v as SideTab)} className="flex min-h-0 flex-1 flex-col">
-        <TabsList aria-label="Side panel sections" className="border-b border-border px-3 py-2">
-          <TabsTrigger value="details" className="min-h-9 px-3">Details</TabsTrigger>
-          {showAi ? <TabsTrigger value="ai" className="min-h-9 px-3" data-testid="ai-tab">Ask AI</TabsTrigger> : null}
-          <TabsTrigger value="discussion" className="min-h-9 px-3">Discussion</TabsTrigger>
-        </TabsList>
-        <TabsContent value="details" className="m-0 min-h-0 flex-1 overflow-y-auto">
-          {showAi && selectedId && selectedLabel ? (
-            <div className="border-b border-border px-4 pt-3 pb-3">
-              <Button variant="secondary" size="sm" onClick={() => { onFocusChange({ id: selectedId, label: selectedLabel }); onTabChange('ai') }}>
-                <Sparkles aria-hidden="true" /> Ask AI about this step
-              </Button>
-            </div>
-          ) : null}
-          <Inspector onDeleteNode={onDeleteNode} />
-        </TabsContent>
-        {showAi ? (
-          <TabsContent value="ai" forceMount className="m-0 min-h-0 flex-1 flex-col data-[state=active]:flex data-[state=inactive]:hidden">
-            <AuthoringPanel focus={focus} onFocusChange={onFocusChange} />
-          </TabsContent>
+    <aside className="w-80 shrink-0 space-y-3 overflow-y-auto border-l border-border bg-canvas p-3" aria-label="Details and discussion">
+      <Card title="Details" open={open.details} onToggle={() => onOpenChange('details', !open.details)}>
+        {showAi && selectedId && selectedLabel ? (
+          <div className="border-b border-border px-4 pt-3 pb-3">
+            <Button variant="secondary" size="sm" onClick={() => onAskAbout({ id: selectedId, label: selectedLabel })}>
+              <Sparkles aria-hidden="true" /> Ask AI about this step
+            </Button>
+          </div>
         ) : null}
-        <TabsContent value="discussion" forceMount className="m-0 min-h-0 flex-1 overflow-y-auto data-[state=inactive]:hidden">
-          <DiscussionPanel />
-        </TabsContent>
-      </Tabs>
+        <Inspector onDeleteNode={onDeleteNode} />
+      </Card>
+      <Card title="Discussion" open={open.discussion} onToggle={() => onOpenChange('discussion', !open.discussion)}>
+        <DiscussionPanel />
+      </Card>
     </aside>
   )
 }

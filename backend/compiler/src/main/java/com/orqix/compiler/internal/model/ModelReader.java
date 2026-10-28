@@ -146,7 +146,10 @@ public final class ModelReader {
                     c.has("dueAfterMinutes") ? c.get("dueAfterMinutes").intValue() : null,
                     c.has("perItem") ? new Node.PerItem(c.get("perItem").get("itemsRef").stringValue(),
                             c.get("perItem").has("itemLabel") ? c.get("perItem").get("itemLabel").stringValue() : null,
-                            c.get("perItem").path("allowSamePerson").asBoolean(false)) : null);
+                            c.get("perItem").path("allowSamePerson").asBoolean(false),
+                            c.get("perItem").path("sequential").asBoolean(false),
+                            c.get("perItem").path("quorum").isIntegralNumber() ? c.get("perItem").get("quorum").intValue() : null,
+                            c.get("perItem").has("assigneeFrom") ? c.get("perItem").get("assigneeFrom").stringValue() : null) : null);
             case DECISION -> new Node.Decision(index, id, label, c.get("decisionRef").stringValue());
             case BRANCH -> new Node.Branch(index, id, label);
             case HTTP -> new Node.Http(index, id, label, c.get("connectionRef").stringValue(),

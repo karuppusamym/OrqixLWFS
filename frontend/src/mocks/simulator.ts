@@ -404,16 +404,20 @@ class Run {
       t = this.next(n, 'approved')
       sentence += ' In this test they approve.'
     }
-    const perItem = n.config.perItem as { itemsRef?: string } | undefined
+    const perItem = n.config.perItem as { itemsRef?: string; quorum?: number; sequential?: boolean } | undefined
     if (perItem?.itemsRef) {
-      // One task per list item (docs/build/S88), as the server simulator: the first item is the one rejected.
+      // One task per list item (docs/build/S88, S104), as the server simulator: approvals stop at the quorum (default:
+      // every item); a rejection starts at the first item and goes on until the quorum can no longer be reached.
       const list = this.resolve(perItem.itemsRef)
       const items = Array.isArray(list) ? list.length : 0
+      const quorum = Math.min(items, perItem.quorum ?? items)
       d.items = items
       const rejected = out.decision === 'rejected'
-      out.itemDecisions = Array.from({ length: items }, (_, i) => (rejected ? (i === 0 ? 'rejected' : 'cancelled') : 'approved'))
-      out.approvedCount = rejected ? 0 : items
-      sentence += ` It opens one task for each of the ${items} items.`
+      const lastRejected = 1 + (items - quorum)
+      out.itemDecisions = Array.from({ length: items }, (_, i) => (rejected ? (i + 1 <= lastRejected ? 'rejected' : 'cancelled') : (i < quorum ? 'approved' : 'cancelled')))
+      out.approvedCount = rejected ? 0 : quorum
+      sentence += perItem.sequential ? ` It opens one task at a time for each of the ${items} items.` : ` It opens one task for each of the ${items} items.`
+      if (quorum < items) sentence += ` ${quorum} of them must be approved.`
     }
     if (out.decision !== 'timedOut') out.decidedBy = 'Test approver'
     d.decision = out.decision as string

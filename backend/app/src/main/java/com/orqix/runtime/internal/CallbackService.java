@@ -73,13 +73,14 @@ public class CallbackService implements InboundCallbacks {
     private final IdempotencyService idempotency;
     private final AuditWriter audit;
     private final OutboundWebhooks webhooks;
+    private final CallbackRateLimiter limiter;
     private final Json json;
     private final Clock clock;
 
     public CallbackService(PolicyService policy, CallbackStore store, MessageStore messages,
             @Lazy MessageDelivery delivery, MessageSettings settings, RunSuspensions suspensions,
             ReleaseQueries releases, IdempotencyService idempotency, AuditWriter audit,
-            @Lazy OutboundWebhooks webhooks, Json json, Clock clock) {
+            @Lazy OutboundWebhooks webhooks, CallbackRateLimiter limiter, Json json, Clock clock) {
         this.policy = policy;
         this.store = store;
         this.messages = messages;
@@ -90,6 +91,7 @@ public class CallbackService implements InboundCallbacks {
         this.idempotency = idempotency;
         this.audit = audit;
         this.webhooks = webhooks;
+        this.limiter = limiter;
         this.json = json;
         this.clock = clock;
     }
@@ -303,7 +305,7 @@ public class CallbackService implements InboundCallbacks {
 
     // ---------------------------------------------------------------- helpers
 
-    /** Unknown, malformed, replaced or revoked token, or a token of another workspace: 404, all alike. */
+    /** Unknown, malformed, replaced, revoked or purged token, or a token of another workspace: 404, all alike. */
     private CallbackStore.Row resolve(UUID workspaceId, String token, boolean lock) {
         if (token == null || !TOKEN.matcher(token.strip()).matches() || workspaceId == null) {
             throw ApiException.notFound();
@@ -313,6 +315,7 @@ public class CallbackService implements InboundCallbacks {
         if (!workspaceId.equals(row.workspaceId())) {
             throw ApiException.notFound();
         }
+        limiter.check(sha); // S104: counted only for tokens that resolve, before any further work
         return row;
     }
 

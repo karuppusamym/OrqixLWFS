@@ -111,7 +111,8 @@ export function evaluateTable(
 }
 
 export function currentRelease(run: MockRun): MockRelease {
-  const wf = db.workflows.get(run.workflowId) as MockWorkflow
+  // Requests of an archived workflow stay readable, as on the server (S103/S104).
+  const wf = (db.workflows.get(run.workflowId) ?? db.archivedWorkflows?.get(run.workflowId)?.workflow) as MockWorkflow
   return wf.releases.find((r) => r.id === run.releaseId) as MockRelease
 }
 

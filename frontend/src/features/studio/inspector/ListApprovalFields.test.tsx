@@ -88,4 +88,42 @@ describe('inspector: one approval per list item (S88)', () => {
     finance.config.timeoutAfter = 'PT2H'
     expect(codes(def)).toEqual(expect.arrayContaining(['WF_PER_ITEM_LABEL', 'WF_PER_ITEM_UNSUPPORTED']))
   })
+
+  it('sets one item at a time, a quorum and the proposed approver column, and clears each again (S104)', async () => {
+    const def = withLists()
+    const lines = (def.inputSchema.properties as Record<string, { items: { properties: Record<string, unknown> } }>).lines!
+    lines.items.properties.approver = { type: 'string', title: 'Approver email' }
+    const config = renderFinance(def)
+    const user = userEvent.setup()
+    await user.selectOptions(screen.getByLabelText(/^One approval per list item/), 'lines')
+    await user.click(screen.getByRole('checkbox', { name: 'Decide items one at a time, in list order' }))
+    expect(config().perItem).toEqual({ itemsRef: '/input/lines', itemLabel: 'description', sequential: true })
+    await user.type(screen.getByLabelText(/^Items that must be approved/), '2')
+    await user.tab()
+    expect(config().perItem).toMatchObject({ quorum: 2, sequential: true })
+    // Only plain text columns can hold an email: not the number or the yes/no column.
+    const who = screen.getByLabelText(/^Proposed approver/)
+    expect([...who.querySelectorAll('option')].map((o) => o.textContent)).toEqual(['Nobody, use the group queue', 'Description', 'Approver email'])
+    await user.selectOptions(who, 'approver')
+    expect(config().perItem).toEqual({ itemsRef: '/input/lines', itemLabel: 'description', sequential: true, quorum: 2, assigneeFrom: 'approver' })
+    await user.selectOptions(who, '')
+    await user.clear(screen.getByLabelText(/^Items that must be approved/))
+    await user.tab()
+    await user.click(screen.getByRole('checkbox', { name: 'Decide items one at a time, in list order' }))
+    expect(config().perItem).toEqual({ itemsRef: '/input/lines', itemLabel: 'description' })
+  })
+
+  it('the offline checks refuse an unreachable quorum and a proposed approver that is not a text column (S104)', () => {
+    const def = withLists()
+    const finance = def.nodes.find((n) => n.id === 'finance')!
+    const codes = (d: Definition) => validateDefinition(d, { groups: ['managers', 'finance-approvers'], connections: [], isTestWorkspace: false } as never).map((i) => i.code)
+    finance.config.perItem = { itemsRef: '/input/lines', itemLabel: 'description', quorum: 2 }
+    expect(codes(def)).toContain('WF_PER_ITEM_QUORUM')
+    ;(def.inputSchema.properties as Record<string, { minItems: number }>).lines!.minItems = 2
+    expect(codes(def)).not.toContain('WF_PER_ITEM_QUORUM')
+    finance.config.perItem = { itemsRef: '/input/lines', itemLabel: 'description', assigneeFrom: 'amount' }
+    expect(codes(def)).toContain('WF_PER_ITEM_ASSIGNEE')
+    finance.config.perItem = { itemsRef: '/input/lines', itemLabel: 'description', assigneeFrom: 'description' }
+    expect(codes(def).filter((c) => c.startsWith('WF_PER_ITEM'))).toEqual([])
+  })
 })

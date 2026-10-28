@@ -48,7 +48,7 @@ public class TaskStore {
     @Transactional(propagation = Propagation.MANDATORY)
     public void insert(String taskId, UUID workspaceId, UUID runId, String nodeId, String label, String candidateGroup,
             Instant dueAt, Instant createdAt) {
-        insert(taskId, workspaceId, runId, nodeId, label, candidateGroup, dueAt, createdAt, null, null, null);
+        insert(taskId, workspaceId, runId, nodeId, label, candidateGroup, dueAt, createdAt, null, null, null, null);
     }
 
     /**
@@ -58,11 +58,11 @@ public class TaskStore {
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public void insert(String taskId, UUID workspaceId, UUID runId, String nodeId, String label, String candidateGroup,
-            Instant dueAt, Instant createdAt, Integer itemIndex, String itemLabel, String itemScope) {
+            Instant dueAt, Instant createdAt, Integer itemIndex, String itemLabel, String itemScope, Integer itemCount) {
         int inserted = jdbc.sql("""
                 INSERT INTO task_context (engine_task_id, workspace_id, run_id, node_id, label, candidate_group_key,
                                           initiator_subject_id, self_approval_allowed, status, version, due_at, created_at, required_skills, separate_from,
-                                          item_index, item_label, item_scope)
+                                          item_index, item_label, item_scope, item_count)
                 SELECT :task, run.workspace_id, run.id, :node, :label, :grp, run.initiator_subject_id,
                        (rel.definition -> 'security' ->> 'selfApproval' = 'allow' AND ws.allow_self_approval_workflows),
                        'open', 1, :due, :created,
@@ -77,7 +77,7 @@ public class TaskStore {
                                -- A list-driven approval (S88) keeps the same rule unless one person may decide several items.
                                OR (n->'config'->'perItem' IS NOT NULL
                                    AND COALESCE((n->'config'->'perItem'->>'allowSamePerson')::boolean, false) = false))),'[]'::jsonb),
-                       CAST(:item AS integer), CAST(:itemLabel AS text), CAST(:itemScope AS text)
+                       CAST(:item AS integer), CAST(:itemLabel AS text), CAST(:itemScope AS text), CAST(:itemCount AS integer)
                 FROM workflow_run run
                 JOIN workflow_release rel ON rel.workspace_id = run.workspace_id AND rel.id = run.release_id
                 JOIN workspace ws ON ws.id = run.workspace_id
@@ -86,6 +86,7 @@ public class TaskStore {
                 .param("task", taskId).param("node", nodeId).param("label", label).param("grp", candidateGroup)
                 .param("due", Sql.ts(dueAt)).param("created", Sql.ts(createdAt)).param("ws", workspaceId)
                 .param("run", runId).param("item", itemIndex).param("itemLabel", itemLabel).param("itemScope", itemScope)
+                .param("itemCount", itemCount)
                 .update();
         if (inserted != 1) {
             throw new IllegalStateException("Run " + runId + " not found for task " + taskId);
@@ -103,8 +104,11 @@ public class TaskStore {
                 .param("due",Sql.ts(createdAt.plus(reminders.after()))).update();
     }
 
-    /** The item a task of a list-driven approval decides (S88). */
-    public record Item(int index, String label, String scope) {
+    /**
+     * The item a task of a list-driven approval decides (S88). {@code count} is the number of items of the visit
+     * (S104), null for tasks created before it was recorded.
+     */
+    public record Item(int index, String label, String scope, Integer count) {
     }
 
     /** One item of one visit of a list-driven approval with its result so far ({@code action} null until decided). */
@@ -114,10 +118,20 @@ public class TaskStore {
     /** @return the item of this task, or empty for a task that is not one item of a list-driven approval */
     @Transactional(readOnly = true)
     public Optional<Item> item(UUID workspaceId, String taskId) {
-        return jdbc.sql("SELECT item_index, item_label, item_scope FROM task_context WHERE workspace_id=:ws AND engine_task_id=:task AND item_index IS NOT NULL")
+        return jdbc.sql("SELECT item_index, item_label, item_scope, item_count FROM task_context WHERE workspace_id=:ws AND engine_task_id=:task AND item_index IS NOT NULL")
                 .param("ws", workspaceId).param("task", taskId)
-                .query((rs, n) -> new Item(rs.getInt("item_index"), rs.getString("item_label"), rs.getString("item_scope")))
+                .query((rs, n) -> new Item(rs.getInt("item_index"), rs.getString("item_label"), rs.getString("item_scope"),
+                        (Integer) rs.getObject("item_count")))
                 .optional();
+    }
+
+    /** Cancels the open item tasks of one visit of a list-driven approval once its outcome is settled (S104). */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public int cancelOpenForScope(UUID workspaceId, String itemScope, Instant endedAt) {
+        return jdbc.sql("""
+                UPDATE task_context SET status = 'cancelled', ended_at = :ended, version = version + 1
+                WHERE workspace_id = :ws AND item_scope = :scope AND status = 'open'
+                """).param("ended", Sql.ts(endedAt)).param("ws", workspaceId).param("scope", itemScope).update();
     }
 
     /** Every item of one visit of a list-driven approval, in list order, with the decision taken on it so far. */

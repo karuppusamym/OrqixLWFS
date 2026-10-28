@@ -265,27 +265,23 @@ public class TaskService {
         output.put("decidedAt", now.toString());
 
         tasks.end(workspaceId, taskId, "completed", now);
-        // A rejection ends a step with several approvers at once: the other approvers' open tasks are cancelled (S51).
-        int cancelledSiblings = reject ? tasks.cancelOpenForNode(workspaceId, task.runId(), task.nodeId(), now) : 0;
-        // A list-driven approval (S88): once no item is open (all approved, or this rejection cancelled the rest), the
-        // step's output also carries the number of approved items and the decision of every item in list order.
         TaskStore.Item item = tasks.item(workspaceId, taskId).orElse(null);
-        if (item != null) {
-            List<TaskStore.ItemState> items = tasks.items(workspaceId, item.scope());
-            if (items.stream().noneMatch(i -> "open".equals(i.status()))) {
-                var decisions = output.putArray("itemDecisions");
-                int approvedCount = 0;
-                for (TaskStore.ItemState i : items) {
-                    String value = "cancelled".equals(i.status()) ? "cancelled"
-                            : "reject".equals(i.action()) ? "rejected" : "approved";
-                    approvedCount += "approved".equals(value) ? 1 : 0;
-                    decisions.add(value);
-                }
-                output.put("approvedCount", approvedCount);
-            }
+        int cancelledSiblings;
+        boolean stepEnds;
+        if (item == null) {
+            // A rejection ends a step with several approvers at once: the other approvers' open tasks are cancelled (S51).
+            cancelledSiblings = reject ? tasks.cancelOpenForNode(workspaceId, task.runId(), task.nodeId(), now) : 0;
+            stepEnds = reject;
+        } else {
+            // A list-driven approval (S88, S104): settled once the quorum (default: every item) is approved, or once it
+            // can no longer be reached. Then the open items are cancelled, items never opened (one at a time) count as
+            // cancelled, and the step's output carries its decision, approvedCount and itemDecisions in list order.
+            Integer settled = settleItems(workspaceId, visible.run(), task.nodeId(), item, output, now);
+            cancelledSiblings = settled == null ? 0 : settled;
+            stepEnds = settled != null;
         }
         runs.mutate(workspaceId, task.runId(), m -> {
-            if (reject) {
+            if (stepEnds) {
                 m.removeStep(task.nodeId());
             } else {
                 m.removeStepOfTask(task.nodeId(), taskId);
@@ -322,6 +318,42 @@ public class TaskService {
         metrics.taskDecided(request.action());
         TaskQueries.DecisionRow decision = taskQueries.decision(workspaceId, decisionId).orElseThrow();
         return new Decided(views.decision(decision, task.label(), names(decision)), false);
+    }
+
+    /**
+     * Settles a list-driven approval after one item was decided (S104). With {@code n} items and quorum {@code k}
+     * (default {@code n}) the step is approved at {@code k} approvals and rejected at {@code n - k + 1} rejections. When
+     * settled, writes {@code decision}, {@code approvedCount} and {@code itemDecisions} into {@code output} and cancels
+     * the open items. For an S88 step ({@code k = n}) this is exactly the earlier rule: every item approved, or the
+     * first rejection.
+     *
+     * @return the number of open items cancelled when the step is settled, or null while it is not
+     */
+    private Integer settleItems(UUID workspaceId, RunStore.RunRow run, String nodeId, TaskStore.Item item,
+            ObjectNode output, Instant now) {
+        List<TaskStore.ItemState> items = tasks.items(workspaceId, item.scope());
+        int n = item.count() != null ? item.count() : items.size();
+        tools.jackson.databind.JsonNode node = releases.require(workspaceId, run.releaseId()).node(nodeId);
+        tools.jackson.databind.JsonNode configured = node == null ? null : node.path("config").path("perItem").path("quorum");
+        int k = configured != null && configured.isIntegralNumber() ? Math.min(Math.max(1, configured.intValue()), n) : n;
+        long approved = items.stream().filter(i -> "approve".equals(i.action())).count();
+        long rejected = items.stream().filter(i -> "reject".equals(i.action())).count();
+        if (approved < k && rejected <= n - k) {
+            return null;
+        }
+        int cancelled = tasks.cancelOpenForScope(workspaceId, item.scope(), now);
+        Map<Integer, String> byIndex = new java.util.HashMap<>();
+        for (TaskStore.ItemState i : tasks.items(workspaceId, item.scope())) {
+            byIndex.put(i.index(), "reject".equals(i.action()) ? "rejected" : "approve".equals(i.action()) ? "approved"
+                    : "cancelled");
+        }
+        var decisions = output.putArray("itemDecisions");
+        for (int index = 0; index < n; index++) {
+            decisions.add(byIndex.getOrDefault(index, "cancelled"));
+        }
+        output.put("approvedCount", approved);
+        output.put("decision", approved >= k ? "approved" : "rejected");
+        return cancelled;
     }
 
     @Transactional

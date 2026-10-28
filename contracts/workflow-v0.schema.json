@@ -1006,7 +1006,7 @@
               "additionalProperties": false
             },
             "perItem": {
-              "description": "One approval task per item of a request list (docs/build/S88): itemsRef names a required, unconditional request list of at most 20 items; each task shows its item (the value, or the itemLabel column of a list of rows). All items must be approved; the first rejection rejects the step and cancels the open items. Extra outputs: approvedCount and itemDecisions (approved, rejected or cancelled per item, in list order). Each item needs a different person unless allowSamePerson is true. Not combined with several approvers, a time limit, escalation, correctable fields or (without allowSamePerson) dispatch.",
+              "description": "One approval task per item of a request list (docs/build/S88, S104): itemsRef names a required, unconditional request list of at most 20 items; each task shows its item (the value, or the itemLabel column of a list of rows). By default all items must be approved and the first rejection rejects the step; with quorum k the step is approved as soon as k items are approved and rejected as soon as k can no longer be reached, and the open items are cancelled. sequential opens one item at a time in list order. assigneeFrom names a text column of a list of rows holding the email of the person proposed for each item; that person is assigned when eligible, otherwise the task stays in the group queue (or goes to the dispatch policy). Extra outputs: approvedCount and itemDecisions (approved, rejected or cancelled per item, in list order; cancelled = not decided because the step had ended). Each item needs a different person unless allowSamePerson is true. Not combined with several approvers, a time limit, escalation or correctable fields.",
               "type": "object",
               "properties": {
                 "itemsRef": {
@@ -1019,6 +1019,20 @@
                 "allowSamePerson": {
                   "description": "Present (true) only when one person may decide several items; leave it out for one person per item.",
                   "const": true
+                },
+                "sequential": {
+                  "description": "Present (true) only when the items are decided one at a time, in list order; leave it out for all items at once.",
+                  "const": true
+                },
+                "quorum": {
+                  "description": "How many items must be approved for the step to be approved (default: all). The list's minimum number of items must be at least this.",
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 20
+                },
+                "assigneeFrom": {
+                  "description": "A text column of the list of rows holding the email of the person proposed for each item. Assigned only when that person may decide the task; otherwise the task stays in the group queue.",
+                  "$ref": "#/$defs/fieldKey"
                 }
               },
               "required": [

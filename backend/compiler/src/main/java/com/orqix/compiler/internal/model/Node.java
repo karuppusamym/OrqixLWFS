@@ -235,9 +235,22 @@ public sealed interface Node {
      * value is shown). {@code allowSamePerson} lets one person decide several items; by default each item needs a
      * different person (the S51 rule).
      */
-    record PerItem(String itemsRef, String itemLabel, boolean allowSamePerson) {
+    record PerItem(String itemsRef, String itemLabel, boolean allowSamePerson, boolean sequential, Integer quorum,
+            String assigneeFrom) {
         /** Most items a list-driven approval may open tasks for. */
         public static final int MAX_ITEMS = 20;
+
+        public PerItem(String itemsRef, String itemLabel, boolean allowSamePerson) {
+            this(itemsRef, itemLabel, allowSamePerson, false, null, null);
+        }
+
+        /**
+         * @return true when the step ends by the S104 settle rule (a quorum or one item at a time) rather than the S88
+         *         "all approved or first rejection" condition; S88 steps keep generating exactly the BPMN they did
+         */
+        public boolean settles() {
+            return sequential || quorum != null;
+        }
 
         /** @return the request field key of the list */
         public String listKey() {

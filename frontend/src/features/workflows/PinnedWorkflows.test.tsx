@@ -28,8 +28,12 @@ describe('pinned workflow shortcuts', () => {
     const second = await renderAppReady(`/w/${WS}/workflows?q=no-such-workflow`)
     await screen.findByText('No workflows match your search')
     await user.click(await within(panel()).findByRole('link', { name: 'Purchase approval' }))
-    await user.click(await screen.findByRole('button', { name: 'Unpin Purchase approval' }))
-    await waitFor(() => expect(JSON.parse(localStorage.getItem(stored)!).ids).toEqual([]))
+    // The pinned link navigates to the overview; wait for it, or the catalog's own Unpin button can be clicked as it unmounts.
+    await screen.findByRole('heading', { level: 1, name: 'Purchase approval' }, { timeout: 5000 })
+    await user.click(await screen.findByRole('button', { name: 'Unpin Purchase approval' }, { timeout: 5000 }))
+    // Under a loaded full run the overview re-renders slowly: wait for the button to flip, then for the stored list.
+    await screen.findByRole('button', { name: 'Pin Purchase approval' }, { timeout: 5000 })
+    await waitFor(() => expect(JSON.parse(localStorage.getItem(stored)!).ids).toEqual([]), { timeout: 5000 })
     second.unmount()
     await renderAppReady(`/w/${WS}/workflows`)
     await screen.findByRole('region', { name: 'Pinned workflows' })

@@ -68,6 +68,13 @@ export function WebhooksPanel() {
     setName(''); setUrl(''); setSecretRef(''); setEvents(['request.completed'])
     await reload()
   })
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const remove = (s: Subscription) => run(async () => {
+    await call(api.DELETE('/workspaces/{workspaceId}/webhook-subscriptions/{subscriptionId}', { params: { path: { workspaceId: ws, subscriptionId: s.id } } }))
+    setConfirmDelete(null)
+    setNotice(`Subscription ${s.name} deleted with its deliveries; the audit trail keeps the deletion.`)
+    await reload()
+  })
   const toggle = (s: Subscription) => run(async () => {
     await call(api.PUT('/workspaces/{workspaceId}/webhook-subscriptions/{subscriptionId}', {
       params: { path: { workspaceId: ws, subscriptionId: s.id } },
@@ -111,6 +118,9 @@ export function WebhooksPanel() {
                   <p className="text-muted-foreground">{s.pending} waiting to be sent · {s.dead} dead letters</p>
                 </div>
                 {manage ? <Button variant="secondary" disabled={pending} onClick={() => void toggle(s)} aria-label={`${s.enabled ? 'Pause' : 'Resume'} ${s.name}`}>{s.enabled ? 'Pause' : 'Resume'}</Button> : null}
+                {manage && !s.enabled ? (confirmDelete === s.id
+                  ? <><Button variant="danger" disabled={pending} onClick={() => void remove(s)} aria-label={`Confirm: delete ${s.name}`}>Delete for good</Button><Button variant="ghost" disabled={pending} onClick={() => setConfirmDelete(null)}>Keep it</Button></>
+                  : <Button variant="ghost" disabled={pending} onClick={() => setConfirmDelete(s.id)} aria-label={`Delete ${s.name}`}>Delete</Button>) : null}
               </li>
             ))}
           </ul>

@@ -6,6 +6,7 @@ import jakarta.validation.Valid;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -46,6 +47,12 @@ public class KafkaTriggerController {
     public KafkaTriggerService.TriggerView updateKafkaTrigger(@PathVariable UUID workspaceId,
             @PathVariable UUID kafkaTriggerId, @Valid @RequestBody KafkaTriggerService.UpdateTrigger request) {
         return triggers.update(callers.current(), workspaceId, kafkaTriggerId, request);
+    }
+
+    @DeleteMapping("/kafka-triggers/{kafkaTriggerId}")
+    public ResponseEntity<Void> deleteKafkaTrigger(@PathVariable UUID workspaceId, @PathVariable UUID kafkaTriggerId) {
+        triggers.delete(callers.current(), workspaceId, kafkaTriggerId);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/kafka-dead-letters")

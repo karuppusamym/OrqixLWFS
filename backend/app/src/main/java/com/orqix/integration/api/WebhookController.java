@@ -6,6 +6,7 @@ import jakarta.validation.Valid;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -40,6 +41,12 @@ public class WebhookController {
     public ResponseEntity<WebhookService.SubscriptionView> createWebhookSubscription(@PathVariable UUID workspaceId,
             @Valid @RequestBody WebhookService.CreateSubscription request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(webhooks.create(callers.current(), workspaceId, request));
+    }
+
+    @DeleteMapping("/webhook-subscriptions/{subscriptionId}")
+    public ResponseEntity<Void> deleteWebhookSubscription(@PathVariable UUID workspaceId, @PathVariable UUID subscriptionId) {
+        webhooks.delete(callers.current(), workspaceId, subscriptionId);
+        return ResponseEntity.noContent().build();
     }
 
     @PutMapping("/webhook-subscriptions/{subscriptionId}")

@@ -41,6 +41,7 @@ public enum ProblemCode {
     EFFECT_STATE_CONFLICT(409, "The external call is not in a state that allows this"),
     GROUP_REVISION_CONFLICT(409, "The group changed since you loaded it"),
     CONFIGURATION_VERSION_CONFLICT(409, "The adapter or trigger changed since you loaded it"),
+    RESOURCE_IN_USE(409, "This is still in use"),
     STALE_REVISION(412, "The draft changed since you loaded it"),
     PAYLOAD_TOO_LARGE(413, "The request body is too large"),
     VALIDATION_FAILED(422, "Some values are not valid"),

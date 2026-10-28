@@ -476,6 +476,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "checkReleasePromotion", "promoteRelease", "requestReleasePromotion" -> Map.of("targetWorkspaceId", UUID.randomUUID().toString());
             case "rejectPromotionRequest" -> Map.of("note", "Foreign attempt");
             case "setWorkflowOwner" -> Map.of("ownerSubjectId", UUID.randomUUID().toString(), "expectedVersion", 1);
+            case "archiveWorkflow" -> Map.of("expectedVersion", 1, "reason", "Foreign attempt");
             case "saveWorkflowTestSuite" -> Map.of("expectedVersion", 0, "cases", List.of());
             case "runWorkflowTestSuite" -> Map.of("revision", 1, "suiteVersion", 1);
             case "correctRunInput" -> Map.of("expectedVersion", 1, "reason", "Foreign attempt", "changes", Map.of("title", "Corrected"));

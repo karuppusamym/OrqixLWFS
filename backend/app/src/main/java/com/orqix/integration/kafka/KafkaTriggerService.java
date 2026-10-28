@@ -258,6 +258,27 @@ public class KafkaTriggerService {
         return view(workspaceId, id, true);
     }
 
+    /**
+     * Deletes a trigger that is switched off, with its status rows and its record rows (de-duplication memory and dead
+     * letters). A trigger that is on is refused, so no consumer is reading it while it goes.
+     */
+    @Transactional
+    public void delete(Caller caller, UUID workspaceId, UUID id) {
+        manage(caller, workspaceId, "deleteKafkaTrigger");
+        Trigger current = lock(workspaceId, id).orElseThrow(ApiException::notFound);
+        if (current.enabled()) {
+            throw new ApiException(ProblemCode.RESOURCE_IN_USE, "Switch the trigger off before deleting it.");
+        }
+        long dead = jdbc.sql("SELECT count(*) FROM kafka_inbound_record WHERE trigger_id = :id AND status = 'dead'")
+                .param("id", id).query(Long.class).single();
+        jdbc.sql("DELETE FROM kafka_trigger_status WHERE trigger_id = :id").param("id", id).update();
+        int records = jdbc.sql("DELETE FROM kafka_inbound_record WHERE trigger_id = :id").param("id", id).update();
+        jdbc.sql("DELETE FROM kafka_trigger WHERE id = :id AND workspace_id = :ws").param("id", id).param("ws", workspaceId).update();
+        audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.USER, caller.subjectId(),
+                "kafka.trigger-deleted", "kafkaTrigger", id.toString(), AuditWriter.Outcome.SUCCESS,
+                Map.of("key", current.key(), "records", records, "deadLetters", dead)));
+    }
+
     @Transactional(readOnly = true)
     public TriggerList list(Caller caller, UUID workspaceId) {
         WorkspaceAccess access = policy.requireVisible(caller, workspaceId);

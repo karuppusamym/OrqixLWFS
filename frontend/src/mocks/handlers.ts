@@ -1077,6 +1077,16 @@ export function createHandlers(): HttpHandler[] {
       }
       return HttpResponse.json({ ...summary(wf, g.perms), version: wf.version, createdAt: wf.createdAt, permissions: g.perms })
     }),
+    http.post(`${B}/workspaces/:ws/workflows/:id/archive`, async ({ params, request }) => {
+      const g = guard(params.ws, 'workflow.edit')
+      if (!g.ok) return g.res
+      const wf = findWorkflow(str(params.ws), str(params.id))
+      if (!wf) return notFound()
+      const input = await body<{ expectedVersion?: number; reason?: string }>(request)
+      if (input.expectedVersion !== wf.version) return problem(409, 'WORKFLOW_VERSION_CONFLICT', 'The workflow changed since you loaded it')
+      db.workflows.delete(wf.id)
+      return new HttpResponse(null, { status: 204 })
+    }),
     http.put(`${B}/workspaces/:ws/workflows/:id/owner`, async ({ params, request }) => {
       await slow()
       const g = guard(params.ws, 'workflow.edit')

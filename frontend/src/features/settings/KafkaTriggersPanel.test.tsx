@@ -70,4 +70,22 @@ describe('Kafka triggers panel', () => {
     const dead = screen.getByRole('list', { name: 'Kafka dead letters' })
     expect(dead).toHaveTextContent('orders-in · unmapped · partition 1, offset 77 · 120 bytes')
   })
+
+  it('deletes only a paused trigger, after one more confirmation', async () => {
+    const user = userEvent.setup()
+    seedKafkaMocks({
+      mode: 'live',
+      triggers: [{ id: 't1', key: 'orders-in', name: 'Orders', cluster: 'main', topic: 'orders.created', consumerGroup: 'orqix-orders-in', secretRef: null, action: 'start', workflowId: null, messageName: null, correlationPointer: null, mapping: { title: '/title' }, batchSize: 50, maxPerSecond: 20, startFrom: 'latest', runAs: 'u1', enabled: true, version: 1, createdAt: '2026-10-26T00:00:00Z', updatedAt: null,
+        status: { lag: 12, handled: 40, duplicates: 2, dead: 1, lastError: 'unmapped', lastErrorAt: '2026-10-26T10:00:00Z', replicas: [{ instanceId: 'pod-a', partitions: [0], lag: 5, running: true, lastPollAt: null }, { instanceId: 'pod-b', partitions: [1], lag: 7, running: true, lastPollAt: null }] } }],
+      dead: [{ id: 'd1', triggerId: 't1', triggerKey: 'orders-in', partition: 1, offset: 77, keyDigest: 'abcd', errorCode: 'unmapped', valueBytes: 120, valueSha256: null, attempts: 1, receivedAt: '2026-10-26T10:00:00Z' }],
+    })
+    mount()
+    await screen.findByTestId('kafka-trigger-orders-in')
+    expect(screen.queryByRole('button', { name: 'Delete orders-in' })).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Pause orders-in' }))
+    await user.click(await screen.findByRole('button', { name: 'Delete orders-in' }))
+    await user.click(screen.getByRole('button', { name: 'Confirm: delete orders-in' }))
+    expect(await screen.findByText(/Trigger orders-in deleted/)).toBeVisible()
+    await waitFor(() => expect(screen.queryByTestId('kafka-trigger-orders-in')).toBeNull())
+  })
 })

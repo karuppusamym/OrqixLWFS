@@ -36,6 +36,13 @@ public class OrganizationController {
         return service.organization(callers.current(), workspaceId);
     }
 
+    @PostMapping("/workflows/{workflowId}/archive")
+    public ResponseEntity<Void> archive(@PathVariable UUID workspaceId, @PathVariable UUID workflowId,
+            @Valid @RequestBody OrganizationService.ArchiveRequest request) {
+        service.archive(callers.current(), workspaceId, workflowId, request);
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/workflow-owner-candidates")
     public java.util.Map<String, java.util.List<com.orqix.identity.SubjectService.SubjectRef>> ownerCandidates(
             @PathVariable UUID workspaceId) {

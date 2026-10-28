@@ -269,4 +269,36 @@ public class OrganizationService {
                 Map.of("from", row.owner().toString(), "to", request.ownerSubjectId().toString())));
         return workflows.view(store.workflow(ws, workflowId).orElseThrow(ApiException::notFound), access);
     }
+
+    public record ArchiveRequest(@jakarta.validation.constraints.NotNull @jakarta.validation.constraints.Min(1) Integer expectedVersion,
+            @jakarta.validation.constraints.NotNull @jakarta.validation.constraints.Size(min = 3, max = 300) String reason) {
+    }
+
+    /**
+     * Archives a workflow: it leaves the catalog, the start lists and child-workflow choices. Refused while requests of
+     * it are open, so nothing that is running loses its workflow. Finished requests and releases stay readable.
+     */
+    @Transactional
+    public void archive(Caller caller, UUID ws, UUID workflowId, ArchiveRequest request) {
+        editor(caller, ws, "archiveWorkflow");
+        workflows.visible(caller, ws, workflowId, "archiveWorkflow");
+        CatalogStore.WorkflowRow row = store.lockWorkflow(ws, workflowId).orElseThrow(ApiException::notFound);
+        if (row.version() != request.expectedVersion()) {
+            throw new ApiException(ProblemCode.WORKFLOW_VERSION_CONFLICT, "The workflow changed. Reload before archiving it.")
+                    .with("currentVersion", row.version());
+        }
+        long open = jdbc.sql("""
+                SELECT count(*) FROM workflow_run WHERE workspace_id = :ws AND workflow_id = :id
+                  AND lifecycle IN ('running', 'waiting', 'needsAttention')
+                """).param("ws", ws).param("id", workflowId).query(Long.class).single();
+        if (open > 0) {
+            throw new ApiException(ProblemCode.RESOURCE_IN_USE, open + (open == 1 ? " request of this workflow is" : " requests of this workflow are")
+                    + " still open. Let them finish, or cancel them, before archiving.").with("openRequests", open);
+        }
+        jdbc.sql("UPDATE workflow SET archived_at = now(), version = version + 1, updated_at = now() WHERE workspace_id = :ws AND id = :id")
+                .param("ws", ws).param("id", workflowId).update();
+        audit.write(new AuditWriter.Entry(ws, AuditWriter.ActorType.USER, caller.subjectId(), "workflow.archived",
+                "workflow", workflowId.toString(), AuditWriter.Outcome.SUCCESS,
+                Map.of("key", row.key(), "reasonLength", request.reason().strip().length())));
+    }
 }

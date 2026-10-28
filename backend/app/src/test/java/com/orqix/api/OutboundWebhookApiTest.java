@@ -127,6 +127,25 @@ class OutboundWebhookApiTest extends RuntimeTestBase {
     // ---------------------------------------------------------------- configuration
 
     @Test
+    void aSubscriptionCanBeDeletedOnlyOnceItIsSwitchedOffAndTakesItsDeliveriesWithIt() throws Exception {
+        JsonNode sub = subscribe("/hooks/gone", List.of("request.started"));
+        String id = sub.path("id").asString();
+        delivery(UUID.fromString(id), 0);
+        Response on = api("wade.admin").delete("/workspaces/{ws}/webhook-subscriptions/{id}", PURCHASING, id);
+        assertThat(on.status()).isEqualTo(409);
+        assertThat(on.code()).isEqualTo("RESOURCE_IN_USE");
+        Response off = api("wade.admin").put(Map.of("name", "Ops feed", "url", Stub.baseUrl() + "/hooks/gone", "secretRef", REF,
+                "events", List.of("request.started"), "enabled", false, "expectedVersion", sub.path("version").asInt()), null,
+                "/workspaces/{ws}/webhook-subscriptions/{id}", PURCHASING, id);
+        assertThat(off.status()).as(off.toString()).isEqualTo(200);
+        assertThat(api("dana.designer").delete("/workspaces/{ws}/webhook-subscriptions/{id}", PURCHASING, id).status()).isEqualTo(403);
+        assertThat(api("wade.admin").delete("/workspaces/{ws}/webhook-subscriptions/{id}", PURCHASING, id).status()).isEqualTo(204);
+        assertThat(jdbc.sql("SELECT count(*) FROM webhook_delivery WHERE subscription_id = :s").param("s", UUID.fromString(id))
+                .query(Long.class).single()).isZero();
+        assertThat(api("wade.admin").delete("/workspaces/{ws}/webhook-subscriptions/{id}", PURCHASING, id).status()).isEqualTo(404);
+    }
+
+    @Test
     void subscriptionsNeedConnectionManageAnAllowListedEndpointAndAWebhookOnlySecret() throws Exception {
         Map<String, Object> body = Map.of("name", "Feed", "url", "https://not-allowed.example.com/hook",
                 "secretRef", REF, "events", List.of("request.started"));

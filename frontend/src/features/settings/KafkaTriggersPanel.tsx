@@ -42,6 +42,7 @@ export function KafkaTriggersPanel() {
     queryFn: () => call(api.GET('/workspaces/{workspaceId}/kafka-dead-letters', { params: { path: { workspaceId: ws } } })) })
   const [error, setError] = useState<ProblemError | null>(null)
   const [notice, setNotice] = useState('')
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
   const [key, setKey] = useState('')
   const [name, setName] = useState('')
@@ -90,6 +91,11 @@ export function KafkaTriggersPanel() {
     }))
     setNotice(`Trigger ${t.key} ${t.enabled ? 'paused' : 'resumed'}.`)
   })
+  const remove = (t: Trigger) => run(async () => {
+    await call(api.DELETE('/workspaces/{workspaceId}/kafka-triggers/{kafkaTriggerId}', { params: { path: { workspaceId: ws, kafkaTriggerId: t.id } } }))
+    setConfirmDelete(null)
+    setNotice(`Trigger ${t.key} deleted. Its records and dead letters are gone; the audit trail keeps the deletion.`)
+  })
   const sendTest = (t: Trigger) => run(async () => {
     let value: unknown
     try { value = JSON.parse(testValue[t.id] ?? '') } catch { throw new Error('The test value must be a JSON object.') }
@@ -123,6 +129,9 @@ export function KafkaTriggersPanel() {
                 {t.status.lastError ? <p className="text-danger">Last error: {t.status.lastError}{t.status.lastErrorAt ? ` at ${formatDateTime(t.status.lastErrorAt)}` : ''}</p> : null}
                 <div className="flex flex-wrap items-end gap-2">
                   {manage ? <Button variant="secondary" disabled={pending} onClick={() => void toggle(t)} aria-label={`${t.enabled ? 'Pause' : 'Resume'} ${t.key}`}>{t.enabled ? 'Pause' : 'Resume'}</Button> : null}
+                  {manage && !t.enabled ? (confirmDelete === t.id
+                    ? <><Button variant="danger" disabled={pending} onClick={() => void remove(t)} aria-label={`Confirm: delete ${t.key}`}>Delete for good</Button><Button variant="ghost" disabled={pending} onClick={() => setConfirmDelete(null)}>Keep it</Button></>
+                    : <Button variant="ghost" disabled={pending} onClick={() => setConfirmDelete(t.id)} aria-label={`Delete ${t.key}`}>Delete</Button>) : null}
                   {manage && data?.mode === 'stub' ? <>
                     <div className="space-y-1">
                       <Label htmlFor={`kafka-test-${t.id}`}>Test value (JSON) for {t.key}</Label>

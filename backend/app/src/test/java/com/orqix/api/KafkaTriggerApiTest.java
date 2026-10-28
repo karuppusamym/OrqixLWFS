@@ -166,6 +166,31 @@ class KafkaTriggerApiTest extends RuntimeTestBase {
     }
 
     @Test
+    void aTriggerCanBeDeletedOnlyOnceItIsSwitchedOff() throws Exception {
+        UUID workflowId = publishPurchase(PURCHASING, null);
+        grant("workflow.start", workflowId);
+        Response created = api("wade.admin").post(startTrigger(key("gone"), workflowId), "/workspaces/{ws}/kafka-triggers", PURCHASING);
+        assertThat(created.status()).as(created.toString()).isEqualTo(201);
+        String id = created.body().path("id").asString();
+        assertThat(api("dana.designer").delete("/workspaces/{ws}/kafka-triggers/{id}", PURCHASING, id).status()).isEqualTo(403);
+        Response on = api("wade.admin").delete("/workspaces/{ws}/kafka-triggers/{id}", PURCHASING, id);
+        assertThat(on.status()).isEqualTo(409);
+        assertThat(on.code()).isEqualTo("RESOURCE_IN_USE");
+
+        Map<String, Object> off = new LinkedHashMap<>();
+        off.put("name", "Orders feed");
+        off.put("mapping", Map.of("title", "/title", "purpose", "/purpose", "costCenter", "/costCenter", "amount", "/amount"));
+        off.put("batchSize", created.body().path("batchSize").asInt());
+        off.put("maxPerSecond", created.body().path("maxPerSecond").asInt());
+        off.put("enabled", false);
+        off.put("expectedVersion", created.body().path("version").asInt());
+        assertThat(api("wade.admin").put(off, null, "/workspaces/{ws}/kafka-triggers/{id}", PURCHASING, id).status()).isEqualTo(200);
+        assertThat(api("wade.admin").delete("/workspaces/{ws}/kafka-triggers/{id}", PURCHASING, id).status()).isEqualTo(204);
+        assertThat(api("wade.admin").get("/workspaces/{ws}/kafka-triggers", PURCHASING).body().path("items").toString()).doesNotContain(id);
+        assertThat(api("wade.admin").delete("/workspaces/{ws}/kafka-triggers/{id}", PURCHASING, id).status()).isEqualTo(404);
+    }
+
+    @Test
     void stubMessagesStartRequestsOnceDropDuplicatesAndDeadLetterBadRecordsWithoutContent() throws Exception {
         UUID workflowId = publishPurchase(PURCHASING, null);
         grant("workflow.start", workflowId);

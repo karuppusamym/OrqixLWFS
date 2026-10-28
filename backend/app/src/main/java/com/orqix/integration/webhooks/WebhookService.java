@@ -185,6 +185,26 @@ public class WebhookService implements OutboundWebhooks {
         }
     }
 
+    /** Deletes a subscription that is switched off, with its delivery rows; one that is on is refused. */
+    @Transactional
+    public void delete(Caller caller, UUID workspaceId, UUID id) {
+        WorkspaceAccess access = policy.freshAccess(caller, workspaceId).filter(WorkspaceAccess::visible)
+                .orElseThrow(ApiException::notFound);
+        policy.require(access, Permission.CONNECTION_MANAGE, "deleteWebhookSubscription", true);
+        Boolean enabled = jdbc.sql("SELECT enabled FROM webhook_subscription WHERE id = :id AND workspace_id = :ws FOR UPDATE")
+                .param("id", id).param("ws", workspaceId).query(Boolean.class).optional().orElseThrow(ApiException::notFound);
+        if (enabled) {
+            throw new ApiException(ProblemCode.RESOURCE_IN_USE, "Switch the subscription off before deleting it.");
+        }
+        int deliveries = jdbc.sql("DELETE FROM webhook_delivery WHERE subscription_id = :id AND workspace_id = :ws")
+                .param("id", id).param("ws", workspaceId).update();
+        jdbc.sql("DELETE FROM webhook_subscription WHERE id = :id AND workspace_id = :ws").param("id", id)
+                .param("ws", workspaceId).update();
+        audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.USER, caller.subjectId(),
+                "webhook.subscription-deleted", "webhookSubscription", id.toString(), AuditWriter.Outcome.SUCCESS,
+                Map.of("deliveries", deliveries)));
+    }
+
     @Transactional
     public SubscriptionView update(Caller caller, UUID workspaceId, UUID id, UpdateSubscription request) {
         WorkspaceAccess access = policy.freshAccess(caller, workspaceId).filter(WorkspaceAccess::visible)

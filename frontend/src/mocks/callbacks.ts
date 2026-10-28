@@ -117,6 +117,13 @@ export function createCallbackHandlers(): HttpHandler[] {
       kafkaTriggers = kafkaTriggers.map((t) => (t.id === current.id ? { ...t, status } : t))
       return HttpResponse.json((mapped ? { outcome: 'started', code: null, runId: newId() } : { outcome: 'dead', code: 'unmapped', runId: null }) satisfies S['KafkaTestMessageResult'])
     }),
+    http.delete(`${B}/kafka-triggers/:id`, ({ params }) => {
+      const current = kafkaTriggers.find((t) => t.id === params.id)
+      if (!current) return problem(404, 'NOT_FOUND', 'Not found')
+      if (current.enabled) return problem(409, 'RESOURCE_IN_USE', 'This is still in use')
+      kafkaTriggers = kafkaTriggers.filter((t) => t.id !== current.id)
+      return new HttpResponse(null, { status: 204 })
+    }),
     http.get(`${B}/kafka-dead-letters`, () => HttpResponse.json({ items: kafkaDead })),
     http.get(`${B}/webhook-subscriptions`, () => HttpResponse.json({ items: subscriptions })),
     http.post(`${B}/webhook-subscriptions`, async ({ request }) => {
@@ -126,6 +133,13 @@ export function createCallbackHandlers(): HttpHandler[] {
       const created: S['WebhookSubscription'] = { id: newId(), name: body.name, url: body.url, secretRef: body.secretRef, events: body.events, enabled: body.enabled ?? true, version: 1, pending: 0, dead: 0, createdAt: new Date().toISOString(), updatedAt: null }
       subscriptions = [...subscriptions, created]
       return HttpResponse.json(created, { status: 201 })
+    }),
+    http.delete(`${B}/webhook-subscriptions/:id`, ({ params }) => {
+      const current = subscriptions.find((s) => s.id === params.id)
+      if (!current) return problem(404, 'NOT_FOUND', 'Not found')
+      if (current.enabled) return problem(409, 'RESOURCE_IN_USE', 'This is still in use')
+      subscriptions = subscriptions.filter((s) => s.id !== current.id)
+      return new HttpResponse(null, { status: 204 })
     }),
     http.put(`${B}/webhook-subscriptions/:id`, async ({ params, request }) => {
       const body = (await request.json()) as S['WebhookSubscriptionUpdateRequest']

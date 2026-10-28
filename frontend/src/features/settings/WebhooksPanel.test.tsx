@@ -70,4 +70,19 @@ describe('outbound webhooks panel', () => {
     expect(screen.queryByRole('button', { name: /Pause/ })).toBeNull()
     expect(screen.queryByText('Dead letters')).toBeNull()
   })
+
+  it('offers Delete only for a paused subscription and asks once more before deleting', async () => {
+    const user = userEvent.setup()
+    seedCallbackMocks({ subscriptions: [
+      { id: 's1', name: 'Live feed', url: 'https://hooks.example.com/a', secretRef: 'webhook-a', events: ['request.started'], enabled: true, version: 1, pending: 0, dead: 0, createdAt: '2026-10-26T00:00:00Z', updatedAt: null },
+      { id: 's2', name: 'Old feed', url: 'https://hooks.example.com/b', secretRef: 'webhook-b', events: ['request.started'], enabled: false, version: 2, pending: 0, dead: 0, createdAt: '2026-10-26T00:00:00Z', updatedAt: null },
+    ] })
+    mount()
+    expect(await screen.findByText('Old feed')).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Delete Live feed' })).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Delete Old feed' }))
+    await user.click(screen.getByRole('button', { name: 'Confirm: delete Old feed' }))
+    expect(await screen.findByText(/Subscription Old feed deleted/)).toBeVisible()
+    await waitFor(() => expect(screen.queryByText('Old feed')).toBeNull())
+  })
 })

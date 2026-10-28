@@ -2004,6 +2004,33 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
 
+  /workspaces/{workspaceId}/workflows/{workflowId}/archive:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+    post:
+      tags: [Workflows]
+      operationId: archiveWorkflow
+      summary: Archive a workflow so it leaves the catalog, the start lists and child-workflow choices
+      description: |
+        Refused while requests of the workflow are still open (409 RESOURCE_IN_USE). Finished requests,
+        releases and the audit trail stay readable through their own links. There is no un-archive in this version.
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: workflow.archived
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ArchiveWorkflow' }
+      responses:
+        '204': { description: Archived }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
   /workspaces/{workspaceId}/workflows/{workflowId}/discussion:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -3063,6 +3090,20 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
 
+    delete:
+      tags: [Adapters]
+      operationId: deleteKafkaTrigger
+      summary: Delete a Kafka trigger that is switched off, with its status and de-duplication records (dead letters go too)
+      description: A trigger that is switched on is refused (409); switch it off first so no consumer is reading it.
+      x-orqix-permission: connection.manage
+      x-orqix-audit: kafka.trigger-deleted
+      responses:
+        '204': { description: Deleted }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
   /workspaces/{workspaceId}/kafka-triggers/{kafkaTriggerId}/test-message:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -3173,6 +3214,20 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
+
+    delete:
+      tags: [Adapters]
+      operationId: deleteWebhookSubscription
+      summary: Delete a webhook subscription that is switched off, with its delivery rows
+      description: A subscription that is switched on is refused (409); switch it off first (that also stops pending deliveries).
+      x-orqix-permission: connection.manage
+      x-orqix-audit: webhook.subscription-deleted
+      responses:
+        '204': { description: Deleted }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
 
   /workspaces/{workspaceId}/webhook-deliveries:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
@@ -8048,6 +8103,7 @@ components:
             - EFFECT_STATE_CONFLICT
             - GROUP_REVISION_CONFLICT
             - CONFIGURATION_VERSION_CONFLICT
+            - RESOURCE_IN_USE
             - STALE_REVISION
             - PAYLOAD_TOO_LARGE
             - VALIDATION_FAILED
@@ -8317,6 +8373,13 @@ components:
       required: [resolved]
       properties:
         resolved: { type: boolean }
+    ArchiveWorkflow:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, reason]
+      properties:
+        expectedVersion: { type: integer, minimum: 1, description: 'The workflow version' }
+        reason: { type: string, minLength: 3, maxLength: 300 }
     SetWorkflowOwner:
       type: object
       additionalProperties: false

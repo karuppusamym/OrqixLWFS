@@ -43,6 +43,7 @@ const ORGANIZE_REFUSALS = {
   VALIDATION_FAILED: 'Choose an owner who can edit workflows in this workspace.',
   WORKFLOW_VERSION_CONFLICT: 'The folder or workflow was changed by someone else. Close this window, reopen it and try again.',
   NOT_FOUND: 'The folder or workflow no longer exists. Close this window and reload the list.',
+  RESOURCE_IN_USE: 'Requests of this workflow are still open. Let them finish, or cancel them, before archiving it.',
 }
 
 export function folderName(folders: Folder[] | undefined, id: string | undefined): string | null {
@@ -185,6 +186,8 @@ export function OrganizeWorkflowDialog({ workflow, onClose }: { workflow: Workfl
   const [ownerId, setOwnerId] = useState(workflow.owner?.id ?? '')
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<ProblemError | null>(null)
+  const [archiveReason, setArchiveReason] = useState('')
+  const [confirmArchive, setConfirmArchive] = useState(false)
   const folders = org.data?.folders ?? []
   const ownerOptions = [...(candidates.data?.items ?? [])]
   if (workflow.owner && !ownerOptions.some((o) => o.id === workflow.owner!.id)) ownerOptions.unshift(workflow.owner)
@@ -213,6 +216,21 @@ export function OrganizeWorkflowDialog({ workflow, onClose }: { workflow: Workfl
     }
   }
 
+  const archive = async () => {
+    setPending(true)
+    setError(null)
+    try {
+      const { version } = await endpoints.getWorkflow(ws, workflow.id)
+      await endpoints.archiveWorkflow(ws, workflow.id, { expectedVersion: version, reason: archiveReason.trim() })
+      await refresh()
+      onClose()
+    } catch (cause) {
+      setError(toProblem(cause))
+    } finally {
+      setPending(false)
+    }
+  }
+
   return (
     <Dialog open onClose={onClose} title={`Organize ${workflow.name}`} dismissible={!pending}
       description="Folders and owners help people find this workflow. They do not change who can use it."
@@ -233,6 +251,17 @@ export function OrganizeWorkflowDialog({ workflow, onClose }: { workflow: Workfl
           <p className="text-xs text-muted-foreground">Only people who can edit workflows in this workspace can own one.</p>
         </div>
         {error ? <Refusal error={error} messages={ORGANIZE_REFUSALS} /> : null}
+        <details className="rounded-control border border-border p-3" data-testid="archive-section">
+          <summary className="cursor-pointer text-sm font-semibold">Archive this workflow</summary>
+          <div className="mt-3 space-y-2">
+            <p className="text-xs text-muted-foreground">Archived workflows leave the catalog and can no longer be started. Finished requests stay readable. This is refused while requests are still open, and it cannot be undone here.</p>
+            <Label htmlFor="archive-reason">Why archive it?</Label>
+            <Input id="archive-reason" value={archiveReason} maxLength={300} onChange={(e) => { setArchiveReason(e.target.value); setConfirmArchive(false) }} />
+            {confirmArchive
+              ? <div className="flex gap-2"><Button variant="danger" onClick={() => void archive()} loading={pending}>Archive for good</Button><Button variant="ghost" onClick={() => setConfirmArchive(false)} disabled={pending}>Keep it</Button></div>
+              : <Button variant="secondary" onClick={() => setConfirmArchive(true)} disabled={pending || archiveReason.trim().length < 3}>Archive…</Button>}
+          </div>
+        </details>
       </div>
     </Dialog>
   )

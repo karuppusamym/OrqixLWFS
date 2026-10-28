@@ -95,6 +95,7 @@ const TABLE = {
   EFFECT_STATE_CONFLICT: { behavior: 'operator-message', message: 'This step changed in the meantime. Reload to see its current state.' },
   GROUP_REVISION_CONFLICT: { behavior: 'message', message: 'This group was changed by someone else. Reload and try again.' },
   CONFIGURATION_VERSION_CONFLICT: { behavior: 'message', message: 'This adapter or trigger was changed by someone else. Reload and try again.' },
+  RESOURCE_IN_USE: { behavior: 'message', message: 'This is still in use. Switch it off, or let its open requests finish, and try again.' },
   STALE_REVISION: { behavior: 'studio-conflict', message: (c) => `A newer version was saved by ${c.otherUserName ?? 'someone else'}.` },
   PAYLOAD_TOO_LARGE: { behavior: 'message', message: 'This is too large to save. Remove some content and try again.' },
   VALIDATION_FAILED: { behavior: 'inline-fields', message: 'Check the highlighted fields and try again.' },

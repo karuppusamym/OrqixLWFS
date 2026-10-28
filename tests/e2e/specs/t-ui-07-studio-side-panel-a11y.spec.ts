@@ -6,7 +6,7 @@ import { workflowIdByKey, workspaceId } from '../support/app'
  * T-UI-07: the studio's single side panel (Details, Ask AI, Discussion) and the More menu on a 1280 px wide screen.
  * Opens the seeded purchase approval workflow; changes nothing. Serious or critical axe findings fail the test.
  */
-test('studio panes, View and More menus, Ask Orqix and the Assistant pass the accessibility scan at 1280 px', async ({ sessions }) => {
+test('studio panes, View and More menus, Home, Cases, Ask Orqix and the Assistant pass the accessibility scan at 1280 px', async ({ sessions }) => {
   const designer = await sessions.as('dana.designer')
   await designer.setViewportSize({ width: 1280, height: 800 })
   const ws = await workspaceId(designer)
@@ -30,6 +30,14 @@ test('studio panes, View and More menus, Ask Orqix and the Assistant pass the ac
   await designer.getByRole('button', { name: 'More actions' }).click()
   await expect(designer.getByRole('menuitem', { name: /Download BPMN/ })).toBeVisible()
   await expectNoSeriousViolations(designer, 'studio More menu')
+
+  await designer.goto(`/w/${ws}`)
+  await expect(designer.getByTestId('get-started')).toBeVisible()
+  await expectNoSeriousViolations(designer, 'home with get-started cards')
+
+  await designer.goto(`/w/${ws}/cases`)
+  await expect(designer.getByRole('heading', { level: 1, name: 'Cases' })).toBeVisible()
+  await expectNoSeriousViolations(designer, 'cases page')
 
   await designer.goto(`/w/${ws}/assistant`)
   await expect(designer.getByRole('complementary', { name: 'About this conversation' })).toBeVisible()

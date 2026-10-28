@@ -311,6 +311,8 @@ jobs:
         working-directory: deploy/compose
         run: |
           gunzip -c ../../orqix-image.tar.gz | docker load
+          # The stub image is a local fixture that no registry serves; build it here. The app image is the one loaded above.
+          docker compose build procurement-stub
           docker compose --profile app up -d --no-build
           for _ in $(seq 1 60); do
             status=$(docker compose ps orqix --format '{{.Health}}')

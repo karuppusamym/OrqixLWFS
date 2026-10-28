@@ -70,11 +70,13 @@ R0 is implemented: compiler module, Spring Boot + Flowable application, React fr
 
 ## Current state
 
+Test totals below are from the latest [release record](docs/release/RELEASE-r0-2026-10-29.md); other rows keep their dated evidence.
+
 | Area | Location | Verified |
 |---|---|---|
-| Compiler | `backend/compiler` | 280 tests |
-| Application | `backend/app` | 453 tests on PostgreSQL 18 (Testcontainers), API responses validated against the OpenAPI contract |
-| Frontend | `frontend` | 530 unit/component tests including color-contrast checks; typecheck, lint, build |
+| Compiler | `backend/compiler` | 640 tests |
+| Application | `backend/app` | 1,007 tests on PostgreSQL 18 (Testcontainers), API responses validated against the OpenAPI contract |
+| Frontend | `frontend` | 1,171 unit/component tests including color-contrast checks; typecheck, lint, build |
 | Browser E2E | `tests/e2e` | 30 pass / 11 skipped (mock-only) against the Docker stack; 37 / 4 in mock mode; no serious accessibility findings |
 | API E2E | `tools/api-e2e` | 26 / 26 with injected failures, plus 33 / 33 operations scenarios |
 | Resilience, performance | `tools/resilience`, `tools/perf` | Kill, database outage, graceful shutdown and revocation scenarios pass; 20 users × 10 min with 0 errors and p95 under 120 ms |

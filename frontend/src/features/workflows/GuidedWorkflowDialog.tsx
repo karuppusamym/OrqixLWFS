@@ -12,7 +12,8 @@ import { toKey } from '@/lib/text'
 import { guidedDefinition, type GuidedAnswers } from './guidedDefinition'
 
 const titles = ['Purpose and questions', 'Approvals and routing', 'Working calendar', 'Messages and closure', 'Review the draft']
-export function GuidedWorkflowDialog({ onClose }: { onClose: () => void }) {
+/** Governed (Tier-1) questionnaire: SLA calendar, stage emails, closure policy and the Tier-1 sign-off up front. */
+export function GuidedWorkflowDialog({ onClose, onBack }: { onClose: () => void; onBack?: () => void }) {
   const { workspace } = useWorkspace(); const ws = workspace.id
   const groups = useGroups(ws); const navigate = useNavigate(); const client = useQueryClient()
   const [page, setPage] = useState(0); const [error, setError] = useState(''); const [pending, setPending] = useState(false)
@@ -47,8 +48,8 @@ export function GuidedWorkflowDialog({ onClose }: { onClose: () => void }) {
     } catch (e) { setError(e instanceof Error ? e.message : 'The draft could not be saved. Your answers are retained; retry to save the same draft.') }
     finally { setPending(false) }
   }
-  return <Dialog open onClose={onClose} title="Create with guided questions" description={`Question group ${page + 1} of 5: ${titles[page]}`} dismissible={!pending}
-    footer={<><Button variant="secondary" disabled={pending} onClick={onClose}>Cancel</Button>{page > 0 ? <Button disabled={pending || !!created} onClick={() => setPage(p => p - 1)}>Back</Button> : null}
+  return <Dialog open onClose={onClose} title="Governed Tier-1 questionnaire" description={`Question group ${page + 1} of 5: ${titles[page]}`} dismissible={!pending}
+    footer={<>{page === 0 && onBack ? <Button variant="ghost" className="mr-auto" disabled={pending} onClick={onBack}>Other ways to start</Button> : null}<Button variant="secondary" disabled={pending} onClick={onClose}>Cancel</Button>{page > 0 ? <Button disabled={pending || !!created} onClick={() => setPage(p => p - 1)}>Back</Button> : null}
       {page < 4 ? <Button variant="primary" onClick={next}>Next</Button> : <Button variant="primary" loading={pending} onClick={() => void save()}>Create reviewable draft</Button>}</>}>
     <div className="space-y-4">
       {page === 0 ? <>

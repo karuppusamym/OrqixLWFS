@@ -61,7 +61,13 @@ To import an existing process, choose **Workflows → Import workflow**. Camunda
 
 On a request's timeline, expand **Decision evidence** to see the input, evaluated candidate rules, selected rule and default status from its pinned workflow version. The requester, eligible participants and readers with request-data permission can see values. Metadata-only viewers receive a restricted-evidence message.
 
-1. **Workflows → New workflow**, then pick a template such as *Purchase approval*, or start from scratch.
+1. **Workflows → New workflow** asks how you want to start. Every choice gives you an ordinary draft; nothing runs until you publish.
+   - **Start from a template**: pick one such as *Purchase approval*, name your copy and adjust it.
+   - **Answer a few questions**: three short steps (a name, what the requester fills in, who approves, optionally only above an amount). No AI is used; deadlines, emails and rules are added in the studio afterwards.
+   - **Describe it to AI** (only when AI is turned on): write what should happen and review the draft AI produces.
+   - **Start empty**: a request form and a finish step to build on yourself.
+
+   AI is never required. Start any way you like and open **Ask AI** in the studio only when you want help. **Use the governed questionnaire** at the bottom of the dialog asks for working-hour deadlines, stage emails and the Tier-1 sign-off up front.
 2. The **studio** opens with the **Canvas** tab: steps connected by arrows. Add steps from the palette — *Ask for approval*, *Make a decision*, *Choose a path*, *Call a system*, *Notify someone*, *Finish*. Select a step to edit it in the panel on the right; the basic settings come first, and *Advanced* holds the rest.
 3. The **Steps** tab offers the same editing as a list that works fully with the keyboard.
 4. Changes save automatically ("Saved just now" at the top). Undo and redo with Ctrl+Z and Ctrl+Shift+Z (Cmd on Mac). If a colleague saved a newer version, Orqix stops saving and lets you reload or download your version.
@@ -74,7 +80,7 @@ On a request's timeline, expand **Decision evidence** to see the input, evaluate
 
 ## Background drafts and workflow patterns
 
-**Workflows → New workflow → Describe it** creates a draft in the background when AI is enabled. You can close the dialog and keep working; the workspace notice offers **Open draft** when it is ready. Review every step and the AI's assumptions before publishing. If generation fails, the notice explains the reason and you can submit again.
+**Workflows → New workflow → Describe it to AI** creates a draft in the background when AI is enabled. You can close the dialog and keep working; the workspace notice offers **Open draft** when it is ready. Review every step and the AI's assumptions before publishing. If generation fails, the notice explains the reason and you can submit again.
 
 The studio palette also includes **Run in parallel**, **Wait for all**, **Wait** and **Start another workflow**. Connect every parallel branch to its matching **Wait for all** step. A rejection ends the request and cancels other open branches. **Wait** has two forms: **For a duration** (`PT30M`, `P1D`) and **Until a date**, which waits until the date the requester entered in a **Date** question (for example "Start date") at a time of day you choose, 09:00 by default. Times are always UTC; the inspector shows "Waits until 14 Oct 2026, 09:00 UTC." for a date you try. If the date has already passed the request continues at once; a date more than a year (366 days) ahead is refused on the form. The date question must be required.
 

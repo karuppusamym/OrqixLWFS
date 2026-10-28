@@ -1,31 +1,21 @@
-import { useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, FileClock, FilePlus2, PencilLine, Workflow as WorkflowIcon } from 'lucide-react'
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router'
-import * as endpoints from '@/api/endpoints'
-import type { ProblemError } from '@/api/problem'
-import { useTemplates, useWorkflowOrganization, useWorkflows } from '@/api/queries'
+import { Link } from 'react-router'
+import { useWorkflowOrganization, useWorkflows } from '@/api/queries'
 import type { components } from '@/api/schema'
 import { useWorkspace } from '@/app/workspace'
-import { FormField } from '@/components/common/FormField'
 import { EmptyState } from '@/components/common/EmptyState'
 import { LoadingBlock } from '@/components/common/LoadingBlock'
 import { PageHeader } from '@/components/common/PageHeader'
-import { ProblemAlert, toProblem } from '@/components/common/ProblemAlert'
 import { QueryError } from '@/components/common/QueryError'
 import { RelativeTime } from '@/components/common/RelativeTime'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Dialog } from '@/components/ui/dialog'
-import { Input, Textarea } from '@/components/ui/input'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table'
-import { fieldErrorMap } from '@/lib/problemMessages'
-import { humanize, KEY_PATTERN, toKey } from '@/lib/text'
 import { useListFilters } from '@/lib/useListFilters'
-import { DescribeItChoice, DescribeItDialog } from '@/features/ai/DescribeItDialog'
-import { GuidedWorkflowDialog } from './GuidedWorkflowDialog'
+import { NewWorkflowDialog } from './NewWorkflowDialog'
 import { PinnedWorkflows, PinWorkflowButton } from './PinnedWorkflows'
 import { folderName, ManageFoldersButton, OrganizationFilters, OrganizeWorkflowDialog } from './Organization'
 
@@ -90,7 +80,7 @@ export function WorkflowsPage() {
         <QueryError error={query.error} onRetry={() => void query.refetch()} what="workflows" />
       ) : items.length === 0 ? (
         <EmptyState icon={WorkflowIcon} title={filtered ? 'No workflows match your search' : 'No workflows yet'} action={filtered ? <Button onClick={clearSearch}>Show all workflows</Button> : undefined}>
-          {filtered ? 'Try another name, folder or owner, or clear your filters.' : can('workflow.edit') ? 'Create one from a template to get started.' : 'Ask a designer to publish a workflow.'}
+          {filtered ? 'Try another name, folder or owner, or clear your filters.' : can('workflow.edit') ? 'Choose New workflow to start from a template, a few questions or a blank canvas.' : 'Ask a designer to publish a workflow.'}
         </EmptyState>
       ) : (
         <>
@@ -187,135 +177,5 @@ export function WorkflowsPage() {
       {creating ? <NewWorkflowDialog onClose={() => setCreating(false)} /> : null}
       {organizing ? <OrganizeWorkflowDialog workflow={organizing} onClose={() => setOrganizing(null)} /> : null}
     </>
-  )
-}
-
-function NewWorkflowDialog({ onClose }: { onClose: () => void }) {
-  const { workspace } = useWorkspace()
-  const ws = workspace.id
-  const navigate = useNavigate()
-  const client = useQueryClient()
-  const templates = useTemplates(ws)
-  const [templateId, setTemplateId] = useState('')
-  const [name, setName] = useState('')
-  const [key, setKey] = useState('')
-  const [keyTouched, setKeyTouched] = useState(false)
-  const [description, setDescription] = useState('')
-  const [errors, setErrors] = useState<Record<string, string>>({})
-  const [pending, setPending] = useState(false)
-  const [error, setError] = useState<ProblemError | null>(null)
-  const [describing, setDescribing] = useState(false)
-  const [guided, setGuided] = useState(false)
-
-  const effectiveKey = keyTouched ? key : toKey(name)
-  const chosenTemplate = templateId === '' ? (templates.data?.items[0]?.id ?? 'blank') : templateId
-  const radioValue = chosenTemplate
-
-  const submit = async () => {
-    const next: Record<string, string> = {}
-    if (!name.trim()) next.name = 'Give the workflow a name.'
-    if (!KEY_PATTERN.test(effectiveKey)) next.key = 'Use 2 or more lowercase letters, digits and dashes, starting with a letter.'
-    setErrors(next)
-    if (Object.keys(next).length > 0) return
-    setPending(true)
-    setError(null)
-    try {
-      const created = await endpoints.createWorkflow(ws, {
-        key: effectiveKey,
-        name: name.trim(),
-        ...(description.trim() ? { description: description.trim() } : {}),
-        ...(chosenTemplate !== 'blank' ? { templateId: chosenTemplate } : {}),
-      })
-      await client.invalidateQueries({ queryKey: ['ws', ws, 'workflows'] })
-      navigate(`/w/${ws}/workflows/${created.id}/edit`)
-    } catch (cause) {
-      const problem = toProblem(cause)
-      const mapped = fieldErrorMap(problem)
-      if (Object.keys(mapped).length > 0) setErrors(mapped)
-      else setError(problem)
-      if (problem.code === 'DUPLICATE_KEY') setErrors({ key: 'A workflow with this key already exists. Choose a different key.' })
-    } finally {
-      setPending(false)
-    }
-  }
-
-  if (guided) return <GuidedWorkflowDialog onClose={onClose} />
-  if (describing) return <DescribeItDialog onClose={onClose} onBack={() => setDescribing(false)} />
-
-  return (
-    <Dialog
-      open
-      onClose={onClose}
-      title="New workflow"
-      description="Start from a template or from a blank workflow. You can change everything afterwards."
-      dismissible={!pending}
-      footer={
-        <>
-          <Button variant="secondary" onClick={onClose} disabled={pending}>
-            Cancel
-          </Button>
-          <Button variant="primary" onClick={() => void submit()} loading={pending}>
-            Create workflow
-          </Button>
-        </>
-      }
-    >
-      <div className="space-y-5">
-        <fieldset className="space-y-2">
-          <legend className="text-sm font-semibold">Start from</legend>
-          {templates.isPending ? (
-            <p className="text-sm text-muted-foreground">Loading templates…</p>
-          ) : (
-            <RadioGroup value={radioValue} onValueChange={setTemplateId}>
-              {(templates.data?.items ?? []).map((t) => (
-                <div key={t.id} className="flex items-start gap-3 rounded-control border border-border p-3">
-                  <RadioGroupItem value={t.id} id={`tpl-${t.id}`} />
-                  <Label htmlFor={`tpl-${t.id}`} className="font-normal">
-                    <span className="font-semibold">{t.name}</span>
-                    <span className="block text-muted-foreground">{t.description}</span>
-                    <span className="mt-1 block text-xs text-muted-foreground">
-                      Needs approver groups: {(t.requiredGroups ?? []).map(humanize).join(', ') || 'none'} &middot; connections: {(t.requiredConnections ?? []).map(humanize).join(', ') || 'none'}{(t.requiredWorkflows ?? []).length > 0 ? <> &middot; starts workflows: {(t.requiredWorkflows ?? []).map(humanize).join(', ')}</> : null}
-                    </span>
-                  </Label>
-                </div>
-              ))}
-              <div className="flex items-start gap-3 rounded-control border border-border p-3">
-                <RadioGroupItem value="blank" id="tpl-blank" />
-                <Label htmlFor="tpl-blank" className="font-normal">
-                  <span className="font-semibold">Blank workflow</span>
-                  <span className="block text-muted-foreground">A request form and a finish step to build on.</span>
-                </Label>
-              </div>
-            </RadioGroup>
-          )}
-          <Button variant="secondary" onClick={() => setGuided(true)}>Create with guided questions</Button>
-          <DescribeItChoice onSelect={() => setDescribing(true)} />
-        </fieldset>
-        <FormField label="Name" required id="wf-name" error={errors.name}>
-          {(ids) => <Input id={ids.input} value={name} onChange={(e) => setName(e.target.value)} maxLength={200} aria-invalid={errors.name ? true : undefined} aria-describedby={ids.describedBy} autoComplete="off" />}
-        </FormField>
-        <FormField label="Key" required id="wf-key" error={errors.key} description="Used in links and exports. Letters, digits and dashes.">
-          {(ids) => (
-            <Input
-              id={ids.input}
-              value={effectiveKey}
-              onChange={(e) => {
-                setKey(e.target.value)
-                setKeyTouched(true)
-              }}
-              maxLength={64}
-              aria-invalid={errors.key ? true : undefined}
-              aria-describedby={ids.describedBy}
-              autoComplete="off"
-              spellCheck={false}
-            />
-          )}
-        </FormField>
-        <FormField label="Description" optionalText id="wf-desc">
-          {(ids) => <Textarea id={ids.input} value={description} onChange={(e) => setDescription(e.target.value)} maxLength={2000} rows={2} />}
-        </FormField>
-        {error ? <ProblemAlert error={error} /> : null}
-      </div>
-    </Dialog>
   )
 }

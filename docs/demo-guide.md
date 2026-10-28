@@ -23,7 +23,7 @@ Open <http://localhost:8080>. Sign-in passwords for the test users are in `deplo
 | `paul.publisher` | Publishes versions | Publish review, rollback |
 | `wade.admin` | Workspace administrator | Settings: access, groups, connections, AI |
 
-Optional AI: put `OPENROUTER_API_KEY` in `.env` before `docker compose up`. Without it every demo works except the AI parts: the **Describe it** button and the AI section in Settings are simply absent, with no message saying why, so tell the audience AI drafting is switched off in this environment. If `deploy/compose/.env` holds an `OPENROUTER_API_KEY` the stack picks it up and **Describe it** appears, so check which case you are in before the demo. For a stack on other ports, run the seed with `ORQIX_BASE_URL` and `ORQIX_STUB_URL` set. Each AI call costs a fraction of a cent (economy profile: DeepSeek; costly models are excluded and a monthly budget applies).
+Optional AI: put `OPENROUTER_API_KEY` in `.env` before `docker compose up`. Without it every demo works except the AI parts: the **Describe it to AI** choice and the AI section in Settings are absent, and the New workflow dialog says that AI drafting is turned off. If `deploy/compose/.env` holds an `OPENROUTER_API_KEY` the stack picks it up and **Describe it** appears, so check which case you are in before the demo. For a stack on other ports, run the seed with `ORQIX_BASE_URL` and `ORQIX_STUB_URL` set. Each AI call costs a fraction of a cent (economy profile: DeepSeek; costly models are excluded and a monthly budget applies).
 
 ## A repeatable, isolated demo stack
 
@@ -93,7 +93,7 @@ The plan defers Teams approval; the secured in-app inbox is the baseline. Show M
 
 Full script: [S12 §10](build/S12-workflow-patterns.md).
 
-1. As `dana.designer`: New workflow → **New hire onboarding**. Show the IT and Facilities branches, the escalation, the join, the *Waits 1 minute* step and the **Order equipment** step that starts *Purchase approval*.
+1. As `dana.designer`: New workflow → **Start from a template** → **New hire onboarding**. Show the IT and Facilities branches, the escalation, the join, the *Waits 1 minute* step and the **Order equipment** step that starts *Purchase approval*.
 2. `paul.publisher` publishes. `rhea.requester` starts it. `mani.manager` approves IT, `fin.finance` approves Facilities.
 3. After the one-minute wait the run shows **Other requests started by this one**: a Purchase approval ORQ-n. Approve it as `mani.manager`; the parent timeline says it finished and the parent completes with the purchase order number.
 4. Variants: reject Facilities (the whole request ends and the IT task is cancelled); cancel the parent as `olga.operator` while the child waits (the child is cancelled); republish *Purchase approval* mid-run (the running parent keeps its pinned version).
@@ -119,7 +119,7 @@ The minimum Pega demo is not blocked on customer exports. Follow [the Pega migra
 
 Proves: AI drafts a workflow that still passes the same validation and human publishing as any other. Needs `OPENROUTER_API_KEY`. Details: [S10](build/S10-ai-assistance.md).
 
-1. As `dana.designer`: Workflows → New workflow → **Describe it**. Use an example (for example *Employees claim expenses; managers approve; above USD 1,000 finance approves too*), profile **Economy**. Generation takes 10–60 seconds; close the dialog to see that it continues and a notice opens the draft when ready.
+1. As `dana.designer`: Workflows → New workflow → **Describe it to AI**. Use an example (for example *Employees claim expenses; managers approve; above USD 1,000 finance approves too*), profile **Economy**. Generation takes 10–60 seconds; close the dialog to see that it continues and a notice opens the draft when ready.
 2. The studio opens with **AI-drafted — review every step before publishing**: assumptions and missing configuration with *Go to step*. Fix the group, **Check workflow**, **Explain** (the explanation is checked against the validation result, so it never calls a missing group ready).
 3. `paul.publisher` publishes; `rhea.requester` starts a request; approvals complete it exactly like any other workflow.
 4. Settings → AI (as `wade.admin`): profiles, excluded costly models, price caps, month-to-date spend.

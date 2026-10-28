@@ -31,6 +31,7 @@ test.describe('workflow patterns (mock API)', () => {
     // Workflows -> New workflow -> template.
     await designer.goto(`/w/${ws}/workflows`)
     await designer.getByRole('button', { name: /new workflow/i }).first().click()
+    await designer.getByRole('button', { name: 'Start from a template' }).click()
     await expect(designer.getByText('starts workflows: Purchase approval')).toBeVisible()
     await designer.getByLabel(/New hire onboarding/).check()
     await designer.getByLabel(/^Name/).fill('Onboarding demo')

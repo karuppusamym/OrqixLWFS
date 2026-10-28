@@ -137,14 +137,16 @@ public class HttpExecutor {
                 .version(HttpClient.Version.HTTP_1_1)
                 .build());
         HttpResponse<byte[]> response;
+        CompletableFuture<HttpResponse<byte[]>> future = client.sendAsync(request, info -> new LimitedSubscriber());
         try {
-            CompletableFuture<HttpResponse<byte[]>> future = client.sendAsync(request, info -> new LimitedSubscriber());
             response = future.get(timeoutSeconds + 2L, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
+            future.cancel(true); // abort the exchange instead of leaving it running unobserved
             Thread.currentThread().interrupt();
             return finish(started, Observation.MAYBE_APPLIED, operation.effectClass(), null, "INTERRUPTED",
                     "Call interrupted", null, null);
         } catch (TimeoutException e) {
+            future.cancel(true);
             return finish(started, Observation.MAYBE_APPLIED, operation.effectClass(), null, "TIMEOUT",
                     "No complete response within " + timeoutSeconds + " s", null, null);
         } catch (ExecutionException e) {

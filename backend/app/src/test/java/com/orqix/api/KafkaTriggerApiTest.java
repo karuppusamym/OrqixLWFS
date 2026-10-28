@@ -145,7 +145,14 @@ class KafkaTriggerApiTest extends RuntimeTestBase {
         assertThat(sixth.body().path("detail").asString()).contains("switched on");
 
         // Switching one off makes room for another; switching it back on is refused while five are on.
-        JsonNode first = api("wade.admin").get("/workspaces/{ws}/kafka-triggers", PURCHASING).body().path("items").get(0);
+        // An enabled trigger: switching off one that an earlier test already switched off would free no room.
+        JsonNode first = null;
+        for (JsonNode item : api("wade.admin").get("/workspaces/{ws}/kafka-triggers", PURCHASING).body().path("items")) {
+            if (first == null && item.path("enabled").asBoolean()) {
+                first = item;
+            }
+        }
+        assertThat(first).as("an enabled trigger").isNotNull();
         String offId = first.path("id").asString();
         Map<String, Object> off = new LinkedHashMap<>();
         off.put("name", first.path("name").asString());

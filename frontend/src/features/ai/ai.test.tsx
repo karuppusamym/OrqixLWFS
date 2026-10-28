@@ -41,7 +41,8 @@ describe('AI assistance (S10 section 6)', () => {
     const user = userEvent.setup()
     const { router } = renderApp(`/w/${WS}/workflows`)
     const dialog = await openNewWorkflow(user)
-    await within(dialog).findByText('Blank workflow')
+    await within(dialog).findByRole('button', { name: 'Start empty' })
+    expect(within(dialog).getByTestId('new-workflow-ai-note')).toHaveTextContent(/AI drafting is turned off/)
     expect(within(dialog).queryByTestId('describe-it-choice')).not.toBeInTheDocument()
     await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
 
@@ -72,7 +73,7 @@ describe('AI assistance (S10 section 6)', () => {
     const user = userEvent.setup()
     const { router } = renderApp(`/w/${WS}/workflows`)
     const dialog = await openNewWorkflow(user)
-    await user.click(await within(dialog).findByRole('button', { name: 'Describe it' }))
+    await user.click(await within(dialog).findByRole('button', { name: 'Describe it to AI' }))
 
     const describe = await screen.findByRole('dialog', { name: 'Describe your workflow' })
     // Examples fill the description; the profile choice explains the router's variable cost.
@@ -113,7 +114,7 @@ describe('AI assistance (S10 section 6)', () => {
     const user = userEvent.setup()
     renderApp(`/w/${WS}/workflows`)
     const dialog = await openNewWorkflow(user)
-    await user.click(await within(dialog).findByRole('button', { name: 'Describe it' }))
+    await user.click(await within(dialog).findByRole('button', { name: 'Describe it to AI' }))
     const describe = await screen.findByRole('dialog', { name: 'Describe your workflow' })
     const box = within(describe).getByLabelText(/What should the workflow do/)
 
@@ -219,7 +220,7 @@ describe('AI assistance (S10 section 6)', () => {
     const user = userEvent.setup()
     const { router } = renderApp(`/w/${WS}/workflows`)
     const dialog = await openNewWorkflow(user)
-    await user.click(await within(dialog).findByRole('button', { name: 'Describe it' }))
+    await user.click(await within(dialog).findByRole('button', { name: 'Describe it to AI' }))
     const describe = await screen.findByRole('dialog', { name: 'Describe your workflow' })
     await user.type(within(describe).getByLabelText(/What should the workflow do/), 'Access requests approved by the owner and by security.')
     await user.click(within(describe).getByRole('button', { name: /Generate draft/ }))
@@ -251,7 +252,7 @@ describe('AI assistance (S10 section 6)', () => {
     const user = userEvent.setup()
     renderApp(`/w/${WS}/workflows`)
     const dialog = await openNewWorkflow(user)
-    await user.click(await within(dialog).findByRole('button', { name: 'Describe it' }))
+    await user.click(await within(dialog).findByRole('button', { name: 'Describe it to AI' }))
     const describe = await screen.findByRole('dialog', { name: 'Describe your workflow' })
     await user.type(within(describe).getByLabelText(/What should the workflow do/), 'Approval for a laptop purchase (unavailable)')
     await user.click(within(describe).getByRole('button', { name: /Generate draft/ }))

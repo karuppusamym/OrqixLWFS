@@ -217,7 +217,8 @@ class KafkaConsumerTest extends RuntimeTestBase {
                 && records(trigger, "started") == 1);
         JsonNode dead = api("olga.operator").get("/workspaces/{ws}/kafka-dead-letters", PURCHASING).body();
         assertThat(dead.path("items").findValuesAsString("errorCode")).contains("malformed", "unmapped", "too_large");
-        assertThat(dead.toString()).doesNotContain("only a title").doesNotContain("bad-2");
+        // The record key must not be stored. Look for it as a JSON string: the trigger key "kt-bad-<random hex>" can contain "bad-2".
+        assertThat(dead.toString()).doesNotContain("only a title").doesNotContain("\"bad-2\"");
         // Status rows are written about once a second.
         Awaitility.await().atMost(Duration.ofSeconds(10)).until(() -> !status(trigger).path("lastError").asString("").isBlank()
                 && status(trigger).path("dead").asLong() == 3);

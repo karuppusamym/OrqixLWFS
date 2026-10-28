@@ -33,6 +33,8 @@ import tools.jackson.databind.JsonNode;
 /** Workspace consent with PKCE and encrypted durable refresh rotation. No provider response is logged. */
 @Service
 public class DelegatedOAuth {
+    /** Facts only (workspace, secret reference, HTTP status or error class); never tokens or provider bodies. */
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(DelegatedOAuth.class);
     public record Authorization(String authorizationUrl, Instant expiresAt) {}
     public record Status(String status, Instant expiresAt, String remoteRevocation) {}
     public record Finish(String state, String code) {
@@ -227,9 +229,15 @@ public class DelegatedOAuth {
                 return saved ? Optional.of(tokens.access()) : Optional.empty();
             } catch (RuntimeException ex) {
                 tx.executeWithoutResult(ignored -> invalidateInTransaction(ws,ref,next.revision()));
+                log.warn("Delegated OAuth refresh failed for workspace {} secret {}; the connection needs authorization again",
+                        ws, ref);
                 return Optional.empty();
             }
-        } catch (RuntimeException ex) { return Optional.empty(); }
+        } catch (RuntimeException ex) {
+            log.warn("Delegated OAuth credential for workspace {} secret {} is unavailable ({})", ws, ref,
+                    ex.getClass().getSimpleName());
+            return Optional.empty();
+        }
     }
 
     /** A rejected access token requires consent; never transparently repeat an external write or a refresh token. */
@@ -313,7 +321,10 @@ public class DelegatedOAuth {
 
     private Tokens tokenRequest(Config config,String body,String previousRefresh) {
         Instant started=clock.instant().truncatedTo(java.time.temporal.ChronoUnit.MICROS); var response=send(config,config.tokenUrl(),body);
-        if(response.statusCode()!=200) throw OAuthVault.unavailable();
+        if(response.statusCode()!=200) {
+            log.warn("OAuth token endpoint answered HTTP {}", response.statusCode());
+            throw OAuthVault.unavailable();
+        }
         var result=json.parse(new String(response.body(),StandardCharsets.UTF_8));
         String access=result.path("access_token").asString("");
         String refresh=result.has("refresh_token")?result.path("refresh_token").asString(""):previousRefresh;
@@ -342,7 +353,10 @@ public class DelegatedOAuth {
             var future=http.sendAsync(request,info -> new HttpExecutor.LimitedSubscriber(24576));
             try { return future.get(6,TimeUnit.SECONDS); } finally { if(!future.isDone()) future.cancel(true); }
         } catch(InterruptedException ex) { Thread.currentThread().interrupt(); throw OAuthVault.unavailable(); }
-        catch(Exception ex) { throw OAuthVault.unavailable(); }
+        catch(Exception ex) {
+            log.warn("OAuth token endpoint call failed ({})", ex.getClass().getSimpleName());
+            throw OAuthVault.unavailable();
+        }
     }
 
     private String randomValue() { byte[] bytes=new byte[32]; random.nextBytes(bytes); return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes); }

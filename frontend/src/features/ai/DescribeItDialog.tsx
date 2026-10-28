@@ -13,7 +13,7 @@ import { Input, Textarea } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { fieldErrorMap } from '@/lib/problemMessages'
-import { DESCRIPTION_MAX, DESCRIPTION_MIN, generateAiDraft, jobProblem, useAiEnabled, useAiStatus, waitForGeneration, type AiProfile } from './api'
+import { DESCRIPTION_MAX, DESCRIPTION_MIN, generateAiDraft, jobProblem, useAiStatus, waitForGeneration, type AiProfile } from './api'
 import { labelOf, trackJob } from './jobs'
 import { saveReviewNotes } from './reviewNotes'
 
@@ -231,23 +231,5 @@ export function DescribeItDialog({ onClose, onBack }: { onClose: () => void; onB
         ) : null}
       </div>
     </Dialog>
-  )
-}
-
-/** The "Describe it" choice inside New workflow; renders nothing unless AI assistance is on. */
-export function DescribeItChoice({ onSelect }: { onSelect: () => void }) {
-  const enabled = useAiEnabled()
-  if (!enabled) return null
-  return (
-    <div className="flex flex-wrap items-start gap-3 rounded-control border border-border bg-surface p-3" data-testid="describe-it-choice">
-      <Sparkles className="mt-0.5 size-5 shrink-0 text-primary-text" aria-hidden="true" />
-      <div className="min-w-0 flex-1 text-sm">
-        <p className="font-semibold">Or describe it in your own words</p>
-        <p className="text-muted-foreground">AI drafts the steps from your description. You review everything before publishing.</p>
-      </div>
-      <Button size="sm" variant="secondary" onClick={onSelect}>
-        Describe it
-      </Button>
-    </div>
   )
 }

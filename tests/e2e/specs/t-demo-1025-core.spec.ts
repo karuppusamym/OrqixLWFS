@@ -174,7 +174,7 @@ test('without an AI key: Describe it is hidden and the UI says so', async ({ ses
   await shot(dana, 'ai-hidden-new-workflow')
   const t = await dlg.innerText()
   record('Describe it hidden without key', /Describe it/i.test(t) ? 'FAIL' : 'PASS', /Describe it/i.test(t) ? 'Describe it is shown' : 'no Describe it control in New workflow dialog')
-  record('UI says why (AI off message)', /AI|assist/i.test(t.replace(/Create with guided questions/, '')) ? 'PASS' : 'INFO', 'dialog text contains no statement that AI drafting is unavailable')
+  record('UI says why (AI off message)', /AI|assist/i.test(t.replace(/Use the governed questionnaire/, '')) ? 'PASS' : 'INFO', 'dialog text contains no statement that AI drafting is unavailable')
   await axe(dana, 'new workflow dialog')
   const wade = await sessions.as('wade.admin')
   await wade.goto(`/w/${ws}/settings`)

@@ -13,6 +13,7 @@ test('loan case template: publish, attach files, request completes stage flow', 
   const ws = await workspaceId(dana)
   await dana.goto(`/w/${ws}/workflows`)
   await dana.getByRole('button', { name: /New workflow/ }).click()
+  await dana.getByRole('button', { name: 'Start from a template' }).click()
   await dana.getByRole('dialog').getByText('Loan application case').first().click()
   await dana.getByLabel(/^Name/).fill('Loan rehearsal')
   const k = key('rh-loan')

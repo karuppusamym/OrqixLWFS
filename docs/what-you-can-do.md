@@ -13,7 +13,7 @@ A plain-language map of the tool, by what you want to get done. Each line says w
 
 ## 2. Build a workflow (designers)
 
-- **Start from**: a template, the **Describe it** AI draft, an **example** (Home > Get started > Look at an example), or an **import** from Camunda or Pega.
+- **Start from**: a template, **a few questions** (no AI), a blank workflow, the **Describe it to AI** draft, an **example** (Home > Get started > Look at an example), or an **import** from Camunda or Pega.
 - **Steps you can add**: approval, decision (rules), choose a path, call a system, generate a document, notify, run in parallel and wait for all, wait (time or date), wait for a message or a signal, send a signal, hand work to an external worker, send through an adapter (email, Teams, Kafka, database read), start another workflow, undo completed calls, raise an error, finish.
 - **Canvas** in BPMN shapes or cards, **Steps**, **Lanes** (who does what) and **Source** views; **View** shows or hides the step list, **Ask AI** and the details cards.
 - **Ask AI** changes the draft in plain words ("add a finance approval over 5,000"); you review each proposed change before it is applied; **Talk** dictates. It needs an AI key.

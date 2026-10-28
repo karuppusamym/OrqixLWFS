@@ -45,7 +45,10 @@ describe('Pega Blueprint (PDF) import', () => {
     let uploadedName: string | null = null
     server.use(
       http.post('*/api/v1/workspaces/:ws/migrations/blueprints', async ({ request }) => {
-        const form = await request.formData(); uploadedName = (form.get('file') as File).name
+        // Read the multipart body as text: newer Node versions refuse to parse jsdom's File objects back into FormData.
+        const body = await request.text()
+        const part = /Content-Disposition: form-data; name="file"(?:; filename="([^"]*)")?/i.exec(body)
+        uploadedName = part ? (part[1] ?? '') : null
         return HttpResponse.json(job(), { status: 201 })
       }),
       http.get('*/api/v1/workspaces/:ws/migrations/:id', () => HttpResponse.json(job())),

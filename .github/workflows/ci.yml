@@ -199,7 +199,10 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Image digest
-        run: docker image inspect "$IMAGE" --format 'image id {{.Id}}'
+        run: |
+          docker image inspect "$IMAGE" --format 'image id {{.Id}}'
+          # The SBOM steps below write into sbom/; the image SBOM action does not create the folder itself.
+          mkdir -p sbom
 
       - name: SBOM - container image (CycloneDX)
         uses: anchore/sbom-action@v0.24.3

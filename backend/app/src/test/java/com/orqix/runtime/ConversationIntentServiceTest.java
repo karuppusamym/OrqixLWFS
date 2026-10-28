@@ -98,6 +98,23 @@ class ConversationIntentServiceTest {
     }
 
     @Test
+    void nameMatchingUsesWholeWordsSoShortWordsDoNotPickAnUnrelatedWorkflow() {
+        var purchase = new StartableWorkflows.Choice(UUID.randomUUID(), "purchase-approval", "Purchase approval");
+        var hardware = new StartableWorkflows.Choice(UUID.randomUUID(), "hardware-order", "Hardware order");
+        when(workflows.find(caller, workspace, null)).thenReturn(List.of(purchase, hardware));
+        when(model.unavailableReason()).thenReturn("AI is not configured: no provider key is set.");
+
+        // "app" is inside "approval" and "are" inside "hardware": neither may start a workflow on its own.
+        var noisy = intents.interpret(caller, workspace, json.parse("{\"message\":\"I need help, are the app pages slow\"}"));
+        assertThat(noisy.message()).contains("Here is what you can start");
+
+        // Plurals and simple stems still find the workflow.
+        var plural = intents.interpret(caller, workspace, json.parse("{\"message\":\"I need two purchases\"}"));
+        assertThat(plural.choices()).containsExactly(purchase);
+        assertThat(plural.message()).isEmpty();
+    }
+
+    @Test
     void leavesExplicitCommandsOnTheDeterministicPath() {
         assertThat(intents.interpret(caller, workspace, json.parse("{\"message\":\"start Purchase approval\"}")))
                 .isNull();

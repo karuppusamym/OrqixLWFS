@@ -67,16 +67,35 @@ public class ConversationIntentService {
      * tried first: a message that names a workflow does not wait for a model. Only the caller's own authorized list is
      * ever used.
      */
-    private List<StartableWorkflows.Choice> nameMatches(String text, List<StartableWorkflows.Choice> available) {
+    static List<StartableWorkflows.Choice> nameMatches(String text, List<StartableWorkflows.Choice> available) {
         java.util.Set<String> words = new java.util.LinkedHashSet<>();
-        for (String w : text.toLowerCase(java.util.Locale.ROOT).split("[^\\p{L}\\p{N}]+")) {
+        for (String w : words(text)) {
             if (w.length() >= 3 && !FILLER.contains(w)) {
                 words.add(w);
             }
         }
         return available.stream()
-                .filter(c -> words.stream().anyMatch(w -> (c.name() + " " + c.key()).toLowerCase(java.util.Locale.ROOT).contains(w)))
+                .filter(c -> {
+                    List<String> nameWords = words(c.name() + " " + c.key());
+                    return words.stream().anyMatch(w -> nameWords.stream().anyMatch(n -> sameWord(w, n)));
+                })
                 .limit(LIST_BACK).toList();
+    }
+
+    private static List<String> words(String text) {
+        return java.util.Arrays.stream(text.toLowerCase(java.util.Locale.ROOT).split("[^\\p{L}\\p{N}]+"))
+                .filter(w -> !w.isEmpty()).toList();
+    }
+
+    /**
+     * Whole words only, with simple plural/stem tolerance ("purchases" finds "purchase"). A short word never matches the
+     * inside of a longer one, so "app" does not find "approval" and "are" does not find "hardware".
+     */
+    private static boolean sameWord(String said, String named) {
+        if (said.equals(named)) {
+            return true;
+        }
+        return said.length() >= 4 && named.length() >= 4 && (said.startsWith(named) || named.startsWith(said));
     }
 
     /** Nothing fits (or no model is available): show what can be started instead of an error. */

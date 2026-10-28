@@ -208,8 +208,15 @@ class AdapterInboundApiTest extends RuntimeTestBase {
         assertThat(runCount(workflowId)).isEqualTo(runsBefore);
 
         // Visibility: only people who can start the workflow see event data.
-        assertThat(api("wade.admin").get("/workspaces/{ws}/inbound-events", PURCHASING).status()).isEqualTo(403);
-        assertThat(api("olga.operator").get("/workspaces/{ws}/inbound-events", PURCHASING).status()).isEqualTo(403);
+        // People who cannot start this workflow never see its events: 403 when they can start nothing, or a list filtered to
+        // the workflows they may start when another test in this shared workspace granted them one.
+        for (String outsider : List.of("wade.admin", "olga.operator")) {
+            Response seen = api(outsider).get("/workspaces/{ws}/inbound-events", PURCHASING);
+            assertThat(seen.status()).as(outsider).isIn(200, 403);
+            if (seen.status() == 200) {
+                seen.body().path("items").forEach(item -> assertThat(item.path("triggerId").asString()).as(outsider).isNotEqualTo(triggerId));
+            }
+        }
         // Other tests share the workspace, so only this trigger's events are considered.
         List<JsonNode> events = new java.util.ArrayList<>();
         api("rhea.requester").get("/workspaces/{ws}/inbound-events", PURCHASING).body().path("items").forEach(item -> {

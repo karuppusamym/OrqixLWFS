@@ -74,8 +74,14 @@ class ConnectionsApiTest extends IntegrationTestBase {
     void listAndDetailNeverExposeSecretsAndHideBindingFromReaders() throws Exception {
         Response list = api("dana.designer").get("/workspaces/{ws}/connections", PURCHASING);
         assertThat(list.status()).isEqualTo(200);
-        JsonNode procurement = list.body().path("items").get(0);
-        assertThat(procurement.path("key").asString()).isEqualTo("procurement");
+        // Other tests add connections to this shared workspace, so find procurement by key rather than by position.
+        JsonNode procurement = null;
+        for (JsonNode item : list.body().path("items")) {
+            if ("procurement".equals(item.path("key").asString())) {
+                procurement = item;
+            }
+        }
+        assertThat(procurement).as("procurement is listed").isNotNull();
         assertThat(procurement.path("operations").findValues("name").toString()).contains("createOrder", "health");
         Response asDesigner = api("dana.designer").get("/workspaces/{ws}/connections/{key}", PURCHASING, "procurement");
         assertThat(asDesigner.body().path("binding").isNull()).isTrue();

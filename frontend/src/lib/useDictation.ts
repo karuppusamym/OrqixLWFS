@@ -55,11 +55,18 @@ export function useDictation(onText: (finalText: string) => void) {
   const supported = typeof window !== 'undefined' && recognitionConstructor() !== null
 
   const stop = useCallback(() => recognition.current?.stop(), [])
-  useEffect(() => () => recognition.current?.stop(), [])
+  useEffect(() => () => {
+    // Leaving the page: stop quietly, without a late state update or an "interrupted" message.
+    const rec = recognition.current
+    recognition.current = null
+    if (rec) { rec.onresult = null; rec.onerror = null; rec.onend = null; rec.stop() }
+  }, [])
 
   const start = useCallback(() => {
     const Ctor = recognitionConstructor()
     if (!Ctor) return
+    // Only one recogniser at a time: a second start would leave the first one running with no way to stop it.
+    if (recognition.current) return
     setProblem(null)
     const rec = new Ctor()
     rec.lang = document.documentElement.lang || 'en-US'
@@ -83,7 +90,7 @@ export function useDictation(onText: (finalText: string) => void) {
     }
     rec.onend = () => {
       setListening(false)
-      recognition.current = null
+      if (recognition.current === rec) recognition.current = null
       // Ended at once with no error and no words: the browser refused quietly (often a blocked microphone).
       if (!failed && !heard && Date.now() - startedAt < 1500) setProblem(describeError('ended-at-once'))
     }
@@ -93,6 +100,7 @@ export function useDictation(onText: (finalText: string) => void) {
       rec.start()
       setListening(true)
     } catch {
+      recognition.current = null
       setProblem('Dictation could not start.')
     }
   }, [])

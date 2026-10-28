@@ -11,3 +11,10 @@ paths = [
   '''deploy/compose/docker-compose\.yml''',
   '''deploy/compose/\.env\.example''',
 ]
+
+[[allowlists]]
+description = "Synthetic values that tests use on purpose: a placeholder Slack URL that the redaction test must hide, and the local e2e harness's default inbound secret. Neither is a real credential."
+regexes = [
+  '''https://hooks\.slack\.com/services/T00000000/B00000000/X{24}1a''',
+  '''e2e-inbound-secret-0123456789abcdef''',
+]

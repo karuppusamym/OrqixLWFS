@@ -29,7 +29,7 @@ function ShortcutIcon({ icon: Icon }: { icon: typeof Inbox }) {
 function GetStarted({ ws }: { ws: string }) {
   const { can } = useWorkspace()
   const cards = [
-    { show: can('workflow.edit'), to: `/w/${ws}/workflows`, icon: Workflow, title: 'Build a workflow', text: 'Describe it to the AI or start from a template, then add steps on the canvas.' },
+    { show: can('workflow.edit'), to: `/w/${ws}/workflows`, icon: Workflow, title: 'Build a workflow', text: 'Start from a template, answer a few questions, or start empty. AI help is there when you want it.' },
     { show: can('workflow.edit'), to: `/w/${ws}/workflows?q=Sample`, icon: LibraryBig, title: 'Look at an example', text: 'Open a ready-made sample (approvals, waits, cases, rules) and change it.' },
     { show: can('workflow.edit'), to: `/w/${ws}/migrations`, icon: FileInput, title: 'Bring in a Camunda or Pega file', text: 'Import it, review what was understood, and fix what needs a decision.' },
     { show: can('connection.read'), to: `/w/${ws}/settings`, icon: Cable, title: 'Connect other systems', text: 'Connections, webhooks, Kafka, shared rules and documents.' },

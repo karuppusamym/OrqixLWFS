@@ -17,19 +17,18 @@ describe('pinned workflow shortcuts', () => {
     const first = await renderAppReady(`/w/${WS}/workflows`)
     await user.click(await screen.findByRole('button', { name: 'Pin Purchase approval' }))
     expect(await within(panel()).findByRole('link', { name: 'Purchase approval' })).toBeInTheDocument()
-    // The store writes after the panel renders; under load the write can land a moment later, so wait for it.
-    let stored = ''
-    await waitFor(() => {
-      stored = Object.keys(localStorage).find(key => key.startsWith('orqix.workflowPins.v1:')) ?? ''
-      expect(stored).not.toBe('')
-      expect(JSON.parse(localStorage.getItem(stored)!).ids).toEqual([PURCHASE_WORKFLOW_ID])
-    })
+    // The exact key of this account and workspace: never another key that an earlier test may have left behind.
+    const stored = pinsKey((await getMe()).subject.id, WS)
+    await waitFor(() => expect(JSON.parse(localStorage.getItem(stored) ?? '{}').ids).toEqual([PURCHASE_WORKFLOW_ID]))
     first.unmount()
     const second = await renderAppReady(`/w/${WS}/workflows?q=no-such-workflow`)
     await screen.findByText('No workflows match your search')
     await user.click(await within(panel()).findByRole('link', { name: 'Purchase approval' }))
+    // Wait until the overview has settled on its header before clicking, then see the click take effect in the UI.
+    await screen.findByRole('heading', { name: 'Purchase approval' })
     await user.click(await screen.findByRole('button', { name: 'Unpin Purchase approval' }))
-    await waitFor(() => expect(JSON.parse(localStorage.getItem(stored)!).ids).toEqual([]))
+    await screen.findByRole('button', { name: 'Pin Purchase approval' })
+    expect(JSON.parse(localStorage.getItem(stored)!).ids).toEqual([])
     second.unmount()
     await renderAppReady(`/w/${WS}/workflows`)
     await screen.findByRole('region', { name: 'Pinned workflows' })

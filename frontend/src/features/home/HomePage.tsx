@@ -1,4 +1,4 @@
-import { ArrowRight, ClipboardList, Inbox, Play } from 'lucide-react'
+import { ArrowRight, ClipboardList, Cable, FileInput, Inbox, LibraryBig, Play, Workflow } from 'lucide-react'
 import { Link } from 'react-router'
 import { useMyRequests, useTaskCounters, useTasks, useWorkflows } from '@/api/queries'
 import type { TaskSummary } from '@/api/types'
@@ -22,6 +22,34 @@ function ShortcutIcon({ icon: Icon }: { icon: typeof Inbox }) {
     <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary-soft text-primary-text" aria-hidden="true">
       <Icon className="size-5" />
     </span>
+  )
+}
+
+/** Plain-language first steps for people who build workflows or set the workspace up; each card shows only if they may use it. */
+function GetStarted({ ws }: { ws: string }) {
+  const { can } = useWorkspace()
+  const cards = [
+    { show: can('workflow.edit'), to: `/w/${ws}/workflows`, icon: Workflow, title: 'Build a workflow', text: 'Describe it to the AI or start from a template, then add steps on the canvas.' },
+    { show: can('workflow.edit'), to: `/w/${ws}/workflows?q=Sample`, icon: LibraryBig, title: 'Look at an example', text: 'Open a ready-made sample (approvals, waits, cases, rules) and change it.' },
+    { show: can('workflow.edit'), to: `/w/${ws}/migrations`, icon: FileInput, title: 'Bring in a Camunda or Pega file', text: 'Import it, review what was understood, and fix what needs a decision.' },
+    { show: can('connection.read'), to: `/w/${ws}/settings`, icon: Cable, title: 'Connect other systems', text: 'Connections, webhooks, Kafka, shared rules and documents.' },
+  ].filter((c) => c.show)
+  if (cards.length === 0) return null
+  return (
+    <section aria-labelledby="get-started-heading" className="mb-8" data-testid="get-started">
+      <h2 id="get-started-heading" className="mb-1">Get started</h2>
+      <p className="mb-3 text-sm text-muted-foreground">New here? These are the usual first steps. Press Ctrl+K anywhere to jump to a page or ask the Assistant.</p>
+      <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {cards.map((c) => (
+          <li key={c.title}>
+            <Link to={c.to} className={cn(shortcut, 'h-full items-start')}>
+              <ShortcutIcon icon={c.icon} />
+              <span><span className="block font-semibold">{c.title}</span><span className="text-sm text-muted-foreground">{c.text}</span></span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }
 
@@ -63,6 +91,8 @@ export function HomePage() {
           <ArrowRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
         </Link>
       </section>
+
+      <GetStarted ws={ws} />
 
       {canStart && (can('workflow.start') || workflows.length > 0) ? (
         <section aria-labelledby="start-heading" className="mb-8">

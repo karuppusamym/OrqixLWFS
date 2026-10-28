@@ -91,10 +91,19 @@ public class TaskQueries {
                 .param("limit", limit).query(TaskStore::map).list();
     }
 
+    /**
+     * Inbox counts are exact up to this many and stay at it beyond (S92 F16): counting every open task of a large
+     * backlog on each inbox call and on each badge poll was the second-largest user of database time.
+     */
+    public static final int COUNT_CAP = 1000;
+
     @Transactional(readOnly = true)
     public int countAssigned(UUID workspaceId, UUID subject) {
-        return jdbc.sql("SELECT count(*) FROM task_context WHERE workspace_id = :ws AND status = 'open' AND assignee_subject_id = :s")
-                .param("ws", workspaceId).param("s", subject).query(Integer.class).single();
+        return jdbc.sql("""
+                SELECT count(*) FROM (SELECT 1 FROM task_context
+                WHERE workspace_id = :ws AND status = 'open' AND assignee_subject_id = :s LIMIT :cap) c
+                """)
+                .param("ws", workspaceId).param("s", subject).param("cap", COUNT_CAP).query(Integer.class).single();
     }
 
     @Transactional(readOnly = true)
@@ -103,14 +112,16 @@ public class TaskQueries {
             return 0;
         }
         return jdbc.sql("""
-                SELECT count(*) FROM task_context t
+                SELECT count(*) FROM (SELECT 1 FROM task_context t
                 WHERE t.workspace_id = :ws AND t.status = 'open' AND t.assignee_subject_id IS NULL
                   AND t.candidate_group_key IN (:groups) AND (t.self_approval_allowed OR t.initiator_subject_id <> :s)
                   AND t.required_skills <@ CAST(:skills AS jsonb)
                   AND NOT EXISTS (SELECT 1 FROM task_decision d WHERE d.workspace_id = t.workspace_id AND d.run_id = t.run_id
                         AND d.actor_subject_id = :s AND d.node_id IN (SELECT jsonb_array_elements_text(t.separate_from)))
+                LIMIT :cap) c
                 """)
                 .param("ws", workspaceId).param("s", subject).param("groups", List.copyOf(groups)).param("skills",json.write(groups))
+                .param("cap", COUNT_CAP)
                 .query(Integer.class).single();
     }
 

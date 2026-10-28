@@ -163,7 +163,7 @@ export function Shell() {
                     <span className="flex-1">{item.label}</span>
                     {item.badge ? (
                       <span className="rounded-full bg-nav-badge px-2 py-0.5 text-xs font-bold text-nav-badge-foreground">
-                        {item.badge}
+                        {item.badge >= 1000 ? '1000+' : item.badge}
                         <span className="sr-only"> assigned to you</span>
                       </span>
                     ) : null}

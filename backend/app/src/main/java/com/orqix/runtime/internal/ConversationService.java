@@ -212,6 +212,12 @@ public class ConversationService {
             if (!interpretation.message().isBlank()) {
                 state.removeAll();
                 state.put("stage", "idle").put("message", interpretation.message());
+                if (!interpretation.choices().isEmpty()) {
+                    var shown = state.putArray("choices");
+                    for (var choice : interpretation.choices()) {
+                        shown.addObject().put("label", choice.name()).put("command", "start " + choice.key());
+                    }
+                }
                 return;
             }
             if (interpretation.choices().size() == 1) {

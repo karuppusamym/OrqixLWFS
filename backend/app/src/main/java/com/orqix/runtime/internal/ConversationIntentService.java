@@ -57,6 +57,34 @@ public class ConversationIntentService {
         this.json = json;
     }
 
+    private static final java.util.Set<String> FILLER = java.util.Set.of("i", "need", "want", "would", "like", "please", "start", "request",
+            "create", "make", "new", "the", "for", "and", "can", "you", "help", "me", "get", "buy", "with", "have", "some");
+    /** How many request types are listed back when nothing matches by name. */
+    private static final int LIST_BACK = 8;
+
+    /**
+     * Without an AI model the Assistant still helps: it matches the words of the message to the names of the workflows
+     * this person may start. One match starts it, several are offered, and when nothing matches the person is shown
+     * what can be started instead of an error. Only the caller's own authorized list is ever used.
+     */
+    private Interpretation wordMatch(String text, List<StartableWorkflows.Choice> available) {
+        java.util.Set<String> words = new java.util.LinkedHashSet<>();
+        for (String w : text.toLowerCase(java.util.Locale.ROOT).split("[^\\p{L}\\p{N}]+")) {
+            if (w.length() >= 3 && !FILLER.contains(w)) {
+                words.add(w);
+            }
+        }
+        List<StartableWorkflows.Choice> matches = available.stream()
+                .filter(c -> words.stream().anyMatch(w -> (c.name() + " " + c.key()).toLowerCase(java.util.Locale.ROOT).contains(w)))
+                .limit(LIST_BACK).toList();
+        if (!matches.isEmpty()) {
+            return new Interpretation(matches, "", null);
+        }
+        List<StartableWorkflows.Choice> shown = available.stream().limit(LIST_BACK).toList();
+        return new Interpretation(shown, "I match your words to workflow names, and none of them fits this one. Here is what you can start; "
+                + "choose one, or tell me the name.", null);
+    }
+
     /**
      * Interprets only first-turn requests that are not already explicit commands. The model can suggest workflow
      * identifiers, but every suggestion is checked against this caller's authorized workflow list before it is used.
@@ -76,13 +104,8 @@ public class ConversationIntentService {
             return new Interpretation(List.of(), "There are no published workflows you can start in this workspace.", null);
         }
         String unavailable = model.unavailableReason();
-        if (unavailable != null) {
-            return new Interpretation(List.of(), "Natural-language matching is unavailable: " + unavailable
-                    + " You can still say “workflows” or “start <workflow name>”.", null);
-        }
-        if (model.budgetLeftUsd().signum() <= 0) {
-            return new Interpretation(List.of(), "The monthly AI budget is used up. You can still say “workflows” or "
-                    + "“start <workflow name>”.", null);
+        if (unavailable != null || model.budgetLeftUsd().signum() <= 0) {
+            return wordMatch(text, available);
         }
 
         AgentModelPort.ResolvedModel resolved;
@@ -90,8 +113,7 @@ public class ConversationIntentService {
             resolved = model.resolve(null);
         } catch (AgentModelPort.ModelNotAllowedException e) {
             log.warn("Assistant intent matching skipped because the configured model is not allowed");
-            return new Interpretation(List.of(), "Natural-language matching is unavailable because the configured model "
-                    + "is not allowed. You can still say “workflows” or “start <workflow name>”.", null);
+            return wordMatch(text, available);
         }
 
         ObjectNode schema = schema(available);
@@ -108,8 +130,7 @@ public class ConversationIntentService {
             record(caller, workspaceId, resolved, ROUTING_PROMPT_VERSION, null, null, null,
                     System.nanoTime() - started, "providerError");
             log.warn("Assistant intent matching failed: {}", e.getClass().getSimpleName());
-            return new Interpretation(List.of(), "Natural-language matching is temporarily unavailable. You can still "
-                    + "say “workflows” or “start <workflow name>”.", null);
+            return wordMatch(text, available);
         }
 
         List<StartableWorkflows.Choice> matches = parseMatches(completion.message().path("content"), available);

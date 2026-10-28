@@ -80,6 +80,23 @@ class ConversationIntentServiceTest {
     }
 
     @Test
+    void withoutAiItMatchesWordsToTheNamesOfWorkflowsTheCallerMayStart() {
+        var purchase = new StartableWorkflows.Choice(UUID.randomUUID(), "purchase-approval", "Purchase approval");
+        var onboarding = new StartableWorkflows.Choice(UUID.randomUUID(), "vendor-onboarding", "Vendor onboarding check");
+        when(workflows.find(caller, workspace, null)).thenReturn(List.of(purchase, onboarding));
+        when(model.unavailableReason()).thenReturn("AI is not configured: no provider key is set.");
+
+        var byName = intents.interpret(caller, workspace, json.parse("{\"message\":\"I need a purchase\"}"));
+        assertThat(byName.choices()).containsExactly(purchase);
+        assertThat(byName.message()).isEmpty();
+
+        var nothing = intents.interpret(caller, workspace, json.parse("{\"message\":\"I need a laptop\"}"));
+        assertThat(nothing.choices()).containsExactly(purchase, onboarding);
+        assertThat(nothing.message()).doesNotContain("unavailable").contains("Here is what you can start");
+        org.mockito.Mockito.verify(model, org.mockito.Mockito.never()).complete(any());
+    }
+
+    @Test
     void leavesExplicitCommandsOnTheDeterministicPath() {
         assertThat(intents.interpret(caller, workspace, json.parse("{\"message\":\"start Purchase approval\"}")))
                 .isNull();

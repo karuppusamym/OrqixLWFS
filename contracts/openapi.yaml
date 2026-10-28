@@ -4462,7 +4462,7 @@ paths:
                     required: [assigned, claimable]
                     properties:
                       assigned: { type: integer, minimum: 0 }
-                      claimable: { type: integer, minimum: 0 }
+                      claimable: { type: integer, minimum: 0, description: 'Exact up to 1000 and 1000 beyond (a large backlog is not counted in full on every call)' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }

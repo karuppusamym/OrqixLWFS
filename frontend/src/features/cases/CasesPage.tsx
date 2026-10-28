@@ -82,12 +82,11 @@ export function CasesPage() {
 
   if (!can('workflow.read', 'workflow.start', 'run.read', 'task.act')) return <Alert tone="warning">You need case access to view this page.</Alert>
   return <div className="space-y-6">
-    <PageHeader title="Cases" description="Start and work on adaptive cases from validated CMMN definitions." />
-    <Alert tone="info" live="off">Cases support human tasks, stages, sentries and milestones. Full CMMN import is not available yet.</Alert>
+    <PageHeader title="Cases" description="Cases are pieces of work that need people to decide what happens next. Start one, work its tasks and follow its stages." />
     {error ? <Alert tone="danger">{error}</Alert> : null}
     {can('workflow.edit') ? <form className="space-y-3 rounded-card border border-border bg-surface p-5" onSubmit={event => { event.preventDefault(); void create() }}>
       <h2>Create case definition</h2>
-      <p className="text-sm text-muted-foreground">Build a case model or upload CMMN 1.1. The server checks the executable subset before deployment.</p>
+      <p className="text-sm text-muted-foreground">Build a case model here, or upload a CMMN file. Orqix runs human tasks, stages, entry and exit rules and milestones; anything else in a file is reported and not run.</p>
       <div className="grid gap-3 sm:grid-cols-2"><div><Label htmlFor="case-key">Key</Label><Input id="case-key" value={key} onChange={event => { setKey(event.target.value);if(designing)setFile(null) }} required /></div><div><Label htmlFor="case-name">Name</Label><Input id="case-name" value={name} onChange={event => { setName(event.target.value);if(designing)setFile(null) }} required /></div></div>
       <Label htmlFor="case-file">CMMN file (maximum 64 KiB)</Label><Input id="case-file" type="file" accept=".cmmn,.xml" onChange={event => { setFile(event.target.files?.[0] ?? null);setDesigning(false) }} />
       <Button type="button" variant="secondary" disabled={pending} onClick={()=>{setDesigning(value=>!value);setFile(null)}}>{designing?'Close case model designer':'Build a case model'}</Button>

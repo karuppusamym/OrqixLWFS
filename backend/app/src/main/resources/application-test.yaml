@@ -43,6 +43,9 @@ logging:
     org.springframework.boot.autoconfigure: warn
 
 orqix:
+  insights:
+    # Tests read figures right after changing data, so no figure is kept (production default: 30 seconds).
+    cache-ttl-seconds: 0
   identity:
     bootstrap-platform-admin-groups: orqix-platform-admins
     end-session-uri: https://idp.test.example/realms/orqix-test/protocol/openid-connect/logout

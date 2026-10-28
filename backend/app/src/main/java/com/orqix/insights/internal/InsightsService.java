@@ -29,8 +29,9 @@ import com.orqix.shared.problem.ProblemCode;
 
 /**
  * Workflow analytics. Authorization first (workspace visible, then {@code run.read}), then parameter validation, then
- * aggregate queries inside one read-only transaction with a statement timeout. Nothing is cached: the figures are
- * computed from the projection tables on every call, so they always follow the current access rules and data.
+ * aggregate queries inside one read-only transaction with a statement timeout. Access is always checked first; the
+ * finished figures are then kept for a few seconds ({@link InsightsCache}, default 30 s, 0 switches it off) so that
+ * many viewers of the same window share one calculation.
  */
 @Service
 public class InsightsService {
@@ -45,8 +46,10 @@ public class InsightsService {
     private final InsightsQueries queries;
     private final JdbcClient jdbc;
     private final Clock clock;
+    private final InsightsCache cache;
 
-    public InsightsService(PolicyService policy, InsightsQueries queries, JdbcClient jdbc, Clock clock) {
+    public InsightsService(PolicyService policy, InsightsQueries queries, JdbcClient jdbc, Clock clock, InsightsCache cache) {
+        this.cache = cache;
         this.policy = policy;
         this.queries = queries;
         this.jdbc = jdbc;
@@ -71,7 +74,7 @@ public class InsightsService {
     @Transactional(readOnly = true)
     public InsightsDtos.Summary summary(Caller caller, UUID workspaceId, String from, String to, UUID workflowId) {
         Params p = params(caller, workspaceId, from, to, workflowId, "getInsightsSummary");
-        return bounded(() -> {
+        return cache.get(key("summary", p), () -> bounded(() -> {
             List<InsightsQueries.StepRow> approvals = queries.approvalSteps(p.window());
             List<InsightsDtos.Timeout> timeouts = approvals.stream().filter(r -> r.timeouts() > 0)
                     .map(r -> new InsightsDtos.Timeout(r.workflow(), r.nodeId(), r.label(), r.timeouts(), r.finished(),
@@ -90,19 +93,19 @@ public class InsightsService {
                             overdue.size() > InsightsQueries.OVERDUE_LIMIT ? overdue.subList(0, InsightsQueries.OVERDUE_LIMIT)
                                     : overdue,
                             overdueCount));
-        });
+        }));
     }
 
     @Transactional(readOnly = true)
     public InsightsDtos.Throughput throughput(Caller caller, UUID workspaceId, String from, String to, UUID workflowId) {
         Params p = params(caller, workspaceId, from, to, workflowId, "getInsightsThroughput");
-        return bounded(() -> new InsightsDtos.Throughput(p.range(), queries.daily(p.window(), p.from(), p.to())));
+        return cache.get(key("throughput", p), () -> bounded(() -> new InsightsDtos.Throughput(p.range(), queries.daily(p.window(), p.from(), p.to()))));
     }
 
     @Transactional(readOnly = true)
     public InsightsDtos.Steps steps(Caller caller, UUID workspaceId, String from, String to, UUID workflowId) {
         Params p = params(caller, workspaceId, from, to, workflowId, "getInsightsSteps");
-        return bounded(() -> {
+        return cache.get(key("steps", p), () -> bounded(() -> {
             Map<String, InsightsDtos.Step> merged = new HashMap<>();
             Map<String, Integer> openApprovals = queries.openApprovals(workspaceId, workflowId);
             Map<String, Integer> openWaits = queries.openWaits(workspaceId, workflowId);
@@ -127,7 +130,11 @@ public class InsightsService {
             boolean truncated = sorted.size() > InsightsQueries.STEP_LIMIT;
             return new InsightsDtos.Steps(p.range(),
                     truncated ? sorted.subList(0, InsightsQueries.STEP_LIMIT) : sorted, truncated);
-        });
+        }));
+    }
+
+    private static String key(String kind, Params p) {
+        return kind + "|" + p.workspaceId() + "|" + p.workflowId() + "|" + p.from() + "|" + p.to();
     }
 
     private static void add(Map<String, InsightsDtos.Step> merged, InsightsQueries.StepRow r, Map<String, Integer> open) {

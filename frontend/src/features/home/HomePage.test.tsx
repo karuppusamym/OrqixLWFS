@@ -22,4 +22,17 @@ describe('home workspace shortcuts', () => {
     expect(within(shortcuts).getByRole('link', { name: /Track your requests/ })).toHaveAttribute('href', `/w/${WS}/requests`)
     expect(within(shortcuts).queryByText('Assigned to you')).not.toBeInTheDocument()
   })
+
+  it('shows first steps to people who build workflows and not to requesters', async () => {
+    signInAs('dana.designer')
+    const first = renderApp(`/w/${WS}`)
+    const steps = await screen.findByTestId('get-started')
+    expect(within(steps).getByRole('link', { name: /Build a workflow/ })).toHaveAttribute('href', `/w/${WS}/workflows`)
+    expect(within(steps).getByRole('link', { name: /Look at an example/ })).toHaveAttribute('href', `/w/${WS}/workflows?q=Sample`)
+    first.unmount()
+    signInAs('rhea.requester')
+    renderApp(`/w/${WS}`)
+    await screen.findByRole('region', { name: 'Workspace shortcuts' })
+    expect(screen.queryByTestId('get-started')).not.toBeInTheDocument()
+  })
 })

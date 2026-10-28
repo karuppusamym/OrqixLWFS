@@ -15172,6 +15172,7 @@ export interface operations {
                         nextCursor: components["schemas"]["NextCursor"];
                         counts: {
                             assigned: number;
+                            /** @description Exact up to 1000 and 1000 beyond (a large backlog is not counted in full on every call) */
                             claimable: number;
                         };
                     };

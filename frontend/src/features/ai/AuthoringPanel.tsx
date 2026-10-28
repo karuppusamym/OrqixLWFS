@@ -85,9 +85,9 @@ function AuthoringBody({ focus, onFocusChange }: { focus: FocusStep | null; onFo
   if (!status.data.enabled) {
     return (
       <div className="p-3" data-testid="authoring-not-configured">
-        <Alert tone="warning" title="AI is not configured">
-          <p>{status.data.reason ?? 'AI assistance is turned off for this workspace.'}</p>
-          <p className="mt-1">You can keep editing by hand. An administrator can configure AI in the deployment settings.</p>
+        <Alert tone="info" title="AI help is switched off here">
+          <p>Nothing is wrong. You can build and change workflows by hand: add steps from the step list, or open an example from Workflows.</p>
+          <p className="mt-1">To turn AI help on, an administrator adds an AI key ({status.data.reason ?? 'see the admin guide'}).</p>
         </Alert>
       </div>
     )

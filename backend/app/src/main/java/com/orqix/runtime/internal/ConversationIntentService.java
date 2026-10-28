@@ -63,26 +63,27 @@ public class ConversationIntentService {
     private static final int LIST_BACK = 8;
 
     /**
-     * Without an AI model the Assistant still helps: it matches the words of the message to the names of the workflows
-     * this person may start. One match starts it, several are offered, and when nothing matches the person is shown
-     * what can be started instead of an error. Only the caller's own authorized list is ever used.
+     * Matches the words of the message to the names of the workflows this person may start. Instant and free, so it is
+     * tried first: a message that names a workflow does not wait for a model. Only the caller's own authorized list is
+     * ever used.
      */
-    private Interpretation wordMatch(String text, List<StartableWorkflows.Choice> available) {
+    private List<StartableWorkflows.Choice> nameMatches(String text, List<StartableWorkflows.Choice> available) {
         java.util.Set<String> words = new java.util.LinkedHashSet<>();
         for (String w : text.toLowerCase(java.util.Locale.ROOT).split("[^\\p{L}\\p{N}]+")) {
             if (w.length() >= 3 && !FILLER.contains(w)) {
                 words.add(w);
             }
         }
-        List<StartableWorkflows.Choice> matches = available.stream()
+        return available.stream()
                 .filter(c -> words.stream().anyMatch(w -> (c.name() + " " + c.key()).toLowerCase(java.util.Locale.ROOT).contains(w)))
                 .limit(LIST_BACK).toList();
-        if (!matches.isEmpty()) {
-            return new Interpretation(matches, "", null);
-        }
-        List<StartableWorkflows.Choice> shown = available.stream().limit(LIST_BACK).toList();
-        return new Interpretation(shown, "I match your words to workflow names, and none of them fits this one. Here is what you can start; "
-                + "choose one, or tell me the name.", null);
+    }
+
+    /** Nothing fits (or no model is available): show what can be started instead of an error. */
+    private Interpretation listBack(List<StartableWorkflows.Choice> available) {
+        return new Interpretation(available.stream().limit(LIST_BACK).toList(),
+                "I could not tell which workflow you mean from your words. Here is what you can start; choose one, or tell me the name.",
+                null);
     }
 
     /**
@@ -104,8 +105,12 @@ public class ConversationIntentService {
             return new Interpretation(List.of(), "There are no published workflows you can start in this workspace.", null);
         }
         String unavailable = model.unavailableReason();
+        List<StartableWorkflows.Choice> byName = nameMatches(text, available);
+        if (!byName.isEmpty()) {
+            return new Interpretation(byName, "", null);
+        }
         if (unavailable != null || model.budgetLeftUsd().signum() <= 0) {
-            return wordMatch(text, available);
+            return listBack(available);
         }
 
         AgentModelPort.ResolvedModel resolved;
@@ -113,7 +118,7 @@ public class ConversationIntentService {
             resolved = model.resolve(null);
         } catch (AgentModelPort.ModelNotAllowedException e) {
             log.warn("Assistant intent matching skipped because the configured model is not allowed");
-            return wordMatch(text, available);
+            return listBack(available);
         }
 
         ObjectNode schema = schema(available);
@@ -130,7 +135,7 @@ public class ConversationIntentService {
             record(caller, workspaceId, resolved, ROUTING_PROMPT_VERSION, null, null, null,
                     System.nanoTime() - started, "providerError");
             log.warn("Assistant intent matching failed: {}", e.getClass().getSimpleName());
-            return wordMatch(text, available);
+            return listBack(available);
         }
 
         List<StartableWorkflows.Choice> matches = parseMatches(completion.message().path("content"), available);
@@ -140,12 +145,10 @@ public class ConversationIntentService {
                 System.nanoTime() - started, valid ? "success" : "invalidOutput");
         if (!valid) {
             log.warn("Assistant intent matching returned an invalid structured response");
-            return new Interpretation(List.of(), "I couldn't match that request to a workflow. Say “workflows” to see "
-                    + "what's available, or “start <workflow name>”.", null);
+            return listBack(available);
         }
         if (matches.isEmpty()) {
-            return new Interpretation(List.of(), "I couldn't find a workflow that clearly matches. Say “workflows” "
-                    + "to see available options.", null);
+            return listBack(available);
         }
         ObjectNode input = matches.size() == 1
                 ? extractInput(caller, workspaceId, resolved, text, workflows.form(caller, workspaceId,

@@ -9,7 +9,7 @@ A plain-language map of the tool, by what you want to get done. Each line says w
 | Start a request | **Home > Start**, or **Assistant** ("start Purchase approval"), or **Ctrl+K** | Forms show required fields and help text; files can be attached |
 | Follow a request | **My requests**, or the run page (timeline and diagram) | Plain-language progress, decisions and outcome |
 | Approve or reject | **My tasks** (claim, decide, give a reason) | Amount-based routing, several approvers and groups are supported |
-| Do it by talking to the Assistant | **Assistant** page | Free-text matching needs an AI key; without one say "workflows" or "start <name>" |
+| Do it by talking to the Assistant | **Assistant** page | Words that appear in a workflow name ("I need a purchase") match instantly with no AI; other wording asks the AI when a key is set, and otherwise lists what you can start |
 
 ## 2. Build a workflow (designers)
 

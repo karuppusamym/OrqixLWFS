@@ -74,8 +74,9 @@ class ConversationIntentServiceTest {
 
         var result = intents.interpret(caller, workspace, json.parse("{\"message\":\"I need a laptop\"}"));
 
-        assertThat(result.choices()).isEmpty();
-        assertThat(result.message()).contains("couldn't match");
+        // The model's unknown id is ignored; the person is shown only what they may start, never the unknown workflow.
+        assertThat(result.choices()).containsExactly(purchase);
+        assertThat(result.message()).contains("Here is what you can start");
         verify(model).record(org.mockito.ArgumentMatchers.argThat(usage -> usage.outcome().equals("invalidOutput")));
     }
 

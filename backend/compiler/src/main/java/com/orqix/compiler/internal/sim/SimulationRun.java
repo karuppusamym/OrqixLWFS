@@ -1602,8 +1602,16 @@ final class SimulationRun {
                         childInput.set(field, DefaultWorkflowSimulator.json(v));
                     }
                 });
-                if (n.forEach() != null) {
+                if (n.forEach() != null && n.forEach().itemMapping().isEmpty()) {
                     childInput.set(n.forEach().itemInput(), DefaultWorkflowSimulator.json(items.get(i)));
+                } else if (n.forEach() != null && items.get(i) instanceof Map<?, ?> row) {
+                    // S105: the named columns of the current row; an empty column leaves the field out.
+                    n.forEach().itemMapping().forEach((field, column) -> {
+                        Object v = row.get(column);
+                        if (v != null) {
+                            childInput.set(field, DefaultWorkflowSimulator.json(v));
+                        }
+                    });
                 }
                 SimulationResult r = owner.run(childDefinition, StrictJson.write(childInput),
                         StrictJson.write(scenario.path("childScenarios").path(n.id()).isObject() ? scenario.path("childScenarios").path(n.id()) : F.objectNode()), context, depth + 1, budget);

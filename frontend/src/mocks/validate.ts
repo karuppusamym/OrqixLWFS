@@ -218,10 +218,17 @@ export function validateDefinition(def: Definition, ctx: ValidationContext): Iss
         break
       }
       case 'startWorkflow': {
-        const each = c.forEach as { itemsRef?: string } | undefined
+        const each = c.forEach as { itemsRef?: string; itemInput?: string; itemMapping?: Record<string, string> } | undefined
         if (each?.itemsRef?.startsWith('/input/')) {
+          // S105: a list of rows needs an item mapping to existing columns; a list of single values needs one item field.
           const collection = def.inputSchema.properties[each.itemsRef.slice('/input/'.length)]
-          if (collection?.items?.type === 'object') issues.push(issue('WF_FOREACH_COLLECTION', 'blocker', 'Repeating workflows currently accept scalar collections only. Repeating object rows are supported as request data.', nodePath(n, '/config/forEach/itemsRef'), n.id))
+          const rows = collection?.items?.type === 'object'
+          const mapping = each.itemMapping ?? {}
+          if (rows && each.itemInput) issues.push(issue('WF_FOREACH_ITEM_TYPE', 'blocker', `"${collection?.title ?? 'The list'}" is a list of rows. Choose which column fills which field instead of one field for the whole item.`, nodePath(n, '/config/forEach/itemInput'), n.id))
+          if (!rows && Object.keys(mapping).length > 0) issues.push(issue('WF_FOREACH_ITEM_TYPE', 'blocker', `"${collection?.title ?? 'The list'}" is a list of single values, so it has no columns.`, nodePath(n, '/config/forEach/itemMapping'), n.id))
+          if (rows) for (const [field, column] of Object.entries(mapping)) {
+            if (!collection?.items?.properties?.[column]) issues.push(issue('WF_FOREACH_COLUMN', 'blocker', `"${collection?.title ?? 'The list'}" has no column "${column}".`, nodePath(n, `/config/forEach/itemMapping/${field}`), n.id))
+          }
         }
         const ref = c.workflowRef as string | undefined
         if (!ref) issues.push(issue('WF_SCHEMA_INVALID', 'blocker', `"${n.label}" needs a workflow to start.`, nodePath(n, '/config/workflowRef'), n.id))

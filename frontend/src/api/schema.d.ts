@@ -8530,17 +8530,21 @@ export interface components {
                 resultMapping: {
                     [key: string]: components["schemas"]["fieldKey"];
                 };
-                /** @description Sequentially start one pinned child per scalar item. The collection must contain 1 to 25 items. Inputs share inputMapping and itemInput receives the current item. Results are the last child result plus iterations and limitReached=false. */
+                /** @description Start one pinned child per item of a required request list of 1 to 25 items (docs/build/S14, S105). Inputs share inputMapping; for a list of single values itemInput receives the current item, for a list of rows itemMapping copies the named columns of the current row into child request fields (exactly one of the two). Results are the last child result plus iterations, limitReached=false and allSucceeded. */
                 forEach?: {
                     itemsRef: string;
-                    itemInput: components["schemas"]["fieldKey"];
+                    itemInput?: components["schemas"]["fieldKey"];
+                    /** @description List of rows only: child request field -> column of the current row (1 to 10 fields). A column that is empty in a row leaves the field out. */
+                    itemMapping?: {
+                        [key: string]: components["schemas"]["fieldKey"];
+                    };
                     maxItems: number;
                     /**
                      * @default sequential
                      * @enum {unknown}
                      */
                     mode: "sequential" | "parallel";
-                };
+                } & (unknown | unknown);
                 /** @description Collected output name -> guaranteed scalar child result field, or outcome/outcomeKind/reference. For collection iteration only. Values follow input item order. */
                 collectionMapping?: {
                     [key: string]: components["schemas"]["fieldKey"];
@@ -9167,17 +9171,21 @@ export interface components {
                         resultMapping: {
                             [key: string]: components["schemas"]["fieldKey"];
                         };
-                        /** @description Sequentially start one pinned child per scalar item. The collection must contain 1 to 25 items. Inputs share inputMapping and itemInput receives the current item. Results are the last child result plus iterations and limitReached=false. */
+                        /** @description Start one pinned child per item of a required request list of 1 to 25 items (docs/build/S14, S105). Inputs share inputMapping; for a list of single values itemInput receives the current item, for a list of rows itemMapping copies the named columns of the current row into child request fields (exactly one of the two). Results are the last child result plus iterations, limitReached=false and allSucceeded. */
                         forEach?: {
                             itemsRef: string;
-                            itemInput: components["schemas"]["fieldKey"];
+                            itemInput?: components["schemas"]["fieldKey"];
+                            /** @description List of rows only: child request field -> column of the current row (1 to 10 fields). A column that is empty in a row leaves the field out. */
+                            itemMapping?: {
+                                [key: string]: components["schemas"]["fieldKey"];
+                            };
                             maxItems: number;
                             /**
                              * @default sequential
                              * @enum {unknown}
                              */
                             mode: "sequential" | "parallel";
-                        };
+                        } & (unknown | unknown);
                         /** @description Collected output name -> guaranteed scalar child result field, or outcome/outcomeKind/reference. For collection iteration only. Values follow input item order. */
                         collectionMapping?: {
                             [key: string]: components["schemas"]["fieldKey"];

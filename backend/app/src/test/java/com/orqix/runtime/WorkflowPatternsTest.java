@@ -205,6 +205,38 @@ class WorkflowPatternsTest extends RuntimeTestBase {
         assertThat(eventTypes(PURCHASING, run).stream().filter("CHILD_ENDED"::equals).count()).isEqualTo(3);
     }
 
+    @Test
+    void aListOfRowsStartsOneChildPerRowWithItsColumnValues() throws Exception {
+        UUID childWf = publishPurchase(PURCHASING, d -> graph(d, "[" + START + "," + END + "]", "[" + flow("a", "start", "end", "next") + "]"));
+        String key = api("dana.designer").get("/workspaces/{ws}/workflows/{id}", PURCHASING, childWf).body().path("key").asString();
+        for (String mode : java.util.List.of("sequential", "parallel")) {
+            UUID parent = publishPurchase(PURCHASING, d -> {
+                graph(d, "[" + START + ","
+                        + "{\"id\":\"child\",\"type\":\"startWorkflow\",\"label\":\"Each line\",\"config\":{\"workflowRef\":\"" + key
+                        + "\",\"inputMapping\":{\"purpose\":\"/input/purpose\",\"costCenter\":\"/input/costCenter\"},\"resultMapping\":{},"
+                        + "\"forEach\":{\"itemsRef\":\"/input/lines\",\"itemMapping\":{\"title\":\"item\",\"amount\":\"price\"},"
+                        + "\"maxItems\":3,\"mode\":\"" + mode + "\"}}}," + END + "]",
+                        "[" + flow("t1", "start", "child", "next") + "," + flow("t2", "child", "end", "next") + "]");
+                ((ObjectNode) d.path("inputSchema").path("properties")).set("lines", json.parse("{\"type\":\"array\",\"title\":\"Lines\","
+                        + "\"minItems\":1,\"maxItems\":3,\"items\":{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"item\",\"price\"],"
+                        + "\"properties\":{\"item\":{\"type\":\"string\",\"title\":\"Item\",\"minLength\":1,\"maxLength\":200},"
+                        + "\"price\":{\"type\":\"number\",\"title\":\"Price\",\"minimum\":0},\"note\":{\"type\":\"string\",\"title\":\"Note\"}}}}"));
+                ((tools.jackson.databind.node.ArrayNode) d.path("inputSchema").path("required")).add("lines");
+            });
+            var started = api("rhea.requester").post(Map.of("workflowId", parent, "input", Map.of("title", "Purchases", "purpose", "Office equipment",
+                    "amount", BigDecimal.TEN, "costCenter", "IT", "lines", java.util.List.of(
+                            Map.of("item", "Laptop", "price", 1200, "note", "Fast"), Map.of("item", "Monitor", "price", 300)))),
+                    UUID.randomUUID().toString(), "/workspaces/{ws}/runs", PURCHASING);
+            assertThat(started.status()).as(started.toString()).isEqualTo(201);
+            UUID run = UUID.fromString(started.body().path("id").asString());
+            awaitLifecycle(PURCHASING, run, "completed");
+            // Each child got its own row's columns (and only the mapped ones), in list order.
+            assertThat(jdbc.sql("SELECT (input->>'title') || '=' || (input->>'amount') || ':' || jsonb_exists(input, 'note')::text FROM workflow_run"
+                    + " WHERE parent_run_id = :id ORDER BY parent_occurrence").param("id", run).query(String.class).list())
+                    .as(mode).containsExactly("Laptop=1200:false", "Monitor=300:false");
+        }
+    }
+
     private UUID publishExample(String file, String childKey) throws Exception {
         return publishPurchase(PURCHASING, d -> {
             try {

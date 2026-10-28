@@ -176,8 +176,10 @@ public final class ModelReader {
                     c.get("repeat") == null ? null : new Node.Repeat(c.get("repeat").get("maxIterations").intValue(),
                             c.get("repeat").get("untilOutcome").stringValue()),
                     c.get("forEach") == null ? null : new Node.ForEach(c.get("forEach").get("itemsRef").stringValue(),
-                            c.get("forEach").get("itemInput").stringValue(), c.get("forEach").get("maxItems").intValue(),
-                            "parallel".equals(c.get("forEach").path("mode").asString())),
+                            c.get("forEach").has("itemInput") ? c.get("forEach").get("itemInput").stringValue() : null,
+                            c.get("forEach").get("maxItems").intValue(),
+                            "parallel".equals(c.get("forEach").path("mode").asString()),
+                            itemMapping(c.get("forEach").path("itemMapping"))),
                     c.has("collectionMapping") ? stringMap(c.get("collectionMapping")) : Map.of());
             case WAIT_FOR_MESSAGE -> new Node.WaitForMessage(index, id, label, c.get("message").stringValue(),
                     c.get("correlationField").stringValue(),
@@ -305,6 +307,17 @@ public final class ModelReader {
     }
 
     /** Reads a form schema (request or result form) that already passed the workflow JSON Schema. */
+
+    /** S105: child field -> row column of a for-each over a list of rows, in a stable order. */
+    private static java.util.Map<String, String> itemMapping(JsonNode mapping) {
+        if (!mapping.isObject()) {
+            return java.util.Map.of();
+        }
+        java.util.Map<String, String> out = new java.util.TreeMap<>();
+        mapping.properties().forEach(e -> out.put(e.getKey(), e.getValue().asString()));
+        return java.util.Collections.unmodifiableMap(out);
+    }
+
     public static FormSchema readFormSchema(String path, JsonNode form) {
         return readForm(path, form);
     }

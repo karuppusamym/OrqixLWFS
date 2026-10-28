@@ -227,7 +227,22 @@ public sealed interface Node {
     /** Bounded sequential child occurrences; the outer workflow remains acyclic. */
     record Repeat(int maxIterations, String untilOutcome) { }
 
-    record ForEach(String itemsRef, String itemInput, int maxItems, boolean parallel) { }
+    /**
+     * Collection iteration (S14). A list of single values gives each child its item through {@code itemInput}; a list of
+     * rows (S105) copies the columns named in {@code itemMapping} (child field -> row column) instead. Exactly one of the
+     * two is set; {@code itemMapping} is empty for a list of single values.
+     */
+    record ForEach(String itemsRef, String itemInput, int maxItems, boolean parallel,
+            java.util.Map<String, String> itemMapping) {
+        public ForEach(String itemsRef, String itemInput, int maxItems, boolean parallel) {
+            this(itemsRef, itemInput, maxItems, parallel, java.util.Map.of());
+        }
+
+        /** @return true when the child request field is filled from the current item */
+        public boolean fills(String childField) {
+            return childField.equals(itemInput) || itemMapping.containsKey(childField);
+        }
+    }
 
     /**
      * List-driven approval (S88, {@code config.perItem}): one task per item of the request list {@code itemsRef}.

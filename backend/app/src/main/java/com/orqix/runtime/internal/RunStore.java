@@ -172,9 +172,11 @@ public class RunStore {
     private final Json json;
     private final Clock clock;
     private final org.springframework.beans.factory.ObjectProvider<RunStages> stages;
+    private final RunReferences references;
 
     public RunStore(JdbcClient jdbc, Json json, Clock clock,
-            org.springframework.beans.factory.ObjectProvider<RunStages> stages) {
+            org.springframework.beans.factory.ObjectProvider<RunStages> stages, RunReferences references) {
+        this.references = references;
         this.jdbc = jdbc;
         this.json = json;
         this.clock = clock;
@@ -185,10 +187,9 @@ public class RunStore {
     public void insert(UUID id, UUID workspaceId, UUID workflowId, UUID releaseId, String businessKey, UUID initiator,
             JsonNode input) {
         Instant now = clock.instant();
-        // Human reference ORQ-<n>: the workspace counter row is locked until this transaction ends, so concurrent starts
-        // are numbered one after the other and a rolled-back start leaves no gap.
-        long sequence = jdbc.sql("UPDATE workspace SET run_seq = run_seq + 1 WHERE id = :ws RETURNING run_seq")
-                .param("ws", workspaceId).query(Long.class).single();
+        // Human reference ORQ-<n>, unique per workspace. Gapless mode keeps the counter row locked until this transaction
+        // ends (no gaps); fast mode takes the number in its own short transaction (see RunReferences).
+        long sequence = references.next(workspaceId);
         jdbc.sql("""
                 INSERT INTO workflow_run (id, workspace_id, reference, workflow_id, release_id, business_key,
                                           initiator_subject_id, lifecycle, current_steps, input, created_at, updated_at)
@@ -331,6 +332,16 @@ public class RunStore {
         // Case stages are derived from the final steps of the transaction (docs/build/S17 section 4).
         stages.getObject().touch(workspaceId, runId, row.releaseId());
         return find(workspaceId, runId).orElseThrow();
+    }
+
+    /**
+     * Makes starts of one workflow wait for each other until this transaction ends, without touching the workflow row
+     * (an advisory lock keyed by the workflow id). Taken only near the open-request limit, so the limit stays exact.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void lockQuota(UUID workflowId) {
+        jdbc.sql("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))").param("key", "orqix-quota:" + workflowId)
+                .query((rs, n) -> 1).list();
     }
 
     @Transactional(readOnly = true)

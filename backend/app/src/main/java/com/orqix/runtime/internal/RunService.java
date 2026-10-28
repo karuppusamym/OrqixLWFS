@@ -94,6 +94,9 @@ public class RunService {
 
     // ---------------------------------------------------------------- start (S5 section 3)
 
+    /** Distance from the open-request limit at which starts of one workflow start queueing (see start). */
+    static final int QUOTA_MARGIN = 64;
+
     @Transactional
     public Started start(Caller caller, UUID workspaceId, String idempotencyKey, RuntimeDtos.StartRunRequest request) {
         String key = IdempotencyService.requireKey(idempotencyKey);
@@ -155,7 +158,15 @@ public class RunService {
         }
         // Files chosen on the form (fields of format attachment): must be the caller's own and fit the field (S17).
         RunAttachments.StartPlan files = attachments.planStart(caller, workspaceId, release.inputSchema(), request.input());
-        if (runs.countActive(workspaceId, workflow.id()) >= release.maxConcurrentRuns()) {
+        // Open-request limit (S101, S103). Far below the limit starts do not wait for each other; within QUOTA_MARGIN of it
+        // they queue behind a per-workflow lock and count again, so the limit is exact. The margin must exceed the number
+        // of starts that can be in flight at once (connection pool size times replicas).
+        int active = runs.countActive(workspaceId, workflow.id());
+        if (active >= release.maxConcurrentRuns() - QUOTA_MARGIN) {
+            runs.lockQuota(workflow.id());
+            active = runs.countActive(workspaceId, workflow.id());
+        }
+        if (active >= release.maxConcurrentRuns()) {
             throw new ApiException(ProblemCode.QUOTA_EXCEEDED, "Too many requests of this workflow are in progress.")
                     .withHeader("Retry-After", "60");
         }

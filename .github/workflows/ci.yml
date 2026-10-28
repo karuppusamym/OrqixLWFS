@@ -293,6 +293,8 @@ jobs:
       E2E_BASE_URL: http://localhost:8080
       E2E_KEYCLOAK_URL: http://localhost:8180
       E2E_STUB_URL: http://localhost:8095
+      # Dev-only passwords of the realm the compose Keycloak imports (tests/e2e/README.md); no secret is involved.
+      E2E_REALM_FILE: ${{ github.workspace }}/deploy/compose/keycloak/orqix-dev-realm.json
     steps:
       - uses: actions/checkout@v7.0.1
 

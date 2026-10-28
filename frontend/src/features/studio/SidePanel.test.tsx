@@ -20,6 +20,11 @@ describe('studio side panel and header', () => {
     await user.click(discussion)
     expect(discussion).toHaveAttribute('aria-expanded', 'true')
     const dock = screen.getByTestId('ask-dock')
+    // A short screen (jsdom is 768 px high) starts with the dock closed to one line; its bar opens it.
+    const bar = within(dock).getByRole('button', { name: /^Ask AI/ })
+    expect(bar).toHaveAttribute('aria-expanded', 'false')
+    await user.click(bar)
+    expect(bar).toHaveAttribute('aria-expanded', 'true')
     expect(within(dock).getByLabelText('What should change?')).toBeVisible()
   })
 

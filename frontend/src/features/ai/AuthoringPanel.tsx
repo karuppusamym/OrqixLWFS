@@ -64,7 +64,7 @@ function assistantText(proposal: AiDraftEditProposal): string {
  */
 export function AuthoringPanel({ focus, onFocusChange }: { focus: FocusStep | null; onFocusChange: (next: FocusStep | null) => void }) {
   return (
-    <section className="flex min-h-0 flex-1 flex-col" aria-label="Ask AI to change this workflow" data-testid="authoring-panel">
+    <section className="flex min-h-0 flex-1 flex-col overflow-y-auto" aria-label="Ask AI to change this workflow" data-testid="authoring-panel">
       <AuthoringBody focus={focus} onFocusChange={onFocusChange} />
     </section>
   )
@@ -181,12 +181,8 @@ function Conversation({ focus: focusStep, onFocusChange: setFocusStep }: { focus
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="max-h-56 min-h-0 space-y-3 overflow-y-auto px-3 py-2">
-        {turns.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Type or say what you want, for example “Add a finance approval when the amount is 5,000 or more”, then follow up with “make it 10,000”.
-          </p>
-        ) : (
+      <div className="max-h-44 min-h-0 shrink-0 space-y-3 overflow-y-auto px-3 empty:hidden">
+        {turns.length === 0 ? null : (
           <ol className="space-y-3" aria-label="Conversation">
             {turns.map((turn) => turn.role === 'author'
               ? (
@@ -198,7 +194,7 @@ function Conversation({ focus: focusStep, onFocusChange: setFocusStep }: { focus
           </ol>
         )}
       </div>
-      <div className="space-y-2 border-t border-border p-3">
+      <div className="space-y-2 border-t border-border px-3 py-2">
         <p role="status" aria-live="polite" className="text-sm">{busy ? 'Asking the AI. This can take up to a minute…' : status}</p>
         {error ? <ProblemAlert error={error} /> : null}
         <div className="space-y-1.5">
@@ -213,25 +209,28 @@ function Conversation({ focus: focusStep, onFocusChange: setFocusStep }: { focus
               <span className="truncate">Ask about “{selectedLabel}”</span>
             </Button>
           ) : (
-            <p className="text-xs text-muted-foreground">Tip: select a step on the canvas to ask about just that step.</p>
+            <p className="text-xs text-muted-foreground">Tip: select a step to ask about just that step.</p>
           )}
-          <Textarea id={inputId} rows={2} value={text} maxLength={MAX} disabled={busy} aria-describedby={`${inputId}-help`} onChange={(e) => setText(e.target.value)} onKeyDown={onKeyDown} />
+          <div className="flex items-stretch gap-2">
+            <Textarea id={inputId} rows={3} className="min-h-0 flex-1" placeholder="For example: Add a finance approval when the amount is 5,000 or more. Then follow up: make it 10,000." value={text} maxLength={MAX} disabled={busy} aria-describedby={`${inputId}-help`} onChange={(e) => setText(e.target.value)} onKeyDown={onKeyDown} />
+            <div className="flex w-40 shrink-0 flex-col gap-1.5">
+              <Button onClick={() => void ask('edit')} disabled={busy || length < MIN || length > MAX} loading={busy}>
+                <Send aria-hidden="true" /> Send
+              </Button>
+              {dictation.supported ? (
+                <Button variant={dictation.listening ? 'danger' : 'secondary'} onClick={() => (dictation.listening ? dictation.stop() : dictation.start())} disabled={busy} aria-pressed={dictation.listening} data-testid="authoring-mic">
+                  {dictation.listening ? <MicOff aria-hidden="true" /> : <Mic aria-hidden="true" />} {dictation.listening ? 'Stop talking' : 'Talk'}
+                </Button>
+              ) : null}
+              <Button variant="ghost" size="sm" aria-label="Start over with AI" onClick={() => setConfirmRegenerate(true)} disabled={busy || length < MIN || length > MAX}>
+                <RefreshCcw aria-hidden="true" /> Start over
+              </Button>
+            </div>
+          </div>
           <p id={`${inputId}-help`} className="text-xs text-muted-foreground">Ctrl+Enter sends. The AI sees the saved draft without secrets. You review every change before it is applied.</p>
-          {dictation.problem ? <p role="status" className="text-xs text-danger">{dictation.problem}</p> : null}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={() => void ask('edit')} disabled={busy || length < MIN || length > MAX} loading={busy}>
-            <Send aria-hidden="true" /> Send
-          </Button>
-          {dictation.supported ? (
-            <Button variant="secondary" onClick={() => (dictation.listening ? dictation.stop() : dictation.start())} disabled={busy} aria-pressed={dictation.listening} data-testid="authoring-mic">
-              {dictation.listening ? <MicOff aria-hidden="true" /> : <Mic aria-hidden="true" />} {dictation.listening ? 'Stop talking' : 'Talk'}
-            </Button>
-          ) : null}
-          <Button variant="secondary" onClick={() => setConfirmRegenerate(true)} disabled={busy || length < MIN || length > MAX}>
-            <RefreshCcw aria-hidden="true" /> Start over with AI
-          </Button>
-          {turns.length > 0 ? <Button variant="ghost" onClick={() => { setTurns([]); setStatus('Conversation cleared.'); setError(null) }} disabled={busy}>Clear conversation</Button> : null}
+          {dictation.listening ? <p role="status" className="text-xs font-semibold text-danger">Listening… speak now. Press Stop talking when you are done.</p> : null}
+          {dictation.problem ? <p role="status" className="text-xs text-danger" data-testid="authoring-mic-problem">{dictation.problem}</p> : null}
+          {turns.length > 0 ? <Button variant="ghost" size="sm" onClick={() => { setTurns([]); setStatus('Conversation cleared.'); setError(null) }} disabled={busy}>Clear conversation</Button> : null}
         </div>
       </div>
       <ConfirmDialog

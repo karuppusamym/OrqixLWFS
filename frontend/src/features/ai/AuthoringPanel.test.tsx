@@ -1,7 +1,7 @@
 import { cleanup, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { db, PURCHASE_WORKFLOW_ID } from '@/mocks/state'
 import { server } from '@/test/server'
 import { renderAppReady, signInAs, WS } from '@/test/utils'
@@ -17,6 +17,7 @@ async function openPanel() {
 }
 
 describe('conversational authoring panel (STU02, docs/build/S95)', () => {
+  beforeEach(() => { localStorage.setItem('orqix.studio.view.aiExpanded', 'true') })
   afterEach(() => { aiMock.enabled = true })
 
   it('proposes reviewable changes, applies only the ticked ones as one edit, and saves them', async () => {
@@ -108,7 +109,7 @@ describe('conversational authoring panel (STU02, docs/build/S95)', () => {
     })
     await renderAppReady(EDIT)
     const panel = await openPanel()
-    expect(within(panel).getByText(/select a step on the canvas/i)).toBeInTheDocument()
+    expect(within(panel).getByText(/select a step to ask about just that step/i)).toBeInTheDocument()
     await user.click(screen.getByRole('tab', { name: 'Steps' }))
     await user.click((await screen.findAllByRole('button', { name: /Review request/, pressed: false }))[0]!)
     await user.click(await within(panel).findByTestId('authoring-ask-step'))
@@ -145,5 +146,32 @@ describe('conversational authoring panel (STU02, docs/build/S95)', () => {
     cleanup()
     await renderAppReady(EDIT)
     expect(within(await openPanel()).queryByTestId('authoring-mic')).not.toBeInTheDocument()
+  })
+  it('says why dictation stopped: a blocked service, and a refusal that ends at once', async () => {
+    signInAs('dana.designer')
+    const user = userEvent.setup()
+    class FakeRecognition {
+      static last: FakeRecognition | null = null
+      lang = ''; continuous = false; interimResults = false
+      onresult: ((e: unknown) => void) | null = null; onerror: ((e: { error: string }) => void) | null = null; onend: (() => void) | null = null
+      constructor() { FakeRecognition.last = this }
+      start() {}
+      stop() { this.onend?.() }
+    }
+    ;(window as unknown as Record<string, unknown>).webkitSpeechRecognition = FakeRecognition
+    try {
+      await renderAppReady(EDIT)
+      const panel = await openPanel()
+      await user.click(within(panel).getByTestId('authoring-mic'))
+      expect(await within(panel).findByText(/Listening/)).toBeInTheDocument()
+      FakeRecognition.last!.onerror!({ error: 'network' })
+      FakeRecognition.last!.onend!()
+      expect(await within(panel).findByTestId('authoring-mic-problem')).toHaveTextContent(/speech service could not be reached/)
+      await user.click(within(panel).getByTestId('authoring-mic'))
+      FakeRecognition.last!.onend!()
+      expect(await within(panel).findByTestId('authoring-mic-problem')).toHaveTextContent(/stopped straight away/)
+    } finally {
+      delete (window as unknown as Record<string, unknown>).webkitSpeechRecognition
+    }
   })
 })

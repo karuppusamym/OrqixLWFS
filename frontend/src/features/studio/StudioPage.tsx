@@ -22,7 +22,7 @@ import { SourceView } from './SourceView'
 import { Palette } from './Palette'
 import { SidePanel, type SideCard } from './SidePanel'
 import { AskDock } from './AskDock'
-import { AI_DOCK_KEY, SIDE_PANEL_KEY } from './viewKeys'
+import { AI_DOCK_KEY, AI_EXPANDED_KEY, SIDE_PANEL_KEY } from './viewKeys'
 import { usePersistedFlag } from '@/lib/usePersistedFlag'
 import { StudioHint } from './StudioHint'
 import { StepsView } from './StepsView'
@@ -136,6 +136,7 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
   const openCard = useCallback((card: SideCard, next = true) => setCards((c) => ({ ...c, [card]: next })), [])
   const [aiOpen, setAiOpen] = usePersistedFlag(AI_DOCK_KEY, true)
   const [sideOpen, setSideOpen] = usePersistedFlag(SIDE_PANEL_KEY, true)
+  const [, setAiExpanded] = usePersistedFlag(AI_EXPANDED_KEY, true)
   const [aiFocus, setAiFocus] = useState<FocusStep | null>(null)
   // The Test tab keeps its work (sample, settings, last run) while the person edits on another tab (STU03).
   const [testMounted, setTestMounted] = useState(false)
@@ -337,7 +338,7 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
               open={cards}
               onOpenChange={openCard}
               showAi={!readOnly}
-              onAskAbout={(focus) => { setAiFocus(focus); setAiOpen(true) }}
+              onAskAbout={(focus) => { setAiFocus(focus); setAiOpen(true); setAiExpanded(true) }}
               onDeleteNode={(id) => {
                 store.getState().select({ type: 'node', id })
                 requestDelete()

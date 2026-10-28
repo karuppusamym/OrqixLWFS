@@ -19,6 +19,28 @@ function recognitionConstructor(): RecognitionConstructor | null {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null
 }
 
+function describeError(code: string): string {
+  switch (code) {
+    case 'not-allowed':
+    case 'service-not-allowed':
+      return 'The microphone is blocked for this site. Click the lock icon in the address bar, allow the microphone, and try again.'
+    case 'audio-capture':
+      return 'No microphone was found. Connect one and try again.'
+    case 'network':
+      return "The browser's speech service could not be reached. Dictation needs an internet connection and a browser that allows it (Chrome and Edge do; some networks block it). You can type instead."
+    case 'no-speech':
+      return 'No speech was heard. Press Talk and speak after it says Listening.'
+    case 'aborted':
+      return 'Dictation was interrupted.'
+    case 'language-not-supported':
+      return "The browser does not support dictation in this page's language."
+    case 'ended-at-once':
+      return 'Dictation stopped straight away. Check that this site may use the microphone (the lock icon in the address bar) and that no other app is using it.'
+    default:
+      return `Dictation stopped (${code}). You can type instead.`
+  }
+}
+
 /**
  * Speech-to-text for a text box, using the browser's own recogniser (Chrome and Edge; where it is missing,
  * `supported` is false and the caller shows no microphone). The words only fill the box: the person still reads
@@ -46,15 +68,28 @@ export function useDictation(onText: (finalText: string) => void) {
     rec.onresult = (event) => {
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i]
-        if (result?.isFinal) onTextRef.current(result[0].transcript.trim())
+        if (result?.isFinal) {
+          heard = true
+          onTextRef.current(result[0].transcript.trim())
+        }
       }
     }
+    let startedAt = 0
+    let heard = false
+    let failed = false
     rec.onerror = (event) => {
-      setProblem(event.error === 'not-allowed' || event.error === 'service-not-allowed' ? 'The microphone is blocked. Allow it in the browser to dictate.' : event.error === 'no-speech' ? 'No speech heard.' : 'Dictation stopped.')
+      failed = true
+      setProblem(describeError(event.error))
     }
-    rec.onend = () => { setListening(false); recognition.current = null }
+    rec.onend = () => {
+      setListening(false)
+      recognition.current = null
+      // Ended at once with no error and no words: the browser refused quietly (often a blocked microphone).
+      if (!failed && !heard && Date.now() - startedAt < 1500) setProblem(describeError('ended-at-once'))
+    }
     recognition.current = rec
     try {
+      startedAt = Date.now()
       rec.start()
       setListening(true)
     } catch {

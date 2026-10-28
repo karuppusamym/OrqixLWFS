@@ -311,6 +311,8 @@ jobs:
         working-directory: deploy/compose
         run: |
           gunzip -c ../../orqix-image.tar.gz | docker load
+          # The app image comes from the image job; the procurement stub has no published image, so build it here.
+          docker compose build procurement-stub
           docker compose --profile app up -d --no-build
           for _ in $(seq 1 60); do
             status=$(docker compose ps orqix --format '{{.Health}}')

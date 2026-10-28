@@ -6649,7 +6649,7 @@ export interface components {
             removedAt?: components["schemas"]["Timestamp"] | null;
             removedBy?: components["schemas"]["SubjectRef"] | null;
             canRemove: boolean;
-            /** @description False for removed files */
+            /** @description False for removed files, quarantined files and files blocked by the scan */
             downloadable: boolean;
             quarantinedAt?: components["schemas"]["Timestamp"] | null;
             quarantineReason?: string | null;
@@ -7084,7 +7084,7 @@ export interface components {
         ExternalJob: {
             id: components["schemas"]["Uuid"];
             topic: string;
-            /** @description Only the values the step maps */
+            /** @description Only the values the step maps, by name. */
             input: {
                 [key: string]: unknown;
             };
@@ -7582,7 +7582,7 @@ export interface components {
                 reasons: string[];
             }[];
             notes: string[];
-            /** @description Why the description is not about a request form */
+            /** @description Why the description is not about a request form, when it is not */
             notAForm?: string | null;
             generation: components["schemas"]["AiGeneration"];
         };
@@ -7633,7 +7633,7 @@ export interface components {
                 reasons: string[];
             }[];
             notes: string[];
-            /** @description Why the instruction is not about this workflow */
+            /** @description Why the instruction is not about this workflow, when it is not */
             notAnEdit?: string;
             /** @description regenerate only: the complete proposed draft (workflow-v0 document with layout) */
             definition?: {
@@ -7642,7 +7642,7 @@ export interface components {
             generation: components["schemas"]["AiGeneration"];
         };
         AiDraftEditChange: {
-            /** @description c1 */
+            /** @description c1, c2, ... in proposal order */
             id: string;
             summary: string;
             operations: components["schemas"]["AiDraftEditOperation"][];

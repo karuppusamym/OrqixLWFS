@@ -48,7 +48,8 @@ export function AppPageRoute() {
   return <>
     <Link to={`/w/${ws}/apps`} className="mb-4 inline-flex items-center gap-1 text-sm"><ArrowLeft className="size-4" aria-hidden="true" /> All apps</Link>
     <PageHeader title={page.title} description={`Page version ${runtime.data.page.version}${context ? ` for ${page.context} ${task.data?.requestTitle ?? context}` : ''}. Actions are authorized again by the server.`} />
-    <PageCanvas key={`${slug}:${runtime.data.revision}:${context ?? ''}:${task.data?.version ?? ''}:${caseData.data?.version ?? ''}`} page={page} views={views} extensions={extensions}
+    {/* Not keyed by the task or case version: a chain's outcome must stay visible after its own steps change that version. */}
+    <PageCanvas key={`${slug}:${runtime.data.revision}:${context ?? ''}`} page={page} views={views} extensions={extensions}
       runtime={{ ws, slug, revision: runtime.data.revision, context, contextData, task: task.data, caseData: caseData.data, drafts: Object.fromEntries((drafts.data?.items ?? []).map(draft => [draft.componentId, draft.values as Record<string, unknown>])), grants: runtime.data.grants }} />
   </>
 }

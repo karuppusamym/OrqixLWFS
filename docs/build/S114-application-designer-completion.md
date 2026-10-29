@@ -68,6 +68,19 @@ Plan-item steps name the CMMN element (`planItem`). When the step runs, the serv
 | Typecheck, full lint, generated API drift (`api:check`), contract check | Pass; 88/88 contract checks | `evidence/s114-static.log`, `evidence/s114-contracts.log` |
 | Real Chrome (built-in browser) against the mock-mode Vite dev server | Pass: publish a new view version, review and apply its page-draft pin with a reason, history; the live extension frame with the `allow` list and referrer meta; a self-navigating frame reports unloading before its second load; a busy frame does not block the page's timer | `evidence/s114-browser.md` |
 
+## Real-stack acceptance specs
+
+Four Playwright specs cover the UI02 journeys for the real-stack run (`tests/e2e/specs`, helpers in `support/views.ts`):
+
+| Spec | Journey | Mock mode |
+|---|---|---|
+| `t-ui-02g-page-journey.spec.ts` | Designer composes a page in the page designer (palette, inspector, chain, action bar), publisher reviews, publishes and pins a route, requester submits through the chain, viewer sees the form read-only and the server refuses the chain, outsider gets 404 | Runs (outsider check real stack only) |
+| `t-ui-02g-action-chains.spec.ts` | Task page: an operator who may read but not approve is stopped at the claim with later steps skipped; the manager's reject without a reason stops after the claim with the navigation skipped; the held task is then approved and the navigation runs | Runs |
+| `t-ui-02g-extensions.spec.ts` | Register and submit two extensions in the registry, approval by the administrator (not the submitter), server-served frame headers (policy, `SAMEORIGIN`, Permissions-Policy, no-referrer), granted data in the sandboxed frame, the granted chain run through the bridge, a slow extension's start-up fallback, revocation fallback without a frame | Skipped |
+| `t-ui-02h-pin-migration.spec.ts` | Workflow draft pinning version 1, version 2 published, reviewed update with a reason, migrated draft verified and then published as a release, release shown as a fixed pin | Skipped |
+
+The two mock-capable specs pass against the mock build (`evidence/s114-e2e-mock.log`); the specs typecheck. Writing them found that a chain's outcome disappeared when its own claim changed the task version (the runtime canvas was keyed by that version); the canvas is now keyed by route revision and context only.
+
 ## Not covered
 
 - No real-stack (Keycloak/PostgreSQL/Flowable) browser journey and no local image refresh; the session that started this one runs the merged live-stack journeys. The server-served frame headers are verified by backend tests, not in a real browser.

@@ -25,18 +25,41 @@ public final class UiExtensionFrame {
     public record Document(String html, String policy) { }
 
     public static Document build(String bundle) {
-        String html = "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+        return build(bundle, null, null, null);
+    }
+
+    /**
+     * A frame for a multi-file bundle (S116): {@code files} is the absolute URL prefix of this version's files (a
+     * short-lived signed path), {@code entry} the module the frame loads with its integrity hash. The policy admits
+     * scripts, styles, fonts and images from that prefix only; connections stay blocked.
+     */
+    public static Document build(String bundle, String files, String entry, String entryIntegrity) {
+        StringBuilder html = new StringBuilder("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
                 + "<meta name=\"referrer\" content=\"no-referrer\">"
                 + "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Extension</title>"
                 + "<style>" + STYLE + "</style></head><body><div id=\"root\"></div>"
-                + "<script>" + BRIDGE + "</script><script>" + bundle + "</script></body></html>";
-        return new Document(html, policy(bundle));
+                + "<script>" + BRIDGE + "</script>");
+        if (bundle != null && !bundle.isEmpty()) html.append("<script>").append(bundle).append("</script>");
+        if (entry != null) {
+            html.append("<script type=\"module\" crossorigin=\"anonymous\" integrity=\"sha256-").append(entryIntegrity)
+                    .append("\" src=\"").append(files).append(entry).append("\"></script>");
+        }
+        html.append("</body></html>");
+        return new Document(html.toString(), policy(bundle, files));
     }
 
     /** Content-Security-Policy for the frame; {@code sandbox} without {@code allow-same-origin} gives it an opaque origin. */
     public static String policy(String bundle) {
-        return "default-src 'none'; script-src 'sha256-" + hash(BRIDGE) + "' 'sha256-" + hash(bundle) + "'; "
-                + "style-src 'unsafe-inline'; img-src data:; font-src 'none'; connect-src 'none'; media-src 'none'; "
+        return policy(bundle, null);
+    }
+
+    public static String policy(String bundle, String files) {
+        String scripts = "'sha256-" + hash(BRIDGE) + "'" + (bundle == null || bundle.isEmpty() ? "" : " 'sha256-" + hash(bundle) + "'")
+                + (files == null ? "" : " " + files);
+        String extra = files == null ? "" : " " + files;
+        return "default-src 'none'; script-src " + scripts + "; "
+                + "style-src 'unsafe-inline'" + extra + "; img-src data:" + extra + "; font-src " + (files == null ? "'none'" : files)
+                + "; connect-src 'none'; media-src 'none'; "
                 + "object-src 'none'; frame-src 'none'; worker-src 'none'; manifest-src 'none'; form-action 'none'; "
                 + "base-uri 'none'; frame-ancestors 'self'; sandbox allow-scripts";
     }

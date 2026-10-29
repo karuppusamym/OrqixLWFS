@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import axe from 'axe-core'
 import { http, HttpResponse } from 'msw'
@@ -79,6 +79,46 @@ describe('page runtime controls (S114)', () => {
     await user.click(screen.getByRole('button', { name: 'Correct and approve' }))
     await screen.findByText('Correct and approve: completed')
     expect(body).toMatchObject({ context: 't1', inputs: { review: { expectedVersion: 4, reason: 'Typo', values: { purpose: 'Replacement' } } } })
+    expect((await axe.run(container, axeOptions)).violations).toEqual([])
+  }, 30_000)
+
+  it('lets the person choose a plan-item occurrence and shows which steps were undone after a failure (S116)', async () => {
+    signInAs('mani.manager')
+    let body: { inputs?: Record<string, { planItems?: Record<string, string> }> } | null = null
+    server.use(
+      http.get('*/api/v1/workspaces/:ws/cases/instances/:id/plan', () => HttpResponse.json({ items: [
+        { id: 'p1', elementId: 'review', name: 'Review evidence', type: 'humantask', state: 'enabled', parentStageId: null, createdAt: '2026-10-29T09:00:00Z', endedAt: null, required: true, allowedActions: { start: true }, workflow: null },
+        { id: 'p2', elementId: 'review', name: 'Review evidence', type: 'humantask', state: 'enabled', parentStageId: null, createdAt: '2026-10-29T10:00:00Z', endedAt: null, required: true, allowedActions: { start: true }, workflow: null },
+      ], milestones: [], events: [], canClose: false })),
+      http.post('*/api/v1/workspaces/:ws/app-pages/:slug/chains/:chain/run', async ({ request }) => {
+        body = await request.json() as typeof body
+        return HttpResponse.json({ completed: false, navigateTo: null, steps: [
+          { index: 0, action: 'suspendCase', component: 'data', status: 'succeeded', detail: null, problemCode: null, runId: null, compensation: { action: 'resumeCase', status: 'succeeded', detail: null, problemCode: null } },
+          { index: 1, action: 'startPlanItem', component: 'data', status: 'succeeded', detail: null, problemCode: null, runId: null, compensation: null },
+          { index: 2, action: 'closeCase', component: 'data', status: 'failed', detail: 'Required work is open.', problemCode: 'VALIDATION_FAILED', runId: null, compensation: null },
+        ] })
+      }),
+    )
+    const view: ViewDefinition = { schemaVersion: 1, kind: 'case', sections: [{ id: 's', label: 'Case', columns: 1, fields: [{ id: 'summary', label: 'Summary', type: 'text', binding: 'case.summary' }] }], actions: [{ id: 'save', label: 'Save', type: 'saveData' }] }
+    const page: PageDefinition = { schemaVersion: 1, kind: 'page', title: 'Case desk', context: 'case', layout: 'single', breakpoint: 'md', regions: [{ id: 'main', label: 'Main', components: [
+      { id: 'data', type: 'view', view: { id: 'v', version: 1 } },
+      { id: 'bar', type: 'actions', label: 'Work', chains: ['work'] },
+    ] }], chains: [{ id: 'work', label: 'Start review', stopOnFailure: true, steps: [{ action: 'suspendCase', component: 'data', compensate: 'resumeCase' }, { action: 'startPlanItem', component: 'data', planItem: 'review', occurrence: 'choose' }, { action: 'closeCase', component: 'data' }] }] }
+    const caseData = { fields: [], values: { summary: 'x' }, version: 3, canEdit: true, changes: [], viewBinding: null } as never
+    const user = userEvent.setup()
+    const { container } = renderInWorkspace(<PageCanvas page={page} views={new Map([['v:1', view]])} extensions={new Map()} runtime={runtime({ context: 'c1', caseData })} />)
+    const pick = await screen.findByLabelText('Which review')
+    await waitFor(() => expect(within(pick).getAllByRole('option')).toHaveLength(3))
+    await user.click(screen.getByRole('button', { name: 'Start review' }))
+    expect(await screen.findByText(/Choose which review to act on/)).toBeInTheDocument()
+    await user.selectOptions(pick, 'p2')
+    await user.type(screen.getByLabelText('Reason for the change or case action'), 'Second review')
+    await user.click(screen.getByRole('button', { name: 'Start review' }))
+    const outcome = await screen.findByText('Start review: stopped')
+    expect(body!.inputs!.data!.planItems).toEqual({ review: 'p2' })
+    const steps = within(outcome.closest('[role="status"]') as HTMLElement).getAllByRole('listitem')
+    expect(steps[0]).toHaveTextContent('Resume the case: undone')
+    expect(steps[1]).toHaveTextContent('not undone')
     expect((await axe.run(container, axeOptions)).violations).toEqual([])
   }, 30_000)
 })

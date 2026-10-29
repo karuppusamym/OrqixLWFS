@@ -227,6 +227,7 @@ public class TaskService {
             throw new ApiException(ProblemCode.TASK_NOT_OPEN, "This task was already decided.");
         }
         suspensions.requireNotSuspended(workspaceId, task.runId());
+        requireNotSentBack(workspaceId, taskId);
         boolean reject = "reject".equals(request.action());
         if (reject && (request.reason() == null || request.reason().isBlank())) {
             throw new ApiException(ProblemCode.REASON_REQUIRED, "Give a reason for the rejection.")
@@ -421,13 +422,13 @@ public class TaskService {
     record VisibleTask(WorkspaceAccess access, TaskStore.TaskRow task, RunStore.RunRow run) {
     }
 
-    private VisibleTask visible(Caller caller, UUID workspaceId, String taskId) {
+    VisibleTask visible(Caller caller, UUID workspaceId, String taskId) {
         WorkspaceAccess access = freshVisible(caller, workspaceId);
         TaskStore.TaskRow task = tasks.find(workspaceId, taskId).orElseThrow(ApiException::notFound);
         return check(access, task);
     }
 
-    private VisibleTask visibleLocked(Caller caller, UUID workspaceId, String taskId) {
+    VisibleTask visibleLocked(Caller caller, UUID workspaceId, String taskId) {
         WorkspaceAccess access = freshVisible(caller, workspaceId);
         TaskStore.TaskRow snapshot = tasks.find(workspaceId, taskId).orElseThrow(ApiException::notFound);
         check(access, snapshot);
@@ -451,7 +452,7 @@ public class TaskService {
         return new VisibleTask(access, task, run);
     }
 
-    private void requireEligible(WorkspaceAccess access, TaskStore.TaskRow task, String operationId) {
+    void requireEligible(WorkspaceAccess access, TaskStore.TaskRow task, String operationId) {
         if (!access.has(Permission.TASK_ACT)) {
             throw policy.deny(access.workspaceId(), access.subjectId(), "task.act", operationId, true,
                     new ApiException(ProblemCode.FORBIDDEN));
@@ -471,7 +472,7 @@ public class TaskService {
         }
     }
 
-    private static void requireVersion(TaskStore.TaskRow task, int expected) {
+    static void requireVersion(TaskStore.TaskRow task, int expected) {
         if (task.version() != expected) {
             throw new ApiException(ProblemCode.TASK_VERSION_CONFLICT, "The task changed since you loaded it.")
                     .with("currentVersion", task.version());
@@ -498,7 +499,7 @@ public class TaskService {
                 && policy.groupKeys(workspaceId, subjectId, other.groups()).contains(task.candidateGroupKey());
     }
 
-    private RuntimeDtos.TaskDetail detail(VisibleTask visible) {
+    RuntimeDtos.TaskDetail detail(VisibleTask visible) {
         TaskStore.TaskRow task = visible.task();
         RunStore.RunRow run = visible.run();
         WorkspaceAccess access = visible.access();
@@ -526,7 +527,7 @@ public class TaskService {
                 summary.decision(),
                 new RuntimeDtos.TaskRequest(input, release.inputSchema(),
                         release.inputUi().isMissingNode() ? null : release.inputUi()),
-                historyViews, new RuntimeDtos.TaskForm(reasonRequired, correctableFor(access, task, node, run)),
+                historyViews, new RuntimeDtos.TaskForm(reasonRequired, correctableFor(access, task, node, run), taskQueries.openSendBack(task.workspaceId(), task.taskId()).orElse(null)),
                 allowed(access, task, suspensions.isSuspended(task.workspaceId(), task.runId())),
                 own == null ? null : views.ref(own.actor(), names),
                 node == null || !node.path("config").has("viewBinding") ? null : node.path("config").path("viewBinding").path("definition"));
@@ -580,20 +581,61 @@ public class TaskService {
         }
         suspensions.requireNotSuspended(workspaceId, task.runId());
         requireVersion(task, request.expectedVersion());
-        RunStore.RunRow run = runs.lock(workspaceId, task.runId()).orElseThrow(ApiException::notFound);
-        ReleaseQueries.ReleaseView release = releases.require(workspaceId, run.releaseId());
-        JsonNode node = release.node(task.nodeId());
+        requireNotSentBack(workspaceId, taskId);
+        int version = applyCorrection(caller, workspaceId, task, request.changes(), declaredCorrectable(workspaceId, task),
+                request.reason(), null);
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("taskId", taskId);
+        metadata.put("nodeId", task.nodeId());
+        metadata.put("fields", request.changes().size());
+        audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.USER, caller.subjectId(),
+                "task.input-corrected", "task", taskId, AuditWriter.Outcome.SUCCESS, metadata));
+        idempotency.complete(claim, "taskInputCorrection", Integer.toString(version), 200);
+        return detail(visible(caller, workspaceId, taskId));
+    }
+
+    /** The fields the task's step declares correctable in its pinned release (S42). */
+    List<String> declaredCorrectable(UUID workspaceId, TaskStore.TaskRow task) {
+        RunStore.RunRow run = runs.find(workspaceId, task.runId()).orElseThrow(ApiException::notFound);
+        JsonNode node = releases.require(workspaceId, run.releaseId()).node(task.nodeId());
         List<String> allowed = new ArrayList<>();
         if (node != null) {
             node.path("config").path("correctable").forEach(f -> allowed.add(f.asString()));
         }
-        if (request.changes().isEmpty() || request.changes().size() > 10) {
+        return allowed;
+    }
+
+    /** While the request is with its requester (S116), the task holder neither decides nor corrects it. */
+    void requireNotSentBack(UUID workspaceId, String taskId) {
+        if (sendBackOpen(workspaceId, taskId)) {
+            throw new ApiException(ProblemCode.TASK_NOT_OPEN,
+                    "The request is with its requester for corrections. Wait for the answer or withdraw the send-back.");
+        }
+    }
+
+    boolean sendBackOpen(UUID workspaceId, String taskId) {
+        return taskQueries.sendBackOpen(workspaceId, taskId);
+    }
+
+    /**
+     * Applies single-value changes of {@code allowed} fields to the request while its task is open, validated against the
+     * pinned form, through the engine; records before and after with the reason and bumps the task version so a decision
+     * prepared on the old data is refused. Shared by the holder's correction (S42) and the requester's send-back answer.
+     */
+    int applyCorrection(Caller caller, UUID workspaceId, TaskStore.TaskRow task, Map<String, JsonNode> changes,
+            List<String> allowed, String reason, String source) {
+        if (reason == null || reason.isBlank() || reason.length() > 500) {
+            throw new ApiException(ProblemCode.VALIDATION_FAILED, "Give a reason of 1 to 500 characters.");
+        }
+        if (changes == null || changes.isEmpty() || changes.size() > 10) {
             throw ApiException.malformed("changes must contain 1..10 request fields.");
         }
+        RunStore.RunRow run = runs.lock(workspaceId, task.runId()).orElseThrow(ApiException::notFound);
+        ReleaseQueries.ReleaseView release = releases.require(workspaceId, run.releaseId());
         tools.jackson.databind.node.ObjectNode corrected = (tools.jackson.databind.node.ObjectNode) run.input().deepCopy();
         tools.jackson.databind.node.ObjectNode before = json.object();
         tools.jackson.databind.node.ObjectNode after = json.object();
-        for (var change : request.changes().entrySet()) {
+        for (var change : changes.entrySet()) {
             JsonNode value = change.getValue();
             if (!allowed.contains(change.getKey()) || value == null || !value.isValueNode() || value.isNull()) {
                 throw new ApiException(ProblemCode.VALIDATION_FAILED,
@@ -622,22 +664,17 @@ public class TaskService {
         }
         int version = runs.correctInputWhileActive(workspaceId, run.id(), run.version(), corrected);
         // A decision loaded before the correction must not go through on the old data.
-        tasks.bumpVersion(workspaceId, taskId, task.version());
+        TaskStore.TaskRow current = tasks.find(workspaceId, task.taskId()).orElseThrow();
+        tasks.bumpVersion(workspaceId, task.taskId(), current.version());
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("before", before);
         data.put("after", after);
-        data.put("reason", request.reason().trim());
-        data.put("fields", request.changes().size());
+        data.put("reason", reason.trim());
+        data.put("fields", changes.size());
         data.put("version", version);
+        if (source != null) data.put("source", source);
         events.append(workspaceId, run.id(), "INPUT_CORRECTED", task.nodeId(), caller.subjectId(), data);
-        Map<String, Object> metadata = new LinkedHashMap<>();
-        metadata.put("taskId", taskId);
-        metadata.put("nodeId", task.nodeId());
-        metadata.put("fields", request.changes().size());
-        audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.USER, caller.subjectId(),
-                "task.input-corrected", "task", taskId, AuditWriter.Outcome.SUCCESS, metadata));
-        idempotency.complete(claim, "taskInputCorrection", Integer.toString(version), 200);
-        return detail(visible(caller, workspaceId, taskId));
+        return version;
     }
 
     private static String nodeLabel(ReleaseQueries.ReleaseView release, String nodeId) {

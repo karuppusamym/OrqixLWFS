@@ -74,6 +74,11 @@ public class ApplicationPages {
                 parsed.components(), parsed.chains(), Map.copyOf(views), Map.copyOf(extensions));
     }
 
+    /** The compensating action of a chain step action, or null when it cannot be undone (S116). */
+    public static String compensation(String action) {
+        return PageDefinition.COMPENSATIONS.get(action);
+    }
+
     /** {@code task.<summary>} and {@code request.<field>} on task pages; {@code case.<field>} on case pages. */
     public static boolean contextBinding(String binding, String context) {
         return PageDefinition.contextBinding(binding, context);

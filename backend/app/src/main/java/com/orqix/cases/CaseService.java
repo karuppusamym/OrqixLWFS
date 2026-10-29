@@ -1292,6 +1292,18 @@ public class CaseService {
                         (int)row[4]==target.version() ? null : viewProblem(ws,(UUID)row[0],target))).toList();
     }
 
+    /** Older case definition versions that pin a view (S116): listed read-only; cases started on them keep that view. */
+    @Transactional(readOnly=true)
+    public List<ViewUse> olderViewUses(UUID ws, UUID viewId) {
+        return jdbc.sql("""
+                SELECT d.id,c.key,d.name,d.version,v.view_version FROM case_catalog c
+                JOIN case_definition d ON d.workspace_id=c.workspace_id AND d.catalog_id=c.id AND d.version<c.current_version
+                JOIN case_definition_view v ON v.workspace_id=d.workspace_id AND v.definition_id=d.id
+                WHERE c.workspace_id=:ws AND v.view_id=:view ORDER BY c.key, d.version DESC LIMIT 50
+                """).param("ws",ws).param("view",viewId).query((rs,n)->new ViewUse(Sql.uuid(rs,"id"),rs.getString("key"),
+                        rs.getString("name"),rs.getInt("version"),rs.getInt("view_version"),null)).list();
+    }
+
     /**
      * Publishes the next version of a case definition that differs only in its view pin: same model, data fields and
      * workflow task mappings. Refused when the definition is no longer the newest version, when the view does not fit

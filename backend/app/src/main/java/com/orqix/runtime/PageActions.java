@@ -22,10 +22,38 @@ import tools.jackson.databind.JsonNode;
 public class PageActions {
     private final TaskService tasks;
     private final RunService runs;
+    private final com.orqix.runtime.internal.SendBacks sendBacks;
+    private final com.orqix.runtime.internal.OperatorService operator;
 
-    public PageActions(TaskService tasks, RunService runs) {
+    public PageActions(TaskService tasks, RunService runs, com.orqix.runtime.internal.SendBacks sendBacks,
+            com.orqix.runtime.internal.OperatorService operator) {
         this.tasks = tasks;
         this.runs = runs;
+        this.sendBacks = sendBacks;
+        this.operator = operator;
+    }
+
+    /** S116: returns the request to its requester for the step's declared fields; returns the new task version. */
+    public int sendBack(Caller caller, UUID workspaceId, String taskId, String idempotencyKey, int expectedVersion, String reason) {
+        return sendBacks.send(caller, workspaceId, taskId, idempotencyKey, new RuntimeDtos.SendBackRequest(expectedVersion, reason)).version();
+    }
+
+    /** Compensation of a send-back: withdraws it again (holder or operator). */
+    public void withdrawSendBack(Caller caller, UUID workspaceId, String taskId, String note) {
+        int version = tasks.getTask(caller, workspaceId, taskId).version();
+        sendBacks.withdraw(caller, workspaceId, taskId, new RuntimeDtos.WithdrawSendBackRequest(version, note));
+    }
+
+    /** Compensation of a claim: returns the task to its group (assignee only). */
+    public void release(Caller caller, UUID workspaceId, String taskId) {
+        int version = tasks.getTask(caller, workspaceId, taskId).version();
+        tasks.release(caller, workspaceId, taskId, version);
+    }
+
+    /** Compensation of a started request: closes it through the operator's cancel (run.operate), with a reason. */
+    public void cancel(Caller caller, UUID workspaceId, UUID runId, String idempotencyKey, String reason) {
+        int version = runs.getRun(caller, workspaceId, runId).version();
+        operator.cancel(caller, workspaceId, runId, idempotencyKey, new RuntimeDtos.CancelRunRequest(reason, version));
     }
 
     /** A task as the caller may see it; summary keys are the page's task binding names. */

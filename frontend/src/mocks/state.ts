@@ -268,6 +268,8 @@ export interface MockRun {
   comments?: components['schemas']['RunComment'][]
   /** Operator suspension (docs/build/S37): tasks, timers and messages are held while set. */
   suspension?: { since: string; reason: string; byId: string } | null
+  /** S116 send-backs to the requester, newest last. */
+  sendBacks?: Array<{ id: string; taskId: string; nodeId: string; status: 'open' | 'answered' | 'withdrawn'; reason: string; fields: string[]; sentById: string; sentAt: string; closedAt: string | null; note: string | null }>
   id: string
   /** Optional for compatibility with older persisted mock fixtures. */
   reference?: string

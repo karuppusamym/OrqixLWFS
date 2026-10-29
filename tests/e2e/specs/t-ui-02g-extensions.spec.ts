@@ -22,8 +22,12 @@ const BADGE = `(function () {
   });
 })();`
 
-/** Blocks its own start for longer than the host's five-second start-up limit. */
-const SLOW = `(function () { var started = Date.now(); while (Date.now() - started < 8000) {} orqix.onData(function () {}); })();`
+/**
+ * Leaves its approved document once it has data. The bridge reports unloading first, so the host removes the frame and
+ * sends nothing to the next document. (A busy-looping bundle is not used: Chromium may run a same-site sandboxed frame
+ * in the page's process, where the loop would stall the host page too.)
+ */
+const LEAVING = `(function () { orqix.onData(function () { setTimeout(function () { location.reload(); }, 300); }); })();`
 
 async function register(page: Page, name: string, source: string): Promise<void> {
   await page.getByRole('button', { name: 'Register extension' }).click()
@@ -55,30 +59,30 @@ async function decide(page: Page, name: string, decision: 'Approve' | 'Revoke'):
 /**
  * UI02g (S111, S114): a designer registers extensions and submits versions, a different administrator approves them,
  * the server-served frame carries its own sandbox policy and framing headers, the extension receives only the granted
- * data and runs the granted chain through the bridge, a slow extension falls back without breaking the page, and a
+ * data and runs the granted chain through the bridge, an extension leaving its document falls back without breaking the page, and a
  * revoked version is not loaded at all.
  */
-test('approved extensions run sandboxed with granted data, fall back when slow and stop when revoked', async ({ sessions }) => {
+test('approved extensions run sandboxed with granted data, fall back when they leave their document and stop when revoked', async ({ sessions }) => {
   test.skip(MOCK, 'The extension frame is served by the server with its own policy; mock mode would load it as srcdoc under the app policy')
   test.setTimeout(300_000)
   let page = await sessions.as('dana.designer')
   const ws = await workspaceId(page)
   const badge = uniq('Request badge')
-  const slow = uniq('Slow badge')
+  const leaving = uniq('Leaving badge')
   await page.goto(`/w/${ws}/extensions`)
   await register(page, badge, BADGE)
-  await register(page, slow, SLOW)
+  await register(page, leaving, LEAVING)
   // The submitter cannot decide their own version.
   await expect(page.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0)
 
   page = await sessions.as('wade.admin')
   await page.goto(`/w/${ws}/extensions`)
   await decide(page, badge, 'Approve')
-  await decide(page, slow, 'Approve')
+  await decide(page, leaving, 'Approve')
   await expectNoSeriousViolations(page, 'Extension registry')
   const list = await apiGet<{ items: Array<{ id: string; name: string }> }>(page, `/workspaces/${ws}/ui-extensions`)
   const badgeId = list.items.find((item) => item.name === badge)!.id
-  const slowId = list.items.find((item) => item.name === slow)!.id
+  const leavingId = list.items.find((item) => item.name === leaving)!.id
 
   // The frame document: its own policy (hash-pinned scripts, no network, sandbox) and framable only by this origin.
   const headers = await page.evaluate(async (url) => {
@@ -100,7 +104,7 @@ test('approved extensions run sandboxed with granted data, fall back when slow a
   expect(headers.referrer).toBe('no-referrer')
   expect(headers.body).toContain('Approve from extension')
 
-  // A task page granting the badge one binding and one chain, plus the slow extension.
+  // A task page granting the badge one binding and one chain, plus the leaving extension.
   page = await sessions.as('dana.designer')
   const workflow = await createWorkflow(page, ws, uniq('Extension journey'))
   const reviewId = await createView(page, ws, uniq('Extension review'), approvalView())
@@ -113,7 +117,7 @@ test('approved extensions run sandboxed with granted data, fall back when slow a
       { id: 'start', label: 'Decision', components: [{ id: 'decision', type: 'view', view: { id: reviewId, version: 1 } }] },
       { id: 'end', label: 'Extensions', components: [
         { id: 'badge', type: 'extension', label: 'Request badge', extension: { id: badgeId, version: 1 }, bindings: ['task.requestTitle'], chains: ['approveNow'], height: 160 },
-        { id: 'slow', type: 'extension', label: 'Slow badge', extension: { id: slowId, version: 1 }, bindings: [], chains: [], height: 120 },
+        { id: 'leaving', type: 'extension', label: 'Leaving badge', extension: { id: leavingId, version: 1 }, bindings: [], chains: [], height: 120 },
       ] },
     ],
     chains: [{ id: 'approveNow', label: 'Claim and approve', stopOnFailure: true, steps: [{ action: 'claim', component: 'decision' }, { action: 'approve', component: 'decision' }] }] })
@@ -137,9 +141,9 @@ test('approved extensions run sandboxed with granted data, fall back when slow a
   await expect(frameElement).toHaveAttribute('src', `/api/v1/workspaces/${ws}/ui-extensions/${badgeId}/versions/1/frame`)
   const frame = page.frameLocator('iframe[title="Request badge"]')
   await expect(frame.getByText(`Request: ${title}`)).toBeVisible({ timeout: 20_000 })
-  // The slow extension misses the start-up limit; the host removes it and the rest of the page keeps working.
-  await expect(page.getByTestId('extension-fallback').filter({ hasText: 'Slow badge' })).toContainText('did not start in time', { timeout: 30_000 })
-  await expect(page.locator('iframe[title="Slow badge"]')).toHaveCount(0)
+  // The leaving extension navigates away from its approved document; the host removes it and the rest of the page keeps working.
+  await expect(page.getByTestId('extension-fallback').filter({ hasText: 'Leaving badge' })).toContainText('navigated away', { timeout: 20_000 })
+  await expect(page.locator('iframe[title="Leaving badge"]')).toHaveCount(0)
   await expect(frame.getByText(`Request: ${title}`)).toBeVisible()
   await expectNoSeriousViolations(page, 'Task page with sandboxed extensions')
 

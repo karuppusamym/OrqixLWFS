@@ -917,6 +917,36 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/ui-extensions/{extensionId}/versions/{version}/files/{token}/{path}:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: extensionId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+      - { name: version, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      - { name: token, in: path, required: true, schema: { type: string, pattern: '^[0-9]{1,12}\.[0-9a-f]{64}$' } }
+      - { name: path, in: path, required: true, schema: { type: string, pattern: '^[a-z0-9][a-z0-9_-]{0,60}\.(js|mjs|css|woff2|woff|png|jpg|jpeg|webp|gif)$' } }
+    get:
+      tags: [Views]
+      operationId: getUiExtensionFile
+      summary: One file of a multi-file extension bundle, loaded by its sandboxed frame (S116; no session, the signed path is the credential)
+      description: >-
+        The frame document's policy names this version's signed file prefix, minted for a caller allowed to load the
+        version and valid for twelve hours. Only approved or pending versions are served; revoked or rejected versions,
+        expired or forged paths and unknown files are 404. Readable cross-origin because the frame has an opaque origin.
+      security: []
+      x-orqix-permission: extensionFileToken
+      responses:
+        '200':
+          description: File bytes with their type
+          content:
+            text/javascript: { schema: { type: string } }
+            text/css: { schema: { type: string } }
+            font/woff2: { schema: { type: string, format: binary } }
+            font/woff: { schema: { type: string, format: binary } }
+            image/png: { schema: { type: string, format: binary } }
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/webp: { schema: { type: string, format: binary } }
+            image/gif: { schema: { type: string, format: binary } }
+        '404': { $ref: '#/components/responses/NotFound' }
   /workspaces/{workspaceId}/ui-extensions/{extensionId}/versions/{version}/frame:
     parameters:
       - { $ref: '#/components/parameters/WorkspaceId' }
@@ -3700,6 +3730,44 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /workspaces/{workspaceId}/runs/{runId}/send-backs:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: runId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    get:
+      tags: [Runs]
+      operationId: listRunSendBacks
+      summary: Send-backs of a request (S116), newest first; field values only for callers who may read the request data
+      x-orqix-permission: initiator | taskParticipant | run.read
+      responses:
+        '200': { description: Send-backs, content: { application/json: { schema: { $ref: '#/components/schemas/SendBackList' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workspaces/{workspaceId}/runs/{runId}/send-backs/{sendBackId}/answer:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: runId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+      - { name: sendBackId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [Runs]
+      operationId: answerSendBack
+      summary: The requester corrects the returned fields; the send-back closes and the task version changes
+      description: >-
+        Only the requester, while the send-back and its task are open and the request is not suspended, with the task
+        version shown. Only the returned fields, as single values, validated against the pinned form; before and after
+        values are recorded. A decision prepared on the old data is refused.
+      x-orqix-permission: initiator
+      x-orqix-audit: task.send-back.answered
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AnswerSendBackRequest' } } } }
+      responses:
+        '200': { description: Answered send-back (or replay), content: { application/json: { schema: { $ref: '#/components/schemas/SendBack' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
   /workspaces/{workspaceId}/runs/{runId}/comments:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -4892,6 +4960,47 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
 
+  /workspaces/{workspaceId}/tasks/{taskId}/send-back:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/TaskId'
+    post:
+      tags: [Tasks]
+      operationId: sendTaskBack
+      summary: Send the request back to its requester for the fields the step declares correctable (S116)
+      description: >-
+        Only the eligible holder of an open task whose step declares correctable fields. At most one send-back is open
+        per task; while it is open the task cannot be decided or corrected by the holder. Bumps the task version.
+      x-orqix-permission: task.act + assignee
+      x-orqix-audit: task.sent-back
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/SendBackRequest' } } } }
+      responses:
+        '200': { description: Task with its open send-back (or replay), content: { application/json: { schema: { $ref: '#/components/schemas/TaskDetail' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/tasks/{taskId}/send-back/withdraw:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/TaskId'
+    post:
+      tags: [Tasks]
+      operationId: withdrawTaskSendBack
+      summary: Withdraw the open send-back of a task (holder or operator)
+      x-orqix-permission: task.act + assignee | run.operate
+      x-orqix-audit: task.send-back.withdrawn
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/WithdrawSendBackRequest' } } } }
+      responses:
+        '200': { description: Task, content: { application/json: { schema: { $ref: '#/components/schemas/TaskDetail' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
   /workspaces/{workspaceId}/tasks/{taskId}/correct-input:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -7220,7 +7329,7 @@ components:
       required: [key, holderType, holderId, holderName, location, pinnedVersions, expected, status, problems, effect]
       properties:
         key: { type: string, maxLength: 120 }
-        holderType: { type: string, enum: [workflowDraft, workflowRelease, caseDefinition, worklist, pageDraft, pageVersion, route] }
+        holderType: { type: string, enum: [workflowDraft, workflowRelease, caseDefinition, caseVersion, worklist, pageDraft, pageVersion, route] }
         holderId: { type: string }
         holderName: { type: string }
         location: { type: string }
@@ -7442,12 +7551,20 @@ components:
         component: { $ref: '#/components/schemas/ViewElementId' }
         target: { type: string, maxLength: 200 }
         planItem: { type: string, pattern: '^[A-Za-z_][A-Za-z0-9._-]{0,63}$', description: CMMN element id of the plan item, for startPlanItem, completePlanItem and planDiscretionaryItem; resolved in the case when the step runs }
+        occurrence: { type: string, enum: [single, newest, choose], description: 'Plan-item steps only. With several available occurrences: single stops (default), newest takes the most recently created, choose takes the one the person picked (ChainInput.planItems).' }
+        compensate:
+          type: string
+          enum: [cancelRequest, restoreDraft, releaseTask, restoreCaseData, resumeCase, suspendCase, withdrawSendBack]
+          description: >-
+            The step's own inverse, run (authorized again) when a later step fails: submit→cancelRequest (needs run.operate),
+            saveDraft→restoreDraft, claim→releaseTask, saveCaseData→restoreCaseData, suspendCase→resumeCase,
+            resumeCase→suspendCase, sendBack→withdrawSendBack. Other steps cannot be undone. Absent means no compensation.
     ChainAction:
       type: string
       description: >-
         requestCorrection runs correctTaskInput (fields the step lets the holder correct). Case steps run the case
         lifecycle, plan-item and task-completion operations with the carried case version and the component's reason.
-      enum: [submit, saveDraft, claim, requestCorrection, approve, reject, saveCaseData, suspendCase, resumeCase, closeCase, startPlanItem, completePlanItem, planDiscretionaryItem, navigate]
+      enum: [submit, saveDraft, claim, requestCorrection, sendBack, approve, reject, saveCaseData, suspendCase, resumeCase, closeCase, startPlanItem, completePlanItem, planDiscretionaryItem, navigate]
     AppPageSlugValue:
       type: string
       pattern: '^[a-z][a-z0-9-]{0,38}[a-z0-9]$'
@@ -7571,6 +7688,11 @@ components:
         expectedVersion: { type: integer, minimum: 1 }
         reason: { type: string, maxLength: 1000 }
         comment: { type: string, maxLength: 2000 }
+        planItems:
+          type: object
+          maxProperties: 5
+          description: CMMN element id to the chosen plan item, for plan-item steps whose occurrence is choose
+          additionalProperties: { type: string, maxLength: 128 }
     ChainRunResult:
       type: object
       additionalProperties: false
@@ -7592,6 +7714,18 @@ components:
               detail: { type: [string, 'null'] }
               problemCode: { type: [string, 'null'] }
               runId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }] }
+              compensation:
+                description: What ran to undo this succeeded step after a later step failed; null when it declares none
+                oneOf:
+                  - type: 'null'
+                  - type: object
+                    additionalProperties: false
+                    required: [action, status, detail, problemCode]
+                    properties:
+                      action: { type: string }
+                      status: { type: string, enum: [succeeded, failed] }
+                      detail: { type: [string, 'null'] }
+                      problemCode: { type: [string, 'null'] }
     UiExtensionStatus:
       type: string
       enum: [pending, approved, rejected, revoked]
@@ -7601,7 +7735,7 @@ components:
       required: [bindings, actions]
       properties:
         bindings: { type: array, maxItems: 20, items: { type: string, maxLength: 72 } }
-        actions: { type: array, maxItems: 7, items: { $ref: '#/components/schemas/ChainAction' } }
+        actions: { type: array, maxItems: 15, items: { $ref: '#/components/schemas/ChainAction' } }
     UiExtensionVersionSummary:
       type: object
       additionalProperties: false
@@ -7637,8 +7771,21 @@ components:
     UiExtensionVersion:
       type: object
       additionalProperties: false
-      required: [extensionId, name, source, version, status, sha256, capabilities, height, submittedBy, submittedAt, decidedBy, decidedAt, decisionNote]
+      required: [extensionId, name, source, version, status, sha256, capabilities, height, submittedBy, submittedAt, decidedBy, decidedAt, decisionNote, entry, files]
       properties:
+        entry: { type: [string, 'null'], description: Module the frame loads from the bundle's files (S116) }
+        files:
+          type: array
+          description: Bundle files with the SHA-256 recorded at submission; the version hash covers them all
+          items:
+            type: object
+            additionalProperties: false
+            required: [path, contentType, size, sha256]
+            properties:
+              path: { type: string }
+              contentType: { type: string }
+              size: { type: integer, minimum: 1 }
+              sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
         extensionId: { $ref: '#/components/schemas/Uuid' }
         name: { type: string }
         source: { type: string }
@@ -7662,11 +7809,23 @@ components:
     SubmitUiExtensionVersion:
       type: object
       additionalProperties: false
-      required: [source, capabilities, height]
+      required: [capabilities, height]
       properties:
-        source: { type: string, minLength: 1, maxLength: 65536 }
+        source: { type: string, maxLength: 65536, description: Inline classic script; may be empty when an entry module is named }
         capabilities: { $ref: '#/components/schemas/UiExtensionCapabilities' }
         height: { type: integer, minimum: 80, maximum: 800 }
+        entry: { type: string, pattern: '^[a-z0-9][a-z0-9_-]{0,60}\.(js|mjs)$', description: The module the frame loads (one of files) }
+        files:
+          type: array
+          maxItems: 30
+          description: 'JavaScript modules, stylesheets, fonts and images (flat names, no SVG), 1 byte to 256 KiB each, 1 MiB in all; imports resolve only inside the bundle'
+          items:
+            type: object
+            additionalProperties: false
+            required: [path, content]
+            properties:
+              path: { type: string, pattern: '^[a-z0-9][a-z0-9_-]{0,60}\.(js|mjs|css|woff2|woff|png|jpg|jpeg|webp|gif)$' }
+              content: { type: string, maxLength: 349528, description: Base64 file bytes }
     UiExtensionDecision:
       type: object
       additionalProperties: false
@@ -10802,6 +10961,71 @@ components:
         message: { type: string, minLength: 1, maxLength: 500 }
         retryable: { type: boolean }
         retryAfterSeconds: { type: integer, minimum: 0, maximum: 86400 }
+    SendBackOpen:
+      type: object
+      additionalProperties: false
+      required: [id, reason, fields, sentAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        reason: { type: string }
+        fields: { type: array, items: { type: string } }
+        sentAt: { $ref: '#/components/schemas/Timestamp' }
+    SendBackRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, reason]
+      properties:
+        expectedVersion: { type: integer, minimum: 1 }
+        reason: { type: string, minLength: 1, maxLength: 500 }
+    WithdrawSendBackRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: { type: integer, minimum: 1 }
+        note: { type: string, maxLength: 500 }
+    AnswerSendBackRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, changes]
+      properties:
+        expectedVersion: { type: integer, minimum: 1, description: Task version shown with the send-back }
+        changes: { type: object, minProperties: 1, maxProperties: 10, additionalProperties: true }
+        note: { type: string, maxLength: 500 }
+    SendBack:
+      type: object
+      additionalProperties: false
+      required: [id, taskId, nodeId, stepLabel, status, reason, fields, sentBy, sentAt, closedAt, note, taskVersion, canAnswer]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        taskId: { type: string }
+        nodeId: { type: string }
+        stepLabel: { type: string }
+        status: { type: string, enum: [open, answered, withdrawn] }
+        reason: { type: string }
+        fields:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [key, title, schema, value]
+            properties:
+              key: { type: string }
+              title: { type: string }
+              schema: { type: [object, 'null'], additionalProperties: true }
+              value: { description: Current value; null without access to the request data }
+        sentBy: { $ref: '#/components/schemas/SubjectRef' }
+        sentAt: { $ref: '#/components/schemas/Timestamp' }
+        closedAt: { type: [string, 'null'], format: date-time }
+        note: { type: [string, 'null'] }
+        taskVersion: { type: integer, minimum: 0 }
+        canAnswer: { type: boolean }
+    SendBackList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/SendBack' } }
     CorrectTaskInputRequest:
       type: object
       additionalProperties: false
@@ -11025,6 +11249,9 @@ components:
                   description: Request fields the caller may correct on this task now (holder or operator, task open, not suspended); empty otherwise.
                   type: array
                   items: { type: string }
+                sendBack:
+                  description: The open send-back of this task (S116); while it is open the task is neither decided nor corrected by the holder
+                  oneOf: [{ $ref: '#/components/schemas/SendBackOpen' }, { type: 'null' }]
             allowedActions:
               type: object
               required: [claim, release, decide, reassign, priority]

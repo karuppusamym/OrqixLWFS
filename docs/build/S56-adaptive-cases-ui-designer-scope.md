@@ -51,3 +51,5 @@ Mark WM04 or UI02 Closed only after the chosen supported model, API, designer, r
 
 
 [S80](S80-reusable-case-views.md) adds UI02d case-data views: visual authoring, immutable version pins, compatibility checks, case start and permission-checked data corrections. This is case-data presentation, not a graphical case-model designer or whole-case page composer. Worklist pages, broader case/action composition, localization, extension sandboxing and the full UI02/WM04 acceptance above remain open.
+
+[S111](S111-application-designer.md) adds UI02g: versioned application pages composed from pinned views, lists, details and extensions; pinned allowlisted action chains run step by step by the server with stop-on-failure; and approved, capability-limited extensions in a hash-pinned sandbox with failure isolation. Under the status rule above UI02 stays open until the real-stack authoring-to-runtime journey (including the server-served extension frame) and version migration beyond explicit per-pin updates are accepted.

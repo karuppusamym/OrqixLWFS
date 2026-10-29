@@ -82,6 +82,14 @@ test('studio canvas: readable text on open, no overlapping steps, Auto-layout is
   const notation = designer.getByTestId('notation-toggle')
   await expect(notation.getByRole('button', { name: 'BPMN shapes' })).toHaveAttribute('aria-pressed', 'true')
   expect(await nodeBoxes(designer).then(overlaps)).toEqual([])
+  // Task names in BPMN shapes are 14 px or more on screen at the first view as well.
+  const bpmnText = await designer.evaluate(() => {
+    const scale = Number(/scale\(([\d.]+)\)/.exec((document.querySelector('.react-flow__viewport') as HTMLElement).style.transform)?.[1] ?? '1')
+    const label = document.querySelector('.react-flow__node [data-testid^="node-shape-"] span.font-semibold')
+    if (!label) throw new Error('No BPMN task name is rendered on the canvas')
+    return parseFloat(getComputedStyle(label).fontSize) * scale
+  })
+  expect(bpmnText).toBeGreaterThanOrEqual(14)
 
   // The rest runs on the step cards, opened fresh: the choice is remembered per person in this browser, so a reload opens
   // the studio in Cards and the first-view fit and arranging apply to the card sizes.

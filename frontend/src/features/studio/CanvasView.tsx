@@ -54,6 +54,8 @@ export const PALETTE_MIME = 'application/x-orqix-node'
  * Fit view button (bottom left) shows all of it.
  */
 const FIT_MIN_ZOOM = 0.85
+/** BPMN shapes print task names at 15 px, so their first view zooms out no further than 14 px on screen (S94). */
+const BPMN_FIT_MIN_ZOOM = 0.94
 const FIT = { padding: 0.12, maxZoom: 1 } as const
 const FIT_ALL = { ...FIT, minZoom: 0.1 } as const
 
@@ -223,6 +225,9 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
     },
     [announce, notation, readOnly, setNotation, store],
   )
+  // The smallest zoom of the first view and of focusing a step, by notation (kept in a ref for the effects below).
+  const minZoomRef = useRef(FIT_MIN_ZOOM)
+  useEffect(() => { minZoomRef.current = notation === 'bpmn' ? BPMN_FIT_MIN_ZOOM : FIT_MIN_ZOOM }, [notation])
   useEffect(() => {
     if (!fitPending.current || !nodesInitialized || !prepared) return
     fitPending.current = false
@@ -235,16 +240,17 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
       if (!box || all.length === 0) return
       const bounds = getNodesBounds(all)
       const whole = getViewportForBounds(bounds, box.width, box.height, 0.1, FIT.maxZoom, FIT.padding)
-      if (whole.zoom >= FIT_MIN_ZOOM) {
+      const minZoom = minZoomRef.current
+      if (whole.zoom >= minZoom) {
         void flow.setViewport(whole, { duration })
         return
       }
       // Too wide to show whole at a readable size: start at the request form, readable, and pan for the rest.
       const start = all.find((n) => n.data.kind === 'start') ?? all[0]
       if (!start) return
-      const fitsTall = bounds.height * FIT_MIN_ZOOM <= box.height - 48
+      const fitsTall = bounds.height * minZoom <= box.height - 48
       const centerY = fitsTall ? bounds.y + bounds.height / 2 : start.position.y + (start.measured?.height ?? 128) / 2
-      void flow.setViewport({ x: 40 - start.position.x * FIT_MIN_ZOOM, y: box.height / 2 - centerY * FIT_MIN_ZOOM, zoom: FIT_MIN_ZOOM }, { duration })
+      void flow.setViewport({ x: 40 - start.position.x * minZoom, y: box.height / 2 - centerY * minZoom, zoom: minZoom }, { duration })
     })
   })
 
@@ -337,7 +343,7 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
       const visible = left >= 0 && top >= 0 && left + width * viewport.zoom <= box.width && top + height * viewport.zoom <= box.height
       if (visible) return
     }
-    void flow.setCenter(node.position.x + width / 2, node.position.y + height / 2, { zoom: Math.min(Math.max(viewport.zoom, FIT_MIN_ZOOM), 1.1), duration: prefersReducedMotion() ? 0 : 250 })
+    void flow.setCenter(node.position.x + width / 2, node.position.y + height / 2, { zoom: Math.min(Math.max(viewport.zoom, minZoomRef.current), 1.1), duration: prefersReducedMotion() ? 0 : 250 })
   }, [focusRequest, flow])
 
   // While a test run is played back, the step being explained is brought into view when it is not already visible.
@@ -354,7 +360,7 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
       const top = node.position.y * viewport.zoom + viewport.y
       if (left >= 0 && top >= 0 && left + width * viewport.zoom <= box.width && top + height * viewport.zoom <= box.height) return
     }
-    void flow.setCenter(node.position.x + width / 2, node.position.y + height / 2, { zoom: Math.min(Math.max(viewport.zoom, FIT_MIN_ZOOM), 1.1), duration: prefersReducedMotion() ? 0 : 250 })
+    void flow.setCenter(node.position.x + width / 2, node.position.y + height / 2, { zoom: Math.min(Math.max(viewport.zoom, minZoomRef.current), 1.1), duration: prefersReducedMotion() ? 0 : 250 })
   }, [playCurrent, flow])
 
   const onDrop = useCallback(

@@ -95,7 +95,7 @@ test.describe('workflow patterns (mock API)', () => {
     // Both groups decide; the request now waits on its timer.
     const approve = async (user: Username, label: string) => {
       const page = await sessions.as(user)
-      const tasks = await apiGet<{ items: Array<{ id: string; label: string; version: number }> }>(page, `/workspaces/${ws}/tasks?view=claimable`)
+      const tasks = await apiGet<{ items: Array<{ id: string; label: string; version: number }> }>(page, `/workspaces/${ws}/tasks?view=claimable&sort=newest`)
       const task = tasks.items.find((t) => t.label === label)!
       expect((await send(page, 'POST', `/workspaces/${ws}/tasks/${task.id}/claim`, { expectedVersion: task.version })).status).toBe(200)
       expect((await send(page, 'POST', `/workspaces/${ws}/tasks/${task.id}/decision`, { expectedVersion: task.version + 1, action: 'approve' })).status).toBe(201)

@@ -12,7 +12,7 @@ test('after restart: waiting request survives, manager approves, request fulfill
   const rq = await sessions.as('rhea.requester')
   const ws = await workspaceId(rq)
   const mgr = await sessions.as('mani.manager')
-  await mgr.goto(`/w/${ws}/tasks?view=claimable`)
+  await mgr.goto(`/w/${ws}/tasks?view=claimable&sort=newest`)
   await expect(mgr.getByRole('link', { name: 'Ergonomic chairs (12)' })).toBeVisible()
   record('restart: seeded waiting task still present after app restart', 'PASS')
   await openTask(mgr, ws, 'Ergonomic chairs (12)')

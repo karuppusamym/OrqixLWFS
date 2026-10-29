@@ -26,6 +26,7 @@ test('canvas authoring with a discretionary item that a manager plans into a run
   await page.getByLabel('Eligible group for task1').selectOption('managers')
   await page.getByLabel('Name for item1', { exact: true }).fill('Expert opinion')
   await page.getByLabel('Eligible group for item1').selectOption('finance-approvers')
+  await page.getByLabel('Manual activation item1').uncheck()
   await page.getByLabel(/Discretionary item1/).check()
   await page.getByRole('group', { name: /Who may plan/ }).getByLabel('Managers').check()
   await page.getByRole('button', { name: 'Use generated CMMN', exact: true }).click()

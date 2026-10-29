@@ -112,6 +112,6 @@ test('a requester cannot decide their own request', async ({ sessions }) => {
   const ws = await workspaceId(manager)
   const workflowId = await workflowIdByKey(manager, ws)
   await submitPurchase(manager, ws, workflowId, { title: 'Mani own request', purpose: 'Separation of duties', costCenter: 'OPS', amount: '100' })
-  await manager.goto(`/w/${ws}/tasks?view=claimable`)
+  await manager.goto(`/w/${ws}/tasks?view=claimable&sort=newest`)
   await expect(manager.getByRole('link', { name: 'Mani own request' })).toHaveCount(0)
 })

@@ -75,8 +75,14 @@
 .orqix-flow .react-flow__attribution {
   background: var(--surface);
 }
+/* The attribution link meets the 24 px minimum target size (WCAG 2.2 2.5.8). */
 .orqix-flow .react-flow__attribution a {
   color: var(--muted-foreground);
+  display: inline-block;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 4px 6px;
+  line-height: 16px;
 }
 
 .orqix-flow .react-flow__edge.selected .react-flow__edge-path {

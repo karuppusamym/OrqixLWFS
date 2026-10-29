@@ -28,9 +28,19 @@ test('HTTP failure routes survive editing, reload and canvas rendering, and acce
   await designer.getByRole('button', { name: 'Fit View', exact: true }).click()
   const card = designer.locator('.react-flow__node[data-id="procure"]')
   await expect(card.locator('[data-handleid="failed"]')).toBeAttached()
-  await expect(card.getByText('Failed', { exact: true })).toBeVisible()
   const edge = designer.locator(`.react-flow__edge[data-id="${failure.id}"]`)
   await expect(edge).toBeAttached()
+  // The canvas opens in BPMN notation (S94): the word "Failed" is printed on the failure route's line, not on the step.
+  const failedLabel = designer.locator('.react-flow__edgelabel-renderer').getByText('Failed', { exact: true })
+  await expect(failedLabel).toBeVisible()
+  await expect.poll(async () => {
+    const label = await failedLabel.boundingBox()
+    const line = await edge.locator('.react-flow__edge-path').boundingBox()
+    if (!label || !line) return false
+    const x = label.x + label.width / 2
+    const y = label.y + label.height / 2
+    return x >= line.x - 2 && x <= line.x + line.width + 2 && y >= line.y - 2 && y <= line.y + line.height + 2
+  }, { message: 'the Failed label sits on the failure route' }).toBe(true)
   await expect.poll(() => edge.locator('.react-flow__edge-path').evaluate(element => {
     const path = element as SVGPathElement
     const first = path.getPointAtLength(0)

@@ -24,7 +24,8 @@ test('purchase through the Assistant, then a manager decides the task', async ({
   await expectNoSeriousViolations(rhea, 'Assistant start')
 
   await rhea.getByRole('button', { name: 'Start a request' }).click()
-  await rhea.getByRole('button', { name: 'Purchase approval', exact: true }).click()
+  // Other specs leave copies named "Purchase approval" in a shared database; any startable one serves here.
+  await rhea.getByRole('button', { name: 'Purchase approval', exact: true }).first().click()
 
   const answer = async (label: string, value: string) => {
     const box = rhea.getByLabel(`Your answer: ${label}`)

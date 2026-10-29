@@ -68,7 +68,7 @@ export async function submitPurchase(page: Page, ws: string, workflowId: string,
 
 /** Open a task from "Available to claim" or "Assigned to me" by the request title it shows. */
 export async function openTask(page: Page, ws: string, title: string, view: 'claimable' | 'assigned' = 'claimable'): Promise<void> {
-  await page.goto(`/w/${ws}/tasks?view=${view}`)
+  await page.goto(`/w/${ws}/tasks?view=${view}&sort=newest`)
   await page.getByRole('link', { name: title, exact: false }).first().click()
   await expect(page.getByTestId('task-actions')).toBeVisible()
 }

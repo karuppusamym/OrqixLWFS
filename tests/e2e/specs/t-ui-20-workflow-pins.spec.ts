@@ -9,7 +9,8 @@ test('personal workflow pins survive searches and reloads and can be removed fro
   const ws = await workspaceId(page)
   await page.goto(`/w/${ws}/workflows`)
   const panel = page.getByRole('region', { name: 'Pinned workflows' })
-  await page.getByRole('button', { name: 'Pin Purchase approval', exact: true }).click()
+  // Other specs leave copies named "Purchase approval" in a shared database; any one of them serves here.
+  await page.getByRole('button', { name: 'Pin Purchase approval', exact: true }).first().click()
   await expect(panel.getByRole('link', { name: 'Purchase approval', exact: true })).toBeVisible()
   const saved = await page.evaluate(() => {
     const key = Object.keys(localStorage).find(value => value.startsWith('orqix.workflowPins.v1:'))!
@@ -26,14 +27,15 @@ test('personal workflow pins survive searches and reloads and can be removed fro
   await expect(panel.getByRole('link', { name: 'Purchase approval', exact: true })).toBeVisible()
   await expectNoSeriousViolations(page, 'Pinned workflows with an empty catalog search')
   await page.setViewportSize({ width: 375, height: 812 })
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true)
+  // The layout reflows after the resize; wait for it rather than measuring the old width.
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true)
   await expectNoSeriousViolations(page, 'Pinned workflows on mobile')
   await page.setViewportSize({ width: 1440, height: 900 })
   await panel.getByRole('link', { name: 'Purchase approval', exact: true }).click()
   const unpin = page.getByRole('button', { name: 'Unpin Purchase approval', exact: true })
   await expect(unpin).toHaveAttribute('aria-pressed', 'true')
   await unpin.click()
-  await expect(page.getByRole('button', { name: 'Pin Purchase approval', exact: true })).toHaveAttribute('aria-pressed', 'false')
+  await expect(page.getByRole('button', { name: 'Pin Purchase approval', exact: true }).first()).toHaveAttribute('aria-pressed', 'false')
   await page.goto(`/w/${ws}/workflows`)
   await expect(panel.getByRole('link')).toHaveCount(0)
   await expect(panel.getByText('Use Pin beside a workflow to keep it here.')).toBeVisible()

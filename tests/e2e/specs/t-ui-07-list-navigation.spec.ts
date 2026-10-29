@@ -32,7 +32,7 @@ test('home shortcuts and run filters fit narrow screens', async ({ sessions }) =
   await page.setViewportSize({ width: 390, height: 844 })
   const shortcuts = page.getByRole('region', { name: 'Workspace shortcuts' })
   await expect(shortcuts.getByRole('link', { name: /Assigned to you/ })).toBeVisible()
-  await expect(shortcuts.getByRole('link', { name: /Available to claim/ })).toHaveAttribute('href', `/w/${ws}/tasks?view=claimable`)
+  await expect(shortcuts.getByRole('link', { name: /Available to claim/ })).toHaveAttribute('href', `/w/${ws}/tasks?view=claimable&sort=newest`)
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   const operator = await sessions.as('olga.operator')
   await operator.setViewportSize({ width: 320, height: 740 })

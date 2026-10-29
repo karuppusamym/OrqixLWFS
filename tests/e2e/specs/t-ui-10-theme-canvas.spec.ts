@@ -78,10 +78,26 @@ test('studio canvas: readable text on open, no overlapping steps, Auto-layout is
   await expect(designer.getByText('Arranging the steps…')).toHaveCount(0)
   await expect(designer.getByTestId('save-state')).toHaveText(/Saved/) // arranging on open does not make the draft unsaved
 
+  // The canvas opens in BPMN notation by default (S94), with no shapes on top of each other.
+  const notation = designer.getByTestId('notation-toggle')
+  await expect(notation.getByRole('button', { name: 'BPMN shapes' })).toHaveAttribute('aria-pressed', 'true')
+  expect(await nodeBoxes(designer).then(overlaps)).toEqual([])
+
+  // The rest runs on the step cards, opened fresh: the choice is remembered per person in this browser, so a reload opens
+  // the studio in Cards and the first-view fit and arranging apply to the card sizes.
+  await notation.getByRole('button', { name: 'Cards' }).click()
+  await expect(notation.getByRole('button', { name: 'Cards' })).toHaveAttribute('aria-pressed', 'true')
+  await designer.reload()
+  await expect(designer.getByTestId('studio')).toBeVisible()
+  await expect(designer.locator('.react-flow__node [data-testid^="node-card"]').first()).toBeVisible()
+  await expect(designer.getByText('Arranging the steps…')).toHaveCount(0)
+  await expect(designer.getByTestId('save-state')).toHaveText(/Saved/)
+
   // Step text is 14 px or more on screen at the first view: font size times the viewport zoom.
   const effective = await designer.evaluate(() => {
     const scale = Number(/scale\(([\d.]+)\)/.exec((document.querySelector('.react-flow__viewport') as HTMLElement).style.transform)?.[1] ?? '1')
-    const label = document.querySelector('.react-flow__node [data-testid^="node-card"] p') as HTMLElement
+    const label = document.querySelector('.react-flow__node [data-testid^="node-card"] p')
+    if (!label) throw new Error('No step card name is rendered on the canvas')
     return { scale, size: parseFloat(getComputedStyle(label).fontSize) * scale }
   })
   expect(effective.size).toBeGreaterThanOrEqual(14)
@@ -132,7 +148,7 @@ test('phone: requests and tasks are cards, and nothing scrolls sideways', async 
 
   const manager = await sessions.as('mani.manager')
   await manager.setViewportSize({ width: 375, height: 812 })
-  await manager.goto(`/w/${ws}/tasks?view=claimable`)
+  await manager.goto(`/w/${ws}/tasks?view=claimable&sort=newest`)
   await expect(manager.getByRole('list', { name: 'Available to claim' })).toBeVisible()
   await expect.poll(() => manager.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 })
@@ -164,7 +180,7 @@ test('phone: no main screen scrolls sideways at 375 px', async ({ sessions }) =>
 
   const manager = await sessions.as('mani.manager')
   await manager.setViewportSize(view)
-  const tasks = await apiGet<{ items: Array<{ id: string }> }>(manager, `/workspaces/${ws}/tasks?view=claimable`)
+  const tasks = await apiGet<{ items: Array<{ id: string }> }>(manager, `/workspaces/${ws}/tasks?view=claimable&sort=newest`)
   await manager.goto(`/w/${ws}/tasks/${tasks.items[0]?.id}`)
   await expect(manager.getByTestId('task-actions')).toBeVisible()
   await expectFits(manager, 'task panel')
@@ -211,7 +227,7 @@ test('phone: a very long title without spaces wraps instead of widening request,
 
   const manager = await sessions.as('mani.manager')
   await manager.setViewportSize({ width: 375, height: 812 })
-  await manager.goto(`/w/${ws}/tasks?view=claimable`)
+  await manager.goto(`/w/${ws}/tasks?view=claimable&sort=newest`)
   await expect(manager.getByRole('link', { name: new RegExp(title.slice(0, 20)) }).first()).toBeVisible()
   await expectFits(manager, 'task list with a long title')
   await manager.getByRole('link', { name: new RegExp(title.slice(0, 20)) }).first().click()

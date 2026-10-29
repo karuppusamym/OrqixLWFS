@@ -1,16 +1,8 @@
-import type { Page } from '@playwright/test'
 import { expect, test } from '../support/fixtures'
 import { MOCK } from '../support/env'
 import { selectStep, workspaceId } from '../support/app'
 import { createWorkflow, uniq } from '../support/api'
 import { expectNoSeriousViolations } from '../support/axe'
-
-/** The side panel's Discussion card starts collapsed (Studio redesign, 2026-10-27): expand it. */
-async function openDiscussion(page: Page): Promise<void> {
-  const toggle = page.getByRole('complementary', { name: 'Details and discussion' }).getByRole('button', { name: 'Discussion', exact: true })
-  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click()
-  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
-}
 
 /**
  * UI03 (docs/build/S53): the Lanes view groups steps by who does them and lists handoffs; the Source view shows the

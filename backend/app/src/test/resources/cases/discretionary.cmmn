@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/CMMN/20151109/MODEL" xmlns:flowable="http://flowable.org/cmmn"
+             xmlns:cmmndi="http://www.omg.org/spec/CMMN/20151109/CMMNDI" xmlns:dc="http://www.omg.org/spec/CMMN/20151109/DC"
+             xmlns:di="http://www.omg.org/spec/CMMN/20151109/DI" targetNamespace="urn:orqix:planning">
+  <case id="planCase" name="Planned review">
+    <casePlanModel id="plan" name="Planned review" autoComplete="false">
+      <planItem id="intake" name="Intake" definitionRef="intakeTask"/>
+      <planItem id="done" name="Expert heard" definitionRef="doneMilestone">
+        <entryCriterion id="doneEntry" sentryRef="expertDone"/>
+      </planItem>
+      <sentry id="expertDone"><planItemOnPart id="expertDoneOn" sourceRef="intake"><standardEvent>complete</standardEvent></planItemOnPart></sentry>
+      <planningTable id="extras">
+        <discretionaryItem id="expert" name="Expert opinion" definitionRef="expertTask" authorizedRoleRefs="managerRole">
+          <itemControl><requiredRule/></itemControl>
+        </discretionaryItem>
+      </planningTable>
+      <humanTask id="intakeTask" name="Intake" flowable:candidateGroups="managers"/>
+      <humanTask id="expertTask" name="Expert opinion" flowable:candidateGroups="finance-approvers"/>
+      <milestone id="doneMilestone" name="Expert heard"/>
+    </casePlanModel>
+    <caseRoles><role id="managerRole" name="managers"/></caseRoles>
+  </case>
+  <cmmndi:CMMNDI>
+    <cmmndi:CMMNDiagram id="planDiagram" name="Planned review">
+      <cmmndi:CMMNShape id="planShape" cmmnElementRef="plan"><dc:Bounds x="20" y="20" width="640" height="320"/><cmmndi:CMMNLabel/></cmmndi:CMMNShape>
+      <cmmndi:CMMNShape id="intakeShape" cmmnElementRef="intake"><dc:Bounds x="60" y="80" width="160" height="80"/><cmmndi:CMMNLabel/></cmmndi:CMMNShape>
+      <cmmndi:CMMNShape id="doneShape" cmmnElementRef="done"><dc:Bounds x="320" y="100" width="120" height="40"/><cmmndi:CMMNLabel/></cmmndi:CMMNShape>
+      <cmmndi:CMMNShape id="doneEntryShape" cmmnElementRef="doneEntry"><dc:Bounds x="314" y="110" width="12" height="20"/><cmmndi:CMMNLabel/></cmmndi:CMMNShape>
+      <cmmndi:CMMNShape id="expertShape" cmmnElementRef="expert"><dc:Bounds x="60" y="220" width="160" height="80"/><cmmndi:CMMNLabel/></cmmndi:CMMNShape>
+      <cmmndi:CMMNEdge id="intakeToDone" cmmnElementRef="intake" targetCMMNElementRef="doneEntry"><di:waypoint x="220" y="120"/><di:waypoint x="314" y="120"/><cmmndi:CMMNLabel/></cmmndi:CMMNEdge>
+    </cmmndi:CMMNDiagram>
+  </cmmndi:CMMNDI>
+</definitions>

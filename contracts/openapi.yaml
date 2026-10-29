@@ -311,6 +311,57 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/plan:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: instanceId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+      - { name: planItemId, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Cases]
+      operationId: planCaseDiscretionaryItem
+      summary: Plan a discretionary item of a stage's planning table into the case
+      description: >-
+        Requires task.act and current membership of a case role authorized on the discretionary item, mapped to a
+        workspace group. The item must be available to plan in an active stage. The planned item then follows its own
+        required and manual activation rules. Expected version, reason, idempotency and case hold checks apply. Audit
+        metadata excludes the reason.
+      x-orqix-permission: task.act
+      x-orqix-audit: case.planitem.changed
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CaseCommand' } } } }
+      responses:
+        '200': { description: Updated case or replay, content: { application/json: { schema: { $ref: '#/components/schemas/CaseInstance' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/retryWorkflow:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: instanceId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+      - { name: planItemId, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Cases]
+      operationId: retryCaseWorkflowTask
+      summary: Start the pinned workflow of an active workflow task again after it could not start or was cancelled
+      description: >-
+        Requires run.operate. The workflow task must be active and its latest attempt failed or cancelled; at most 20
+        attempts. The input is mapped again from current case data, so correct the data first. Expected version,
+        reason, idempotency and case hold checks apply.
+      x-orqix-permission: run.operate
+      x-orqix-audit: case.planitem.changed
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CaseCommand' } } } }
+      responses:
+        '200': { description: Updated case or replay, content: { application/json: { schema: { $ref: '#/components/schemas/CaseInstance' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
   /workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/start:
     parameters:
       - { $ref: '#/components/parameters/WorkspaceId' }
@@ -6851,6 +6902,40 @@ components:
         name: { type: string, minLength: 1, maxLength: 200 }
         sourceXml: { type: string, minLength: 1, maxLength: 65536, description: Bounded CMMN 1.1 XML source (64 KiB UTF-8) }
         dataFields: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseDataField' } }
+        workflowTasks: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseWorkflowTaskMapping' } }
+    CaseWorkflowTaskMapping:
+      type: object
+      additionalProperties: false
+      required: [taskId]
+      description: Mapping of one CMMN processTask whose process names a workspace workflow (externalRef orqix:workflow:<key>).
+      properties:
+        taskId: { type: string, maxLength: 64 }
+        inputMapping: { type: object, maxProperties: 50, description: Workflow request field to case data field, additionalProperties: { type: string } }
+        resultMapping: { type: object, maxProperties: 30, description: 'Case data field to workflow result field, or outcome, outcomeKind or reference', additionalProperties: { type: string } }
+    CaseWorkflowPin:
+      type: object
+      additionalProperties: false
+      required: [taskId, workflowId, workflowKey, workflowName, releaseId, releaseNumber, inputMapping, resultMapping]
+      properties:
+        taskId: { type: string }
+        workflowId: { $ref: '#/components/schemas/Uuid' }
+        workflowKey: { type: string }
+        workflowName: { type: string }
+        releaseId: { $ref: '#/components/schemas/Uuid' }
+        releaseNumber: { type: integer, minimum: 1 }
+        inputMapping: { type: object, additionalProperties: { type: string } }
+        resultMapping: { type: object, additionalProperties: { type: string } }
+    CaseWorkflowStatus:
+      type: object
+      additionalProperties: false
+      required: [attempt, status, runId, reference, outcome, detail]
+      properties:
+        attempt: { type: integer, minimum: 1 }
+        status: { type: string, enum: [running, completed, failed, cancelled, fenced] }
+        runId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }] }
+        reference: { type: [string, 'null'] }
+        outcome: { type: [string, 'null'] }
+        detail: { type: [string, 'null'] }
     CaseDefinition:
       type: object
       additionalProperties: false
@@ -6876,6 +6961,7 @@ components:
         createdAt: { $ref: '#/components/schemas/Timestamp' }
         sourceXml: { type: string }
         dataFields: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseDataField' } }
+        workflowTasks: { type: array, items: { $ref: '#/components/schemas/CaseWorkflowPin' } }
     CasePlanItem:
       type: object
       additionalProperties: false
@@ -6891,6 +6977,7 @@ components:
         endedAt: { type: [string, 'null'], format: date-time }
         required: { type: boolean }
         allowedActions: { type: object, additionalProperties: { type: boolean } }
+        workflow: { oneOf: [{ $ref: '#/components/schemas/CaseWorkflowStatus' }, { type: 'null' }] }
     CaseEvent:
       type: object
       additionalProperties: false

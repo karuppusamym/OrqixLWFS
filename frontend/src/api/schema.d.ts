@@ -269,6 +269,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+                planItemId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Plan a discretionary item of a stage's planning table into the case
+         * @description Requires task.act and current membership of a case role authorized on the discretionary item, mapped to a workspace group. The item must be available to plan in an active stage. The planned item then follows its own required and manual activation rules. Expected version, reason, idempotency and case hold checks apply. Audit metadata excludes the reason.
+         */
+        post: operations["planCaseDiscretionaryItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/retryWorkflow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+                planItemId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start the pinned workflow of an active workflow task again after it could not start or was cancelled
+         * @description Requires run.operate. The workflow task must be active and its latest attempt failed or cancelled; at most 20 attempts. The input is mapped again from current case data, so correct the data first. Expected version, reason, idempotency and case hold checks apply.
+         */
+        post: operations["retryCaseWorkflowTask"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/start": {
         parameters: {
             query?: never;
@@ -4886,6 +4934,42 @@ export interface components {
             /** @description Bounded CMMN 1.1 XML source (64 KiB UTF-8) */
             sourceXml: string;
             dataFields?: components["schemas"]["CaseDataField"][];
+            workflowTasks?: components["schemas"]["CaseWorkflowTaskMapping"][];
+        };
+        /** @description Mapping of one CMMN processTask whose process names a workspace workflow (externalRef orqix:workflow:<key>). */
+        CaseWorkflowTaskMapping: {
+            taskId: string;
+            /** @description Workflow request field to case data field */
+            inputMapping?: {
+                [key: string]: string;
+            };
+            /** @description Case data field to workflow result field, or outcome, outcomeKind or reference */
+            resultMapping?: {
+                [key: string]: string;
+            };
+        };
+        CaseWorkflowPin: {
+            taskId: string;
+            workflowId: components["schemas"]["Uuid"];
+            workflowKey: string;
+            workflowName: string;
+            releaseId: components["schemas"]["Uuid"];
+            releaseNumber: number;
+            inputMapping: {
+                [key: string]: string;
+            };
+            resultMapping: {
+                [key: string]: string;
+            };
+        };
+        CaseWorkflowStatus: {
+            attempt: number;
+            /** @enum {string} */
+            status: "running" | "completed" | "failed" | "cancelled" | "fenced";
+            runId: components["schemas"]["Uuid"] | null;
+            reference: string | null;
+            outcome: string | null;
+            detail: string | null;
         };
         CaseDefinition: {
             viewBinding?: components["schemas"]["PinnedCaseView"] | null;
@@ -4905,6 +4989,7 @@ export interface components {
             createdAt: components["schemas"]["Timestamp"];
             sourceXml: string;
             dataFields?: components["schemas"]["CaseDataField"][];
+            workflowTasks?: components["schemas"]["CaseWorkflowPin"][];
         };
         CasePlanItem: {
             id: string;
@@ -4920,6 +5005,7 @@ export interface components {
             allowedActions: {
                 [key: string]: boolean;
             };
+            workflow?: components["schemas"]["CaseWorkflowStatus"] | null;
         };
         CaseEvent: {
             version: number;
@@ -10669,6 +10755,80 @@ export interface operations {
         };
     };
     occurCaseUserEvent: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+                planItemId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CaseCommand"];
+            };
+        };
+        responses: {
+            /** @description Updated case or replay */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseInstance"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    planCaseDiscretionaryItem: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+                planItemId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CaseCommand"];
+            };
+        };
+        responses: {
+            /** @description Updated case or replay */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseInstance"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    retryCaseWorkflowTask: {
         parameters: {
             query?: never;
             header: {

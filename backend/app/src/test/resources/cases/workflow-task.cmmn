@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/CMMN/20151109/MODEL" xmlns:flowable="http://flowable.org/cmmn" xmlns:orqixwf="urn:orqix:workflow" targetNamespace="urn:orqix:workflow-task">
+  <case id="workflowCase" name="Purchase case">
+    <casePlanModel id="plan" name="Purchase case" autoComplete="false">
+      <planItem id="purchase" name="Run purchase request" definitionRef="purchaseTask"><itemControl><requiredRule/></itemControl></planItem>
+      <planItem id="followUp" name="Follow up" definitionRef="followTask"><entryCriterion id="followEntry" sentryRef="purchased"/></planItem>
+      <sentry id="purchased"><planItemOnPart id="purchasedOn" sourceRef="purchase"><standardEvent>complete</standardEvent></planItemOnPart></sentry>
+      <processTask id="purchaseTask" name="Run purchase request" processRef="purchaseProcess" isBlocking="true"/>
+      <humanTask id="followTask" name="Follow up" flowable:candidateGroups="managers"/>
+    </casePlanModel>
+  </case>
+  <process id="purchaseProcess" name="Purchase" externalRef="orqixwf:WORKFLOWKEY"/>
+</definitions>

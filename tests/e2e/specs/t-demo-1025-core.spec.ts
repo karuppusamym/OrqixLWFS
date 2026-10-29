@@ -67,7 +67,7 @@ test('Camunda 7 purchase: import, map, convert, publish, run 4,999.99 vs 5,000',
   }
   const mgr = await sessions.as('mani.manager')
   for (const amt of ['4999.99', '5000']) {
-    await mgr.goto(`/w/${ws}/tasks?view=claimable`)
+    await mgr.goto(`/w/${ws}/tasks?view=claimable&sort=newest`)
     await mgr.getByRole('link', { name: `Camunda ${amt} ${tag}`, exact: true }).first().click()
     await expect(mgr.getByTestId('task-actions')).toBeVisible()
     const claim = mgr.getByRole('button', { name: 'Claim task' })
@@ -76,7 +76,7 @@ test('Camunda 7 purchase: import, map, convert, publish, run 4,999.99 vs 5,000',
     await expect(mgr.getByTestId('task-banner')).toContainText('You approved')
   }
   const fin = await sessions.as('fin.finance')
-  await fin.goto(`/w/${ws}/tasks?view=claimable`)
+  await fin.goto(`/w/${ws}/tasks?view=claimable&sort=newest`)
   await fin.getByRole('link', { name: `Camunda 5000 ${tag}`, exact: true }).waitFor({ timeout: 30_000 }).catch(() => undefined)
   const finLinks = await fin.getByRole('link', { name: `Camunda 5000 ${tag}`, exact: true }).count()
   const finLinkSmall = await fin.getByRole('link', { name: `Camunda 4999.99 ${tag}`, exact: true }).count()

@@ -52,7 +52,8 @@ public class DraftAuthoring {
         IMPORT("camunda-import", "convertMigration"),
         PEGA_IMPORT("pega-manual-import", "convertMigration"),
         PEGA_XPDL_IMPORT("pega-xpdl-import", "convertMigration"),
-        PEGA_BLUEPRINT_IMPORT("pega-blueprint-import", "convertMigration");
+        PEGA_BLUEPRINT_IMPORT("pega-blueprint-import", "convertMigration"),
+        PEGA_NATIVE_IMPORT("pega-native-import", "convertMigration");
 
         private final String value;
         private final String operationId;

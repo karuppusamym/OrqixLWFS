@@ -1,5 +1,5 @@
 # Migration strategy: PEGA, Camunda and LWFS
-Status: a supported Camunda 7/8 subset (including comparison operators and and/or groups, grouped service mappings, bounded multi-instance calls and DMN decision tables with hit policies UNIQUE and FIRST) and Pega archive assessment with reviewed manual mappings are implemented. Synthetic fixtures are tested; customer source exports have not been supplied. See the [migration workbench](17-migration-workbench.md) for current behavior and limits. The broader adapters below remain a strategy.
+Status: a supported Camunda 7/8 subset (including comparison operators and and/or groups, grouped service mappings, bounded multi-instance calls and DMN decision tables with hit policies UNIQUE and FIRST) Pega archive assessment with reviewed manual mappings, and native Pega rule archive conversion on a synthetic grammar ([S112](build/S112-pega-native-conversion.md)) are implemented. Synthetic fixtures are tested; customer source exports have not been supplied. See the [migration workbench](17-migration-workbench.md) for current behavior and limits. The broader adapters below remain a strategy.
 
 ## Migration product contract
 
@@ -37,7 +37,7 @@ For a three-day import demo, use one real customer/source BPMN file in the teste
 
 ## PEGA migration
 
-The current release delivers archive assessment and reviewed reconstruction. Its engineering delivery and synthetic target acceptance are closed as MIG10 under [ADR 0002](adr/0002-pega-migration-delivery-scope.md), supported by 105/105 Docker checks across small, medium and complex scenarios. Native export conversion is future MIG11; customer source qualification remains AC01/EXT01. No native Pega export version is certified by this evidence.
+The current release delivers archive assessment and reviewed reconstruction. Its engineering delivery and synthetic target acceptance are closed as MIG10 under [ADR 0002](adr/0002-pega-migration-delivery-scope.md), supported by 105/105 Docker checks across small, medium and complex scenarios. Native rule archive conversion (MIG11) was added on 29 October 2026 on a synthetic grammar ([S112](build/S112-pega-native-conversion.md)); customer source qualification remains AC01/EXT01. No native Pega export version is certified by this evidence.
 
 Pega's own documentation describes exporting rules and data via application/product/ruleset packages for movement between Pega environments. It does not provide evidence that these are portable executable BPMN. [Pega application migration documentation](https://docs.pega.com/bundle/platform-242/page/platform/system-administration/migration-applications-systems-moving.html)
 

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/CMMN/20151109/MODEL" xmlns:flowable="http://flowable.org/cmmn" xmlns:orqixdec="urn:orqix:decision" targetNamespace="urn:orqix:decision-file">
+  <caseFileItemDefinition id="valueDef" name="Value" definitionType="http://www.omg.org/spec/CMMN/DefinitionType/Unspecified"/>
+  <case id="decisionCase" name="Routed review">
+    <caseFileModel id="file"><caseFileItem id="commentItem" name="comment" multiplicity="ZeroOrOne" definitionRef="valueDef"/></caseFileModel>
+    <casePlanModel id="plan" name="Routed review" autoComplete="false">
+      <planItem id="route" name="Route by amount" definitionRef="routeTask"/>
+      <planItem id="finance" name="Finance review" definitionRef="financeTask"><entryCriterion id="financeEntry" sentryRef="routedToFinance"/></planItem>
+      <planItem id="answer" name="Answer the comment" definitionRef="answerTask"><entryCriterion id="answerEntry" sentryRef="commented"/></planItem>
+      <sentry id="routedToFinance"><planItemOnPart id="routedOn" sourceRef="route"><standardEvent>complete</standardEvent></planItemOnPart><ifPart id="routedIf"><condition>${cd_route == 'financeReview'}</condition></ifPart></sentry>
+      <sentry id="commented"><caseFileItemOnPart id="commentedOn" sourceRef="commentItem"><standardEvent>create</standardEvent></caseFileItemOnPart></sentry>
+      <decisionTask id="routeTask" name="Route by amount" decisionRef="policy" isBlocking="true"/>
+      <humanTask id="financeTask" name="Finance review" flowable:candidateGroups="managers"/>
+      <humanTask id="answerTask" name="Answer the comment" flowable:candidateGroups="managers"/>
+    </casePlanModel>
+  </case>
+  <decision id="policy" name="Amount policy" externalRef="orqixdec:DECISIONKEY"/>
+</definitions>

@@ -293,6 +293,8 @@ jobs:
       E2E_BASE_URL: http://localhost:8080
       E2E_KEYCLOAK_URL: http://localhost:8180
       E2E_STUB_URL: http://localhost:8095
+      # Dev-only test users of the realm the Compose stack imports; the suite reads their passwords from it.
+      E2E_REALM_FILE: ${{ github.workspace }}/deploy/compose/keycloak/orqix-dev-realm.json
     steps:
       - uses: actions/checkout@v7.0.1
 
@@ -311,6 +313,8 @@ jobs:
         working-directory: deploy/compose
         run: |
           gunzip -c ../../orqix-image.tar.gz | docker load
+          # The stub image is a local fixture that no registry serves; build it here. The app image is the one loaded above.
+          docker compose build procurement-stub
           docker compose --profile app up -d --no-build
           for _ in $(seq 1 60); do
             status=$(docker compose ps orqix --format '{{.Health}}')

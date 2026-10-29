@@ -68,6 +68,6 @@ A review of S104-S106 after the merge into `main` found eight issues; seven are 
 | 3 | The proposed-approver choice seemed to hide email columns | Not a defect: a field format is only `date` or `attachment`, so emails are always plain text columns, which are offered |
 | 4 | lz4-java and snappy-java overrides were declared twice in `backend/pom.xml` | One declaration, from the version properties |
 | 5 | The Dockerfile updated OS packages twice | One full `microdnf update` |
-| 6 | The closed-callback purge scanned every wait every 30 s | Runs every 10 minutes and only looks at waits created before the cut-off (index from V178) |
+| 6 | The closed-callback purge scanned every wait every 30 s | Runs every 10 minutes and only looks at waits created before the cut-off (index from V203) |
 | 7 | A full rate-limiter table was swept on every call | Swept at most once a second when full |
-| 8 | The proposed-approver email lookup could not use an index | Index on `lower(email)` (V178) |
+| 8 | The proposed-approver email lookup could not use an index | Index on `lower(email)` (V203) |

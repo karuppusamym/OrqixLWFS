@@ -128,7 +128,7 @@ class PegaNativeApiTest extends RuntimeTestBase {
         String suffix = UUID.randomUUID().toString().substring(0, 8);
         var childJob = upload("dana.designer", "purchase-advanced").body();
         var childView = api("dana.designer").get("/workspaces/{ws}/migrations/{id}/pega-rules", PURCHASING, childJob.path("id").asString()).body();
-        assertThat(childView.path("startingPoints").size()).isEqualTo(5);
+        assertThat(childView.path("startingPoints").size()).isEqualTo(7); // 3 flows, 2 case types and their processes Review and Fulfil (S117)
         assertThat(childView.path("entries").toString()).contains("\"status\":\"delegation\"");
         ObjectNode childRequest = json.object().put("workflowKey", "pega-child-" + suffix).put("name", "Record order (native Pega)")
                 .put("acknowledgeInfo", true).put("acknowledgeReview", true).put("pegaStartRule", "flows/RecordOrder.xml");

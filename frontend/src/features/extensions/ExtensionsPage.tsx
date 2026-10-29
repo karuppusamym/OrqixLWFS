@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog } from '@/components/ui/dialog'
-import { Input, Textarea } from '@/components/ui/input'
+import { Input, Select, Textarea } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { STEP_ACTIONS, STEP_LABELS, type ChainAction } from '@/features/pages/model'
 import { ExtensionHost } from './ExtensionHost'
@@ -73,7 +73,10 @@ function VersionReview({ ws, extensionId, version }: { ws: string; extensionId: 
   return <section className="space-y-3 rounded-card border border-border bg-surface p-4" aria-label="Version review">
     <h2 className="text-lg font-semibold">{detail.data.name} version {detail.data.version} <Badge tone={TONE[detail.data.status]}>{detail.data.status}</Badge></h2>
     <p className="break-all text-xs text-muted-foreground">SHA-256 {detail.data.sha256}. The frame admits only this exact source by hash.</p>
-    <div><h3 className="text-sm font-semibold">Source</h3><pre className="max-h-72 overflow-auto rounded bg-surface-muted p-3 text-xs"><code>{detail.data.source}</code></pre></div>
+    {detail.data.source ? <div><h3 className="text-sm font-semibold">Source</h3><pre className="max-h-72 overflow-auto rounded bg-surface-muted p-3 text-xs"><code>{detail.data.source}</code></pre></div> : null}
+    {detail.data.files.length ? <div><h3 className="text-sm font-semibold">Bundle files{detail.data.entry ? `, entry ${detail.data.entry}` : ''}</h3>
+      <ul className="space-y-1 text-xs" aria-label="Bundle files">{detail.data.files.map(file => <li key={file.path} className="break-all"><strong>{file.path}</strong> · {file.contentType} · {file.size} bytes · SHA-256 {file.sha256}</li>)}</ul>
+      <p className="mt-1 text-xs text-muted-foreground">Approval covers exactly these hashes. The frame loads the files only from this version, and imports cannot reach anything else.</p></div> : null}
     <div><h3 className="text-sm font-semibold">Sandbox preview with sample data</h3>
       {runnable ? <ExtensionHost label={`${detail.data.name} preview`} source={source.data ?? null} blocked={source.isError ? 'its sandboxed document could not be loaded' : null} data={sample} chains={[]} height={detail.data.height} onRun={async () => ({ completed: false, steps: [] })} />
         : <p className="text-sm text-muted-foreground">A {detail.data.status} version is not served to anyone.</p>}
@@ -101,12 +104,29 @@ function SubmitDialog({ ws, extension, onClose, onDone }: { ws: string; extensio
   const [height, setHeight] = useState(160)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<unknown>(null)
+  const [files, setFiles] = useState<Array<{ path: string; content: string }>>([])
+  const [entry, setEntry] = useState('')
   const markup = !embeddable(source)
-  const submit = async () => { setBusy(true); setError(null); try { await submitExtensionVersion(ws, extension.id, { source, height, capabilities: { bindings: bindings.split('\n').map(line => line.trim()).filter(Boolean), actions } }); await onDone() } catch (cause) { setError(cause) } finally { setBusy(false) } }
-  return <Dialog open onClose={onClose} title={`Submit a version of ${extension.name}`} description="The version is fixed once submitted and waits for an administrator's approval." footer={<><Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button><Button onClick={() => void submit()} disabled={busy || !source.trim() || markup} loading={busy}>Submit for approval</Button></>}>
+  const modules = files.filter(file => /\.(m?js)$/.test(file.path))
+  const choose = async (list: FileList | null) => {
+    // Flat lower-case names; the server checks names, types, sizes and records each file's SHA-256.
+    const read = await Promise.all([...(list ?? [])].map(async file => {
+      const bytes = new Uint8Array(await file.arrayBuffer())
+      let binary = ''
+      for (const byte of bytes) binary += String.fromCharCode(byte)
+      return { path: file.name.toLowerCase(), content: btoa(binary) }
+    }))
+    setFiles(read)
+    setEntry(read.find(file => /\.(m?js)$/.test(file.path))?.path ?? '')
+  }
+  const submit = async () => { setBusy(true); setError(null); try { await submitExtensionVersion(ws, extension.id, { source, height, capabilities: { bindings: bindings.split('\n').map(line => line.trim()).filter(Boolean), actions }, ...(files.length ? { files, ...(entry ? { entry } : {}) } : {}) }); await onDone() } catch (cause) { setError(cause) } finally { setBusy(false) } }
+  return <Dialog open onClose={onClose} title={`Submit a version of ${extension.name}`} description="The version is fixed once submitted and waits for an administrator's approval." footer={<><Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button><Button onClick={() => void submit()} disabled={busy || (!source.trim() && !entry) || markup} loading={busy}>Submit for approval</Button></>}>
     <div className="space-y-4">
       <div><Label htmlFor="extension-source">Bundle source (JavaScript using the orqix bridge)</Label><Textarea id="extension-source" className="font-mono text-xs" rows={8} value={source} onChange={event => setSource(event.target.value)} />
         {markup ? <p className="mt-1 text-sm text-danger" role="alert">Remove script or comment markup from the source.</p> : null}</div>
+      <div><Label htmlFor="extension-files">Bundle files (optional): modules, stylesheets, fonts, images</Label><Input id="extension-files" type="file" multiple accept=".js,.mjs,.css,.woff2,.woff,.png,.jpg,.jpeg,.webp,.gif" onChange={event => void choose(event.target.files)} />
+        <p className="mt-1 text-xs text-muted-foreground">Up to 30 files, 256 KiB each and 1 MiB in all. Modules may import each other with ./name.js; nothing outside the bundle and no network.</p>
+        {modules.length ? <div className="mt-2"><Label htmlFor="extension-entry">Entry module</Label><Select id="extension-entry" value={entry} onChange={event => setEntry(event.target.value)}><option value="">None (inline source only)</option>{modules.map(file => <option key={file.path} value={file.path}>{file.path}</option>)}</Select></div> : null}</div>
       <div><Label htmlFor="extension-bindings">Data it may receive (one binding per line)</Label><Textarea id="extension-bindings" rows={3} value={bindings} onChange={event => setBindings(event.target.value)} /><p className="mt-1 text-xs text-muted-foreground">task.requestTitle, request.amount, case.status and similar. A page may grant fewer.</p></div>
       <fieldset className="space-y-1"><legend className="text-sm font-semibold">Actions it may request</legend>{STEP_ACTIONS.map(action => <div key={action} className="flex items-center gap-2"><Checkbox id={`extension-action-${action}`} checked={actions.includes(action)} onCheckedChange={checked => setActions(current => checked === true ? [...current, action] : current.filter(item => item !== action))} /><Label htmlFor={`extension-action-${action}`}>{STEP_LABELS[action]}</Label></div>)}</fieldset>
       <div><Label htmlFor="extension-height">Height in pixels</Label><Input id="extension-height" type="number" min={80} max={800} value={height} onChange={event => setHeight(Number(event.target.value))} /></div>

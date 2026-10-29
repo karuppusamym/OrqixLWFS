@@ -100,6 +100,21 @@ public class ViewPins {
                                 "Release " + row[2], versions(pins), null, "readOnly", List.of(),
                                 "Release " + row[2] + " keeps its pinned version. Publish a new release from the updated draft to change it."));
                     });
+            // Releases that are no longer active (S116): shown so owners see what will not move; never changed.
+            jdbc.sql("""
+                    SELECT w.id, w.name, r.id AS release_id, r.release_number, r.definition::text AS definition FROM workflow w
+                    JOIN workflow_release r ON r.workspace_id = w.workspace_id AND r.workflow_id = w.id
+                    WHERE w.workspace_id = :ws AND r.id IS DISTINCT FROM w.active_release_id AND strpos(r.definition::text, :id) > 0
+                    ORDER BY lower(w.name), w.id, r.release_number DESC LIMIT 50
+                    """).param("ws", ws).param("id", id).query((rs, n) -> new Object[] { rs.getObject(1, UUID.class),
+                            rs.getString(2), rs.getObject(3, UUID.class), rs.getInt(4), json.parse(rs.getString(5)) }).list()
+                    .forEach(row -> {
+                        var pins = workflowPins(target.id(), (JsonNode) row[4]);
+                        if (pins.isEmpty()) return;
+                        uses.add(new Use("oldRelease:" + row[2], "workflowRelease", row[0].toString(), (String) row[1],
+                                "Release " + row[3] + " (not active)", versions(pins), null, "readOnly", List.of(),
+                                "Release " + row[3] + " is not active and keeps its pinned version; requests already on it finish with it."));
+                    });
         }
         if (target.kind().equals("worklist")) {
             jdbc.sql("SELECT revision, view_version FROM workspace_worklist_view WHERE workspace_id = :ws AND view_id = :id")

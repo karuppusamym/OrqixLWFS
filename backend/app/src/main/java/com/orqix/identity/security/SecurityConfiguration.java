@@ -63,6 +63,10 @@ public class SecurityConfiguration {
     static final RequestMatcher EXTENSION_FRAME_REQUEST = request -> "GET".equals(request.getMethod())
             && EXTENSION_FRAME.matcher(request.getRequestURI()).matches();
 
+    /** S116: files of a multi-file extension bundle; the signed path is the credential (frames send no session). */
+    private static final java.util.regex.Pattern EXTENSION_FILE = java.util.regex.Pattern
+            .compile("^/api/v1/workspaces/[^/]+/ui-extensions/[^/]+/versions/[0-9]+/files/[0-9]{1,12}[.][0-9a-f]{64}/[a-z0-9][a-z0-9_.-]{0,70}$");
+
     private static final java.util.regex.Pattern INBOUND = java.util.regex.Pattern
             .compile("^/api/v1/workspaces/[^/]+/inbound/[^/]+$");
 
@@ -84,7 +88,8 @@ public class SecurityConfiguration {
         http.securityMatcher(request -> "POST".equals(request.getMethod())
                         && (INBOUND.matcher(request.getRequestURI()).matches()
                                 || CALLBACK_RESUME.matcher(request.getRequestURI()).matches())
-                        || "GET".equals(request.getMethod()) && CALLBACK_POLL.matcher(request.getRequestURI()).matches())
+                        || "GET".equals(request.getMethod()) && (CALLBACK_POLL.matcher(request.getRequestURI()).matches()
+                                || EXTENSION_FILE.matcher(request.getRequestURI()).matches()))
                 .authorizeHttpRequests(a -> a.anyRequest().permitAll())
                 .csrf(c -> c.disable())
                 .requestCache(c -> c.disable())

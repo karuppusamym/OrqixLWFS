@@ -47,4 +47,18 @@ describe('chain editor (S111)', () => {
     await user.click(screen.getByRole('button', { name: 'Remove chain New action' }))
     expect(chains()).toEqual([])
   })
+
+  it('declares an undo only for undoable steps and says which steps cannot be undone (S116)', async () => {
+    const user = userEvent.setup()
+    render(<Harness />)
+    await user.click(screen.getByRole('button', { name: 'Add chain' }))
+    await user.selectOptions(screen.getByLabelText('Step 1 action'), 'claim')
+    await user.click(screen.getByLabelText('If a later step fails: return the task to its group'))
+    expect(chains()[0]!.steps[0]).toEqual({ action: 'claim', component: 'review', compensate: 'releaseTask' })
+    await user.click(screen.getByRole('button', { name: 'Add step' }))
+    await user.selectOptions(screen.getByLabelText('Step 2 action'), 'approve')
+    expect(screen.getByText('Approve cannot be undone if a later step fails.')).toBeInTheDocument()
+    await user.click(screen.getByLabelText('If a later step fails: return the task to its group'))
+    expect(chains()[0]!.steps[0]).toEqual({ action: 'claim', component: 'review' })
+  })
 })

@@ -10,6 +10,9 @@ export type ExtensionStatus = ExtensionInfo['status']
 interface StoredVersion {
   version: number
   source: string
+  /** S116 multi-file bundles: files with their SHA-256 and the entry module. Mock mode cannot serve them to a frame. */
+  entry?: string | null
+  files?: Array<{ path: string; contentType: string; size: number; sha256: string }>
   sha256: string
   capabilities: { bindings: string[]; actions: ChainAction[] }
   height: number
@@ -91,6 +94,7 @@ export async function mockFrameDocument(ws: string, id: string, version: number,
   const permissions = permissionsOf(caller, ws)
   const reviewer = permissions.includes('workflow.edit') || permissions.includes('workspace.manage-access')
   if (!found || !isMember(caller, ws) || !(found.status === 'approved' || found.status === 'pending' && reviewer)) throw new Error('This extension version is not available.')
+  if (found.files?.length) throw new Error('Multi-file bundles are served by the server; mock mode cannot load them.')
   return buildFrameDocument(bridge, found.source)
 }
 
@@ -103,7 +107,7 @@ function summary(version: StoredVersion) {
   return { version: version.version, status: version.status, sha256: version.sha256, capabilities: clone(version.capabilities), height: version.height, submittedBy: subject(version.submittedBy)!, submittedAt: version.submittedAt, decidedBy: subject(version.decidedBy), decidedAt: version.decidedAt, decisionNote: version.decisionNote }
 }
 function detail(extension: StoredExtension, version: StoredVersion) {
-  return { extensionId: extension.id, name: extension.name, source: version.source, ...summary(version) }
+  return { extensionId: extension.id, name: extension.name, source: version.source, entry: version.entry ?? null, files: version.files ?? [], ...summary(version) }
 }
 function listed(extension: StoredExtension) {
   return { id: extension.id, name: extension.name, description: extension.description, createdAt: extension.createdAt, versions: [...extension.versions].reverse().map(summary) }
@@ -152,15 +156,23 @@ export function createExtensionHandlers(currentUser: () => MockUser): HttpHandle
       if (!permissions.includes('workflow.edit')) return problem(403, 'FORBIDDEN', 'Forbidden')
       const extension = find(ws, String(params.extensionId))
       if (!extension) return problem(404, 'NOT_FOUND', 'Not found')
-      const body = await request.json() as { source?: string; capabilities?: unknown; height?: number }
+      const body = await request.json() as { source?: string; capabilities?: unknown; height?: number; files?: Array<{ path: string; content: string }>; entry?: string }
       const source = body.source ?? ''
-      if (!source.trim() || new TextEncoder().encode(source).length > 65_536) return problem(422, 'VALIDATION_FAILED', 'The bundle source must contain 1 to 65536 bytes.')
+      const uploads = body.files ?? []
+      const types: Record<string, string> = { js: 'text/javascript', mjs: 'text/javascript', css: 'text/css', woff2: 'font/woff2', woff: 'font/woff', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif' }
+      if (uploads.length > 30 || new Set(uploads.map(file => file.path)).size !== uploads.length || uploads.some(file => !/^[a-z0-9][a-z0-9_-]{0,60}\.(js|mjs|css|woff2|woff|png|jpg|jpeg|webp|gif)$/.test(file.path))) return problem(422, 'VALIDATION_FAILED', 'Files need distinct lower-case names of supported types.')
+      const files = await Promise.all(uploads.map(async file => { const bytes = Uint8Array.from(atob(file.content), c => c.charCodeAt(0)); const digest = await crypto.subtle.digest('SHA-256', bytes); return { path: file.path, contentType: types[file.path.split('.').pop()!]!, size: bytes.length, sha256: [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('') } }))
+      if (files.some(file => file.size < 1 || file.size > 262_144) || files.reduce((sum, file) => sum + file.size, 0) > 1_048_576) return problem(422, 'VALIDATION_FAILED', 'Each file holds 1 byte to 256 KiB, and the files at most 1 MiB in all.')
+      const entry = body.entry || null
+      if (entry && !files.some(file => file.path === entry && /\.(m?js)$/.test(file.path))) return problem(422, 'VALIDATION_FAILED', "The entry must name one of the bundle's JavaScript files.")
+      if ((!source.trim() && !entry) || new TextEncoder().encode(source).length > 65_536) return problem(422, 'VALIDATION_FAILED', 'The bundle source must contain 1 to 65536 bytes, or name an entry module.')
       if (!embeddable(source)) return problem(422, 'VALIDATION_FAILED', 'The bundle source cannot contain script or comment markup.')
       const capability = capabilityProblem(body.capabilities)
       if (capability) return problem(422, 'VALIDATION_FAILED', capability)
       const height = body.height ?? 240
       if (height < 80 || height > 800) return problem(422, 'VALIDATION_FAILED', 'Height must be 80 to 800 pixels.')
-      const version: StoredVersion = { version: extension.versions.length + 1, source, sha256: await sha256Hex(source), capabilities: clone(body.capabilities as StoredVersion['capabilities']), height, status: 'pending', submittedBy: user.id, submittedAt: clock.iso(), decidedBy: null, decidedAt: null, decisionNote: null }
+      const manifest = [await sha256Hex(source), ...(entry ? [`entry:${entry}`] : []), ...[...files].sort((a, b) => a.path.localeCompare(b.path)).map(file => `${file.path}:${file.sha256}`)].join('\n')
+      const version: StoredVersion = { version: extension.versions.length + 1, source, entry, files, sha256: files.length ? await sha256Hex(manifest) : await sha256Hex(source), capabilities: clone(body.capabilities as StoredVersion['capabilities']), height, status: 'pending', submittedBy: user.id, submittedAt: clock.iso(), decidedBy: null, decidedAt: null, decisionNote: null }
       extension.versions.push(version)
       return HttpResponse.json(detail(extension, version), { status: 201 })
     }),

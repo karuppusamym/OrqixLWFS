@@ -61,7 +61,9 @@ public class UiExtensionsController {
     @GetMapping("/{extensionId}/versions/{version}/frame")
     public ResponseEntity<String> frame(@PathVariable UUID workspaceId, @PathVariable UUID extensionId,
             @PathVariable int version) {
-        UiExtensionFrame.Document document = extensions.frame(callers.current(), workspaceId, extensionId, version);
+        String origin = org.springframework.web.servlet.support.ServletUriComponentsBuilder.fromCurrentContextPath()
+                .build().toUriString();
+        UiExtensionFrame.Document document = extensions.frame(callers.current(), workspaceId, extensionId, version, origin);
         return ResponseEntity.ok()
                 .contentType(new MediaType("text", "html", java.nio.charset.StandardCharsets.UTF_8))
                 .cacheControl(CacheControl.noStore())
@@ -71,7 +73,24 @@ public class UiExtensionsController {
                 .header("Cross-Origin-Resource-Policy", "same-origin")
                 .header("Permissions-Policy", UiExtensionFrame.PERMISSIONS)
                 .header("Referrer-Policy", "no-referrer")
-                .header("Origin-Agent-Cluster", "?1")
                 .body(document.html());
+    }
+
+    /**
+     * A file of a multi-file bundle (S116), requested by the sandboxed frame itself. Such requests carry no session, so
+     * the short-lived signed path minted by the frame endpoint is the credential. Cross-origin readable (the frame has an
+     * opaque origin and loads modules with CORS); never cached by shared caches.
+     */
+    @GetMapping("/{extensionId}/versions/{version}/files/{token}/{path}")
+    public ResponseEntity<byte[]> file(@PathVariable UUID workspaceId, @PathVariable UUID extensionId,
+            @PathVariable int version, @PathVariable String token, @PathVariable String path) {
+        var file = extensions.file(workspaceId, extensionId, version, token, path);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(file.contentType()))
+                .cacheControl(CacheControl.maxAge(java.time.Duration.ofHours(1)).cachePrivate())
+                .header("Access-Control-Allow-Origin", "*")
+                .header("Cross-Origin-Resource-Policy", "cross-origin")
+                .header("X-Content-Type-Options", "nosniff")
+                .body(file.content());
     }
 }

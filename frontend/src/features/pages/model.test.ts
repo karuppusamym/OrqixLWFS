@@ -21,6 +21,25 @@ function taskPage(): PageDefinition {
 const caseView: ViewDefinition = { schemaVersion: 1, kind: 'case', sections: [{ id: 'c', label: 'C', columns: 1, fields: [{ id: 'summary', label: 'Summary', type: 'text', binding: 'case.summary' }] }], actions: [{ id: 'save', label: 'Save', type: 'saveData' }] }
 const correcting: ViewDefinition = { ...approval, actions: [...approval.actions, { id: 'fix', label: 'Fix', type: 'requestCorrection' }] }
 
+describe('S116 chain rules', () => {
+  const taskChain = (steps: PageDefinition['chains'][number]['steps']): PageDefinition => ({ ...taskPage(), regions: [{ id: 'main', label: 'Main', components: [{ id: 'review', type: 'view', view: { id: 'fix', version: 1 } }, { id: 'bar', type: 'actions', chains: ['go'] }] }], chains: [{ id: 'go', label: 'Go', stopOnFailure: true, steps }] })
+  const fixLookups: PageLookups = { views: new Map([['fix:1', correcting]]), extensions: new Map() }
+
+  it('accepts a send-back with its own undo, and refuses it next to a decision', () => {
+    expect(validatePage(taskChain([{ action: 'claim', component: 'review', compensate: 'releaseTask' }, { action: 'sendBack', component: 'review', compensate: 'withdrawSendBack' }]), fixLookups)).toEqual([])
+    expect(validatePage(taskChain([{ action: 'sendBack', component: 'review' }, { action: 'approve', component: 'review' }]), fixLookups).join(' ')).toContain('never with a decision')
+  })
+
+  it('allows only a step\'s own inverse as its undo', () => {
+    expect(validatePage(taskChain([{ action: 'approve', component: 'review', compensate: 'releaseTask' }]), fixLookups).join(' ')).toContain('cannot be undone')
+    expect(validatePage(taskChain([{ action: 'claim', component: 'review', compensate: 'withdrawSendBack' }]), fixLookups).join(' ')).toContain('can only be undone by return the task to its group')
+  })
+
+  it('lets only plan-item steps choose an occurrence', () => {
+    expect(validatePage(taskChain([{ action: 'claim', component: 'review', occurrence: 'newest' }]), fixLookups).join(' ')).toContain('only plan-item steps')
+  })
+})
+
 describe('S114 chain steps', () => {
   const casePage = (steps: PageDefinition['chains'][number]['steps']): PageDefinition => ({ ...blankPage(), title: 'Case', context: 'case', regions: [{ id: 'main', label: 'Main', components: [{ id: 'data', type: 'view', view: { id: 'case', version: 1 } }, { id: 'bar', type: 'actions', chains: ['go'] }] }], chains: [{ id: 'go', label: 'Go', stopOnFailure: true, steps }] })
   const caseLookups: PageLookups = { views: new Map([['case:1', caseView], ['fix:1', correcting], ['app:2', approval]]), extensions: new Map() }

@@ -350,6 +350,10 @@ class SecurityMatrixTest extends RuntimeTestBase {
         ids.put("componentId", "matrix");
         ids.put("chainId", "matrix");
         ids.put("extensionId", UUID.randomUUID().toString());
+        // S116: unknown send-backs and a well-formed but unsigned file path are 404 for foreign principals.
+        ids.put("sendBackId", UUID.randomUUID().toString());
+        ids.put("token", "1." + "0".repeat(64));
+        ids.put("path", "main.js");
         // IN04: the workspace is invisible to foreign principals, so unknown ids prove the 404 as well as real ones.
         ids.put("approvalId", UUID.randomUUID().toString());
         ids.put("writeId", UUID.randomUUID().toString());
@@ -541,6 +545,9 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "putGroup" -> Map.of("name", "Foreign", "members", List.of());
             case "assignAppPage" -> Map.of("expectedRevision", 0);
             case "runAppPageChain" -> Map.of("expectedRevision", 1);
+            case "sendTaskBack" -> Map.of("expectedVersion", 1, "reason", "Foreign attempt");
+            case "withdrawTaskSendBack" -> Map.of("expectedVersion", 1);
+            case "answerSendBack" -> Map.of("expectedVersion", 1, "changes", Map.of("amount", 1));
             case "migrateViewPins" -> Map.of("targetVersion", 1, "planHash", "0".repeat(64), "items", List.of("worklist"), "reason", "Foreign");
             case "createUiExtension" -> Map.of("name", "Foreign extension");
             case "submitUiExtensionVersion" -> Map.of("source", "document.body.textContent = 'x';", "capabilities",

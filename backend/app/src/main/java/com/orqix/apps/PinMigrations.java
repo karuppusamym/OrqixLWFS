@@ -161,6 +161,12 @@ public class PinMigrations {
                         List.of(use.viewVersion()), use.version(), status, List.copyOf(problems),
                         "Publishes case definition version " + (use.version() + 1) + " with the same model, data and workflow tasks. Existing cases keep their version."));
             }
+            for (CaseService.ViewUse use : cases.olderViewUses(ws, target.id())) {
+                items.add(new Item("caseVersion:" + use.definitionId(), "caseVersion", use.definitionId().toString(),
+                        use.name() + " (" + use.key() + ")", "Case definition version " + use.version() + " (older)",
+                        List.of(use.viewVersion()), null, "readOnly", List.of(),
+                        "Version " + use.version() + " is not the newest; cases started on it keep its view."));
+            }
         }
         if (target.kind().equals("page")) {
             String routable = null;

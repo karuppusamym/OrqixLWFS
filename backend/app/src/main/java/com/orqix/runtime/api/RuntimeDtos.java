@@ -223,10 +223,42 @@ public final class RuntimeDtos {
     }
 
     /** {@code correctableFields} lists the request fields this caller may correct on this task now (S42); empty otherwise. */
-    public record TaskForm(boolean rejectReasonRequired, java.util.List<String> correctableFields) {
+    public record TaskForm(boolean rejectReasonRequired, java.util.List<String> correctableFields, SendBackOpen sendBack) {
         public TaskForm(boolean rejectReasonRequired) {
-            this(rejectReasonRequired, java.util.List.of());
+            this(rejectReasonRequired, java.util.List.of(), null);
         }
+
+        public TaskForm(boolean rejectReasonRequired, java.util.List<String> correctableFields) {
+            this(rejectReasonRequired, correctableFields, null);
+        }
+    }
+
+    /** S116: the open send-back of a task, shown to whoever can see the task. */
+    public record SendBackOpen(UUID id, String reason, List<String> fields, Instant sentAt) {
+    }
+
+    public record SendBackRequest(@NotNull @Min(1) Integer expectedVersion, @NotNull @Size(min = 1, max = 500) String reason) {
+        @Override public String toString() { return "Send back [reason redacted]"; }
+    }
+
+    public record WithdrawSendBackRequest(@NotNull @Min(1) Integer expectedVersion, @Size(max = 500) String note) {
+    }
+
+    public record AnswerSendBackRequest(@NotNull @Min(1) Integer expectedVersion, @NotNull Map<String, JsonNode> changes,
+            @Size(max = 500) String note) {
+        @Override public String toString() { return "Send-back answer [values redacted]"; }
+    }
+
+    /** A send-back of a request; values are the current values of the returned fields, shown to the requester. */
+    public record SendBack(UUID id, String taskId, String nodeId, String stepLabel, String status, String reason,
+            List<SendBackField> fields, SubjectRef sentBy, Instant sentAt, Instant closedAt, String note,
+            int taskVersion, boolean canAnswer) {
+    }
+
+    public record SendBackField(String key, String title, JsonNode schema, JsonNode value) {
+    }
+
+    public record SendBackList(List<SendBack> items) {
     }
 
     public record CorrectTaskInputRequest(@NotNull @Min(1) Integer expectedVersion,

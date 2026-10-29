@@ -162,7 +162,7 @@ export function createPageHandlers(currentUser: () => MockUser, published: Publi
       if (!isMember(user, ws)) return problem(404, 'NOT_FOUND', 'Not found')
       const key = request.headers.get('Idempotency-Key')
       if (!key) return problem(400, 'IDEMPOTENCY_KEY_REQUIRED', 'An Idempotency-Key header is required')
-      const body = await request.json() as { expectedRevision?: number; context?: string; source?: string; inputs?: Record<string, { values?: Record<string, unknown>; expectedVersion?: number; reason?: string; comment?: string }> }
+      const body = await request.json() as { expectedRevision?: number; context?: string; source?: string; inputs?: Record<string, { values?: Record<string, unknown>; expectedVersion?: number; reason?: string; comment?: string; planItems?: Record<string, string> }> }
       const found = routed(ws, slug)
       if (!found) return problem(404, 'NOT_FOUND', 'Not found')
       if (found.route.revision !== body.expectedRevision) return problem(409, 'WORKFLOW_VERSION_CONFLICT', 'The page changed. Reload it before running an action.')
@@ -179,7 +179,9 @@ export function createPageHandlers(currentUser: () => MockUser, published: Publi
       const previous = chainRuns.get(runKey)
       if (previous) return previous.hash === hash ? HttpResponse.json(clone(previous.result)) : problem(409, 'IDEMPOTENCY_KEY_REUSED', 'The Idempotency-Key was used for a different request')
       const lookups = mockPageLookups(ws, found.page, published)
-      const steps: Array<{ index: number; action: string; component: string | null; status: string; detail: string | null; problemCode: string | null; runId: string | null }> = []
+      const steps: Array<{ index: number; action: string; component: string | null; status: string; detail: string | null; problemCode: string | null; runId: string | null; compensation?: { action: string; status: string; detail: string | null; problemCode: string | null } | null }> = []
+      // Like the server (S116): undo of succeeded steps that declare a compensation, run in reverse order on a later failure.
+      const undo = new Map<number, { action: string; run: () => Promise<unknown> }>()
       let failed = false, navigateTo: string | null = null, taskVersion: number | null = null, caseVersion: number | null = null
       for (const [index, step] of chain.steps.entries()) {
         const component = step.component ? components.find(item => item.id === step.component) : undefined
@@ -199,9 +201,16 @@ export function createPageHandlers(currentUser: () => MockUser, published: Publi
         // Same lookup as the server: the one plan item with this element id on which the caller may take the action now.
         const planItem = async (verb: string | null) => {
           const plan = await internal(request, 'GET', `/workspaces/${ws}/cases/instances/${body.context}/plan`) as { items: Array<{ id: string; elementId: string; name: string; type: string; state: string; allowedActions: Record<string, boolean> }> }
-          const found = plan.items.filter(item => item.elementId === step.planItem && (verb === null ? item.state === 'active' && item.type === 'humantask' : item.allowedActions[verb] === true))
-          if (found.length !== 1) throw Object.assign(new Error(found.length ? `More than one ${step.planItem} is available. Open the case to choose one.` : `Plan item ${step.planItem} is not available for this action in the case.`), { code: found.length ? 'VALIDATION_FAILED' : 'TASK_NOT_OPEN' })
-          return found[0]!
+          const found = (plan.items as Array<{ id: string; elementId: string; name: string; type: string; state: string; allowedActions: Record<string, boolean>; createdAt?: string }>).filter(item => item.elementId === step.planItem && (verb === null ? item.state === 'active' && item.type === 'humantask' : item.allowedActions[verb] === true))
+          if (found.length === 0) throw Object.assign(new Error(`Plan item ${step.planItem} is not available for this action in the case.`), { code: 'TASK_NOT_OPEN' })
+          if (step.occurrence === 'choose') {
+            const chosen = found.find(item => item.id === input?.planItems?.[step.planItem!])
+            if (!chosen) throw Object.assign(new Error(`Choose which ${step.planItem} to act on.`), { code: 'VALIDATION_FAILED' })
+            return chosen
+          }
+          if (found.length === 1) return found[0]!
+          if (step.occurrence === 'newest') return [...found].sort((a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? '') || a.id.localeCompare(b.id)).at(-1)!
+          throw Object.assign(new Error(`More than one ${step.planItem} is available. Open the case to choose one.`), { code: 'VALIDATION_FAILED' })
         }
         try {
           let runId: string | null = null
@@ -211,6 +220,8 @@ export function createPageHandlers(currentUser: () => MockUser, published: Publi
               const run = await internal(request, 'POST', `/workspaces/${ws}/runs`, { workflowId: component!.workflowId, input: bound('request.') }, `${key}:${index}`)
               runId = String(run.id)
               drafts.delete(`${ws}:${found.route.page!.id}:${component!.id}:${user.id}`)
+              const started = runId
+              if (step.compensate) undo.set(index, { action: 'cancelRequest', run: async () => internal(request, 'POST', `/workspaces/${ws}/runs/${started}/cancel`, { reason: `Chain ${chain.id} stopped at a later step`, expectedVersion: Number((await internal(request, 'GET', `/workspaces/${ws}/runs/${started}`)).version) }, `${key}:${index}:undo`) })
               break
             }
             case 'saveDraft':
@@ -218,10 +229,20 @@ export function createPageHandlers(currentUser: () => MockUser, published: Publi
               {
                 // Like the server: uploads are staged for the submit that attaches them, so drafts keep no file references.
                 const files = new Set(view && !isPage(view) ? view.sections.flatMap(section => section.fields).filter(field => field.type === 'file').map(field => field.binding.slice(8)) : [])
-                drafts.set(`${ws}:${found.route.page!.id}:${component!.id}:${user.id}`, { values: Object.fromEntries(Object.entries(clone(bound('request.'))).filter(([name]) => !files.has(name))), savedAt: clock.iso() })
+                const draftKey = `${ws}:${found.route.page!.id}:${component!.id}:${user.id}`
+                const before = drafts.get(draftKey)
+                drafts.set(draftKey, { values: Object.fromEntries(Object.entries(clone(bound('request.'))).filter(([name]) => !files.has(name))), savedAt: clock.iso() })
+                if (step.compensate) undo.set(index, { action: 'restoreDraft', run: async () => { if (before) drafts.set(draftKey, before); else drafts.delete(draftKey) } })
               }
               break
-            case 'claim': taskVersion = Number((await internal(request, 'POST', `/workspaces/${ws}/tasks/${body.context}/claim`, { expectedVersion: version() })).version); break
+            case 'claim':
+              taskVersion = Number((await internal(request, 'POST', `/workspaces/${ws}/tasks/${body.context}/claim`, { expectedVersion: version() })).version)
+              if (step.compensate) undo.set(index, { action: 'releaseTask', run: async () => internal(request, 'POST', `/workspaces/${ws}/tasks/${body.context}/release`, { expectedVersion: Number((await internal(request, 'GET', `/workspaces/${ws}/tasks/${body.context}`)).version) }) })
+              break
+            case 'sendBack':
+              taskVersion = Number((await internal(request, 'POST', `/workspaces/${ws}/tasks/${body.context}/send-back`, { expectedVersion: version(), reason: reason() }, `${key}:${index}`)).version)
+              if (step.compensate) undo.set(index, { action: 'withdrawSendBack', run: async () => internal(request, 'POST', `/workspaces/${ws}/tasks/${body.context}/send-back/withdraw`, { expectedVersion: Number((await internal(request, 'GET', `/workspaces/${ws}/tasks/${body.context}`)).version), note: `Chain ${chain.id} stopped at a later step.` }) })
+              break
             case 'approve': case 'reject': await internal(request, 'POST', `/workspaces/${ws}/tasks/${body.context}/decision`, { expectedVersion: version(), action: step.action, ...(input?.reason ? { reason: input.reason } : {}), ...(input?.comment ? { comment: input.comment } : {}) }, `${key}:${index}`); break
             case 'requestCorrection': {
               const changes = bound('request.')
@@ -232,6 +253,10 @@ export function createPageHandlers(currentUser: () => MockUser, published: Publi
             case 'saveCaseData': caseVersion = Number((await internal(request, 'POST', `/workspaces/${ws}/cases/instances/${body.context}/data`, { expectedVersion: caseVersionNow(), reason: input?.reason, values: bound('case.') }, `${key}:${index}`)).version); break
             case 'suspendCase': case 'resumeCase': case 'closeCase':
               caseVersion = Number((await internal(request, 'POST', `/workspaces/${ws}/cases/instances/${body.context}/${step.action.slice(0, -4)}`, { expectedVersion: caseVersionNow(), reason: reason() }, `${key}:${index}`)).version)
+              if (step.compensate && step.action !== 'closeCase') {
+                const inverse = step.action === 'suspendCase' ? 'resume' : 'suspend'
+                undo.set(index, { action: step.compensate, run: async () => internal(request, 'POST', `/workspaces/${ws}/cases/instances/${body.context}/${inverse}`, { expectedVersion: Number((await internal(request, 'GET', `/workspaces/${ws}/cases/instances/${body.context}`)).version), reason: `Undone: chain ${chain.id} stopped at a later step` }, `${key}:${index}:undo`) })
+              }
               break
             case 'startPlanItem': case 'planDiscretionaryItem': {
               const verb = step.action === 'startPlanItem' ? 'start' : 'plan'
@@ -253,6 +278,15 @@ export function createPageHandlers(currentUser: () => MockUser, published: Publi
           failed = true
           navigateTo = null
           steps.push({ index, action: step.action, component: step.component ?? null, status: 'failed', detail: (error as Error).message, problemCode: (error as { code?: string }).code ?? 'FAILED', runId: null })
+        }
+      }
+      if (failed) for (const at of [...undo.keys()].reverse()) {
+        const entry = undo.get(at)!
+        try {
+          await entry.run()
+          steps[at] = { ...steps[at]!, compensation: { action: entry.action, status: 'succeeded', detail: null, problemCode: null } }
+        } catch (error) {
+          steps[at] = { ...steps[at]!, compensation: { action: entry.action, status: 'failed', detail: (error as Error).message, problemCode: (error as { code?: string }).code ?? 'FAILED' } }
         }
       }
       const result = { completed: !failed, navigateTo, steps }

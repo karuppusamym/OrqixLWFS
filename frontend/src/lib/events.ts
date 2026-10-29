@@ -208,6 +208,12 @@ export function describeEvent(event: RunEvent, ctx: EventContext): string {
     }
     case 'TASK_PRIORITY_CHANGED':
       return `${actorName(event, ctx)} changed ${label} priority from ${event.data.from} to ${event.data.to}${str(event.data.reason) ? `: ${str(event.data.reason)}` : ''}`
+    case 'TASK_SENT_BACK':
+      return `${actorName(event, ctx)} sent ${label} back to the requester${str(event.data.reason) ? `: ${str(event.data.reason)}` : ''}`
+    case 'TASK_SEND_BACK_WITHDRAWN':
+      return `${actorName(event, ctx)} withdrew the send-back of ${label}`
+    case 'TASK_SEND_BACK_ANSWERED':
+      return `${actorName(event, ctx)} answered the send-back of ${label}`
     case 'INPUT_CORRECTED':
       return `${actorName(event,ctx)} corrected ${event.data.fields} request field${event.data.fields===1 ? '' : 's'}${str(event.data.reason) ? `: ${str(event.data.reason)}` : ''}`
     case 'TASK_DECIDED': {

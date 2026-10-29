@@ -28,9 +28,18 @@ public final class PageDefinition {
             "assignedTasks", TASK_FIELDS, "claimableTasks", TASK_FIELDS,
             "myRequests", Set.of("requestTitle", "reference", "workflowName", "lifecycle", "createdAt", "updatedAt"),
             "cases", Set.of("status", "definitionVersion", "version", "createdAt"));
-    public static final Set<String> STEP_ACTIONS = Set.of("submit", "saveDraft", "claim", "requestCorrection", "approve",
-            "reject", "saveCaseData", "suspendCase", "resumeCase", "closeCase", "startPlanItem", "completePlanItem",
+    public static final Set<String> STEP_ACTIONS = Set.of("submit", "saveDraft", "claim", "requestCorrection", "sendBack",
+            "approve", "reject", "saveCaseData", "suspendCase", "resumeCase", "closeCase", "startPlanItem", "completePlanItem",
             "planDiscretionaryItem", "navigate");
+    /**
+     * The one compensating step each undoable action may declare (S116). It runs, authorized again, when a later step of
+     * the chain fails. Every other action cannot be undone and declares none.
+     */
+    public static final Map<String, String> COMPENSATIONS = Map.of("submit", "cancelRequest", "saveDraft", "restoreDraft",
+            "claim", "releaseTask", "saveCaseData", "restoreCaseData", "suspendCase", "resumeCase", "resumeCase", "suspendCase",
+            "sendBack", "withdrawSendBack");
+    /** How a plan-item step picks among several available occurrences of its element (S116). */
+    public static final Set<String> OCCURRENCES = Set.of("single", "newest", "choose");
     /** Steps that act on one plan item of the case, named by its CMMN element id and resolved when the step runs. */
     public static final Set<String> PLAN_ITEM_STEPS = Set.of("startPlanItem", "completePlanItem", "planDiscretionaryItem");
     static final Set<String> CASE_STEPS = Set.of("saveCaseData", "suspendCase", "resumeCase", "closeCase", "startPlanItem",
@@ -178,19 +187,28 @@ public final class PageDefinition {
         int decisions = 0;
         boolean claimed = false;
         boolean corrected = false;
+        boolean sentBack = false;
         boolean closed = false;
         Set<String> submitted = new HashSet<>();
         for (int i = 0; i < steps.size(); i++) {
             JsonNode step = steps.get(i);
             String sp = path + "/steps/" + i;
             object(step, sp);
-            keys(step, sp, Set.of("action", "component", "target", "planItem"));
+            keys(step, sp, Set.of("action", "component", "target", "planItem", "compensate", "occurrence"));
             String action = text(step, "action", 24, sp);
             if (!STEP_ACTIONS.contains(action)) fail(sp + "/action", "is not in the action allowlist");
             if (PLAN_ITEM_STEPS.contains(action)) {
                 if (!ELEMENT.matcher(text(step, "planItem", 64, sp)).matches()) fail(sp + "/planItem", "must be a CMMN element id");
-            } else if (step.has("planItem")) {
-                fail(sp + "/planItem", "is only used by plan-item steps");
+                if (step.has("occurrence") && !OCCURRENCES.contains(text(step, "occurrence", 10, sp))) {
+                    fail(sp + "/occurrence", "must be single, newest or choose");
+                }
+            } else if (step.has("planItem") || step.has("occurrence")) {
+                fail(sp + (step.has("planItem") ? "/planItem" : "/occurrence"), "is only used by plan-item steps");
+            }
+            if (step.has("compensate")) {
+                String undo = COMPENSATIONS.get(action);
+                if (undo == null) fail(sp + "/compensate", "is not available: " + action + " cannot be undone");
+                if (!undo.equals(text(step, "compensate", 24, sp))) fail(sp + "/compensate", "must be " + undo + " for " + action);
             }
             if (closed && CASE_STEPS.contains(action)) fail(sp, "no case step can follow closing the case");
             if (action.equals("navigate")) {
@@ -209,6 +227,7 @@ public final class PageDefinition {
             switch (action) {
                 case "approve", "reject" -> {
                     if (++decisions > 1) fail(sp, "a chain can contain only one approve or reject step");
+                    if (sentBack) fail(sp, "a send-back may appear once and never with a decision");
                 }
                 case "claim" -> {
                     if (claimed || corrected || decisions > 0) fail(sp, "claim may appear once, before a correction or decision");
@@ -217,6 +236,10 @@ public final class PageDefinition {
                 case "requestCorrection" -> {
                     if (corrected || decisions > 0) fail(sp, "a correction may appear once, before a decision");
                     corrected = true;
+                }
+                case "sendBack" -> {
+                    if (sentBack || decisions > 0) fail(sp, "a send-back may appear once and never with a decision");
+                    sentBack = true;
                 }
                 case "closeCase" -> closed = true;
                 case "submit" -> {

@@ -23,7 +23,7 @@ const STATUS: Record<ViewPinItem['status'], { label: string; tone: 'success' | '
   readOnly: { label: 'Fixed version', tone: 'neutral' },
 }
 const HOLDER: Record<ViewPinItem['holderType'], string> = {
-  workflowDraft: 'Workflow draft', workflowRelease: 'Workflow release', caseDefinition: 'Case definition', worklist: 'Worklist',
+  workflowDraft: 'Workflow draft', workflowRelease: 'Workflow release', caseDefinition: 'Case definition', caseVersion: 'Older case version', worklist: 'Worklist',
   pageDraft: 'Page draft', pageVersion: 'Published page', route: 'Page route',
 }
 
@@ -84,7 +84,7 @@ export function PinMigration({ viewId, versions }: { viewId: string; versions: n
     <p className="text-sm text-muted-foreground">Pins never move on their own. Choose the places to update; the server checks each one again and updates all of them or none.</p>
     {pins.isPending ? <p className="text-sm text-muted-foreground" role="status">Checking pins</p>
       : items.length === 0 ? <p className="text-sm text-muted-foreground">Nothing pins this view yet.</p>
-        : <ul className="space-y-2">{items.map(item => <li key={item.key} className="rounded border border-border p-3">
+        : <ul className="space-y-2" aria-label="Pins of this view">{items.map(item => <li key={item.key} className="rounded border border-border p-3">
           <div className="flex flex-wrap items-start gap-2">
             {item.status === 'ready' && canUpdate ? <Checkbox id={`pin-${item.key}`} checked={selected.has(item.key)} onCheckedChange={checked => setSelected(current => { const next = new Set(current); if (checked === true) next.add(item.key); else next.delete(item.key); return next })} /> : null}
             <div className="min-w-0 flex-1">

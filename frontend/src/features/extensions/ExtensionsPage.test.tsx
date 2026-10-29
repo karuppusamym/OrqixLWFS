@@ -64,4 +64,29 @@ describe('extension registry with mock API (S111)', () => {
     await renderAppReady(`/w/${WS}/extensions`)
     expect(await screen.findByRole('alert')).toHaveTextContent('You do not have permission to read extensions.')
   })
+
+  it('submits a multi-file bundle with an entry module and shows each file with its hash for review (S116)', async () => {
+    signInAs('dana.designer')
+    const user = userEvent.setup()
+    await renderAppReady(`/w/${WS}/extensions`)
+    await user.click(await screen.findByRole('button', { name: 'Register extension' }))
+    const create = await screen.findByRole('dialog', { name: 'Register extension' })
+    await user.type(within(create).getByLabelText('Name'), 'Module card')
+    await user.click(within(create).getByRole('button', { name: 'Register' }))
+    const card = (await screen.findByRole('heading', { level: 2, name: 'Module card' })).closest('li')!
+    await user.click(within(card).getByRole('button', { name: 'Submit version' }))
+    const submit = await screen.findByRole('dialog', { name: 'Submit a version of Module card' })
+    await user.clear(within(submit).getByLabelText('Bundle source (JavaScript using the orqix bridge)'))
+    await user.upload(within(submit).getByLabelText(/Bundle files/), [
+      new File(["import { x } from './util.js'; orqix.onData(function () {});"], 'main.js', { type: 'text/javascript' }),
+      new File(['export const x = 1;'], 'util.js', { type: 'text/javascript' }),
+    ])
+    expect(await within(submit).findByLabelText('Entry module')).toHaveValue('main.js')
+    await user.click(within(submit).getByRole('button', { name: 'Submit for approval' }))
+    await waitFor(() => expect(card).toHaveTextContent('pending'))
+    await user.click(within(card).getByRole('button', { name: 'Version 1' }))
+    const files = await screen.findByRole('list', { name: 'Bundle files' })
+    expect(within(files).getAllByRole('listitem').map(item => item.textContent?.split(' · ')[0])).toEqual(['main.js', 'util.js'])
+    expect(files).toHaveTextContent('SHA-256')
+  }, 30_000)
 })

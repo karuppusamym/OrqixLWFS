@@ -24,13 +24,15 @@ import tools.jackson.databind.JsonNode;
 public class PageReferences {
     private static final Map<String, String> STEP_KIND = Map.ofEntries(Map.entry("submit", "request"),
             Map.entry("saveDraft", "request"), Map.entry("claim", "approval"), Map.entry("requestCorrection", "approval"),
+            Map.entry("sendBack", "approval"),
             Map.entry("approve", "approval"), Map.entry("reject", "approval"), Map.entry("saveCaseData", "case"),
             Map.entry("suspendCase", "case"), Map.entry("resumeCase", "case"), Map.entry("closeCase", "case"),
             Map.entry("startPlanItem", "case"), Map.entry("completePlanItem", "case"),
             Map.entry("planDiscretionaryItem", "case"));
     /** The view action a step needs on its target view; lifecycle and plan-item steps need none. */
     private static final Map<String, String> STEP_VIEW_ACTION = Map.of("submit", "submit", "saveDraft", "saveDraft",
-            "requestCorrection", "requestCorrection", "approve", "approve", "reject", "reject", "saveCaseData", "saveData");
+            "requestCorrection", "requestCorrection", "sendBack", "requestCorrection", "approve", "approve", "reject", "reject",
+            "saveCaseData", "saveData");
 
     private final JdbcClient jdbc;
     private final Json json;

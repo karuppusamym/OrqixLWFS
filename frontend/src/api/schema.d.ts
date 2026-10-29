@@ -882,6 +882,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/ui-extensions/{extensionId}/versions/{version}/files/{token}/{path}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                extensionId: components["schemas"]["Uuid"];
+                version: number;
+                token: string;
+                path: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * One file of a multi-file extension bundle, loaded by its sandboxed frame (S116; no session, the signed path is the credential)
+         * @description The frame document's policy names this version's signed file prefix, minted for a caller allowed to load the version and valid for twelve hours. Only approved or pending versions are served; revoked or rejected versions, expired or forged paths and unknown files are 404. Readable cross-origin because the frame has an opaque origin.
+         */
+        get: operations["getUiExtensionFile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/ui-extensions/{extensionId}/versions/{version}/frame": {
         parameters: {
             query?: never;
@@ -2765,6 +2791,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/runs/{runId}/send-backs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        /** Send-backs of a request (S116), newest first; field values only for callers who may read the request data */
+        get: operations["listRunSendBacks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/runs/{runId}/send-backs/{sendBackId}/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["schemas"]["Uuid"];
+                sendBackId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * The requester corrects the returned fields; the send-back closes and the task version changes
+         * @description Only the requester, while the send-back and its task are open and the request is not suspended, with the task version shown. Only the returned fields, as single values, validated against the pinned form; before and after values are recorded. A decision prepared on the old data is refused.
+         */
+        post: operations["answerSendBack"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/runs/{runId}/comments": {
         parameters: {
             query?: never;
@@ -3659,6 +3729,51 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["claimTask"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/tasks/{taskId}/send-back": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                /** @description Engine task identifier; always resolved through the workspace's task projection first. */
+                taskId: components["parameters"]["TaskId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send the request back to its requester for the fields the step declares correctable (S116)
+         * @description Only the eligible holder of an open task whose step declares correctable fields. At most one send-back is open per task; while it is open the task cannot be decided or corrected by the holder. Bumps the task version.
+         */
+        post: operations["sendTaskBack"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/tasks/{taskId}/send-back/withdraw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                /** @description Engine task identifier; always resolved through the workspace's task projection first. */
+                taskId: components["parameters"]["TaskId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Withdraw the open send-back of a task (holder or operator) */
+        post: operations["withdrawTaskSendBack"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5220,7 +5335,7 @@ export interface components {
         ViewPinItem: {
             key: string;
             /** @enum {string} */
-            holderType: "workflowDraft" | "workflowRelease" | "caseDefinition" | "worklist" | "pageDraft" | "pageVersion" | "route";
+            holderType: "workflowDraft" | "workflowRelease" | "caseDefinition" | "caseVersion" | "worklist" | "pageDraft" | "pageVersion" | "route";
             holderId: string;
             holderName: string;
             location: string;
@@ -5386,12 +5501,22 @@ export interface components {
             target?: string;
             /** @description CMMN element id of the plan item */
             planItem?: string;
+            /**
+             * @description Plan-item steps only. With several available occurrences: single stops (default), newest takes the most recently created, choose takes the one the person picked (ChainInput.planItems).
+             * @enum {string}
+             */
+            occurrence?: "single" | "newest" | "choose";
+            /**
+             * @description The step's own inverse, run (authorized again) when a later step fails: submit→cancelRequest (needs run.operate), saveDraft→restoreDraft, claim→releaseTask, saveCaseData→restoreCaseData, suspendCase→resumeCase, resumeCase→suspendCase, sendBack→withdrawSendBack. Other steps cannot be undone. Absent means no compensation.
+             * @enum {string}
+             */
+            compensate?: "cancelRequest" | "restoreDraft" | "releaseTask" | "restoreCaseData" | "resumeCase" | "suspendCase" | "withdrawSendBack";
         };
         /**
          * @description requestCorrection runs correctTaskInput (fields the step lets the holder correct). Case steps run the case lifecycle, plan-item and task-completion operations with the carried case version and the component's reason.
          * @enum {string}
          */
-        ChainAction: "submit" | "saveDraft" | "claim" | "requestCorrection" | "approve" | "reject" | "saveCaseData" | "suspendCase" | "resumeCase" | "closeCase" | "startPlanItem" | "completePlanItem" | "planDiscretionaryItem" | "navigate";
+        ChainAction: "submit" | "saveDraft" | "claim" | "requestCorrection" | "sendBack" | "approve" | "reject" | "saveCaseData" | "suspendCase" | "resumeCase" | "closeCase" | "startPlanItem" | "completePlanItem" | "planDiscretionaryItem" | "navigate";
         AppPageSlugValue: string;
         AppPageRoute: {
             slug: components["schemas"]["AppPageSlugValue"];
@@ -5473,6 +5598,10 @@ export interface components {
             expectedVersion?: number;
             reason?: string;
             comment?: string;
+            /** @description CMMN element id to the chosen plan item, for plan-item steps whose occurrence is choose */
+            planItems?: {
+                [key: string]: string;
+            };
         };
         ChainRunResult: {
             completed: boolean;
@@ -5486,6 +5615,14 @@ export interface components {
                 detail: string | null;
                 problemCode: string | null;
                 runId: components["schemas"]["Uuid"] | null;
+                /** @description What ran to undo this succeeded step after a later step failed; null when it declares none */
+                compensation?: null | {
+                    action: string;
+                    /** @enum {string} */
+                    status: "succeeded" | "failed";
+                    detail: string | null;
+                    problemCode: string | null;
+                };
             }[];
         };
         /** @enum {string} */
@@ -5518,6 +5655,15 @@ export interface components {
             canApprove: boolean;
         };
         UiExtensionVersion: {
+            /** @description Module the frame loads from the bundle's files (S116) */
+            entry: string | null;
+            /** @description Bundle files with the SHA-256 recorded at submission; the version hash covers them all */
+            files: {
+                path: string;
+                contentType: string;
+                size: number;
+                sha256: string;
+            }[];
             extensionId: components["schemas"]["Uuid"];
             name: string;
             source: string;
@@ -5537,9 +5683,18 @@ export interface components {
             description?: string;
         };
         SubmitUiExtensionVersion: {
-            source: string;
+            /** @description Inline classic script; may be empty when an entry module is named */
+            source?: string;
             capabilities: components["schemas"]["UiExtensionCapabilities"];
             height: number;
+            /** @description The module the frame loads (one of files) */
+            entry?: string;
+            /** @description JavaScript modules, stylesheets, fonts and images (flat names, no SVG), 1 byte to 256 KiB each, 1 MiB in all; imports resolve only inside the bundle */
+            files?: {
+                path: string;
+                /** @description Base64 file bytes */
+                content: string;
+            }[];
         };
         UiExtensionDecision: {
             /** @enum {string} */
@@ -7878,6 +8033,56 @@ export interface components {
             retryable: boolean;
             retryAfterSeconds?: number;
         };
+        SendBackOpen: {
+            id: components["schemas"]["Uuid"];
+            reason: string;
+            fields: string[];
+            sentAt: components["schemas"]["Timestamp"];
+        };
+        SendBackRequest: {
+            expectedVersion: number;
+            reason: string;
+        };
+        WithdrawSendBackRequest: {
+            expectedVersion: number;
+            note?: string;
+        };
+        AnswerSendBackRequest: {
+            /** @description Task version shown with the send-back */
+            expectedVersion: number;
+            changes: {
+                [key: string]: unknown;
+            };
+            note?: string;
+        };
+        SendBack: {
+            id: components["schemas"]["Uuid"];
+            taskId: string;
+            nodeId: string;
+            stepLabel: string;
+            /** @enum {string} */
+            status: "open" | "answered" | "withdrawn";
+            reason: string;
+            fields: {
+                key: string;
+                title: string;
+                schema: {
+                    [key: string]: unknown;
+                } | null;
+                /** @description Current value; null without access to the request data */
+                value: unknown;
+            }[];
+            sentBy: components["schemas"]["SubjectRef"];
+            sentAt: components["schemas"]["Timestamp"];
+            /** Format: date-time */
+            closedAt: string | null;
+            note: string | null;
+            taskVersion: number;
+            canAnswer: boolean;
+        };
+        SendBackList: {
+            items: components["schemas"]["SendBack"][];
+        };
         CorrectTaskInputRequest: {
             expectedVersion: number;
             reason: string;
@@ -8044,6 +8249,8 @@ export interface components {
                 rejectReasonRequired: boolean;
                 /** @description Request fields the caller may correct on this task now (holder or operator, task open, not suspended); empty otherwise. */
                 correctableFields?: string[];
+                /** @description The open send-back of this task (S116); while it is open the task is neither decided nor corrected by the holder */
+                sendBack?: components["schemas"]["SendBackOpen"] | null;
             };
             allowedActions: {
                 claim: components["schemas"]["ActionAvailability"];
@@ -12108,6 +12315,40 @@ export interface operations {
             422: components["responses"]["Unprocessable"];
         };
     };
+    getUiExtensionFile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                extensionId: components["schemas"]["Uuid"];
+                version: number;
+                token: string;
+                path: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description File bytes with their type */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/javascript": string;
+                    "text/css": string;
+                    "font/woff2": string;
+                    "font/woff": string;
+                    "image/png": string;
+                    "image/jpeg": string;
+                    "image/webp": string;
+                    "image/gif": string;
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
     getUiExtensionFrame: {
         parameters: {
             query?: never;
@@ -15348,6 +15589,67 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    listRunSendBacks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Send-backs */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SendBackList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    answerSendBack: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["schemas"]["Uuid"];
+                sendBackId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnswerSendBackRequest"];
+            };
+        };
+        responses: {
+            /** @description Answered send-back (or replay) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SendBack"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
     listRunComments: {
         parameters: {
             query?: {
@@ -16750,6 +17052,75 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    sendTaskBack: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                /** @description Engine task identifier; always resolved through the workspace's task projection first. */
+                taskId: components["parameters"]["TaskId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SendBackRequest"];
+            };
+        };
+        responses: {
+            /** @description Task with its open send-back (or replay) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskDetail"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    withdrawTaskSendBack: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                /** @description Engine task identifier; always resolved through the workspace's task projection first. */
+                taskId: components["parameters"]["TaskId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WithdrawSendBackRequest"];
+            };
+        };
+        responses: {
+            /** @description Task */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskDetail"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     correctTaskInput: {

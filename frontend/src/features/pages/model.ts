@@ -6,7 +6,7 @@ export type PageLayout = 'single' | 'sidebar' | 'split'
 export type RegionId = 'main' | 'side' | 'start' | 'end'
 export type ComponentType = 'heading' | 'text' | 'view' | 'list' | 'details' | 'actions' | 'extension'
 export type ListSource = 'assignedTasks' | 'claimableTasks' | 'myRequests' | 'cases'
-export type ChainAction = 'submit' | 'saveDraft' | 'claim' | 'requestCorrection' | 'approve' | 'reject' | 'saveCaseData'
+export type ChainAction = 'submit' | 'saveDraft' | 'claim' | 'requestCorrection' | 'sendBack' | 'approve' | 'reject' | 'saveCaseData'
   | 'suspendCase' | 'resumeCase' | 'closeCase' | 'startPlanItem' | 'completePlanItem' | 'planDiscretionaryItem' | 'navigate'
 
 export interface Pin { id: string; version: number }
@@ -32,7 +32,9 @@ export interface PageComponent {
 }
 
 export interface PageRegion { id: RegionId; label: string; components: PageComponent[] }
-export interface ChainStep { action: ChainAction; component?: string; target?: string; planItem?: string }
+export type Compensation = 'cancelRequest' | 'restoreDraft' | 'releaseTask' | 'restoreCaseData' | 'resumeCase' | 'suspendCase' | 'withdrawSendBack'
+export type Occurrence = 'single' | 'newest' | 'choose'
+export interface ChainStep { action: ChainAction; component?: string; target?: string; planItem?: string; occurrence?: Occurrence; compensate?: Compensation }
 export interface ActionChain { id: string; label: string; stopOnFailure: boolean; steps: ChainStep[] }
 
 export interface PageDefinition {
@@ -68,18 +70,21 @@ export const LIST_COLUMNS: Record<ListSource, readonly string[]> = {
   cases: ['status', 'definitionVersion', 'version', 'createdAt'],
 }
 export const LIST_LABELS: Record<ListSource, string> = { assignedTasks: 'My assigned tasks', claimableTasks: 'Tasks I can claim', myRequests: 'My requests', cases: 'Cases' }
-export const STEP_ACTIONS: ChainAction[] = ['submit', 'saveDraft', 'claim', 'requestCorrection', 'approve', 'reject', 'saveCaseData', 'suspendCase', 'resumeCase', 'closeCase', 'startPlanItem', 'completePlanItem', 'planDiscretionaryItem', 'navigate']
+export const STEP_ACTIONS: ChainAction[] = ['submit', 'saveDraft', 'claim', 'requestCorrection', 'sendBack', 'approve', 'reject', 'saveCaseData', 'suspendCase', 'resumeCase', 'closeCase', 'startPlanItem', 'completePlanItem', 'planDiscretionaryItem', 'navigate']
 export const STEP_LABELS: Record<ChainAction, string> = {
-  submit: 'Submit request', saveDraft: 'Save draft', claim: 'Claim task', requestCorrection: 'Correct request', approve: 'Approve', reject: 'Reject',
+  submit: 'Submit request', saveDraft: 'Save draft', claim: 'Claim task', requestCorrection: 'Correct request', sendBack: 'Send back to requester', approve: 'Approve', reject: 'Reject',
   saveCaseData: 'Save case data', suspendCase: 'Hold case', resumeCase: 'Resume case', closeCase: 'Close case', startPlanItem: 'Start case task',
   completePlanItem: 'Complete case task', planDiscretionaryItem: 'Plan optional work', navigate: 'Go to page',
 }
 /** The view kind each step needs, and the view action it must declare. */
 export const STEP_KIND: Record<Exclude<ChainAction, 'navigate'>, ViewDefinition['kind']> = {
-  submit: 'request', saveDraft: 'request', claim: 'approval', requestCorrection: 'approval', approve: 'approval', reject: 'approval', saveCaseData: 'case',
+  submit: 'request', saveDraft: 'request', claim: 'approval', requestCorrection: 'approval', sendBack: 'approval', approve: 'approval', reject: 'approval', saveCaseData: 'case',
   suspendCase: 'case', resumeCase: 'case', closeCase: 'case', startPlanItem: 'case', completePlanItem: 'case', planDiscretionaryItem: 'case',
 }
-const STEP_VIEW_ACTION: Partial<Record<ChainAction, string>> = { submit: 'submit', saveDraft: 'saveDraft', requestCorrection: 'requestCorrection', approve: 'approve', reject: 'reject', saveCaseData: 'saveData' }
+const STEP_VIEW_ACTION: Partial<Record<ChainAction, string>> = { submit: 'submit', saveDraft: 'saveDraft', requestCorrection: 'requestCorrection', sendBack: 'requestCorrection', approve: 'approve', reject: 'reject', saveCaseData: 'saveData' }
+/** The one compensating step an undoable action may declare (S116); it runs, authorized again, if a later step fails. */
+export const COMPENSATIONS: Partial<Record<ChainAction, Compensation>> = { submit: 'cancelRequest', saveDraft: 'restoreDraft', claim: 'releaseTask', saveCaseData: 'restoreCaseData', suspendCase: 'resumeCase', resumeCase: 'suspendCase', sendBack: 'withdrawSendBack' }
+export const COMPENSATION_LABELS: Record<Compensation, string> = { cancelRequest: 'Withdraw the started request (needs operator rights)', restoreDraft: 'Put the earlier draft back', releaseTask: 'Return the task to its group', restoreCaseData: 'Restore the earlier case values', resumeCase: 'Resume the case', suspendCase: 'Hold the case again', withdrawSendBack: 'Withdraw the send-back' }
 /** Steps that act on one plan item, named by its CMMN element id and found in the case when the step runs. */
 export const PLAN_ITEM_STEPS: ChainAction[] = ['startPlanItem', 'completePlanItem', 'planDiscretionaryItem']
 const CASE_STEPS: ChainAction[] = ['saveCaseData', 'suspendCase', 'resumeCase', 'closeCase', ...PLAN_ITEM_STEPS]
@@ -222,7 +227,7 @@ export function chainProblems(chain: ActionChain, components: Map<string, PageCo
   if (!trimmed(chain.label, 80) || !chain.label) problems.push(`Chain ${chain.id} needs a label of at most 80 characters.`)
   if (!chain.stopOnFailure) problems.push(`Chain ${name} must stop at the first failed step.`)
   if (chain.steps.length < 1 || chain.steps.length > 5) problems.push(`Chain ${name} needs 1 to 5 steps.`)
-  let decisions = 0, claimed = false, corrected = false, closed = false
+  let decisions = 0, claimed = false, corrected = false, sentBack = false, closed = false
   const submitted = new Set<string>()
   chain.steps.forEach((step, index) => {
     const at = `Chain ${name}, step ${index + 1}`
@@ -233,12 +238,16 @@ export function chainProblems(chain: ActionChain, components: Map<string, PageCo
     }
     if (PLAN_ITEM_STEPS.includes(step.action) ? !step.planItem || !ELEMENT.test(step.planItem) : step.planItem !== undefined) problems.push(PLAN_ITEM_STEPS.includes(step.action) ? `${at} needs the CMMN element id of the case task or optional item.` : `${at} does not use a plan item.`)
     if (closed && CASE_STEPS.includes(step.action)) problems.push(`${at}: no case step can follow closing the case.`)
+    if (step.occurrence !== undefined && !PLAN_ITEM_STEPS.includes(step.action)) problems.push(`${at} chooses an occurrence, which only plan-item steps do.`)
+    if (step.compensate !== undefined && COMPENSATIONS[step.action] !== step.compensate) problems.push(COMPENSATIONS[step.action] ? `${at} can only be undone by ${COMPENSATION_LABELS[COMPENSATIONS[step.action]!].toLowerCase()}.` : `${at} cannot be undone.`)
     if (step.action === 'closeCase') closed = true
     const component = step.component ? components.get(step.component) : undefined
     if (!component || component.type !== 'view') { problems.push(`${at} must target a view component on this page.`); return }
     if (step.action === 'approve' || step.action === 'reject') { if (++decisions > 1) problems.push(`${at}: a chain can contain only one approve or reject step.`) }
     if (step.action === 'claim') { if (claimed || corrected || decisions > 0) problems.push(`${at}: claim may appear once, before a correction or decision.`); claimed = true }
     if (step.action === 'requestCorrection') { if (corrected || decisions > 0) problems.push(`${at}: a correction may appear once, before a decision.`); corrected = true }
+    if (step.action === 'sendBack') { if (sentBack || decisions > 0) problems.push(`${at}: a send-back may appear once and never with a decision.`); sentBack = true }
+    if ((step.action === 'approve' || step.action === 'reject') && sentBack) problems.push(`${at}: a send-back may appear once and never with a decision.`)
     if (step.action === 'submit') { if (submitted.has(component.id)) problems.push(`${at}: a request can be submitted once per chain.`); submitted.add(component.id) }
     const view = component.view ? lookups?.views.get(pinKey(component.view)) : undefined
     if (!view || view.kind === 'page') return

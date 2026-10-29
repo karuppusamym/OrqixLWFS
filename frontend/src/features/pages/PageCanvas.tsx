@@ -16,7 +16,7 @@ import { Button } from '@/components/ui/button'
 import { Input, Select, Textarea } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table'
-import { listCaseInstances } from '@/features/cases/api'
+import { getCasePlan, listCaseInstances } from '@/features/cases/api'
 import { ExtensionHost } from '@/features/extensions/ExtensionHost'
 import { frameSource } from '@/features/extensions/frame'
 import { ConfiguredWorklist } from '@/features/tasks/ConfiguredWorklist'
@@ -26,7 +26,7 @@ import { buildFields, parseFormSchema, parseFormUi, presentFields } from '@/lib/
 import { buildPayload, validateForm, valuesFromJson, type FieldErrors, type RawValues } from '@/lib/form/values'
 import { requestReference, taskTitle } from '@/lib/runText'
 import { uuid } from '@/lib/text'
-import { LAYOUT_REGIONS, needsContext, pinKey, STEP_LABELS, visible, type ActionChain, type ListSource, type PageComponent, type PageDefinition } from './model'
+import { COMPENSATION_LABELS, LAYOUT_REGIONS, needsContext, pinKey, STEP_LABELS, visible, type ActionChain, type Compensation, type ListSource, type PageComponent, type PageDefinition } from './model'
 
 type S = components['schemas']
 type ExtensionUse = S['AppPageExtensionUse']
@@ -127,12 +127,17 @@ export function PageCanvas({ page, views, extensions, preview, runtime }: PageCa
     return {}
   }
 
-  const run = async (chain: ActionChain, source?: string): Promise<ChainRunResult> => {
+  const run = async (chain: ActionChain, source?: string, picks: Record<string, string> = {}): Promise<ChainRunResult> => {
     if (!runtime) throw new Error('Preview only')
     setBusy(chain.id)
     setError(null)
     try {
-      const inputs = Object.fromEntries([...new Set(chain.steps.flatMap(step => step.component ? [step.component] : []))].map(id => [id, inputFor(id, chain.steps.some(step => step.component === id && step.action === 'submit'))]))
+      const inputs: Record<string, Record<string, unknown>> = Object.fromEntries([...new Set(chain.steps.flatMap(step => step.component ? [step.component] : []))].map(id => [id, inputFor(id, chain.steps.some(step => step.component === id && step.action === 'submit'))]))
+      // Plan-item steps whose occurrence is "choose" send the occurrence the person picked; the server checks it is available.
+      for (const step of chain.steps) if (step.occurrence === 'choose' && step.component && step.planItem) {
+        if (!picks[step.planItem]) throw new Error(`Choose which ${step.planItem} to act on.`)
+        inputs[step.component] = { ...inputs[step.component], planItems: { ...(inputs[step.component]?.planItems as Record<string, string> | undefined), [step.planItem]: picks[step.planItem] } }
+      }
       const result = await runChain(runtime.ws, runtime.slug, chain.id, { expectedRevision: runtime.revision, ...(runtime.context ? { context: runtime.context } : {}), ...(source ? { source } : {}), inputs }, uuid())
       setResults(current => ({ ...current, [chain.id]: result }))
       await queryClient.invalidateQueries()
@@ -177,7 +182,7 @@ interface ComponentProps {
   onNote: (note: { comment?: string; reason?: string }) => void
   busy: string | null
   results: Record<string, ChainRunResult>
-  onRun: (chain: ActionChain, source?: string) => Promise<ChainRunResult>
+  onRun: (chain: ActionChain, source?: string, picks?: Record<string, string>) => Promise<ChainRunResult>
   register: (id: string, collect: Collect | null) => void
 }
 
@@ -350,9 +355,20 @@ function DataList({ component, page, preview, runtime }: ComponentProps) {
 function ActionBar({ component, page, preview, runtime, busy, results, onRun }: ComponentProps) {
   const chains = (component.chains ?? []).flatMap(id => page.chains.filter(chain => chain.id === id))
   const blocked = !preview && runtime && page.context !== 'none' && !runtime.context && chains.some(chain => chain.steps.some(step => needsContext(step.action)))
+  // S116: a plan-item step may let the person choose among several available occurrences of its element.
+  const choices = chains.flatMap(chain => chain.steps.filter(step => step.occurrence === 'choose' && step.planItem).map(step => ({ chain, step })))
+  const plan = useQuery({ queryKey: ['casePlan', runtime?.ws, runtime?.context], queryFn: () => getCasePlan(runtime!.ws, runtime!.context!), enabled: !preview && !!runtime?.context && page.context === 'case' && choices.length > 0 })
+  const [picks, setPicks] = useState<Record<string, string>>({})
+  const verbOf = (action: string) => action === 'startPlanItem' ? 'start' : action === 'planDiscretionaryItem' ? 'plan' : null
   return <section aria-label={component.label ?? 'Actions'} className="space-y-3 rounded-card border border-border bg-surface p-4">
     {component.label ? <h2 className="font-semibold">{component.label}</h2> : null}
-    <div className="flex flex-wrap gap-2">{chains.map((chain, index) => <Button key={chain.id} variant={index === 0 ? 'primary' : 'secondary'} disabled={preview || !!busy || !!blocked} loading={busy === chain.id} onClick={() => void onRun(chain).catch(() => undefined)}>{chain.label}</Button>)}</div>
+    {choices.length && !preview ? <div className="grid gap-2 sm:grid-cols-2">{[...new Map(choices.map(choice => [choice.step.planItem!, choice])).values()].map(({ step }) => {
+      const verb = verbOf(step.action)
+      const options = (plan.data?.items ?? []).filter(item => item.elementId === step.planItem && (verb ? item.allowedActions?.[verb] === true : item.state === 'active' && item.type === 'humantask'))
+      const id = `${component.id}-pick-${step.planItem}`
+      return <div key={step.planItem}><Label htmlFor={id}>Which {step.planItem}</Label><Select id={id} value={picks[step.planItem!] ?? ''} onChange={event => setPicks(current => ({ ...current, [step.planItem!]: event.target.value }))}><option value="">Choose one</option>{options.map((item, index) => <option key={item.id} value={item.id}>{item.name || step.planItem} #{index + 1}{item.createdAt ? `, ${formatDateTime(item.createdAt)}` : ''}</option>)}</Select></div>
+    })}</div> : null}
+    <div className="flex flex-wrap gap-2">{chains.map((chain, index) => <Button key={chain.id} variant={index === 0 ? 'primary' : 'secondary'} disabled={preview || !!busy || !!blocked} loading={busy === chain.id} onClick={() => void onRun(chain, undefined, picks).catch(() => undefined)}>{chain.label}</Button>)}</div>
     {blocked ? <p className="text-sm text-muted-foreground">Open a {page.context} from a list first.</p> : null}
     {preview ? <p className="text-xs text-muted-foreground">Preview only. Each step is authorized again by the server and the chain stops at the first failure.</p> : null}
     {chains.map(chain => results[chain.id] ? <ChainOutcome key={chain.id} chain={chain} result={results[chain.id]!} /> : null)}
@@ -362,7 +378,10 @@ function ActionBar({ component, page, preview, runtime, busy, results, onRun }: 
 export function ChainOutcome({ chain, result }: { chain: ActionChain; result: ChainRunResult }) {
   return <div role="status" className="rounded border border-border p-3 text-sm">
     <p className="font-semibold">{chain.label}: {result.completed ? 'completed' : 'stopped'}</p>
-    <ol className="mt-1 list-decimal space-y-1 pl-5">{result.steps.map(step => <li key={step.index}>{STEP_LABELS[step.action]} <Badge tone={step.status === 'succeeded' ? 'success' : step.status === 'failed' ? 'danger' : 'neutral'}>{step.status}</Badge>{step.detail ? <span className="ml-1 text-muted-foreground">{step.detail}</span> : null}</li>)}</ol>
+    <ol className="mt-1 list-decimal space-y-1 pl-5">{result.steps.map(step => <li key={step.index}>{STEP_LABELS[step.action]} <Badge tone={step.status === 'succeeded' ? 'success' : step.status === 'failed' ? 'danger' : 'neutral'}>{step.status}</Badge>{step.detail ? <span className="ml-1 text-muted-foreground">{step.detail}</span> : null}
+      {/* S116: what ran to undo a succeeded step after a later failure, or that it was not undone. */}
+      {step.compensation ? <span className="ml-1">· {COMPENSATION_LABELS[step.compensation.action as Compensation] ?? step.compensation.action}: <Badge tone={step.compensation.status === 'succeeded' ? 'success' : 'danger'}>{step.compensation.status === 'succeeded' ? 'undone' : 'not undone'}</Badge>{step.compensation.detail ? <span className="ml-1 text-muted-foreground">{step.compensation.detail}</span> : null}</span>
+        : !result.completed && step.status === 'succeeded' && step.action !== 'navigate' ? <span className="ml-1 text-muted-foreground">· not undone</span> : null}</li>)}</ol>
   </div>
 }
 

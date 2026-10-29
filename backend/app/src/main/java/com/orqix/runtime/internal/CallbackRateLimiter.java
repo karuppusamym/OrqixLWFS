@@ -22,6 +22,7 @@ public class CallbackRateLimiter {
 
     static final long WINDOW_MILLIS = 60_000;
     static final int MAX_TRACKED_TOKENS = 50_000;
+    static final long FULL_SWEEP_MILLIS = 1_000;
 
     private final Clock clock;
     private final int limit;
@@ -41,8 +42,10 @@ public class CallbackRateLimiter {
     /** @throws ApiException RATE_LIMITED with Retry-After when this token has used up the window */
     public synchronized void check(String tokenSha256) {
         long now = clock.millis();
+        // A full table is swept at most once a second: with every tracked token still active, sweeping on each call
+        // would scan all of them under this lock for every request.
         if (lastCleanupMillis == Long.MIN_VALUE || now - lastCleanupMillis >= WINDOW_MILLIS
-                || recent.size() >= MAX_TRACKED_TOKENS) {
+                || (recent.size() >= MAX_TRACKED_TOKENS && now - lastCleanupMillis >= FULL_SWEEP_MILLIS)) {
             recent.entrySet().removeIf(e -> {
                 drop(e.getValue(), now);
                 return e.getValue().isEmpty();

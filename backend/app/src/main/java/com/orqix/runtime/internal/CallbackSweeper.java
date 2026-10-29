@@ -32,6 +32,9 @@ public class CallbackSweeper {
     private final TransactionTemplate transactions;
     private final CallbackSettings settings;
     private final Clock clock;
+    /** The purge looks at old rows only, and the retention is at least an hour: every ten minutes is plenty. */
+    static final java.time.Duration PURGE_EVERY = java.time.Duration.ofMinutes(10);
+    private Instant lastPurge = Instant.MIN;
 
     public CallbackSweeper(CallbackStore store, AuditWriter audit, TransactionTemplate transactions,
             CallbackSettings settings, Clock clock) {
@@ -46,7 +49,11 @@ public class CallbackSweeper {
     public void sweep() {
         try {
             run();
-            purge(clock.instant());
+            Instant now = clock.instant();
+            if (!now.isBefore(lastPurge.plus(PURGE_EVERY))) {
+                lastPurge = now;
+                purge(now);
+            }
         } catch (RuntimeException e) {
             LOG.warn("Callback expiry sweep failed; it runs again shortly ({})", e.getClass().getSimpleName());
         }

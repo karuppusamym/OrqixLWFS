@@ -283,9 +283,21 @@ class PromotionApprovalTest extends RuntimeTestBase {
         UUID source = publishPurchase(SANDBOX, null);
         UUID release = activeRelease(SANDBOX, source);
         String key = api("dana.designer").get("/workspaces/{ws}/workflows/{id}", SANDBOX, source).body().path("key").asString();
+        // An approver through an identity-provider group grant is found from the grant, not from a scan of all users.
+        String group = "promo-approvers-" + UUID.randomUUID().toString().substring(0, 8);
+        UUID olga = UUID.fromString(api("olga.operator").get("/me").body().path("subject").path("id").asString());
+        var groupGrant = api("wade.admin").post(Map.of("permission", "workflow.approve-promotion",
+                "principal", Map.of("type", "idpGroup", "value", group)), "/workspaces/{ws}/access/grants", PURCHASING);
+        assertThat(groupGrant.status()).as(groupGrant.toString()).isEqualTo(201);
+        grants.add(UUID.fromString(groupGrant.body().path("id").asString()));
+        jdbc.sql("UPDATE subject SET idp_groups = idp_groups || to_jsonb(CAST(:g AS text)) WHERE id = :id")
+                .param("g", group).param("id", olga).update();
         var asked = requestPromotion("dana.designer", source, release, null);
         assertThat(asked.status()).as(asked.toString()).isEqualTo(201);
         UUID requestId = UUID.fromString(asked.body().path("id").asString());
+        assertThat(jdbc.sql("SELECT count(*) FROM notification WHERE recipient_subject_id = :s AND dedup_key = :k")
+                .param("s", olga).param("k", "promotion-request:" + requestId + ":" + olga).query(Long.class).single())
+                .as("approver through a group grant").isEqualTo(1);
 
         List<JsonNode> paul = notificationsOf("paul.publisher", PURCHASING, "promotionRequest");
         assertThat(paul).hasSize(paulBefore + 1);

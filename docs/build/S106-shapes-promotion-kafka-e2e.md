@@ -56,3 +56,18 @@ Full `mvnw clean verify` (29 October 2026, JDK 21, Testcontainers PostgreSQL and
 - Promotion: email or Teams delivery, reminders, multi-approver and expiry, Git promotion, automatic canary evaluation.
 - Kafka: see section 3.
 - E2E: the suite was repaired against a local stack; the CI run is the record for the full suite (see the PR checks). Specs still assume a shared, growing database; they are ordered and tolerant, not isolated.
+
+## Review fixes (29 October 2026)
+
+A review of S104-S106 after the merge into `main` found eight issues; seven are fixed, one was not a defect.
+
+| # | Issue | Outcome |
+|---|---|---|
+| 1 | Promotion approvers were found by scanning the first 500 users by name, so approvers further down were never notified | The approvers come from the target's `workflow.approve-promotion` grants (person or identity-provider group); each is still checked with fresh access. `PromotionApprovalTest` covers a group grant |
+| 2 | Same scan ran an access check per user inside the request | Fixed with 1: only the people the grants name are checked |
+| 3 | The proposed-approver choice seemed to hide email columns | Not a defect: a field format is only `date` or `attachment`, so emails are always plain text columns, which are offered |
+| 4 | lz4-java and snappy-java overrides were declared twice in `backend/pom.xml` | One declaration, from the version properties |
+| 5 | The Dockerfile updated OS packages twice | One full `microdnf update` |
+| 6 | The closed-callback purge scanned every wait every 30 s | Runs every 10 minutes and only looks at waits created before the cut-off (index from V178) |
+| 7 | A full rate-limiter table was swept on every call | Swept at most once a second when full |
+| 8 | The proposed-approver email lookup could not use an index | Index on `lower(email)` (V178) |

@@ -522,11 +522,12 @@ public class PromotionService {
     private int notifyApprovers(UUID target, UUID requestId, Caller requester, String workflowKey, int releaseNumber,
             String sourceWorkspaceKey) {
         int notified = 0;
-        for (SubjectService.Subject s : subjects.knownSubjects(500)) {
+        for (UUID candidate : approverCandidates(target, requester.subjectId())) {
             if (notified >= MAX_APPROVERS_NOTIFIED) {
                 break;
             }
-            if (s.disabled() || s.id().equals(requester.subjectId())) {
+            SubjectService.Subject s = subjects.find(candidate).orElse(null);
+            if (s == null || s.disabled()) {
                 continue;
             }
             boolean approver = policy.freshAccess(new Caller(s.id(), s.displayName(), s.email(), s.issuer(),
@@ -540,6 +541,26 @@ public class PromotionService {
             }
         }
         return notified;
+    }
+
+    /**
+     * The people the target's {@code workflow.approve-promotion} grants name, directly or through an identity-provider
+     * group they belong to (no role carries that permission). Enabled people only, never the requester, in a stable
+     * order and bounded. The caller still checks each one's fresh access, so a grant alone never notifies anyone.
+     */
+    private List<UUID> approverCandidates(UUID target, UUID requester) {
+        return jdbc.sql("""
+                SELECT s.id FROM subject s
+                WHERE s.disabled_at IS NULL AND s.id <> :requester
+                  AND (s.id IN (SELECT CAST(pg.principal_value AS uuid) FROM permission_grant pg
+                                WHERE pg.workspace_id = :ws AND pg.permission = 'workflow.approve-promotion'
+                                  AND pg.workflow_id IS NULL AND pg.principal_type = 'subject')
+                       OR jsonb_exists_any(s.idp_groups, ARRAY(SELECT pg.principal_value FROM permission_grant pg
+                                WHERE pg.workspace_id = :ws AND pg.permission = 'workflow.approve-promotion'
+                                  AND pg.workflow_id IS NULL AND pg.principal_type = 'idpGroup')))
+                ORDER BY s.id LIMIT :limit
+                """).param("ws", target).param("requester", requester).param("limit", MAX_APPROVERS_NOTIFIED * 4)
+                .query(UUID.class).list();
     }
 
     /** PL02a (S106): tells the requester, in the source workspace, that the request was approved or rejected. */

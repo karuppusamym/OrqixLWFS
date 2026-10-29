@@ -298,7 +298,7 @@ Receivers should recompute that value, compare in constant time, reject timestam
 
 ## Promotion notifications and Kafka sign-in errors - 29 October 2026
 
-[S106](build/S106-shapes-promotion-kafka-e2e.md). Apply migration V177 (two new notification kinds) before starting this image.
+[S106](build/S106-shapes-promotion-kafka-e2e.md). Apply migrations V177 (two new notification kinds) and V178 (two indexes, for the callback purge and the proposed-approver lookup) before starting this image.
 
 **Promotion notifications.** When a promotion into a workspace with the approval gate is requested, everyone who may approve promotions there (explicit `workflow.approve-promotion` grant) gets an in-app notification, except the requester. The requester is told in their own workspace when it is approved or rejected. Nothing is sent by email.
 

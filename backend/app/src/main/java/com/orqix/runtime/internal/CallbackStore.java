@@ -166,7 +166,9 @@ public class CallbackStore {
                     SELECT c.id FROM callback_wait c
                     JOIN message_subscription s ON s.id = c.subscription_id
                     JOIN workflow_run r ON r.workspace_id = c.workspace_id AND r.id = c.run_id
-                    WHERE coalesce(c.resumed_at,
+                    -- A wait closed before the cut-off was created before it: the index on created_at keeps this to old rows.
+                    WHERE c.created_at < :before
+                      AND coalesce(c.resumed_at,
                                    CASE WHEN s.status <> 'waiting' THEN coalesce(s.closed_at, r.ended_at) END,
                                    r.ended_at) < :before
                     ORDER BY c.created_at LIMIT :limit

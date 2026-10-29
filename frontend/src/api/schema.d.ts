@@ -5408,7 +5408,7 @@ export interface components {
             holderName: string;
             location: string;
             pinnedVersions: number[];
-            /** @description Draft revision */
+            /** @description Draft revision, case definition version or route/worklist revision the update expects */
             expected: number | null;
             /** @enum {string} */
             status: "ready" | "current" | "newer" | "blocked" | "readOnly";
@@ -5567,7 +5567,7 @@ export interface components {
             action: components["schemas"]["ChainAction"];
             component?: components["schemas"]["ViewElementId"];
             target?: string;
-            /** @description CMMN element id of the plan item */
+            /** @description CMMN element id of the plan item, for startPlanItem, completePlanItem and planDiscretionaryItem; resolved in the case when the step runs */
             planItem?: string;
             /**
              * @description Plan-item steps only. With several available occurrences: single stops (default), newest takes the most recently created, choose takes the one the person picked (ChainInput.planItems).
@@ -9150,7 +9150,7 @@ export interface components {
                 connector: string;
                 dataPage?: string | null;
                 method: string;
-                /** @description Source endpoint */
+                /** @description Source endpoint, shown for review only */
                 endpoint?: string | null;
                 inputMapping: {
                     [key: string]: string;

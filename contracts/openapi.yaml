@@ -7440,7 +7440,7 @@ components:
         holderName: { type: string }
         location: { type: string }
         pinnedVersions: { type: array, items: { type: integer, minimum: 1 } }
-        expected: { type: [integer, 'null'], description: Draft revision, case definition version or route/worklist revision the update expects }
+        expected: { type: [integer, 'null'], description: 'Draft revision, case definition version or route/worklist revision the update expects' }
         status: { type: string, enum: [ready, current, newer, blocked, readOnly] }
         problems: { type: array, items: { type: string } }
         effect: { type: string, description: What applying this item does }
@@ -7656,7 +7656,7 @@ components:
         action: { $ref: '#/components/schemas/ChainAction' }
         component: { $ref: '#/components/schemas/ViewElementId' }
         target: { type: string, maxLength: 200 }
-        planItem: { type: string, pattern: '^[A-Za-z_][A-Za-z0-9._-]{0,63}$', description: CMMN element id of the plan item, for startPlanItem, completePlanItem and planDiscretionaryItem; resolved in the case when the step runs }
+        planItem: { type: string, pattern: '^[A-Za-z_][A-Za-z0-9._-]{0,63}$', description: 'CMMN element id of the plan item, for startPlanItem, completePlanItem and planDiscretionaryItem; resolved in the case when the step runs' }
         occurrence: { type: string, enum: [single, newest, choose], description: 'Plan-item steps only. With several available occurrences: single stops (default), newest takes the most recently created, choose takes the one the person picked (ChainInput.planItems).' }
         compensate:
           type: string
@@ -12303,7 +12303,7 @@ components:
               connector: { type: string }
               dataPage: { type: [string, 'null'] }
               method: { type: string }
-              endpoint: { type: [string, 'null'], description: Source endpoint, shown for review only }
+              endpoint: { type: [string, 'null'], description: 'Source endpoint, shown for review only' }
               inputMapping: { type: object, additionalProperties: { type: string } }
               resultMapping: { type: object, additionalProperties: { type: string } }
               timeoutSeconds: { type: integer }

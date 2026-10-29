@@ -17,6 +17,7 @@ import com.orqix.migration.dmn.DmnConverter;
 import com.orqix.migration.dmn.DmnTable;
 import com.orqix.migration.pega.PegaSource;
 import com.orqix.migration.pega.PegaXpdl;
+import com.orqix.migration.pega.rules.RuleResolution;
 import com.orqix.migration.cmmn.CmmnInventory;
 import com.orqix.shared.Ids;
 import com.orqix.shared.json.Json;
@@ -34,9 +35,9 @@ public class MigrationService {
     private record Stored(Job view, String format, byte[] source, String mappings, String sourceHash) { }
     private final JdbcClient jdbc; private final Json json; private final PolicyService policy;
     private final DraftAuthoring drafts; private final AuditWriter audit;
-    private final ConnectionService connections; private final BlueprintImports blueprints;
-    public MigrationService(JdbcClient jdbc, Json json, PolicyService policy, DraftAuthoring drafts, AuditWriter audit, ConnectionService connections, BlueprintImports blueprints) {
-        this.jdbc=jdbc; this.json=json; this.policy=policy; this.drafts=drafts; this.audit=audit; this.connections=connections; this.blueprints=blueprints;
+    private final ConnectionService connections; private final BlueprintImports blueprints; private final PegaRuleArchives pegaRules;
+    public MigrationService(JdbcClient jdbc, Json json, PolicyService policy, DraftAuthoring drafts, AuditWriter audit, ConnectionService connections, BlueprintImports blueprints, PegaRuleArchives pegaRules) {
+        this.jdbc=jdbc; this.json=json; this.policy=policy; this.drafts=drafts; this.audit=audit; this.connections=connections; this.blueprints=blueprints; this.pegaRules=pegaRules;
     }
     private void authorize(Caller caller, UUID ws, boolean edit, String operation) {
         var access=policy.requireVisible(caller, ws);
@@ -49,11 +50,12 @@ public class MigrationService {
             String format=requestedFormat == null ? "bpmn" : requestedFormat;
             if (format.equals(BlueprintImports.FORMAT)) throw SourceException.invalid("Upload a Pega Blueprint PDF as a file through the blueprint upload (multipart), not as text.");
             byte[] bytes;
-            try { bytes="pegaArchive".equals(format) ? Base64.getDecoder().decode(content) : content.getBytes(StandardCharsets.UTF_8); }
+            try { bytes="pegaArchive".equals(format) || PegaRuleArchives.FORMAT.equals(format) ? Base64.getDecoder().decode(content) : content.getBytes(StandardCharsets.UTF_8); }
             catch (IllegalArgumentException e) { throw SourceException.invalid("The archive content must be base64 encoded."); }
             if (bytes.length == 0 || bytes.length > Limits.DEFAULT.maxBytes()) throw new SourceException("Source must be between 1 byte and 1 MiB.",true);
-            Report.CompatibilityReport report;
+            Report.CompatibilityReport report; RuleResolution.Analysis nativeRules=null;
             if (format.equals("pegaArchive")) report=PegaSource.archive(bytes);
+            else if (format.equals(PegaRuleArchives.FORMAT)) { nativeRules=RuleResolution.analyze(bytes); report=pegaRules.report(nativeRules); }
             else if (format.equals("pegaXpdl")) report=PegaXpdl.analyze(content).report();
             else if (format.equals("pegaMapping")) {
                 JsonNode pkg=parsePackage(content);
@@ -77,6 +79,7 @@ public class MigrationService {
                 """).param("id",id).param("ws",ws).param("actor",caller.subjectId()).param("file",fileName)
                 .param("format",format).param("hash",Json.sha256Hex(bytes)).param("source",bytes)
                 .param("adapter",report.adapterVersion()).param("report",json.write(report)).update();
+            if (nativeRules != null) pegaRules.storeInventory(ws,id,nativeRules);
             audit(caller,ws,id,"migration.uploaded",Map.of("migrationId",id.toString(),"sourceSystem",format,"sourceSha256",Json.sha256Hex(bytes),"adapterVersion",report.adapterVersion()));
             return stored(ws,id,false).view;
         } catch (SourceException e) { throw sourceProblem(e); }
@@ -94,7 +97,7 @@ public class MigrationService {
             return new Converted(existing.workflow(),existing.draft(),job.view.report());
         }
         try {
-            ObjectNode definition; Report.CompatibilityReport report; Object sourceMap;
+            ObjectNode definition; Report.CompatibilityReport report; Object sourceMap; PegaRuleArchives.Prepared nativePlan=null;
             if (job.format.equals("camundaForm")) throw new ApiException(ProblemCode.MIGRATION_BLOCKED,
                     "A Camunda form has no target of its own. Import the BPMN file it belongs to and attach this form under formMappings.")
                     .with("openItems",job.view.report().issues().stream().filter(i -> Report.OPEN.equals(i.resolutionStatus())).toList());
@@ -104,7 +107,10 @@ public class MigrationService {
             if (job.format.equals("pegaArchive")) throw new ApiException(ProblemCode.MIGRATION_BLOCKED,
                     "Native Pega archives are inventory-only. Upload a checksum-linked manual mapping package to create a draft.")
                     .with("openItems",job.view.report().issues());
-            if (job.format.equals(BlueprintImports.FORMAT)) {
+            if (job.format.equals(PegaRuleArchives.FORMAT)) {
+                nativePlan=pegaRules.prepare(id,job.source,request);
+                definition=nativePlan.definition(); report=nativePlan.report(); sourceMap=nativePlan.sourceMap();
+            } else if (job.format.equals(BlueprintImports.FORMAT)) {
                 var prepared=blueprints.prepare(ws,id,job.sourceHash,request);
                 definition=prepared.definition(); report=prepared.report(); sourceMap=prepared.sourceMap();
             } else if (job.format.equals("pegaXpdl")) {
@@ -138,7 +144,7 @@ public class MigrationService {
                     .with("openItems",report.issues().stream().filter(i -> Report.OPEN.equals(i.resolutionStatus())).toList());
             var created=drafts.createFromDefinition(caller,ws,new DraftAuthoring.NewDraft(request.path("workflowKey").asString(null),
                     request.path("name").asString(null),"Imported source; review compatibility report and verify behavior.",definition,
-                    job.format.equals("pegaXpdl") ? DraftAuthoring.Source.PEGA_XPDL_IMPORT : job.format.equals(BlueprintImports.FORMAT) ? DraftAuthoring.Source.PEGA_BLUEPRINT_IMPORT : job.format.equals("pegaMapping") ? DraftAuthoring.Source.PEGA_IMPORT : DraftAuthoring.Source.IMPORT,false));
+                    job.format.equals("pegaXpdl") ? DraftAuthoring.Source.PEGA_XPDL_IMPORT : job.format.equals(PegaRuleArchives.FORMAT) ? DraftAuthoring.Source.PEGA_NATIVE_IMPORT : job.format.equals(BlueprintImports.FORMAT) ? DraftAuthoring.Source.PEGA_BLUEPRINT_IMPORT : job.format.equals("pegaMapping") ? DraftAuthoring.Source.PEGA_IMPORT : DraftAuthoring.Source.IMPORT,false));
             if (!created.report().path("publishable").asBoolean(false)) {
                 throw new ApiException(ProblemCode.MIGRATION_BLOCKED,"The mapped draft did not pass compiler validation. No workflow was created.")
                         .with("issues",created.report().path("issues"));
@@ -148,6 +154,7 @@ public class MigrationService {
                     status='converted',converted_workflow_id=:workflow,converted_by_subject_id=:mapper,updated_at=now() WHERE workspace_id=:ws AND id=:id
                 """).param("report",json.write(report)).param("map",json.write(sourceMap)).param("mappings",json.write(request))
                 .param("workflow",created.workflowId()).param("mapper",caller.subjectId()).param("ws",ws).param("id",id).update();
+            if (nativePlan != null) pegaRules.recordConversion(ws,id,nativePlan.plan());
             audit(caller,ws,id,"migration.converted",Map.of("migrationId",id.toString(),"workflowId",created.workflowId().toString(),"workflowKey",request.path("workflowKey").asString("")));
             return new Converted(created.workflow(),created.draft(),report);
         } catch (SourceException e) { throw sourceProblem(e); }

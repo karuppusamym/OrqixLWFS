@@ -69,3 +69,12 @@ are manually authored; no native Pega parser or independent Pega execution is im
 ## Readable Pega decision snapshots
 
 `pega_decision.py` converts a strict one-column, first-match subset of Pega decision-table authoring JSON to DMN plus a source-hash provenance sidecar. See [S55](../../docs/build/S55-pega-decisions.md) for usage, source evidence and limitations. It does not decode RAP or extract/resolve source rules. Run its tests with `python -m unittest discover -s tools/migration-equivalence -p test_pega_decision.py` from the repository root.
+
+## Native Pega rule archives: independent resolution oracle
+
+`pega_native.py` decodes a native rule archive (ZIP/RAP/JAR of `<pagedata>` rule pages) and computes the inventory and effective-rule resolution with the written rules of [S112](../../docs/build/S112-pega-native-conversion.md). It is a separate implementation from the backend adapter on purpose: `PegaNativeTest` requires the backend to produce exactly the same result for the fixtures in `examples/migration/pega-native/`. It never executes source content and does not convert rules; conversion is done by the backend through the normal review, compile and publish pipeline. The grammar is synthetic; fidelity against genuine exports is AC01/EXT01.
+
+```powershell
+python tools/migration-equivalence/pega_native.py examples/migration/pega-native/purchase-request.zip
+python -m unittest discover -s tools/migration-equivalence -p test_pega_native.py
+```

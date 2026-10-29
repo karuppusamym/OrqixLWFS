@@ -51,3 +51,5 @@ Mark WM04 or UI02 Closed only after the chosen supported model, API, designer, r
 
 
 [S80](S80-reusable-case-views.md) adds UI02d case-data views: visual authoring, immutable version pins, compatibility checks, case start and permission-checked data corrections. This is case-data presentation, not a graphical case-model designer or whole-case page composer. Worklist pages, broader case/action composition, localization, extension sandboxing and the full UI02/WM04 acceptance above remain open.
+
+[S110](S110-cmmn-canvas-planning-workflow-tasks.md) adds the drawable case canvas, discretionary planning tables, workflow (process) tasks with pinned releases and fenced results, general repetition and CMMN import with source-linked diagnostics. The full WM04 acceptance above (nested cases, listeners, case-file semantics, conformance) remains open.

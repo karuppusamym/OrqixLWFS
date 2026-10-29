@@ -9,6 +9,7 @@ describe('case model authoring',()=>{
     signInAs('dana.designer')
     const apply=vi.fn(),user=userEvent.setup()
     renderInWorkspace(<CaseModelDesigner ws={WS} caseKey="visual-case" name="Visual case" onApply={apply} disabled={false}/> )
+    await user.click(await screen.findByRole('button',{name:'Form view'}))
     await user.click(await screen.findByRole('button',{name:'Use generated CMMN'}))
     expect(await screen.findByText('Choose an eligible workspace group for every human task.')).toBeInTheDocument()
     const group=screen.getByLabelText('Eligible group for task1')

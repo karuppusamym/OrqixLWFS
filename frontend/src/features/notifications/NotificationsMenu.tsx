@@ -10,11 +10,16 @@ import { Button } from '@/components/ui/button'
 import { useWsId } from '@/app/workspace'
 import { cn } from '@/lib/cn'
 
-/** Where a notification leads: the request for run notifications, the studio discussion for a mention (CMP01). */
+/**
+ * Where a notification leads: the request for run notifications, the studio discussion for a mention (CMP01), the
+ * Promotions page for a promotion waiting for approval and the workflow for a promotion decision (PL02a).
+ */
 export function notificationHref(ws: string, n: Notification): string | null {
   if (n.kind === 'discussionMention' && n.workflowId && n.elementId) {
     return `/w/${ws}/workflows/${n.workflowId}/edit?element=${encodeURIComponent(n.elementId)}&discussion=1`
   }
+  if (n.kind === 'promotionRequest') return `/w/${ws}/promotions`
+  if (n.kind === 'promotionDecision') return n.workflowId ? `/w/${ws}/workflows/${n.workflowId}` : null
   return n.runId ? `/w/${ws}/runs/${n.runId}` : null
 }
 

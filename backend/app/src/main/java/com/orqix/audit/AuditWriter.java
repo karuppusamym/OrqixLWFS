@@ -94,7 +94,7 @@ public class AuditWriter {
             Map.entry("workflow.canary.cleared", Set.of("canaryReleaseNumber")),
             Map.entry("workspace.environment.changed", Set.of("from", "to", "requireApproval")),
             Map.entry("release.promotion.requested", Set.of("releaseNumber", "targetWorkspaceId", "requestId")),
-            Map.entry("release.promotion.approval-requested", Set.of("releaseNumber", "sourceWorkspaceId", "requestId")),
+            Map.entry("release.promotion.approval-requested", Set.of("releaseNumber", "sourceWorkspaceId", "requestId", "approversNotified")),
             Map.entry("release.promotion.approved", Set.of("releaseNumber", "requestId", "requestedBy", "draftRevision")),
             Map.entry("release.promotion.rejected", Set.of("releaseNumber", "requestId", "requestedBy")),
             Map.entry("release.promotion.cancelled", Set.of("releaseNumber", "requestId")),

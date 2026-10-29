@@ -96,7 +96,7 @@ test('worklist language and authored table breakpoint preserve authorized naviga
   const prior=await apiGet<{revision:number;binding:{id:string;version:number}|null}>(page,`/workspaces/${ws}/worklist-view`)
   try {
     expect((await apiSend(page,'PUT',`/workspaces/${ws}/worklist-view`,{expectedRevision:prior.revision,viewRef:{id:created.body.id,version:1}})).status).toBe(200)
-    page=await sessions.as('max.manager');await page.setViewportSize({width:900,height:900});await page.goto(`/w/${ws}/tasks?view=claimable`)
+    page=await sessions.as('max.manager');await page.setViewportSize({width:900,height:900});await page.goto(`/w/${ws}/tasks?view=claimable&sort=newest`)
     await page.getByLabel('View language').selectOption('fr');await expect(page.getByRole('columnheader',{name:'Demande',exact:true})).toBeVisible()
     await page.setViewportSize({width:390,height:844});await expect(page.getByRole('list',{name:'Travail',exact:true})).toBeVisible();await expect(page.getByRole('columnheader',{name:'Demande',exact:true})).toHaveCount(0)
     await expectNoSeriousViolations(page,'Localized worklist mobile')

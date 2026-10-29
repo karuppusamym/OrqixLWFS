@@ -1,5 +1,5 @@
 import { expect, test } from '../support/fixtures'
-import { workspaceId } from '../support/app'
+import { workflowIdByKey, workspaceId } from '../support/app'
 import { expectNoSeriousViolations } from '../support/axe'
 import { MOCK } from '../support/env'
 
@@ -9,7 +9,10 @@ test('personal workflow pins survive searches and reloads and can be removed fro
   const ws = await workspaceId(page)
   await page.goto(`/w/${ws}/workflows`)
   const panel = page.getByRole('region', { name: 'Pinned workflows' })
-  await page.getByRole('button', { name: 'Pin Purchase approval', exact: true }).click()
+  // Other specs leave copies of the template that are also called "Purchase approval": use the seeded one's row.
+  const seededId = await workflowIdByKey(page, ws)
+  const seededRow = page.getByRole('row').filter({ has: page.locator(`a[href$="/workflows/${seededId}"]`) })
+  await seededRow.getByRole('button', { name: 'Pin Purchase approval', exact: true }).click()
   await expect(panel.getByRole('link', { name: 'Purchase approval', exact: true })).toBeVisible()
   const saved = await page.evaluate(() => {
     const key = Object.keys(localStorage).find(value => value.startsWith('orqix.workflowPins.v1:'))!
@@ -33,7 +36,7 @@ test('personal workflow pins survive searches and reloads and can be removed fro
   const unpin = page.getByRole('button', { name: 'Unpin Purchase approval', exact: true })
   await expect(unpin).toHaveAttribute('aria-pressed', 'true')
   await unpin.click()
-  await expect(page.getByRole('button', { name: 'Pin Purchase approval', exact: true })).toHaveAttribute('aria-pressed', 'false')
+  await expect(page.getByRole('button', { name: 'Pin Purchase approval', exact: true }).first()).toHaveAttribute('aria-pressed', 'false')
   await page.goto(`/w/${ws}/workflows`)
   await expect(panel.getByRole('link')).toHaveCount(0)
   await expect(panel.getByText('Use Pin beside a workflow to keep it here.')).toBeVisible()

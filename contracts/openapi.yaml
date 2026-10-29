@@ -7508,7 +7508,7 @@ components:
         handled: { type: integer, minimum: 0 }
         duplicates: { type: integer, minimum: 0 }
         dead: { type: integer, minimum: 0 }
-        lastError: { type: [string, 'null'] }
+        lastError: { type: [string, 'null'], description: 'A code, never a message: secret_unavailable (the secretRef file is missing or not {username, password}), authentication_failed (the broker refused the credentials), consumer_error (any other broker or network failure); the consumer keeps retrying' }
         lastErrorAt: { type: [string, 'null'], format: date-time }
         replicas: { type: array, items: { $ref: '#/components/schemas/KafkaReplicaStatus' } }
     KafkaTrigger:
@@ -10382,11 +10382,11 @@ components:
         runId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }] }
         runReference: { type: [string, 'null'], description: 'Human request reference of runId, e.g. ORQ-1043' }
         requestTitle: { type: [string, 'null'], description: 'Title of the request runId (see Run.requestTitle); null when the recipient may not read the request data' }
-        kind: { type: string, enum: [workflowMessage, runAttention, discussionMention] }
+        kind: { type: string, enum: [workflowMessage, runAttention, discussionMention, promotionRequest, promotionDecision], description: 'promotionRequest: a promotion into this workspace waits for approval (open Promotions); promotionDecision: your promotion request was approved or rejected (workflowId is the source workflow)' }
         message: { type: string, description: 'For discussionMention: who mentioned the recipient, on which step and workflow; never the comment text' }
         createdAt: { $ref: '#/components/schemas/Timestamp' }
         readAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
-        workflowId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }], description: 'discussionMention only: the workflow whose discussion mentions the recipient' }
+        workflowId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }], description: 'discussionMention: the workflow whose discussion mentions the recipient; promotionDecision: the promoted source workflow' }
         elementId: { type: [string, 'null'], description: 'discussionMention only: the step or connection ID of the discussion' }
 
     ConnectionSummary:

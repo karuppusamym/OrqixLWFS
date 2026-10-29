@@ -321,3 +321,5 @@ Press **Ctrl+K** (Cmd+K on a Mac) on any page. Type a page name to jump to it (o
 
 **Start a workflow once per row** ([S105](build/S105-row-iteration.md)). In a *Start another workflow* step, **Collection iteration** now also accepts a list of rows (for example order lines with an item and a price). Choose the list, then under **Fill from each row** pick which column fills each field of the started workflow. Fields not filled from the row take their value from **Request values** as before. Check workflow reports a column that does not exist (`WF_FOREACH_COLUMN`) or does not fit the field (`WF_FOREACH_ITEM_TYPE`), including an optional column feeding a required field.
 
+**Promotion notifications** ([S106](build/S106-shapes-promotion-kafka-e2e.md)). If you can approve promotions into a workspace, the bell tells you when someone asks to promote a workflow there; the notification opens **Promotions**. If you asked, the bell in your own workspace tells you when your request was approved or rejected, with the approver's note.
+

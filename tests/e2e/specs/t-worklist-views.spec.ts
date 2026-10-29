@@ -24,7 +24,7 @@ test('published worklist columns and navigation preserve authorized task actions
     const run=await apiGet<{tasks:Array<{id:string;version:number}>}>(page,`/workspaces/${ws}/runs/${started.body.id}`)
     page=await sessions.as('olga.operator')
     expect((await apiSend(page,'PUT',`/workspaces/${ws}/tasks/${run.tasks[0]!.id}/priority`,{expectedVersion:run.tasks[0]!.version,priority:100,reason:'Synthetic worklist verification'})).status).toBe(200)
-    page=await sessions.as('max.manager');await page.goto(`/w/${ws}/tasks?view=claimable`)
+    page=await sessions.as('max.manager');await page.goto(`/w/${ws}/tasks?view=claimable&sort=newest`)
     await expect(page.getByRole('columnheader',{name:'Work request'})).toBeVisible()
     const open=page.getByRole('button',{name:`Review work: ${title}`,exact:true})
     for(let i=0;i<30 && await open.count()===0;i++) {

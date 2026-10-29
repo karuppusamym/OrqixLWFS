@@ -16,7 +16,8 @@ import { MOCK } from '../support/env'
  * FAILS the test on serious/critical violations (soft, so the flow continues). Results: $REHEARSAL_OUT/results.jsonl.
  * Set REHEARSAL_OUT=../../evidence/rehearsal-1026 and E2E_DB_CONTAINER=<postgres container> for the "no job created" count.
  */
-test.skip(MOCK, 'Real stack only.')
+// Demo rehearsals need a seeded demo stack (docs/build/S86); the general suite and CI leave them out.
+test.skip(MOCK || process.env.E2E_REHEARSAL !== 'true', 'Demo rehearsal: real seeded stack and E2E_REHEARSAL=true only.')
 test.describe.configure({ mode: 'serial' })
 test.setTimeout(300_000)
 

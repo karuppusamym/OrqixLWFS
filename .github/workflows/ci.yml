@@ -287,7 +287,8 @@ jobs:
     name: "5 E2E"
     needs: [image, procurement-stub]
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    # The general suite runs one spec at a time against one stack (about 25 minutes plus stack start).
+    timeout-minutes: 60
     env:
       ORQIX_IMAGE: orqix/orqix:ci
       E2E_BASE_URL: http://localhost:8080

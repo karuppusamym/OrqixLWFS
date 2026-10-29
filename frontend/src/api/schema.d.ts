@@ -5265,6 +5265,7 @@ export interface components {
             handled: number;
             duplicates: number;
             dead: number;
+            /** @description A code, never a message: secret_unavailable (the secretRef file is missing or not {username, password}), authentication_failed (the broker refused the credentials), consumer_error (any other broker or network failure); the consumer keeps retrying */
             lastError?: string | null;
             /** Format: date-time */
             lastErrorAt?: string | null;
@@ -7459,13 +7460,16 @@ export interface components {
             runReference?: string | null;
             /** @description Title of the request runId (see Run.requestTitle); null when the recipient may not read the request data */
             requestTitle?: string | null;
-            /** @enum {string} */
-            kind: "workflowMessage" | "runAttention" | "discussionMention";
+            /**
+             * @description promotionRequest: a promotion into this workspace waits for approval (open Promotions); promotionDecision: your promotion request was approved or rejected (workflowId is the source workflow)
+             * @enum {string}
+             */
+            kind: "workflowMessage" | "runAttention" | "discussionMention" | "promotionRequest" | "promotionDecision";
             /** @description For discussionMention: who mentioned the recipient, on which step and workflow; never the comment text */
             message: string;
             createdAt: components["schemas"]["Timestamp"];
             readAt: components["schemas"]["Timestamp"] | null;
-            /** @description discussionMention only: the workflow whose discussion mentions the recipient */
+            /** @description discussionMention: the workflow whose discussion mentions the recipient; promotionDecision: the promoted source workflow */
             workflowId?: components["schemas"]["Uuid"] | null;
             /** @description discussionMention only: the step or connection ID of the discussion */
             elementId?: string | null;

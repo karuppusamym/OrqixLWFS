@@ -81,7 +81,8 @@ test('studio canvas: readable text on open, no overlapping steps, Auto-layout is
   // Step text is 14 px or more on screen at the first view: font size times the viewport zoom.
   const effective = await designer.evaluate(() => {
     const scale = Number(/scale\(([\d.]+)\)/.exec((document.querySelector('.react-flow__viewport') as HTMLElement).style.transform)?.[1] ?? '1')
-    const label = document.querySelector('.react-flow__node [data-testid^="node-card"] p') as HTMLElement
+    // Cards (node-card) or BPMN shapes (shape-label, the default since STU01): whichever the canvas draws.
+    const label = document.querySelector('.react-flow__node [data-testid^="node-card"] p, .react-flow__node [data-testid="shape-label"] span') as HTMLElement
     return { scale, size: parseFloat(getComputedStyle(label).fontSize) * scale }
   })
   expect(effective.size).toBeGreaterThanOrEqual(14)
@@ -132,7 +133,7 @@ test('phone: requests and tasks are cards, and nothing scrolls sideways', async 
 
   const manager = await sessions.as('mani.manager')
   await manager.setViewportSize({ width: 375, height: 812 })
-  await manager.goto(`/w/${ws}/tasks?view=claimable`)
+  await manager.goto(`/w/${ws}/tasks?view=claimable&sort=newest`)
   await expect(manager.getByRole('list', { name: 'Available to claim' })).toBeVisible()
   await expect.poll(() => manager.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 })
@@ -211,7 +212,7 @@ test('phone: a very long title without spaces wraps instead of widening request,
 
   const manager = await sessions.as('mani.manager')
   await manager.setViewportSize({ width: 375, height: 812 })
-  await manager.goto(`/w/${ws}/tasks?view=claimable`)
+  await manager.goto(`/w/${ws}/tasks?view=claimable&sort=newest`)
   await expect(manager.getByRole('link', { name: new RegExp(title.slice(0, 20)) }).first()).toBeVisible()
   await expectFits(manager, 'task list with a long title')
   await manager.getByRole('link', { name: new RegExp(title.slice(0, 20)) }).first().click()

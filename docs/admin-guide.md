@@ -296,3 +296,11 @@ Receivers should recompute that value, compare in constant time, reject timestam
 
 **Callback token settings.** `orqix.callbacks.retention` (default `30d`, 1 hour to 365 days): a callback wait that has closed (resumed, answered elsewhere, timed out or its request ended) is deleted that long after it closed, and its token then answers 404. Each pass is audited as `callback.waits-purged` with a count. `orqix.callbacks.requests-per-minute` (default `60`, 1 to 6000): poll and resume calls one token may make per minute on each server; beyond that 429 `RATE_LIMITED` with `Retry-After`. Tell external systems to poll with `If-None-Match` and back off on 429. With several servers the effective limit is up to servers × the setting.
 
+## Promotion notifications and Kafka sign-in errors - 29 October 2026
+
+[S106](build/S106-shapes-promotion-kafka-e2e.md). Apply migration V177 (two new notification kinds) before starting this image.
+
+**Promotion notifications.** When a promotion into a workspace with the approval gate is requested, everyone who may approve promotions there (explicit `workflow.approve-promotion` grant) gets an in-app notification, except the requester. The requester is told in their own workspace when it is approved or rejected. Nothing is sent by email.
+
+**Kafka trigger errors.** The triggers panel and the API show a code after a failure: `secret_unavailable` (the trigger's `secretRef` file is missing or not `{"username": ..., "password": ...}`), `authentication_failed` (the broker refused those credentials) and `consumer_error` (anything else, for example the broker cannot be reached). The consumer keeps retrying, backing off to one minute.
+

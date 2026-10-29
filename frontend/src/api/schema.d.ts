@@ -4699,6 +4699,21 @@ export interface components {
             sourceXml: string;
             dataFields?: components["schemas"]["CaseDataField"][];
             workflowTasks?: components["schemas"]["CaseWorkflowTaskMapping"][];
+            /** @description One mapping per CMMN caseTask (caseRef prefix:key bound to urn:orqix:case); inputMapping is child field to parent field, resultMapping is parent field to child field or outcome */
+            caseTasks?: components["schemas"]["CaseWorkflowTaskMapping"][];
+        };
+        CaseChildPin: {
+            taskId: string;
+            childDefinitionId: components["schemas"]["Uuid"];
+            childKey: string;
+            childName: string;
+            childVersion: number;
+            inputMapping: {
+                [key: string]: string;
+            };
+            resultMapping: {
+                [key: string]: string;
+            };
         };
         /** @description Mapping of one CMMN processTask whose process names a workspace workflow (externalRef orqix:workflow:<key>). */
         CaseWorkflowTaskMapping: {
@@ -4727,6 +4742,8 @@ export interface components {
             };
         };
         CaseWorkflowStatus: {
+            /** @description The child case a case task started */
+            caseId: components["schemas"]["Uuid"] | null;
             attempt: number;
             /** @enum {string} */
             status: "running" | "completed" | "failed" | "cancelled" | "fenced";
@@ -4754,6 +4771,7 @@ export interface components {
             sourceXml: string;
             dataFields?: components["schemas"]["CaseDataField"][];
             workflowTasks?: components["schemas"]["CaseWorkflowPin"][];
+            caseTasks?: components["schemas"]["CaseChildPin"][];
         };
         CasePlanItem: {
             id: string;

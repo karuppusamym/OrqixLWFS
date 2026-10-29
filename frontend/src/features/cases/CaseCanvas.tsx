@@ -17,11 +17,11 @@ import {
   type NodeChange,
   type NodeProps,
 } from '@xyflow/react'
-import { User, Workflow } from 'lucide-react'
+import { Clock, FolderOpen, User, Workflow } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useAnnounce } from '@/components/common/Announcer'
 import { cn } from '@/lib/cn'
-import { KIND_LABEL, autoLayout, bounds, caseItems, entrySources, occurs, type CaseModelItem } from './caseModel'
+import { KIND_LABEL, autoLayout, bounds, caseItems, entrySources, hasEntry, isListener, occurs, type CaseModelItem } from './caseModel'
 import { connect, connectionProblem, disconnect, fitStages, moveItem, parentOf, reparent, resizeStage, stageAt, type RuleKind } from './caseCanvasOps'
 
 interface CaseNodeData extends Record<string, unknown> {
@@ -39,6 +39,8 @@ function markers(item: CaseModelItem): string[] {
   if (item.required) words.push('Required')
   if (item.repetitions) words.push(`Repeats ${item.repetitions}×`)
   if (item.discretionary) words.push('Discretionary')
+  if (item.when?.clauses.length) words.push('Data condition')
+  if (item.kind === 'timerEventListener' && item.timer) words.push(item.timer)
   return words
 }
 
@@ -46,11 +48,11 @@ const HANDLE = '!h-4 !w-3 !rounded-none !border-0 !bg-transparent'
 
 /** Hollow diamond (entry criterion) on the left, filled diamond (exit criterion) on the right, a source dot below. */
 function RuleHandles({ item, readOnly }: { item: CaseModelItem; readOnly: boolean }) {
-  const canEnter = item.kind !== 'userEventListener' && !item.discretionary
+  const canEnter = !isListener(item) && !item.discretionary
   const canExit = canEnter && item.kind !== 'milestone'
   return <>
     {canEnter ? <Handle type="target" id="entry" position={Position.Left} isConnectable={!readOnly} className={HANDLE} title="Entry rule: drop a connector here (starts after)">
-      <svg width={12} height={16} viewBox="0 0 12 16" aria-hidden="true" className="pointer-events-none text-foreground"><polygon points="6,1 11,8 6,15 1,8" fill={entrySources(item).length ? 'var(--surface)' : 'transparent'} stroke="currentColor" strokeWidth={1.6} opacity={entrySources(item).length ? 1 : 0.45} /></svg>
+      <svg width={12} height={16} viewBox="0 0 12 16" aria-hidden="true" className="pointer-events-none text-foreground"><polygon points="6,1 11,8 6,15 1,8" fill={hasEntry(item) ? 'var(--surface)' : 'transparent'} stroke="currentColor" strokeWidth={1.6} opacity={hasEntry(item) ? 1 : 0.45} /></svg>
     </Handle> : null}
     {canExit ? <Handle type="target" id="exit" position={Position.Right} isConnectable={!readOnly} className={HANDLE} title="Exit rule: drop a connector here (ends when)">
       <svg width={12} height={16} viewBox="0 0 12 16" aria-hidden="true" className="pointer-events-none text-foreground"><polygon points="6,1 11,8 6,15 1,8" fill={item.exitAfter ? 'currentColor' : 'transparent'} stroke="currentColor" strokeWidth={1.6} opacity={item.exitAfter ? 1 : 0.45} /></svg>
@@ -71,15 +73,15 @@ function CaseNode({ data }: NodeProps<CaseFlowNode>) {
     <div className="relative px-4 pt-2 text-sm"><span className="font-semibold text-muted-foreground">Stage</span> <span className="font-semibold">{item.label}</span>{words.length ? <span className="text-muted-foreground"> · {words.join(' · ')}</span> : null}</div>
     <RuleHandles item={item} readOnly={readOnly} />
   </div>
-  if (item.kind === 'userEventListener') return <div className={cn('flex h-full w-full flex-col items-center text-center', ring)} data-testid={`canvas-${item.id}`}>
+  if (isListener(item)) return <div className={cn('flex h-full w-full flex-col items-center text-center', ring)} data-testid={`canvas-${item.id}`}>
     <svg width={44} height={44} viewBox="0 0 44 44" className="text-foreground" aria-hidden="true">
       <circle cx={22} cy={22} r={20.5} fill="var(--surface)" stroke="currentColor" strokeWidth={1.6} /><circle cx={22} cy={22} r={17} fill="none" stroke="currentColor" strokeWidth={1.6} />
-      <User x={13} y={13} width={18} height={18} strokeWidth={2.2} />
+      {item.kind === 'timerEventListener' ? <Clock x={13} y={13} width={18} height={18} strokeWidth={2.2} /> : <User x={13} y={13} width={18} height={18} strokeWidth={2.2} />}
     </svg>
-    <span className="text-xs font-semibold text-muted-foreground">User event</span><span className="text-sm leading-4 font-semibold">{item.label}</span>
+    <span className="text-xs font-semibold text-muted-foreground">{KIND_LABEL[item.kind]}</span><span className="text-sm leading-4 font-semibold">{item.label}</span>{words.length ? <span className="text-xs text-muted-foreground">{words.join(' · ')}</span> : null}
     <RuleHandles item={item} readOnly={readOnly} />
   </div>
-  const Icon = item.kind === 'processTask' ? Workflow : User
+  const Icon = item.kind === 'processTask' ? Workflow : item.kind === 'caseTask' ? FolderOpen : User
   return <div className={cn('relative flex h-full w-full flex-col justify-center border-2 border-foreground bg-surface px-3 text-left', item.kind === 'milestone' ? 'rounded-full px-6 text-center' : 'rounded-lg', dashed, ring)} data-testid={`canvas-${item.id}`}>
     {item.kind !== 'milestone' ? <Icon className="absolute top-1.5 right-1.5 size-4" aria-hidden="true" /> : null}
     <span className="text-xs font-semibold text-muted-foreground">{KIND_LABEL[item.kind]}</span>

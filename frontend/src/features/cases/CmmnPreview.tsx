@@ -1,7 +1,7 @@
-import { User, Workflow } from 'lucide-react'
+import { Clock, FolderOpen, User, Workflow } from 'lucide-react'
 import { useId } from 'react'
 import { cn } from '@/lib/cn'
-import { entrySources, type CaseModelItem } from './caseModel'
+import { conditionExpression, entrySources, type CaseModelItem } from './caseModel'
 
 /**
  * Read-only CMMN 1.1 notation preview of the case model designer (STU01). The designer itself is a form (a tree of plan
@@ -22,6 +22,8 @@ export const CMMN_KIND: Record<CaseModelItem['kind'], { label: string; symbol: s
   stage: { label: 'Stage', symbol: 'Rectangle with angled corners and a collapse marker', element: 'stage' },
   humanTask: { label: 'Human task', symbol: 'Rounded rectangle with a person icon', element: 'human task' },
   processTask: { label: 'Workflow task', symbol: 'Rounded rectangle with a process icon', element: 'process task' },
+  caseTask: { label: 'Case task', symbol: 'Rounded rectangle with a folder icon', element: 'case task' },
+  timerEventListener: { label: 'Timer', symbol: 'Double circle with a clock', element: 'timer event listener' },
   milestone: { label: 'Milestone', symbol: 'Stadium (rounded ends)', element: 'milestone' },
   userEventListener: { label: 'User event', symbol: 'Double circle with a person icon', element: 'user event listener' },
 }
@@ -35,6 +37,8 @@ function markerWords(item: CaseModelItem): string[] {
   if (item.repetitions) words.push(`Repeats ${item.repetitions} times`)
   if (item.discretionary) words.push(`Discretionary: planned by ${(item.planners ?? []).join(', ') || 'nobody yet'}`)
   if (item.kind === 'processTask' && item.workflow?.key) words.push(`Runs workflow ${item.workflow.key}`)
+  if (item.kind === 'caseTask' && item.childCase?.key) words.push(`Starts case ${item.childCase.key}`)
+  if (item.kind === 'timerEventListener' && item.timer) words.push(`Fires after ${item.timer}`)
   return words
 }
 
@@ -46,7 +50,9 @@ function eventWords(id: string, lookup: Lookup): string | null {
 
 function entryText(item: CaseModelItem, lookup: Lookup): string | null {
   const words = entrySources(item).map(id => eventWords(id, lookup)).filter((value): value is string => !!value)
-  return words.length ? `Starts after ${words.join(' and ')}` : null
+  const data = item.when?.clauses.length ? `case data ${conditionExpression(item.when).slice(2, -1).replaceAll('cd_', '')}` : null
+  if (!words.length && !data) return null
+  return words.length ? `Starts after ${words.join(' and ')}${data ? ` when ${data}` : ''}` : `Starts when ${data}`
 }
 
 function exitText(item: CaseModelItem, lookup: Lookup): string | null {
@@ -121,7 +127,7 @@ function ItemText({ item, lookup }: { item: CaseModelItem; lookup: Lookup }) {
 const ANGLED = '[clip-path:polygon(14px_0,calc(100%-14px)_0,100%_14px,100%_calc(100%-14px),calc(100%-14px)_100%,14px_100%,0_calc(100%-14px),0_14px)]'
 
 function PlanItem({ item, lookup }: { item: CaseModelItem; lookup: Lookup }) {
-  const sentry = <>{item.after && lookup.has(item.after) ? <Sentry /> : null}{item.exitAfter && lookup.has(item.exitAfter) ? <ExitSentry /> : null}</>
+  const sentry = <>{item.after && lookup.has(item.after) || item.when?.clauses.length ? <Sentry /> : null}{item.exitAfter && lookup.has(item.exitAfter) ? <ExitSentry /> : null}</>
   const outline = item.discretionary ? 'border-dashed' : ''
   if (item.kind === 'stage')
     return (
@@ -146,13 +152,13 @@ function PlanItem({ item, lookup }: { item: CaseModelItem; lookup: Lookup }) {
         </div>
       </li>
     )
-  if (item.kind === 'userEventListener')
+  if (item.kind === 'userEventListener' || item.kind === 'timerEventListener')
     return (
-      <li className="flex w-44 flex-col items-center text-center" data-cmmn="userEventListener" data-testid={`cmmn-${item.id}`}>
+      <li className="flex w-44 flex-col items-center text-center" data-cmmn={item.kind} data-testid={`cmmn-${item.id}`}>
         <svg width={44} height={44} viewBox="0 0 44 44" className="text-foreground" aria-hidden="true">
           <circle cx={22} cy={22} r={20.5} fill="var(--surface)" stroke="currentColor" strokeWidth={1.6} />
           <circle cx={22} cy={22} r={17} fill="none" stroke="currentColor" strokeWidth={1.6} />
-          <User x={13} y={13} width={18} height={18} strokeWidth={2.2} />
+          {item.kind === 'timerEventListener' ? <Clock x={13} y={13} width={18} height={18} strokeWidth={2.2} /> : <User x={13} y={13} width={18} height={18} strokeWidth={2.2} />}
         </svg>
         <ItemText item={item} lookup={lookup} />
       </li>
@@ -165,7 +171,7 @@ function PlanItem({ item, lookup }: { item: CaseModelItem; lookup: Lookup }) {
         <Markers item={item} />
       </li>
     )
-  const Icon = item.kind === 'processTask' ? Workflow : User
+  const Icon = item.kind === 'processTask' ? Workflow : item.kind === 'caseTask' ? FolderOpen : User
   return (
     <li className={cn('relative w-52 rounded-lg border-2 border-foreground bg-surface px-3 pt-2 pb-5', outline)} data-cmmn={item.kind} data-testid={`cmmn-${item.id}`}>
       {sentry}

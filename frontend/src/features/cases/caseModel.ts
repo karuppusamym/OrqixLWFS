@@ -1,4 +1,10 @@
-export type CaseItemKind = 'humanTask' | 'processTask' | 'milestone' | 'stage' | 'userEventListener'
+export type CaseItemKind = 'humanTask' | 'processTask' | 'caseTask' | 'milestone' | 'stage' | 'userEventListener' | 'timerEventListener'
+
+export type ConditionOperator = '==' | '!=' | '<' | '<=' | '>' | '>='
+/** One comparison of a case data field with a literal; an entry rule can require all or any of them (CMMN if-part). */
+export interface CaseConditionClause { field: string; op: ConditionOperator; value: string | number | boolean }
+export interface CaseCondition { join: 'all' | 'any'; clauses: CaseConditionClause[] }
+export const CONDITION_OPERATORS: ConditionOperator[] = ['==', '!=', '<', '<=', '>', '>=']
 
 /** Workflow a process task runs: the workspace workflow key and explicit field mappings (pinned at publication). */
 export interface CaseWorkflowRef {
@@ -40,6 +46,12 @@ export interface CaseModelItem {
   discretionary?: boolean
   planners?: string[]
   workflow?: CaseWorkflowRef
+  /** Case task: the case definition key it starts; input is child field -> case field, result is case field -> child field or outcome. */
+  childCase?: CaseWorkflowRef
+  /** Timer: ISO-8601 duration (for example PT4H, P2D) counted from when the timer becomes available. */
+  timer?: string
+  /** Entry rule condition on case data (CMMN if-part): with "after" it must hold when the event happens; alone, the item starts when the data makes it true. */
+  when?: CaseCondition
   ids?: CaseItemIds
   /** Absolute diagram position (CMMNDI bounds). */
   layout?: CaseItemLayout
@@ -56,18 +68,35 @@ export interface CaseModelOptions {
 }
 
 export const KIND_LABEL: Record<CaseItemKind, string> = {
-  humanTask: 'Human task', processTask: 'Workflow task', milestone: 'Milestone', stage: 'Stage', userEventListener: 'User event',
+  humanTask: 'Human task', processTask: 'Workflow task', caseTask: 'Case task', milestone: 'Milestone', stage: 'Stage', userEventListener: 'User event', timerEventListener: 'Timer',
 }
 export const WORKFLOW_RESULT_SOURCES = ['outcome', 'outcomeKind', 'reference'] as const
 export const SHAPE: Record<CaseItemKind, { w: number; h: number }> = {
-  humanTask: { w: 180, h: 84 }, processTask: { w: 180, h: 84 }, milestone: { w: 170, h: 52 }, userEventListener: { w: 150, h: 96 }, stage: { w: 420, h: 240 },
+  humanTask: { w: 180, h: 84 }, processTask: { w: 180, h: 84 }, caseTask: { w: 180, h: 84 }, milestone: { w: 170, h: 52 }, userEventListener: { w: 150, h: 96 }, timerEventListener: { w: 150, h: 96 }, stage: { w: 420, h: 240 },
 }
 
 export function caseItems(items: CaseModelItem[]): CaseModelItem[] { return items.flatMap(item => [item, ...caseItems(item.children ?? [])]) }
 function escape(value: string): string { return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&apos;') }
 const GROUP = /^[a-z][a-z0-9-]{1,62}$/
 const ID = /^[A-Za-z_][A-Za-z0-9_.-]{0,63}$/
-export const occurs = (item: CaseModelItem | undefined) => item?.kind === 'milestone' || item?.kind === 'userEventListener'
+export const occurs = (item: CaseModelItem | undefined) => item?.kind === 'milestone' || item?.kind === 'userEventListener' || item?.kind === 'timerEventListener'
+export const isListener = (item: CaseModelItem | undefined) => item?.kind === 'userEventListener' || item?.kind === 'timerEventListener'
+const FIELD = /^[A-Za-z][A-Za-z0-9_]{0,63}$/
+const DURATION = /^P(?:\d{1,3}D)?(?:T(?:\d{1,4}H)?(?:\d{1,6}M)?(?:\d{1,8}S)?)?$/
+
+/** Minutes of an ISO-8601 duration (days, hours, minutes, seconds), or null when it is not one. */
+export function durationMinutes(value: string): number | null {
+  const match = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/.exec(value)
+  if (!match || !DURATION.test(value) || value === 'P' || value.endsWith('T')) return null
+  return Number(match[1] ?? 0) * 1440 + Number(match[2] ?? 0) * 60 + Number(match[3] ?? 0) + Number(match[4] ?? 0) / 60
+}
+
+/** The if-part expression, for example ${cd_amount > 5000 && cd_region == 'EU'}; only this grammar is admitted. */
+export function conditionExpression(condition: CaseCondition): string {
+  const literal = (value: CaseConditionClause['value']) => typeof value === 'string' ? `'${value}'` : String(value)
+  return `\${${condition.clauses.map(clause => `cd_${clause.field} ${clause.op} ${literal(clause.value)}`).join(condition.join === 'all' ? ' && ' : ' || ')}}`
+}
+export const hasEntry = (item: CaseModelItem) => !!item.after || !!item.when?.clauses.length
 
 /** Every source this item's entry criterion waits for. */
 export function entrySources(item: CaseModelItem): string[] { return item.after ? [item.after, ...(item.afterAll ?? []).filter(id => id !== item.after)] : [] }
@@ -129,22 +158,38 @@ export function validateCaseModel(items: CaseModelItem[]): void {
     if (!item.label.trim() || item.label.length > 120) throw new Error('Every plan item needs a label of at most 120 characters.')
     if (item.kind === 'humanTask' && !GROUP.test(item.group ?? '')) throw new Error('Choose an eligible workspace group for every human task.')
     if (item.kind === 'userEventListener' && !GROUP.test(item.group ?? '')) throw new Error('Choose an authorized workspace group for every user event.')
-    if (item.kind === 'userEventListener' && (item.after || item.exitAfter || item.required || item.manual || item.repetitions || item.discretionary)) throw new Error('User events cannot have entry or exit rules, required/manual controls, repetition or planning.')
+    if (isListener(item) && (hasEntry(item) || item.exitAfter || item.required || item.manual || item.repetitions || item.discretionary)) throw new Error('User events and timers cannot have entry or exit rules, required/manual controls, repetition or planning.')
     if (item.kind === 'processTask') {
       if (!item.workflow || !GROUP.test(item.workflow.key)) throw new Error(`Choose the workflow that "${item.label}" runs.`)
       if (item.manual) throw new Error('Workflow tasks start automatically; make them discretionary to let people decide.')
     }
+    if (item.kind === 'caseTask') {
+      if (!item.childCase || !GROUP.test(item.childCase.key)) throw new Error(`Choose the case that "${item.label}" starts.`)
+      if (item.manual) throw new Error('Case tasks start automatically; make them discretionary to let people decide.')
+    }
+    if (item.kind === 'timerEventListener') {
+      const minutes = durationMinutes(item.timer ?? '')
+      if (minutes === null || minutes < 1 || minutes > 366 * 1440) throw new Error(`Give timer "${item.label}" a duration from 1 minute to 366 days.`)
+    }
+    if (item.when) {
+      if (!item.when.clauses.length || item.when.clauses.length > 10) throw new Error(`The data condition of "${item.label}" needs 1 to 10 comparisons.`)
+      for (const clause of item.when.clauses) {
+        if (!FIELD.test(clause.field) || !CONDITION_OPERATORS.includes(clause.op)) throw new Error(`Complete the data condition of "${item.label}".`)
+        if (typeof clause.value === 'string' && (/['\\$#{}]/.test(clause.value) || clause.value.length > 120)) throw new Error('Condition text cannot contain quotes, backslashes, $, #, { or } and is at most 120 characters.')
+        if (typeof clause.value === 'number' && (!Number.isFinite(clause.value) || Math.abs(clause.value) >= 1e15)) throw new Error('Condition numbers must be finite.')
+      }
+    }
     if (item.repetitions !== undefined) {
       if (!Number.isInteger(item.repetitions) || item.repetitions < 2 || item.repetitions > 30) throw new Error('Repeat an item from 2 to 30 times.')
-      if (item.kind === 'userEventListener' || item.discretionary) throw new Error('User events and discretionary items cannot repeat.')
+      if (isListener(item) || item.discretionary) throw new Error('User events, timers and discretionary items cannot repeat.')
       if (item.exitAfter) throw new Error('A repeated item cannot also have an exit rule.')
-      if (item.kind === 'milestone' && !item.after) throw new Error('A repeated milestone needs a "start after" rule; it repeats each time that rule is met again.')
+      if (item.kind === 'milestone' && !hasEntry(item)) throw new Error('A repeated milestone needs a "start after" rule; it repeats each time that rule is met again.')
     }
     if (item.kind === 'milestone' && item.manual) throw new Error('Milestones cannot use manual activation.')
     if (item.kind === 'milestone' && item.exitAfter) throw new Error('A milestone cannot have an exit rule.')
     if (item.discretionary) {
-      if (item.kind !== 'humanTask' && item.kind !== 'processTask') throw new Error('Only human tasks and workflow tasks can be discretionary.')
-      if (item.after || item.exitAfter) throw new Error('Discretionary items start when someone plans them, so they cannot have entry or exit rules.')
+      if (item.kind !== 'humanTask' && item.kind !== 'processTask' && item.kind !== 'caseTask') throw new Error('Only human, workflow and case tasks can be discretionary.')
+      if (hasEntry(item) || item.exitAfter) throw new Error('Discretionary items start when someone plans them, so they cannot have entry or exit rules.')
       if (!item.planners?.length || item.planners.length > 10 || item.planners.some(group => !GROUP.test(group))) throw new Error(`Choose 1 to 10 groups who may plan "${item.label}".`)
     }
     if (item.kind !== 'stage' && item.children?.length) throw new Error('Only stages can contain other plan items.')
@@ -154,13 +199,13 @@ export function validateCaseModel(items: CaseModelItem[]): void {
   for (const item of all) {
     const r = refs(item)
     claim(r.definition); claim(r.planItem)
-    if (item.after) { claim(r.entry); claim(r.sentry) }
+    if (hasEntry(item)) { claim(r.entry); claim(r.sentry) }
     if (item.exitAfter) { claim(r.exit); claim(r.exitSentry) }
     if (item.kind === 'processTask') claim(`${r.definition}_process`)
     if (item.discretionary) for (const suffix of ['__planner', '__planner_item', '__plan_entry', '__plan_sentry']) claim(`${r.planItem}${suffix}`)
   }
-  const initial = (nodes: CaseModelItem[]): boolean => nodes.some(item => !item.after && !item.discretionary && (item.kind === 'humanTask' || item.kind === 'processTask' || item.kind === 'userEventListener' || item.kind === 'stage' && initial(item.children ?? [])))
-  if (!initial(items)) throw new Error('Keep a human task, workflow task, user event or a stage containing one available when the case starts.')
+  const initial = (nodes: CaseModelItem[]): boolean => nodes.some(item => !hasEntry(item) && !item.discretionary && (item.kind === 'humanTask' || item.kind === 'processTask' || item.kind === 'caseTask' || isListener(item) || item.kind === 'stage' && initial(item.children ?? [])))
+  if (!initial(items)) throw new Error('Keep a human task, workflow task, case task, user event, timer or a stage containing one available when the case starts.')
   const scope = (nodes: CaseModelItem[], depth: number) => {
     if (depth > 4 || !nodes.some(item => !item.discretionary)) throw new Error('Stages need work and support at most four nested levels.')
     const local = new Map(nodes.map(item => [item.id, item]))
@@ -197,6 +242,7 @@ export function caseModelXml(key: string, name: string, items: CaseModelItem[], 
   const roleId = (group: string) => options.roleIds?.[group] ?? `case_role_${group}`
   const withIds = !!options.diagram || all.some(item => item.ids)
   const processes: string[] = []
+  let caseTasks = 0
   function plan(nodes: CaseModelItem[], owner: string): string {
     let planItems = '', definitions = '', sentries = '', table = ''
     for (const item of nodes) {
@@ -208,14 +254,17 @@ export function caseModelXml(key: string, name: string, items: CaseModelItem[], 
         table += `<discretionaryItem id="${r.planItem}" name="${escape(item.label)}" definitionRef="${r.definition}" authorizedRoleRefs="${(item.planners ?? []).map(roleId).join(' ')}">${controls ? `<itemControl>${controls}</itemControl>` : ''}</discretionaryItem>`
       } else {
         const exit = item.exitAfter ? lookup.get(item.exitAfter)! : undefined
-        planItems += `<planItem id="${r.planItem}" name="${escape(item.label)}" definitionRef="${r.definition}">${controls ? `<itemControl>${controls}</itemControl>` : ''}${sources.length ? `<entryCriterion id="${r.entry}" sentryRef="${r.sentry}"/>` : ''}${exit ? `<exitCriterion id="${r.exit}" sentryRef="${r.exitSentry}"/>` : ''}</planItem>`
-        if (sources.length) sentries += `<sentry id="${r.sentry}">${sources.map((source, index) => onPart(source, r.sentry, index)).join('')}</sentry>`
+        const condition = item.when?.clauses.length ? `<ifPart${withIds ? ` id="${r.sentry}_if"` : ''}><condition>${escape(conditionExpression(item.when))}</condition></ifPart>` : ''
+        planItems += `<planItem id="${r.planItem}" name="${escape(item.label)}" definitionRef="${r.definition}">${controls ? `<itemControl>${controls}</itemControl>` : ''}${sources.length || condition ? `<entryCriterion id="${r.entry}" sentryRef="${r.sentry}"/>` : ''}${exit ? `<exitCriterion id="${r.exit}" sentryRef="${r.exitSentry}"/>` : ''}</planItem>`
+        if (sources.length || condition) sentries += `<sentry id="${r.sentry}">${sources.map((source, index) => onPart(source, r.sentry, index)).join('')}${condition}</sentry>`
         if (exit) sentries += `<sentry id="${r.exitSentry}">${onPart(exit, r.exitSentry, 0)}</sentry>`
       }
       if (item.kind === 'processTask') processes.push(`<process id="${r.definition}_process" name="${escape(item.label)}" externalRef="orqixwf:${item.workflow!.key}"/>`)
       definitions += item.kind === 'stage' ? `<stage id="${r.definition}" name="${escape(item.label)}" autoComplete="false">${plan(item.children ?? [], r.definition)}</stage>`
         : item.kind === 'humanTask' ? `<humanTask id="${r.definition}" name="${escape(item.label)}" flowable:candidateGroups="${escape(item.group!)}"/>`
           : item.kind === 'processTask' ? `<processTask id="${r.definition}" name="${escape(item.label)}" processRef="${r.definition}_process" isBlocking="true"/>`
+          : item.kind === 'caseTask' ? (caseTasks++, `<caseTask id="${r.definition}" name="${escape(item.label)}" caseRef="orqixcase:${item.childCase!.key}" isBlocking="true"/>`)
+          : item.kind === 'timerEventListener' ? `<timerEventListener id="${r.definition}" name="${escape(item.label)}"><timerExpression>${item.timer}</timerExpression></timerEventListener>`
             : item.kind === 'userEventListener' ? `<userEventListener id="${r.definition}" name="${escape(item.label)}" authorizedRoleRefs="${roleId(item.group!)}"/>`
               : `<milestone id="${r.definition}" name="${escape(item.label)}"/>`
     }
@@ -225,7 +274,7 @@ export function caseModelXml(key: string, name: string, items: CaseModelItem[], 
   const body = plan(laid, planId)
   const roles = groups.length ? `<caseRoles>${groups.map(group => `<role id="${roleId(group)}" name="${escape(group)}"/>`).join('')}</caseRoles>` : ''
   const diagram = options.diagram ? diagramXml(laid, planId, options.planLayout) : ''
-  const namespaces = (processes.length ? ' xmlns:orqixwf="urn:orqix:workflow"' : '') + (options.diagram ? ' xmlns:cmmndi="http://www.omg.org/spec/CMMN/20151109/CMMNDI" xmlns:dc="http://www.omg.org/spec/CMMN/20151109/DC" xmlns:di="http://www.omg.org/spec/CMMN/20151109/DI"' : '')
+  const namespaces = (processes.length ? ' xmlns:orqixwf="urn:orqix:workflow"' : '') + (caseTasks ? ' xmlns:orqixcase="urn:orqix:case"' : '') + (options.diagram ? ' xmlns:cmmndi="http://www.omg.org/spec/CMMN/20151109/CMMNDI" xmlns:dc="http://www.omg.org/spec/CMMN/20151109/DC" xmlns:di="http://www.omg.org/spec/CMMN/20151109/DI"' : '')
   const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<definitions xmlns="http://www.omg.org/spec/CMMN/20151109/MODEL" xmlns:flowable="http://flowable.org/cmmn"${namespaces} targetNamespace="urn:orqix:case-designer"><case id="${key}" name="${escape(name)}"><casePlanModel id="${planId}" name="${escape(name)}" autoComplete="false">${body}</casePlanModel>${roles}</case>${processes.join('')}${diagram}</definitions>`
   if (new TextEncoder().encode(xml).length > 65536) throw new Error('The generated CMMN exceeds 64 KiB.')
   return xml
@@ -243,7 +292,7 @@ function diagramXml(items: CaseModelItem[], planId: string, planLayout?: CaseIte
     const r = refs(item), b = item.layout!
     shapes += `<cmmndi:CMMNShape id="${r.planItem}_di" cmmnElementRef="${r.planItem}"><dc:Bounds x="${n(b.x)}" y="${n(b.y)}" width="${n(b.w)}" height="${n(b.h)}"/><cmmndi:CMMNLabel/></cmmndi:CMMNShape>`
     const sources = entrySources(item)
-    if (sources.length) {
+    if (hasEntry(item)) {
       shapes += `<cmmndi:CMMNShape id="${r.entry}_di" cmmnElementRef="${r.entry}"><dc:Bounds x="${n(b.x - 6)}" y="${n(b.y + b.h / 2 - 10)}" width="12" height="20"/><cmmndi:CMMNLabel/></cmmndi:CMMNShape>`
       sources.forEach((id, index) => {
         const s = lookup.get(id)!.layout!
@@ -257,6 +306,11 @@ function diagramXml(items: CaseModelItem[], planId: string, planLayout?: CaseIte
     }
   }
   return `<cmmndi:CMMNDI><cmmndi:CMMNDiagram id="${planId}_diagram">${shapes}${edges}</cmmndi:CMMNDiagram></cmmndi:CMMNDI>`
+}
+
+/** The child case mappings the server needs alongside the CMMN source, one per case task (keyed by its definition ID). */
+export function caseModelCaseTasks(items: CaseModelItem[]): Array<{ taskId: string; inputMapping: Record<string, string>; resultMapping: Record<string, string> }> {
+  return caseItems(items).filter(item => item.kind === 'caseTask' && item.childCase).map(item => ({ taskId: refs(item).definition, inputMapping: { ...item.childCase!.input }, resultMapping: { ...item.childCase!.result } }))
 }
 
 /** The workflow mappings the server needs alongside the CMMN source, one per workflow task (keyed by its definition ID). */

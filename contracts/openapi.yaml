@@ -6679,6 +6679,19 @@ components:
         sourceXml: { type: string, minLength: 1, maxLength: 65536, description: Bounded CMMN 1.1 XML source (64 KiB UTF-8) }
         dataFields: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseDataField' } }
         workflowTasks: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseWorkflowTaskMapping' } }
+        caseTasks: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseWorkflowTaskMapping' }, description: 'One mapping per CMMN caseTask (caseRef prefix:key bound to urn:orqix:case); inputMapping is child field to parent field, resultMapping is parent field to child field or outcome' }
+    CaseChildPin:
+      type: object
+      additionalProperties: false
+      required: [taskId, childDefinitionId, childKey, childName, childVersion, inputMapping, resultMapping]
+      properties:
+        taskId: { type: string }
+        childDefinitionId: { $ref: '#/components/schemas/Uuid' }
+        childKey: { type: string }
+        childName: { type: string }
+        childVersion: { type: integer, minimum: 1 }
+        inputMapping: { type: object, additionalProperties: { type: string } }
+        resultMapping: { type: object, additionalProperties: { type: string } }
     CaseWorkflowTaskMapping:
       type: object
       additionalProperties: false
@@ -6704,8 +6717,9 @@ components:
     CaseWorkflowStatus:
       type: object
       additionalProperties: false
-      required: [attempt, status, runId, reference, outcome, detail]
+      required: [attempt, status, runId, reference, outcome, detail, caseId]
       properties:
+        caseId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }], description: The child case a case task started }
         attempt: { type: integer, minimum: 1 }
         status: { type: string, enum: [running, completed, failed, cancelled, fenced] }
         runId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }] }
@@ -6738,6 +6752,7 @@ components:
         sourceXml: { type: string }
         dataFields: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseDataField' } }
         workflowTasks: { type: array, items: { $ref: '#/components/schemas/CaseWorkflowPin' } }
+        caseTasks: { type: array, items: { $ref: '#/components/schemas/CaseChildPin' } }
     CasePlanItem:
       type: object
       additionalProperties: false

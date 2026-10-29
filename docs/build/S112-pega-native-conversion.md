@@ -1,5 +1,7 @@
 # S112 - Native Pega rule archive conversion, MIG11 (29 October 2026)
 
+**Extended by [S115](S115-pega-native-completion.md)** (circumstances and date ranges of decision rules, subflows, split-joins, business calendars, escalations, case-level service levels, delegation provenance); the "blocked when referenced" lists below are as of S112.
+
 MIG11 was deferred on purpose ([ADR 0003](../adr/0003-minimum-demo-pega-scope.md)): the synthetic demo did not need it, and no genuine Pega export was available to define a grammar. The user has now asked for it to be built. This record describes what is implemented, what it was tested against, and what it does not establish.
 
 **The grammar is synthetic.** No genuine Pega or customer export was available. The decoder reads the clipboard XML shape that Pega documents for rule and data instances (a `<pagedata>` page, one element per property, PageList and PropertyList values as `REPEATINGTYPE` lists of numbered `<rowdata>`), with property names taken from Pega's public rule properties where they are known. The fixtures follow that shape. Whether real RAP/JAR exports of a given Pega release match it is **AC01/EXT01 customer qualification** and is not established here. No Pega release is certified.

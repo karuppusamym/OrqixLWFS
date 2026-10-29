@@ -6,6 +6,7 @@ These archives are **synthetic test fixtures, not Pega exports and not customer 
 |---|---|
 | `purchase-request.zip` | Converts end to end: case type with two stages, decision table, fork with a when rule over a flattened data-page property, three assignments with due times, a two-section harness, a literal `pyDefault`, plus shadowed versions (lower version, not available, withdrawn, closer class, ruleset outside the stack) and unused rules |
 | `refusals.zip` | Every referenced construct blocks with its source path: activity, connector, business-day service level, a Blocked decision table, a circumstanced flow action, an unresolvable flow action, a declare expression and a binary entry |
+| `purchase-advanced.zip` | S115: circumstance and date variants of decision rules and a when rule, a split-join and a subflow (child workflows), three starting child flows, a business calendar with a NotifyAssignee escalation, a single-stage case type with a case-level service level, an explicit USD cell and a delegation record. Convert and publish `flows/RecordOrder.xml` first, then map `Checks_1`, `Checks_2` and `Record` to it |
 | `expected/*.json` | Inventory and effective-rule resolution computed by the independent Python implementation (`tools/migration-equivalence/pega_native.py`). `PegaNativeTest` requires the backend to produce exactly the same result |
 
 Generate or verify from the repository root:

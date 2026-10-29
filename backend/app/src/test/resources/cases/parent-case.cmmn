@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/CMMN/20151109/MODEL" xmlns:flowable="http://flowable.org/cmmn" xmlns:orqixcase="urn:orqix:case" targetNamespace="urn:orqix:parent">
+  <case id="parentCase" name="Purchase with supplier review">
+    <casePlanModel id="plan" name="Purchase with supplier review" autoComplete="false">
+      <planItem id="supplier" name="Supplier review" definitionRef="supplierTask"><itemControl><requiredRule/></itemControl></planItem>
+      <planItem id="followUp" name="Follow up" definitionRef="followTask"><entryCriterion id="followEntry" sentryRef="reviewed"/></planItem>
+      <sentry id="reviewed"><planItemOnPart id="reviewedOn" sourceRef="supplier"><standardEvent>complete</standardEvent></planItemOnPart></sentry>
+      <caseTask id="supplierTask" name="Supplier review" caseRef="orqixcase:CHILDKEY" isBlocking="true"/>
+      <humanTask id="followTask" name="Follow up" flowable:candidateGroups="managers"/>
+    </casePlanModel>
+  </case>
+</definitions>

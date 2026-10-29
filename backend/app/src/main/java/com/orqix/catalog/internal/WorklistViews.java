@@ -59,7 +59,7 @@ public class WorklistViews {
                 .param("ws",ws).query((rs,n)->new State(rs.getInt(1),rs.getObject(2)==null?null:new ApplicationViewQueries.Pinned(rs.getObject(2,UUID.class),rs.getInt(3),json.parse(rs.getString(4)))))
                 .optional().orElse(new State(0,null));
     }
-    static void validate(tools.jackson.databind.JsonNode view) {
+    public static void validate(tools.jackson.databind.JsonNode view) {
         if (!"worklist".equals(view.path("kind").asString()) || view.path("sections").size()!=1 || view.path("sections").get(0).path("fields").size()>10)
             throw new ApiException(ProblemCode.VALIDATION_FAILED,"A worklist view needs one section with at most ten columns.");
         boolean title=false;

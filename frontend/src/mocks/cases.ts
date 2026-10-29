@@ -4,12 +4,13 @@ import { clock, inGroup, isMember, newId, permissionsOf, WS_PURCHASING, type Moc
 
 type Definition = components['schemas']['CaseDefinition']
 type Instance = components['schemas']['CaseInstance']
-type Row = { value: Instance; startedBy: string; step: number; events?: components['schemas']['CaseEvent'][] }
+type Row = { value: Instance; startedBy: string; step: number; events?: components['schemas']['CaseEvent'][]; planned?: boolean }
+type Stored = Definition & { ws: string; sourceXml?: string; workflowTasks?: components['schemas']['CaseWorkflowPin'][] }
 
 const B = '/api/v1'
 const DEMO_DEFINITION: Definition = { id: '77777777-7777-4777-8777-777777777701', key: 'demoCase', name: 'Evidence review', version: 1, createdAt: '2026-10-17T12:00:00Z' }
 const DEMO_INSTANCE = '77777777-7777-4777-8777-777777777702'
-let definitions: Array<Definition & { ws: string }> = []
+let definitions: Stored[] = []
 let instances: Row[] = []
 const replays = new Map<string, Instance>()
 const terminations = new Map<string, { request: string; value: Instance }>()
@@ -104,11 +105,47 @@ export function createCaseHandlers(getUser: () => MockUser): HttpHandler[] {
       if (!perms.includes('workflow.read') && !perms.includes('workflow.start')) return failure(403, 'FORBIDDEN', 'Case definitions are not visible.')
       return HttpResponse.json(definitions.filter(value => value.ws === ws).map(({ ws: _ws, ...value }) => value))
     }),
-    http.post(`${B}/workspaces/:ws/cases/definitions`, ({ params }) => {
+    http.post(`${B}/workspaces/:ws/cases/definitions`, async ({ params, request }) => {
       const ws = String(params.ws), user = getUser()
       if (!member(ws, user)) return failure(404, 'NOT_FOUND', 'Workspace not found.')
       if (!permissionsOf(user, ws).includes('workflow.edit')) return failure(403, 'FORBIDDEN', 'Case definition editing is not allowed.')
-      return failure(422, 'WORKFLOW_INVALID', 'CMMN deployment in mock mode needs the real backend validator.')
+      // Mock mode keeps a structural check only; executable admission is the real backend validator's job.
+      const body = await request.json() as components['schemas']['CreateCaseDefinition']
+      if (!/^[a-z][a-z0-9-]{1,62}$/.test(body.key ?? '') || !body.name?.trim()) return failure(422, 'VALIDATION_FAILED', 'Case key or name is invalid.')
+      if (!body.sourceXml?.includes('http://www.omg.org/spec/CMMN/20151109/MODEL') || !body.sourceXml.includes(`<case id="${body.key}"`)) return failure(422, 'WORKFLOW_INVALID', 'Exactly one case with an ID matching the catalog key is required.')
+      const processTasks = [...body.sourceXml.matchAll(/<processTask id="([^"]+)"/g)].map(match => match[1]!)
+      const mapped = new Set((body.workflowTasks ?? []).map(task => task.taskId))
+      if (processTasks.length !== mapped.size || processTasks.some(id => !mapped.has(id))) return failure(422, 'VALIDATION_FAILED', `Workflow task mappings must match the workflow tasks of the model exactly: [${processTasks.join(', ')}].`)
+      const version = definitions.filter(value => value.ws === ws && value.key === body.key).length + 1
+      const stored: Stored = { id: newId(), key: body.key, name: body.name.trim(), version, createdAt: clock.iso(), dataFields: body.dataFields ?? [], ws, sourceXml: body.sourceXml,
+        workflowTasks: (body.workflowTasks ?? []).map(task => ({ taskId: task.taskId, workflowId: newId(), workflowKey: /externalRef="orqixwf:([^"]+)"/.exec(body.sourceXml)?.[1] ?? 'workflow', workflowName: 'Pinned workflow', releaseId: newId(), releaseNumber: 1, inputMapping: task.inputMapping ?? {}, resultMapping: task.resultMapping ?? {} })) }
+      definitions = [stored, ...definitions]
+      const { ws: _ws, sourceXml: _source, workflowTasks: _tasks, ...summary } = stored
+      return HttpResponse.json(summary, { status: 201 })
+    }),
+    http.get(`${B}/workspaces/:ws/cases/definitions/:definitionId`, ({ params }) => {
+      const ws = String(params.ws), user = getUser()
+      const stored = definitions.find(value => value.ws === ws && value.id === String(params.definitionId))
+      if (!member(ws, user) || !stored) return failure(404, 'NOT_FOUND', 'Case definition not found.')
+      if (!permissionsOf(user, ws).includes('workflow.edit')) return failure(403, 'FORBIDDEN', 'Case definition source is not visible.')
+      const { ws: _ws, ...detail } = stored
+      return HttpResponse.json({ ...detail, sourceXml: stored.sourceXml ?? `<?xml version="1.0" encoding="UTF-8"?>\n<definitions xmlns="http://www.omg.org/spec/CMMN/20151109/MODEL" targetNamespace="urn:orqix:mock"><case id="${stored.key}" name="${stored.name}"/></definitions>`, workflowTasks: stored.workflowTasks ?? [] })
+    }),
+    http.post(`${B}/workspaces/:ws/cases/instances/:id/plan-items/:itemId/plan`, async ({ params, request }) => {
+      const ws = String(params.ws), user = getUser()
+      const row = instances.find(value => value.value.id === String(params.id) && definitions.some(def => def.ws === ws && def.id === value.value.definitionId))
+      if (!member(ws, user) || !row) return failure(404, 'NOT_FOUND', 'Case not found.')
+      if (!permissionsOf(user, ws).includes('task.act')) return failure(403, 'FORBIDDEN', 'Planning is not allowed.')
+      if (String(params.itemId) !== `${row.value.id}-expert` || row.planned) return failure(404, 'NOT_FOUND', 'Plan item not found.')
+      if (!inGroup(user, 'managers')) return failure(403, 'NOT_ELIGIBLE', 'Only managers may plan this item.')
+      const body = await request.json() as { expectedVersion: number; reason: string }
+      if (!body.reason?.trim()) return failure(422, 'VALIDATION_FAILED', 'Supply a current version and reason.')
+      if (row.value.version !== body.expectedVersion) return failure(409, 'TASK_VERSION_CONFLICT', 'Refresh the case.')
+      if (row.value.status !== 'active') return failure(409, row.value.status === 'suspended' ? 'RUN_SUSPENDED' : 'TASK_NOT_OPEN', 'That command is not available now.')
+      row.planned = true
+      row.value = { ...row.value, version: row.value.version + 1, tasks: [...row.value.tasks, { id: 'demo-expert', name: 'Expert opinion', status: 'available', candidateGroups: ['finance-approvers'], eligible: false }] }
+      row.events = [{ version: row.value.version, action: 'plan', planItemId: `${row.value.id}-expert`, fromStatus: 'active', toStatus: 'active', actorId: user.id, actorName: user.displayName, reason: body.reason.trim(), occurredAt: clock.iso() }, ...(row.events ?? [])]
+      return HttpResponse.json(project(row, user))
     }),
     http.get(`${B}/workspaces/:ws/cases/instances`, ({ params }) => {
       const ws = String(params.ws), user = getUser(), perms = permissionsOf(user, ws)
@@ -130,8 +167,16 @@ export function createCaseHandlers(getUser: () => MockUser): HttpHandler[] {
       const items: components['schemas']['CasePlanItem'][] = [0, 1].filter(step => step <= row.step).map(step => ({
         id: `${row.value.id}-${step}`, elementId: step ? 'review' : 'collect', name: task(step).name, type: 'humantask',
         state: step < row.step ? 'completed' : row.value.status === 'terminated' ? 'terminated' : 'active',
-        required: false, allowedActions: {}, parentStageId: null, createdAt: row.value.createdAt, endedAt: step < row.step || row.value.status !== 'active' ? row.value.createdAt : null,
+        required: false, allowedActions: {}, parentStageId: null, createdAt: row.value.createdAt, endedAt: step < row.step || row.value.status !== 'active' ? row.value.createdAt : null, workflow: null,
       }))
+      // The demo case also shows a discretionary item (planned by managers) and a workflow task with its run.
+      const active = row.value.status === 'active'
+      items.push({ id: `${row.value.id}-expert`, elementId: 'expert', name: 'Expert opinion', type: 'discretionaryItem', state: row.planned ? 'planned' : active ? 'available' : 'notPlanned',
+        required: false, allowedActions: { plan: !row.planned && active && inGroup(user, 'managers') && permissionsOf(user, ws).includes('task.act') }, parentStageId: null, createdAt: row.value.createdAt, endedAt: null, workflow: null })
+      if (row.planned) items.push({ id: `${row.value.id}-expert-task`, elementId: 'expert', name: 'Expert opinion', type: 'humantask', state: active ? 'active' : 'terminated', required: true, allowedActions: {}, parentStageId: null, createdAt: row.value.createdAt, endedAt: null, workflow: null })
+      items.push({ id: `${row.value.id}-supplier`, elementId: 'supplierCheck', name: 'Supplier check', type: 'processTask', state: row.step > 0 ? 'completed' : active ? 'active' : 'terminated',
+        required: true, allowedActions: {}, parentStageId: null, createdAt: row.value.createdAt, endedAt: row.step > 0 ? row.value.createdAt : null,
+        workflow: { attempt: 1, status: row.step > 0 ? 'completed' : active ? 'running' : 'cancelled', runId: null, reference: 'ORQ-1042', outcome: row.step > 0 ? 'Approved' : null, detail: null, caseId: null } })
       const milestones = row.value.status === 'completed' ? [{ id: `${row.value.id}-milestone`, elementId: 'done', name: 'Reviewed', achievedAt: row.value.createdAt }] : []
       return HttpResponse.json({ items, milestones, events: (row.events ?? []).map(event => ({ ...event, reason: permissionsOf(user, ws).includes('run.read-data') ? event.reason : null })), canClose: row.value.status === 'active' && !row.value.tasks.length && permissionsOf(user, ws).includes('run.operate') })
     }),

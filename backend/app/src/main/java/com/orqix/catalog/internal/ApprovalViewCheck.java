@@ -59,7 +59,7 @@ public class ApprovalViewCheck {
         return result;
     }
 
-    static String compatibility(JsonNode workflow, JsonNode view) {
+    public static String compatibility(JsonNode workflow, JsonNode view) {
         if (!"approval".equals(view.path("kind").asString())) return "Choose a published approval view.";
         Set<String> actions = new HashSet<>();
         for (var action : view.path("actions")) {

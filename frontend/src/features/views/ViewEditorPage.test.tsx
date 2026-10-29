@@ -20,7 +20,7 @@ describe('reusable view editor', () => {
     currentDetail = detail()
     vi.mocked(getView).mockReset().mockImplementation(async () => currentDetail)
     vi.mocked(saveView).mockReset().mockImplementation(async (_ws, _id, body) => {
-      currentDetail = { ...currentDetail, ...body, draftRevision: 2 }
+      currentDetail = { ...currentDetail, ...body, definition: body.definition as typeof currentDetail.definition, draftRevision: 2 }
       return currentDetail
     })
     vi.mocked(publishView).mockReset().mockImplementation(async () => ({ ...detail(), draftRevision: 2, publishedVersion: 1, versions: [{ version: 1, publishedAt: '2026-10-17T12:00:00Z' }] }))

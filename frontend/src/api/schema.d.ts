@@ -269,6 +269,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+                planItemId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Plan a discretionary item of a stage's planning table into the case
+         * @description Requires task.act and current membership of a case role authorized on the discretionary item, mapped to a workspace group. The item must be available to plan in an active stage. The planned item then follows its own required and manual activation rules. Expected version, reason, idempotency and case hold checks apply. Audit metadata excludes the reason.
+         */
+        post: operations["planCaseDiscretionaryItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/retryWorkflow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+                planItemId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start the pinned workflow of an active workflow task again after it could not start or was cancelled
+         * @description Requires run.operate. The workflow task must be active and its latest attempt failed or cancelled; at most 20 attempts. The input is mapped again from current case data, so correct the data first. Expected version, reason, idempotency and case hold checks apply.
+         */
+        post: operations["retryCaseWorkflowTask"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/start": {
         parameters: {
             query?: never;
@@ -567,6 +615,289 @@ export interface paths {
         };
         /** Get an immutable published view version */
         get: operations["getViewVersion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/views/{viewId}/pins": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                viewId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Review every pin of a view or page against a published version, with compatibility diagnostics and a plan hash (S114)
+         * @description Lists the holders that pin this view: workflow drafts and active releases, the newest version of each case definition, the workspace worklist, page drafts and published pages, and page routes. Each holder is ready, current, newer, blocked (with the diagnostics a move would have) or readOnly (an immutable release or published version, shown for review). The target defaults to the newest published version.
+         */
+        get: operations["listViewPins"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/views/{viewId}/pin-migrations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                viewId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        /** List applied pin migrations of a view, newest first (at most 50) */
+        get: operations["listViewPinMigrations"];
+        put?: never;
+        /**
+         * Move the selected reviewed pins to one published version in a single all-or-nothing operation
+         * @description The plan is read again and must still have the reviewed hash (409 otherwise). Each selected holder must be ready. Workflow and page drafts get a new draft revision, a case gets a new definition version with the same model, data fields and workflow task pins, and the worklist and page routes get a new revision; each through its own operation, so its permission, revision check and audit apply. Published releases and page versions never change. Any failure rolls back every item. A repeated request fails with 409 because the pins have changed.
+         */
+        post: operations["migrateViewPins"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/app-pages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** List application page routes and their pinned published page versions (S111) */
+        get: operations["listAppPages"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/app-pages/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                slug: components["parameters"]["AppPageSlug"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Read the exact published page pinned to this route with its pinned views, extension uses and caller grants
+         * @description Returns presentation only. Business data is read through the existing authorized task, request and case operations or the component data operation; every action runs through runAppPageChain.
+         */
+        get: operations["getAppPage"];
+        /** Pin an exact published page version to a route, or remove the route */
+        put: operations["assignAppPage"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/app-pages/{slug}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                slug: components["parameters"]["AppPageSlug"];
+            };
+            cookie?: never;
+        };
+        /** Append-only history of the versions pinned to a route */
+        get: operations["listAppPageHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/app-pages/{slug}/drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                slug: components["parameters"]["AppPageSlug"];
+            };
+            cookie?: never;
+        };
+        /** The caller's own saved request drafts for this page */
+        get: operations["listAppPageDrafts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/app-pages/{slug}/components/{componentId}/data": {
+        parameters: {
+            query?: {
+                context?: string;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                slug: components["parameters"]["AppPageSlug"];
+                componentId: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Server-filtered data for an extension component's granted bindings
+         * @description Reads the page context with the caller's own task or case read permission and returns only the bindings the pinned page grants to this extension component. A version that is no longer approved returns 403.
+         */
+        get: operations["getAppPageComponentData"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/app-pages/{slug}/chains/{chainId}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                slug: components["parameters"]["AppPageSlug"];
+                chainId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run a pinned action chain; each step is authorized again by its own operation and the chain stops at the first failure */
+        post: operations["runAppPageChain"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/ui-extensions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** List registered UI extension bundles and their versions */
+        get: operations["listUiExtensions"];
+        put?: never;
+        /** Register a UI extension */
+        post: operations["createUiExtension"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/ui-extensions/{extensionId}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                extensionId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit an immutable bundle version with declared capabilities for admin approval */
+        post: operations["submitUiExtensionVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/ui-extensions/{extensionId}/versions/{version}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                extensionId: components["schemas"]["Uuid"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        /** Read an extension version including its source for review */
+        get: operations["getUiExtensionVersion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/ui-extensions/{extensionId}/versions/{version}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                extensionId: components["schemas"]["Uuid"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve, reject or revoke an extension version; the submitter cannot decide their own version */
+        post: operations["decideUiExtensionVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/ui-extensions/{extensionId}/versions/{version}/frame": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                extensionId: components["schemas"]["Uuid"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        /**
+         * The sandboxed frame document for an extension version
+         * @description An HTML document whose Content-Security-Policy sandboxes it without same-origin access, admits no network, forms, frames or navigation, and lets only the bridge and the stored bundle run by SHA-256. Approved versions are served to members; pending versions only to designers and workspace administrators for review.
+         */
+        get: operations["getUiExtensionFrame"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4673,6 +5004,59 @@ export interface components {
             /** @description Bounded CMMN 1.1 XML source (64 KiB UTF-8) */
             sourceXml: string;
             dataFields?: components["schemas"]["CaseDataField"][];
+            workflowTasks?: components["schemas"]["CaseWorkflowTaskMapping"][];
+            /** @description One mapping per CMMN caseTask (caseRef prefix:key bound to urn:orqix:case); inputMapping is child field to parent field, resultMapping is parent field to child field or outcome */
+            caseTasks?: components["schemas"]["CaseWorkflowTaskMapping"][];
+        };
+        CaseChildPin: {
+            taskId: string;
+            childDefinitionId: components["schemas"]["Uuid"];
+            childKey: string;
+            childName: string;
+            childVersion: number;
+            inputMapping: {
+                [key: string]: string;
+            };
+            resultMapping: {
+                [key: string]: string;
+            };
+        };
+        /** @description Mapping of one CMMN processTask whose process names a workspace workflow (externalRef orqix:workflow:<key>). */
+        CaseWorkflowTaskMapping: {
+            taskId: string;
+            /** @description Workflow request field to case data field */
+            inputMapping?: {
+                [key: string]: string;
+            };
+            /** @description Case data field to workflow result field, or outcome, outcomeKind or reference */
+            resultMapping?: {
+                [key: string]: string;
+            };
+        };
+        CaseWorkflowPin: {
+            taskId: string;
+            workflowId: components["schemas"]["Uuid"];
+            workflowKey: string;
+            workflowName: string;
+            releaseId: components["schemas"]["Uuid"];
+            releaseNumber: number;
+            inputMapping: {
+                [key: string]: string;
+            };
+            resultMapping: {
+                [key: string]: string;
+            };
+        };
+        CaseWorkflowStatus: {
+            /** @description The child case a case task started */
+            caseId: components["schemas"]["Uuid"] | null;
+            attempt: number;
+            /** @enum {string} */
+            status: "running" | "completed" | "failed" | "cancelled" | "fenced";
+            runId: components["schemas"]["Uuid"] | null;
+            reference: string | null;
+            outcome: string | null;
+            detail: string | null;
         };
         CaseDefinition: {
             viewBinding?: components["schemas"]["PinnedCaseView"] | null;
@@ -4692,6 +5076,8 @@ export interface components {
             createdAt: components["schemas"]["Timestamp"];
             sourceXml: string;
             dataFields?: components["schemas"]["CaseDataField"][];
+            workflowTasks?: components["schemas"]["CaseWorkflowPin"][];
+            caseTasks?: components["schemas"]["CaseChildPin"][];
         };
         CasePlanItem: {
             id: string;
@@ -4707,6 +5093,7 @@ export interface components {
             allowedActions: {
                 [key: string]: boolean;
             };
+            workflow?: components["schemas"]["CaseWorkflowStatus"] | null;
         };
         CaseEvent: {
             version: number;
@@ -4814,12 +5201,61 @@ export interface components {
             sections: components["schemas"]["ViewSection"][];
             actions: components["schemas"]["ViewAction"][];
         };
+        ViewPinItem: {
+            key: string;
+            /** @enum {string} */
+            holderType: "workflowDraft" | "workflowRelease" | "caseDefinition" | "worklist" | "pageDraft" | "pageVersion" | "route";
+            holderId: string;
+            holderName: string;
+            location: string;
+            pinnedVersions: number[];
+            /** @description Draft revision */
+            expected: number | null;
+            /** @enum {string} */
+            status: "ready" | "current" | "newer" | "blocked" | "readOnly";
+            problems: string[];
+            /** @description What applying this item does */
+            effect: string;
+        };
+        ViewPinInventory: {
+            viewId: components["schemas"]["Uuid"];
+            viewName: string;
+            /** @enum {string} */
+            kind: "request" | "approval" | "case" | "worklist" | "page";
+            latestVersion: number;
+            targetVersion: number;
+            planHash: string;
+            items: components["schemas"]["ViewPinItem"][];
+        };
+        MigrateViewPins: {
+            targetVersion: number;
+            planHash: string;
+            items: string[];
+            reason: string;
+        };
+        ViewPinApplied: {
+            key: string;
+            holderType: string;
+            holderName: string;
+            outcome: string;
+        };
+        ViewPinMigration: {
+            id: components["schemas"]["Uuid"];
+            targetVersion: number;
+            reason: string;
+            items: components["schemas"]["ViewPinApplied"][];
+            appliedBy: components["schemas"]["Uuid"];
+            appliedAt: components["schemas"]["Timestamp"];
+        };
+        ViewPinMigrationList: {
+            items: components["schemas"]["ViewPinMigration"][];
+        };
         ViewSummary: {
             id: components["schemas"]["Uuid"];
             name: string;
             description: string | null;
             /** @enum {string} */
-            kind: "request" | "approval" | "case" | "worklist";
+            kind: "request" | "approval" | "case" | "worklist" | "page";
             draftRevision: number;
             publishedVersion: number | null;
             createdAt: components["schemas"]["Timestamp"];
@@ -4839,7 +5275,7 @@ export interface components {
             description: string | null;
             draftRevision: number;
             publishedVersion: number | null;
-            definition: components["schemas"]["ViewDefinition"];
+            definition: components["schemas"]["LibraryViewDefinition"];
             versions: components["schemas"]["ViewVersionSummary"][];
         };
         ViewVersion: {
@@ -4847,13 +5283,13 @@ export interface components {
             version: number;
             name: string;
             description: string | null;
-            definition: components["schemas"]["ViewDefinition"];
+            definition: components["schemas"]["LibraryViewDefinition"];
             publishedAt: components["schemas"]["Timestamp"];
         };
         CreateView: {
             name: string;
             description?: string;
-            definition: components["schemas"]["ViewDefinition"];
+            definition: components["schemas"]["LibraryViewDefinition"];
         };
         CopyView: {
             name: string;
@@ -4862,10 +5298,238 @@ export interface components {
             expectedRevision: number;
             name: string;
             description?: string;
-            definition: components["schemas"]["ViewDefinition"];
+            definition: components["schemas"]["LibraryViewDefinition"];
         };
         PublishView: {
             expectedRevision: number;
+        };
+        /** @description A form view (request, approval, case or worklist) or an application page (S111). */
+        LibraryViewDefinition: components["schemas"]["ViewDefinition"] | components["schemas"]["PageDefinition"];
+        ViewElementId: string;
+        /** @description Data-only application page (S111). Regions are fixed by the layout; components pin exact published view and extension versions; chains use the fixed server-checked step allowlist and always stop at the first failure. */
+        PageDefinition: {
+            /** @enum {integer} */
+            schemaVersion: 1;
+            /** @enum {string} */
+            kind: "page";
+            title: string;
+            /** @enum {string} */
+            context: "none" | "task" | "case";
+            /** @enum {string} */
+            layout: "single" | "sidebar" | "split";
+            /** @enum {string} */
+            breakpoint: "sm" | "md" | "lg";
+            regions: components["schemas"]["PageRegion"][];
+            chains: components["schemas"]["ActionChain"][];
+        };
+        PageRegion: {
+            /** @enum {string} */
+            id: "main" | "side" | "start" | "end";
+            label: string;
+            components: components["schemas"]["PageComponent"][];
+        };
+        /** @description One page component. Allowed properties depend on `type`; the server rejects properties that do not belong to it. */
+        PageComponent: {
+            id: components["schemas"]["ViewElementId"];
+            /** @enum {string} */
+            type: "heading" | "text" | "view" | "list" | "details" | "actions" | "extension";
+            text?: string;
+            label?: string;
+            view?: components["schemas"]["CaseViewRef"];
+            workflowId?: components["schemas"]["Uuid"];
+            /** @enum {string} */
+            source?: "assignedTasks" | "claimableTasks" | "myRequests" | "cases" | "task" | "case";
+            columns?: components["schemas"]["PageField"][];
+            fields?: components["schemas"]["PageField"][];
+            limit?: number;
+            chains?: components["schemas"]["ViewElementId"][];
+            extension?: components["schemas"]["CaseViewRef"];
+            bindings?: string[];
+            height?: number;
+            visibleWhen?: components["schemas"]["PageCondition"];
+        };
+        PageField: {
+            field: string;
+            label: string;
+        };
+        /** @description Presentation-only visibility; hiding a component never grants or denies an operation. */
+        PageCondition: {
+            binding: string;
+            equals: string | number | boolean;
+        };
+        ActionChain: {
+            id: components["schemas"]["ViewElementId"];
+            label: string;
+            /** @description Must be true; later steps never run after a failed step. */
+            stopOnFailure: boolean;
+            steps: components["schemas"]["ChainStep"][];
+        };
+        ChainStep: {
+            action: components["schemas"]["ChainAction"];
+            component?: components["schemas"]["ViewElementId"];
+            target?: string;
+            /** @description CMMN element id of the plan item */
+            planItem?: string;
+        };
+        /**
+         * @description requestCorrection runs correctTaskInput (fields the step lets the holder correct). Case steps run the case lifecycle, plan-item and task-completion operations with the carried case version and the component's reason.
+         * @enum {string}
+         */
+        ChainAction: "submit" | "saveDraft" | "claim" | "requestCorrection" | "approve" | "reject" | "saveCaseData" | "suspendCase" | "resumeCase" | "closeCase" | "startPlanItem" | "completePlanItem" | "planDiscretionaryItem" | "navigate";
+        AppPageSlugValue: string;
+        AppPageRoute: {
+            slug: components["schemas"]["AppPageSlugValue"];
+            revision: number;
+            title: string | null;
+            page: components["schemas"]["CaseViewRef"] | null;
+            changedAt: components["schemas"]["Timestamp"];
+        };
+        AppPageRouteList: {
+            items: components["schemas"]["AppPageRoute"][];
+            canAssign: boolean;
+        };
+        AssignAppPage: {
+            expectedRevision: number;
+            viewRef?: components["schemas"]["CaseViewRef"] | null;
+        };
+        AppPageHistory: {
+            items: {
+                revision: number;
+                page: components["schemas"]["CaseViewRef"] | null;
+                changedBy: components["schemas"]["Uuid"];
+                changedAt: components["schemas"]["Timestamp"];
+            }[];
+        };
+        AppPageRuntime: {
+            slug: components["schemas"]["AppPageSlugValue"];
+            revision: number;
+            page: {
+                id: components["schemas"]["Uuid"];
+                version: number;
+                definition: components["schemas"]["PageDefinition"];
+            };
+            views: components["schemas"]["PinnedCaseView"][];
+            extensions: components["schemas"]["AppPageExtensionUse"][];
+            grants: components["schemas"]["AppPageGrants"];
+        };
+        AppPageExtensionUse: {
+            id: components["schemas"]["Uuid"];
+            version: number;
+            name: string;
+            status: components["schemas"]["UiExtensionStatus"];
+            sha256: string;
+            capabilities: components["schemas"]["UiExtensionCapabilities"];
+            height: number;
+        };
+        /** @description Hints for presentation; every chain step is authorized again by its own operation. */
+        AppPageGrants: {
+            startWorkflows: components["schemas"]["Uuid"][];
+            taskAct: boolean;
+            readCases: boolean;
+        };
+        AppPageDraftList: {
+            items: {
+                componentId: components["schemas"]["ViewElementId"];
+                values: {
+                    [key: string]: unknown;
+                };
+                savedAt: components["schemas"]["Timestamp"];
+            }[];
+        };
+        AppPageComponentData: {
+            /** @description Granted binding to value; bindings the caller cannot read are omitted. */
+            values: {
+                [key: string]: unknown;
+            };
+        };
+        ChainRunRequest: {
+            expectedRevision: number;
+            context?: string;
+            source?: components["schemas"]["ViewElementId"];
+            inputs?: {
+                [key: string]: components["schemas"]["ChainInput"];
+            };
+        };
+        ChainInput: {
+            values?: {
+                [key: string]: unknown;
+            };
+            expectedVersion?: number;
+            reason?: string;
+            comment?: string;
+        };
+        ChainRunResult: {
+            completed: boolean;
+            navigateTo: string | null;
+            steps: {
+                index: number;
+                action: components["schemas"]["ChainAction"];
+                component: string | null;
+                /** @enum {string} */
+                status: "succeeded" | "failed" | "skipped";
+                detail: string | null;
+                problemCode: string | null;
+                runId: components["schemas"]["Uuid"] | null;
+            }[];
+        };
+        /** @enum {string} */
+        UiExtensionStatus: "pending" | "approved" | "rejected" | "revoked";
+        UiExtensionCapabilities: {
+            bindings: string[];
+            actions: components["schemas"]["ChainAction"][];
+        };
+        UiExtensionVersionSummary: {
+            version: number;
+            status: components["schemas"]["UiExtensionStatus"];
+            sha256: string;
+            capabilities: components["schemas"]["UiExtensionCapabilities"];
+            height: number;
+            submittedBy: components["schemas"]["SubjectRef"];
+            submittedAt: components["schemas"]["Timestamp"];
+            decidedBy: components["schemas"]["SubjectRef"] | null;
+            decidedAt: components["schemas"]["Timestamp"] | null;
+            decisionNote: string | null;
+        };
+        UiExtension: {
+            id: components["schemas"]["Uuid"];
+            name: string;
+            description: string | null;
+            createdAt: components["schemas"]["Timestamp"];
+            versions: components["schemas"]["UiExtensionVersionSummary"][];
+        };
+        UiExtensionList: {
+            items: components["schemas"]["UiExtension"][];
+            canApprove: boolean;
+        };
+        UiExtensionVersion: {
+            extensionId: components["schemas"]["Uuid"];
+            name: string;
+            source: string;
+            version: number;
+            status: components["schemas"]["UiExtensionStatus"];
+            sha256: string;
+            capabilities: components["schemas"]["UiExtensionCapabilities"];
+            height: number;
+            submittedBy: components["schemas"]["SubjectRef"];
+            submittedAt: components["schemas"]["Timestamp"];
+            decidedBy: components["schemas"]["SubjectRef"] | null;
+            decidedAt: components["schemas"]["Timestamp"] | null;
+            decisionNote: string | null;
+        };
+        CreateUiExtension: {
+            name: string;
+            description?: string;
+        };
+        SubmitUiExtensionVersion: {
+            source: string;
+            capabilities: components["schemas"]["UiExtensionCapabilities"];
+            height: number;
+        };
+        UiExtensionDecision: {
+            /** @enum {string} */
+            decision: "approve" | "reject" | "revoke";
+            note: string;
+            expectedStatus: components["schemas"]["UiExtensionStatus"];
         };
         CorrectRunInputRequest: {
             expectedVersion: number;
@@ -9903,6 +10567,7 @@ export interface components {
     parameters: {
         /** @description The callback token issued once for this wait (docs/build/S98); never put it in a URL. */
         CallbackToken: string;
+        AppPageSlug: string;
         WorkspaceId: components["schemas"]["Uuid"];
         WorkflowId: components["schemas"]["Uuid"];
         GenerationId: components["schemas"]["Uuid"];
@@ -10377,6 +11042,80 @@ export interface operations {
         };
     };
     occurCaseUserEvent: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+                planItemId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CaseCommand"];
+            };
+        };
+        responses: {
+            /** @description Updated case or replay */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseInstance"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    planCaseDiscretionaryItem: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+                planItemId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CaseCommand"];
+            };
+        };
+        responses: {
+            /** @description Updated case or replay */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseInstance"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    retryCaseWorkflowTask: {
         parameters: {
             query?: never;
             header: {
@@ -10905,6 +11644,476 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ViewVersion"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listViewPins: {
+        parameters: {
+            query?: {
+                targetVersion?: number;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                viewId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pins and diagnostics */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ViewPinInventory"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listViewPinMigrations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                viewId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Applied migrations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ViewPinMigrationList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    migrateViewPins: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                viewId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MigrateViewPins"];
+            };
+        };
+        responses: {
+            /** @description Applied migration */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ViewPinMigration"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listAppPages: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Page routes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppPageRouteList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getAppPage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                slug: components["parameters"]["AppPageSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pinned page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppPageRuntime"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    assignAppPage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                slug: components["parameters"]["AppPageSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssignAppPage"];
+            };
+        };
+        responses: {
+            /** @description Updated route */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppPageRoute"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listAppPageHistory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                slug: components["parameters"]["AppPageSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Route history */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppPageHistory"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listAppPageDrafts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                slug: components["parameters"]["AppPageSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Saved drafts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppPageDraftList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getAppPageComponentData: {
+        parameters: {
+            query?: {
+                context?: string;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                slug: components["parameters"]["AppPageSlug"];
+                componentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Granted values */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppPageComponentData"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    runAppPageChain: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                slug: components["parameters"]["AppPageSlug"];
+                chainId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChainRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Step results */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChainRunResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listUiExtensions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Extensions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UiExtensionList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createUiExtension: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateUiExtension"];
+            };
+        };
+        responses: {
+            /** @description Registered extension */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UiExtension"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    submitUiExtensionVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                extensionId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubmitUiExtensionVersion"];
+            };
+        };
+        responses: {
+            /** @description Pending version */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UiExtensionVersion"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    getUiExtensionVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                extensionId: components["schemas"]["Uuid"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Extension version */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UiExtensionVersion"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    decideUiExtensionVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                extensionId: components["schemas"]["Uuid"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UiExtensionDecision"];
+            };
+        };
+        responses: {
+            /** @description Decided version */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UiExtensionVersion"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    getUiExtensionFrame: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                extensionId: components["schemas"]["Uuid"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Frame document */
+            200: {
+                headers: {
+                    "Content-Security-Policy"?: string;
+                    "X-Content-Type-Options"?: "nosniff";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
                 };
             };
             401: components["responses"]["Unauthenticated"];

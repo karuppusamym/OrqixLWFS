@@ -284,6 +284,7 @@ Evidence for each row is in its build note; none of it is production acceptance.
 
 [S115](build/S115-pega-native-completion.md) converts more of what S112 refused: property circumstances and date ranges of decision tables and trees (one FIRST table with guarded and dated rows), property circumstances of when rules (a gateway in front of per-variant forks), subflows and split-joins (child workflow steps mapped through `childWorkflowMappings`, parallel split/join), business-day assignment deadlines on a decoded business calendar, NotifyAssignee escalations as overdue notices, a case-level service level on a single-stage case, explicit USD, and delegation records as provenance. Spin-offs, Any/Some joins, alternate stages, optional processes, other currencies and other escalations stay refused with reasons. A compiler fix makes a parallel split reached by two routes work (it deadlocked before). AC01/EXT01 stay open. Not deployed to Docker.
 | Decision tasks on shared decision tables, case file items and events, timer dates, any-of start rules (WM04k) | [S118](build/S118-cmmn-decisions-case-files-dates-any-of.md) | Verified, *tests* | Case file lists/nesting, DMN files, timer cycles, native suspension |
+| Integrated WM04 + UI02 + MIG11 branch with `main` (full suites and a real-stack browser run) | [S119](build/S119-integration-wm04-ui02-mig11.md) | Verified, *tests and real-stack browser* | Not merged to `main` yet |
 
 ## Native Pega conversion, round 3 - 29 October 2026
 

@@ -418,3 +418,7 @@ Full backend verify passes (compiler 641/641, application 1061 with 0 failures).
 ## Native Pega conversion, round 3 (MIG11) - 29 October 2026
 
 [S117](build/S117-pega-native-round-3.md) (V202): Connect-REST connectors (and read-only Thread-scoped data pages on one connector) become call steps on an explicitly chosen workspace connection; simple Set-from-property data transforms become step input and result mappings; a validate rule on case creation becomes request form validation (required, range, length, simple pattern). A case type converts to a CMMN case definition through the case designer's API: stages, workflow tasks pinned to the published workflows converted from each process, discretionary items for optional processes, user-event-entered alternate stages, service-level timers with milestones (new endpoint `POST /migrations/{id}/case-definition`, with preview). Declare expressions stay refused (no computed fields), as do other data pages and complex transforms. AC01/EXT01 stay open. Verification is recorded in S117.
+
+## Integration of WM04, UI02 and MIG11 - 29 October 2026
+
+[S119](build/S119-integration-wm04-ui02-mig11.md) merges the three big open features with `main`. On the merged branch: compiler 650/650; application 1091 run, 0 failures (4 skipped); frontend 1266/1266; lint, types, `api:check` and 88 contract checks pass. On a fresh stack the full Playwright suite runs 85 passed, 0 failed, with 65 skipped on purpose (mock-only, rehearsal and extra-environment specs). Not yet merged to `main`.

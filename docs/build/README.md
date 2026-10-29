@@ -106,3 +106,4 @@ Resume workstreams: [message events](S23-message-events.md), [run diagram and In
 Scalability: [S92 scalability qualification](S92-scalability-qualification.md) (two replicas, load, failover, volume, V155).
 
 Application pages, composed actions and sandboxed extensions (UI02g): [S111](S111-application-designer.md) (V190-V192).
+Application designer completion (UI02h): [S114](S114-application-designer-completion.md) (V193).

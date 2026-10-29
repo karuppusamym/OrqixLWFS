@@ -1,13 +1,16 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import * as endpoints from '@/api/endpoints'
 import type { components } from '@/api/schema'
+import { isProblemError } from '@/api/problem'
+import { useConnections, useGroups } from '@/api/queries'
 import { useWorkspace } from '@/app/workspace'
 import { LoadingBlock } from '@/components/common/LoadingBlock'
 import { QueryError } from '@/components/common/QueryError'
 import { Alert } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
-import { Select } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { Input, Select } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { JobReview } from './JobReview'
@@ -16,6 +19,7 @@ type Job = components['schemas']['MigrationJob']
 type Archive = components['schemas']['PegaRuleArchive']
 type Start = components['schemas']['PegaRuleStartingPoint']
 type Result = components['schemas']['PegaRuleResult']
+type CaseResult = components['schemas']['PegaCaseDefinitionResult']
 
 const CONVERSION_TONE: Record<string, 'success' | 'info' | 'danger' | 'neutral' | 'warning'> = {
   converted: 'success', review: 'info', blocked: 'danger', notUsed: 'warning', shadowed: 'neutral', supported: 'neutral',
@@ -68,10 +72,10 @@ function ArchiveView({ job, archive, editable }: { job: Job; archive: Archive; e
     {archive.startingPoints.length > 1 && !archive.convertedStartRule ? <div>
       <Label htmlFor="pega-start">Starting point to convert</Label>
       <Select id="pega-start" value={startRule} onChange={e => setStartRule(e.target.value)}>
-        {archive.startingPoints.map(s => <option key={s.rule} value={s.rule}>{s.kind === 'caseType' ? 'Case type' : 'Flow'} {s.label} ({s.rule})</option>)}
+        {archive.startingPoints.map(s => <option key={s.rule} value={s.rule}>{s.kind === 'caseType' ? 'Case type' : s.kind === 'process' ? 'Process' : 'Flow'} {s.label} ({s.rule})</option>)}
       </Select>
     </div> : null}
-    {start ? <p className="text-sm">Converting the {start.kind === 'caseType' ? 'case type' : 'starting flow'} <strong>{start.label}</strong> in {start.context}{start.blocked ? ' — blocked until the findings below are resolved.' : '.'}</p> : null}
+    {start ? <p className="text-sm">Converting the {start.kind === 'caseType' ? 'case type' : start.kind === 'process' ? 'process flow' : 'starting flow'} <strong>{start.label}</strong> in {start.context}{start.blocked ? ' — blocked until the findings below are resolved.' : '.'}</p> : null}
     <Tabs defaultValue="rules">
       <TabsList>
         <TabsTrigger value="rules">Per-rule results</TabsTrigger>
@@ -82,6 +86,7 @@ function ArchiveView({ job, archive, editable }: { job: Job; archive: Archive; e
       <TabsContent value="effective"><EffectiveRules archive={archive} /></TabsContent>
       <TabsContent value="inventory"><Inventory archive={archive} /></TabsContent>
     </Tabs>
+    {start?.caseTarget ? <CaseDefinitionPanel key={`case-${start.rule}`} job={job} start={start} archive={archive} editable={editable} /> : null}
     {start ? <Conversion key={start.rule} job={job} start={start} editable={editable} /> : null}
   </section>
 }
@@ -158,7 +163,36 @@ function Conversion({ job, start, editable }: { job: Job; start: Start; editable
     return [a.id, { approvedFlowId: approved, rejectedFlowId: rejected }]
   }))
   const converted = !!job.convertedWorkflowId
+  const { workspace } = useWorkspace()
+  const connections = useConnections(workspace.id, editable && start.calls.length > 0)
+  const [connection, setConnection] = useState<Record<string, { connectionRef: string; operation: string; definitionVersion?: number }>>({})
+  const mapped = Object.fromEntries(Object.entries(connection).filter(([, c]) => c.connectionRef && c.operation))
   return <div className="space-y-4">
+    {start.calls.length && editable && !converted ? <fieldset className="space-y-3 rounded-card border border-border bg-surface p-4">
+      <legend className="px-1 font-semibold">Workspace connection for each call</legend>
+      <p className="text-sm text-muted-foreground">Each connector becomes a call step. Choose the approved workspace connection and operation it runs; request and result fields come from the connector. The source endpoint is shown for comparison only, and credentials are never migrated.</p>
+      {connections.isError ? <QueryError error={connections.error} onRetry={() => void connections.refetch()} what="workspace connections" /> : null}
+      {start.calls.map(c => {
+        const chosen = connection[c.id]
+        const summary = connections.data?.items.find(x => x.key === chosen?.connectionRef)
+        return <div key={c.id} className="grid gap-2 sm:grid-cols-2">
+          <p className="text-sm sm:col-span-2"><span className="font-semibold">{c.label}</span> ({c.flow}): {c.dataPage ? `data page ${c.dataPage} via ` : ''}connector {c.connector}, {c.method} {c.endpoint ?? ''}. Sends {Object.keys(c.inputMapping).join(', ') || 'nothing'}; keeps {Object.keys(c.resultMapping).join(', ') || 'nothing'}.</p>
+          <div><Label htmlFor={`connection-${c.id}`}>Connection for {c.label}</Label>
+            <Select id={`connection-${c.id}`} value={chosen?.connectionRef ?? ''} onChange={e => {
+              const s = connections.data?.items.find(x => x.key === e.target.value)
+              setConnection({ ...connection, [c.id]: { connectionRef: e.target.value, operation: '', ...(s ? { definitionVersion: s.latestVersion } : {}) } })
+            }}>
+              <option value="">{connections.isPending ? 'Loading connections…' : 'Choose a connection'}</option>
+              {connections.data?.items.map(x => <option key={x.key} value={x.key}>{x.name}</option>)}
+            </Select></div>
+          <div><Label htmlFor={`operation-${c.id}`}>Operation for {c.label}</Label>
+            <Select id={`operation-${c.id}`} value={chosen?.operation ?? ''} disabled={!summary} onChange={e => setConnection({ ...connection, [c.id]: { ...chosen!, operation: e.target.value } })}>
+              <option value="">Choose an operation</option>
+              {summary?.operations.map(o => <option key={o.name} value={o.name}>{o.label}</option>)}
+            </Select></div>
+        </div>
+      })}
+    </fieldset> : null}
     {start.assignments.length && editable && !converted ? <fieldset className="space-y-3 rounded-card border border-border bg-surface p-4">
       <legend className="px-1 font-semibold">Approval meaning of each assignment</legend>
       <p className="text-sm text-muted-foreground">Each assignment becomes an approval step. Choose the flow action that means approved; the other one means rejected. Nothing is inferred from action names.</p>
@@ -175,6 +209,75 @@ function Conversion({ job, start, editable }: { job: Job; start: Start; editable
       <p className="text-sm text-muted-foreground">Each subflow runs as a separate child request. Publish the child workflow first (a starting flow of this archive can be converted on its own), then map every call below under child workflow mappings with its workflowRef, inputMapping and resultMapping.</p>
       <ul className="list-disc pl-5 text-sm">{start.subflows.map(s => <li key={s.id}><span className="font-mono">{s.id}</span>: subflow {s.flow} in {s.source}</li>)}</ul>
     </section> : null}
-    <JobReview job={{ ...job, report: start.report }} editable={editable} native={{ pegaStartRule: start.rule, approvalRoutes: routes }} />
+    <JobReview job={{ ...job, report: start.report }} editable={editable} native={{ pegaStartRule: start.rule, approvalRoutes: routes, connectionMappings: mapped }} />
   </div>
+}
+
+/**
+ * A case type as a CMMN case definition (docs/build/S117): name the published workflow converted from each process flow,
+ * choose the groups that plan optional processes and move the case to alternate stages, preview, then create it through
+ * the case definition API. Creating it is the publication; nothing is created by the preview.
+ */
+function CaseDefinitionPanel({ job, start, archive, editable }: { job: Job; start: Start; archive: Archive; editable: boolean }) {
+  const { workspace } = useWorkspace()
+  const queryClient = useQueryClient()
+  const target = start.caseTarget!
+  const flows = [...new Set(target.processes.map(p => p.flow))]
+  const roleNames = [...target.processes.filter(p => p.optional).map(p => ({ key: p.flow, label: `Group that plans ${p.flow}` })),
+    ...target.alternates.map(a => ({ key: a.stageId, label: `Group that moves the case to ${a.label}` }))]
+  const groups = useGroups(workspace.id, editable && roleNames.length > 0)
+  const [key, setKey] = useState(start.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'pega-case')
+  const [name, setName] = useState(start.label)
+  const [workflows, setWorkflows] = useState<Record<string, string>>({})
+  const [roles, setRoles] = useState<Record<string, string>>({})
+  const [ack, setAck] = useState(false)
+  const [result, setResult] = useState<CaseResult | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [openItems, setOpenItems] = useState<string[]>([])
+  const [pending, setPending] = useState(false)
+  const done = archive.caseConversion
+  if (done) return <Alert tone="success" title="Converted to a case definition">Case definition {done.caseKey} version {done.caseVersion} was created from {done.startRule} (CMMN SHA-256 {short(done.sourceSha256)}).</Alert>
+  const send = async (dryRun: boolean) => {
+    setPending(true); setError(null); setOpenItems([])
+    try {
+      const r = await endpoints.convertPegaCaseDefinition(workspace.id, job.id, { key, name, pegaStartRule: start.rule, workflowMappings: workflows, roleMappings: roles, dryRun, acknowledgeInfo: ack, acknowledgeReview: ack })
+      setResult(r)
+      if (!dryRun) void queryClient.invalidateQueries({ queryKey: ['ws', workspace.id, 'migration', job.id] })
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'The case definition could not be built.')
+      if (isProblemError(cause)) setOpenItems(cause.openItems.map(i => `${i.sourceElementId}: ${i.explanation}`))
+    } finally { setPending(false) }
+  }
+  return <section className="space-y-3 rounded-card border border-border bg-surface p-4" aria-label="Convert to a case definition">
+    <h3>Convert to a case definition</h3>
+    <p className="text-sm text-muted-foreground">Stages become CMMN stages, each process a workflow task that runs the published workflow converted from that flow, optional processes discretionary items and alternate stages stages entered by a user event. Deadlines become timers that reach a milestone. Convert and publish each process flow first (they are starting points of this archive).</p>
+    <ul className="list-disc pl-5 text-sm">{target.processes.map(p => <li key={p.taskId}>{p.stageLabel}: {p.flow}{p.optional ? ' (optional)' : ''}{p.alternate ? ' (alternate stage)' : ''}</li>)}</ul>
+    {editable ? <>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div><Label htmlFor="case-key">Case key</Label><Input id="case-key" value={key} onChange={e => setKey(e.target.value)} /></div>
+        <div><Label htmlFor="case-name">Case name</Label><Input id="case-name" value={name} onChange={e => setName(e.target.value)} /></div>
+        {flows.map(f => <div key={f}><Label htmlFor={`case-workflow-${f}`}>Published workflow for {f}</Label>
+          <Input id={`case-workflow-${f}`} value={workflows[f] ?? ''} placeholder="workflow key" onChange={e => setWorkflows({ ...workflows, [f]: e.target.value.trim() })} /></div>)}
+        {roleNames.map(r => <div key={r.key}><Label htmlFor={`case-role-${r.key}`}>{r.label}</Label>
+          <Select id={`case-role-${r.key}`} value={roles[r.key] ?? ''} onChange={e => setRoles({ ...roles, [r.key]: e.target.value })}>
+            <option value="">{groups.isPending ? 'Loading workspace groups…' : 'Choose workspace group'}</option>
+            {groups.data?.items.map(g => <option key={g.key} value={g.key}>{g.name}</option>)}
+          </Select></div>)}
+      </div>
+      <Label className="flex items-start gap-2"><input type="checkbox" checked={ack} onChange={e => setAck(e.target.checked)} />I reviewed the case definition findings: timers, manual stage completion and the items not reproduced.</Label>
+      <div className="flex flex-wrap gap-2">
+        <Button onClick={() => void send(true)} loading={pending}>Preview case definition</Button>
+        <Button variant="primary" onClick={() => void send(false)} loading={pending} disabled={!result?.dryRun}>Create case definition</Button>
+      </div>
+    </> : null}
+    {error ? <Alert tone="danger">{error}</Alert> : null}
+    {openItems.length ? <ul aria-label="Open case definition findings" className="list-disc space-y-1 pl-5 text-sm">{openItems.map((m, i) => <li key={i}>{m}</li>)}</ul> : null}
+    {result ? <div className="space-y-2" aria-label="Case definition proposal">
+      {result.definition ? <Alert tone="success" title="Case definition created">{result.definition.key} version {result.definition.version} is published and pins the mapped workflows.</Alert>
+        : <Alert tone="info" title="Preview">The proposal passed the case designer's checks. Nothing has been created yet.</Alert>}
+      <p className="text-sm">Data fields: {result.dataFields.map(f => `${f.label} (${f.type}${f.required ? ', required' : ''})`).join('; ')}</p>
+      <p className="text-sm">Workflow tasks: {result.workflowTasks.map(t => t.taskId).join(', ')}</p>
+      <details><summary className="text-sm">Generated CMMN (SHA-256 {short(result.sourceSha256)})</summary><pre className="max-h-80 overflow-auto text-xs">{result.sourceXml}</pre></details>
+    </div> : null}
+  </section>
 }

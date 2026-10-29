@@ -4721,6 +4721,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/migrations/{migrationId}/case-definition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                migrationId: components["parameters"]["MigrationId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Convert a native Pega case type to a CMMN case definition (docs/build/S117)
+         * @description Builds a CMMN case definition in the case designer's admitted subset from a case type of a native rule archive: stages, workflow tasks pinned to the published workflows converted from each process flow (workflowMappings), discretionary items for optional processes and user events for alternate stages (roleMappings), service level timers with deadline milestones, and typed case data fields. With dryRun the proposal is returned and checked against the subset; otherwise the definition is created through the case definition API, which deploys it and pins the workflow releases. The same request again returns the recorded definition; a different one is a conflict.
+         */
+        post: operations["convertPegaCaseDefinition"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/migrations/{migrationId}/convert": {
         parameters: {
             query?: never;
@@ -8722,6 +8745,14 @@ export interface components {
             contexts: components["schemas"]["PegaRuleContext"][];
             startingPoints: components["schemas"]["PegaRuleStartingPoint"][];
             convertedStartRule?: string | null;
+            /** @description The case definition created from a case type of this archive (S117) */
+            caseConversion?: null | {
+                startRule: string;
+                caseDefinitionId: components["schemas"]["Uuid"];
+                caseKey: string;
+                caseVersion: number;
+                sourceSha256: string;
+            };
             /** @description Recorded per-rule results of the converted starting point (empty before conversion) */
             conversion: {
                 rule: string;
@@ -8789,8 +8820,11 @@ export interface components {
         };
         PegaRuleStartingPoint: {
             rule: string;
-            /** @enum {string} */
-            kind: "caseType" | "flow";
+            /**
+             * @description process is a flow a case type runs as a process; convert and publish it so a case definition can pin it (S117)
+             * @enum {string}
+             */
+            kind: "caseType" | "flow" | "process";
             context: string;
             name: string;
             label: string;
@@ -8817,6 +8851,74 @@ export interface components {
                 /** @description Flow that calls it */
                 source: string;
             }[];
+            /** @description Connector and data page calls that become call steps (S117); each id needs a connectionMappings entry naming a workspace connection operation */
+            calls: {
+                id: string;
+                label: string;
+                connector: string;
+                dataPage?: string | null;
+                method: string;
+                /** @description Source endpoint */
+                endpoint?: string | null;
+                inputMapping: {
+                    [key: string]: string;
+                };
+                resultMapping: {
+                    [key: string]: string;
+                };
+                timeoutSeconds: number;
+                flow: string;
+            }[];
+            /** @description For a case type: the processes and alternate stages a case definition conversion needs mappings for (S117) */
+            caseTarget?: null | {
+                processes: {
+                    taskId: string;
+                    stageId: string;
+                    stageLabel: string;
+                    flow: string;
+                    rule?: string | null;
+                    optional: boolean;
+                    alternate: boolean;
+                }[];
+                alternates: {
+                    stageId: string;
+                    label: string;
+                }[];
+            };
+        };
+        PegaCaseDefinitionRequest: {
+            key: string;
+            name: string;
+            /** @description Entry path of the case type */
+            pegaStartRule: string;
+            /** @description Process flow name to the key of the published workflow converted from it */
+            workflowMappings?: {
+                [key: string]: string;
+            };
+            /** @description Optional process flow name or alternate stage id to the workspace group that plans it or moves the case there */
+            roleMappings?: {
+                [key: string]: string;
+            };
+            /**
+             * @description Build and check the proposal without creating anything
+             * @default false
+             */
+            dryRun: boolean;
+            acknowledgeInfo?: boolean;
+            acknowledgeReview?: boolean;
+        };
+        PegaCaseDefinitionResult: {
+            dryRun: boolean;
+            key: string;
+            name: string;
+            /** @description Generated CMMN 1.1 in the case designer subset */
+            sourceXml: string;
+            sourceSha256: string;
+            dataFields: components["schemas"]["CaseDataField"][];
+            workflowTasks: components["schemas"]["CaseWorkflowTaskMapping"][];
+            report: components["schemas"]["CompatibilityReport"];
+            /** @description The created case definition (absent for a dry run) */
+            definition?: components["schemas"]["CaseDefinition"] | null;
         };
         PegaRuleResult: {
             rule: string;
@@ -8895,8 +8997,17 @@ export interface components {
             };
             /** @description DMN migrations only: the decision to convert; optional when the file has exactly one decision */
             decisionId?: string;
-            /** @description Native Pega rule archives (pegaRules) only: the archive entry path of the starting point to convert (an effective case type or starting flow); optional when the archive has exactly one. For these archives only workflowKey, name, groupMappings, approvalRoutes, childWorkflowMappings, the acknowledgements and pegaStartRule are accepted. */
+            /** @description Native Pega rule archives (pegaRules) only: the archive entry path of the starting point to convert (an effective case type or starting flow); optional when the archive has exactly one. For these archives only workflowKey, name, groupMappings, approvalRoutes, childWorkflowMappings, connectionMappings, the acknowledgements and pegaStartRule are accepted. */
             pegaStartRule?: string;
+            /** @description Native Pega rule archives only (S117): call step id to the workspace connection operation it runs; request and result mappings come from the connector */
+            connectionMappings?: {
+                [key: string]: {
+                    connectionRef: components["schemas"]["Key"];
+                    operation: string;
+                    definitionVersion?: number;
+                    timeoutSeconds?: number;
+                };
+            };
             /** @description Pega Blueprint PDF migrations only (required there): the transcriptionSha256 of the reviewed transcription revision being converted. Routes, request fields and steps come from that transcription, so approvalRoutes, inputSchema and other mappings except groupMappings are refused. */
             transcriptionSha256?: string;
             /** @description Reviewed canonical request schema; otherwise inferred from BPMN comparisons and service input mappings */
@@ -18350,6 +18461,48 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    convertPegaCaseDefinition: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                migrationId: components["parameters"]["MigrationId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PegaCaseDefinitionRequest"];
+            };
+        };
+        responses: {
+            /** @description Dry run proposal */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PegaCaseDefinitionResult"];
+                };
+            };
+            /** @description Case definition created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PegaCaseDefinitionResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     convertMigration: {

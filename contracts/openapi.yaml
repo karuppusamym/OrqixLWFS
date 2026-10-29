@@ -6328,6 +6328,46 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /workspaces/{workspaceId}/migrations/{migrationId}/case-definition:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/MigrationId'
+    post:
+      tags: [Migration]
+      operationId: convertPegaCaseDefinition
+      summary: Convert a native Pega case type to a CMMN case definition (docs/build/S117)
+      description: >-
+        Builds a CMMN case definition in the case designer's admitted subset from a case type of a native rule archive:
+        stages, workflow tasks pinned to the published workflows converted from each process flow (workflowMappings),
+        discretionary items for optional processes and user events for alternate stages (roleMappings), service level
+        timers with deadline milestones, and typed case data fields. With dryRun the proposal is returned and checked
+        against the subset; otherwise the definition is created through the case definition API, which deploys it and
+        pins the workflow releases. The same request again returns the recorded definition; a different one is a conflict.
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: migration.case.converted
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PegaCaseDefinitionRequest' }
+      responses:
+        '200':
+          description: Dry run proposal
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PegaCaseDefinitionResult' }
+        '201':
+          description: Case definition created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PegaCaseDefinitionResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
   /workspaces/{workspaceId}/migrations/{migrationId}/convert:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -11822,6 +11862,18 @@ components:
           type: array
           items: { $ref: '#/components/schemas/PegaRuleStartingPoint' }
         convertedStartRule: { type: [string, 'null'] }
+        caseConversion:
+          description: The case definition created from a case type of this archive (S117)
+          oneOf:
+            - type: 'null'
+            - type: object
+              required: [startRule, caseDefinitionId, caseKey, caseVersion, sourceSha256]
+              properties:
+                startRule: { type: string }
+                caseDefinitionId: { $ref: '#/components/schemas/Uuid' }
+                caseKey: { type: string }
+                caseVersion: { type: integer }
+                sourceSha256: { type: string }
         conversion:
           type: array
           description: Recorded per-rule results of the converted starting point (empty before conversion)
@@ -11881,10 +11933,10 @@ components:
                 items: { type: object, required: [rule, outcome], properties: { rule: { type: string }, outcome: { type: string } } }
     PegaRuleStartingPoint:
       type: object
-      required: [rule, kind, context, name, label, blocked, report, rules, assignments, subflows]
+      required: [rule, kind, context, name, label, blocked, report, rules, assignments, subflows, calls]
       properties:
         rule: { type: string }
-        kind: { type: string, enum: [caseType, flow] }
+        kind: { type: string, enum: [caseType, flow, process], description: 'process is a flow a case type runs as a process; convert and publish it so a case definition can pin it (S117)' }
         context: { type: string }
         name: { type: string }
         label: { type: string }
@@ -11918,6 +11970,72 @@ components:
               label: { type: string }
               flow: { type: string, description: Subflow rule name }
               source: { type: string, description: Flow that calls it }
+        calls:
+          type: array
+          description: 'Connector and data page calls that become call steps (S117); each id needs a connectionMappings entry naming a workspace connection operation'
+          items:
+            type: object
+            required: [id, label, connector, method, inputMapping, resultMapping, timeoutSeconds, flow]
+            properties:
+              id: { type: string }
+              label: { type: string }
+              connector: { type: string }
+              dataPage: { type: [string, 'null'] }
+              method: { type: string }
+              endpoint: { type: [string, 'null'], description: Source endpoint, shown for review only }
+              inputMapping: { type: object, additionalProperties: { type: string } }
+              resultMapping: { type: object, additionalProperties: { type: string } }
+              timeoutSeconds: { type: integer }
+              flow: { type: string }
+        caseTarget:
+          description: 'For a case type: the processes and alternate stages a case definition conversion needs mappings for (S117)'
+          oneOf:
+            - type: 'null'
+            - type: object
+              required: [processes, alternates]
+              properties:
+                processes:
+                  type: array
+                  items:
+                    type: object
+                    required: [taskId, stageId, stageLabel, flow, optional, alternate]
+                    properties:
+                      taskId: { type: string }
+                      stageId: { type: string }
+                      stageLabel: { type: string }
+                      flow: { type: string }
+                      rule: { type: [string, 'null'] }
+                      optional: { type: boolean }
+                      alternate: { type: boolean }
+                alternates:
+                  type: array
+                  items: { type: object, required: [stageId, label], properties: { stageId: { type: string }, label: { type: string } } }
+    PegaCaseDefinitionRequest:
+      type: object
+      additionalProperties: false
+      required: [key, name, pegaStartRule]
+      properties:
+        key: { type: string, pattern: '^[a-z][a-z0-9-]{1,62}$' }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        pegaStartRule: { type: string, description: Entry path of the case type }
+        workflowMappings: { type: object, description: 'Process flow name to the key of the published workflow converted from it', additionalProperties: { type: string } }
+        roleMappings: { type: object, description: 'Optional process flow name or alternate stage id to the workspace group that plans it or moves the case there', additionalProperties: { type: string } }
+        dryRun: { type: boolean, default: false, description: Build and check the proposal without creating anything }
+        acknowledgeInfo: { type: boolean }
+        acknowledgeReview: { type: boolean }
+    PegaCaseDefinitionResult:
+      type: object
+      required: [dryRun, key, name, sourceXml, sourceSha256, dataFields, workflowTasks, report]
+      properties:
+        dryRun: { type: boolean }
+        key: { type: string }
+        name: { type: string }
+        sourceXml: { type: string, description: Generated CMMN 1.1 in the case designer subset }
+        sourceSha256: { type: string }
+        dataFields: { type: array, items: { $ref: '#/components/schemas/CaseDataField' } }
+        workflowTasks: { type: array, items: { $ref: '#/components/schemas/CaseWorkflowTaskMapping' } }
+        report: { $ref: '#/components/schemas/CompatibilityReport' }
+        definition: { oneOf: [{ $ref: '#/components/schemas/CaseDefinition' }, { type: 'null' }], description: The created case definition (absent for a dry run) }
     PegaRuleResult:
       type: object
       required: [rule, ruleType, className, ruleName, ruleset, version, availability, sourceSha256, resolution, conversion, targets, reasons, delegatedTo]
@@ -12003,7 +12121,19 @@ components:
             properties:
               migrationId: { $ref: '#/components/schemas/Uuid' }
         decisionId: { type: string, minLength: 1, maxLength: 128, description: 'DMN migrations only: the decision to convert; optional when the file has exactly one decision' }
-        pegaStartRule: { type: string, minLength: 1, maxLength: 500, description: 'Native Pega rule archives (pegaRules) only: the archive entry path of the starting point to convert (an effective case type or starting flow); optional when the archive has exactly one. For these archives only workflowKey, name, groupMappings, approvalRoutes, childWorkflowMappings, the acknowledgements and pegaStartRule are accepted.' }
+        pegaStartRule: { type: string, minLength: 1, maxLength: 500, description: 'Native Pega rule archives (pegaRules) only: the archive entry path of the starting point to convert (an effective case type or starting flow); optional when the archive has exactly one. For these archives only workflowKey, name, groupMappings, approvalRoutes, childWorkflowMappings, connectionMappings, the acknowledgements and pegaStartRule are accepted.' }
+        connectionMappings:
+          type: object
+          description: 'Native Pega rule archives only (S117): call step id to the workspace connection operation it runs; request and result mappings come from the connector'
+          additionalProperties:
+            type: object
+            additionalProperties: false
+            required: [connectionRef, operation]
+            properties:
+              connectionRef: { $ref: '#/components/schemas/Key' }
+              operation: { type: string, pattern: '^[a-z][A-Za-z0-9]{0,63}$' }
+              definitionVersion: { type: integer, minimum: 1 }
+              timeoutSeconds: { type: integer, minimum: 1, maximum: 30 }
         transcriptionSha256: { type: string, pattern: '^[0-9a-f]{64}$', description: 'Pega Blueprint PDF migrations only (required there): the transcriptionSha256 of the reviewed transcription revision being converted. Routes, request fields and steps come from that transcription, so approvalRoutes, inputSchema and other mappings except groupMappings are refused.' }
         inputSchema:
           type: object

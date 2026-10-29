@@ -507,6 +507,8 @@ export const getMigration = (ws: string, migrationId: string) =>
 // Native Pega rule archive (docs/build/S112): inventory, effective rules and per-rule conversion results.
 export const getPegaRuleArchive = (ws: string, migrationId: string) =>
   call(api.GET('/workspaces/{workspaceId}/migrations/{migrationId}/pega-rules', { params: { path: { workspaceId: ws, migrationId } } }))
+export const convertPegaCaseDefinition = (ws: string, migrationId: string, body: S['PegaCaseDefinitionRequest']) =>
+  call(api.POST('/workspaces/{workspaceId}/migrations/{migrationId}/case-definition', { params: { path: { workspaceId: ws, migrationId } }, body }))
 export const convertMigration = (ws: string, migrationId: string, body: S['ConvertMigrationRequest']) =>
   call(api.POST('/workspaces/{workspaceId}/migrations/{migrationId}/convert', { params: { path: { workspaceId: ws, migrationId } }, body }))
 

@@ -28,6 +28,12 @@ public class MigrationController {
     /** Inventory, effective-rule resolution and per-rule conversion results of a native Pega rule archive (docs/build/S112). */
     @GetMapping("/{migrationId}/pega-rules")
     public PegaRuleArchives.View pegaRules(@PathVariable UUID workspaceId,@PathVariable UUID migrationId) { return pegaRules.view(callers.current(),workspaceId,migrationId); }
+    /** Converts a native Pega case type to a CMMN case definition, or previews it with dryRun (docs/build/S117). */
+    @PostMapping("/{migrationId}/case-definition")
+    public ResponseEntity<?> caseDefinition(@PathVariable UUID workspaceId,@PathVariable UUID migrationId,@RequestBody JsonNode request) {
+        var result=pegaRules.caseDefinition(callers.current(),workspaceId,migrationId,request);
+        return ResponseEntity.status(result.dryRun() ? 200 : 201).body(result);
+    }
     @PostMapping("/{migrationId}/convert")
     public ResponseEntity<?> convert(@PathVariable UUID workspaceId,@PathVariable UUID migrationId,@RequestBody JsonNode request) {
         return ResponseEntity.status(201).body(service.convert(callers.current(),workspaceId,migrationId,request));

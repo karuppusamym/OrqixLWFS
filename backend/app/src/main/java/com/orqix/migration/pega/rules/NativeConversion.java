@@ -51,14 +51,22 @@ public final class NativeConversion {
     public record Action(String connectorId, String flowAction) { }
     /** A subflow call that becomes a child workflow step; childWorkflowMappings names the published workflow (S115). */
     public record Subflow(String id, String label, String flow, String source) { }
+    /**
+     * A call to a system (S117): a REST connector, directly or through a read-only data page, becomes a call step on a
+     * workspace connection named in connectionMappings. Request and result mappings come from the connector's mappings or
+     * its simple data transforms; method and endpoint are shown for review only.
+     */
+    public record ServiceCall(String id, String label, String connector, String dataPage, String method, String endpoint,
+            Map<String, String> inputMapping, Map<String, String> resultMapping, int timeoutSeconds, String flow) { }
     public record Plan(Start start, String name, String label, List<RuleResult> rules, List<Assignment> assignments, List<Subflow> subflows,
-            List<Report.Issue> sourceIssues, boolean blocked, Build build, Report.CompatibilityReport report) { }
+            List<ServiceCall> calls, List<Report.Issue> sourceIssues, boolean blocked, Build build, Report.CompatibilityReport report) { }
     /** An approval due time: elapsed minutes, or working minutes of the business calendar; optional overdue notices. */
-    record Due(int minutes, ObjectNode calendar, ObjectNode escalation) { }
-    record Build(String bpmn, ObjectNode inputSchema, ObjectNode inputUi, Map<String, DmnTable> tables, Map<String, Due> dues,
+    public record Due(int minutes, ObjectNode calendar, ObjectNode escalation) { }
+    public record Build(String bpmn, ObjectNode inputSchema, ObjectNode inputUi, Map<String, DmnTable> tables, Map<String, Due> dues,
             Map<String, String> endKinds, List<StagePlan> stages, Map<String, String> paths, String processId, String processName,
-            Set<String> decisionTasks, String description, Map<String, ObjectNode> combinedTables) { }
-    record StagePlan(String id, String label, Set<String> bpmnNodes, String sla) { }
+            Set<String> decisionTasks, String description, Map<String, ObjectNode> combinedTables, Map<String, ServiceCall> calls,
+            Map<String, Map<String, String>> subflowInputs) { }
+    public record StagePlan(String id, String label, Set<String> bpmnNodes, String sla) { }
     public record Result(ObjectNode definition, Report.CompatibilityReport report, Map<String, String> sourceMap) { }
 
     private NativeConversion() { }
@@ -88,7 +96,29 @@ public final class NativeConversion {
         effective.put("name", request.path("name").asString(""));
         effective.set("groupMappings", request.path("groupMappings").isObject() ? request.path("groupMappings").deepCopy() : json.object());
         effective.set("approvalRoutes", request.path("approvalRoutes").isObject() ? request.path("approvalRoutes").deepCopy() : json.object());
-        if (request.path("childWorkflowMappings").isObject()) effective.set("childWorkflowMappings", request.path("childWorkflowMappings").deepCopy());
+        if (request.path("childWorkflowMappings").isObject()) {
+            ObjectNode children = (ObjectNode) request.path("childWorkflowMappings").deepCopy();
+            // A subflow's input data transform fills the child's input mapping where the reviewer left it empty (S117).
+            b.subflowInputs().forEach((call, inputs) -> {
+                if (children.path(call).isObject() && children.path(call).path("inputMapping").isEmpty()) {
+                    ObjectNode mapping = ((ObjectNode) children.path(call)).putObject("inputMapping");
+                    inputs.forEach(mapping::put);
+                }
+            });
+            effective.set("childWorkflowMappings", children);
+        }
+        ObjectNode services = effective.putObject("serviceTaskMappings");
+        for (ServiceCall call : b.calls().values()) {
+            JsonNode connection = request.path("connectionMappings").path(call.id());
+            if (!connection.isObject()) continue; // reported by the converter as an unmapped call
+            ObjectNode m = services.putObject(call.id());
+            m.put("connectionRef", connection.path("connectionRef").asString(""));
+            m.put("operation", connection.path("operation").asString(""));
+            if (connection.has("definitionVersion")) m.put("definitionVersion", connection.path("definitionVersion").asInt());
+            m.put("timeoutSeconds", connection.path("timeoutSeconds").asInt(call.timeoutSeconds()));
+            ObjectNode in = m.putObject("inputMapping"); call.inputMapping().forEach(in::put);
+            ObjectNode out = m.putObject("resultMapping"); call.resultMapping().forEach(out::put);
+        }
         effective.set("inputSchema", b.inputSchema().deepCopy());
         effective.put("acknowledgeInfo", request.path("acknowledgeInfo").asBoolean(false));
         effective.put("acknowledgeReview", request.path("acknowledgeReview").asBoolean(false));
@@ -218,6 +248,9 @@ public final class NativeConversion {
         return out;
     }
 
+    /** Days, hours and minutes of a service level interval (prefix pyGoal or pyDeadline) in minutes. */
+    static int minutesOf(Page p, String prefix) { return Planner.minutes(p, prefix); }
+
     static Report.Issue issue(String id, String name, String kind, String severity, String code, String explanation, String action, String target, String path) {
         return new Report.Issue(id, name, kind, severity, code, explanation, action, target, Report.OPEN, path);
     }
@@ -230,6 +263,8 @@ public final class NativeConversion {
         final Map<String, DmnTable> tables = new LinkedHashMap<>(); final Map<String, Due> due = new LinkedHashMap<>();
         final Map<String, List<Variant>> variantsOf = new HashMap<>(); final Map<String, ObjectNode> combinedTables = new LinkedHashMap<>();
         final Map<String, List<String[]>> forkVariants = new HashMap<>(); final List<Subflow> subflows = new ArrayList<>();
+        final LinkedHashMap<String, ServiceCall> calls = new LinkedHashMap<>(); final Map<String, Map<String, String>> subflowInputs = new LinkedHashMap<>();
+        final Map<String, String> callOutputs = new LinkedHashMap<>();
         final Map<String, String> endKinds = new LinkedHashMap<>(); final List<StagePlan> stages = new ArrayList<>();
         final Map<String, String> paths = new LinkedHashMap<>(); final Set<String> decisionTasks = new LinkedHashSet<>();
         final Set<String> contexts = new LinkedHashSet<>(); final StringBuilder xml = new StringBuilder(); final Set<String> conditionFields = new HashSet<>(); final Map<String, DmnTable> taskTables = new LinkedHashMap<>(); final List<Assignment> assignments = new ArrayList<>();
@@ -242,7 +277,10 @@ public final class NativeConversion {
             String fragment; final List<String> reasons = new ArrayList<>(); String explanation; String review;
             Use(Entry e, String role) { this.e = e; this.role = role; }
         }
-        static final class Field { String key; ObjectNode schema; boolean required; String rule; String description; }
+        static final class Field {
+            String key; ObjectNode schema; boolean required; String rule; String description;
+            java.math.BigDecimal minimum, maximum; Integer minLength, maxLength; String pattern, patternMessage;
+        }
         record Step(String stageId, String flowName, String fromPath, Use from) { }
         record Shape(String id, String type, Page page) { }
         record FlowDef(Step step, Entry entry, Use use, LinkedHashMap<String, Shape> shapes, List<Page> connectors, Page start) { }
@@ -315,15 +353,13 @@ public final class NativeConversion {
             processId = Identifiers.sanitize(root.ruleName(), false);
             processName = root.page().text("pyLabel") == null ? root.ruleName() : root.page().text("pyLabel");
             label = processName;
-            List<Step> steps = new ArrayList<>(); String harness = null;
+            List<Step> steps = new ArrayList<>(); String harness = null; String createValidate = null;
             if (start.kind().equals("caseType")) {
                 try {
                     Page p = root.page();
-                    if (p.fields().containsKey("pyAlternateStages")) {
-                        subBlock(u, "pyAlternateStages", "Rule-Obj-CaseType", "PEGA_NATIVE_ALTERNATE_STAGE_UNSUPPORTED", "Alternate stages are entered by a Change Stage action outside the primary path. A converted workflow has no stage that can be entered out of sequence, and the case designer target would need every process converted and published as its own workflow first (see S115).", p.pathOf("pyAlternateStages"));
-                        return;
-                    }
-                    p.allow(with("pyNewHarness", "pyStages", "pyServiceLevelName"));
+                    if (p.fields().containsKey("pyAlternateStages"))
+                        subBlock(u, "pyAlternateStages", "Rule-Obj-CaseType", "PEGA_NATIVE_ALTERNATE_STAGE_UNSUPPORTED", "Alternate stages are entered by a Change Stage action outside the primary path, which a workflow cannot express. Convert this case type to a case definition instead: alternate stages become stages entered by a user event (S117).", p.pathOf("pyAlternateStages"));
+                    p.allow(with("pyNewHarness", "pyStages", "pyServiceLevelName", "pyAlternateStages", "pyCreateValidate"));
                     List<Page> rows = p.pages("pyStages");
                     if (rows.isEmpty() || rows.size() > 20) throw new Page.Grammar(p.pathOf("pyStages"), "1 to 20 stages are required");
                     Set<String> ids = new HashSet<>();
@@ -343,8 +379,8 @@ public final class NativeConversion {
                         stages.add(new StagePlan(id, name, new LinkedHashSet<>(), sla));
                         for (Page process : processes) {
                             if ("true".equals(process.text("pyOptional"))) {
-                                subBlock(u, id + ":" + process.text("pyFlowName"), "Rule-Obj-CaseType", "PEGA_NATIVE_OPTIONAL_PROCESS_UNSUPPORTED", "Optional processes start only when a user chooses them. A converted workflow runs its steps in sequence and cannot offer a process on demand; discretionary items exist only in case definitions, which would need the process converted and published separately (see S115).", process.pathOf("pyOptional"));
-                                return;
+                                subBlock(u, id + ":" + process.text("pyFlowName"), "Rule-Obj-CaseType", "PEGA_NATIVE_OPTIONAL_PROCESS_UNSUPPORTED", "Optional processes start only when a user chooses them, which a workflow cannot express. Convert this case type to a case definition instead: optional processes become discretionary workflow tasks (S117).", process.pathOf("pyOptional"));
+                                continue;
                             }
                             process.allow(Set.of("pyFlowName", "pyOptional"));
                             if (RuleArchive.blank(process.text("pyFlowName"))) throw new Page.Grammar(process.path(), "pyFlowName is required");
@@ -352,6 +388,7 @@ public final class NativeConversion {
                         }
                     }
                     harness = p.text("pyNewHarness");
+                    createValidate = p.text("pyCreateValidate");
                     if (p.text("pyServiceLevelName") != null) caseServiceLevel(u, p);
                 } catch (Page.Grammar g) { refuse(u, g); return; }
                 u.targetKind = "workflowStages";
@@ -371,6 +408,10 @@ public final class NativeConversion {
                 if (def != null) flows.add(def);
             }
             if (harness != null) harness(harness, u, start.kind().equals("caseType") ? root.page().pathOf("pyNewHarness") : root.page().path());
+            if (createValidate != null) {
+                Entry rule = lookup(ctx, "Rule-Obj-Validate", createValidate, u, "pyCreateValidate", root.page().pathOf("pyCreateValidate"), "validate");
+                if (rule != null) validateRule(rule);
+            }
             declaratives(u);
             boolean flowsOk = flows.size() == steps.size() && flows.stream().noneMatch(f -> "blocked".equals(f.use().conversion));
             if (flowsOk) emit(flows);
@@ -407,7 +448,8 @@ public final class NativeConversion {
                         case "End" -> s.allow(Set.of("pyShapeID", "pyShapeType", "pyShapeName", "pyStatusWork"));
                         case "Assignment" -> s.allow(Set.of("pyShapeID", "pyShapeType", "pyShapeName", "pyRouterType", "pyRouterParam", "pyServiceLevelName"));
                         case "Decision" -> s.allow(Set.of("pyShapeID", "pyShapeType", "pyShapeName", "pyDecisionType", "pyDecisionName"));
-                        case "Subprocess" -> s.allow(Set.of("pyShapeID", "pyShapeType", "pyShapeName", "pyFlowName", "pySpinOff", "pyRunOn"));
+                        case "Subprocess" -> s.allow(Set.of("pyShapeID", "pyShapeType", "pyShapeName", "pyFlowName", "pySpinOff", "pyRunOn", "pyInputTransform"));
+                        case "Integrator" -> s.allow(Set.of("pyShapeID", "pyShapeType", "pyShapeName", "pyConnectorName", "pyDataPageName"));
                         case "Split-Join" -> s.allow(Set.of("pyShapeID", "pyShapeType", "pyShapeName", "pySplitFlows", "pyJoinCondition"));
                         default -> { }
                     }
@@ -448,6 +490,7 @@ public final class NativeConversion {
                     case "Assignment" -> assignment(f, s, out);
                     case "Decision" -> decisionShape(f, s, out);
                     case "Subprocess" -> subprocess(f, s, out);
+                    case "Integrator" -> integrator(f, s, out);
                     case "Split-Join" -> splitJoin(f, s, out);
                     default -> unsupportedShape(f, s);
                 }
@@ -490,6 +533,10 @@ public final class NativeConversion {
                     review(u, "PEGA_NATIVE_FLOWACTION_FORM_NOT_IMPORTED", "The flow action's section '" + action.page().text("pySection")
                             + "' is not imported: the approval uses the standard decision form (approve or reject with a reason).");
             } catch (Page.Grammar g) {
+                if (action.page().fields().containsKey("pyValidate")) {
+                    subBlock(u, "pyValidate", "Rule-Obj-FlowAction", "PEGA_NATIVE_FLOWACTION_PROCESSING", "A validate rule on a flow action checks fields entered at that assignment. Converted approvals collect only a decision and a reason, so there is nothing to validate there; only a validate rule on case creation (pyCreateValidate) converts.", action.page().pathOf("pyValidate"));
+                    return;
+                }
                 subBlock(u, g.sourcePath().substring(g.sourcePath().indexOf('#') + 1), "Rule-Obj-FlowAction", "PEGA_NATIVE_FLOWACTION_PROCESSING",
                         "The flow action runs processing that is not converted (" + g.getMessage() + "): pre/post activities, validation and data transforms are never executed.", g.sourcePath());
             }
@@ -548,6 +595,205 @@ public final class NativeConversion {
             String name = p.text("pyFlowName");
             if (RuleArchive.blank(name)) { subBlock(f.use(), s.id(), "flowShape", "PEGA_NATIVE_SUBFLOW_UNSUPPORTED", "The subprocess names no flow.", p.path()); return; }
             child(f, s.id(), p.text("pyShapeName") == null ? s.id() : p.text("pyShapeName"), name, p.pathOf("pyFlowName"));
+            if (p.text("pyInputTransform") != null) {
+                Entry transform = lookup(ctx, "Rule-Obj-Model", p.text("pyInputTransform"), f.use(), s.id(), p.pathOf("pyInputTransform"), "transform");
+                if (transform == null) return;
+                List<String[]> steps = transformSteps(transform, "child input mapping");
+                if (steps == null) { block(f.use(), "PEGA_NATIVE_DEPENDENCY_BLOCKED", "The subflow's input data transform cannot be converted."); return; }
+                Map<String, String> inputs = new LinkedHashMap<>();
+                for (String[] step : steps) {
+                    var target = PROPERTY_REF.matcher(step[0]);
+                    if (!target.matches() || target.group(2) != null) { refuseTransform(transform, "a child input must set a direct property of the subflow (.Name)"); block(f.use(), "PEGA_NATIVE_DEPENDENCY_BLOCKED", "The subflow's input data transform cannot be converted."); return; }
+                    String source = property(step[1], use(transform, "transform"), "pySource", transform.page().path());
+                    if (source == null) return;
+                    inputs.put(lower(target.group(1)), "/input/" + source);
+                }
+                subflowInputs.put(s.id(), inputs);
+                Use tu = use(transform, "transform"); tu.targetKind = "childInputMapping"; tu.targets.add(s.id()); tu.fragment = inputs.toString();
+            }
+        }
+
+        /** Steps of a data transform that only sets properties from properties (S117); anything else is refused. */
+        List<String[]> transformSteps(Entry transform, String target) {
+            Use u = use(transform, "transform");
+            try {
+                Page p = transform.page(); p.allow(with("pySteps"));
+                List<Page> rows = p.pages("pySteps");
+                if (rows.isEmpty() || rows.size() > 30) throw new Page.Grammar(p.pathOf("pySteps"), "1 to 30 steps are required");
+                List<String[]> out = new ArrayList<>();
+                for (Page step : rows) {
+                    step.allow(Set.of("pyAction", "pyTarget", "pySource"));
+                    if (!"Set".equals(step.text("pyAction"))) throw new Page.Grammar(step.pathOf("pyAction"), "only Set steps are converted; conditions, loops, appends and other actions are not");
+                    String source = String.valueOf(step.text("pySource")), dest = String.valueOf(step.text("pyTarget"));
+                    if (!source.startsWith(".")) throw new Page.Grammar(step.pathOf("pySource"), "only property sources are converted to a " + target + "; literals and functions are not");
+                    out.add(new String[] {dest, source});
+                }
+                return out;
+            } catch (Page.Grammar g) {
+                subBlock(u, g.sourcePath().substring(g.sourcePath().indexOf('#') + 1), "Rule-Obj-Model", "PEGA_NATIVE_TRANSFORM_UNSUPPORTED",
+                        "The data transform is not converted: " + g.getMessage() + ".", g.sourcePath());
+                return null;
+            }
+        }
+
+        void refuseTransform(Entry transform, String why) {
+            subBlock(use(transform, "transform"), "pySteps", "Rule-Obj-Model", "PEGA_NATIVE_TRANSFORM_UNSUPPORTED", "The data transform is not converted: " + why + ".", transform.page().pathOf("pySteps"));
+        }
+
+        /**
+         * An Integrator shape (S117): a REST connector, directly or through a read-only data page sourced by one, becomes a
+         * call step. The workspace connection and operation are mapped explicitly at conversion.
+         */
+        void integrator(FlowDef f, Shape s, List<Page> out) {
+            Page p = s.page();
+            if (!single(f, s, out)) return;
+            String connectorName = p.text("pyConnectorName"), dataPage = p.text("pyDataPageName");
+            if ((connectorName == null) == (dataPage == null)) { subBlock(f.use(), s.id(), "flowShape", "PEGA_NATIVE_CONNECTOR_UNSUPPORTED", "An Integrator shape must name exactly one connector or data page.", p.path()); return; }
+            if (dataPage != null) {
+                Entry page = lookup(ctx, "Rule-Declare-Pages", dataPage, f.use(), s.id(), p.pathOf("pyDataPageName"), "dataPage");
+                if (page == null) return;
+                connectorName = dataPageSource(page);
+                if (connectorName == null) { block(f.use(), "PEGA_NATIVE_DEPENDENCY_BLOCKED", "The data page cannot be converted."); return; }
+            }
+            Entry connector = lookup(ctx, "Rule-Connect-REST", connectorName, f.use(), s.id(), dataPage != null ? p.pathOf("pyDataPageName") : p.pathOf("pyConnectorName"), "connector");
+            if (connector == null) return;
+            ServiceCall call = connector(connector, s.id(), p.text("pyShapeName") == null ? s.id() : p.text("pyShapeName"), dataPage, f.entry().ruleName());
+            if (call == null) { block(f.use(), "PEGA_NATIVE_DEPENDENCY_BLOCKED", "The connector cannot be converted."); return; }
+            calls.put(s.id(), call);
+            paths.put(s.id(), p.path());
+        }
+
+        /** A data page converts only when it is read-only, scoped to the case and loaded by a REST connector. */
+        String dataPageSource(Entry page) {
+            Use u = use(page, "dataPage");
+            try {
+                Page p = page.page(); p.allow(with("pyDataPageScope", "pyIsReadOnly", "pySourceType", "pySourceName", "pyRefreshStrategy"));
+                if (!"true".equals(p.text("pyIsReadOnly")))
+                    throw new Page.Grammar(p.pathOf("pyIsReadOnly"), "editable or savable data pages write data, which a call step does not reproduce");
+                if (!"Thread".equals(p.text("pyDataPageScope")))
+                    throw new Page.Grammar(p.pathOf("pyDataPageScope"), "requestor and node data pages are shared across cases and cached, which has no equivalent");
+                if (!"Connector".equals(p.text("pySourceType")) || RuleArchive.blank(p.text("pySourceName")))
+                    throw new Page.Grammar(p.pathOf("pySourceType"), "only data pages loaded by a REST connector convert; data transforms, report definitions and activities as sources do not");
+                if (p.text("pyRefreshStrategy") != null)
+                    throw new Page.Grammar(p.pathOf("pyRefreshStrategy"), "refresh strategies have no equivalent; the call runs once where the flow calls it");
+                u.targetKind = "callStep"; u.fragment = "dataPage:" + page.ruleName() + ":" + p.text("pySourceName");
+                review(u, "PEGA_NATIVE_DATA_PAGE_AS_CALL", "The read-only data page becomes a call step that runs its connector once where the flow references it; Pega's lazy loading and caching are not reproduced.");
+                return p.text("pySourceName");
+            } catch (Page.Grammar g) {
+                subBlock(u, g.sourcePath().substring(g.sourcePath().indexOf('#') + 1), "Rule-Declare-Pages", "PEGA_NATIVE_DATA_PAGE_UNSUPPORTED",
+                        "The data page is not converted: " + g.getMessage() + ".", g.sourcePath());
+                return null;
+            }
+        }
+
+        /** A REST connector's request and response as call-step mappings; credentials and endpoints are never copied. */
+        ServiceCall connector(Entry connector, String shape, String label, String dataPage, String flow) {
+            Use u = use(connector, "connector");
+            try {
+                Page p = connector.page();
+                p.allow(with("pyMethod", "pyEndpointURL", "pyTimeoutSeconds", "pyRequestMappings", "pyResponseMappings",
+                        "pyRequestDataTransform", "pyResponseDataTransform", "pyAuthProfile"));
+                String method = String.valueOf(p.text("pyMethod"));
+                if (!Set.of("GET", "POST", "PUT", "PATCH", "DELETE").contains(method)) throw new Page.Grammar(p.pathOf("pyMethod"), "a GET, POST, PUT, PATCH or DELETE method is required");
+                int timeout = 10;
+                if (p.text("pyTimeoutSeconds") != null) {
+                    if (!p.text("pyTimeoutSeconds").matches("[1-9][0-9]?") || Integer.parseInt(p.text("pyTimeoutSeconds")) > 30) throw new Page.Grammar(p.pathOf("pyTimeoutSeconds"), "a timeout of 1 to 30 seconds is required");
+                    timeout = Integer.parseInt(p.text("pyTimeoutSeconds"));
+                }
+                Map<String, String> in = new LinkedHashMap<>(), out = new LinkedHashMap<>();
+                for (Page row : p.pages("pyRequestMappings")) {
+                    row.allow(Set.of("pyParameter", "pySource"));
+                    request(in, row.text("pyParameter"), row.text("pySource"), u, row.path());
+                }
+                for (Page row : p.pages("pyResponseMappings")) {
+                    row.allow(Set.of("pyTarget", "pyJsonPointer"));
+                    response(out, row.text("pyTarget"), row.text("pyJsonPointer"), u, row.path());
+                }
+                if (p.text("pyRequestDataTransform") != null) {
+                    Entry t = lookup(ctx, "Rule-Obj-Model", p.text("pyRequestDataTransform"), u, "pyRequestDataTransform", p.pathOf("pyRequestDataTransform"), "transform");
+                    List<String[]> steps = t == null ? null : transformSteps(t, "call request");
+                    if (steps == null) return null;
+                    for (String[] step : steps) {
+                        if (!step[0].startsWith(".request.")) { refuseTransform(t, "a request transform must set .request.<field>"); return null; }
+                        request(in, step[0].substring(9), step[1], use(t, "transform"), t.page().path());
+                    }
+                    Use tu = use(t, "transform"); tu.targetKind = "callInputMapping"; tu.targets.add(shape); tu.fragment = in.toString();
+                }
+                if (p.text("pyResponseDataTransform") != null) {
+                    Entry t = lookup(ctx, "Rule-Obj-Model", p.text("pyResponseDataTransform"), u, "pyResponseDataTransform", p.pathOf("pyResponseDataTransform"), "transform");
+                    List<String[]> steps = t == null ? null : transformSteps(t, "call result");
+                    if (steps == null) return null;
+                    for (String[] step : steps) {
+                        if (!step[1].startsWith(".response.")) { refuseTransform(t, "a response transform must read .response.<field>"); return null; }
+                        response(out, step[0], "/" + step[1].substring(10).replace('.', '/'), use(t, "transform"), t.page().path());
+                    }
+                    Use tu = use(t, "transform"); tu.targetKind = "callResultMapping"; tu.targets.add(shape); tu.fragment = out.toString();
+                }
+                if ("blocked".equals(u.conversion)) return null;
+                u.targetKind = "callStep"; if (!u.targets.contains(shape)) u.targets.add(shape);
+                u.fragment = method + " " + in + " " + out;
+                review(u, "PEGA_NATIVE_CONNECTOR_AS_CALL", "The connector becomes a call step on the workspace connection mapped in connectionMappings. Its source call (" + method + " "
+                        + (p.text("pyEndpointURL") == null ? "no endpoint" : p.text("pyEndpointURL")) + ") is shown for review only: the mapped operation must be the same service. Errors follow the connection's retry and failure rules, not Pega's error handlers.");
+                if (p.text("pyAuthProfile") != null) review(u, "PEGA_NATIVE_CONNECTOR_CREDENTIALS", "The authentication profile is not migrated; credentials belong to the workspace connection binding.");
+                return new ServiceCall(shape, label, connector.ruleName(), dataPage, method, p.text("pyEndpointURL"), Map.copyOf(in), Map.copyOf(out), timeout, flow);
+            } catch (Page.Grammar g) { refuse(u, g); return null; }
+        }
+
+        void request(Map<String, String> in, String parameter, String source, Use from, String path) {
+            if (parameter == null || !FIELD_KEY.matcher(parameter).matches()) throw new Page.Grammar(path, "a request field name (lowerCamelCase) is required");
+            if (source == null || !source.startsWith(".")) throw new Page.Grammar(path, "request values must come from case properties; literals are not converted");
+            String field = property(source, from, parameter, path);
+            if (field == null) throw new Page.Grammar(path, "the source property cannot be converted");
+            in.put(parameter, "/input/" + field);
+        }
+
+        void response(Map<String, String> out, String target, String pointer, Use from, String path) {
+            var m = target == null ? null : PROPERTY_REF.matcher(target);
+            if (m == null || !m.matches() || m.group(2) != null) throw new Page.Grammar(path, "a response must set a direct case property (.Name)");
+            if (pointer == null || !pointer.matches("(/[A-Za-z0-9_-]{1,64}){1,5}")) throw new Page.Grammar(path, "a JSON pointer like /id is required");
+            Entry property = lookup(ctx, "Rule-Obj-Property", m.group(1), from, "response", path, "property");
+            if (property == null) throw new Page.Grammar(path, "the target property cannot be resolved");
+            String key = lower(m.group(1));
+            Use pu = use(property, "property"); pu.targetKind = "callResult"; if (!pu.targets.contains(key)) pu.targets.add(key); pu.fragment = pointer;
+            out.put(key, pointer); callOutputs.put(key, from.e.path());
+        }
+
+        /** A validate rule on case creation (S117) as request form validation: required, numeric range, length and pattern. */
+        void validateRule(Entry rule) {
+            Use u = use(rule, "validate");
+            try {
+                Page p = rule.page(); p.allow(with("pyConditions"));
+                List<Page> rows = p.pages("pyConditions");
+                if (rows.isEmpty() || rows.size() > 30) throw new Page.Grammar(p.pathOf("pyConditions"), "1 to 30 conditions are required");
+                List<String> applied = new ArrayList<>();
+                for (Page row : rows) {
+                    row.allow(Set.of("pyProperty", "pyCheck", "pyValue", "pyMessage"));
+                    String field = property(row.text("pyProperty"), u, "condition", row.pathOf("pyProperty"));
+                    if (field == null) return;
+                    Field f = fields.get(field); String type = f.schema.path("type").asString(); boolean text = type.equals("string") && !f.schema.has("format");
+                    String check = String.valueOf(row.text("pyCheck")), value = row.text("pyValue");
+                    switch (check) {
+                        case "Required" -> f.required = true;
+                        case "Minimum", "Maximum" -> {
+                            if (!(type.equals("number") || type.equals("integer")) || value == null || !NUMBER.matcher(value).matches()) throw new Page.Grammar(row.pathOf("pyValue"), "a numeric limit on a numeric property is required");
+                            if (check.equals("Minimum")) f.minimum = new java.math.BigDecimal(value); else f.maximum = new java.math.BigDecimal(value);
+                        }
+                        case "MinLength", "MaxLength" -> {
+                            if (!text || value == null || !value.matches("[0-9]{1,4}")) throw new Page.Grammar(row.pathOf("pyValue"), "a length limit on a text property is required");
+                            int n = Integer.parseInt(value);
+                            if (check.equals("MinLength")) f.minLength = n; else f.maxLength = Math.max(1, Math.min(n, 4000));
+                        }
+                        case "Pattern" -> {
+                            if (!text || value == null || value.length() > 200 || !value.matches("\\^[A-Za-z0-9 \\[\\]\\\\.+*?{},|()_-]*\\$")) throw new Page.Grammar(row.pathOf("pyValue"), "only a simple anchored pattern (^...$) on a text property is converted");
+                            f.pattern = value;
+                            if (!RuleArchive.blank(row.text("pyMessage"))) f.patternMessage = row.text("pyMessage").length() > 200 ? row.text("pyMessage").substring(0, 200) : row.text("pyMessage");
+                        }
+                        default -> throw new Page.Grammar(row.pathOf("pyCheck"), "the check '" + check + "' is not converted; only Required, Minimum, Maximum, MinLength, MaxLength and Pattern are");
+                    }
+                    applied.add(field + " " + check + (value == null ? "" : " " + value));
+                }
+                u.targetKind = "requestValidation"; u.targets.add("inputSchema"); u.fragment = applied.toString();
+            } catch (Page.Grammar g) { refuse(u, g); }
         }
 
         /** A split-join over subflows becomes a parallel split, one child workflow step per subflow and a join (all). */
@@ -580,7 +826,6 @@ public final class NativeConversion {
             Page p = s.page();
             String[] ref = switch (s.type()) {
                 case "Utility" -> new String[] {"Rule-Obj-Activity", p.text("pyActivityName"), "PEGA_NATIVE_ACTIVITY_NOT_EXECUTED", "Activities (and any Java they run) are never executed."};
-                case "Integrator" -> new String[] {"Rule-Connect-REST", p.text("pyConnectorName"), "PEGA_NATIVE_CONNECTOR_NOT_EXECUTED", "Connectors are not converted; map the integration to an approved Orqix connection and rebuild the step."};
                 case "Spinoff" -> new String[] {"Rule-Obj-Flow", p.text("pyFlowName"), "PEGA_NATIVE_SPINOFF_UNSUPPORTED", "A spin-off runs a flow without waiting for it; the target's child workflow step always waits."};
                 case "Split-ForEach" -> new String[] {"Rule-Obj-Flow", p.text("pyFlowName"), "PEGA_NATIVE_SPLIT_UNSUPPORTED", "Split-for-each iterates over a page list, which has no converted request field."};
                 default -> null;
@@ -844,6 +1089,10 @@ public final class NativeConversion {
         String property(String ref, Use from, String fromId, String fromPath) {
             if (propertyKeys.containsKey(ref)) return propertyKeys.get(ref);
             var m = ref == null ? null : PROPERTY_REF.matcher(ref);
+            if (m != null && m.matches() && m.group(1).startsWith("D_")) {
+                subBlock(from, fromId, "reference", "PEGA_NATIVE_DATA_PAGE_UNSUPPORTED", "'" + ref + "' reads a data page. Data page references in conditions, decisions and forms are not converted; only a read-only data page loaded by a REST connector and called from an Integrator shape becomes a call step.", fromPath);
+                return null;
+            }
             if (m == null || !m.matches()) { subBlock(from, fromId, "reference", "PEGA_NATIVE_PROPERTY_REFERENCE", "Only direct properties (.Name) and properties of one embedded data page (.Page.Name) are supported; '" + ref + "' is not.", fromPath); return null; }
             Entry top = lookup(ctx, "Rule-Obj-Property", m.group(1), from, fromId, fromPath, "property");
             if (top == null) return null;
@@ -1097,7 +1346,7 @@ public final class NativeConversion {
             for (Lookup l : a.context(ctx).keys().values()) {
                 if (l.chosen() == null || !IMPLICIT.contains(l.chosen().ruleType())) continue;
                 Use u = use(l.chosen(), "declarative");
-                block(u, "PEGA_NATIVE_DECLARATIVE_UNSUPPORTED", "Declarative rules run automatically for every case of this class (forward or backward chaining). They are not converted, so the converted workflow would silently behave differently.");
+                block(u, "PEGA_NATIVE_DECLARATIVE_UNSUPPORTED", "Declarative rules run automatically for every case of this class (forward or backward chaining). They are not converted: the target has no computed fields, so a declare expression has nowhere to go, and leaving it out would silently change behavior.");
                 sub.add(issue(from.e.path() + "#declarative:" + l.chosen().ruleName(), l.chosen().ruleName(), "reference", Report.BLOCKER, "PEGA_NATIVE_DECLARATIVE_UNSUPPORTED",
                         l.chosen().label() + " applies to the case class and is not converted.", "Rebuild the calculation explicitly or remove the rule from the application before converting.", null, l.chosen().path()));
             }
@@ -1166,6 +1415,7 @@ public final class NativeConversion {
                     switch (s.type()) {
                         case "Assignment" -> { fragment.append("<userTask id='").append(s.id()).append("' name='").append(name).append("' c:candidateGroups='").append(esc(p.text("pyRouterParam"))).append("'/>"); stageNodes.add(s.id()); }
                         case "End" -> { fragment.append("<endEvent id='").append(s.id()).append("' name='").append(name).append("'/>"); endKinds.put(s.id(), "Resolved-Rejected".equals(p.text("pyStatusWork")) ? "rejected" : "success"); }
+                        case "Integrator" -> { fragment.append("<serviceTask id='").append(s.id()).append("' name='").append(name).append("' c:type='external' c:topic='pega-call-").append(s.id()).append("'/>"); stageNodes.add(s.id()); }
                         case "Subprocess" -> { fragment.append("<callActivity id='").append(s.id()).append("' name='").append(name).append("' calledElement='").append(esc(p.text("pyFlowName"))).append("'/>"); stageNodes.add(s.id()); }
                         case "Split-Join" -> {
                             List<String> flowNames = p.texts("pySplitFlows");
@@ -1354,6 +1604,10 @@ public final class NativeConversion {
         }
 
         Plan finish() {
+            for (var output : callOutputs.entrySet()) if (fields.containsKey(output.getKey())) {
+                Use from = uses.get(output.getValue());
+                subBlock(from, output.getKey(), "reference", "PEGA_NATIVE_CONNECTOR_OUTPUT_READ", "The property '" + output.getKey() + "' is set by a connector and also read by a condition, decision or form. Values a call returns are step results, not request fields, so reading them is not converted.", from.e.path());
+            }
             List<Report.Issue> issues = new ArrayList<>(archiveIssues(a));
             for (Entry e : a.entries()) issues.add(entryIssue(e));
             issues.addAll(sub);
@@ -1362,6 +1616,11 @@ public final class NativeConversion {
             ArrayNode required = schema.putArray("required"); ObjectNode props = schema.putObject("properties");
             for (Field f : fields.values()) {
                 if (f.description != null) f.schema.put("description", f.description);
+                if (f.minimum != null) f.schema.put("minimum", f.minimum);
+                if (f.maximum != null) f.schema.put("maximum", f.maximum);
+                if (f.minLength != null) f.schema.put("minLength", f.minLength);
+                if (f.maxLength != null) f.schema.put("maxLength", Math.min(f.maxLength, f.schema.path("maxLength").asInt(4000)));
+                if (f.pattern != null) { f.schema.put("pattern", f.pattern); if (f.patternMessage != null) f.schema.put("patternMessage", f.patternMessage); }
                 props.set(f.key, f.schema);
                 Use fieldUse = uses.get(f.rule);
                 if (fieldUse != null) fieldUse.fragment = f.schema.toString();
@@ -1370,7 +1629,7 @@ public final class NativeConversion {
             Build build = new Build(xml.toString(), schema, inputUi, Map.copyOf(taskTables), Map.copyOf(due), Map.copyOf(endKinds), List.copyOf(stages),
                     Map.copyOf(paths), processId, processName, Set.copyOf(decisionTasks),
                     "Converted from the native Pega rule archive " + a.sourceSha256().substring(0, 12) + " (" + start.kind() + " " + a.entry(start.rule()).label()
-                            + ", adapter " + ADAPTER + "). Review the per-rule conversion results and verify behavior before publishing.", Map.copyOf(combinedTables));
+                            + ", adapter " + ADAPTER + "). Review the per-rule conversion results and verify behavior before publishing.", Map.copyOf(combinedTables), Map.copyOf(calls), Map.copyOf(subflowInputs));
             Map<String, List<String>> delegations = new HashMap<>();
             for (Entry d : a.entries()) if ("delegation".equals(d.status())) {
                 Entry t = delegated(d);
@@ -1398,7 +1657,7 @@ public final class NativeConversion {
             var report = new Report.CompatibilityReport("pega", version, ADAPTER, a.sourceSha256(), processId, label, Report.ElementCounts.of(all), List.copyOf(all),
                     NativeConversion.report(a, null, null, List.of(), null, false).assumptions(),
                     required(converted), false);
-            return new Plan(start, processId, label, List.copyOf(results), List.copyOf(assignments), List.copyOf(subflows), List.copyOf(issues), blocked, build, report);
+            return new Plan(start, processId, label, List.copyOf(results), List.copyOf(assignments), List.copyOf(subflows), List.copyOf(calls.values()), List.copyOf(issues), blocked, build, report);
         }
     }
 

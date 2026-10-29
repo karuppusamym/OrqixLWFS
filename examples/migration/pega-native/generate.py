@@ -398,7 +398,92 @@ def purchase_advanced() -> dict[str, bytes]:
     return e
 
 
-FIXTURES = {"purchase-request": purchase_request, "refusals": refusals, "purchase-advanced": purchase_advanced}
+def simple_flow(name: str, shapes: list, connectors: list, starting: bool = False) -> bytes:
+    body = {"pyShapes": PageList(shapes), "pyConnectors": PageList(connectors)}
+    if starting:
+        body = {"pyIsStartingFlow": "true", **body}
+    return page("Rule-Obj-Flow", WORK, name, "Purchasing", "01-01-01", body=body, stamp="20261001T130000.000")
+
+
+def purchase_connected() -> dict[str, bytes]:
+    """S117: a REST connector with a request data transform and response mappings, a validate rule, a read-only data
+    page, and a case type with an optional process, an alternate stage, a stage service level and a case service level,
+    which converts to a CMMN case definition whose workflow tasks pin the converted process flows."""
+    base = purchase_request()
+    keep = ("META-INF/", "application/", "classes/", "flowactions/", "data/")
+    e = {k: v for k, v in base.items() if k.startswith(keep)}
+    e["properties/Amount.xml"] = prop(WORK, "Amount", "Decimal", pyLabel="Amount (USD)")
+    e["properties/Title.xml"] = prop(WORK, "Title", "Text", pyMaxLength="120", pyLabel="What are you buying?")
+    e["properties/CostCenter.xml"] = prop(WORK, "CostCenter", "Text", pyTableType="Local List",
+                                          pyLocalList=PropertyList(["OPS", "IT", "HR"]), pyLabel="Cost center")
+    e["properties/OrderId.xml"] = prop(WORK, "OrderId", "Text", pyMaxLength="64")
+    e["validate/RequestChecks.xml"] = page("Rule-Obj-Validate", WORK, "RequestChecks", "Purchasing", "01-01-01", body={
+        "pyConditions": PageList([
+            {"pyProperty": ".Title", "pyCheck": "Required"},
+            {"pyProperty": ".Amount", "pyCheck": "Required"},
+            {"pyProperty": ".Amount", "pyCheck": "Minimum", "pyValue": "1"},
+            {"pyProperty": ".Amount", "pyCheck": "Maximum", "pyValue": "1000000"},
+            {"pyProperty": ".Title", "pyCheck": "MaxLength", "pyValue": "120"}])})
+    e["connectors/CreateOrder.xml"] = page("Rule-Connect-REST", WORK, "CreateOrder", "Purchasing", "01-01-01", body={
+        "pyMethod": "POST", "pyEndpointURL": "https://procurement.example.invalid/orders", "pyTimeoutSeconds": "10",
+        "pyRequestDataTransform": "OrderRequest",
+        "pyResponseMappings": PageList([{"pyTarget": ".OrderId", "pyJsonPointer": "/id"}])})
+    e["transforms/OrderRequest.xml"] = page("Rule-Obj-Model", WORK, "OrderRequest", "Purchasing", "01-01-01", body={
+        "pySteps": PageList([{"pyAction": "Set", "pyTarget": ".request.title", "pySource": ".Title"},
+                             {"pyAction": "Set", "pyTarget": ".request.amount", "pySource": ".Amount"},
+                             {"pyAction": "Set", "pyTarget": ".request.costCenter", "pySource": ".CostCenter"}])})
+    e["datapages/D_OrderPlacement.xml"] = page("Rule-Declare-Pages", WORK, "D_OrderPlacement", "Purchasing", "01-01-01", body={
+        "pyDataPageScope": "Thread", "pyIsReadOnly": "true", "pySourceType": "Connector", "pySourceName": "CreateOrder"})
+    start = {"pyShapeID": "Start1", "pyShapeType": "Start", "pyShapeName": "Start"}
+    e["flows/Order.xml"] = simple_flow("Order", [
+        start, assignment("Review", "Review the order", "Managers"),
+        {"pyShapeID": "PlaceOrder", "pyShapeType": "Integrator", "pyShapeName": "Place the order", "pyConnectorName": "CreateOrder"},
+        {"pyShapeID": "Placed", "pyShapeType": "End", "pyShapeName": "Order placed"},
+        {"pyShapeID": "Declined", "pyShapeType": "End", "pyShapeName": "Declined", "pyStatusWork": "Resolved-Rejected"}], [
+        connector("o1", "Start1", "Review", "Always"),
+        connector("orderApprove", "Review", "PlaceOrder", "FlowAction", pyFlowActionName="Approve"),
+        connector("orderReject", "Review", "Declined", "FlowAction", pyFlowActionName="Reject"),
+        connector("o2", "PlaceOrder", "Placed", "Always")])
+    e["flows/Escalate.xml"] = simple_flow("Escalate", [
+        start, assignment("FinanceCheck", "Finance check", "Finance"),
+        {"pyShapeID": "Checked", "pyShapeType": "End", "pyShapeName": "Checked"},
+        {"pyShapeID": "Refused", "pyShapeType": "End", "pyShapeName": "Refused", "pyStatusWork": "Resolved-Rejected"}], [
+        connector("x1", "Start1", "FinanceCheck", "Always"),
+        connector("financeOk", "FinanceCheck", "Checked", "FlowAction", pyFlowActionName="Approve"),
+        connector("financeNo", "FinanceCheck", "Refused", "FlowAction", pyFlowActionName="Reject")])
+    e["flows/Close.xml"] = simple_flow("Close", [
+        start, assignment("WrapUp", "Wrap up", "Managers"),
+        {"pyShapeID": "Closed", "pyShapeType": "End", "pyShapeName": "Closed"},
+        {"pyShapeID": "Reopen", "pyShapeType": "End", "pyShapeName": "Reopened", "pyStatusWork": "Resolved-Rejected"}], [
+        connector("w1", "Start1", "WrapUp", "Always"),
+        connector("wrapOk", "WrapUp", "Closed", "FlowAction", pyFlowActionName="Approve"),
+        connector("wrapNo", "WrapUp", "Reopen", "FlowAction", pyFlowActionName="Reject")])
+    e["flows/Withdraw.xml"] = simple_flow("Withdraw", [
+        start, {"pyShapeID": "Withdrawn", "pyShapeType": "End", "pyShapeName": "Withdrawn", "pyStatusWork": "Resolved-Rejected"}], [
+        connector("d1", "Start1", "Withdrawn", "Always")])
+    e["sla/CaseSLA.xml"] = page("Rule-Obj-ServiceLevel", WORK, "CaseSLA", "Purchasing", "01-01-01",
+                                body={"pyDeadlineDays": "5", "pyUseBusinessDays": "false"})
+    e["sla/IntakeSLA.xml"] = page("Rule-Obj-ServiceLevel", WORK, "IntakeSLA", "Purchasing", "01-01-01",
+                                  body={"pyGoalHours": "8", "pyDeadlineDays": "2", "pyUseBusinessDays": "false"})
+    e["sections/Request.xml"] = page("Rule-HTML-Section", WORK, "Request", "Purchasing", "01-01-01", body={
+        "pyTitle": "Order", "pyColumns": "1", "pyCells": PageList([
+            {"pyProperty": ".Title", "pyControl": "pxTextInput", "pyLabel": "What are you buying?", "pyRequired": "true"},
+            {"pyProperty": ".Amount", "pyControl": "pxCurrency", "pyLabel": "Amount", "pyRequired": "true", "pyCurrency": "USD"},
+            {"pyProperty": ".CostCenter", "pyControl": "pxDropdown", "pyLabel": "Cost center", "pyRequired": "true"}])})
+    e["harness/New.xml"] = page("Rule-HTML-Harness", WORK, "New", "Purchasing", "01-01-01", body={"pySections": PropertyList(["Request"])})
+    e["casetypes/ConnectedPurchase.xml"] = page("Rule-Obj-CaseType", REQUEST, "ConnectedPurchase", "Purchasing", "01-01-05", body={
+        "pyLabel": "Connected purchase", "pyNewHarness": "New", "pyCreateValidate": "RequestChecks", "pyServiceLevelName": "CaseSLA",
+        "pyStages": PageList([
+            {"pyStageID": "intake", "pyStageName": "Intake", "pyServiceLevelName": "IntakeSLA", "pyProcesses": PageList([
+                {"pyFlowName": "Order"}, {"pyFlowName": "Escalate", "pyOptional": "true"}])},
+            {"pyStageID": "close", "pyStageName": "Close", "pyProcesses": PageList([{"pyFlowName": "Close"}])}]),
+        "pyAlternateStages": PageList([
+            {"pyStageID": "withdrawn", "pyStageName": "Withdrawn", "pyProcesses": PageList([{"pyFlowName": "Withdraw"}])}])})
+    return e
+
+
+FIXTURES = {"purchase-request": purchase_request, "refusals": refusals, "purchase-advanced": purchase_advanced,
+            "purchase-connected": purchase_connected}
 
 
 def generated() -> dict[str, bytes]:

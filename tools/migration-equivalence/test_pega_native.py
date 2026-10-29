@@ -53,8 +53,11 @@ class FixtureTest(unittest.TestCase):
         self.assertEqual(keys["Rule-HTML-Section REQUESTDETAILS"]["chosen"], "sections/RequestDetails-Work.xml")
         self.assertEqual(outcomes("Rule-HTML-Section REQUESTDETAILS")["sections/RequestDetails-Request-01-01-02.xml"], "maskedByWithdrawn")
         self.assertEqual(keys["Rule-Obj-When NEEDSVENDORCHECK"]["chosen"], "when/NeedsVendorCheck-Request.xml")
-        self.assertEqual(result["startingPoints"], [{"rule": "casetypes/PurchaseRequest.xml", "kind": "caseType",
-                                                     "context": "ACME-Purchasing-Work-Request"}])
+        # The case type's processes are starting points too (S117): a case definition pins their published workflows.
+        context = "ACME-Purchasing-Work-Request"
+        self.assertEqual(result["startingPoints"], [{"rule": "casetypes/PurchaseRequest.xml", "kind": "caseType", "context": context},
+                                                    {"rule": "flows/ApproveRequest.xml", "kind": "process", "context": context},
+                                                    {"rule": "flows/Fulfil.xml", "kind": "process", "context": context}])
         self.assertEqual({e["status"] for e in result["entries"]}, {"manifest", "rule", "data"})
 
     def test_refusals_fixture_reports_blocked_circumstanced_and_undecoded(self):
@@ -76,7 +79,17 @@ class FixtureTest(unittest.TestCase):
         self.assertEqual(keys["Rule-Obj-When NEEDSVENDORCHECK"]["variants"][0]["value"], "Software")
         self.assertIn({"path": "delegation/ApprovalLevel.xml", "status": "delegation"},
                       [{k: e[k] for k in ("path", "status")} for e in result["entries"]])
-        self.assertEqual(len(result["startingPoints"]), 5)
+        self.assertEqual(len(result["startingPoints"]), 7)
+        self.assertEqual([s["kind"] for s in result["startingPoints"]].count("process"), 2)
+
+    def test_purchase_connected_processes_in_stage_order(self):
+        result = pega_native.analyze((FIXTURES / "purchase-connected.zip").read_bytes())
+        self.assertEqual(result["archiveBlockers"], [])
+        self.assertEqual([(s["rule"], s["kind"]) for s in result["startingPoints"]], [
+            ("casetypes/ConnectedPurchase.xml", "caseType"), ("flows/Order.xml", "process"), ("flows/Escalate.xml", "process"),
+            ("flows/Close.xml", "process"), ("flows/Withdraw.xml", "process")])
+        keys = result["contexts"]["ACME-Purchasing-Work-Request"]["keys"]
+        self.assertIn("Rule-Connect-REST CREATEORDER", keys)
 
 
 class ResolutionTest(unittest.TestCase):

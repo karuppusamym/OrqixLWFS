@@ -1,6 +1,6 @@
 # S112 - Native Pega rule archive conversion, MIG11 (29 October 2026)
 
-**Extended by [S115](S115-pega-native-completion.md)** (circumstances and date ranges of decision rules, subflows, split-joins, business calendars, escalations, case-level service levels, delegation provenance); the "blocked when referenced" lists below are as of S112.
+**Extended by [S115](S115-pega-native-completion.md)** (circumstances and date ranges of decision rules, subflows, split-joins, business calendars, escalations, case-level service levels, delegation provenance) and [S117](S117-pega-native-round-3.md) (connectors as call steps, simple transforms, creation validation, case types as CMMN case definitions); the "blocked when referenced" lists below are as of S112.
 
 MIG11 was deferred on purpose ([ADR 0003](../adr/0003-minimum-demo-pega-scope.md)): the synthetic demo did not need it, and no genuine Pega export was available to define a grammar. The user has now asked for it to be built. This record describes what is implemented, what it was tested against, and what it does not establish.
 

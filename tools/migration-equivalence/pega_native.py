@@ -449,6 +449,21 @@ def analyze(data: bytes) -> dict:
                     starts.append({"rule": chosen["path"], "kind": "caseType", "context": context})
                 elif chosen["ruleType"] == "Rule-Obj-Flow" and chosen["fields"].get("pyIsStartingFlow") == "true":
                     starts.append({"rule": chosen["path"], "kind": "flow", "context": context})
+            # S117: every effective flow a case type of this context runs as a process (primary stages, then alternate
+            # stages) is also a starting point, so it can be converted and published as the workflow a case task pins.
+            for case_type in [s for s in starts if s["kind"] == "caseType" and s["context"] == context]:
+                fields = next(r for r in rules if r["path"] == case_type["rule"])["fields"]
+                for stage_list in ("pyStages", "pyAlternateStages"):
+                    stages = fields.get(stage_list)
+                    for stage in stages if isinstance(stages, list) else []:
+                        processes = stage.get("pyProcesses") if isinstance(stage, dict) else None
+                        for process in processes if isinstance(processes, list) else []:
+                            name = process.get("pyFlowName") if isinstance(process, dict) else None
+                            if not isinstance(name, str):
+                                continue
+                            chosen = resolved.get(f"Rule-Obj-Flow {name.upper()}", {}).get("chosen")
+                            if chosen and not any(s["rule"] == chosen and s["context"] == context for s in starts):
+                                starts.append({"rule": chosen, "kind": "process", "context": context})
     return {"decoder": DECODER, "sourceSha256": hashlib.sha256(data).hexdigest(), "entries": entries,
             "archiveBlockers": blockers,
             "stack": None if stack is None else [[name, "%02d-%02d-%02d" % v] for name, (_i, v) in sorted(stack.items(), key=lambda s: s[1][0])],

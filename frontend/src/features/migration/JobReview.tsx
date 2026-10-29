@@ -38,6 +38,8 @@ export interface ProjectContext {
 export interface NativeContext {
   pegaStartRule: string
   approvalRoutes: NonNullable<Request['approvalRoutes']>
+  /** Call step id to the workspace connection operation it runs (S117). */
+  connectionMappings?: NonNullable<Request['connectionMappings']>
 }
 
 /** Compatibility report and mapping form of one source file; converting creates a draft, never a release. */
@@ -95,6 +97,7 @@ export function JobReview({ job, editable, project, native }: { job: Job; editab
     try {
       const request: Request = { workflowKey: key, name, groupMappings, approvalRoutes: native ? native.approvalRoutes : JSON.parse(routes) as Request['approvalRoutes'],
         ...(native ? { pegaStartRule: native.pegaStartRule } : {}),
+        ...(native?.connectionMappings && Object.keys(native.connectionMappings).length ? { connectionMappings: native.connectionMappings } : {}),
         serviceTaskMappings: JSON.parse(services) as Request['serviceTaskMappings'], childWorkflowMappings: JSON.parse(children) as Request['childWorkflowMappings'], acknowledgeInfo: ack, acknowledgeReview: ackReview,
         ...(Object.keys(formMappings).length ? { formMappings } : {}),
         serviceGroupMappings: JSON.parse(serviceGroups) as Request['serviceGroupMappings'], decisionMappings: JSON.parse(decisions) as Request['decisionMappings'],

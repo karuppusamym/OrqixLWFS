@@ -40,7 +40,7 @@ test('purchase-request archive: effective rules, reviewed conversion, separate p
   await expect(review.getByText('Hidden by a withdrawn version').first()).toBeVisible()
   await expectNoSeriousViolations(dana, 'native Pega effective rules')
   await review.getByRole('tab', { name: 'Archive inventory' }).click()
-  await expect(review.getByText('flows/ApproveRequest-sandbox.xml')).toBeVisible()
+  await expect(review.getByRole('cell', { name: 'flows/ApproveRequest-sandbox.xml', exact: true })).toBeVisible()
   // The same provenance through the API.
   const archive = await apiGet<Archive>(dana, `/workspaces/${ws}/migrations/${migration}/pega-rules`)
   const flowKey = archive.contexts[0]!.keys.find(k => k.ruleType === 'Rule-Obj-Flow' && k.ruleName === 'ApproveRequest')!

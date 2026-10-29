@@ -23,7 +23,7 @@ class PegaNativeApiTest extends RuntimeTestBase {
 
     private ObjectNode request() {
         ObjectNode r = json.object().put("workflowKey", "pega-native-" + UUID.randomUUID().toString().substring(0, 8)).put("name", "Purchase request (native Pega)")
-                .put("acknowledgeInfo", true).put("acknowledgeReview", true);
+                .put("acknowledgeInfo", true).put("acknowledgeReview", true).put("pegaStartRule", "casetypes/PurchaseRequest.xml");
         r.putObject("groupMappings").put("Managers", "managers").put("Finance", "finance-approvers").put("Procurement", "managers");
         ObjectNode routes = r.putObject("approvalRoutes");
         routes.putObject("ManagerReview").put("approvedFlowId", "managerApprove").put("rejectedFlowId", "managerReject");
@@ -65,7 +65,7 @@ class PegaNativeApiTest extends RuntimeTestBase {
         var noRoutes = request(); noRoutes.remove("approvalRoutes");
         assertThat(convert(job, noRoutes).status()).isEqualTo(422);
         assertThat(convert(job, request().set("inputSchema", json.object().put("type", "object"))).status()).isEqualTo(400);
-        assertThat(convert(job, request().put("pegaStartRule", "flows/ApproveRequest.xml")).status()).isEqualTo(400);
+        assertThat(convert(job, request().put("pegaStartRule", "decisions/ApprovalLevel-01-01-01.xml")).status()).isEqualTo(400);
         assertThat(api("rhea.requester").post(request(), "/workspaces/{ws}/migrations/{id}/convert", PURCHASING, job.path("id").asString()).status()).isEqualTo(403);
 
         ObjectNode mappings = request();

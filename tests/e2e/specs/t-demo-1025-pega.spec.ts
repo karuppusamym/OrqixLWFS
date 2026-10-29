@@ -116,7 +116,7 @@ test('review-branch.xpdl: approve -> Finance, reject -> Rejected', async ({ sess
   const b = await request(sessions, ws, id, '5000', 'review-reject')
   const mgr = await sessions.as('mani.manager')
   for (const [bk, action] of [[a.ref, 'approve'], [b.ref, 'reject']] as const) {
-    await mgr.goto(`/w/${ws}/tasks?view=claimable`)
+    await mgr.goto(`/w/${ws}/tasks?view=claimable&sort=newest`)
     await mgr.getByRole('link', { name: bk, exact: true }).first().click()
     await expect(mgr.getByTestId('task-actions')).toBeVisible()
     await shot(mgr, `review-task-${action}`)

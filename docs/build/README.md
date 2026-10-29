@@ -101,6 +101,12 @@ When an IDE Java compiler is active, run coordinated verification with `./mvnw.c
 
 Pega Blueprint PDF import through a reviewed transcription: [S91](S91-pega-blueprint-pdf.md).
 
+Native Pega rule archive conversion (MIG11, synthetic grammar): [S112](S112-pega-native-conversion.md), completed in [S115](S115-pega-native-completion.md); connectors, transforms, validation and case types as case definitions in [S117](S117-pega-native-round-3.md).
+
 Resume workstreams: [message events](S23-message-events.md), [run diagram and Insights](S24-run-diagram-insights.md), [attachments and stages](S25-attachments-stages.md), and [workflow simulation](S26-workflow-simulation.md). Camunda 8 import is documented in [S11](S11-camunda-import.md). Operator [suspend and resume](S37-suspend-resume.md) and [in-flight release migration](S38-release-migration.md) implement EX04.
 
 Scalability: [S92 scalability qualification](S92-scalability-qualification.md) (two replicas, load, failover, volume, V155).
+
+Application pages, composed actions and sandboxed extensions (UI02g): [S111](S111-application-designer.md) (V190-V192).
+Application designer completion (UI02h): [S114](S114-application-designer-completion.md) (V193).
+Application designer round 3 (UI02i): [S116](S116-application-designer-round-3.md) (V194-V195).

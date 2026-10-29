@@ -180,6 +180,43 @@ class GeneratedXmlTest {
         assertThat(w.groups()).containsExactly("managers");
     }
 
+    /** A split reached by two routes gets an exclusive merge in front, so the parallel gateway only splits (S115). */
+    @Test
+    void parallelSplitReachedByTwoRoutesGetsAMergeInFront() throws Exception {
+        String approval = "{\"id\":\"%s\",\"type\":\"approval\",\"label\":\"%s\",\"config\":{\"candidateGroupRef\":\"managers\",\"rejectReasonRequired\":true}}";
+        String json = "{\"schemaVersion\":\"0.1\",\"workflowKey\":\"split-merge\",\"name\":\"Split merge\",\"metadata\":{\"description\":\"x\"},"
+                + "\"inputSchema\":{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"amount\"],\"properties\":{\"amount\":{\"type\":\"number\",\"title\":\"Amount\"}}},"
+                + "\"triggers\":[\"manual\"],\"nodes\":[{\"id\":\"start\",\"type\":\"start\",\"label\":\"Start\",\"config\":{}},"
+                + "{\"id\":\"choose\",\"type\":\"branch\",\"label\":\"Choose\",\"config\":{}}," + approval.formatted("review", "Review") + ","
+                + "{\"id\":\"split\",\"type\":\"parallelSplit\",\"label\":\"Checks\",\"config\":{\"joinRef\":\"join\"}}," + "{\"id\":\"a1\",\"type\":\"wait\",\"label\":\"One\",\"config\":{\"duration\":\"PT1M\"}},"
+                + "{\"id\":\"a2\",\"type\":\"wait\",\"label\":\"Two\",\"config\":{\"duration\":\"PT1M\"}},{\"id\":\"join\",\"type\":\"parallelJoin\",\"label\":\"Join\",\"config\":{}},"
+                + "{\"id\":\"end\",\"type\":\"end\",\"label\":\"Done\",\"config\":{\"businessOutcome\":\"Done\",\"outcomeKind\":\"success\"}}],"
+                + "\"transitions\":[{\"id\":\"t1\",\"from\":\"start\",\"to\":\"choose\",\"on\":\"next\"},"
+                + "{\"id\":\"t2\",\"from\":\"choose\",\"to\":\"split\",\"on\":\"condition\",\"condition\":{\"fieldRef\":\"/input/amount\",\"operator\":\"gte\",\"value\":100}},"
+                + "{\"id\":\"t3\",\"from\":\"choose\",\"to\":\"review\",\"on\":\"default\"},{\"id\":\"t4\",\"from\":\"review\",\"to\":\"split\",\"on\":\"approved\"},"
+                + "{\"id\":\"t5\",\"from\":\"review\",\"to\":\"end\",\"on\":\"rejected\"},{\"id\":\"t6\",\"from\":\"split\",\"to\":\"a1\",\"on\":\"next\"},"
+                + "{\"id\":\"t7\",\"from\":\"split\",\"to\":\"a2\",\"on\":\"next\"},{\"id\":\"t8\",\"from\":\"a1\",\"to\":\"join\",\"on\":\"next\"},"
+                + "{\"id\":\"t10\",\"from\":\"a2\",\"to\":\"join\",\"on\":\"next\"},"
+                + "{\"id\":\"t12\",\"from\":\"join\",\"to\":\"end\",\"on\":\"next\"}],"
+                + "\"execution\":{\"maxConcurrentRuns\":10,\"maxAttempts\":3,\"retryDelaySeconds\":30},\"security\":{\"selfApproval\":\"deny\"},\"dependencies\":{\"connections\":[]},\"decisions\":[],\"outputMapping\":{},\"outputSchema\":{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{}}}";
+        assertThat(Compilers.workflowCompiler().validate(json, TestSupport.defaultContext()).issues()).filteredOn(i -> i.severity().name().equals("BLOCKER")).isEmpty();
+        CompiledWorkflow w = Compilers.workflowCompiler().compile(json, TestSupport.defaultContext());
+        Document bpmn = parse(w.bpmnXml());
+        assertThat(byId(bpmn, "split__merge").getLocalName()).isEqualTo("exclusiveGateway");
+        assertThat(byId(bpmn, "split__merge__out").getAttribute("targetRef")).isEqualTo("split");
+        assertThat(byId(bpmn, "t2").getAttribute("targetRef")).isEqualTo("split__merge");
+        assertThat(byId(bpmn, "t4").getAttribute("targetRef")).isEqualTo("split__merge");
+        // With a layout, the merge gets its own diagram shape next to the split.
+        var layout = new tools.jackson.databind.ObjectMapper().readTree(json);
+        var positions = ((tools.jackson.databind.node.ObjectNode) layout).putObject("uiLayout").putObject("positions");
+        int x = 0;
+        for (String id : List.of("start", "choose", "review", "split", "a1", "a2", "join", "end")) positions.putObject(id).put("x", x += 240).put("y", 100);
+        String diagram = Compilers.workflowCompiler().compile(layout.toString(), TestSupport.defaultContext()).bpmnXml();
+        assertThat(diagram).contains("bpmnElement=\"split__merge\"").contains("bpmnElement=\"split__merge__out\"");
+        // A split with one incoming route is unchanged.
+        assertThat(Compilers.workflowCompiler().compile(everythingJson(), TestSupport.defaultContext()).bpmnXml()).doesNotContain("__merge\"");
+    }
+
     private static Element byId(Document doc, String id) {
         NodeList all = doc.getElementsByTagNameNS("*", "*");
         for (int i = 0; i < all.getLength(); i++) {

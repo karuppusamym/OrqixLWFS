@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/CMMN/20151109/MODEL" xmlns:flowable="http://flowable.org/cmmn" targetNamespace="urn:orqix:child">
+  <case id="childCase" name="Supplier review">
+    <casePlanModel id="plan" name="Supplier review" autoComplete="false">
+      <planItem id="decide" name="Decide supplier" definitionRef="decideTask"/>
+      <humanTask id="decideTask" name="Decide supplier" flowable:candidateGroups="managers"/>
+    </casePlanModel>
+  </case>
+</definitions>

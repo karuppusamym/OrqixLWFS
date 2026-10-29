@@ -506,10 +506,15 @@ export const getAccessOverview = (ws: string) => call(api.GET('/workspaces/{work
 export const listGroups = (ws: string) => call(api.GET('/workspaces/{workspaceId}/groups', { params: { path: { workspaceId: ws } } }))
 
 // Migration sources are immutable; conversion creates a validated draft, never a release.
-export const uploadMigration = (ws: string, body: { fileName: string; content: string; sourceFormat?: 'bpmn' | 'dmn' | 'camundaForm' | 'pegaArchive' | 'pegaMapping' | 'pegaXpdl' | 'cmmn' }) =>
+export const uploadMigration = (ws: string, body: { fileName: string; content: string; sourceFormat?: 'bpmn' | 'dmn' | 'camundaForm' | 'pegaArchive' | 'pegaMapping' | 'pegaXpdl' | 'cmmn' | 'pegaRules' }) =>
   call(api.POST('/workspaces/{workspaceId}/migrations', { params: { path: { workspaceId: ws } }, body }))
 export const getMigration = (ws: string, migrationId: string) =>
   call(api.GET('/workspaces/{workspaceId}/migrations/{migrationId}', { params: { path: { workspaceId: ws, migrationId } } }))
+// Native Pega rule archive (docs/build/S112): inventory, effective rules and per-rule conversion results.
+export const getPegaRuleArchive = (ws: string, migrationId: string) =>
+  call(api.GET('/workspaces/{workspaceId}/migrations/{migrationId}/pega-rules', { params: { path: { workspaceId: ws, migrationId } } }))
+export const convertPegaCaseDefinition = (ws: string, migrationId: string, body: S['PegaCaseDefinitionRequest']) =>
+  call(api.POST('/workspaces/{workspaceId}/migrations/{migrationId}/case-definition', { params: { path: { workspaceId: ws, migrationId } }, body }))
 export const convertMigration = (ws: string, migrationId: string, body: S['ConvertMigrationRequest']) =>
   call(api.POST('/workspaces/{workspaceId}/migrations/{migrationId}/convert', { params: { path: { workspaceId: ws, migrationId } }, body }))
 

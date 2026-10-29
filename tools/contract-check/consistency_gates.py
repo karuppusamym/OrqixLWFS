@@ -35,9 +35,10 @@ PERMISSION_QUALIFIERS = {
     "currentAssignee", "assignee", "candidate", "recipient", "conversation.author", "requester",
     "inboundSignature",  # IN02: HMAC over the body with a per-trigger secret; no session or token
     "callbackToken",  # EX10 (S98): possession of a one-wait callback token; no session
+    "extensionFileToken",  # UI02 (S116): a short-lived signed file path minted by the frame endpoint; no session
 }
 # Free-text fragments allowed inside an x-orqix-permission value.
-PERMISSION_PHRASES = ("underlying action permission",)
+PERMISSION_PHRASES = ("underlying action permission", "underlying read permission")
 
 # Server problem codes that are deliberately not in the public contract enum.
 PROBLEM_CODES_NOT_IN_CONTRACT = {"INTERNAL_ERROR": "unexpected defect (HTTP 500); the contract has no code for it"}

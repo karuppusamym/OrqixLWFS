@@ -45,7 +45,7 @@ export const getCasePlan = (ws: string, instanceId: string) => call(api.GET('/wo
 }))
 
 export type CaseLifecycleAction = 'suspend' | 'resume' | 'close'
-export type PlanItemAction = 'start' | 'enable' | 'disable' | 'activateStage' | 'completeStage' | 'terminate' | 'occur'
+export type PlanItemAction = 'start' | 'enable' | 'disable' | 'activateStage' | 'completeStage' | 'terminate' | 'occur' | 'plan' | 'retryWorkflow'
 
 export const changeCaseLifecycle = (ws: string, instanceId: string, action: CaseLifecycleAction, expectedVersion: number, reason: string) => {
   const path = {
@@ -65,6 +65,8 @@ export const changeCasePlanItem = (ws: string, instanceId: string, planItemId: s
     activateStage: '/workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/activateStage',
     completeStage: '/workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/completeStage',
     terminate: '/workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/terminate',
+    plan: '/workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/plan',
+    retryWorkflow: '/workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/retryWorkflow',
   } as const
   return call(api.POST(path[action], { params: { path: { workspaceId: ws, instanceId, planItemId }, header: { 'Idempotency-Key': uuid() } }, body: { expectedVersion, reason } }))
 }

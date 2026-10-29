@@ -1,6 +1,7 @@
 import { usePresentedView,ViewLanguage } from '@/features/views/ViewLanguage'
 import { viewSurface } from '@/features/views/presentation'
 import { TaskCorrection } from './TaskCorrection'
+import { SendBackPanel } from './SendBackPanel'
 import { useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, ShieldAlert, Undo2, UserCheck, XCircle } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -269,7 +270,8 @@ export function TaskPanel({ taskId, onClaimed }: { taskId: string; onClaimed?: (
 
         {navigation?.target ? <Link to={navigation.target}>{navigation.label}</Link> : null}
 
-        <TaskCorrection ws={ws} task={task} fields={fields} onDone={refreshAll} />
+        {task.form.sendBack ? null : <TaskCorrection ws={ws} task={task} fields={fields} onDone={refreshAll} />}
+        <SendBackPanel ws={ws} task={task} fields={fields} onDone={refreshAll} />
 
         <RunFiles ws={ws} runId={task.runId} readOnly />
 

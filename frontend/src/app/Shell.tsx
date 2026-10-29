@@ -1,4 +1,4 @@
-import { Activity, BarChart3, Check, ClipboardList, ChevronsUpDown, FlaskConical, House, Inbox, Layers3, LogOut, Menu, MessageSquare, PanelsTopLeft, Rocket, Send, Settings, Workflow, X } from 'lucide-react'
+import { Activity, AppWindow, BarChart3, Check, ClipboardList, ChevronsUpDown, FlaskConical, House, Inbox, Layers3, LogOut, Menu, MessageSquare, PanelsTopLeft, Rocket, Send, Settings, Workflow, X } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, NavLink, Outlet, useLocation, useMatches, useNavigate } from 'react-router'
 import { signOut } from '@/api/auth'
@@ -79,6 +79,7 @@ export function Shell() {
     { to: `${base}/workflows`, label: 'Workflows', icon: Workflow, visible: can('workflow.read', 'workflow.start') },
     { to: `${base}/runs`, label: 'Runs', icon: Activity, visible: can('run.read') },
     { to: `${base}/cases`, label: 'Cases', icon: Layers3, visible: can('workflow.read', 'workflow.start', 'run.read', 'task.act') },
+    { to: `${base}/apps`, label: 'Apps', icon: AppWindow, visible: true },
     { to: `${base}/views`, label: 'Views', icon: PanelsTopLeft, visible: can('workflow.read') },
     { to: `${base}/insights`, label: 'Insights', icon: BarChart3, visible: can('run.read') },
     { to: `${base}/agent-writes`, label: 'Agent writes', icon: Send, visible: can('agent.approve-write-tool', 'run.operate') },

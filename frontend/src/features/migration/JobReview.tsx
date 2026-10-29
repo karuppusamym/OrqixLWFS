@@ -31,8 +31,19 @@ export interface ProjectContext {
   decisionIds?: string[]
 }
 
+/**
+ * Set for a native Pega rule archive (docs/build/S112): the selected starting point and the approval routes the reviewer
+ * chose per assignment. The routes replace the JSON field; they are never inferred from flow action names.
+ */
+export interface NativeContext {
+  pegaStartRule: string
+  approvalRoutes: NonNullable<Request['approvalRoutes']>
+  /** Call step id to the workspace connection operation it runs (S117). */
+  connectionMappings?: NonNullable<Request['connectionMappings']>
+}
+
 /** Compatibility report and mapping form of one source file; converting creates a draft, never a release. */
-export function JobReview({ job, editable, project }: { job: Job; editable: boolean; project?: ProjectContext }) {
+export function JobReview({ job, editable, project, native }: { job: Job; editable: boolean; project?: ProjectContext; native?: NativeContext }) {
   const { workspace } = useWorkspace()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -84,7 +95,9 @@ export function JobReview({ job, editable, project }: { job: Job; editable: bool
   const convert = async () => {
     setPending(true); setError(null); setFailedItems([])
     try {
-      const request: Request = { workflowKey: key, name, groupMappings, approvalRoutes: JSON.parse(routes) as Request['approvalRoutes'],
+      const request: Request = { workflowKey: key, name, groupMappings, approvalRoutes: native ? native.approvalRoutes : JSON.parse(routes) as Request['approvalRoutes'],
+        ...(native ? { pegaStartRule: native.pegaStartRule } : {}),
+        ...(native?.connectionMappings && Object.keys(native.connectionMappings).length ? { connectionMappings: native.connectionMappings } : {}),
         serviceTaskMappings: JSON.parse(services) as Request['serviceTaskMappings'], childWorkflowMappings: JSON.parse(children) as Request['childWorkflowMappings'], acknowledgeInfo: ack, acknowledgeReview: ackReview,
         ...(Object.keys(formMappings).length ? { formMappings } : {}),
         serviceGroupMappings: JSON.parse(serviceGroups) as Request['serviceGroupMappings'], decisionMappings: JSON.parse(decisions) as Request['decisionMappings'],
@@ -151,7 +164,7 @@ export function JobReview({ job, editable, project }: { job: Job; editable: bool
       <Label htmlFor="migration-name">Workflow name</Label><Input id="migration-name" required maxLength={200} value={name} onChange={e => setName(e.target.value)} />
       {(report.requiredMappings?.groups ?? []).map(group => <div key={group}><Label htmlFor={`migration-group-${group}`}>Map source assignment: {group}</Label><Select id={`migration-group-${group}`} disabled={groups.isPending} value={groupMappings[group] ?? ''} onChange={e => setGroupMappings({ ...groupMappings, [group]: e.target.value })}><option value="">{groups.isPending ? 'Loading workspace groups…' : 'Choose workspace group'}</option>{groups.data?.items.map(g => <option key={g.key} value={g.key}>{g.name}</option>)}</Select></div>)}
       {groups.isError ? <QueryError error={groups.error} onRetry={() => void groups.refetch()} what="workspace groups" /> : null}
-      {(report.requiredMappings?.approvalTasks ?? []).length ? <><Label htmlFor="migration-routes">Approval routes (JSON; optional for recognized approval gateways)</Label><Textarea id="migration-routes" value={routes} onChange={e => setRoutes(e.target.value)} rows={4} spellCheck={false} /><p className="text-sm text-muted-foreground">Task IDs: {report.requiredMappings?.approvalTasks?.join(', ')}. Example: {JSON.stringify({ taskId: { approvedFlowId: 'approvedFlow', rejectedFlowId: 'rejectedFlow' } })}</p></> : null}
+      {(report.requiredMappings?.approvalTasks ?? []).length && !native ? <><Label htmlFor="migration-routes">Approval routes (JSON; optional for recognized approval gateways)</Label><Textarea id="migration-routes" value={routes} onChange={e => setRoutes(e.target.value)} rows={4} spellCheck={false} /><p className="text-sm text-muted-foreground">Task IDs: {report.requiredMappings?.approvalTasks?.join(', ')}. Example: {JSON.stringify({ taskId: { approvedFlowId: 'approvedFlow', rejectedFlowId: 'rejectedFlow' } })}</p></> : null}
       {(report.requiredMappings?.serviceTasks ?? []).length ? <><ServiceMappingGuide tasks={report.requiredMappings?.serviceTasks ?? []} value={services} onChange={setServices} hints={hints?.services} /><Label htmlFor="migration-services">Service task mappings (JSON)</Label><Textarea id="migration-services" value={services} onChange={e => setServices(e.target.value)} rows={7} spellCheck={false} /><p className="text-sm text-muted-foreground">Source tasks: {report.requiredMappings?.serviceTasks?.join(', ')}. Review each approved connectionRef, definitionVersion, operation, inputMapping and resultMapping.</p></> : null}
       {Object.keys(report.requiredMappings?.serviceGroups ?? {}).length ? <><Label htmlFor="migration-service-groups">Service group mappings (JSON)</Label><Textarea id="migration-service-groups" value={serviceGroups} onChange={e => setServiceGroups(e.target.value)} rows={5} spellCheck={false} /><p className="text-sm text-muted-foreground">One mapping covers every task with the same implementation: {Object.entries(report.requiredMappings?.serviceGroups ?? {}).map(([group, tasks]) => `${group} (${tasks.length} tasks)`).join('; ')}. A service task mapping above overrides the group for one task.</p></> : null}
       {(report.requiredMappings?.decisionTasks ?? []).length ? <><Label htmlFor="migration-decisions">Decision mappings (JSON)</Label><Textarea id="migration-decisions" value={decisions} onChange={e => setDecisions(e.target.value)} rows={4} spellCheck={false} /><p className="text-sm text-muted-foreground">Business rule tasks: {report.requiredMappings?.decisionTasks?.join(', ')}. Upload the DMN file first, then map each task to its migration, for example {JSON.stringify({ taskId: { migrationId: 'DMN-MIGRATION-ID' } })}.</p></> : null}

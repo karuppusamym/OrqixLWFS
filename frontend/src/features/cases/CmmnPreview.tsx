@@ -1,7 +1,7 @@
-import { User } from 'lucide-react'
+import { Clock, FolderOpen, Table2, User, Workflow } from 'lucide-react'
 import { useId } from 'react'
 import { cn } from '@/lib/cn'
-import type { CaseModelItem } from './caseModel'
+import { conditionExpression, entrySources, type CaseModelItem } from './caseModel'
 
 /**
  * Read-only CMMN 1.1 notation preview of the case model designer (STU01). The designer itself is a form (a tree of plan
@@ -21,6 +21,10 @@ import type { CaseModelItem } from './caseModel'
 export const CMMN_KIND: Record<CaseModelItem['kind'], { label: string; symbol: string; element: string }> = {
   stage: { label: 'Stage', symbol: 'Rectangle with angled corners and a collapse marker', element: 'stage' },
   humanTask: { label: 'Human task', symbol: 'Rounded rectangle with a person icon', element: 'human task' },
+  processTask: { label: 'Workflow task', symbol: 'Rounded rectangle with a process icon', element: 'process task' },
+  caseTask: { label: 'Case task', symbol: 'Rounded rectangle with a folder icon', element: 'case task' },
+  decisionTask: { label: 'Decision task', symbol: 'Rounded rectangle with a table icon', element: 'decision task' },
+  timerEventListener: { label: 'Timer', symbol: 'Double circle with a clock', element: 'timer event listener' },
   milestone: { label: 'Milestone', symbol: 'Stadium (rounded ends)', element: 'milestone' },
   userEventListener: { label: 'User event', symbol: 'Double circle with a person icon', element: 'user event listener' },
 }
@@ -32,14 +36,32 @@ function markerWords(item: CaseModelItem): string[] {
   if (item.required) words.push('Required')
   if (item.manual) words.push('Manual start')
   if (item.repetitions) words.push(`Repeats ${item.repetitions} times`)
+  if (item.discretionary) words.push(`Discretionary: planned by ${(item.planners ?? []).join(', ') || 'nobody yet'}`)
+  if (item.kind === 'processTask' && item.workflow?.key) words.push(`Runs workflow ${item.workflow.key}`)
+  if (item.kind === 'caseTask' && item.childCase?.key) words.push(`Starts case ${item.childCase.key}`)
+  if (item.kind === 'decisionTask' && item.decision?.key) words.push(`Evaluates decision ${item.decision.key}`)
+  if (item.kind === 'timerEventListener' && item.timer) words.push(`Fires after ${item.timer}`)
   return words
 }
 
-function entryText(item: CaseModelItem, lookup: Lookup): string | null {
-  if (!item.after) return null
-  const source = lookup.get(item.after)
+function eventWords(id: string, lookup: Lookup): string | null {
+  const source = lookup.get(id)
   if (!source) return null
-  return `Starts after ${source.label} ${source.kind === 'milestone' || source.kind === 'userEventListener' ? 'occurs' : 'completes'}`
+  return `${source.label} ${source.kind === 'milestone' || source.kind === 'userEventListener' ? 'occurs' : 'completes'}`
+}
+
+function entryText(item: CaseModelItem, lookup: Lookup): string | null {
+  const words = entrySources(item).map(id => eventWords(id, lookup)).filter((value): value is string => !!value)
+  const data = item.when?.clauses.length ? `case data ${conditionExpression(item.when).slice(2, -1).replaceAll('cd_', '')}` : null
+  const changes = (item.onData ?? []).map(event => `${event.field} ${event.event === 'create' ? 'gets its first value' : 'changes'}`)
+  const all = [...words, ...changes]
+  if (!all.length && !data) return null
+  return all.length ? `Starts after ${all.join(item.anyOf ? ' or ' : ' and ')}${data ? ` when ${data}` : ''}` : `Starts when ${data}`
+}
+
+function exitText(item: CaseModelItem, lookup: Lookup): string | null {
+  const words = item.exitAfter ? eventWords(item.exitAfter, lookup) : null
+  return words ? `Ends when ${words}` : null
 }
 
 /** CMMN decorators, drawn left to right at the bottom centre of a task or stage. */
@@ -73,6 +95,15 @@ function CollapseMarker() {
   )
 }
 
+/** Exit criterion: a filled diamond on the right edge of the item. */
+function ExitSentry() {
+  return (
+    <svg width={14} height={18} viewBox="0 0 14 18" className="absolute top-1/2 -right-[7px] -translate-y-1/2 text-foreground" aria-hidden="true" data-testid="cmmn-exit-sentry">
+      <polygon points="7,1 13,9 7,17 1,9" fill="currentColor" stroke="currentColor" strokeWidth={1.6} strokeLinejoin="round" />
+    </svg>
+  )
+}
+
 /** Entry criterion: a hollow diamond on the left edge of the item. */
 function Sentry() {
   return (
@@ -85,11 +116,13 @@ function Sentry() {
 function ItemText({ item, lookup }: { item: CaseModelItem; lookup: Lookup }) {
   const words = markerWords(item)
   const entry = entryText(item, lookup)
+  const exit = exitText(item, lookup)
+  const all = [...words, ...(entry ? [entry] : []), ...(exit ? [exit] : [])]
   return (
     <>
       <span className="block text-sm leading-5 font-semibold text-muted-foreground">{CMMN_KIND[item.kind].label}</span>
       <span className="block text-[15px] leading-5 font-semibold break-words text-foreground">{item.label || item.id}</span>
-      {words.length || entry ? <span className="block text-sm leading-5 text-muted-foreground">{[...words, ...(entry ? [entry] : [])].join(' · ')}</span> : null}
+      {all.length ? <span className="block text-sm leading-5 text-muted-foreground">{all.join(' · ')}</span> : null}
     </>
   )
 }
@@ -98,7 +131,8 @@ function ItemText({ item, lookup }: { item: CaseModelItem; lookup: Lookup }) {
 const ANGLED = '[clip-path:polygon(14px_0,calc(100%-14px)_0,100%_14px,100%_calc(100%-14px),calc(100%-14px)_100%,14px_100%,0_calc(100%-14px),0_14px)]'
 
 function PlanItem({ item, lookup }: { item: CaseModelItem; lookup: Lookup }) {
-  const sentry = item.after && lookup.has(item.after) ? <Sentry /> : null
+  const sentry = <>{item.after && lookup.has(item.after) || item.when?.clauses.length || item.onData?.length ? <Sentry /> : null}{item.exitAfter && lookup.has(item.exitAfter) ? <ExitSentry /> : null}</>
+  const outline = item.discretionary ? 'border-dashed' : ''
   if (item.kind === 'stage')
     return (
       <li className="relative px-5 pt-3 pb-7" data-cmmn="stage" data-testid={`cmmn-${item.id}`}>
@@ -122,13 +156,13 @@ function PlanItem({ item, lookup }: { item: CaseModelItem; lookup: Lookup }) {
         </div>
       </li>
     )
-  if (item.kind === 'userEventListener')
+  if (item.kind === 'userEventListener' || item.kind === 'timerEventListener')
     return (
-      <li className="flex w-44 flex-col items-center text-center" data-cmmn="userEventListener" data-testid={`cmmn-${item.id}`}>
+      <li className="flex w-44 flex-col items-center text-center" data-cmmn={item.kind} data-testid={`cmmn-${item.id}`}>
         <svg width={44} height={44} viewBox="0 0 44 44" className="text-foreground" aria-hidden="true">
           <circle cx={22} cy={22} r={20.5} fill="var(--surface)" stroke="currentColor" strokeWidth={1.6} />
           <circle cx={22} cy={22} r={17} fill="none" stroke="currentColor" strokeWidth={1.6} />
-          <User x={13} y={13} width={18} height={18} strokeWidth={2.2} />
+          {item.kind === 'timerEventListener' ? <Clock x={13} y={13} width={18} height={18} strokeWidth={2.2} /> : <User x={13} y={13} width={18} height={18} strokeWidth={2.2} />}
         </svg>
         <ItemText item={item} lookup={lookup} />
       </li>
@@ -141,10 +175,11 @@ function PlanItem({ item, lookup }: { item: CaseModelItem; lookup: Lookup }) {
         <Markers item={item} />
       </li>
     )
+  const Icon = item.kind === 'processTask' ? Workflow : item.kind === 'caseTask' ? FolderOpen : item.kind === 'decisionTask' ? Table2 : User
   return (
-    <li className="relative w-52 rounded-lg border-2 border-foreground bg-surface px-3 pt-2 pb-5" data-cmmn="humanTask" data-testid={`cmmn-${item.id}`}>
+    <li className={cn('relative w-52 rounded-lg border-2 border-foreground bg-surface px-3 pt-2 pb-5', outline)} data-cmmn={item.kind} data-testid={`cmmn-${item.id}`}>
       {sentry}
-      <User className="absolute top-2 right-2 size-4 text-foreground" aria-hidden="true" />
+      <Icon className="absolute top-2 right-2 size-4 text-foreground" aria-hidden="true" />
       <ItemText item={item} lookup={lookup} />
       <Markers item={item} />
     </li>
@@ -168,7 +203,7 @@ export function CmmnPreview({ name, items, className }: { name: string; items: C
         CMMN diagram (read only)
       </h3>
       <p className="text-sm text-muted-foreground">
-        The plan drawn in CMMN 1.1 notation. It follows your changes; edit the plan items above. Every symbol is also written out in words.
+        The plan drawn in CMMN 1.1 notation. It follows your changes. Every symbol is also written out in words.
       </p>
       <div className="overflow-x-auto rounded-card border border-border bg-canvas p-4">
         <div className="relative inline-block min-w-full">
@@ -192,6 +227,12 @@ export function CmmnPreview({ name, items, className }: { name: string; items: C
           ))}
           <li>
             <span className="font-semibold">Start after</span>: small hollow diamond on the left edge (CMMN entry criterion sentry)
+          </li>
+          <li>
+            <span className="font-semibold">Ends when</span>: small filled diamond on the right edge (CMMN exit criterion sentry)
+          </li>
+          <li>
+            <span className="font-semibold">Discretionary item</span>: dashed outline; people of its planner groups add it to the case when needed (CMMN planning table)
           </li>
           <li>
             <span className="font-semibold">Markers</span> at the bottom: play triangle for manual activation, ! for required, # for repetition, minus for an expanded stage

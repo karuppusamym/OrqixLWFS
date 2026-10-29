@@ -49,7 +49,7 @@ public class RequestViewCheck {
     }
 
     /** Returns incompatibilities without changing input validation, conditions, routing or action permissions. */
-    List<String> matches(JsonNode workflow, JsonNode view) {
+    public List<String> matches(JsonNode workflow, JsonNode view) {
         if (!"request".equals(view.path("kind").asString())) return List.of("Only request views may bind to a request form.");
         if (view.path("sections").size() > 10) return List.of("A request form supports at most ten view sections.");
         var actions = view.path("actions");
@@ -91,7 +91,46 @@ public class RequestViewCheck {
             return List.of("The request form layout or submit action differs from its pinned view. Reapply the view or detach it before editing.");
         return List.of();
     }
-    static boolean fieldCompatible(JsonNode field, JsonNode property) {
+    /**
+     * Copies a request view's presentation into a workflow definition, as the studio's "use this view" does: field
+     * labels, order, widgets, sections, submit label and the exact pin. Input types, bounds, conditions, required flags
+     * and execution are unchanged; {@link #matches} then proves the result is consistent.
+     */
+    public JsonNode project(JsonNode workflow, java.util.UUID id, int version, JsonNode view) {
+        var next = (tools.jackson.databind.node.ObjectNode) workflow.deepCopy();
+        var properties = next.path("inputSchema").path("properties");
+        var order = json.mapper().createArrayNode();
+        var widgets = json.object();
+        var sections = json.mapper().createArrayNode();
+        for (var section : view.path("sections")) {
+            var projected = sections.addObject().put("id", section.path("id").asString())
+                    .put("title", section.path("label").asString()).put("columns", section.path("columns").asInt());
+            var fields = projected.putArray("fields");
+            for (var field : section.path("fields")) {
+                String binding = field.path("binding").asString();
+                String key = binding.startsWith("request.") ? binding.substring(8) : binding;
+                if (properties.path(key).isObject()) ((tools.jackson.databind.node.ObjectNode) properties.path(key)).set("title", field.path("label"));
+                String type = field.path("type").asString();
+                if (Set.of("text", "number", "choice").contains(type)) widgets.put(key, type.equals("choice") ? "select" : type);
+                order.add(key);
+                fields.add(key);
+            }
+        }
+        var ui = next.path("inputUi").isObject() ? (tools.jackson.databind.node.ObjectNode) next.path("inputUi") : next.putObject("inputUi");
+        ui.putObject("viewRef").put("id", id.toString()).put("version", version);
+        ui.set("order", order);
+        ui.set("widgets", widgets);
+        var layout = ui.path("layout").isObject() ? (tools.jackson.databind.node.ObjectNode) ui.path("layout") : ui.putObject("layout");
+        layout.set("sections", sections);
+        if (view.has("presentation")) ui.set("viewDefinition", view.deepCopy());
+        else ui.remove("viewDefinition");
+        var actions = view.path("actions");
+        if (!actions.isEmpty()) ui.put("submitLabel", actions.get(0).path("label").asString());
+        else ui.remove("submitLabel");
+        return next;
+    }
+
+    public static boolean fieldCompatible(JsonNode field, JsonNode property) {
         return switch (field.path("type").asString()) {
             case "text" -> "string".equals(property.path("type").asString()) && !property.has("format") && !property.has("enum");
             case "number" -> Set.of("number", "integer").contains(property.path("type").asString());

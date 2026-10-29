@@ -206,4 +206,28 @@ public class TaskQueries {
                 rs.getString("reason"), rs.getString("comment"), json.parse(rs.getString("policy_flags")),
                 Sql.instant(rs, "decided_at"));
     }
+
+    // ---------------------------------------------------------------- send-backs (S116)
+
+    @Transactional(readOnly = true)
+    public boolean sendBackOpen(UUID workspaceId, String taskId) {
+        return jdbc.sql("SELECT count(*) FROM task_send_back WHERE workspace_id = :ws AND task_id = :task AND status = 'open'")
+                .param("ws", workspaceId).param("task", taskId).query(Long.class).single() > 0;
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<com.orqix.runtime.api.RuntimeDtos.SendBackOpen> openSendBack(UUID workspaceId, String taskId) {
+        return jdbc.sql("""
+                SELECT id, reason, fields::text AS fields, sent_at FROM task_send_back
+                WHERE workspace_id = :ws AND task_id = :task AND status = 'open'
+                """).param("ws", workspaceId).param("task", taskId)
+                .query((rs, n) -> new com.orqix.runtime.api.RuntimeDtos.SendBackOpen(Sql.uuid(rs, "id"), rs.getString("reason"),
+                        strings(rs.getString("fields")), Sql.instant(rs, "sent_at"))).optional();
+    }
+
+    private List<String> strings(String array) {
+        List<String> values = new java.util.ArrayList<>();
+        json.parse(array).forEach(value -> values.add(value.asString()));
+        return values;
+    }
 }

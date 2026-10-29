@@ -62,7 +62,7 @@ export function createMigrationHandlers(): HttpHandler[] {
       if (!g.ok) return g.res
       const input = await json<{ fileName?: string; content?: string; sourceFormat?: string }>(request)
       if (!input.fileName || !input.content) return problem(400, 'MALFORMED_REQUEST', 'Bad request', { detail: 'fileName and content are required.' })
-      if (input.sourceFormat && !['bpmn', 'dmn', 'camundaForm'].includes(input.sourceFormat)) return problem(422, 'SOURCE_INVALID', 'Source not supported', { detail: 'Mock mode inventories BPMN, DMN and Camunda forms only; Pega archive and XPDL conversion require the real backend.' })
+      if (input.sourceFormat && !['bpmn', 'dmn', 'camundaForm'].includes(input.sourceFormat)) return problem(422, 'SOURCE_INVALID', 'Source not supported', { detail: 'Mock mode inventories BPMN, DMN and Camunda forms only; Pega archive, native rule archive and XPDL conversion require the real backend.' })
       try {
         const { migration } = createMigration(g.ws, input.fileName, input.content, input.sourceFormat)
         return HttpResponse.json(migrationView(migration), { status: 201 })
@@ -84,6 +84,13 @@ export function createMigrationHandlers(): HttpHandler[] {
       if (!g.ok) return g.res
       const migration = migrationOf(g.ws, params.id)
       return migration ? HttpResponse.json(migrationView(migration)) : notFound()
+    }),
+    // Native Pega rule archives (docs/build/S112) are refused at upload in mock mode, so no mock job has this view.
+    http.get(`${B}/workspaces/:ws/migrations/:id/pega-rules`, async ({ params }) => {
+      await slow()
+      const g = guard(params.ws, 'workflow.read')
+      if (!g.ok) return g.res
+      return notFound()
     }),
     http.post(`${B}/workspaces/:ws/migrations/:id/convert`, async ({ params, request }) => {
       await slow()

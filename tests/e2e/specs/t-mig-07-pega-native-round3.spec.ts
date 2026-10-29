@@ -24,6 +24,8 @@ test('purchase-connected archive: connector call step runs, case type becomes a 
   const paul = await sessions.as('paul.publisher')
   const rhea = await sessions.as('rhea.requester')
   const mani = await sessions.as('mani.manager')
+  // Listing a workflow's runs needs run.read on the workspace: the requester only sees their own runs.
+  const olga = await sessions.as('olga.operator')
 
   // 1. The Order flow: the connector is shown with its source endpoint; the connection and operation are explicit.
   await analyseNativeArchive(dana, ws, 'purchase-connected.zip')
@@ -87,15 +89,16 @@ test('purchase-connected archive: connector call step runs, case type becomes a 
   expect(started.status).toBe(201)
   let caseRun = ''
   await expect.poll(async () => {
-    const runs = await apiGet<Runs>(rhea, `/workspaces/${ws}/runs?workflowId=${orderId}`)
+    const runs = await apiGet<Runs>(olga, `/workspaces/${ws}/runs?workflowId=${orderId}`)
     caseRun = runs.items.find(r => r.id !== run)?.id ?? ''
     return caseRun
   }, { timeout: 60_000, intervals: [1_000] }).not.toBe('')
   await openTaskOfRun(mani, ws, caseRun)
   await decideOpenTask(mani, 'approve')
-  expect(await waitForLifecycle(rhea, ws, caseRun, ['completed', 'needsAttention'], 120_000)).toBe('completed')
+  expect(await waitForLifecycle(olga, ws, caseRun, ['completed', 'needsAttention'], 120_000)).toBe('completed')
   await expect.poll(async () => {
     const plan = await apiGet<{ items: Array<{ elementId: string; state: string }> }>(rhea, `/workspaces/${ws}/cases/instances/${started.body.id}/plan`)
-    return plan.items.find(i => i.elementId === 't_intake_Order')?.state
+    // Plan items carry the CMMN plan item id; t_intake_Order is the task definition it refers to.
+    return plan.items.find(i => i.elementId === 't_intake_Order_item')?.state
   }, { timeout: 90_000, intervals: [2_000] }).toBe('completed')
 })

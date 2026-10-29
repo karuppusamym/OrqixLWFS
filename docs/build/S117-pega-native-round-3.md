@@ -50,7 +50,7 @@ The case-type-to-workflow conversion is unchanged: alternate stages and optional
 | Compiler module (`mvnw -pl compiler clean verify`) | 641/641 pass |
 | Frontend: full Vitest suite, typecheck, ESLint, `api:check` | 174 files, 1,246/1,246 tests (2 new: call-step connection mapping and case-definition preview with refusal; recorded case conversion); typecheck, full ESLint and `api:check` pass |
 | Contract checks (`tools/contract-check/contract_check.py`) | 88/88 pass |
-| E2E specs (`tests/e2e`, `npx tsc --noEmit`) | Type-check |
+| E2E specs (`tests/e2e`, `npx tsc --noEmit`; t-mig-07 live on orqix-integ-1029) | Type-check; t-mig-07 passes live (see below) |
 | `PegaNativeRound3ApiTest` on PostgreSQL/Flowable: the Order flow converts only with a connection mapping, publishes and runs its call step against the procurement stub; Escalate, Close and Withdraw publish; the case definition is refused without mappings, previewed (200), forbidden to a requester (403), created (201), replayed (201) and refused when changed (409); the definition has 4 workflow tasks; a case runs the Order workflow as its first task to completion; request validation | 2/2 pass |
 | `PegaNativeApiTest` (S112/S115 scenarios; the advanced archive now has 7 starting points with the two process flows) and `SecurityMatrixTest` (new operation included) | 3/3 and 8/8 pass |
 | Full backend suite (`mvnw clean verify`, compiler and application) | Compiler 641/641; application 1,060 run, 0 failures, 4 intentional skips; build and coverage gate pass |
@@ -59,7 +59,9 @@ No Docker stack was started, stopped or rebuilt.
 
 ## Real-stack E2E specs
 
-`tests/e2e/specs/t-mig-07-pega-native-round3.spec.ts` (purchase-connected archive: the Order flow's call step mapped to `procurement`/`createOrder`, converted, published and run to completion against the procurement stub after manager approval; Escalate, Close and Withdraw converted and published; the case type previewed and created as a case definition in the workbench; a case started whose first workflow task runs the Order workflow to completion). `t-mig-05` uses an exact cell locator for the shadowed flow (the strict-mode failure in the live run: the path also appears in a finding line). `t-mig-06` selects its starting points by rule path, so the new process starting points do not change it. The specs type-check (`npx tsc --noEmit`) and are skipped in mock mode; they were not run here because the live stack was down (Docker was restarting).
+`tests/e2e/specs/t-mig-07-pega-native-round3.spec.ts` (purchase-connected archive: the Order flow's call step mapped to `procurement`/`createOrder`, converted, published and run to completion against the procurement stub after manager approval; Escalate, Close and Withdraw converted and published; the case type previewed and created as a case definition in the workbench; a case started whose first workflow task runs the Order workflow to completion). `t-mig-05` uses an exact cell locator for the shadowed flow (the strict-mode failure in the live run: the path also appears in a finding line). `t-mig-06` selects its starting points by rule path, so the new process starting points do not change it. The specs type-check (`npx tsc --noEmit`) and are skipped in mock mode.
+
+**Live run, 29 October 2026** (stack orqix-integ-1029, built from `claude/big-open-features-f6ffdd` at 0e97cc8): t-mig-05 and t-mig-06 pass. t-mig-07 first failed: it listed the Order workflow's runs as rhea.requester, who has no `run.read` (403, also logged as a browser console error), and it looked for the case plan item by task id `t_intake_Order` instead of plan item id `t_intake_Order_item`. The spec now lists and follows the case's run as olga.operator and matches the plan item id; t-mig-07 passes (1/1, 38 s). Only that spec was run here; the stack was not restarted or rebuilt.
 
 ## Not covered
 

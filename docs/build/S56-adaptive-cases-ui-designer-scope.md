@@ -56,4 +56,6 @@ Mark WM04 or UI02 Closed only after the chosen supported model, API, designer, r
 
 [S114](S114-application-designer-completion.md) completes the UI02 product gaps: reviewed, version-checked and audited migration of every pin of a view or page (new drafts, case definition versions and route/worklist revisions; releases never change), file and row controls on pages, request correction and case lifecycle/plan-item chain steps, and extension frame hardening. UI02 stays open only for the real-stack authoring-to-runtime journey.
 
+[S116](S116-application-designer-round-3.md) adds send back to the requester, declared chain compensation, plan-item occurrence choice, hashed multi-file extension bundles and read-only older pins. UI02 stays open only for the real-stack authoring-to-runtime journey.
+
 [S110](S110-cmmn-canvas-planning-workflow-tasks.md) adds the drawable case canvas, discretionary planning tables, workflow (process) tasks with pinned releases and fenced results, general repetition and CMMN import with source-linked diagnostics. The full WM04 acceptance above (nested cases, listeners, case-file semantics, conformance) remains open.

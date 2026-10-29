@@ -53,12 +53,21 @@ public class ApplicationViews {
     private final PolicyService policy;
     private final Json json;
     private final AuditWriter audit;
+    private final PageReferences pages;
 
-    public ApplicationViews(JdbcClient jdbc, PolicyService policy, Json json, AuditWriter audit) {
+    public ApplicationViews(JdbcClient jdbc, PolicyService policy, Json json, AuditWriter audit, PageReferences pages) {
         this.jdbc = jdbc;
         this.policy = policy;
         this.json = json;
         this.audit = audit;
+        this.pages = pages;
+    }
+
+    /** Pages also need their pinned views, workflows and extensions checked (S111); publication requires approval. */
+    private String validate(UUID ws, JsonNode definition, boolean publishing) {
+        String kind = ViewDefinition.validate(json, definition);
+        if (kind.equals("page")) pages.check(ws, definition, publishing);
+        return kind;
     }
 
     private void require(Caller caller, UUID ws, Permission permission, String operation) {
@@ -106,7 +115,7 @@ public class ApplicationViews {
     @Transactional
     public Detail create(Caller caller, UUID ws, Create request) {
         require(caller, ws, Permission.WORKFLOW_EDIT, "createApplicationView");
-        String kind = ViewDefinition.validate(json, request.definition());
+        String kind = validate(ws, request.definition(), false);
         return createRow(caller, ws, request.name(), request.description(), kind, request.definition(), "view.created");
     }
 
@@ -143,7 +152,7 @@ public class ApplicationViews {
     @Transactional
     public Detail save(Caller caller, UUID ws, UUID id, Save request) {
         require(caller, ws, Permission.WORKFLOW_EDIT, "saveApplicationView");
-        String kind = ViewDefinition.validate(json, request.definition());
+        String kind = validate(ws, request.definition(), false);
         Locked current = lock(ws, id);
         expected(current, request.expectedRevision());
         if (!kind.equals(current.kind())) throw invalid("A view kind cannot change; copy the view instead.");
@@ -173,6 +182,7 @@ public class ApplicationViews {
         }
         int next = current.publishedVersion() == null ? 1 : current.publishedVersion() + 1;
         if (next > MAX_VERSIONS) throw invalid("A view can have at most " + MAX_VERSIONS + " published versions.");
+        validate(ws, current.definition(), true);
         jdbc.sql("""
                 INSERT INTO application_view_version (workspace_id, view_id, version, name, description, definition, published_by)
                 VALUES (:ws, :id, :version, :name, :description, CAST(:definition AS jsonb), :by)

@@ -26,7 +26,10 @@ import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.security.web.savedrequest.HttpSessionRequestCache;
 import org.springframework.security.web.csrf.CsrfToken;
+import org.springframework.security.web.header.writers.DelegatingRequestMatcherHeaderWriter;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
+import org.springframework.security.web.header.writers.frameoptions.XFrameOptionsHeaderWriter;
+import org.springframework.security.web.util.matcher.NegatedRequestMatcher;
 import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -50,6 +53,15 @@ public class SecurityConfiguration {
         String header = request.getHeader("Authorization");
         return header != null && header.regionMatches(true, 0, "Bearer ", 0, 7);
     };
+
+    /**
+     * S111: the sandboxed UI extension frame document is the one browser response that may be framed, and only by this
+     * origin (its own policy says frame-ancestors 'self' and sandbox). Every other response keeps X-Frame-Options DENY.
+     */
+    private static final java.util.regex.Pattern EXTENSION_FRAME = java.util.regex.Pattern
+            .compile("^/api/v1/workspaces/[^/]+/ui-extensions/[^/]+/versions/[0-9]+/frame$");
+    static final RequestMatcher EXTENSION_FRAME_REQUEST = request -> "GET".equals(request.getMethod())
+            && EXTENSION_FRAME.matcher(request.getRequestURI()).matches();
 
     private static final java.util.regex.Pattern INBOUND = java.util.regex.Pattern
             .compile("^/api/v1/workspaces/[^/]+/inbound/[^/]+$");
@@ -158,7 +170,10 @@ public class SecurityConfiguration {
                 .sessionManagement(s -> s.sessionFixation(f -> f.changeSessionId()))
                 .headers(h -> h.contentSecurityPolicy(csp -> csp.policyDirectives(CSP))
                         .referrerPolicy(r -> r.policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.NO_REFERRER))
-                        .frameOptions(f -> f.deny()));
+                        .frameOptions(f -> f.disable())
+                        .addHeaderWriter(new DelegatingRequestMatcherHeaderWriter(
+                                new NegatedRequestMatcher(EXTENSION_FRAME_REQUEST),
+                                new XFrameOptionsHeaderWriter(XFrameOptionsHeaderWriter.XFrameOptionsMode.DENY))));
         return http.build();
     }
 

@@ -33,21 +33,22 @@ The target is OMG CMMN 1.1 (formal/16-12-01). "Executable" means admitted by `Cm
 |---|---|---|---|
 | 5.1 | Definitions, Case, CasePlanModel | Executable (one case per file, key = case ID) | `CaseApiTest`, `CaseLifecycleApiTest` |
 | 5.1.4 | CaseRoles and Role | Executable (role name = workspace group) | `CaseEventApiTest`, `CasePlanningApiTest` |
-| 5.2 | CaseFile, CaseFileItem, CaseFileItemDefinition | Refused; typed case data fields (S69) plus if-parts cover data-driven behaviour | `caseModelCmmn.test.ts` (import report) |
+| 5.2 | CaseFile, CaseFileItem, CaseFileItemDefinition | Executable since [S118](S118-cmmn-decisions-case-files-dates-any-of.md) for one-value items named after case data fields | `CaseDecisionFileApiTest` |
 | 5.3.1 | Process (external reference) | Executable when `externalRef` names a workspace workflow QName | `CaseWorkflowTaskApiTest`, `CmmnPlanningRulesTest` |
 | 5.4.1, 5.4.2 | PlanItemDefinition, PlanFragment, Stage (nested up to four levels) | Executable | `CaseStagesTest`, `CmmnStageValidatorTest` |
 | 5.4.3 | PlanItem | Executable (one plan item per definition) | `CmmnStageValidatorTest` |
 | 5.4.4 | Sentry, PlanItemOnPart (complete, occur) | Executable | `CaseLifecycleApiTest`, `CaseEventApiTest` |
 | 5.4.4 | Sentry IfPart | Executable in the restricted grammar above | `CaseNestingTriggersApiTest` (data-triggered and combined rules) |
-| 5.4.4 | CaseFileItemOnPart, other standard events (suspend, terminate, exit, reactivate...) | Refused | `CmmnPlanningRulesTest`, import report |
+| 5.4.4 | CaseFileItemOnPart create/update | Executable since S118 | `CaseDecisionFileApiTest` |
+| 5.4.4 | Other standard events (suspend, terminate, exit, reactivate, case file delete/replace...) | Refused | `CmmnPlanningRulesTest`, import report |
 | 5.4.5 | EntryCriterion, ExitCriterion | Executable (one entry criterion per item in the designer; several are admitted from files) | `CaseLifecycleApiTest`, `CmmnStageValidatorTest` |
 | 5.4.6 | UserEventListener (authorized roles) | Executable | `CaseEventApiTest` |
-| 5.4.6 | TimerEventListener (duration) | Executable; start triggers and dates/cycles refused | `CaseNestingTriggersApiTest` |
+| 5.4.6 | TimerEventListener (duration; dates since S118) | Executable; start triggers and cycles refused | `CaseNestingTriggersApiTest`, `CaseDecisionFileApiTest` |
 | 5.4.7 | Milestone | Executable | `CaseStagesTest` |
 | 5.4.8 | Task (generic), HumanTask (candidate groups, blocking) | Executable; non-blocking human tasks refused | `CaseApiTest` |
 | 5.4.9 | ProcessTask (blocking, explicit mappings) | Executable; parameter mappings refused (explicit field mappings instead) | `CaseWorkflowTaskApiTest` |
 | 5.4.10 | CaseTask (blocking, explicit mappings) | Executable; parameter mappings refused | `CaseNestingTriggersApiTest` |
-| 5.4.11 | DecisionTask | Refused | import report |
+| 5.4.11 | DecisionTask on a shared decision table | Executable since S118 | `CaseDecisionFileApiTest` |
 | 5.4.12 | PlanItemControl: RepetitionRule (finite counter), RequiredRule, ManualActivationRule (constant conditions) | Executable; expression conditions refused | `CaseEventApiTest`, `CasePlanningApiTest`, `CmmnEventRulesTest` |
 | 5.4.13 | PlanningTable, DiscretionaryItem, authorized roles | Executable on stages and the case plan; applicability rules and task planning tables refused | `CasePlanningApiTest` |
 | 5.5 | Expressions | Restricted: constant booleans, `repetitionCounter < N`, if-part comparisons on case data; no general expression language | `CmmnEventRulesTest`, `CaseNestingTriggersApiTest` |

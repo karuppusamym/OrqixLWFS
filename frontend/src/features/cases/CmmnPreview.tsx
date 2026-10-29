@@ -1,4 +1,4 @@
-import { Clock, FolderOpen, User, Workflow } from 'lucide-react'
+import { Clock, FolderOpen, Table2, User, Workflow } from 'lucide-react'
 import { useId } from 'react'
 import { cn } from '@/lib/cn'
 import { conditionExpression, entrySources, type CaseModelItem } from './caseModel'
@@ -23,6 +23,7 @@ export const CMMN_KIND: Record<CaseModelItem['kind'], { label: string; symbol: s
   humanTask: { label: 'Human task', symbol: 'Rounded rectangle with a person icon', element: 'human task' },
   processTask: { label: 'Workflow task', symbol: 'Rounded rectangle with a process icon', element: 'process task' },
   caseTask: { label: 'Case task', symbol: 'Rounded rectangle with a folder icon', element: 'case task' },
+  decisionTask: { label: 'Decision task', symbol: 'Rounded rectangle with a table icon', element: 'decision task' },
   timerEventListener: { label: 'Timer', symbol: 'Double circle with a clock', element: 'timer event listener' },
   milestone: { label: 'Milestone', symbol: 'Stadium (rounded ends)', element: 'milestone' },
   userEventListener: { label: 'User event', symbol: 'Double circle with a person icon', element: 'user event listener' },
@@ -38,6 +39,7 @@ function markerWords(item: CaseModelItem): string[] {
   if (item.discretionary) words.push(`Discretionary: planned by ${(item.planners ?? []).join(', ') || 'nobody yet'}`)
   if (item.kind === 'processTask' && item.workflow?.key) words.push(`Runs workflow ${item.workflow.key}`)
   if (item.kind === 'caseTask' && item.childCase?.key) words.push(`Starts case ${item.childCase.key}`)
+  if (item.kind === 'decisionTask' && item.decision?.key) words.push(`Evaluates decision ${item.decision.key}`)
   if (item.kind === 'timerEventListener' && item.timer) words.push(`Fires after ${item.timer}`)
   return words
 }
@@ -51,8 +53,10 @@ function eventWords(id: string, lookup: Lookup): string | null {
 function entryText(item: CaseModelItem, lookup: Lookup): string | null {
   const words = entrySources(item).map(id => eventWords(id, lookup)).filter((value): value is string => !!value)
   const data = item.when?.clauses.length ? `case data ${conditionExpression(item.when).slice(2, -1).replaceAll('cd_', '')}` : null
-  if (!words.length && !data) return null
-  return words.length ? `Starts after ${words.join(' and ')}${data ? ` when ${data}` : ''}` : `Starts when ${data}`
+  const changes = (item.onData ?? []).map(event => `${event.field} ${event.event === 'create' ? 'gets its first value' : 'changes'}`)
+  const all = [...words, ...changes]
+  if (!all.length && !data) return null
+  return all.length ? `Starts after ${all.join(item.anyOf ? ' or ' : ' and ')}${data ? ` when ${data}` : ''}` : `Starts when ${data}`
 }
 
 function exitText(item: CaseModelItem, lookup: Lookup): string | null {
@@ -127,7 +131,7 @@ function ItemText({ item, lookup }: { item: CaseModelItem; lookup: Lookup }) {
 const ANGLED = '[clip-path:polygon(14px_0,calc(100%-14px)_0,100%_14px,100%_calc(100%-14px),calc(100%-14px)_100%,14px_100%,0_calc(100%-14px),0_14px)]'
 
 function PlanItem({ item, lookup }: { item: CaseModelItem; lookup: Lookup }) {
-  const sentry = <>{item.after && lookup.has(item.after) || item.when?.clauses.length ? <Sentry /> : null}{item.exitAfter && lookup.has(item.exitAfter) ? <ExitSentry /> : null}</>
+  const sentry = <>{item.after && lookup.has(item.after) || item.when?.clauses.length || item.onData?.length ? <Sentry /> : null}{item.exitAfter && lookup.has(item.exitAfter) ? <ExitSentry /> : null}</>
   const outline = item.discretionary ? 'border-dashed' : ''
   if (item.kind === 'stage')
     return (
@@ -171,7 +175,7 @@ function PlanItem({ item, lookup }: { item: CaseModelItem; lookup: Lookup }) {
         <Markers item={item} />
       </li>
     )
-  const Icon = item.kind === 'processTask' ? Workflow : item.kind === 'caseTask' ? FolderOpen : User
+  const Icon = item.kind === 'processTask' ? Workflow : item.kind === 'caseTask' ? FolderOpen : item.kind === 'decisionTask' ? Table2 : User
   return (
     <li className={cn('relative w-52 rounded-lg border-2 border-foreground bg-surface px-3 pt-2 pb-5', outline)} data-cmmn={item.kind} data-testid={`cmmn-${item.id}`}>
       {sentry}

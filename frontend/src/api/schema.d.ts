@@ -5007,6 +5007,21 @@ export interface components {
             workflowTasks?: components["schemas"]["CaseWorkflowTaskMapping"][];
             /** @description One mapping per CMMN caseTask (caseRef prefix:key bound to urn:orqix:case); inputMapping is child field to parent field, resultMapping is parent field to child field or outcome */
             caseTasks?: components["schemas"]["CaseWorkflowTaskMapping"][];
+            /** @description One mapping per CMMN decisionTask (decision externalRef prefix:key bound to urn:orqix:decision); inputMapping is table fieldRef to case field, resultMapping is case field to table output */
+            decisionTasks?: components["schemas"]["CaseWorkflowTaskMapping"][];
+        };
+        CaseDecisionPin: {
+            taskId: string;
+            assetId: components["schemas"]["Uuid"];
+            decisionKey: string;
+            decisionName: string;
+            decisionVersion: number;
+            inputMapping: {
+                [key: string]: string;
+            };
+            resultMapping: {
+                [key: string]: string;
+            };
         };
         CaseChildPin: {
             taskId: string;
@@ -5078,6 +5093,7 @@ export interface components {
             dataFields?: components["schemas"]["CaseDataField"][];
             workflowTasks?: components["schemas"]["CaseWorkflowPin"][];
             caseTasks?: components["schemas"]["CaseChildPin"][];
+            decisionTasks?: components["schemas"]["CaseDecisionPin"][];
         };
         CasePlanItem: {
             id: string;

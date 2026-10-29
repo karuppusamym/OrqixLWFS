@@ -6986,6 +6986,19 @@ components:
         dataFields: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseDataField' } }
         workflowTasks: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseWorkflowTaskMapping' } }
         caseTasks: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseWorkflowTaskMapping' }, description: 'One mapping per CMMN caseTask (caseRef prefix:key bound to urn:orqix:case); inputMapping is child field to parent field, resultMapping is parent field to child field or outcome' }
+        decisionTasks: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseWorkflowTaskMapping' }, description: 'One mapping per CMMN decisionTask (decision externalRef prefix:key bound to urn:orqix:decision); inputMapping is table fieldRef to case field, resultMapping is case field to table output' }
+    CaseDecisionPin:
+      type: object
+      additionalProperties: false
+      required: [taskId, assetId, decisionKey, decisionName, decisionVersion, inputMapping, resultMapping]
+      properties:
+        taskId: { type: string }
+        assetId: { $ref: '#/components/schemas/Uuid' }
+        decisionKey: { type: string }
+        decisionName: { type: string }
+        decisionVersion: { type: integer, minimum: 1 }
+        inputMapping: { type: object, additionalProperties: { type: string } }
+        resultMapping: { type: object, additionalProperties: { type: string } }
     CaseChildPin:
       type: object
       additionalProperties: false
@@ -7059,6 +7072,7 @@ components:
         dataFields: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseDataField' } }
         workflowTasks: { type: array, items: { $ref: '#/components/schemas/CaseWorkflowPin' } }
         caseTasks: { type: array, items: { $ref: '#/components/schemas/CaseChildPin' } }
+        decisionTasks: { type: array, items: { $ref: '#/components/schemas/CaseDecisionPin' } }
     CasePlanItem:
       type: object
       additionalProperties: false

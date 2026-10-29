@@ -16,7 +16,7 @@ import type { components } from '@/api/schema'
 import { getPublishedView } from '@/api/views'
 import type { ViewDefinition } from '@/features/views/model'
 import { CaseViewPicker } from './CaseViewPicker'
-import { CaseModelDesigner, type CaseTaskMapping, type WorkflowTaskMapping } from './CaseModelDesigner'
+import { CaseModelDesigner, type CaseTaskMapping, type DecisionTaskMapping, type WorkflowTaskMapping } from './CaseModelDesigner'
 import { downloadBlob } from '@/lib/download'
 import { validateCaseView } from './caseView'
 import { Input } from '@/components/ui/input'
@@ -43,6 +43,7 @@ export function CasesPage() {
   const [file, setFile] = useState<File | null>(null)
   const [workflowTasks, setWorkflowTasks] = useState<WorkflowTaskMapping[]>([])
   const [caseTasks, setCaseTasks] = useState<CaseTaskMapping[]>([])
+  const [decisionTasks, setDecisionTasks] = useState<DecisionTaskMapping[]>([])
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -56,8 +57,8 @@ export function CasesPage() {
         const published = await getPublishedView(ws, viewRef.id, viewRef.version)
         validateCaseView(dataFields, published.definition as ViewDefinition)
       }
-      await createCaseDefinition(ws, { key: key.trim(), name: name.trim(), sourceXml: await file.text(), dataFields, viewRef, ...(designing && workflowTasks.length ? { workflowTasks } : {}), ...(designing && caseTasks.length ? { caseTasks } : {}) })
-      setFile(null); setKey(''); setName(''); setDataFields([]); setViewRef(undefined);setDesigning(false);setWorkflowTasks([]);setCaseTasks([])
+      await createCaseDefinition(ws, { key: key.trim(), name: name.trim(), sourceXml: await file.text(), dataFields, viewRef, ...(designing && workflowTasks.length ? { workflowTasks } : {}), ...(designing && caseTasks.length ? { caseTasks } : {}), ...(designing && decisionTasks.length ? { decisionTasks } : {}) })
+      setFile(null); setKey(''); setName(''); setDataFields([]); setViewRef(undefined);setDesigning(false);setWorkflowTasks([]);setCaseTasks([]);setDecisionTasks([])
       await queryClient.invalidateQueries({ queryKey: ['ws', ws, 'case-definitions'] })
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'The case definition could not be created.') }
     finally { setPending(false) }
@@ -92,7 +93,7 @@ export function CasesPage() {
       <div className="grid gap-3 sm:grid-cols-2"><div><Label htmlFor="case-key">Key</Label><Input id="case-key" value={key} onChange={event => { setKey(event.target.value);if(designing)setFile(null) }} required /></div><div><Label htmlFor="case-name">Name</Label><Input id="case-name" value={name} onChange={event => { setName(event.target.value);if(designing)setFile(null) }} required /></div></div>
       <Label htmlFor="case-file">CMMN file (maximum 64 KiB)</Label><Input id="case-file" type="file" accept=".cmmn,.xml" onChange={event => { setFile(event.target.files?.[0] ?? null);setDesigning(false) }} />
       <Button type="button" variant="secondary" disabled={pending} onClick={()=>{setDesigning(value=>!value);setFile(null)}}>{designing?'Close case model designer':'Build a case model'}</Button>
-      {designing?<CaseModelDesigner ws={ws} caseKey={key.trim()} name={name.trim()} disabled={pending} dataFields={dataFields} onImported={(importedKey,importedName)=>{if(!key.trim()&&/^[a-z][a-z0-9-]{1,62}$/.test(importedKey))setKey(importedKey);if(!name.trim()&&importedName)setName(importedName.slice(0,200))}} onApply={(xml,tasks,children)=>{setFile(xml===null?null:new File([xml],`${key.trim()}.cmmn`,{type:'application/xml'}));setWorkflowTasks(tasks??[]);setCaseTasks(children??[])}}/>:null}
+      {designing?<CaseModelDesigner ws={ws} caseKey={key.trim()} name={name.trim()} disabled={pending} dataFields={dataFields} onImported={(importedKey,importedName)=>{if(!key.trim()&&/^[a-z][a-z0-9-]{1,62}$/.test(importedKey))setKey(importedKey);if(!name.trim()&&importedName)setName(importedName.slice(0,200))}} onApply={(xml,tasks,children,tables)=>{setFile(xml===null?null:new File([xml],`${key.trim()}.cmmn`,{type:'application/xml'}));setWorkflowTasks(tasks??[]);setCaseTasks(children??[]);setDecisionTasks(tables??[])}}/>:null}
       {designing&&file?<p role="status">Generated CMMN selected for this definition.</p>:null}
       <CaseDataFieldsEditor fields={dataFields} onChange={setDataFields} disabled={pending} />
       <CaseViewPicker ws={ws} value={viewRef} onChange={setViewRef} disabled={pending} />

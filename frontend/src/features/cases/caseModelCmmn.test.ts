@@ -102,7 +102,7 @@ describe('CMMN import', () => {
   })
   it('reports unsupported content with the path of each element and leaves it out', () => {
     const source = `<?xml version="1.0"?><definitions xmlns="http://www.omg.org/spec/CMMN/20151109/MODEL" xmlns:flowable="http://flowable.org/cmmn">
-      <case id="foreign" name="Foreign"><caseFileModel id="files"/><casePlanModel id="plan" name="Foreign">
+      <case id="foreign" name="Foreign"><input id="files"/><casePlanModel id="plan" name="Foreign">
         <planItem id="t1" definitionRef="task1"/><planItem id="t2" definitionRef="task2"><entryCriterion id="e1" sentryRef="s1"/><entryCriterion id="e2" sentryRef="s2"/></planItem>
         <planItem id="timer" definitionRef="timerDef"/>
         <sentry id="s1"><planItemOnPart sourceRef="t1"><standardEvent>complete</standardEvent></planItemOnPart><ifPart><condition>\${x}</condition></ifPart></sentry>
@@ -112,7 +112,7 @@ describe('CMMN import', () => {
     const imported = importCaseModel(source)
     expect(imported.items.map(item => item.id)).toEqual(['t1', 't2'])
     const messages = imported.diagnostics.map(d => `${d.severity} ${d.path}: ${d.message}`)
-    expect(messages.some(m => m.startsWith('error case[foreign]/caseFileModel[files]'))).toBe(true)
+    expect(messages.some(m => m.startsWith('error case[foreign]/input[files]'))).toBe(true)
     expect(messages.some(m => m.includes('timerEventListener[timerDef]') && m.includes('not supported'))).toBe(true)
     expect(messages.some(m => m.includes('planItem[t2]/entryCriterion[e2]'))).toBe(true)
     expect(messages.some(m => m.includes('ifPart'))).toBe(true)

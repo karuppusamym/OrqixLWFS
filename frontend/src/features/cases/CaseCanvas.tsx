@@ -17,7 +17,7 @@ import {
   type NodeChange,
   type NodeProps,
 } from '@xyflow/react'
-import { Clock, FolderOpen, User, Workflow } from 'lucide-react'
+import { Clock, FolderOpen, Table2, User, Workflow } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useAnnounce } from '@/components/common/Announcer'
 import { cn } from '@/lib/cn'
@@ -40,6 +40,8 @@ function markers(item: CaseModelItem): string[] {
   if (item.repetitions) words.push(`Repeats ${item.repetitions}×`)
   if (item.discretionary) words.push('Discretionary')
   if (item.when?.clauses.length) words.push('Data condition')
+  if (item.onData?.length) words.push('Data event')
+  if (item.anyOf) words.push('Any of')
   if (item.kind === 'timerEventListener' && item.timer) words.push(item.timer)
   return words
 }
@@ -81,7 +83,7 @@ function CaseNode({ data }: NodeProps<CaseFlowNode>) {
     <span className="text-xs font-semibold text-muted-foreground">{KIND_LABEL[item.kind]}</span><span className="text-sm leading-4 font-semibold">{item.label}</span>{words.length ? <span className="text-xs text-muted-foreground">{words.join(' · ')}</span> : null}
     <RuleHandles item={item} readOnly={readOnly} />
   </div>
-  const Icon = item.kind === 'processTask' ? Workflow : item.kind === 'caseTask' ? FolderOpen : User
+  const Icon = item.kind === 'processTask' ? Workflow : item.kind === 'caseTask' ? FolderOpen : item.kind === 'decisionTask' ? Table2 : User
   return <div className={cn('relative flex h-full w-full flex-col justify-center border-2 border-foreground bg-surface px-3 text-left', item.kind === 'milestone' ? 'rounded-full px-6 text-center' : 'rounded-lg', dashed, ring)} data-testid={`canvas-${item.id}`}>
     {item.kind !== 'milestone' ? <Icon className="absolute top-1.5 right-1.5 size-4" aria-hidden="true" /> : null}
     <span className="text-xs font-semibold text-muted-foreground">{KIND_LABEL[item.kind]}</span>

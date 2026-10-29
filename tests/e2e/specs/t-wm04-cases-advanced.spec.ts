@@ -131,7 +131,7 @@ test('a workflow task starts its pinned workflow and cancelling the task cancels
   await expect(operator.getByTestId(/^workflow-/).first()).toContainText(/Workflow running: ORQ-\d+/)
   const runLink = operator.getByTestId(/^workflow-/).first().getByRole('link')
   const runHref = await runLink.getAttribute('href')
-  await operator.getByRole('button', { name: 'Cancel plan item', exact: true }).first().click()
+  await operator.getByRole('listitem').filter({ hasText: 'Run purchase request' }).getByRole('button', { name: 'Cancel plan item', exact: true }).click()
   await operator.getByRole('dialog').getByLabel('Reason', { exact: true }).fill('Not needed')
   await operator.getByRole('button', { name: 'Confirm plan change', exact: true }).click()
   await expect(operator.getByText(/Workflow cancelled/).first()).toBeVisible()

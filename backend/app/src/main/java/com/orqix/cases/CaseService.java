@@ -1263,4 +1263,69 @@ public class CaseService {
         }
         return json.convert(json.parse(stored.getValue()),Instance.class);
     }
+
+    /**
+     * The open human task of one plan item, for a caller that already found the item through {@link #plan}. This grants
+     * nothing: {@link #complete} checks eligibility, version, idempotency and the case hold again.
+     */
+    @Transactional(readOnly=true)
+    public java.util.Optional<String> openTaskId(UUID ws, UUID id, String planItemId) {
+        var row=instanceRow(ws,id,false);
+        return tasks.createTaskQuery().caseInstanceId(row.engineInstanceId()).list().stream()
+                .filter(task -> planItemId.equals(task.getSubScopeId())).map(org.flowable.task.api.Task::getId).findFirst();
+    }
+
+    /** The newest version of one case definition that pins a view, with the problem a move to the target would have. */
+    public record ViewUse(UUID definitionId, String key, String name, int version, int viewVersion, String problem) {}
+
+    /** S114 pin migration: the newest version of every case definition that pins this view. Older versions stay as they are. */
+    @Transactional(readOnly=true)
+    public List<ViewUse> viewUses(UUID ws, UUID viewId, ApplicationViewQueries.Pinned target) {
+        return jdbc.sql("""
+                SELECT d.id,c.key,d.name,d.version,v.view_version FROM case_catalog c
+                JOIN case_definition d ON d.workspace_id=c.workspace_id AND d.catalog_id=c.id AND d.version=c.current_version
+                JOIN case_definition_view v ON v.workspace_id=d.workspace_id AND v.definition_id=d.id
+                WHERE c.workspace_id=:ws AND v.view_id=:view ORDER BY c.key
+                """).param("ws",ws).param("view",viewId).query((rs,n)->new Object[]{Sql.uuid(rs,"id"),rs.getString("key"),
+                        rs.getString("name"),rs.getInt("version"),rs.getInt("view_version")}).list().stream()
+                .map(row -> new ViewUse((UUID)row[0],(String)row[1],(String)row[2],(int)row[3],(int)row[4],
+                        (int)row[4]==target.version() ? null : viewProblem(ws,(UUID)row[0],target))).toList();
+    }
+
+    /**
+     * Publishes the next version of a case definition that differs only in its view pin: same model, data fields and
+     * workflow task mappings. Refused when the definition is no longer the newest version, when the view does not fit
+     * its data fields, or when a workflow task would move to another release (that change belongs in the case designer).
+     */
+    @Transactional
+    public Definition reviseView(Caller caller, UUID ws, UUID definitionId, int expectedVersion, ApplicationViewQueries.Pin viewRef) {
+        access(caller, ws, Permission.WORKFLOW_EDIT, "migrateViewPins");
+        var row = definition(ws, definitionId);
+        int current = jdbc.sql("SELECT current_version FROM case_catalog WHERE workspace_id=:ws AND key=:key FOR UPDATE")
+                .param("ws",ws).param("key",row.key()).query(Integer.class).single();
+        if (row.version()!=expectedVersion || current!=expectedVersion)
+            throw new ApiException(ProblemCode.WORKFLOW_VERSION_CONFLICT, "Case \"" + row.name() + "\" changed since you reviewed it. Review the pins again.");
+        var view = viewQueries.require(ws, viewRef);
+        String problem = viewProblem(ws, definitionId, view);
+        if (problem != null) throw new ApiException(ProblemCode.VALIDATION_FAILED, problem);
+        var mappings = pins(ws, definitionId).stream().map(pin -> new WorkflowTaskMapping(pin.taskId(), pin.inputMapping(), pin.resultMapping())).toList();
+        return createDefinition(caller, ws, new CreateDefinition(row.key(), row.name(), row.sourceXml(), row.dataFields(), viewRef, mappings));
+    }
+
+    private String viewProblem(UUID ws, UUID definitionId, ApplicationViewQueries.Pinned view) {
+        var row = definition(ws, definitionId);
+        try {
+            CaseViewBinding.validate(row.dataFields(), view.definition());
+        } catch (ApiException e) {
+            return e.detail() == null ? e.code().title() : e.detail();
+        }
+        for (var pin : pins(ws, definitionId)) {
+            UUID active = jdbc.sql("SELECT active_release_id FROM workflow WHERE workspace_id=:ws AND id=:id AND archived_at IS NULL")
+                    .param("ws",ws).param("id",pin.workflowId()).query((rs,n)->Sql.uuid(rs,"active_release_id")).optional().orElse(null);
+            if (!pin.releaseId().equals(active))
+                return "Workflow task " + pin.taskId() + " pins release " + pin.releaseNumber() + " of \"" + pin.workflowName()
+                        + "\", which is no longer its active release. Create the new case version in the case designer instead.";
+        }
+        return null;
+    }
 }

@@ -26,6 +26,10 @@ final class ViewDefinition {
         if (node == null || !node.isObject() || json.write(node).getBytes(StandardCharsets.UTF_8).length > 32_768) {
             fail("definition", "must be a JSON object of at most 32 KiB");
         }
+        if ("page".equals(node.path("kind").asString(""))) {
+            PageDefinition.validate(node);
+            return "page";
+        }
         keys(node, "definition", Set.of("schemaVersion", "kind", "sections", "actions", "presentation"));
         if (!node.path("schemaVersion").isIntegralNumber() || node.path("schemaVersion").asInt() != 1) {
             fail("schemaVersion", "must be 1");

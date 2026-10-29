@@ -30,6 +30,9 @@ export function QuickGuideDialog({ onClose, onBack }: { onClose: () => void; onB
   const [problem, setProblem] = useState<string | null>(null)
   const [error, setError] = useState<ProblemError | null>(null)
   const [pending, setPending] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
+  // The workflow, once created: if saving its draft fails, "Create draft" retries only the save (no second workflow).
+  const [created, setCreated] = useState<{ id: string; key: string } | null>(null)
   const [a, setA] = useState<QuickAnswers>({
     name: '',
     purpose: '',
@@ -43,11 +46,12 @@ export function QuickGuideDialog({ onClose, onBack }: { onClose: () => void; onB
   const next = () => {
     const found = stepProblem(step, a)
     setProblem(found)
-    if (!found) setStep((s) => s + 1)
+    if (!found) { setNotice(null); setStep((s) => s + 1) }
   }
   const back = () => {
     setProblem(null)
     setError(null)
+    setNotice(null)
     if (step === 1) onBack()
     else setStep((s) => s - 1)
   }
@@ -57,12 +61,17 @@ export function QuickGuideDialog({ onClose, onBack }: { onClose: () => void; onB
     setError(null)
     setProblem(null)
     try {
-      const key = toKey(a.name) || 'workflow'
+      const key = created?.key ?? (toKey(a.name) || 'workflow')
       const definition = quickGuideDefinition(a, key)
-      const created = await endpoints.createWorkflow(ws, { key, name: a.name.trim(), ...(a.purpose.trim() ? { description: a.purpose.trim() } : {}) })
-      await endpoints.saveDraft(ws, created.id, definition, 1)
+      let target = created
+      if (!target) {
+        const made = await endpoints.createWorkflow(ws, { key, name: a.name.trim(), ...(a.purpose.trim() ? { description: a.purpose.trim() } : {}) })
+        target = { id: made.id, key }
+        setCreated(target)
+      }
+      await endpoints.saveDraft(ws, target.id, definition, 1)
       await client.invalidateQueries({ queryKey: ['ws', ws, 'workflows'] })
-      navigate(`/w/${ws}/workflows/${created.id}/edit`)
+      navigate(`/w/${ws}/workflows/${target.id}/edit`)
       onClose()
     } catch (cause) {
       if (cause instanceof Error && !isProblemError(cause)) {
@@ -90,7 +99,7 @@ export function QuickGuideDialog({ onClose, onBack }: { onClose: () => void; onB
       dismissible={!pending}
       footer={
         <>
-          <Button variant="ghost" onClick={back} disabled={pending} className="mr-auto">
+          <Button variant="ghost" onClick={back} disabled={pending || created !== null} className="mr-auto">
             <ArrowLeft aria-hidden="true" /> {step === 1 ? 'Other ways to start' : 'Back'}
           </Button>
           <Button variant="secondary" onClick={onClose} disabled={pending}>Cancel</Button>
@@ -139,11 +148,15 @@ export function QuickGuideDialog({ onClose, onBack }: { onClose: () => void; onB
                     size="icon"
                     aria-label={`Remove question ${i + 1}`}
                     disabled={a.questions.length === 1}
-                    onClick={() => patch({
-                      questions: a.questions.filter((_, j) => j !== i),
-                      // Approvals that depended on a removed question run always; later indexes shift down.
-                      approvals: a.approvals.map((s) => s.whenQuestion === undefined ? s : s.whenQuestion === i ? { label: s.label, group: s.group } : s.whenQuestion > i ? { ...s, whenQuestion: s.whenQuestion - 1 } : s),
-                    })}
+                    onClick={() => {
+                      // Approvals that depended on the removed question now run always (said below); later indexes shift.
+                      const loose = a.approvals.filter((s) => s.whenQuestion === i).map((s) => s.label.trim() || 'An approval')
+                      setNotice(loose.length > 0 ? `${loose.join(', ')} depended on "${q.label.trim() || `Question ${i + 1}`}" and now ${loose.length === 1 ? 'runs' : 'run'} for every request. Change that in the next step if needed.` : null)
+                      patch({
+                        questions: a.questions.filter((_, j) => j !== i),
+                        approvals: a.approvals.map((s) => s.whenQuestion === undefined ? s : s.whenQuestion === i ? { label: s.label, group: s.group } : s.whenQuestion > i ? { ...s, whenQuestion: s.whenQuestion - 1 } : s),
+                      })
+                    }}
                   >
                     <Trash2 aria-hidden="true" />
                   </Button>
@@ -244,6 +257,8 @@ export function QuickGuideDialog({ onClose, onBack }: { onClose: () => void; onB
           </div>
         ) : null}
 
+        {notice ? <p role="status" className="text-sm text-warning-foreground" data-testid="quick-notice">{notice}</p> : null}
+        {created && !pending ? <p className="text-sm text-muted-foreground">The workflow was created; only its draft still needs saving. Choose Create draft to try again.</p> : null}
         {problem ? <p role="alert" className="text-sm text-danger">{problem}</p> : null}
         {error ? <ProblemAlert error={error} /> : null}
       </div>

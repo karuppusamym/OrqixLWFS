@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { FolderCog, FolderOpen } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import * as endpoints from '@/api/endpoints'
 import type { ProblemError } from '@/api/problem'
 import { useWorkflowOrganization, useWorkflowOwnerCandidates } from '@/api/queries'
@@ -43,7 +43,12 @@ const ORGANIZE_REFUSALS = {
   VALIDATION_FAILED: 'Choose an owner who can edit workflows in this workspace.',
   WORKFLOW_VERSION_CONFLICT: 'The folder or workflow was changed by someone else. Close this window, reopen it and try again.',
   NOT_FOUND: 'The folder or workflow no longer exists. Close this window and reload the list.',
-  RESOURCE_IN_USE: 'Requests of this workflow are still open. Let them finish, or cancel them, before archiving it.',
+}
+
+/** Archive refusals name what is still using the workflow (open requests, parent workflows, triggers): show that. */
+function archiveRefusal(error: ProblemError): ProblemError | string {
+  if (error.code === 'RESOURCE_IN_USE') return error.detail ?? 'Something still uses this workflow. Remove that use and try again.'
+  return error
 }
 
 export function folderName(folders: Folder[] | undefined, id: string | undefined): string | null {
@@ -188,6 +193,17 @@ export function OrganizeWorkflowDialog({ workflow, onClose }: { workflow: Workfl
   const [error, setError] = useState<ProblemError | null>(null)
   const [archiveReason, setArchiveReason] = useState('')
   const [confirmArchive, setConfirmArchive] = useState(false)
+  // The version as this dialog opened: archiving sends it, so a change someone makes meanwhile is refused (409)
+  // instead of being archived unseen. The list rows carry no version.
+  const [archiveVersion, setArchiveVersion] = useState<number | null>(null)
+  const [archiveError, setArchiveError] = useState<ProblemError | string | null>(null)
+  useEffect(() => {
+    let live = true
+    endpoints.getWorkflow(ws, workflow.id)
+      .then((w) => { if (live) setArchiveVersion(w.version) })
+      .catch((cause: unknown) => { if (live) setArchiveError(toProblem(cause)) })
+    return () => { live = false }
+  }, [ws, workflow.id])
   const folders = org.data?.folders ?? []
   const ownerOptions = [...(candidates.data?.items ?? [])]
   if (workflow.owner && !ownerOptions.some((o) => o.id === workflow.owner!.id)) ownerOptions.unshift(workflow.owner)
@@ -217,15 +233,16 @@ export function OrganizeWorkflowDialog({ workflow, onClose }: { workflow: Workfl
   }
 
   const archive = async () => {
+    if (archiveVersion === null) return
     setPending(true)
-    setError(null)
+    setArchiveError(null)
     try {
-      const { version } = await endpoints.getWorkflow(ws, workflow.id)
-      await endpoints.archiveWorkflow(ws, workflow.id, { expectedVersion: version, reason: archiveReason.trim() })
+      await endpoints.archiveWorkflow(ws, workflow.id, { expectedVersion: archiveVersion, reason: archiveReason.trim() })
       await refresh()
       onClose()
     } catch (cause) {
-      setError(toProblem(cause))
+      setArchiveError(archiveRefusal(toProblem(cause)))
+      setConfirmArchive(false)
     } finally {
       setPending(false)
     }
@@ -259,7 +276,10 @@ export function OrganizeWorkflowDialog({ workflow, onClose }: { workflow: Workfl
             <Input id="archive-reason" value={archiveReason} maxLength={300} onChange={(e) => { setArchiveReason(e.target.value); setConfirmArchive(false) }} />
             {confirmArchive
               ? <div className="flex gap-2"><Button variant="danger" onClick={() => void archive()} loading={pending}>Archive for good</Button><Button variant="ghost" onClick={() => setConfirmArchive(false)} disabled={pending}>Keep it</Button></div>
-              : <Button variant="secondary" onClick={() => setConfirmArchive(true)} disabled={pending || archiveReason.trim().length < 3}>Archive…</Button>}
+              : <Button variant="secondary" onClick={() => setConfirmArchive(true)} disabled={pending || archiveVersion === null || archiveReason.trim().length < 3}>Archive…</Button>}
+            {typeof archiveError === 'string'
+              ? <p role="alert" className="rounded-card border border-danger-border bg-danger-soft p-3 text-sm text-danger-foreground">{archiveError}</p>
+              : archiveError ? <Refusal error={archiveError} messages={ORGANIZE_REFUSALS} /> : null}
           </div>
         </details>
       </div>

@@ -38,10 +38,12 @@ class RunReferencesFastModeTest extends RuntimeTestBase {
         UUID first = publishPurchase(PURCHASING, null);
         UUID second = publishPurchase(PURCHASING, null);
         List<String> users = List.of("rhea.requester", "mani.manager", "max.manager");
-        ExecutorService pool = Executors.newFixedThreadPool(8);
+        // More starts at once than the application pool has connections (15): each start already holds one, so taking the
+        // number must not need a second connection from that same pool.
+        ExecutorService pool = Executors.newFixedThreadPool(24);
         try {
             List<Future<Response>> starts = new ArrayList<>();
-            for (int i = 0; i < 16; i++) {
+            for (int i = 0; i < 24; i++) {
                 UUID workflow = i % 2 == 0 ? first : second;
                 String user = users.get(i % users.size());
                 starts.add(pool.submit(() -> api(user).post(Map.of("workflowId", workflow, "input", input(BigDecimal.ONE)),

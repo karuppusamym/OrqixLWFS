@@ -141,7 +141,7 @@ public class ReleaseQueries {
                 .optional();
     }
 
-    /** Locks the workflow row against release changes (they take FOR UPDATE); starts of one workflow do not wait for each other here. The open-request limit has its own lock (RunStore.lockQuota). */
+    /** Locks the workflow row against release changes (they take FOR UPDATE); starts of one workflow do not wait for each other here. The open-request limit has its own lock (RunQuota). */
     @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
     public Optional<WorkflowRef> lockWorkflow(UUID workspaceId, UUID workflowId) {
         return jdbc.sql("""

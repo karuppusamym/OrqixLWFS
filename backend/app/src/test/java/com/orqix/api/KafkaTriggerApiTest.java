@@ -192,6 +192,15 @@ class KafkaTriggerApiTest extends RuntimeTestBase {
         off.put("enabled", false);
         off.put("expectedVersion", created.body().path("version").asInt());
         assertThat(api("wade.admin").put(off, null, "/workspaces/{ws}/kafka-triggers/{id}", PURCHASING, id).status()).isEqualTo(200);
+        // Switched off, but a replica's consumer has not stopped yet (it stops on its next reconcile): still refused.
+        jdbc.sql("""
+                INSERT INTO kafka_trigger_status (trigger_id, instance_id, workspace_id, running, updated_at)
+                VALUES (CAST(:id AS uuid), 'replica-a', :ws, true, now())
+                """).param("id", id).param("ws", PURCHASING).update();
+        Response stopping = api("wade.admin").delete("/workspaces/{ws}/kafka-triggers/{id}", PURCHASING, id);
+        assertThat(stopping.status()).as(stopping.toString()).isEqualTo(409);
+        assertThat(stopping.body().path("detail").asString()).contains("still stopping");
+        jdbc.sql("UPDATE kafka_trigger_status SET running = false WHERE trigger_id = CAST(:id AS uuid)").param("id", id).update();
         assertThat(api("wade.admin").delete("/workspaces/{ws}/kafka-triggers/{id}", PURCHASING, id).status()).isEqualTo(204);
         assertThat(api("wade.admin").get("/workspaces/{ws}/kafka-triggers", PURCHASING).body().path("items").toString()).doesNotContain(id);
         assertThat(api("wade.admin").delete("/workspaces/{ws}/kafka-triggers/{id}", PURCHASING, id).status()).isEqualTo(404);

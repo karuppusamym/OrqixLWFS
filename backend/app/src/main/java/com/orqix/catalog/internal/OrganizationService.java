@@ -271,7 +271,7 @@ public class OrganizationService {
     }
 
     public record ArchiveRequest(@jakarta.validation.constraints.NotNull @jakarta.validation.constraints.Min(1) Integer expectedVersion,
-            @jakarta.validation.constraints.NotNull @jakarta.validation.constraints.Size(min = 3, max = 300) String reason) {
+            @jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Size(min = 3, max = 300) String reason) {
     }
 
     /**
@@ -281,6 +281,10 @@ public class OrganizationService {
     @Transactional
     public void archive(Caller caller, UUID ws, UUID workflowId, ArchiveRequest request) {
         editor(caller, ws, "archiveWorkflow");
+        if (request.reason().strip().length() < 3) {
+            throw new ApiException(ProblemCode.VALIDATION_FAILED, "Some values are not valid.").withFieldErrors(List.of(
+                    new ApiException.FieldError("/reason", "tooShort", "Say in a few words why it is archived.")));
+        }
         workflows.visible(caller, ws, workflowId, "archiveWorkflow");
         CatalogStore.WorkflowRow row = store.lockWorkflow(ws, workflowId).orElseThrow(ApiException::notFound);
         if (row.version() != request.expectedVersion()) {
@@ -295,10 +299,46 @@ public class OrganizationService {
             throw new ApiException(ProblemCode.RESOURCE_IN_USE, open + (open == 1 ? " request of this workflow is" : " requests of this workflow are")
                     + " still open. Let them finish, or cancel them, before archiving.").with("openRequests", open);
         }
+        refuseWhileStartedElsewhere(ws, workflowId);
         jdbc.sql("UPDATE workflow SET archived_at = now(), version = version + 1, updated_at = now() WHERE workspace_id = :ws AND id = :id")
                 .param("ws", ws).param("id", workflowId).update();
         audit.write(new AuditWriter.Entry(ws, AuditWriter.ActorType.USER, caller.subjectId(), "workflow.archived",
                 "workflow", workflowId.toString(), AuditWriter.Outcome.SUCCESS,
                 Map.of("key", row.key(), "reasonLength", request.reason().strip().length())));
+    }
+
+    /**
+     * Archiving is refused while something else would keep starting the workflow: another workflow's active or canary
+     * release that starts it as a child, or a switched-on Kafka trigger or inbound trigger. Those would otherwise fail
+     * (dead letters) or start requests of a workflow nobody can see in the catalog.
+     */
+    private void refuseWhileStartedElsewhere(UUID ws, UUID workflowId) {
+        List<String> parents = jdbc.sql("""
+                SELECT DISTINCT p.name FROM workflow p
+                JOIN workflow_release r ON r.workflow_id = p.id
+                WHERE p.workspace_id = :ws AND p.archived_at IS NULL AND p.id <> :id
+                  AND (r.id = p.active_release_id
+                       OR r.id IN (SELECT c.release_id FROM workflow_canary c WHERE c.workflow_id = p.id))
+                  AND EXISTS (SELECT 1 FROM jsonb_array_elements(r.manifest -> 'workflows') pin
+                              JOIN workflow_release child ON child.id = CAST(pin ->> 'releaseId' AS uuid)
+                              WHERE child.workflow_id = :id)
+                ORDER BY p.name
+                """).param("ws", ws).param("id", workflowId).query(String.class).list();
+        if (!parents.isEmpty()) {
+            throw new ApiException(ProblemCode.RESOURCE_IN_USE, "Published workflows start this one as a step: "
+                    + String.join(", ", parents) + ". Publish them without that step, or archive them first.")
+                    .with("startedBy", parents);
+        }
+        List<String> triggers = jdbc.sql("""
+                SELECT key FROM kafka_trigger WHERE workspace_id = :ws AND workflow_id = :id AND enabled
+                UNION
+                SELECT key FROM inbound_trigger WHERE workspace_id = :ws AND workflow_id = :id AND enabled
+                ORDER BY key
+                """).param("ws", ws).param("id", workflowId).query(String.class).list();
+        if (!triggers.isEmpty()) {
+            throw new ApiException(ProblemCode.RESOURCE_IN_USE, "Switched-on triggers start this workflow: "
+                    + String.join(", ", triggers) + ". Switch them off in Settings before archiving it.")
+                    .with("triggers", triggers);
+        }
     }
 }

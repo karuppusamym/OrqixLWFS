@@ -184,4 +184,21 @@ describe('workflow folders and owners (PL01)', () => {
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Organize Purchase approval' })).toBeNull())
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Organize Purchase approval' })).toBeNull())
   })
+
+  it('archiving after someone else changed the workflow is refused instead of archiving it unseen', async () => {
+    signInAs('dana.designer')
+    const user = userEvent.setup()
+    await renderAppReady(`/w/${WS}/workflows`)
+    await user.click(await screen.findByRole('button', { name: 'Organize Purchase approval' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Organize Purchase approval' })
+    await user.click(within(dialog).getByText('Archive this workflow'))
+    await user.type(within(dialog).getByLabelText('Why archive it?'), 'Replaced by the new flow')
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Archive…' })).toBeEnabled())
+    const workflow = [...db.workflows.values()].find((w) => w.name === 'Purchase approval')!
+    workflow.version += 1 // someone else changes it while the dialog is open
+    await user.click(within(dialog).getByRole('button', { name: 'Archive…' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Archive for good' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(/changed by someone else/)
+    expect(db.workflows.has(workflow.id)).toBe(true)
+  })
 })

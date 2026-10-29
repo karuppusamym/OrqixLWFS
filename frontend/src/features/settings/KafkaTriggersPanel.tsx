@@ -94,7 +94,7 @@ export function KafkaTriggersPanel() {
   const remove = (t: Trigger) => run(async () => {
     await call(api.DELETE('/workspaces/{workspaceId}/kafka-triggers/{kafkaTriggerId}', { params: { path: { workspaceId: ws, kafkaTriggerId: t.id } } }))
     setConfirmDelete(null)
-    setNotice(`Trigger ${t.key} deleted. Its records and dead letters are gone; the audit trail keeps the deletion.`)
+    setNotice(`Trigger ${t.key} deleted. Its records and dead letters are gone; the audit trail keeps the deletion. Kafka still remembers how far consumer group ${t.consumerGroup} read: give a new trigger a new consumer group to read the topic again.`)
   })
   const sendTest = (t: Trigger) => run(async () => {
     let value: unknown

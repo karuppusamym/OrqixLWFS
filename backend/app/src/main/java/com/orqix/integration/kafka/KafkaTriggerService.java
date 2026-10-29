@@ -269,6 +269,17 @@ public class KafkaTriggerService {
         if (current.enabled()) {
             throw new ApiException(ProblemCode.RESOURCE_IN_USE, "Switch the trigger off before deleting it.");
         }
+        // Switching off stops the consumers on their next reconcile (orqix.kafka.reconcile-delay), not at once. A consumer
+        // that still reported itself running in the last minute may still be handling records; a crashed replica's row
+        // goes stale and no longer counts.
+        long consuming = jdbc.sql("""
+                SELECT count(*) FROM kafka_trigger_status
+                WHERE trigger_id = :id AND running AND updated_at > :since
+                """).param("id", id).param("since", Sql.ts(clock.instant().minusSeconds(60))).query(Long.class).single();
+        if (consuming > 0) {
+            throw new ApiException(ProblemCode.RESOURCE_IN_USE, "The trigger is still stopping. Try again in a few seconds.")
+                    .with("runningConsumers", consuming);
+        }
         long dead = jdbc.sql("SELECT count(*) FROM kafka_inbound_record WHERE trigger_id = :id AND status = 'dead'")
                 .param("id", id).query(Long.class).single();
         jdbc.sql("DELETE FROM kafka_trigger_status WHERE trigger_id = :id").param("id", id).update();

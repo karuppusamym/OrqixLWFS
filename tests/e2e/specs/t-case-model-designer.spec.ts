@@ -14,6 +14,7 @@ test('a visually authored model executes required manual work and achieves its m
   await page.getByLabel('Key',{exact:true}).fill(key)
   await page.getByLabel('Name',{exact:true}).fill(key)
   await page.getByRole('button',{name:'Build a case model',exact:true}).click()
+  await page.getByRole('button',{name:'Form view',exact:true}).click()
   await page.getByLabel('Eligible group for task1').selectOption('managers')
   await page.getByRole('button',{name:'Add milestone',exact:true}).click()
   await page.getByLabel('Name for item1',{exact:true}).fill('Review ready')

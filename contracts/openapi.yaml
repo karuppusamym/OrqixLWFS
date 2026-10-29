@@ -6270,8 +6270,8 @@ paths:
               required: [fileName, content]
               properties:
                 fileName: { type: string, minLength: 1, maxLength: 200 }
-                content: { type: string, minLength: 1, maxLength: 1398104, description: 'BPMN, DMN, CMMN or XPDL XML, form or mapping JSON text; base64 for Pega archives. Decoded sources are limited to 1 MiB.' }
-                sourceFormat: { type: string, enum: [bpmn, dmn, camundaForm, pegaArchive, pegaMapping, pegaXpdl, cmmn], default: bpmn, description: 'bpmn is Camunda 7/8 BPMN 2.0; dmn is a Camunda DMN 1.1-1.4 file with decision tables; camundaForm is a Camunda Forms .form JSON file attached through formMappings. pegaXpdl is a bounded XPDL 2.0 flow export; it does not resolve native RAP rule pages. cmmn inventories a CMMN 1.1 file but cannot convert or deploy it.' }
+                content: { type: string, minLength: 1, maxLength: 1398104, description: 'BPMN, DMN, CMMN or XPDL XML, form or mapping JSON text; base64 for Pega archives and native Pega rule archives. Decoded sources are limited to 1 MiB.' }
+                sourceFormat: { type: string, enum: [bpmn, dmn, camundaForm, pegaArchive, pegaMapping, pegaXpdl, cmmn, pegaRules], default: bpmn, description: 'bpmn is Camunda 7/8 BPMN 2.0; dmn is a Camunda DMN 1.1-1.4 file with decision tables; camundaForm is a Camunda Forms .form JSON file attached through formMappings. pegaXpdl is a bounded XPDL 2.0 flow export; it does not resolve native RAP rule pages. cmmn inventories a CMMN 1.1 file but cannot convert or deploy it. pegaRules (base64) is a native Pega rule archive (ZIP/RAP/JAR of pagedata rule pages), decoded with a strict synthetic grammar, resolved against its own application stack and converted per starting point (docs/build/S112); grammar fidelity against genuine exports is customer qualification.' }
       responses:
         '201':
           description: Job created with its compatibility report
@@ -6301,6 +6301,31 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/MigrationJob' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/migrations/{migrationId}/pega-rules:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/MigrationId'
+    get:
+      tags: [Migration]
+      operationId: getPegaRuleArchive
+      summary: Inventory, effective-rule resolution and per-rule conversion results of a native Pega rule archive (docs/build/S112)
+      description: >-
+        Recomputed from the immutable archive bytes. Lists every archive entry with its SHA-256 and decoded identity or refusal
+        reason, the application ruleset stack, each case context's class chain with the chosen and shadowed candidates of every
+        rule key, and for every starting point the compatibility report and per-rule conversion results with target fragment
+        hashes. After conversion, the recorded per-rule results of the converted starting point are included. 404 for other
+        source formats.
+      x-orqix-permission: workflow.read
+      responses:
+        '200':
+          description: Native rule archive view
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PegaRuleArchive' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
   /workspaces/{workspaceId}/migrations/{migrationId}/convert:
@@ -11770,6 +11795,150 @@ components:
               unclassifiedLines: { type: integer, minimum: 0 }
         transcription: { $ref: '#/components/schemas/BlueprintTranscription' }
         report: { $ref: '#/components/schemas/CompatibilityReport' }
+    PegaRuleArchive:
+      type: object
+      required: [migrationId, status, decoder, adapterVersion, sourceSha256, stack, archiveBlockers, entries, contexts, startingPoints, conversion]
+      properties:
+        migrationId: { $ref: '#/components/schemas/Uuid' }
+        status: { type: string, enum: [analyzed, converted, failed] }
+        decoder: { type: string, description: Decoder and resolver version }
+        adapterVersion: { type: string }
+        sourceSha256: { type: string }
+        application: { type: [string, 'null'], description: 'Rule-Application name and version declared in the archive; not proof of a certified Pega release' }
+        stack:
+          type: array
+          description: Application ruleset stack in precedence order
+          items: { type: object, required: [name, version], properties: { name: { type: string }, version: { type: string } } }
+        archiveBlockers:
+          type: array
+          items: { type: object, required: [code, paths], properties: { code: { type: string }, paths: { type: array, items: { type: string } } } }
+        entries:
+          type: array
+          items: { $ref: '#/components/schemas/PegaRuleEntry' }
+        contexts:
+          type: array
+          items: { $ref: '#/components/schemas/PegaRuleContext' }
+        startingPoints:
+          type: array
+          items: { $ref: '#/components/schemas/PegaRuleStartingPoint' }
+        convertedStartRule: { type: [string, 'null'] }
+        conversion:
+          type: array
+          description: Recorded per-rule results of the converted starting point (empty before conversion)
+          items:
+            type: object
+            required: [rule, startRule, resolution, conversion, targets, reasons]
+            properties:
+              rule: { type: string }
+              startRule: { type: string }
+              resolution: { type: string }
+              conversion: { type: string, enum: [converted, review, blocked, notUsed, shadowed, supported] }
+              targetKind: { type: [string, 'null'] }
+              targets: { type: array, items: { type: string } }
+              targetSha256: { type: [string, 'null'] }
+              reasons: { type: array, items: { type: string } }
+    PegaRuleEntry:
+      type: object
+      required: [path, sha256, status, circumstanced]
+      properties:
+        path: { type: string }
+        sha256: { type: string }
+        status: { type: string, enum: [manifest, rule, data, delegation, refused], description: 'delegation is a System-User-MyRules record kept as provenance' }
+        reason: { type: [string, 'null'], description: Refusal reason code }
+        detail: { type: [string, 'null'] }
+        ruleType: { type: [string, 'null'] }
+        className: { type: [string, 'null'] }
+        ruleName: { type: [string, 'null'] }
+        ruleset: { type: [string, 'null'] }
+        version: { type: [string, 'null'] }
+        availability: { type: [string, 'null'], description: 'Yes, No, Blocked, Withdrawn or Final' }
+        circumstanced: { type: boolean, description: 'The rule has a qualifier (property or date circumstance, or a date range)' }
+        qualifier:
+          description: 'kind property (property, value), date (property, date YYYYMMDD), dateRange (from, to as YYYYMMDDTHHMMSS.mmm GMT) or multivariate (parts)'
+          oneOf: [{ type: 'null' }, { type: object, required: [kind], additionalProperties: true, properties: { kind: { type: string, enum: [property, date, dateRange, multivariate] } } }]
+    PegaRuleContext:
+      type: object
+      required: [className, chain, keys]
+      properties:
+        className: { type: string }
+        chain: { type: array, description: 'Class inheritance searched, closest first', items: { type: string } }
+        keys:
+          type: array
+          items:
+            type: object
+            required: [ruleType, ruleName, status, candidates]
+            properties:
+              ruleType: { type: string }
+              ruleName: { type: string }
+              status: { type: string, enum: [resolved, noCandidate, circumstanceUnresolved, ambiguous, blocked, finalOverridden] }
+              chosen: { type: [string, 'null'], description: Entry path of the effective rule }
+              variants:
+                type: array
+                description: 'Circumstance and date variants of the chosen base rule, with their qualifier (S115)'
+                items: { type: object, required: [rule, kind], additionalProperties: true, properties: { rule: { type: string }, kind: { type: string } } }
+              candidates:
+                type: array
+                items: { type: object, required: [rule, outcome], properties: { rule: { type: string }, outcome: { type: string } } }
+    PegaRuleStartingPoint:
+      type: object
+      required: [rule, kind, context, name, label, blocked, report, rules, assignments, subflows]
+      properties:
+        rule: { type: string }
+        kind: { type: string, enum: [caseType, flow] }
+        context: { type: string }
+        name: { type: string }
+        label: { type: string }
+        blocked: { type: boolean }
+        report: { $ref: '#/components/schemas/CompatibilityReport' }
+        rules:
+          type: array
+          items: { $ref: '#/components/schemas/PegaRuleResult' }
+        assignments:
+          type: array
+          description: 'Assignments to map: the work queue needs a groupMappings entry, and one of the two flow actions is chosen as approval in approvalRoutes (never inferred)'
+          items:
+            type: object
+            required: [id, label, workQueue, flow, actions]
+            properties:
+              id: { type: string }
+              label: { type: string }
+              workQueue: { type: string }
+              flow: { type: string }
+              actions:
+                type: array
+                items: { type: object, required: [connectorId, flowAction], properties: { connectorId: { type: string }, flowAction: { type: string } } }
+        subflows:
+          type: array
+          description: 'Subflow calls that become child workflow steps; each id needs a childWorkflowMappings entry naming a published workflow'
+          items:
+            type: object
+            required: [id, label, flow, source]
+            properties:
+              id: { type: string }
+              label: { type: string }
+              flow: { type: string, description: Subflow rule name }
+              source: { type: string, description: Flow that calls it }
+    PegaRuleResult:
+      type: object
+      required: [rule, ruleType, className, ruleName, ruleset, version, availability, sourceSha256, resolution, conversion, targets, reasons, delegatedTo]
+      properties:
+        rule: { type: string }
+        ruleType: { type: string }
+        className: { type: string }
+        ruleName: { type: string }
+        ruleset: { type: string }
+        version: { type: string }
+        availability: { type: string }
+        sourceSha256: { type: string }
+        role: { type: [string, 'null'] }
+        resolution: { type: string, description: 'selected, a shadowing outcome, or outsideContext' }
+        conversion: { type: string, enum: [converted, review, blocked, notUsed, shadowed, supported] }
+        targetKind: { type: [string, 'null'] }
+        targets: { type: array, items: { type: string } }
+        targetSha256: { type: [string, 'null'], description: SHA-256 of the mapping-independent target fragment }
+        reasons: { type: array, items: { type: string } }
+        circumstance: { type: [string, 'null'], description: 'The rule qualifier in words (for example .Category = Services)' }
+        delegatedTo: { type: array, items: { type: string }, description: 'Access groups the rule is delegated to (provenance only)' }
     MigrationJob:
       type: object
       required: [id, fileName, status, report, createdAt]
@@ -11834,6 +12003,7 @@ components:
             properties:
               migrationId: { $ref: '#/components/schemas/Uuid' }
         decisionId: { type: string, minLength: 1, maxLength: 128, description: 'DMN migrations only: the decision to convert; optional when the file has exactly one decision' }
+        pegaStartRule: { type: string, minLength: 1, maxLength: 500, description: 'Native Pega rule archives (pegaRules) only: the archive entry path of the starting point to convert (an effective case type or starting flow); optional when the archive has exactly one. For these archives only workflowKey, name, groupMappings, approvalRoutes, childWorkflowMappings, the acknowledgements and pegaStartRule are accepted.' }
         transcriptionSha256: { type: string, pattern: '^[0-9a-f]{64}$', description: 'Pega Blueprint PDF migrations only (required there): the transcriptionSha256 of the reviewed transcription revision being converted. Routes, request fields and steps come from that transcription, so approvalRoutes, inputSchema and other mappings except groupMappings are refused.' }
         inputSchema:
           type: object

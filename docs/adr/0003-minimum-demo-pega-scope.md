@@ -2,6 +2,8 @@
 
 Status: **Accepted**. Date: 17 October 2026. The user delegated this decision and explicitly permitted an independent model review. This closes the scope decision and removes MIG11 from the minimum-demo blockers; it does not mark native RAP conversion implemented.
 
+**29 October 2026 note:** the user later asked for MIG11 to be built. [S112](../build/S112-pega-native-conversion.md) implements native rule archive conversion (`pegaRules`): a strict decoder for `<pagedata>` rule pages, effective-rule resolution over the archive's ruleset stack, class inheritance and availability, per-rule conversion of flows, decision tables/trees, when rules, properties, simple sections, service levels and case types, and source-linked blockers for everything else, through the normal review, compile and separate publication pipeline. The grammar is synthetic, built from Pega's documented page shape without a genuine export, so this decision's reasoning about export fidelity still holds: AC01/EXT01 customer qualification remains open, and the minimum demo scope below is unchanged. A second round the same day ([S115](../build/S115-pega-native-completion.md)) added circumstance and date variants of decision rules, subflows and split-joins as child workflows, business calendars, escalations and case-level service levels; alternate stages, optional processes and spin-offs stay refused with reasons.
+
 ## Decision
 
 The minimum Pega demo uses the delivered MIG10 and MIG13 capabilities:

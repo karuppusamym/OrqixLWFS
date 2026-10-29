@@ -62,7 +62,7 @@ function RuleHandles({ item, readOnly }: { item: CaseModelItem; readOnly: boolea
 function CaseNode({ data }: NodeProps<CaseFlowNode>) {
   const { item, selected, readOnly } = data
   const words = markers(item)
-  const ring = selected ? 'outline outline-3 outline-offset-2 outline-[var(--focus,#2563eb)]' : ''
+  const ring = selected ? 'outline outline-3 outline-offset-2 outline-primary' : ''
   const dashed = item.discretionary ? 'border-dashed' : ''
   if (item.kind === 'stage') return <div className={cn('relative h-full w-full', ring)} data-testid={`canvas-${item.id}`}>
     {!readOnly ? <NodeResizer isVisible={selected} minWidth={200} minHeight={120} onResizeEnd={(_event, size) => data.onResize(item.id, size.width, size.height)} /> : null}

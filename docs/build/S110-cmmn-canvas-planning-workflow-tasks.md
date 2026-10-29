@@ -60,7 +60,7 @@ The engine's own "completable" flag counts items that are only waiting (an unpla
 | Frontend case tests (`npx vitest run src/features/cases`) | **43/43 pass**; new `caseModelCmmn.test.ts` (generation, import round trips of the backend fixtures keeping IDs, diagnostics, canvas operations) and `CaseCanvas.test.tsx` (canvas authoring with nesting and a diagram, jsdom axe, workflow/discretionary fields, import report, Plan action against the mock backend) |
 | TypeScript, ESLint on changed files, `npm run api:check` | pass |
 | Real browser (built-in browser, mock-mode Vite server) | Designer opens on the canvas; shapes drawn in CMMN notation; a connector drawn by dragging from the task's dot to a milestone's entry diamond; dragging the milestone into a stage nested it and removed the crossing rule with a spoken announcement; adding items refits the view; no console errors |
-| Full frontend suite | see the closing note below |
+| Full frontend suite (`npx vitest run`, 4 workers) | 1199/1201 on a loaded machine: a hard-coded colour in the canvas selection ring (fixed, test passes) and `ProjectPage.test.tsx`, which passes 11/11 when run alone (timing under load, not this change) |
 
 ## Not covered (WM04 remains open)
 

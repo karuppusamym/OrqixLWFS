@@ -63,6 +63,10 @@ Variants of other rule types (flows, flow actions, sections, harnesses, properti
 
 No Docker stack was started, stopped or rebuilt, and no real browser was used. Live-stack journeys are left to the session that merges the three branches.
 
+## Real-stack E2E specs (round 3)
+
+`tests/e2e/specs/t-mig-05-pega-native.spec.ts` (purchase-request archive: inventory, effective rules and provenance, review and conversion, separate publication on the publish page, runs at 4,999.99 through manager review and order confirmation to Completed and at 5,000 to a finance rejection; the refusals archive shows its blockers with source paths and creates no workflow; requester and outsider access) and `t-mig-06-pega-native-advanced.spec.ts` (purchase-advanced archive: a starting flow converted and published as the child, then the case type with the Services variant, the split-join and the subflow mapped to it; Services 3,000 runs through the parallel child checks, finance and order confirmation; Hardware 50 takes the Express route). Shared helpers are in `tests/e2e/support/pega-native.ts`. They type-check (`npx tsc --noEmit`) and are skipped in mock mode; they have not been run here, because the real stack is run by the session that merges the branches.
+
 ## Not covered
 
 - AC01/EXT01: real exports, source-runtime equivalence, source-owner sign-off.

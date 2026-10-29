@@ -1,0 +1,6 @@
+{
+  "$comment": "BPMN shape bounding boxes, the one source for the Studio canvas (frontend/src/features/studio/model/shapeSizes.ts) and the BPMN export's diagram interchange (BpmnShapeSizes in the compiler). A saved step position is the top-left corner of its box. docs/build/S94, S97, S106.",
+  "event": { "width": 48, "height": 48 },
+  "gateway": { "width": 64, "height": 64 },
+  "task": { "width": 200, "height": 80 }
+}

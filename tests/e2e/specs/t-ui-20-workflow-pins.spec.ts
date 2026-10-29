@@ -7,9 +7,10 @@ test('personal workflow pins survive searches and reloads and can be removed fro
   if (MOCK) await sessions.mockCall('reset', { demo: true })
   const page = await sessions.as('dana.designer')
   const ws = await workspaceId(page)
-  await page.goto(`/w/${ws}/workflows`)
+  // Search by the seeded key: by now other specs have created many workflows, newest first, so the seeded template is
+  // not on the first page, and their copies of the template are also called "Purchase approval".
+  await page.goto(`/w/${ws}/workflows?q=purchase-approval`)
   const panel = page.getByRole('region', { name: 'Pinned workflows' })
-  // Other specs leave copies of the template that are also called "Purchase approval": use the seeded one's row.
   const seededId = await workflowIdByKey(page, ws)
   const seededRow = page.getByRole('row').filter({ has: page.locator(`a[href$="/workflows/${seededId}"]`) })
   await seededRow.getByRole('button', { name: 'Pin Purchase approval', exact: true }).click()

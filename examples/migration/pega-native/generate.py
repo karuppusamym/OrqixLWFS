@@ -83,6 +83,7 @@ def archive(entries: dict[str, bytes]) -> bytes:
         for name, content in entries.items():
             info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_STORED
+            info.create_system = 3  # same bytes on Windows and Linux
             info.external_attr = 0o644 << 16
             zf.writestr(info, content)
     return output.getvalue()

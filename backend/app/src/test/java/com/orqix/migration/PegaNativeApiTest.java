@@ -115,6 +115,79 @@ class PegaNativeApiTest extends RuntimeTestBase {
         assertThat(openTask(PURCHASING, vendorCheck, "FinanceReview")).isNotNull();
     }
 
+    private UUID publish(JsonNode converted) throws Exception {
+        UUID workflow = UUID.fromString(converted.path("workflow").path("id").asString());
+        var published = api("paul.publisher").post(Map.of("draftRevision", converted.path("draft").path("revision").asInt(), "acknowledgeWarnings", true),
+                UUID.randomUUID().toString(), "/workspaces/{ws}/workflows/{id}/publish", PURCHASING, workflow);
+        assertThat(published.status()).as(published.toString()).isEqualTo(201);
+        return workflow;
+    }
+
+    /** S115: a child flow converted and published first, then the case with subflows, a split-join, variants, a business calendar and escalation. */
+    @Test void advancedArchiveRunsChildWorkflowsParallelChecksAndCircumstanceVariants() throws Exception {
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        var childJob = upload("dana.designer", "purchase-advanced").body();
+        var childView = api("dana.designer").get("/workspaces/{ws}/migrations/{id}/pega-rules", PURCHASING, childJob.path("id").asString()).body();
+        assertThat(childView.path("startingPoints").size()).isEqualTo(5);
+        assertThat(childView.path("entries").toString()).contains("\"status\":\"delegation\"");
+        ObjectNode childRequest = json.object().put("workflowKey", "pega-child-" + suffix).put("name", "Record order (native Pega)")
+                .put("acknowledgeInfo", true).put("acknowledgeReview", true).put("pegaStartRule", "flows/RecordOrder.xml");
+        var child = convert(childJob, childRequest);
+        assertThat(child.status()).as(child.toString()).isEqualTo(201);
+        publish(child.body());
+
+        var job = upload("dana.designer", "purchase-advanced").body();
+        var view = api("dana.designer").get("/workspaces/{ws}/migrations/{id}/pega-rules", PURCHASING, job.path("id").asString()).body();
+        JsonNode order = null;
+        for (JsonNode s : view.path("startingPoints")) if (s.path("rule").asString().equals("casetypes/PurchaseOrder.xml")) order = s;
+        assertThat(order.path("subflows").size()).isEqualTo(3);
+        assertThat(order.path("rules").toString()).contains("\"resolution\":\"variant\"").contains("Purchasing:Managers");
+        ObjectNode request = request().put("pegaStartRule", "casetypes/PurchaseOrder.xml");
+        assertThat(convert(job, request).status()).as("child workflow mappings are required").isEqualTo(422);
+        ObjectNode children = request.putObject("childWorkflowMappings");
+        for (String call : List.of("Checks_1", "Checks_2", "Record")) {
+            ObjectNode m = children.putObject(call); m.put("workflowRef", "pega-child-" + suffix); m.putObject("inputMapping"); m.putObject("resultMapping");
+        }
+        var converted = convert(job, request);
+        assertThat(converted.status()).as(converted.toString()).isEqualTo(201);
+        assertThat(converted.body().path("draft").toString()).contains("parallelSplit").contains("startWorkflow").contains("America/New_York").contains("\"maxNotices\":4");
+        UUID workflow = publish(converted.body());
+
+        Map<String, Object> base = new LinkedHashMap<>(Map.of("description", "Laptops", "vendorName", "Acme", "vendorPreferred", true));
+        // Services at 3,000: the circumstance variant's 2,000 threshold sends it through the parallel child checks to finance.
+        Map<String, Object> services = new LinkedHashMap<>(base); services.put("category", "Services"); services.put("amount", new BigDecimal("3000"));
+        UUID viaChecks = start(workflow, services);
+        awaitLifecycle(PURCHASING, viaChecks, "waiting", "needsAttention");
+        assertThat(openTask(PURCHASING, viaChecks, "ManagerReview")).isNull();
+        approve("fin.finance", PURCHASING, viaChecks, "FinanceReview");
+        awaitLifecycle(PURCHASING, viaChecks, "waiting", "needsAttention");
+        approve("mani.manager", PURCHASING, viaChecks, "ConfirmOrder");
+        awaitLifecycle(PURCHASING, viaChecks, "completed", "needsAttention");
+        assertThat(lifecycle(PURCHASING, viaChecks)).isEqualTo("completed");
+        // Hardware at 3,000 uses the base 5,000 threshold: manager review (business calendar), then the base when rule.
+        Map<String, Object> hardware = new LinkedHashMap<>(base); hardware.put("category", "Hardware"); hardware.put("amount", new BigDecimal("3000"));
+        UUID viaManager = start(workflow, hardware);
+        awaitLifecycle(PURCHASING, viaManager, "waiting", "needsAttention");
+        assertThat(openTask(PURCHASING, viaManager, "FinanceReview")).isNull();
+        approve("mani.manager", PURCHASING, viaManager, "ManagerReview");
+        awaitLifecycle(PURCHASING, viaManager, "waiting", "needsAttention");
+        assertThat(openTask(PURCHASING, viaManager, "ConfirmOrder")).isNotNull();
+        // Software at 600 with a preferred vendor: only the Software variant of the when rule (>= 500) routes to the checks.
+        Map<String, Object> software = new LinkedHashMap<>(base); software.put("category", "Software"); software.put("amount", new BigDecimal("600"));
+        UUID variantWhen = start(workflow, software);
+        awaitLifecycle(PURCHASING, variantWhen, "waiting", "needsAttention");
+        approve("mani.manager", PURCHASING, variantWhen, "ManagerReview");
+        awaitLifecycle(PURCHASING, variantWhen, "waiting", "needsAttention");
+        assertThat(openTask(PURCHASING, variantWhen, "FinanceReview")).isNotNull();
+        // Hardware at 50: the decision tree's current (undated) rule makes it Express, so no order confirmation.
+        Map<String, Object> small = new LinkedHashMap<>(base); small.put("category", "Hardware"); small.put("amount", new BigDecimal("50"));
+        UUID express = start(workflow, small);
+        awaitLifecycle(PURCHASING, express, "waiting", "needsAttention");
+        approve("mani.manager", PURCHASING, express, "ManagerReview");
+        awaitLifecycle(PURCHASING, express, "completed", "needsAttention");
+        assertThat(lifecycle(PURCHASING, express)).isEqualTo("completed");
+    }
+
     @Test void unsupportedRulesBlockConversionAndAccessIsEnforced() throws Exception {
         var uploaded = upload("dana.designer", "refusals");
         assertThat(uploaded.status()).as(uploaded.toString()).isEqualTo(201);

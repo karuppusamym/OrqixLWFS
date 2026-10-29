@@ -30,6 +30,8 @@ AVAILABILITY = {"Yes", "No", "Blocked", "Withdrawn", "Final"}
 VERSION = re.compile(r"^(\d{2})-(\d{2})-(\d{2})$")
 NAME = re.compile(r"^[A-Za-z@][A-Za-z0-9_@.-]{0,127}$")
 STAMP = re.compile(r"^ #\d{8}T\d{6}\.\d{3} GMT$")
+DATE = re.compile(r"^\d{8}$")
+DATETIME = re.compile(r"^\d{8}T\d{6}\.\d{3} GMT$")
 UNRESOLVED_TYPES = {"Rule-Application", "Rule-Obj-Class"}
 
 
@@ -127,6 +129,12 @@ def identity(fields: dict) -> dict:
         if not isinstance(fields.get("pzInsKey"), str) or not fields["pzInsKey"]:
             raise ValueError("pzInsKey is required")
         return {"status": "data", "ruleType": obj}
+    if obj == "System-User-MyRules":
+        # A rule delegation record: kept as provenance of the delegated rule, never converted.
+        for key in ("pzInsKey", "pyRuleInsKey", "pyAccessGroup"):
+            if not isinstance(fields.get(key), str) or not fields[key] or len(fields[key]) > 300:
+                raise ValueError(f"{key} is required")
+        return {"status": "delegation", "ruleType": obj}
     if not obj.startswith("Rule-"):
         raise ValueError("instance class")
     for key in ("pyClassName", "pyRuleName", "pyRuleSet", "pyRuleSetVersion", "pyRuleAvailable", "pzInsKey"):
@@ -141,12 +149,39 @@ def identity(fields: dict) -> dict:
     key = fields["pzInsKey"]
     if not key.upper().startswith(prefix) or (key[len(prefix):] and not STAMP.match(key[len(prefix):])):
         raise ValueError("pzInsKey does not match the rule identity")
-    circumstanced = "pyCircumstanceProp" in fields or "pyCircumstanceVal" in fields
-    if circumstanced and not (fields.get("pyCircumstanceProp") and fields.get("pyCircumstanceVal")):
-        raise ValueError("circumstance needs a property and a value")
+    q = qualifier(fields)
     return {"status": "rule", "ruleType": obj, "className": fields["pyClassName"], "ruleName": fields["pyRuleName"],
             "ruleset": fields["pyRuleSet"], "version": fields["pyRuleSetVersion"],
-            "availability": fields["pyRuleAvailable"], "circumstanced": circumstanced}
+            "availability": fields["pyRuleAvailable"], "circumstanced": q is not None, "qualifier": q}
+
+
+def qualifier(fields: dict):
+    """Property circumstance, date circumstance and date range (S115). Several on one rule are multivariate."""
+    parts = []
+    if "pyCircumstanceProp" in fields or "pyCircumstanceVal" in fields:
+        if not (fields.get("pyCircumstanceProp") and fields.get("pyCircumstanceVal")):
+            raise ValueError("circumstance needs a property and a value")
+        parts.append({"kind": "property", "property": fields["pyCircumstanceProp"], "value": fields["pyCircumstanceVal"]})
+    if "pyCircumstanceDateProp" in fields or "pyCircumstanceDate" in fields:
+        date = fields.get("pyCircumstanceDate")
+        if not fields.get("pyCircumstanceDateProp") or not isinstance(date, str) or not DATE.match(date):
+            raise ValueError("a date circumstance needs a property and a YYYYMMDD date")
+        parts.append({"kind": "date", "property": fields["pyCircumstanceDateProp"], "date": date})
+    if "pyStartDateTime" in fields or "pyEndDateTime" in fields:
+        start, end = fields.get("pyStartDateTime") or None, fields.get("pyEndDateTime") or None
+        for value in (start, end):
+            if value is not None and (not isinstance(value, str) or not DATETIME.match(value)):
+                raise ValueError("a date range needs YYYYMMDDTHHMMSS.mmm GMT bounds")
+        if start is None and end is None or start and end and start > end:
+            raise ValueError("a date range needs at least one bound, in order")
+        parts.append({"kind": "dateRange", "from": start, "to": end})
+    if not parts:
+        return None
+    return parts[0] if len(parts) == 1 else {"kind": "multivariate", "parts": parts}
+
+
+def qkey(rule: dict) -> str:
+    return json.dumps(rule["qualifier"], sort_keys=True) if rule["qualifier"] else ""
 
 
 def read_archive(data: bytes) -> list[dict]:
@@ -223,44 +258,69 @@ def resolve(candidates: list[dict], chain: list[str], stack: dict[str, tuple[int
     for w in [c for c in live if c["availability"] == "Withdrawn"]:
         outcome[w["path"]] = "withdrawn"
         for c in live:
-            if (c is not w and c["className"] == w["className"] and c["ruleset"] == w["ruleset"]
+            if (c is not w and c["className"] == w["className"] and c["ruleset"] == w["ruleset"] and qkey(c) == qkey(w)
                     and version_tuple(c["version"])[0] == version_tuple(w["version"])[0]
                     and version_tuple(c["version"]) < version_tuple(w["version"])):
                 outcome[c["path"]] = "maskedByWithdrawn"
     live = sorted((c for c in live if c["path"] not in outcome), key=lambda c: (rank_key(c, chain, stack), c["path"]))
-    result = {"status": "resolved", "chosen": None}
-    circumstanced = [c for c in live if c["circumstanced"]]
-    base = [c for c in live if not c["circumstanced"]]
-    if not live:
-        result["status"] = "noCandidate"
-    elif circumstanced:
-        result["status"] = "circumstanceUnresolved"
-        for c in circumstanced:
-            outcome[c["path"]] = "circumstanced"
-        for i, c in enumerate(base):
-            outcome[c["path"]] = "baseFallback" if i == 0 else "lowerRanked"
-    elif len(live) > 1 and rank_key(live[0], chain, stack) == rank_key(live[1], chain, stack):
+    result = {"status": "resolved", "chosen": None, "variants": []}
+    base = [c for c in live if not c["qualifier"]]
+    qualified = [c for c in live if c["qualifier"]]
+
+    def rank(c):
+        return rank_key(c, chain, stack)
+    for c in qualified:
+        outcome[c["path"]] = "circumstanced"  # unless it becomes a variant of a resolved base below
+    if not base:
+        result["status"] = "circumstanceUnresolved" if qualified else "noCandidate"
+    elif len(base) > 1 and rank(base[0]) == rank(base[1]):
         result["status"] = "ambiguous"
-        for c in live:
-            outcome[c["path"]] = "duplicate" if rank_key(c, chain, stack) == rank_key(live[0], chain, stack) else "lowerRanked"
-    elif live[0]["availability"] == "Blocked":
+        for c in base:
+            outcome[c["path"]] = "duplicate" if rank(c) == rank(base[0]) else "lowerRanked"
+    elif base[0]["availability"] == "Blocked":
         result["status"] = "blocked"
-        outcome[live[0]["path"]] = "blocked"
-        for c in live[1:]:
+        outcome[base[0]["path"]] = "blocked"
+        for c in base[1:]:
             outcome[c["path"]] = "belowBlocked"
     else:
-        best = live[0]
-        final = [c for c in live[1:] if c["availability"] == "Final" and c["ruleset"] != best["ruleset"]]
+        best = base[0]
+        final = [c for c in base[1:] if c["availability"] == "Final" and c["ruleset"] != best["ruleset"]]
         if final:
             result["status"] = "finalOverridden"
             outcome[best["path"]] = "overridesFinal"
-            for c in live[1:]:
+            for c in base[1:]:
                 outcome[c["path"]] = "finalOverridden" if c in final else "lowerRanked"
         else:
-            result["chosen"] = best["path"]
             outcome[best["path"]] = "selected"
-            for c in live[1:]:
+            for c in base[1:]:
                 outcome[c["path"]] = "lowerRanked"
+            unresolved, groups = False, {}
+            for c in qualified:
+                if chain.index(c["className"]) > chain.index(best["className"]):
+                    outcome[c["path"]] = "lowerRanked"
+                elif chain.index(c["className"]) < chain.index(best["className"]) or c["qualifier"]["kind"] == "multivariate":
+                    unresolved = True
+                else:
+                    groups.setdefault(qkey(c), []).append(c)
+            winners = []
+            for _key, group in sorted(groups.items()):
+                if len(group) > 1 and rank(group[0]) == rank(group[1]) or group[0]["availability"] == "Blocked":
+                    unresolved = True
+                    continue
+                winners.append(group[0])
+                outcome[group[0]["path"]] = "variant"
+                for c in group[1:]:
+                    outcome[c["path"]] = "lowerRanked"
+            if len({(w["qualifier"]["kind"], w["qualifier"].get("property")) for w in winners}) > 1:
+                unresolved = True
+            if unresolved:
+                result["status"] = "circumstanceUnresolved"
+                outcome[best["path"]] = "baseFallback"
+                for w in winners:
+                    outcome[w["path"]] = "circumstanced"
+            else:
+                result["chosen"] = best["path"]
+                result["variants"] = [{"rule": w["path"], **w["qualifier"]} for w in sorted(winners, key=lambda w: w["path"])]
     result["candidates"] = [{"rule": c["path"], "outcome": outcome[c["path"]]}
                             for c in sorted(candidates, key=lambda c: c["path"])]
     return result
@@ -358,7 +418,7 @@ def analyze(data: bytes) -> dict:
     rules = [e for e in entries if e["status"] == "rule"]
     keys: dict[str, list[str]] = {}
     for e in entries:
-        if e["status"] in ("rule", "data"):
+        if e["status"] in ("rule", "data", "delegation"):
             keys.setdefault(e["fields"]["pzInsKey"].upper(), []).append(e["path"])
     for paths in keys.values():
         if len(paths) > 1:
@@ -398,7 +458,7 @@ def analyze(data: bytes) -> dict:
 def expectation(analysis: dict) -> dict:
     """The comparable result: what the backend must report for the same archive."""
     keep = ("path", "sha256", "status", "reason", "ruleType", "className", "ruleName", "ruleset", "version",
-            "availability", "circumstanced")
+            "availability", "circumstanced", "qualifier")
     return {**{k: v for k, v in analysis.items() if k != "entries"},
             "entries": [{k: e[k] for k in keep if k in e} for e in analysis["entries"]]}
 

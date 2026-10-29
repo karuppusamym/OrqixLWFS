@@ -31,7 +31,7 @@ public final class NativeConversion {
     private static final Pattern NUMBER = Pattern.compile("-?(?:0|[1-9][0-9]{0,14})(?:\\.[0-9]{1,8})?");
     private static final Pattern TEXT_LITERAL = Pattern.compile("\"([A-Za-z0-9][A-Za-z0-9 _.-]{0,99})\"");
     private static final Set<String> IDENTITY = Set.of("pxObjClass", "pyClassName", "pyRuleName", "pyRuleSet", "pyRuleSetVersion",
-            "pyRuleAvailable", "pzInsKey", "pyLabel", "pyDescription", "pyCircumstanceProp", "pyCircumstanceVal");
+            "pyRuleAvailable", "pzInsKey", "pyLabel", "pyDescription", "pyCircumstanceProp", "pyCircumstanceVal", "pyCircumstanceDateProp", "pyCircumstanceDate", "pyStartDateTime", "pyEndDateTime");
     private static final Set<String> IMPLICIT = Set.of("Rule-Declare-Expressions", "Rule-Declare-Trigger", "Rule-Declare-OnChange",
             "Rule-Declare-Constraints", "Rule-Declare-Index");
     private static final Map<String, String> WIDGETS = Map.of("pxTextInput", "text", "pxTextArea", "textarea", "pxInteger", "number",
@@ -45,15 +45,19 @@ public final class NativeConversion {
      */
     public record RuleResult(String rule, String ruleType, String className, String ruleName, String ruleset, String version,
             String availability, String sourceSha256, String role, String resolution, String conversion, String targetKind,
-            List<String> targets, String targetSha256, List<String> reasons) { }
+            List<String> targets, String targetSha256, List<String> reasons, String circumstance, List<String> delegatedTo) { }
     /** An assignment to map: its work queue (a group mapping) and its two flow actions (one approves, one rejects). */
     public record Assignment(String id, String label, String workQueue, String flow, List<Action> actions) { }
     public record Action(String connectorId, String flowAction) { }
-    public record Plan(Start start, String name, String label, List<RuleResult> rules, List<Assignment> assignments, List<Report.Issue> sourceIssues,
-            boolean blocked, Build build, Report.CompatibilityReport report) { }
-    record Build(String bpmn, ObjectNode inputSchema, ObjectNode inputUi, Map<String, DmnTable> tables, Map<String, Integer> dueMinutes,
+    /** A subflow call that becomes a child workflow step; childWorkflowMappings names the published workflow (S115). */
+    public record Subflow(String id, String label, String flow, String source) { }
+    public record Plan(Start start, String name, String label, List<RuleResult> rules, List<Assignment> assignments, List<Subflow> subflows,
+            List<Report.Issue> sourceIssues, boolean blocked, Build build, Report.CompatibilityReport report) { }
+    /** An approval due time: elapsed minutes, or working minutes of the business calendar; optional overdue notices. */
+    record Due(int minutes, ObjectNode calendar, ObjectNode escalation) { }
+    record Build(String bpmn, ObjectNode inputSchema, ObjectNode inputUi, Map<String, DmnTable> tables, Map<String, Due> dues,
             Map<String, String> endKinds, List<StagePlan> stages, Map<String, String> paths, String processId, String processName,
-            Set<String> decisionTasks, String description) { }
+            Set<String> decisionTasks, String description, Map<String, ObjectNode> combinedTables) { }
     record StagePlan(String id, String label, Set<String> bpmnNodes, String sla) { }
     public record Result(ObjectNode definition, Report.CompatibilityReport report, Map<String, String> sourceMap) { }
 
@@ -84,6 +88,7 @@ public final class NativeConversion {
         effective.put("name", request.path("name").asString(""));
         effective.set("groupMappings", request.path("groupMappings").isObject() ? request.path("groupMappings").deepCopy() : json.object());
         effective.set("approvalRoutes", request.path("approvalRoutes").isObject() ? request.path("approvalRoutes").deepCopy() : json.object());
+        if (request.path("childWorkflowMappings").isObject()) effective.set("childWorkflowMappings", request.path("childWorkflowMappings").deepCopy());
         effective.set("inputSchema", b.inputSchema().deepCopy());
         effective.put("acknowledgeInfo", request.path("acknowledgeInfo").asBoolean(false));
         effective.put("acknowledgeReview", request.path("acknowledgeReview").asBoolean(false));
@@ -100,13 +105,25 @@ public final class NativeConversion {
         for (JsonNode node : def.path("nodes")) {
             String id = node.path("id").asString();
             String source = canonical.entrySet().stream().filter(e -> e.getValue().equals(id)).map(Map.Entry::getKey)
-                    .filter(k -> b.dueMinutes().containsKey(k) || b.endKinds().containsKey(k)).findFirst().orElse(null);
+                    .filter(k -> b.dues().containsKey(k) || b.endKinds().containsKey(k) || b.combinedTables().containsKey(k)).findFirst().orElse(null);
             if (source == null) continue;
             ObjectNode config = (ObjectNode) node.path("config");
-            Integer minutes = b.dueMinutes().get(source);
-            if (minutes != null && "approval".equals(node.path("type").asString())) {
+            Due due = b.dues().get(source);
+            if (due != null && "approval".equals(node.path("type").asString())) {
+                int minutes = due.minutes();
                 config.remove("dueAfterHours"); config.remove("dueAfterMinutes");
                 if (minutes % 60 == 0 && minutes / 60 <= 720) config.put("dueAfterHours", minutes / 60); else config.put("dueAfterMinutes", minutes);
+                if (due.calendar() != null) config.set("calendar", due.calendar().deepCopy());
+                if (due.escalation() != null) config.set("escalation", due.escalation().deepCopy());
+            }
+            ObjectNode combined = b.combinedTables().get(source);
+            if (combined != null && "decision".equals(node.path("type").asString())) {
+                String key = config.path("decisionRef").asString();
+                for (JsonNode table : def.path("decisions")) if (key.equals(table.path("key").asString())) {
+                    ((ObjectNode) table).put("hitPolicy", "FIRST");
+                    ((ObjectNode) table).set("rows", combined.path("rows").deepCopy());
+                    ((ObjectNode) table).set("default", combined.path("default").deepCopy());
+                }
             }
             String kind = b.endKinds().get(source);
             if (kind != null && "end".equals(node.path("type").asString())) config.put("outcomeKind", kind);
@@ -163,16 +180,21 @@ public final class NativeConversion {
             String version, boolean withConverter) {
         boolean ready = withConverter && converted != null && converted.publishable()
                 && issues.stream().noneMatch(i -> i.blocksPublishing() || Report.INFO.equals(i.severity()) && Report.OPEN.equals(i.resolutionStatus()));
-        var required = converted == null ? new Report.RequiredMappings(List.of(), List.of(), List.of())
-                : new Report.RequiredMappings(converted.requiredMappings().groups(), converted.requiredMappings().approvalTasks(), List.of());
+        var required = required(converted);
         String hash = plan != null ? plan.report().sourceHash() : a.sourceSha256();
         return new Report.CompatibilityReport("pega", version, ADAPTER, hash, plan == null ? null : plan.name(), plan == null ? null : plan.label(),
                 Report.ElementCounts.of(issues), List.copyOf(issues),
                 List.of("Native rule pages are decoded with a strict synthetic grammar (docs/build/S112). Fidelity against genuine Pega exports is customer qualification (AC01/EXT01), not established here.",
-                        "Effective rules are resolved from the archive's own application ruleset stack, class inheritance and availability. Circumstances, date ranges, access and built-on applications other than PegaRULES are not evaluated; affected rules block.",
-                        "Activities, Java, connectors, declarative rules and other unsupported rule types are never executed; when referenced they block conversion.",
-                        "Workbasket-to-group mappings and the approve/reject meaning of flow actions are supplied explicitly. No live cases, history, identities or credentials are migrated."),
+                        "Effective rules are resolved from the archive's own application ruleset stack, class inheritance and availability. Property circumstances and date ranges of decision rules are carried into the target (decision rows on case data or the submission day; branch variants on case data); other circumstanced rules, access and built-on applications other than PegaRULES block.",
+                        "Activities, Java, connectors, declarative rules and other unsupported rule types are never executed; when referenced they block conversion. Subflows run as separately published child workflows named in childWorkflowMappings.",
+                        "Workbasket-to-group mappings, the approve/reject meaning of flow actions and child workflows are supplied explicitly. No live cases, history, identities or credentials are migrated."),
                 required, ready);
+    }
+
+    private static Report.RequiredMappings required(Report.CompatibilityReport converted) {
+        return converted == null ? new Report.RequiredMappings(List.of(), List.of(), List.of())
+                : new Report.RequiredMappings(converted.requiredMappings().groups(), converted.requiredMappings().approvalTasks(), List.of(),
+                        converted.requiredMappings().childWorkflows());
     }
 
     private static List<Report.Issue> archiveIssues(Analysis a) {
@@ -205,7 +227,9 @@ public final class NativeConversion {
         final Analysis a; final Start start; final Json json; final String ctx;
         final Map<String, Use> uses = new LinkedHashMap<>(); final List<Report.Issue> sub = new ArrayList<>();
         final LinkedHashMap<String, Field> fields = new LinkedHashMap<>(); final Map<String, String> propertyKeys = new HashMap<>();
-        final Map<String, DmnTable> tables = new LinkedHashMap<>(); final Map<String, Integer> due = new LinkedHashMap<>();
+        final Map<String, DmnTable> tables = new LinkedHashMap<>(); final Map<String, Due> due = new LinkedHashMap<>();
+        final Map<String, List<Variant>> variantsOf = new HashMap<>(); final Map<String, ObjectNode> combinedTables = new LinkedHashMap<>();
+        final Map<String, List<String[]>> forkVariants = new HashMap<>(); final List<Subflow> subflows = new ArrayList<>();
         final Map<String, String> endKinds = new LinkedHashMap<>(); final List<StagePlan> stages = new ArrayList<>();
         final Map<String, String> paths = new LinkedHashMap<>(); final Set<String> decisionTasks = new LinkedHashSet<>();
         final Set<String> contexts = new LinkedHashSet<>(); final StringBuilder xml = new StringBuilder(); final Set<String> conditionFields = new HashSet<>(); final Map<String, DmnTable> taskTables = new LinkedHashMap<>(); final List<Assignment> assignments = new ArrayList<>();
@@ -250,6 +274,19 @@ public final class NativeConversion {
         Entry lookup(String context, String type, String name, Use from, String fromId, String fromPath, String role) {
             contexts.add(context);
             Lookup l = a.lookup(context, type, name);
+            if (l.resolved() && !l.variants().isEmpty()) {
+                boolean decisionRule = role.equals("decision") || role.equals("when");
+                for (Variant v : l.variants()) {
+                    Use vu = use(v.rule(), role);
+                    if (!decisionRule) block(vu, "PEGA_NATIVE_CIRCUMSTANCE_UNSUPPORTED", "This " + type + " variant (" + describe(v.qualifier())
+                            + ") is chosen at run time from case data or the date. The target has no run-time variant selection for this rule type; only decision tables, decision trees and when rules carry variants.");
+                }
+                if (!decisionRule) {
+                    subBlock(from, fromId, "reference", "PEGA_NATIVE_CIRCUMSTANCE_UNSUPPORTED", type + " '" + name + "' has circumstance or date variants, which the target cannot select at run time for this rule type.", fromPath);
+                    return null;
+                }
+                variantsOf.put(l.chosen().path(), l.variants());
+            }
             if (l.resolved()) return l.chosen();
             String code = switch (l.status()) {
                 case "blocked" -> "PEGA_NATIVE_RULE_BLOCKED"; case "circumstanceUnresolved" -> "PEGA_NATIVE_CIRCUMSTANCE_UNRESOLVED";
@@ -258,7 +295,7 @@ public final class NativeConversion {
             };
             String why = switch (l.status()) {
                 case "blocked" -> "the highest-ranked candidate is Blocked, so rule resolution finds no rule";
-                case "circumstanceUnresolved" -> "a circumstanced variant exists and circumstances depend on case data at run time";
+                case "circumstanceUnresolved" -> "its circumstance or date variants cannot be selected statically (no base rule, a variant in a closer class, several dimensions, or a blocked or duplicated variant)";
                 case "ambiguous" -> "two candidates have the same class, ruleset and version";
                 case "finalOverridden" -> "a Final rule is overridden from another ruleset";
                 default -> "no available candidate exists in the archive for the application stack and class " + context;
@@ -281,7 +318,12 @@ public final class NativeConversion {
             List<Step> steps = new ArrayList<>(); String harness = null;
             if (start.kind().equals("caseType")) {
                 try {
-                    Page p = root.page(); p.allow(with("pyNewHarness", "pyStages"));
+                    Page p = root.page();
+                    if (p.fields().containsKey("pyAlternateStages")) {
+                        subBlock(u, "pyAlternateStages", "Rule-Obj-CaseType", "PEGA_NATIVE_ALTERNATE_STAGE_UNSUPPORTED", "Alternate stages are entered by a Change Stage action outside the primary path. A converted workflow has no stage that can be entered out of sequence, and the case designer target would need every process converted and published as its own workflow first (see S115).", p.pathOf("pyAlternateStages"));
+                        return;
+                    }
+                    p.allow(with("pyNewHarness", "pyStages", "pyServiceLevelName"));
                     List<Page> rows = p.pages("pyStages");
                     if (rows.isEmpty() || rows.size() > 20) throw new Page.Grammar(p.pathOf("pyStages"), "1 to 20 stages are required");
                     Set<String> ids = new HashSet<>();
@@ -295,23 +337,29 @@ public final class NativeConversion {
                         String sla = null;
                         if (s.text("pyServiceLevelName") != null) {
                             Entry level = lookup(ctx, "Rule-Obj-ServiceLevel", s.text("pyServiceLevelName"), u, id, s.pathOf("pyServiceLevelName"), "serviceLevel");
-                            Integer minutes = level == null ? null : serviceLevel(level, 129_600, "stage time limit");
-                            if (minutes != null) { sla = duration(minutes); use(level, "serviceLevel").targets.add("stage:" + id); }
+                            Due d = level == null ? null : serviceLevel(level, 129_600, "stage time limit", false);
+                            if (d != null) { sla = duration(d.minutes()); use(level, "serviceLevel").targets.add("stage:" + id); }
                         }
                         stages.add(new StagePlan(id, name, new LinkedHashSet<>(), sla));
                         for (Page process : processes) {
-                            process.allow(Set.of("pyFlowName"));
+                            if ("true".equals(process.text("pyOptional"))) {
+                                subBlock(u, id + ":" + process.text("pyFlowName"), "Rule-Obj-CaseType", "PEGA_NATIVE_OPTIONAL_PROCESS_UNSUPPORTED", "Optional processes start only when a user chooses them. A converted workflow runs its steps in sequence and cannot offer a process on demand; discretionary items exist only in case definitions, which would need the process converted and published separately (see S115).", process.pathOf("pyOptional"));
+                                return;
+                            }
+                            process.allow(Set.of("pyFlowName", "pyOptional"));
                             if (RuleArchive.blank(process.text("pyFlowName"))) throw new Page.Grammar(process.path(), "pyFlowName is required");
                             steps.add(new Step(id, process.text("pyFlowName"), process.pathOf("pyFlowName"), u));
                         }
                     }
                     harness = p.text("pyNewHarness");
+                    if (p.text("pyServiceLevelName") != null) caseServiceLevel(u, p);
                 } catch (Page.Grammar g) { refuse(u, g); return; }
                 u.targetKind = "workflowStages";
                 stages.forEach(s -> u.targets.add(s.id()));
             } else {
                 steps.add(new Step(null, root.ruleName(), root.page().path(), u));
-                harness = "New";
+                // A starting flow (often converted to serve as a child workflow) has a request form only when it names a harness.
+                harness = root.page().fields().get("pyHarness") instanceof Page.Text t ? t.text() : null;
             }
             List<FlowDef> flows = new ArrayList<>();
             Set<String> seen = new HashSet<>();
@@ -329,10 +377,26 @@ public final class NativeConversion {
             transform(u);
         }
 
+        /** A case-level service level: expressible only as the time limit of a single stage that has none of its own. */
+        void caseServiceLevel(Use u, Page p) {
+            Entry level = lookup(ctx, "Rule-Obj-ServiceLevel", p.text("pyServiceLevelName"), u, "pyServiceLevelName", p.pathOf("pyServiceLevelName"), "serviceLevel");
+            if (level == null) return;
+            if (stages.size() != 1 || stages.getFirst().sla() != null) {
+                subBlock(u, "pyServiceLevelName", "Rule-Obj-CaseType", "PEGA_NATIVE_CASE_SLA_UNSUPPORTED", "A case-level service level runs from case creation across all stages. Workflows only have per-stage time limits, so it is expressible only for a case type with one stage that has no limit of its own.", p.pathOf("pyServiceLevelName"));
+                return;
+            }
+            Due d = serviceLevel(level, 129_600, "stage time limit", false);
+            if (d == null) return;
+            StagePlan only = stages.getFirst();
+            stages.set(0, new StagePlan(only.id(), only.label(), only.bpmnNodes(), duration(d.minutes())));
+            Use lu = use(level, "serviceLevel"); lu.targets.add("stage:" + only.id());
+            review(lu, "PEGA_NATIVE_CASE_SLA_AS_STAGE", "The case deadline becomes the time limit of the only stage '" + only.label() + "', counted from its first step (which starts when the request is submitted).");
+        }
+
         FlowDef flow(Step step, Entry entry) {
             Use u = use(entry, "flow");
             try {
-                Page p = entry.page(); p.allow(with("pyIsStartingFlow", "pyShapes", "pyConnectors"));
+                Page p = entry.page(); p.allow(with("pyIsStartingFlow", "pyHarness", "pyShapes", "pyConnectors"));
                 LinkedHashMap<String, Shape> shapes = new LinkedHashMap<>(); Page startShape = null;
                 for (Page s : p.pages("pyShapes")) {
                     String id = s.text("pyShapeID"), type = s.text("pyShapeType");
@@ -343,6 +407,8 @@ public final class NativeConversion {
                         case "End" -> s.allow(Set.of("pyShapeID", "pyShapeType", "pyShapeName", "pyStatusWork"));
                         case "Assignment" -> s.allow(Set.of("pyShapeID", "pyShapeType", "pyShapeName", "pyRouterType", "pyRouterParam", "pyServiceLevelName"));
                         case "Decision" -> s.allow(Set.of("pyShapeID", "pyShapeType", "pyShapeName", "pyDecisionType", "pyDecisionName"));
+                        case "Subprocess" -> s.allow(Set.of("pyShapeID", "pyShapeType", "pyShapeName", "pyFlowName", "pySpinOff", "pyRunOn"));
+                        case "Split-Join" -> s.allow(Set.of("pyShapeID", "pyShapeType", "pyShapeName", "pySplitFlows", "pyJoinCondition"));
                         default -> { }
                     }
                     shapes.put(id, new Shape(id, type, s));
@@ -381,6 +447,8 @@ public final class NativeConversion {
                     }
                     case "Assignment" -> assignment(f, s, out);
                     case "Decision" -> decisionShape(f, s, out);
+                    case "Subprocess" -> subprocess(f, s, out);
+                    case "Split-Join" -> splitJoin(f, s, out);
                     default -> unsupportedShape(f, s);
                 }
             }
@@ -407,8 +475,8 @@ public final class NativeConversion {
             String sla = p.text("pyServiceLevelName");
             if (sla != null) {
                 Entry level = lookup(ctx, "Rule-Obj-ServiceLevel", sla, u, s.id(), p.pathOf("pyServiceLevelName"), "serviceLevel");
-                Integer minutes = level == null ? null : serviceLevel(level, 43_200, "approval due time");
-                if (minutes != null) { due.put(s.id(), minutes); use(level, "serviceLevel").targets.add(s.id()); }
+                Due d = level == null ? null : serviceLevel(level, 43_200, "approval due time", true);
+                if (d != null) { due.put(s.id(), d); use(level, "serviceLevel").targets.add(s.id()); }
             }
         }
 
@@ -436,7 +504,7 @@ public final class NativeConversion {
                 if (whens.size() != 1 || out.size() != 2) { subBlock(u, s.id(), "flowShape", "PEGA_NATIVE_FORK_ORDER", "A fork must have one When connector and one Else connector. With several When conditions the likelihood order is not reproduced.", p.path()); return; }
                 Page c = whens.getFirst();
                 Entry when = lookup(ctx, "Rule-Obj-When", String.valueOf(c.text("pyWhenName")), u, c.text("pyConnectorID"), c.pathOf("pyWhenName"), "when");
-                if (when != null) when(when, c.text("pyConnectorID"));
+                if (when != null && when(when, c.text("pyConnectorID")) != null) whenVariants(f, s, when, c);
                 return;
             }
             if (!type.equals("DecisionTable") && !type.equals("DecisionTree")) { subBlock(u, s.id(), "flowShape", "PEGA_NATIVE_DECISION_UNSUPPORTED", "Decision shapes of type '" + type + "' are not supported; only DecisionTable, DecisionTree and Fork.", p.pathOf("pyDecisionType")); return; }
@@ -445,13 +513,67 @@ public final class NativeConversion {
             if (rule == null) return;
             NativeDecisions.Table table = decision(rule);
             if (table == null) { block(u, "PEGA_NATIVE_DEPENDENCY_BLOCKED", "A rule this flow depends on cannot be converted."); return; }
+            if (variantsOf.containsKey(rule.path())) {
+                ObjectNode combined = combined(rule, table, u, s.id(), p.pathOf("pyDecisionName"));
+                if (combined == null) return;
+                combinedTables.put(s.id(), combined);
+            }
             for (Page c : out) {
                 String kind = c.text("pyConditionType");
                 if (kind.equals("Else")) continue;
-                if (!kind.equals("Result") || !table.results().contains(String.valueOf(c.text("pyResultValue"))))
+                if (!kind.equals("Result") || !resultsOf(rule, table).contains(String.valueOf(c.text("pyResultValue"))))
                     subBlock(u, c.text("pyConnectorID"), "connector", "PEGA_NATIVE_RESULT_UNKNOWN", "A decision connector must test a result the decision can return (" + table.results() + ").", c.path());
             }
             use(rule, "decision").targets.add(s.id());
+        }
+
+        boolean single(FlowDef f, Shape s, List<Page> out) {
+            if (out.size() == 1 && "Always".equals(out.getFirst().text("pyConditionType"))) return true;
+            subBlock(f.use(), s.id(), "flowShape", "PEGA_NATIVE_FLOW_SHAPE", "A " + s.type() + " shape needs exactly one Always connector.", s.page().path());
+            return false;
+        }
+
+        /** A subflow on the current case becomes a child workflow step; the published child is mapped explicitly. */
+        void subprocess(FlowDef f, Shape s, List<Page> out) {
+            Page p = s.page();
+            if ("true".equals(p.text("pySpinOff"))) {
+                subBlock(f.use(), s.id(), "flowShape", "PEGA_NATIVE_SPINOFF_UNSUPPORTED", "A spin-off runs the subflow without waiting for it. The target's child workflow step always waits for the child to finish, so a spin-off cannot be converted faithfully.", p.pathOf("pySpinOff"));
+                return;
+            }
+            if (p.text("pyRunOn") != null && !"CurrentCase".equals(p.text("pyRunOn"))) {
+                subBlock(f.use(), s.id(), "flowShape", "PEGA_NATIVE_SUBFLOW_UNSUPPORTED", "Subflows on another page or case are not converted; only subflows on the current case are.", p.pathOf("pyRunOn"));
+                return;
+            }
+            if (!single(f, s, out)) return;
+            String name = p.text("pyFlowName");
+            if (RuleArchive.blank(name)) { subBlock(f.use(), s.id(), "flowShape", "PEGA_NATIVE_SUBFLOW_UNSUPPORTED", "The subprocess names no flow.", p.path()); return; }
+            child(f, s.id(), p.text("pyShapeName") == null ? s.id() : p.text("pyShapeName"), name, p.pathOf("pyFlowName"));
+        }
+
+        /** A split-join over subflows becomes a parallel split, one child workflow step per subflow and a join (all). */
+        void splitJoin(FlowDef f, Shape s, List<Page> out) {
+            Page p = s.page();
+            if (!"All".equals(p.text("pyJoinCondition"))) {
+                subBlock(f.use(), s.id(), "flowShape", "PEGA_NATIVE_JOIN_UNSUPPORTED", "Only a join that waits for all branches is converted; Any and Some joins (which cancel or ignore unfinished branches) have no equivalent.", p.pathOf("pyJoinCondition"));
+                return;
+            }
+            List<String> flows;
+            try { flows = p.texts("pySplitFlows"); } catch (Page.Grammar g) { refuse(f.use(), g); return; }
+            if (flows.size() < 2 || flows.size() > 5) { subBlock(f.use(), s.id(), "flowShape", "PEGA_NATIVE_SPLIT_UNSUPPORTED", "A split-join needs 2 to 5 subflows.", p.pathOf("pySplitFlows")); return; }
+            if (!single(f, s, out)) return;
+            for (int i = 0; i < flows.size(); i++) child(f, s.id() + "_" + (i + 1), flows.get(i), flows.get(i), p.pathOf("pySplitFlows") + "/" + (i + 1));
+        }
+
+        void child(FlowDef f, String id, String label, String flowName, String path) {
+            Entry sub = lookup(ctx, "Rule-Obj-Flow", flowName, f.use(), id, path, "subflow");
+            if (sub == null) return;
+            Use su = use(sub, "subflow");
+            if (!"blocked".equals(su.conversion)) {
+                su.targetKind = "childWorkflow"; su.targets.add(id); su.fragment = "childWorkflow:" + sub.ruleName();
+                review(su, "PEGA_NATIVE_SUBFLOW_AS_CHILD", "The subflow runs as a separate child request of the workflow named in childWorkflowMappings, with its data passed by inputMapping and returned by resultMapping. Convert and publish that child first (a starting flow of this archive can be converted on its own).");
+            }
+            subflows.add(new Subflow(id, label, flowName, f.entry().ruleName()));
+            paths.put(id, path);
         }
 
         void unsupportedShape(FlowDef f, Shape s) {
@@ -459,7 +581,8 @@ public final class NativeConversion {
             String[] ref = switch (s.type()) {
                 case "Utility" -> new String[] {"Rule-Obj-Activity", p.text("pyActivityName"), "PEGA_NATIVE_ACTIVITY_NOT_EXECUTED", "Activities (and any Java they run) are never executed."};
                 case "Integrator" -> new String[] {"Rule-Connect-REST", p.text("pyConnectorName"), "PEGA_NATIVE_CONNECTOR_NOT_EXECUTED", "Connectors are not converted; map the integration to an approved Orqix connection and rebuild the step."};
-                case "Subprocess" -> new String[] {"Rule-Obj-Flow", p.text("pyFlowName"), "PEGA_NATIVE_SUBFLOW_UNSUPPORTED", "Subflows are not converted; publish the child separately and rebuild the call."};
+                case "Spinoff" -> new String[] {"Rule-Obj-Flow", p.text("pyFlowName"), "PEGA_NATIVE_SPINOFF_UNSUPPORTED", "A spin-off runs a flow without waiting for it; the target's child workflow step always waits."};
+                case "Split-ForEach" -> new String[] {"Rule-Obj-Flow", p.text("pyFlowName"), "PEGA_NATIVE_SPLIT_UNSUPPORTED", "Split-for-each iterates over a page list, which has no converted request field."};
                 default -> null;
             };
             String code = ref == null ? "PEGA_NATIVE_SHAPE_UNSUPPORTED" : ref[2];
@@ -471,6 +594,144 @@ public final class NativeConversion {
                 if (target != null) block(use(target, s.type().equals("Utility") ? "activity" : s.type().equals("Integrator") ? "connector" : "flow"), code,
                         "Referenced from the " + s.type() + " shape '" + s.id() + "' of " + f.entry().ruleName() + ". " + ref[3]);
             }
+        }
+
+        Set<String> resultsOf(Entry rule, NativeDecisions.Table table) {
+            Set<String> all = new LinkedHashSet<>(table.results());
+            for (Variant v : variantsOf.getOrDefault(rule.path(), List.of()))
+                if (decisionTables.containsKey(v.rule().path())) all.addAll(decisionTables.get(v.rule().path()).results());
+            return all;
+        }
+
+        static String describe(RuleArchive.Qualifier q) {
+            return switch (q.kind()) {
+                case "property" -> q.property() + " = " + q.value();
+                case "date" -> q.property() + " on or after " + q.date();
+                case "dateRange" -> "from " + (q.from() == null ? "the beginning" : q.from()) + " until " + (q.to() == null ? "no end" : q.to());
+                default -> "several qualifiers";
+            };
+        }
+
+        /** UTC date of a qualifier bound; ranges must start and end at midnight because the target dates rows by day. */
+        static String day(String value, boolean end, String path) {
+            if (value == null) return null;
+            String digits = value.substring(0, 8);
+            if (value.length() > 8 && !value.substring(8).equals("T000000.000 GMT")) throw new Page.Grammar(path, "date range bounds must be at midnight GMT, because decision rows are dated by day");
+            var date = java.time.LocalDate.parse(digits, java.time.format.DateTimeFormatter.BASIC_ISO_DATE);
+            return (end ? date.minusDays(1) : date).toString(); // a range ends before its end instant: the last day included is the day before
+        }
+
+        ObjectNode atom(String fieldKey, String operator, JsonNode value) {
+            ObjectNode a = json.object(); a.put("fieldRef", "/input/" + fieldKey); a.put("operator", operator); a.set("value", value); return a;
+        }
+
+        JsonNode literalNode(String type, String value) {
+            return type.equals("string") ? json.object().textNode(value) : json.object().numberNode(new java.math.BigDecimal(value));
+        }
+
+        ObjectNode rowCondition(NativeDecisions.Table t, NativeDecisions.Row r) {
+            String op = Map.of("=", "eq", "!=", "ne", ">", "gt", ">=", "gte", "<", "lt", "<=", "lte").get(r.operator());
+            return atom(t.fieldKey(), op, literalNode(t.fieldType(), r.value()));
+        }
+
+        /** Always true for a required value of the input field (used where a dated row needs a condition). */
+        ObjectNode always(NativeDecisions.Table t) {
+            ObjectNode any = json.object(); ArrayNode list = any.putArray("any");
+            JsonNode pivot = t.fieldType().equals("string") ? json.object().textNode(fields.get(t.fieldKey()).schema.has("enum")
+                    ? fields.get(t.fieldKey()).schema.path("enum").get(0).asString() : "") : json.object().numberNode(0);
+            list.add(atom(t.fieldKey(), "eq", pivot)); list.add(atom(t.fieldKey(), "ne", pivot));
+            return any;
+        }
+
+        ObjectNode then(String result) { ObjectNode o = json.object(); o.put("result", result); return o; }
+
+        /**
+         * One FIRST table for a decision with variants (S115): property-circumstance rows test the case field and the input
+         * together, date-qualified rows carry an effective window judged by the submission day; then the base rows and the
+         * base otherwise as default. Pega selects the variant first and then evaluates it; this ordering does the same.
+         */
+        ObjectNode combined(Entry rule, NativeDecisions.Table base, Use from, String shape, String fromPath) {
+            List<Variant> variants = variantsOf.get(rule.path());
+            ArrayNode rows = json.mapper().createArrayNode();
+            for (Variant v : variants) {
+                Use vu = use(v.rule(), "decision");
+                NativeDecisions.Table vt = decision(v.rule());
+                if (vt == null) { block(from, "PEGA_NATIVE_DEPENDENCY_BLOCKED", "A variant of the decision cannot be converted."); return null; }
+                if (!vt.fieldKey().equals(base.fieldKey())) { subBlock(vu, "pyColumns", v.rule().ruleType(), "PEGA_NATIVE_VARIANT_UNSUPPORTED", "A variant must test the same property as its base rule.", v.rule().path()); return null; }
+                RuleArchive.Qualifier q = v.qualifier();
+                try {
+                    switch (q.kind()) {
+                        case "property" -> {
+                            String field = property(q.property(), vu, "circumstance", v.rule().page().pathOf("pyCircumstanceProp"));
+                            if (field == null) return null;
+                            if (field.equals(base.fieldKey())) throw new Page.Grammar(v.rule().page().pathOf("pyCircumstanceProp"), "the circumstance property is the tested property itself");
+                            conditionFields.add(field);
+                            ObjectNode schema = fields.get(field).schema; String type = schema.path("type").asString();
+                            JsonNode value;
+                            if (type.equals("string") && !schema.has("format")) {
+                                if (schema.has("enum") && !schema.path("enum").toString().contains("\"" + q.value() + "\"")) throw new Page.Grammar(v.rule().page().pathOf("pyCircumstanceVal"), "the circumstance value is not an allowed value of the property");
+                                value = json.object().textNode(q.value());
+                            } else if ((type.equals("number") || type.equals("integer")) && NUMBER.matcher(q.value()).matches()) value = json.object().numberNode(new java.math.BigDecimal(q.value()));
+                            else if (type.equals("boolean") && (q.value().equals("true") || q.value().equals("false"))) value = json.object().booleanNode(Boolean.parseBoolean(q.value()));
+                            else throw new Page.Grammar(v.rule().page().pathOf("pyCircumstanceVal"), "the circumstance value does not fit the property type");
+                            ObjectNode guard = atom(field, "eq", value);
+                            for (NativeDecisions.Row r : vt.rows()) {
+                                ObjectNode row = rows.addObject(); ObjectNode when = row.putObject("when"); ArrayNode all = when.putArray("all");
+                                all.add(guard.deepCopy()); all.add(rowCondition(vt, r)); row.set("then", then(r.result()));
+                            }
+                            ObjectNode otherwise = rows.addObject(); otherwise.set("when", guard.deepCopy()); otherwise.set("then", then(vt.otherwise()));
+                        }
+                        case "date", "dateRange" -> {
+                            ObjectNode effective = json.object();
+                            if (q.kind().equals("date")) {
+                                if (!".pxCreateDateTime".equals(q.property())) throw new Page.Grammar(v.rule().page().pathOf("pyCircumstanceDateProp"), "only the case creation date (.pxCreateDateTime) can date a rule; the target dates rows by the submission day");
+                                effective.put("from", day(q.date(), false, v.rule().page().pathOf("pyCircumstanceDate")));
+                            } else {
+                                if (q.from() != null) effective.put("from", day(q.from(), false, v.rule().page().pathOf("pyStartDateTime")));
+                                if (q.to() != null) effective.put("to", day(q.to(), true, v.rule().page().pathOf("pyEndDateTime")));
+                            }
+                            for (NativeDecisions.Row r : vt.rows()) { ObjectNode row = rows.addObject(); row.set("when", rowCondition(vt, r)); row.set("then", then(r.result())); row.set("effective", effective.deepCopy()); }
+                            ObjectNode otherwise = rows.addObject(); otherwise.set("when", always(vt)); otherwise.set("then", then(vt.otherwise())); otherwise.set("effective", effective.deepCopy());
+                        }
+                        default -> throw new Page.Grammar(v.rule().path() + "#", "unsupported qualifier");
+                    }
+                } catch (Page.Grammar g) { refuse(vu, g); block(from, "PEGA_NATIVE_DEPENDENCY_BLOCKED", "A variant of the decision cannot be converted."); return null; }
+                vu.targetKind = "decisionVariant"; if (!vu.targets.contains(shape)) vu.targets.add(shape);
+            }
+            for (NativeDecisions.Row r : base.rows()) { ObjectNode row = rows.addObject(); row.set("when", rowCondition(base, r)); row.set("then", then(r.result())); }
+            if (rows.size() > 50) { subBlock(use(rule, "decision"), "pyRows", rule.ruleType(), "PEGA_NATIVE_DECISION_TOO_LARGE", "With its variants the decision needs " + rows.size() + " rows; a decision table has at most 50.", fromPath); return null; }
+            ObjectNode combined = json.object(); combined.set("rows", rows); combined.set("default", then(base.otherwise()));
+            Use bu = use(rule, "decision"); bu.fragment = combined.toString(); bu.targetKind = "dmnDecision";
+            for (Variant v : variants) uses.get(v.rule().path()).fragment = combined.toString();
+            return combined;
+        }
+
+        /** Property-circumstance variants of a fork's when rule become a gateway on the case field before the fork (S115). */
+        void whenVariants(FlowDef f, Shape s, Entry when, Page c) {
+            List<Variant> variants = variantsOf.get(when.path());
+            if (variants == null) return;
+            List<String[]> list = new ArrayList<>();
+            for (Variant v : variants) {
+                Use vu = use(v.rule(), "when");
+                if (!v.qualifier().kind().equals("property")) {
+                    subBlock(vu, "qualifier", "Rule-Obj-When", "PEGA_NATIVE_CIRCUMSTANCE_UNSUPPORTED", "A date-qualified when rule cannot be converted: branch conditions read request fields, not the submission date.", v.rule().path());
+                    block(f.use(), "PEGA_NATIVE_DEPENDENCY_BLOCKED", "A variant of a when rule cannot be converted.");
+                    return;
+                }
+                String field = property(v.qualifier().property(), vu, "circumstance", v.rule().page().pathOf("pyCircumstanceProp"));
+                if (field == null) { block(f.use(), "PEGA_NATIVE_DEPENDENCY_BLOCKED", "A variant of a when rule cannot be converted."); return; }
+                conditionFields.add(field);
+                ObjectNode schema = fields.get(field).schema; String type = schema.path("type").asString(); String value = v.qualifier().value(); String literal;
+                if (type.equals("string") && !schema.has("format") && value.matches("[A-Za-z0-9][A-Za-z0-9 _.-]{0,99}")) literal = "'" + value + "'";
+                else if ((type.equals("number") || type.equals("integer")) && NUMBER.matcher(value).matches()) literal = value;
+                else if (type.equals("boolean") && (value.equals("true") || value.equals("false"))) literal = value;
+                else { subBlock(vu, "pyCircumstanceVal", "Rule-Obj-When", "PEGA_NATIVE_VARIANT_UNSUPPORTED", "The circumstance value does not fit the property type.", v.rule().page().pathOf("pyCircumstanceVal")); block(f.use(), "PEGA_NATIVE_DEPENDENCY_BLOCKED", "A variant of a when rule cannot be converted."); return; }
+                String expression = when(v.rule(), c.text("pyConnectorID"));
+                if (expression == null) { block(f.use(), "PEGA_NATIVE_DEPENDENCY_BLOCKED", "A variant of a when rule cannot be converted."); return; }
+                vu.targetKind = "branchVariant";
+                list.add(new String[] {"${" + field + " == " + literal + "}", expression, v.qualifier().property() + " = " + value});
+            }
+            forkVariants.put(s.id(), list);
         }
 
         NativeDecisions.Table decision(Entry rule) {
@@ -526,7 +787,7 @@ public final class NativeConversion {
                             + analysis.blockersOf(id).stream().map(Report.Issue::explanation).toList());
                     return null;
                 }
-                tables.put(id, converted); decisionTables.put(rule.path(), table);
+                tables.putIfAbsent(id, converted); decisionTables.put(rule.path(), table);
                 return table;
             } catch (Page.Grammar g) { u.fragment = ""; refuse(u, g); return null; }
         }
@@ -647,20 +908,109 @@ public final class NativeConversion {
             } catch (Page.Grammar g) { refuse(u, g); return null; }
         }
 
-        Integer serviceLevel(Entry rule, int maxMinutes, String target) {
+        /**
+         * A service level as a due time (S115). Elapsed deadlines convert directly. Business-day deadlines need a named
+         * business calendar data instance and an approval target: N days become N workdays of that calendar's working
+         * hours. A NotifyAssignee deadline escalation becomes overdue notices; passed-deadline repeats set their interval
+         * and count. Goals and other escalations have no target.
+         */
+        Due serviceLevel(Entry rule, int maxMinutes, String target, boolean approval) {
             Use u = use(rule, "serviceLevel");
             try {
                 Page p = rule.page();
-                p.allow(with("pyGoalDays", "pyGoalHours", "pyGoalMinutes", "pyDeadlineDays", "pyDeadlineHours", "pyDeadlineMinutes", "pyUseBusinessDays", "pyGoalEscalation", "pyDeadlineEscalation"));
-                if (!"false".equals(p.text("pyUseBusinessDays"))) { subBlock(u, "pyUseBusinessDays", "Rule-Obj-ServiceLevel", "PEGA_NATIVE_SLA_BUSINESS_DAYS", "Business-day or calendar-based intervals are not converted; elapsed time (pyUseBusinessDays false) must be explicit.", p.pathOf("pyUseBusinessDays")); return null; }
-                for (String escalation : List.of("pyGoalEscalation", "pyDeadlineEscalation"))
-                    if (!RuleArchive.blank(p.text(escalation))) { subBlock(u, escalation, "Rule-Obj-ServiceLevel", "PEGA_NATIVE_SLA_ESCALATION", "Escalation activities are never executed; the service level cannot be converted with one.", p.pathOf(escalation)); return null; }
-                int goal = minutes(p, "pyGoal"), deadline = minutes(p, "pyDeadline");
+                p.allow(with("pyGoalDays", "pyGoalHours", "pyGoalMinutes", "pyDeadlineDays", "pyDeadlineHours", "pyDeadlineMinutes", "pyUseBusinessDays",
+                        "pyBusinessCalendar", "pyGoalEscalation", "pyDeadlineEscalation", "pyPassedDeadlineHours", "pyPassedDeadlineLimit"));
+                String business = p.text("pyUseBusinessDays");
+                if (!"false".equals(business) && !"true".equals(business)) throw new Page.Grammar(p.pathOf("pyUseBusinessDays"), "pyUseBusinessDays must be explicit (true or false)");
+                if (!RuleArchive.blank(p.text("pyGoalEscalation"))) { subBlock(u, "pyGoalEscalation", "Rule-Obj-ServiceLevel", "PEGA_NATIVE_SLA_ESCALATION", "Goal escalations have no equivalent: the target only reacts when a step is overdue.", p.pathOf("pyGoalEscalation")); return null; }
+                String escalationName = p.text("pyDeadlineEscalation");
+                boolean passed = p.fields().containsKey("pyPassedDeadlineHours") || p.fields().containsKey("pyPassedDeadlineLimit");
+                if (!RuleArchive.blank(escalationName) && (!approval || !"NotifyAssignee".equals(escalationName))) {
+                    subBlock(u, "pyDeadlineEscalation", "Rule-Obj-ServiceLevel", "PEGA_NATIVE_SLA_ESCALATION", "Only a NotifyAssignee deadline escalation on an assignment is converted (to overdue notices). '" + escalationName + "' would run an activity, transfer the work or advance the flow, which is never executed.", p.pathOf("pyDeadlineEscalation"));
+                    return null;
+                }
+                if (passed && RuleArchive.blank(escalationName)) throw new Page.Grammar(p.pathOf("pyPassedDeadlineHours"), "passed-deadline repeats need a deadline escalation");
+                int goal = minutes(p, "pyGoal");
+                ObjectNode calendar = null; int deadline; String note = null;
+                if ("true".equals(business)) {
+                    if (!approval) { subBlock(u, "pyUseBusinessDays", "Rule-Obj-ServiceLevel", "PEGA_NATIVE_SLA_BUSINESS_DAYS", "Business-day intervals convert only for assignment due times; " + target + "s are elapsed time.", p.pathOf("pyUseBusinessDays")); return null; }
+                    String name = p.text("pyBusinessCalendar");
+                    if (RuleArchive.blank(name)) { subBlock(u, "pyBusinessCalendar", "Rule-Obj-ServiceLevel", "PEGA_NATIVE_SLA_BUSINESS_DAYS", "Business days need a named calendar (pyBusinessCalendar). The default calendar comes from the operator's organization, which is not in the archive.", p.pathOf("pyUseBusinessDays")); return null; }
+                    Entry cal = calendarEntry(name);
+                    if (cal == null) { subBlock(u, "pyBusinessCalendar", "Rule-Obj-ServiceLevel", "PEGA_NATIVE_CALENDAR_UNRESOLVED", "The business calendar '" + name + "' is not a Data-Admin-Calendar instance of the archive (or is defined twice).", p.pathOf("pyBusinessCalendar")); return null; }
+                    calendar = calendar(cal);
+                    if (calendar == null) { block(u, "PEGA_NATIVE_DEPENDENCY_BLOCKED", "The business calendar cannot be converted."); return null; }
+                    int workday = calendar.path("workdayMinutes").asInt(); calendar.remove("workdayMinutes");
+                    deadline = days(p, "pyDeadlineDays") * workday + minutesOnly(p, "pyDeadline");
+                    note = "Business days count as " + (workday / 60.0) + " working hours each of calendar '" + name + "' (" + calendar.path("zone").asString() + ").";
+                    Use cu = use(cal, "calendar"); cu.targetKind = "approvalCalendar"; cu.fragment = calendar.toString(); if (!cu.targets.contains(rule.ruleName())) cu.targets.add(rule.ruleName());
+                } else deadline = minutes(p, "pyDeadline");
                 if (deadline < 1 || deadline > maxMinutes) { subBlock(u, "pyDeadline", "Rule-Obj-ServiceLevel", "PEGA_NATIVE_SLA_DEADLINE", "A deadline between 1 minute and " + (maxMinutes / 1440) + " days is required for the " + target + ".", p.path()); return null; }
-                u.targetKind = "dueTime"; u.fragment = "deadlineMinutes:" + deadline;
+                ObjectNode escalation = null;
+                if (!RuleArchive.blank(escalationName)) {
+                    int interval = 24, limit = 0;
+                    if (passed) {
+                        String h = p.text("pyPassedDeadlineHours"), n = p.text("pyPassedDeadlineLimit");
+                        if (h == null || !h.matches("[1-9][0-9]{0,2}") || Integer.parseInt(h) > 720 || n == null || !n.matches("[1-9][0-9]?") || Integer.parseInt(n) > 19)
+                            throw new Page.Grammar(p.pathOf("pyPassedDeadlineHours"), "passed-deadline repeats need 1 to 720 hours and a limit of 1 to 19");
+                        interval = Integer.parseInt(h); limit = Integer.parseInt(n);
+                    }
+                    escalation = json.object(); escalation.put("intervalHours", interval); escalation.put("maxNotices", 1 + limit);
+                    review(u, "PEGA_NATIVE_ESCALATION_AS_NOTICES", "NotifyAssignee becomes overdue notices to the current eligible assignee (" + (1 + limit) + " notice" + (limit == 0 ? "" : "s, every " + interval + " hours") + "); Pega's correspondence template is not reproduced.");
+                }
+                u.targetKind = "dueTime"; u.fragment = "deadlineMinutes:" + deadline + (calendar == null ? "" : ":" + calendar) + (escalation == null ? "" : ":" + escalation);
                 if (goal > 0) review(u, "PEGA_NATIVE_SLA_GOAL_NOT_REPRESENTED", "The goal interval (" + goal + " minutes) has no Orqix equivalent; only the deadline becomes the " + target + ".");
-                return deadline;
+                if (note != null) review(u, "PEGA_NATIVE_SLA_BUSINESS_DAYS_AS_HOURS", note);
+                return new Due(deadline, calendar, escalation);
             } catch (Page.Grammar g) { refuse(u, g); return null; }
+        }
+
+        static int days(Page p, String name) {
+            String v = p.text(name);
+            if (v == null) return 0;
+            if (!v.matches("[0-9]{1,3}")) throw new Page.Grammar(p.pathOf(name), "a whole number from 0 to 999 is required");
+            return Integer.parseInt(v);
+        }
+
+        static int minutesOnly(Page p, String prefix) {
+            int total = 0;
+            for (var part : List.of(Map.entry("Hours", 60), Map.entry("Minutes", 1))) total += days(p, prefix + part.getKey()) * part.getValue();
+            return total;
+        }
+
+        Entry calendarEntry(String name) {
+            List<Entry> found = a.entries().stream().filter(e -> "data".equals(e.status()) && "Data-Admin-Calendar".equals(e.ruleType())
+                    && name.equals(e.page().fields().get("pyCalendarName") instanceof Page.Text t ? t.text() : null)).toList();
+            return found.size() == 1 ? found.getFirst() : null;
+        }
+
+        /** A Data-Admin-Calendar instance as an approval calendar; workdayMinutes is returned alongside and removed by the caller. */
+        ObjectNode calendar(Entry cal) {
+            Use cu = use(cal, "calendar");
+            try {
+                Page p = cal.page();
+                p.allow(Set.of("pxObjClass", "pzInsKey", "pyCalendarName", "pyTimeZone", "pyWorkDays", "pyStartTime", "pyEndTime", "pyHolidays", "pyLabel", "pyDescription"));
+                String zone = p.text("pyTimeZone");
+                try { java.time.ZoneId.of(String.valueOf(zone)); } catch (java.time.DateTimeException e) { throw new Page.Grammar(p.pathOf("pyTimeZone"), "an IANA time zone is required"); }
+                List<String> names = List.of("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun");
+                List<String> days = p.texts("pyWorkDays");
+                if (days.isEmpty() || !names.containsAll(days) || new HashSet<>(days).size() != days.size()) throw new Page.Grammar(p.pathOf("pyWorkDays"), "work days must be distinct Mon to Sun");
+                String start = p.text("pyStartTime"), end = p.text("pyEndTime");
+                String hhmm = "([01][0-9]|2[0-3]):[0-5][0-9]";
+                if (start == null || end == null || !start.matches(hhmm) || !end.matches(hhmm) || start.compareTo(end) >= 0) throw new Page.Grammar(p.pathOf("pyStartTime"), "working hours need HH:MM start before end");
+                List<String> holidays = p.texts("pyHolidays");
+                for (String h : holidays) {
+                    try { java.time.LocalDate.parse(h); } catch (java.time.DateTimeException e) { throw new Page.Grammar(p.pathOf("pyHolidays"), "holidays must be YYYY-MM-DD dates"); }
+                }
+                if (holidays.size() > 366 || new HashSet<>(holidays).size() != holidays.size()) throw new Page.Grammar(p.pathOf("pyHolidays"), "at most 366 distinct holidays");
+                ObjectNode c = json.object(); c.put("zone", zone);
+                ArrayNode wd = c.putArray("weekdays"); days.stream().map(d -> names.indexOf(d) + 1).sorted().forEach(wd::add);
+                c.put("start", start); c.put("end", end);
+                if (!holidays.isEmpty()) { ArrayNode hs = c.putArray("holidays"); holidays.stream().sorted().forEach(hs::add); }
+                int workday = (Integer.parseInt(end.substring(0, 2)) * 60 + Integer.parseInt(end.substring(3))) - (Integer.parseInt(start.substring(0, 2)) * 60 + Integer.parseInt(start.substring(3)));
+                c.put("workdayMinutes", workday);
+                return c;
+            } catch (Page.Grammar g) { refuse(cu, g); return null; }
         }
 
         static int minutes(Page p, String prefix) {
@@ -677,13 +1027,11 @@ public final class NativeConversion {
         static String duration(int minutes) { return minutes % 1440 == 0 ? "P" + minutes / 1440 + "D" : minutes % 60 == 0 ? "PT" + minutes / 60 + "H" : "PT" + minutes + "M"; }
 
         void harness(String name, Use from, String fromPath) {
-            Lookup l = a.lookup(ctx, "Rule-HTML-Harness", name);
-            if (!l.resolved() && l.candidates().isEmpty() && start.kind().equals("flow")) return; // optional for starting flows
             Entry harness = lookup(ctx, "Rule-HTML-Harness", name, from, "harness", fromPath, "harness");
             if (harness == null) return;
             Use hu = use(harness, "harness");
             ObjectNode ui = json.object(); ArrayNode order = json.mapper().createArrayNode(); ObjectNode widgets = json.object(); ArrayNode sections = json.mapper().createArrayNode();
-            boolean money = false;
+            boolean money = false, assumedUsd = false, explicitUsd = false;
             try {
                 harness.page().allow(with("pySections"));
                 List<String> names = harness.page().texts("pySections");
@@ -702,7 +1050,12 @@ public final class NativeConversion {
                         ObjectNode s = json.object(); s.put("id", Identifiers.sanitize(section.ruleName(), true)); s.put("title", title.length() > 80 ? title.substring(0, 80) : title);
                         s.put("columns", Integer.parseInt(columns)); ArrayNode list = s.putArray("fields");
                         for (Page cell : cells) {
-                            cell.allow(Set.of("pyProperty", "pyControl", "pyLabel", "pyRequired"));
+                            cell.allow(Set.of("pyProperty", "pyControl", "pyLabel", "pyRequired", "pyCurrency"));
+                            if (cell.text("pyCurrency") != null && !"USD".equals(cell.text("pyCurrency"))) {
+                                subBlock(su, cell.path().substring(cell.path().indexOf('#') + 1), "Rule-HTML-Section", "PEGA_NATIVE_CURRENCY_UNSUPPORTED", "The request form shows money in USD only; a " + cell.text("pyCurrency") + " amount would be shown and entered with the wrong currency.", cell.pathOf("pyCurrency"));
+                                continue;
+                            }
+                            if (cell.text("pyCurrency") != null) explicitUsd = true;
                             String control = String.valueOf(cell.text("pyControl"));
                             if (!WIDGETS.containsKey(control)) throw new Page.Grammar(cell.pathOf("pyControl"), "unsupported control " + control);
                             if (!Set.of("true", "false").contains(String.valueOf(cell.text("pyRequired")))) throw new Page.Grammar(cell.pathOf("pyRequired"), "pyRequired must be true or false");
@@ -722,7 +1075,7 @@ public final class NativeConversion {
                             if (list.toString().contains("\"" + field + "\"") || order.toString().contains("\"" + field + "\"")) throw new Page.Grammar(cell.pathOf("pyProperty"), "a field appears twice in the harness");
                             list.add(field); order.add(field);
                             if (!widget.isEmpty()) widgets.put(field, widget);
-                            if (widget.equals("money")) { money = true; f.schema.put("multipleOf", 0.01); }
+                            if (widget.equals("money")) { money = true; f.schema.put("multipleOf", 0.01); if (cell.text("pyCurrency") == null) assumedUsd = true; }
                             if ("true".equals(cell.text("pyRequired"))) f.required = true;
                             if (!RuleArchive.blank(cell.text("pyLabel"))) { String l2 = cell.text("pyLabel"); f.schema.put("title", l2.length() > 100 ? l2.substring(0, 100) : l2); }
                         }
@@ -733,7 +1086,8 @@ public final class NativeConversion {
             } catch (Page.Grammar g) { refuse(hu, g); return; }
             if (sections.isEmpty()) return;
             ui.set("order", order); if (!widgets.isEmpty()) ui.set("widgets", widgets);
-            if (money) { ui.put("currency", "USD"); review(hu, "PEGA_NATIVE_CURRENCY_ASSUMED", "Currency controls are shown in USD and accept whole cents (multipleOf 0.01); the source currency setting is not part of the supported grammar."); }
+            if (money) ui.put("currency", "USD");
+            if (money && assumedUsd) { review(hu, "PEGA_NATIVE_CURRENCY_ASSUMED", "Currency controls are shown in USD and accept whole cents (multipleOf 0.01); the source currency setting is not part of the supported grammar."); }
             ui.putObject("layout").set("sections", sections);
             hu.targetKind = "requestView"; hu.targets.add("inputUi"); hu.fragment = ui.toString();
             inputUi = ui;
@@ -786,6 +1140,18 @@ public final class NativeConversion {
                 for (Page c : f.connectors()) if (!ids.add(c.text("pyConnectorID"))) { subBlock(f.use(), c.text("pyConnectorID"), "connector", "PEGA_NATIVE_ID_CONFLICT", "Two converted flows use the connector id '" + c.text("pyConnectorID") + "'.", c.path()); conflict = true; }
             }
             if (conflict) return;
+            // A split-join reached from several places gets an exclusive merge in front, so its parallel split has one entry.
+            Map<String, Integer> incoming = new HashMap<>();
+            for (int k = 0; k < flows.size(); k++) {
+                FlowDef g = flows.get(k);
+                for (Page c : g.connectors()) {
+                    Shape src = g.shapes().get(c.text("pyFrom"));
+                    if (src.type().equals("Start") && k > 0) continue;
+                    int weight = src.type().equals("Decision") && forkVariants.containsKey(src.id()) ? 1 + forkVariants.get(src.id()).size() : 1;
+                    incoming.merge(target(flows, k, c.text("pyTo")), weight, Integer::sum);
+                }
+            }
+            for (FlowDef g : flows) for (Shape sh : g.shapes().values()) if (sh.type().equals("Split-Join") && incoming.getOrDefault(sh.id(), 0) > 1) merges.add(sh.id());
             xml.append("<definitions xmlns='").append(Namespaces.BPMN).append("' xmlns:c='").append(Namespaces.CAMUNDA7)
                .append("' targetNamespace='urn:orqix:pega-native'><process isExecutable='true' id='").append(esc(processId)).append("' name='").append(esc(processName)).append("'>");
             xml.append("<startEvent id='pega-start' name='Start'/>");
@@ -800,9 +1166,46 @@ public final class NativeConversion {
                     switch (s.type()) {
                         case "Assignment" -> { fragment.append("<userTask id='").append(s.id()).append("' name='").append(name).append("' c:candidateGroups='").append(esc(p.text("pyRouterParam"))).append("'/>"); stageNodes.add(s.id()); }
                         case "End" -> { fragment.append("<endEvent id='").append(s.id()).append("' name='").append(name).append("'/>"); endKinds.put(s.id(), "Resolved-Rejected".equals(p.text("pyStatusWork")) ? "rejected" : "success"); }
+                        case "Subprocess" -> { fragment.append("<callActivity id='").append(s.id()).append("' name='").append(name).append("' calledElement='").append(esc(p.text("pyFlowName"))).append("'/>"); stageNodes.add(s.id()); }
+                        case "Split-Join" -> {
+                            List<String> flowNames = p.texts("pySplitFlows");
+                            if (merges.contains(s.id())) {
+                                fragment.append("<exclusiveGateway id='").append(s.id()).append("_merge' name='").append(name).append(" (merge)'/>");
+                                fragment.append("<sequenceFlow id='").append(s.id()).append("_merged' sourceRef='").append(s.id()).append("_merge' targetRef='").append(s.id()).append("'/>");
+                                paths.put(s.id() + "_merge", p.path()); paths.put(s.id() + "_merged", p.path());
+                            }
+                            fragment.append("<parallelGateway id='").append(s.id()).append("' name='").append(name).append("'/>");
+                            fragment.append("<parallelGateway id='").append(s.id()).append("_join' name='").append(name).append(" (join)'/>");
+                            stageNodes.add(s.id()); stageNodes.add(s.id() + "_join"); paths.put(s.id() + "_join", p.path());
+                            for (int n = 0; n < flowNames.size(); n++) {
+                                String call = s.id() + "_" + (n + 1);
+                                fragment.append("<callActivity id='").append(call).append("' name='").append(esc(flowNames.get(n))).append("' calledElement='").append(esc(flowNames.get(n))).append("'/>");
+                                fragment.append("<sequenceFlow id='").append(call).append("_split' sourceRef='").append(s.id()).append("' targetRef='").append(call).append("'/>");
+                                fragment.append("<sequenceFlow id='").append(call).append("_joined' sourceRef='").append(call).append("' targetRef='").append(s.id()).append("_join'/>");
+                                stageNodes.add(call); paths.put(call + "_split", p.path()); paths.put(call + "_joined", p.path());
+                            }
+                        }
                         default -> {
                             String elseFlow = outgoing(f, s.id()).stream().filter(c -> "Else".equals(c.text("pyConditionType"))).findFirst().orElseThrow().text("pyConnectorID");
-                            if ("Fork".equals(p.text("pyDecisionType"))) {
+                            if ("Fork".equals(p.text("pyDecisionType")) && forkVariants.containsKey(s.id())) {
+                                // A gateway on the circumstance field picks the variant's fork; each fork repeats the When and Else routes.
+                                List<String[]> vs = forkVariants.get(s.id());
+                                Page whenC = outgoing(f, s.id()).stream().filter(c -> "When".equals(c.text("pyConditionType"))).findFirst().orElseThrow();
+                                String whenTarget = entry(target(flows, i, whenC.text("pyTo"))), elseTarget = entry(target(flows, i, outgoing(f, s.id()).stream().filter(c -> "Else".equals(c.text("pyConditionType"))).findFirst().orElseThrow().text("pyTo")));
+                                if (whenTarget.equals("pega-completed") || elseTarget.equals("pega-completed")) completed = true;
+                                fragment.append("<exclusiveGateway id='").append(s.id()).append("' name='").append(name).append(" (circumstance)' default='").append(s.id()).append("_base_in'/>");
+                                fragment.append("<exclusiveGateway id='").append(s.id()).append("_base' name='").append(name).append("' default='").append(elseFlow).append("'/>");
+                                fragment.append("<sequenceFlow id='").append(s.id()).append("_base_in' sourceRef='").append(s.id()).append("' targetRef='").append(s.id()).append("_base' name='Otherwise'/>");
+                                stageNodes.add(s.id()); stageNodes.add(s.id() + "_base"); paths.put(s.id() + "_base", p.path()); paths.put(s.id() + "_base_in", p.path());
+                                for (int v = 0; v < vs.size(); v++) {
+                                    String g = s.id() + "_v" + (v + 1), w = whenC.text("pyConnectorID") + "_v" + (v + 1), el = elseFlow + "_v" + (v + 1);
+                                    fragment.append("<sequenceFlow id='").append(g).append("_in' sourceRef='").append(s.id()).append("' targetRef='").append(g).append("' name='").append(esc(vs.get(v)[2])).append("'><conditionExpression>").append(esc(vs.get(v)[0])).append("</conditionExpression></sequenceFlow>");
+                                    fragment.append("<exclusiveGateway id='").append(g).append("' name='").append(name).append(" (").append(esc(vs.get(v)[2])).append(")' default='").append(el).append("'/>");
+                                    fragment.append("<sequenceFlow id='").append(w).append("' sourceRef='").append(g).append("' targetRef='").append(whenTarget).append("'><conditionExpression>").append(esc(vs.get(v)[1])).append("</conditionExpression></sequenceFlow>");
+                                    fragment.append("<sequenceFlow id='").append(el).append("' sourceRef='").append(g).append("' targetRef='").append(elseTarget).append("' name='Otherwise'/>");
+                                    stageNodes.add(g); paths.put(g, p.path()); paths.put(g + "_in", p.path()); paths.put(w, whenC.path()); paths.put(el, p.path());
+                                }
+                            } else if ("Fork".equals(p.text("pyDecisionType"))) {
                                 fragment.append("<exclusiveGateway id='").append(s.id()).append("' name='").append(name).append("' default='").append(elseFlow).append("'/>");
                                 stageNodes.add(s.id());
                             } else {
@@ -820,13 +1223,21 @@ public final class NativeConversion {
                 for (Page c : f.connectors()) {
                     String from = c.text("pyFrom"); Shape source = f.shapes().get(from); String id = c.text("pyConnectorID");
                     paths.put(id, c.path());
-                    String target = target(flows, i, c.text("pyTo"));
+                    String target = entry(target(flows, i, c.text("pyTo")));
                     if (target.equals("pega-completed")) completed = true;
                     if (source.type().equals("Start")) {
                         if (i == 0) { fragment.append("<sequenceFlow id='").append(id).append("' sourceRef='pega-start' targetRef='").append(target).append("'/>"); paths.put("pega-start", c.path()); }
                         continue;
                     }
-                    String sourceRef = source.type().equals("Decision") && !"Fork".equals(source.page().text("pyDecisionType")) ? from + "-route" : from;
+                    if (source.type().equals("Decision") && "Fork".equals(source.page().text("pyDecisionType")) && forkVariants.containsKey(from)) {
+                        // The base fork keeps the original connector ids; the variant forks were written with the shape.
+                        fragment.append("<sequenceFlow id='").append(id).append("' sourceRef='").append(from).append("_base' targetRef='").append(target).append("'");
+                        if (!"When".equals(c.text("pyConditionType"))) { fragment.append(" name='Otherwise'/>"); continue; }
+                        fragment.append("><conditionExpression>").append(esc(whens.get(a.lookup(ctx, "Rule-Obj-When", c.text("pyWhenName")).chosen().path()))).append("</conditionExpression></sequenceFlow>");
+                        continue;
+                    }
+                    String sourceRef = source.type().equals("Decision") && !"Fork".equals(source.page().text("pyDecisionType")) ? from + "-route"
+                            : source.type().equals("Split-Join") ? from + "_join" : from;
                     String label = switch (c.text("pyConditionType")) {
                         case "FlowAction" -> c.text("pyFlowActionName");
                         case "Result" -> c.text("pyResultValue");
@@ -850,6 +1261,11 @@ public final class NativeConversion {
             if (completed) { xml.append("<endEvent id='pega-completed' name='Completed'/>"); endKinds.put("pega-completed", "success"); }
             xml.append("</process></definitions>");
         }
+
+        final Set<String> merges = new HashSet<>();
+
+        /** The element a route enters: the merge in front of a split-join when it has one. */
+        String entry(String target) { return merges.contains(target) ? target + "_merge" : target; }
 
         boolean emitted(Shape s) { return !s.type().equals("Start") && !(s.type().equals("End") && s.page().text("pyStatusWork") == null); }
 
@@ -875,7 +1291,19 @@ public final class NativeConversion {
             switch (e.status()) {
                 case "refused" -> { return issue(path, path, "archiveEntry", Report.BLOCKER, e.reason(), e.detail(), "Re-export the entry as a readable rule page or remove it from the export; conversion stays blocked while it is present.", null, path); }
                 case "manifest" -> { return issue(path, path, "archiveEntry", Report.SUPPORTED, "PEGA_NATIVE_MANIFEST", "Archive manifest; descriptive only.", null, null, path); }
-                case "data" -> { return issue(path, e.insKey(), e.ruleType(), Report.INFO, "PEGA_NATIVE_DATA_INSTANCE_EXCLUDED", "Data instance (" + e.ruleType() + "). Operators, access groups, work queues and other records are not migrated; groups and permissions are mapped explicitly in the workspace.", "Acknowledge this exclusion.", null, path); }
+                case "delegation" -> {
+                    Entry target = delegated(e);
+                    return issue(path, e.insKey(), e.ruleType(), Report.INFO, "PEGA_NATIVE_DELEGATION_RECORDED", "Rule delegation to access group "
+                            + e.page().text("pyAccessGroup") + (target == null ? " for a rule that is not in this archive" : " for " + target.label())
+                            + ". It is kept as provenance only: business users may change a delegated rule in production, and changes made after this export are not migrated.", "Acknowledge; confirm with the rule owner that the export holds the current version.", null, path);
+                }
+                case "data" -> {
+                    Use used = uses.get(path);
+                    if (used != null) return "blocked".equals(used.conversion)
+                            ? issue(path, e.insKey(), e.ruleType(), Report.BLOCKER, used.reasons.getFirst(), used.explanation, "Correct the instance; no draft is created while it is open.", null, path)
+                            : issue(path, e.insKey(), e.ruleType(), Report.SUPPORTED, "PEGA_NATIVE_RULE_CONVERTED", "Converted to " + used.targetKind + " for " + used.targets + ".", null, null, path);
+                    return issue(path, e.insKey(), e.ruleType(), Report.INFO, "PEGA_NATIVE_DATA_INSTANCE_EXCLUDED", "Data instance (" + e.ruleType() + "). Operators, access groups, work queues and other records are not migrated; groups and permissions are mapped explicitly in the workspace.", "Acknowledge this exclusion.", null, path);
+                }
                 default -> { }
             }
             if (e.ruleType().equals("Rule-Application"))
@@ -893,10 +1321,15 @@ public final class NativeConversion {
                 };
             }
             String outcome = outcome(e);
-            if (outcome != null && !outcome.equals("selected") && !outcome.equals("blocked") && !outcome.equals("circumstanced") && !outcome.equals("duplicate") && !outcome.equals("baseFallback") && !outcome.equals("overridesFinal"))
+            if (outcome != null && !Set.of("selected", "blocked", "circumstanced", "duplicate", "baseFallback", "overridesFinal", "variant").contains(outcome))
                 return issue(path, e.label(), e.ruleType(), Report.SUPPORTED, "PEGA_NATIVE_RULE_SHADOWED", "Not the effective rule (" + describe(outcome) + "), so Pega would not run it either.", null, null, path);
             return issue(path, e.label(), e.ruleType(), Report.INFO, "PEGA_NATIVE_RULE_NOT_USED", (outcome == null ? "Outside the class context of this starting point" : "Effective rule, but not referenced by this starting point")
                     + "; it is not converted.", "Acknowledge that this rule is not part of the converted workflow.", null, path);
+        }
+
+        Entry delegated(Entry delegation) {
+            String key = String.valueOf(delegation.page().text("pyRuleInsKey")).toUpperCase(Locale.ROOT);
+            return a.entries().stream().filter(x -> x.isRule() && x.insKey().toUpperCase(Locale.ROOT).equals(key)).findFirst().orElse(null);
         }
 
         String outcome(Entry e) {
@@ -915,6 +1348,7 @@ public final class NativeConversion {
                 case "lowerRanked" -> "a closer class, higher ruleset or higher version wins";
                 case "belowBlocked" -> "it ranks below a blocked rule";
                 case "finalOverridden" -> "it is Final but overridden";
+                case "variant" -> "a circumstance or date variant of the effective rule";
                 default -> outcome;
             };
         }
@@ -936,18 +1370,23 @@ public final class NativeConversion {
             Build build = new Build(xml.toString(), schema, inputUi, Map.copyOf(taskTables), Map.copyOf(due), Map.copyOf(endKinds), List.copyOf(stages),
                     Map.copyOf(paths), processId, processName, Set.copyOf(decisionTasks),
                     "Converted from the native Pega rule archive " + a.sourceSha256().substring(0, 12) + " (" + start.kind() + " " + a.entry(start.rule()).label()
-                            + ", adapter " + ADAPTER + "). Review the per-rule conversion results and verify behavior before publishing.");
+                            + ", adapter " + ADAPTER + "). Review the per-rule conversion results and verify behavior before publishing.", Map.copyOf(combinedTables));
+            Map<String, List<String>> delegations = new HashMap<>();
+            for (Entry d : a.entries()) if ("delegation".equals(d.status())) {
+                Entry t = delegated(d);
+                if (t != null) delegations.computeIfAbsent(t.path(), k -> new ArrayList<>()).add(d.page().text("pyAccessGroup"));
+            }
             List<RuleResult> results = new ArrayList<>();
             for (Entry e : a.entries()) {
                 if (!e.isRule()) continue;
                 Use u = uses.get(e.path()); String outcome = outcome(e);
                 String conversion = u != null ? u.conversion : e.ruleType().equals("Rule-Application") || e.ruleType().equals("Rule-Obj-Class") ? "supported"
-                        : outcome != null && !Set.of("selected", "blocked", "circumstanced", "duplicate", "baseFallback", "overridesFinal").contains(outcome) ? "shadowed" : "notUsed";
+                        : outcome != null && !Set.of("selected", "blocked", "circumstanced", "duplicate", "baseFallback", "overridesFinal", "variant").contains(outcome) ? "shadowed" : "notUsed";
                 String fragment = u == null ? null : u.fragment;
                 results.add(new RuleResult(e.path(), e.ruleType(), e.className(), e.ruleName(), e.ruleset(), e.version(), e.availability(), e.sha256(),
                         u == null ? null : u.role, outcome == null ? "outsideContext" : outcome, conversion, u == null ? null : u.targetKind,
                         u == null ? List.of() : List.copyOf(u.targets), fragment == null || fragment.isEmpty() ? null : Json.sha256Hex(fragment.getBytes(StandardCharsets.UTF_8)),
-                        u == null ? List.of() : List.copyOf(u.reasons)));
+                        u == null ? List.of() : List.copyOf(u.reasons), e.qualifier() == null ? null : describe(e.qualifier()), delegations.getOrDefault(e.path(), List.of())));
             }
             Report.CompatibilityReport converted = null;
             if (!xml.isEmpty()) {
@@ -958,9 +1397,8 @@ public final class NativeConversion {
             List<Report.Issue> all = new ArrayList<>(issues); all.addAll(converterIssues(build, converted));
             var report = new Report.CompatibilityReport("pega", version, ADAPTER, a.sourceSha256(), processId, label, Report.ElementCounts.of(all), List.copyOf(all),
                     NativeConversion.report(a, null, null, List.of(), null, false).assumptions(),
-                    converted == null ? new Report.RequiredMappings(List.of(), List.of(), List.of()) : new Report.RequiredMappings(converted.requiredMappings().groups(), converted.requiredMappings().approvalTasks(), List.of()),
-                    false);
-            return new Plan(start, processId, label, List.copyOf(results), List.copyOf(assignments), List.copyOf(issues), blocked, build, report);
+                    required(converted), false);
+            return new Plan(start, processId, label, List.copyOf(results), List.copyOf(assignments), List.copyOf(subflows), List.copyOf(issues), blocked, build, report);
         }
     }
 

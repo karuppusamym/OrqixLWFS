@@ -20,6 +20,16 @@ public final class RuleArchive {
     static final Pattern VERSION = Pattern.compile("(\\d{2})-(\\d{2})-(\\d{2})");
     static final Pattern NAME = Pattern.compile("[A-Za-z@][A-Za-z0-9_@.-]{0,127}");
     private static final Pattern STAMP = Pattern.compile(" #\\d{8}T\\d{6}\\.\\d{3} GMT");
+    static final Pattern DATE = Pattern.compile("\\d{8}");
+    static final Pattern DATETIME = Pattern.compile("\\d{8}T\\d{6}\\.\\d{3} GMT");
+
+    /**
+     * A rule qualifier (docs/build/S115): a property circumstance, a date circumstance or a date range. Several on one
+     * rule are {@code multivariate}. Dates keep their source text (YYYYMMDD, or YYYYMMDDTHHMMSS.mmm GMT for ranges).
+     */
+    public record Qualifier(String kind, String property, String value, String date, String from, String to, List<Qualifier> parts) {
+        public String key() { return kind + "|" + property + "|" + value + "|" + date + "|" + from + "|" + to + "|" + (parts == null ? "" : parts.stream().map(Qualifier::key).toList()); }
+    }
     private static final Limits LIMITS = Limits.DEFAULT;
 
     /**
@@ -27,7 +37,7 @@ public final class RuleArchive {
      * set for rules only.
      */
     public record Entry(String path, String sha256, String status, String reason, String detail, String ruleType, String className,
-            String ruleName, String ruleset, String version, String availability, boolean circumstanced, String insKey, Page page) {
+            String ruleName, String ruleset, String version, String availability, boolean circumstanced, String insKey, Page page, Qualifier qualifier) {
         public boolean isRule() { return "rule".equals(status); }
         public int[] versionParts() { return parts(version); }
         public String key() { return ruleType + " " + ruleName.toUpperCase(Locale.ROOT); }
@@ -58,12 +68,12 @@ public final class RuleArchive {
     }
 
     private static Entry refused(String path, String hash, String reason, String detail) {
-        return new Entry(path, hash, "refused", reason, detail, null, null, null, null, null, null, false, null, null);
+        return new Entry(path, hash, "refused", reason, detail, null, null, null, null, null, null, false, null, null, null);
     }
 
     static Entry entry(String path, byte[] content) {
         String hash = Json.sha256Hex(content);
-        if (path.equals("META-INF/MANIFEST.MF")) return new Entry(path, hash, "manifest", null, null, null, null, null, null, null, null, false, null, null);
+        if (path.equals("META-INF/MANIFEST.MF")) return new Entry(path, hash, "manifest", null, null, null, null, null, null, null, null, false, null, null, null);
         if (!path.toLowerCase(Locale.ROOT).endsWith(".xml"))
             return refused(path, hash, "PEGA_NATIVE_ENTRY_UNDECODED", "Binary or non-XML entry. It could hold serialized rules, so the archive cannot be resolved without it.");
         XElement root;
@@ -125,7 +135,15 @@ public final class RuleArchive {
         if (obj.startsWith("Data-")) {
             String key = page.text("pzInsKey");
             if (key == null || key.isEmpty()) throw new Page.Grammar(page.pathOf("pzInsKey"), "pzInsKey is required");
-            return new Entry(path, hash, "data", null, null, obj, null, null, null, null, null, false, key, page);
+            return new Entry(path, hash, "data", null, null, obj, null, null, null, null, null, false, key, page, null);
+        }
+        if (obj.equals("System-User-MyRules")) {
+            // A rule delegation record: provenance of the delegated rule, never converted.
+            for (String field : List.of("pzInsKey", "pyRuleInsKey", "pyAccessGroup")) {
+                String value = page.text(field);
+                if (value == null || value.isEmpty() || value.length() > 300) throw new Page.Grammar(page.pathOf(field), field + " is required");
+            }
+            return new Entry(path, hash, "delegation", null, null, obj, null, null, null, null, null, false, page.text("pzInsKey"), page, null);
         }
         if (!obj.startsWith("Rule-")) throw new Page.Grammar(page.pathOf("pxObjClass"), "only rule and data instances are supported");
         for (String key : List.of("pyClassName", "pyRuleName", "pyRuleSet", "pyRuleSetVersion", "pyRuleAvailable", "pzInsKey")) {
@@ -140,11 +158,36 @@ public final class RuleArchive {
         String key = page.text("pzInsKey");
         if (!key.toUpperCase(Locale.ROOT).startsWith(prefix) || !(key.length() == prefix.length() || STAMP.matcher(key.substring(prefix.length())).matches()))
             throw new Page.Grammar(page.pathOf("pzInsKey"), "pzInsKey does not match the rule identity");
-        boolean circumstanced = page.fields().containsKey("pyCircumstanceProp") || page.fields().containsKey("pyCircumstanceVal");
-        if (circumstanced && (blank(page.text("pyCircumstanceProp")) || blank(page.text("pyCircumstanceVal"))))
-            throw new Page.Grammar(page.pathOf("pyCircumstanceProp"), "a circumstance needs a property and a value");
+        Qualifier qualifier = qualifier(page);
         return new Entry(path, hash, "rule", null, null, obj, page.text("pyClassName"), page.text("pyRuleName"), page.text("pyRuleSet"),
-                page.text("pyRuleSetVersion"), page.text("pyRuleAvailable"), circumstanced, key, page);
+                page.text("pyRuleSetVersion"), page.text("pyRuleAvailable"), qualifier != null, key, page, qualifier);
+    }
+
+    private static Qualifier qualifier(Page page) {
+        List<Qualifier> parts = new ArrayList<>();
+        var f = page.fields();
+        if (f.containsKey("pyCircumstanceProp") || f.containsKey("pyCircumstanceVal")) {
+            if (blank(page.text("pyCircumstanceProp")) || blank(page.text("pyCircumstanceVal")))
+                throw new Page.Grammar(page.pathOf("pyCircumstanceProp"), "a circumstance needs a property and a value");
+            parts.add(new Qualifier("property", page.text("pyCircumstanceProp"), page.text("pyCircumstanceVal"), null, null, null, null));
+        }
+        if (f.containsKey("pyCircumstanceDateProp") || f.containsKey("pyCircumstanceDate")) {
+            String date = page.text("pyCircumstanceDate");
+            if (blank(page.text("pyCircumstanceDateProp")) || date == null || !DATE.matcher(date).matches())
+                throw new Page.Grammar(page.pathOf("pyCircumstanceDate"), "a date circumstance needs a property and a YYYYMMDD date");
+            parts.add(new Qualifier("date", page.text("pyCircumstanceDateProp"), null, date, null, null, null));
+        }
+        if (f.containsKey("pyStartDateTime") || f.containsKey("pyEndDateTime")) {
+            String from = blank(page.text("pyStartDateTime")) ? null : page.text("pyStartDateTime");
+            String to = blank(page.text("pyEndDateTime")) ? null : page.text("pyEndDateTime");
+            for (String v : Arrays.asList(from, to))
+                if (v != null && !DATETIME.matcher(v).matches()) throw new Page.Grammar(page.pathOf("pyStartDateTime"), "a date range needs YYYYMMDDTHHMMSS.mmm GMT bounds");
+            if (from == null && to == null || from != null && to != null && from.compareTo(to) > 0)
+                throw new Page.Grammar(page.pathOf("pyStartDateTime"), "a date range needs at least one bound, in order");
+            parts.add(new Qualifier("dateRange", null, null, null, from, to, null));
+        }
+        if (parts.isEmpty()) return null;
+        return parts.size() == 1 ? parts.getFirst() : new Qualifier("multivariate", null, null, null, null, null, List.copyOf(parts));
     }
 
     static boolean blank(String s) { return s == null || s.isBlank(); }

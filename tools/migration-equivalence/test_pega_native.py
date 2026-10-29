@@ -62,8 +62,21 @@ class FixtureTest(unittest.TestCase):
         self.assertEqual(result["archiveBlockers"], [{"code": "PEGA_NATIVE_ARCHIVE_INCOMPLETE", "paths": ["binary/legacy.bin"]}])
         keys = result["contexts"]["ACME-Purchasing-Work"]["keys"]
         self.assertEqual(keys["Rule-Declare-DecisionTable TIER"]["status"], "blocked")
-        self.assertEqual(keys["Rule-Obj-FlowAction APPROVE"]["status"], "circumstanceUnresolved")
-        self.assertIsNone(keys["Rule-Obj-FlowAction APPROVE"]["chosen"])
+        # The circumstanced flow action is a variant of a resolved base; conversion refuses it (no run-time selection).
+        self.assertEqual(keys["Rule-Obj-FlowAction APPROVE"]["status"], "resolved")
+        self.assertEqual(keys["Rule-Obj-FlowAction APPROVE"]["variants"][0]["value"], "Services")
+
+    def test_purchase_advanced_variants_and_delegation(self):
+        result = pega_native.analyze((FIXTURES / "purchase-advanced.zip").read_bytes())
+        self.assertEqual(result["archiveBlockers"], [])
+        keys = result["contexts"]["ACME-Purchasing-Work-Request"]["keys"]
+        self.assertEqual(keys["Rule-Declare-DecisionTable APPROVALLEVEL"]["variants"],
+                         [{"rule": "decisions/ApprovalLevel-Services.xml", "kind": "property", "property": ".Category", "value": "Services"}])
+        self.assertEqual(keys["Rule-Declare-DecisionTree ORDERTIER"]["variants"][0]["kind"], "dateRange")
+        self.assertEqual(keys["Rule-Obj-When NEEDSVENDORCHECK"]["variants"][0]["value"], "Software")
+        self.assertIn({"path": "delegation/ApprovalLevel.xml", "status": "delegation"},
+                      [{k: e[k] for k in ("path", "status")} for e in result["entries"]])
+        self.assertEqual(len(result["startingPoints"]), 5)
 
 
 class ResolutionTest(unittest.TestCase):
@@ -123,7 +136,58 @@ class ResolutionTest(unittest.TestCase):
         circumstanced = self.analyze({"c.xml": klass("A", "@baseclass"), "f1.xml": flow("A", "Go"),
                                       "f2.xml": generate.page("Rule-Obj-Flow", "A", "Go", "Purchasing", "01-01-01",
                                                               stamp="20261001T090100.000", circumstance=(".Tier", "Gold"))})
-        self.assertEqual(circumstanced["contexts"]["A"]["keys"]["Rule-Obj-Flow GO"]["status"], "circumstanceUnresolved")
+        key = circumstanced["contexts"]["A"]["keys"]["Rule-Obj-Flow GO"]
+        self.assertEqual((key["status"], key["chosen"]), ("resolved", "f1.xml"))
+        self.assertEqual(key["variants"], [{"rule": "f2.xml", "kind": "property", "property": ".Tier", "value": "Gold"}])
+
+    def variant(self, cls, stamp, **extra):
+        circumstance = extra.pop("circumstance", None)
+        return generate.page("Rule-Obj-Flow", cls, "Go", "Purchasing", extra.pop("version", "01-01-01"), extra.pop("available", "Yes"),
+                             stamp=stamp, circumstance=circumstance, extra=extra or None, body={"pyIsStartingFlow": "true"})
+
+    def test_variants_that_cannot_be_selected_statically_stay_unresolved(self):
+        status = lambda r, ctx="A-B": r["contexts"][ctx]["keys"]["Rule-Obj-Flow GO"]["status"]
+        classes = {"c1.xml": klass("A-B", "A"), "c2.xml": klass("A", "@baseclass")}
+        # Only a variant, no base rule.
+        self.assertEqual(status(self.analyze({**classes, "v.xml": self.variant("A-B", "20261001T090100.000", circumstance=(".Tier", "Gold"))})), "circumstanceUnresolved")
+        # A variant in a closer class than the base.
+        self.assertEqual(status(self.analyze({**classes, "b.xml": flow("A", "Go"),
+                                              "v.xml": self.variant("A-B", "20261001T090100.000", circumstance=(".Tier", "Gold"))})), "circumstanceUnresolved")
+        # A variant in a farther class is simply lower ranked.
+        farther = self.analyze({**classes, "b.xml": flow("A-B", "Go"), "v.xml": self.variant("A", "20261001T090100.000", circumstance=(".Tier", "Gold"))})
+        self.assertEqual((status(farther), farther["contexts"]["A-B"]["keys"]["Rule-Obj-Flow GO"]["variants"]), ("resolved", []))
+        # Two dimensions on one key, and two dimensions on one rule (multivariate).
+        self.assertEqual(status(self.analyze({**classes, "b.xml": flow("A-B", "Go"),
+                                              "v1.xml": self.variant("A-B", "20261001T090100.000", circumstance=(".Tier", "Gold")),
+                                              "v2.xml": self.variant("A-B", "20261001T090200.000", circumstance=(".Region", "EU"))})), "circumstanceUnresolved")
+        self.assertEqual(status(self.analyze({**classes, "b.xml": flow("A-B", "Go"),
+                                              "v.xml": self.variant("A-B", "20261001T090100.000", circumstance=(".Tier", "Gold"),
+                                                                    pyStartDateTime="20260101T000000.000 GMT")})), "circumstanceUnresolved")
+        # Same variant twice at the same rank is ambiguous; a higher version of the same variant wins.
+        self.assertEqual(status(self.analyze({**classes, "b.xml": flow("A-B", "Go"),
+                                              "v1.xml": self.variant("A-B", "20261001T090100.000", circumstance=(".Tier", "Gold")),
+                                              "v2.xml": self.variant("A-B", "20261001T090200.000", circumstance=(".Tier", "Gold"))})), "circumstanceUnresolved")
+        newer = self.analyze({**classes, "b.xml": flow("A-B", "Go"),
+                              "v1.xml": self.variant("A-B", "20261001T090100.000", circumstance=(".Tier", "Gold")),
+                              "v2.xml": self.variant("A-B", "20261001T090200.000", circumstance=(".Tier", "Gold"), version="01-01-02")})
+        self.assertEqual(newer["contexts"]["A-B"]["keys"]["Rule-Obj-Flow GO"]["variants"][0]["rule"], "v2.xml")
+
+    def test_date_qualifiers_and_their_grammar(self):
+        date = self.analyze({"c.xml": klass("A", "@baseclass"), "b.xml": flow("A", "Go"),
+                             "v.xml": self.variant("A", "20261001T090100.000", pyCircumstanceDateProp=".pxCreateDateTime", pyCircumstanceDate="20270101")})
+        self.assertEqual(date["contexts"]["A"]["keys"]["Rule-Obj-Flow GO"]["variants"][0],
+                         {"rule": "v.xml", "kind": "date", "property": ".pxCreateDateTime", "date": "20270101"})
+        for bad in ({"pyStartDateTime": "2026-01-01"}, {"pyStartDateTime": "20270101T000000.000 GMT", "pyEndDateTime": "20260101T000000.000 GMT"},
+                    {"pyCircumstanceDateProp": ".X"}):
+            entry = next(e for e in self.analyze({"v.xml": self.variant("A", "20261001T090100.000", **bad)})["entries"] if e["path"] == "v.xml")
+            self.assertEqual(entry["reason"], "PEGA_NATIVE_IDENTITY_INVALID", bad)
+
+    def test_delegation_records_need_their_rule_and_access_group(self):
+        good = generate.data_page("System-User-MyRules", "AG Go", {"pyRuleInsKey": "RULE-OBJ-FLOW A GO", "pyAccessGroup": "App:Managers"})
+        bad = generate.data_page("System-User-MyRules", "AG Go", {"pyRuleInsKey": "RULE-OBJ-FLOW A GO"})
+        result = self.analyze({"d1.xml": good, "d2.xml": bad.replace(b"AG GO", b"AG GO2")})
+        statuses = {e["path"]: e.get("reason", e["status"]) for e in result["entries"]}
+        self.assertEqual((statuses["d1.xml"], statuses["d2.xml"]), ("delegation", "PEGA_NATIVE_IDENTITY_INVALID"))
 
     def test_pattern_inheritance_can_be_switched_off_and_cycles_are_refused(self):
         result = self.analyze({"c1.xml": klass("A-B", "X", pattern="false"), "c2.xml": klass("X", "@baseclass"),

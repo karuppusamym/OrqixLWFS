@@ -22,7 +22,10 @@ public final class RuleResolution {
 
     public record Candidate(String rule, String outcome) { }
     /** status: resolved, noCandidate, circumstanceUnresolved, ambiguous, blocked or finalOverridden. */
-    public record Lookup(String key, String status, Entry chosen, List<Candidate> candidates) {
+    /** A circumstance or date variant of the chosen base rule, selected by case data or the submission date (S115). */
+    public record Variant(Entry rule, RuleArchive.Qualifier qualifier) { }
+    public record Lookup(String key, String status, Entry chosen, List<Candidate> candidates, List<Variant> variants) {
+        public Lookup(String key, String status, Entry chosen, List<Candidate> candidates) { this(key, status, chosen, candidates, List.of()); }
         public boolean resolved() { return chosen != null; }
     }
     public record Context(String className, List<String> chain, boolean acyclic, Map<String, Lookup> keys) { }
@@ -81,6 +84,7 @@ public final class RuleResolution {
                 if (e.isRule()) {
                     n.put("className", e.className()); n.put("ruleName", e.ruleName()); n.put("ruleset", e.ruleset());
                     n.put("version", e.version()); n.put("availability", e.availability()); n.put("circumstanced", e.circumstanced());
+                    n.set("qualifier", qualifierJson(e.qualifier(), json));
                 }
             }
             ArrayNode b = root.putArray("archiveBlockers");
@@ -95,6 +99,18 @@ public final class RuleResolution {
         }
     }
 
+    public static JsonNode qualifierJson(RuleArchive.Qualifier q, Json json) {
+        if (q == null) return json.object().nullNode();
+        ObjectNode n = json.object(); n.put("kind", q.kind());
+        switch (q.kind()) {
+            case "property" -> { n.put("property", q.property()); n.put("value", q.value()); }
+            case "date" -> { n.put("property", q.property()); n.put("date", q.date()); }
+            case "dateRange" -> { n.put("from", q.from()); n.put("to", q.to()); }
+            default -> { var parts = n.putArray("parts"); q.parts().forEach(x -> parts.add(qualifierJson(x, json))); }
+        }
+        return n;
+    }
+
     public static JsonNode contextJson(Context c, Json json) {
         ObjectNode n = json.object();
         var chain = n.putArray("chain"); c.chain().forEach(chain::add);
@@ -102,6 +118,8 @@ public final class RuleResolution {
         c.keys().forEach((key, l) -> {
             ObjectNode k = keys.putObject(key); k.put("status", l.status());
             if (l.chosen() == null) k.putNull("chosen"); else k.put("chosen", l.chosen().path());
+            var vars = k.putArray("variants");
+            for (Variant v : l.variants()) { ObjectNode q = (ObjectNode) qualifierJson(v.qualifier(), json); q.put("rule", v.rule().path()); vars.add(q); }
             var cand = k.putArray("candidates");
             for (Candidate cd : l.candidates()) cand.addObject().put("rule", cd.rule()).put("outcome", cd.outcome());
         });
@@ -195,41 +213,63 @@ public final class RuleResolution {
         for (Entry w : live) {
             if (!w.availability().equals("Withdrawn")) continue;
             outcome.put(w.path(), "withdrawn");
-            for (Entry c : live) if (c != w && c.className().equals(w.className()) && c.ruleset().equals(w.ruleset())
+            for (Entry c : live) if (c != w && c.className().equals(w.className()) && c.ruleset().equals(w.ruleset()) && qkey(c).equals(qkey(w))
                     && c.versionParts()[0] == w.versionParts()[0] && compareVersion(c.versionParts(), w.versionParts()) < 0)
                 outcome.put(c.path(), "maskedByWithdrawn");
         }
         List<Entry> ranked = live.stream().filter(c -> !outcome.containsKey(c.path()))
                 .sorted((x, y) -> { int c = compareRank(rank(x, chain, stack), rank(y, chain, stack)); return c != 0 ? c : x.path().compareTo(y.path()); }).toList();
-        String status = "resolved"; Entry chosen = null;
-        List<Entry> circumstanced = ranked.stream().filter(Entry::circumstanced).toList();
+        String status = "resolved"; Entry chosen = null; List<Variant> variants = new ArrayList<>();
+        List<Entry> qualified = ranked.stream().filter(Entry::circumstanced).toList();
         List<Entry> base = ranked.stream().filter(c -> !c.circumstanced()).toList();
-        if (ranked.isEmpty()) status = "noCandidate";
-        else if (!circumstanced.isEmpty()) {
-            status = "circumstanceUnresolved";
-            circumstanced.forEach(c -> outcome.put(c.path(), "circumstanced"));
-            for (int i = 0; i < base.size(); i++) outcome.put(base.get(i).path(), i == 0 ? "baseFallback" : "lowerRanked");
-        } else if (ranked.size() > 1 && compareRank(rank(ranked.get(0), chain, stack), rank(ranked.get(1), chain, stack)) == 0) {
+        qualified.forEach(c -> outcome.put(c.path(), "circumstanced"));
+        if (base.isEmpty()) status = qualified.isEmpty() ? "noCandidate" : "circumstanceUnresolved";
+        else if (base.size() > 1 && compareRank(rank(base.get(0), chain, stack), rank(base.get(1), chain, stack)) == 0) {
             status = "ambiguous";
-            var top = rank(ranked.get(0), chain, stack);
-            for (Entry c : ranked) outcome.put(c.path(), compareRank(rank(c, chain, stack), top) == 0 ? "duplicate" : "lowerRanked");
-        } else if (ranked.get(0).availability().equals("Blocked")) {
-            status = "blocked"; outcome.put(ranked.get(0).path(), "blocked");
-            ranked.stream().skip(1).forEach(c -> outcome.put(c.path(), "belowBlocked"));
+            var top = rank(base.get(0), chain, stack);
+            for (Entry c : base) outcome.put(c.path(), compareRank(rank(c, chain, stack), top) == 0 ? "duplicate" : "lowerRanked");
+        } else if (base.get(0).availability().equals("Blocked")) {
+            status = "blocked"; outcome.put(base.get(0).path(), "blocked");
+            base.stream().skip(1).forEach(c -> outcome.put(c.path(), "belowBlocked"));
         } else {
-            Entry best = ranked.get(0);
-            List<Entry> finals = ranked.stream().skip(1).filter(c -> c.availability().equals("Final") && !c.ruleset().equals(best.ruleset())).toList();
+            Entry best = base.get(0);
+            List<Entry> finals = base.stream().skip(1).filter(c -> c.availability().equals("Final") && !c.ruleset().equals(best.ruleset())).toList();
             if (!finals.isEmpty()) {
                 status = "finalOverridden"; outcome.put(best.path(), "overridesFinal");
-                ranked.stream().skip(1).forEach(c -> outcome.put(c.path(), finals.contains(c) ? "finalOverridden" : "lowerRanked"));
+                base.stream().skip(1).forEach(c -> outcome.put(c.path(), finals.contains(c) ? "finalOverridden" : "lowerRanked"));
             } else {
-                chosen = best; outcome.put(best.path(), "selected");
-                ranked.stream().skip(1).forEach(c -> outcome.put(c.path(), "lowerRanked"));
+                outcome.put(best.path(), "selected");
+                base.stream().skip(1).forEach(c -> outcome.put(c.path(), "lowerRanked"));
+                boolean unresolved = false; Map<String, List<Entry>> groups = new TreeMap<>();
+                int bestClass = chain.indexOf(best.className());
+                for (Entry c : qualified) {
+                    int cls = chain.indexOf(c.className());
+                    if (cls > bestClass) outcome.put(c.path(), "lowerRanked");
+                    else if (cls < bestClass || c.qualifier().kind().equals("multivariate")) unresolved = true;
+                    else groups.computeIfAbsent(qkey(c), k -> new ArrayList<>()).add(c);
+                }
+                List<Entry> winners = new ArrayList<>();
+                for (List<Entry> group : groups.values()) {
+                    if (group.size() > 1 && compareRank(rank(group.get(0), chain, stack), rank(group.get(1), chain, stack)) == 0
+                            || group.get(0).availability().equals("Blocked")) { unresolved = true; continue; }
+                    winners.add(group.get(0)); outcome.put(group.get(0).path(), "variant");
+                    group.stream().skip(1).forEach(c -> outcome.put(c.path(), "lowerRanked"));
+                }
+                if (winners.stream().map(w -> w.qualifier().kind() + "|" + w.qualifier().property()).distinct().count() > 1) unresolved = true;
+                if (unresolved) {
+                    status = "circumstanceUnresolved"; outcome.put(best.path(), "baseFallback");
+                    winners.forEach(w -> outcome.put(w.path(), "circumstanced"));
+                } else {
+                    chosen = best;
+                    winners.stream().sorted(Comparator.comparing(Entry::path)).forEach(w -> variants.add(new Variant(w, w.qualifier())));
+                }
             }
         }
         List<Candidate> list = candidates.stream().sorted(Comparator.comparing(Entry::path)).map(c -> new Candidate(c.path(), outcome.get(c.path()))).toList();
-        return new Lookup(key, status, chosen, list);
+        return new Lookup(key, status, chosen, list, List.copyOf(variants));
     }
+
+    private static String qkey(Entry e) { return e.qualifier() == null ? "" : e.qualifier().key(); }
 
     private static LinkedHashMap<String, Stacked> application(List<Entry> rules, List<Blocker> blockers, Entry[] found) {
         List<Entry> apps = rules.stream().filter(r -> r.ruleType().equals("Rule-Application") && (r.availability().equals("Yes") || r.availability().equals("Final"))).toList();

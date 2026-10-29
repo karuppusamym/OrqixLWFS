@@ -22,7 +22,7 @@ const report = (issues: Issue[]): components['schemas']['CompatibilityReport'] =
   requiredMappings: { groups: ['Managers'], approvalTasks: ['ManagerReview'], serviceTasks: [] }, publishable: false })
 const rule = (path: string, ruleType: string, name: string, resolution: string, conversion: Result['conversion'], extra: Partial<Result> = {}): Result => ({
   rule: path, ruleType, className: 'ACME-Purchasing-Work', ruleName: name, ruleset: 'Purchasing', version: '01-01-05', availability: 'Yes',
-  sourceSha256: sha('1'), resolution, conversion, targets: [], reasons: [], ...extra })
+  sourceSha256: sha('1'), resolution, conversion, targets: [], reasons: [], delegatedTo: [], ...extra })
 const archive = (blocked = false): Archive => ({
   migrationId: id, status: 'analyzed', decoder: 'pega-native-0.1', adapterVersion: 'pega-native-0.1', sourceSha256: sha('a'),
   application: 'Purchasing 01-01-01', stack: [{ name: 'PurchasingOrg', version: '01-02-01' }, { name: 'Purchasing', version: '01-01-10' }],
@@ -33,14 +33,19 @@ const archive = (blocked = false): Archive => ({
   ],
   contexts: [{ className: 'ACME-Purchasing-Work-Request', chain: ['ACME-Purchasing-Work-Request', 'ACME-Purchasing-Work', '@baseclass'], keys: [
     { ruleType: 'Rule-Obj-Flow', ruleName: 'ApproveRequest', status: 'resolved', chosen: 'flows/ApproveRequest.xml', candidates: [
-      { rule: 'flows/ApproveRequest.xml', outcome: 'selected' }, { rule: 'flows/ApproveRequest-sandbox.xml', outcome: 'rulesetNotInApplication' }] }] }],
+      { rule: 'flows/ApproveRequest.xml', outcome: 'selected' }, { rule: 'flows/ApproveRequest-sandbox.xml', outcome: 'rulesetNotInApplication' }] },
+    { ruleType: 'Rule-Declare-DecisionTable', ruleName: 'ApprovalLevel', status: 'resolved', chosen: 'decisions/ApprovalLevel.xml', candidates: [
+      { rule: 'decisions/ApprovalLevel.xml', outcome: 'selected' }, { rule: 'decisions/ApprovalLevel-Services.xml', outcome: 'variant' }],
+      variants: [{ rule: 'decisions/ApprovalLevel-Services.xml', kind: 'property', property: '.Category', value: 'Services' }] }] }],
   startingPoints: [{ rule: 'casetypes/PurchaseRequest.xml', kind: 'caseType', context: 'ACME-Purchasing-Work-Request', name: 'PurchaseRequest', label: 'PurchaseRequest', blocked,
     report: report(blocked ? [issue('activities/SendNotice.xml', 'blocker', 'PEGA_NATIVE_ACTIVITY_NOT_EXECUTED', 'Activities are never executed.')] : [issue('transforms/pyDefault.xml', 'review', 'PEGA_NATIVE_TRANSFORM_DEFAULT_NOT_APPLIED', 'Request forms have no default values.')]),
     rules: [
       rule('flows/ApproveRequest.xml', 'Rule-Obj-Flow', 'ApproveRequest', 'selected', 'converted', { targetKind: 'workflowNodes', targets: ['ManagerReview'], targetSha256: sha('2') }),
       rule('flows/ApproveRequest-sandbox.xml', 'Rule-Obj-Flow', 'ApproveRequest', 'rulesetNotInApplication', 'shadowed'),
       rule('activities/SendNotice.xml', 'Rule-Obj-Activity', 'SendNotice', 'selected', blocked ? 'blocked' : 'notUsed', blocked ? { reasons: ['PEGA_NATIVE_ACTIVITY_NOT_EXECUTED'] } : {}),
+      rule('decisions/ApprovalLevel-Services.xml', 'Rule-Declare-DecisionTable', 'ApprovalLevel', 'variant', 'converted', { circumstance: '.Category = Services', delegatedTo: ['Purchasing:Managers'] }),
     ],
+    subflows: [{ id: 'Record', label: 'Record the order', flow: 'RecordOrder', source: 'Fulfil' }],
     assignments: [{ id: 'ManagerReview', label: 'Manager review', workQueue: 'Managers', flow: 'ApproveRequest', actions: [{ connectorId: 'managerApprove', flowAction: 'Approve' }, { connectorId: 'managerReject', flowAction: 'Reject' }] }] }],
   conversion: [],
 })
@@ -69,14 +74,18 @@ describe('Native Pega rule archive import', () => {
     expect(within(review).getByText('PurchasingOrg:01-02-01 → Purchasing:01-01-10')).toBeInTheDocument()
     expect(within(review).getByText(/Fidelity against genuine Pega exports still needs customer qualification/)).toBeInTheDocument()
     // Per-rule results: converted with hashes, shadowed with the reason, unused rules listed.
-    expect(within(review).getByText('Converted')).toBeInTheDocument()
+    expect(within(review).getAllByText('Converted')).toHaveLength(2)
     expect(within(review).getByText('Shadowed')).toBeInTheDocument()
     expect(within(review).getByText('Ruleset not in the application')).toBeInTheDocument()
+    expect(within(review).getByText('Variant: .Category = Services')).toBeInTheDocument()
+    expect(within(review).getByText('Delegated to Purchasing:Managers (provenance only)')).toBeInTheDocument()
+    expect(within(review).getByRole('region', { name: 'Child workflows to map' })).toHaveTextContent('Record: subflow RecordOrder in Fulfil')
     expect(within(review).getAllByText(sha('2').slice(0, 12))).toHaveLength(1)
     await user.selectOptions(within(review).getByLabelText('Show'), 'shadowed')
     expect(within(review).queryByText('Converted')).not.toBeInTheDocument()
     await user.click(within(review).getByRole('tab', { name: 'Effective rules' }))
     expect(await within(review).findByText(/Classes searched, closest first: ACME-Purchasing-Work-Request → ACME-Purchasing-Work → @baseclass/)).toBeInTheDocument()
+    expect(within(review).getByText(/Variants: .Category = Services \(decisions\/ApprovalLevel-Services.xml\)/)).toBeInTheDocument()
     await user.click(within(review).getByRole('tab', { name: 'Archive inventory' }))
     expect(await within(review).findByText(/Rule-Obj-Flow ACME-Purchasing-Work.ApproveRequest Purchasing:01-01-05 \(Yes\)/)).toBeInTheDocument()
     // The route JSON field is replaced by an explicit choice; nothing is inferred from the action names.

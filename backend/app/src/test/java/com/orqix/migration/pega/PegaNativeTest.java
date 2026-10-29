@@ -62,6 +62,21 @@ class PegaNativeTest {
         return NativeConversion.plan(analysis, analysis.startingPoints().getFirst(), json);
     }
 
+    NativeConversion.Plan plan(byte[] archive, String start) {
+        var analysis = RuleResolution.analyze(archive);
+        return NativeConversion.plan(analysis, analysis.startingPoints().stream().filter(s -> s.rule().equals(start)).findFirst().orElseThrow(), json);
+    }
+
+    ObjectNode advancedRequest() {
+        ObjectNode r = request().put("workflowKey", "purchase-order");
+        r.putObject("groupMappings").put("Managers", "managers").put("Finance", "finance").put("Procurement", "procurement");
+        ObjectNode children = r.putObject("childWorkflowMappings");
+        for (String call : List.of("Checks_1", "Checks_2", "Record"))
+            children.putObject(call).put("workflowRef", "pega-child").set("inputMapping", json.object());
+        children.properties().forEach(e -> ((ObjectNode) e.getValue()).set("resultMapping", json.object()));
+        return r;
+    }
+
     static Set<String> codes(Report.CompatibilityReport report) {
         Set<String> codes = new TreeSet<>();
         report.issues().stream().filter(Report.Issue::blocksPublishing).forEach(i -> codes.add(i.reasonCode()));
@@ -69,7 +84,7 @@ class PegaNativeTest {
     }
 
     @Test void resolutionMatchesTheIndependentPythonImplementation() throws Exception {
-        for (String name : List.of("purchase-request", "refusals")) {
+        for (String name : List.of("purchase-request", "refusals", "purchase-advanced")) {
             JsonNode expected = json.parse(Files.readString(FIXTURES.resolve("expected/" + name + ".json")));
             assertThat(RuleResolution.analyze(fixture(name)).expectation(json)).as(name).isEqualTo(expected);
         }
@@ -122,7 +137,7 @@ class PegaNativeTest {
         var plan = plan(fixture("refusals"));
         assertThat(plan.blocked()).isTrue();
         assertThat(codes(plan.report())).contains("PEGA_NATIVE_ENTRY_UNDECODED", "PEGA_NATIVE_ACTIVITY_NOT_EXECUTED", "PEGA_NATIVE_CONNECTOR_NOT_EXECUTED",
-                "PEGA_NATIVE_SLA_BUSINESS_DAYS", "PEGA_NATIVE_RULE_BLOCKED", "PEGA_NATIVE_CIRCUMSTANCE_UNRESOLVED", "PEGA_NATIVE_REFERENCE_UNRESOLVED",
+                "PEGA_NATIVE_SLA_BUSINESS_DAYS", "PEGA_NATIVE_RULE_BLOCKED", "PEGA_NATIVE_CIRCUMSTANCE_UNSUPPORTED", "PEGA_NATIVE_REFERENCE_UNRESOLVED",
                 "PEGA_NATIVE_DECLARATIVE_UNSUPPORTED");
         assertThat(plan.report().issues()).filteredOn(Report.Issue::blocksPublishing).allSatisfy(i -> assertThat(i.sourcePath()).isNotBlank());
         var byRule = new HashMap<String, NativeConversion.RuleResult>();
@@ -130,6 +145,113 @@ class PegaNativeTest {
         assertThat(byRule.get("activities/SendNotice.xml").conversion()).isEqualTo("blocked");
         assertThat(byRule.get("connectors/CreditCheck.xml").conversion()).isEqualTo("blocked");
         assertThat(byRule.get("decisions/Tier-org.xml").conversion()).isEqualTo("blocked");
+    }
+
+    @Test void advancedCaseConvertsVariantsSubflowsSplitJoinCalendarAndEscalation() throws Exception {
+        byte[] archive = fixture("purchase-advanced");
+        var plan = plan(archive, "casetypes/PurchaseOrder.xml");
+        assertThat(plan.blocked()).as(plan.report().issues().stream().filter(Report.Issue::blocksPublishing).toList().toString()).isFalse();
+        assertThat(plan.report().requiredMappings().childWorkflows()).containsExactlyInAnyOrder("Checks_1", "Checks_2", "Record");
+        assertThat(plan.subflows()).extracting(NativeConversion.Subflow::flow).containsExactlyInAnyOrder("BudgetCheck", "VendorScreen", "RecordOrder");
+        var byRule = new HashMap<String, NativeConversion.RuleResult>();
+        plan.rules().forEach(r -> byRule.put(r.rule(), r));
+        assertThat(byRule.get("decisions/ApprovalLevel-Services.xml").resolution()).isEqualTo("variant");
+        assertThat(byRule.get("decisions/ApprovalLevel-Services.xml").circumstance()).isEqualTo(".Category = Services");
+        assertThat(byRule.get("decisions/ApprovalLevel.xml").delegatedTo()).containsExactly("Purchasing:Managers");
+        assertThat(byRule.get("flows/BudgetCheck.xml").targetKind()).isEqualTo("childWorkflow");
+        assertThat(plan.report().issues()).extracting(Report.Issue::reasonCode).contains("PEGA_NATIVE_DELEGATION_RECORDED", "PEGA_NATIVE_ESCALATION_AS_NOTICES", "PEGA_NATIVE_SUBFLOW_AS_CHILD");
+        assertThat(byRule.get("sla/BusinessSLA.xml").reasons()).contains("PEGA_NATIVE_ESCALATION_AS_NOTICES", "PEGA_NATIVE_SLA_BUSINESS_DAYS_AS_HOURS", "PEGA_NATIVE_SLA_GOAL_NOT_REPRESENTED");
+        assertThat(NativeConversion.convert(plan, UUID.randomUUID(), request(), json).report().publishable()).as("child mappings are required").isFalse();
+        var result = NativeConversion.convert(plan, UUID.randomUUID(), advancedRequest(), json);
+        assertThat(result.definition()).as(result.report().issues().stream().filter(i -> Report.OPEN.equals(i.resolutionStatus()) && !Report.SUPPORTED.equals(i.severity())).toList().toString()).isNotNull();
+        ObjectNode def = result.definition();
+        var compiled = Compilers.workflowCompiler().validate(json.write(def), new CompileContext(false, Map.of(), List.of(), Set.of()));
+        // Groups and the child workflow are bound to the workspace at draft creation; the API test covers that.
+        assertThat(compiled.issues()).as(def.toString()).filteredOn(i -> !i.code().equals("WF_GROUP_UNBOUND") && !i.code().startsWith("WF_CHILD")).isEmpty();
+        Map<String, String> types = new HashMap<>();
+        def.path("nodes").forEach(n -> types.put(n.path("id").asString(), n.path("type").asString()));
+        assertThat(types).containsEntry("Checks", "parallelSplit").containsEntry("Checks_join", "parallelJoin").containsEntry("Checks_1", "startWorkflow")
+                .containsEntry("Checks_2", "startWorkflow").containsEntry("Record", "startWorkflow").containsEntry("VendorCheck_v1", "branch").containsEntry("VendorCheck_base", "branch");
+        JsonNode manager = null;
+        for (JsonNode n : def.path("nodes")) if (n.path("id").asString().equals("ManagerReview")) manager = n.path("config");
+        assertThat(manager.path("calendar").path("zone").asString()).isEqualTo("America/New_York");
+        assertThat(manager.path("calendar").path("weekdays").toString()).isEqualTo("[1,2,3,4,5]");
+        assertThat(manager.path("dueAfterHours").asInt()).isEqualTo(16);
+        assertThat(manager.path("escalation").toString()).isEqualTo("{\"intervalHours\":4,\"maxNotices\":4}");
+        String level = null, tier = null;
+        for (JsonNode t : def.path("decisions")) {
+            if (t.toString().contains("Services")) level = t.path("key").asString();
+            if (t.toString().contains("effective")) tier = t.path("key").asString();
+        }
+        assertThat(level).isNotNull(); assertThat(tier).isNotNull();
+        record Case(String amount, String category, String expected) { }
+        for (Case c : List.of(new Case("1999.99", "Services", "Standard"), new Case("2000", "Services", "Finance"), new Case("4999.99", "Hardware", "Standard"), new Case("5000", "Hardware", "Finance")))
+            assertThat(Compilers.decisionEvaluator().evaluate(json.write(def), level, Map.of("/input/amount", new BigDecimal(c.amount()), "/input/category", c.category())).output())
+                    .as(c.toString()).containsEntry("result", c.expected());
+        for (var c : Map.of("2020-06-01", "Express", "2020-12-30", "Express", "2020-12-31", "Standard", "2026-10-29", "Standard").entrySet())
+            assertThat(Compilers.decisionEvaluator().evaluate(json.write(def), tier, Map.of("/input/amount", new BigDecimal("300"), "$asOf", c.getKey())).output())
+                    .as(c.getKey()).containsEntry("result", c.getValue());
+        assertThat(result.sourceMap()).containsKey("flows/Review.xml#/pyShapes/5");
+
+        var quick = plan(archive, "casetypes/QuickOrder.xml");
+        assertThat(quick.blocked()).isFalse();
+        assertThat(quick.report().issues()).extracting(Report.Issue::reasonCode).contains("PEGA_NATIVE_CASE_SLA_AS_STAGE");
+        ObjectNode quickRequest = json.object().put("workflowKey", "quick-order").put("name", "Quick order").put("acknowledgeInfo", true).put("acknowledgeReview", true);
+        quickRequest.putObject("groupMappings").put("Procurement", "procurement");
+        quickRequest.putObject("approvalRoutes").putObject("ConfirmOrder").put("approvedFlowId", "confirm").put("rejectedFlowId", "cancel");
+        quickRequest.putObject("childWorkflowMappings").set("Record", advancedRequest().path("childWorkflowMappings").path("Record").deepCopy());
+        var quickResult = NativeConversion.convert(quick, UUID.randomUUID(), quickRequest, json);
+        assertThat(quickResult.definition().path("stages").get(0).path("sla").asString()).isEqualTo("P5D");
+    }
+
+    @Test void constructsWithoutASoundTargetStayRefused() throws Exception {
+        byte[] base = fixture("purchase-advanced");
+        record Mutation(String code, String entry, UnaryOperator<String> change, String start) { }
+        String order = "casetypes/PurchaseOrder.xml";
+        List<Mutation> mutations = List.of(
+            new Mutation("PEGA_NATIVE_SPINOFF_UNSUPPORTED", "flows/Fulfil.xml", s -> s.replace("<pyFlowName>RecordOrder</pyFlowName>", "<pyFlowName>RecordOrder</pyFlowName>\n        <pySpinOff>true</pySpinOff>"), order),
+            new Mutation("PEGA_NATIVE_SPINOFF_UNSUPPORTED", "flows/Fulfil.xml", s -> s.replace("<pyShapeType>Subprocess</pyShapeType>", "<pyShapeType>Spinoff</pyShapeType>"), order),
+            new Mutation("PEGA_NATIVE_JOIN_UNSUPPORTED", "flows/Review.xml", s -> s.replace("<pyJoinCondition>All</pyJoinCondition>", "<pyJoinCondition>Any</pyJoinCondition>"), order),
+            new Mutation("PEGA_NATIVE_CURRENCY_UNSUPPORTED", "sections/RequestDetails.xml", s -> s.replace("<pyCurrency>USD</pyCurrency>", "<pyCurrency>EUR</pyCurrency>"), order),
+            new Mutation("PEGA_NATIVE_ALTERNATE_STAGE_UNSUPPORTED", order, s -> s.replace("<pyNewHarness>", "<pyAlternateStages REPEATINGTYPE=\"PageList\"><rowdata REPEATINGINDEX=\"1\"><pyStageID>withdrawn</pyStageID></rowdata></pyAlternateStages>\n  <pyNewHarness>"), order),
+            new Mutation("PEGA_NATIVE_OPTIONAL_PROCESS_UNSUPPORTED", order, s -> s.replace("<pyFlowName>Fulfil</pyFlowName>", "<pyFlowName>Fulfil</pyFlowName><pyOptional>true</pyOptional>"), order),
+            new Mutation("PEGA_NATIVE_CASE_SLA_UNSUPPORTED", order, s -> s.replace("<pyNewHarness>", "<pyServiceLevelName>CaseSLA</pyServiceLevelName>\n  <pyNewHarness>"), order),
+            new Mutation("PEGA_NATIVE_SLA_ESCALATION", "sla/BusinessSLA.xml", s -> s.replace("NotifyAssignee", "TransferToManager"), order),
+            new Mutation("PEGA_NATIVE_SLA_ESCALATION", "sla/BusinessSLA.xml", s -> s.replace("<pyUseBusinessDays>", "<pyGoalEscalation>NotifyAssignee</pyGoalEscalation>\n  <pyUseBusinessDays>"), order),
+            new Mutation("PEGA_NATIVE_CALENDAR_UNRESOLVED", "sla/BusinessSLA.xml", s -> s.replace("ACMEBusiness", "OtherCalendar"), order),
+            new Mutation("PEGA_NATIVE_GRAMMAR_UNSUPPORTED", "data/ACMEBusiness.xml", s -> s.replace("America/New_York", "Mars/Olympus"), order),
+            new Mutation("PEGA_NATIVE_SLA_BUSINESS_DAYS", "sla/CaseSLA.xml", s -> s.replace("<pyUseBusinessDays>false", "<pyBusinessCalendar>ACMEBusiness</pyBusinessCalendar><pyUseBusinessDays>true"), "casetypes/QuickOrder.xml"),
+            new Mutation("PEGA_NATIVE_GRAMMAR_UNSUPPORTED", "decisions/OrderTier-2020.xml", s -> s.replace("20200101T000000.000", "20200101T120000.000"), order),
+            new Mutation("PEGA_NATIVE_CIRCUMSTANCE_UNSUPPORTED", "when/NeedsVendorCheck-Software.xml", s -> s.replace("<pyCircumstanceProp>.Category</pyCircumstanceProp>\n  <pyCircumstanceVal>Software</pyCircumstanceVal>",
+                    "<pyStartDateTime>20200101T000000.000 GMT</pyStartDateTime>"), order),
+            new Mutation("PEGA_NATIVE_GRAMMAR_UNSUPPORTED", "decisions/ApprovalLevel-Services.xml", s -> s.replace("<pyCircumstanceProp>.Category</pyCircumstanceProp>\n  <pyCircumstanceVal>Services</pyCircumstanceVal>",
+                    "<pyCircumstanceDateProp>.NeededBy</pyCircumstanceDateProp>\n  <pyCircumstanceDate>20270101</pyCircumstanceDate>"), order),
+            new Mutation("PEGA_NATIVE_CIRCUMSTANCE_UNSUPPORTED", "flows/RecordOrder.xml", s -> s.replace("<pyRuleAvailable>Yes</pyRuleAvailable>", "<pyRuleAvailable>Yes</pyRuleAvailable>\n  <pyCircumstanceProp>.Category</pyCircumstanceProp>\n  <pyCircumstanceVal>Services</pyCircumstanceVal>")
+                    .replace("#20261001T090000.000", "#20261001T090900.000"), order));
+        for (Mutation m : mutations) {
+            byte[] archive = m.entry().equals("flows/RecordOrder.xml")
+                    ? add(base, "flows/RecordOrder-Services.xml", m.change().apply(text(base, "flows/RecordOrder.xml")).replace("<pyIsStartingFlow>true</pyIsStartingFlow>", "<pyIsStartingFlow>false</pyIsStartingFlow>"))
+                    : edit(base, m.entry(), m.change());
+            var plan = plan(archive, m.start());
+            assertThat(plan.blocked()).as(m.code() + " " + m.entry()).isTrue();
+            assertThat(codes(plan.report())).as(m.code() + " " + m.entry()).contains(m.code());
+        }
+    }
+
+    static String text(byte[] archive, String entry) throws Exception {
+        try (var in = new ZipInputStream(new ByteArrayInputStream(archive))) {
+            for (ZipEntry e = in.getNextEntry(); e != null; e = in.getNextEntry()) if (e.getName().equals(entry)) return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        }
+        throw new IllegalArgumentException(entry);
+    }
+
+    static byte[] add(byte[] archive, String entry, String content) throws Exception {
+        var out = new ByteArrayOutputStream();
+        try (var in = new ZipInputStream(new ByteArrayInputStream(archive)); var zip = new ZipOutputStream(out)) {
+            for (ZipEntry e = in.getNextEntry(); e != null; e = in.getNextEntry()) { zip.putNextEntry(new ZipEntry(e.getName())); zip.write(in.readAllBytes()); zip.closeEntry(); }
+            zip.putNextEntry(new ZipEntry(entry)); zip.write(content.getBytes(StandardCharsets.UTF_8)); zip.closeEntry();
+        }
+        return out.toByteArray();
     }
 
     @Test void grammarOutsideTheSubsetIsRefusedNotGuessed() throws Exception {

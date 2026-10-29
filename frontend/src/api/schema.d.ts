@@ -8074,8 +8074,11 @@ export interface components {
         PegaRuleEntry: {
             path: string;
             sha256: string;
-            /** @enum {string} */
-            status: "manifest" | "rule" | "data" | "refused";
+            /**
+             * @description delegation is a System-User-MyRules record kept as provenance
+             * @enum {string}
+             */
+            status: "manifest" | "rule" | "data" | "delegation" | "refused";
             /** @description Refusal reason code */
             reason?: string | null;
             detail?: string | null;
@@ -8086,7 +8089,15 @@ export interface components {
             version?: string | null;
             /** @description Yes, No, Blocked, Withdrawn or Final */
             availability?: string | null;
+            /** @description The rule has a qualifier (property or date circumstance, or a date range) */
             circumstanced: boolean;
+            /** @description kind property (property, value), date (property, date YYYYMMDD), dateRange (from, to as YYYYMMDDTHHMMSS.mmm GMT) or multivariate (parts) */
+            qualifier?: null | ({
+                /** @enum {string} */
+                kind: "property" | "date" | "dateRange" | "multivariate";
+            } & {
+                [key: string]: unknown;
+            });
         };
         PegaRuleContext: {
             className: string;
@@ -8099,6 +8110,13 @@ export interface components {
                 status: "resolved" | "noCandidate" | "circumstanceUnresolved" | "ambiguous" | "blocked" | "finalOverridden";
                 /** @description Entry path of the effective rule */
                 chosen?: string | null;
+                /** @description Circumstance and date variants of the chosen base rule, with their qualifier (S115) */
+                variants?: ({
+                    rule: string;
+                    kind: string;
+                } & {
+                    [key: string]: unknown;
+                })[];
                 candidates: {
                     rule: string;
                     outcome: string;
@@ -8126,6 +8144,15 @@ export interface components {
                     flowAction: string;
                 }[];
             }[];
+            /** @description Subflow calls that become child workflow steps; each id needs a childWorkflowMappings entry naming a published workflow */
+            subflows: {
+                id: string;
+                label: string;
+                /** @description Subflow rule name */
+                flow: string;
+                /** @description Flow that calls it */
+                source: string;
+            }[];
         };
         PegaRuleResult: {
             rule: string;
@@ -8146,6 +8173,10 @@ export interface components {
             /** @description SHA-256 of the mapping-independent target fragment */
             targetSha256?: string | null;
             reasons: string[];
+            /** @description The rule qualifier in words (for example .Category = Services) */
+            circumstance?: string | null;
+            /** @description Access groups the rule is delegated to (provenance only) */
+            delegatedTo: string[];
         };
         MigrationJob: {
             id: components["schemas"]["Uuid"];
@@ -8200,7 +8231,7 @@ export interface components {
             };
             /** @description DMN migrations only: the decision to convert; optional when the file has exactly one decision */
             decisionId?: string;
-            /** @description Native Pega rule archives (pegaRules) only: the archive entry path of the starting point to convert (an effective case type or starting flow); optional when the archive has exactly one. For these archives only workflowKey, name, groupMappings, approvalRoutes, the acknowledgements and pegaStartRule are accepted. */
+            /** @description Native Pega rule archives (pegaRules) only: the archive entry path of the starting point to convert (an effective case type or starting flow); optional when the archive has exactly one. For these archives only workflowKey, name, groupMappings, approvalRoutes, childWorkflowMappings, the acknowledgements and pegaStartRule are accepted. */
             pegaStartRule?: string;
             /** @description Pega Blueprint PDF migrations only (required there): the transcriptionSha256 of the reviewed transcription revision being converted. Routes, request fields and steps come from that transcription, so approvalRoutes, inputSchema and other mappings except groupMappings are refused. */
             transcriptionSha256?: string;

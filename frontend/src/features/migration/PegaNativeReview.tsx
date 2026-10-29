@@ -28,8 +28,12 @@ const OUTCOME_LABEL: Record<string, string> = {
   notAvailable: 'Not available', withdrawn: 'Withdrawn', maskedByWithdrawn: 'Hidden by a withdrawn version', lowerRanked: 'Lower ranked',
   blocked: 'Blocked (stops resolution)', belowBlocked: 'Below a blocked rule', circumstanced: 'Circumstanced (not evaluated)',
   baseFallback: 'Base rule of a circumstanced key', duplicate: 'Same rank as another rule', overridesFinal: 'Overrides a Final rule',
-  finalOverridden: 'Final rule overridden', outsideContext: 'Outside the case class',
+  finalOverridden: 'Final rule overridden', outsideContext: 'Outside the case class', variant: 'Circumstance or date variant',
 }
+
+type Qualifier = { kind?: string; property?: string; value?: string; date?: string; from?: string | null; to?: string | null }
+const qualifierText = (q?: Qualifier | null) => !q ? '' : q.kind === 'property' ? `${q.property} = ${q.value}` : q.kind === 'date' ? `${q.property} on or after ${q.date}`
+  : q.kind === 'dateRange' ? `from ${q.from ?? 'the beginning'} until ${q.to ?? 'no end'}` : 'several qualifiers'
 const short = (hash?: string | null) => (hash ? hash.slice(0, 12) : '—')
 
 /**
@@ -104,7 +108,9 @@ function RuleResults({ start, recorded }: { start: Start; recorded: Archive['con
 
 function RuleRow({ r, recorded }: { r: Result; recorded?: string | null }) {
   return <tr className="border-t border-border align-top">
-    <td className="p-2"><div className="font-medium">{r.ruleType} {r.className}.{r.ruleName}</div><div className="break-all font-mono text-xs text-muted-foreground">{r.rule}</div></td>
+    <td className="p-2"><div className="font-medium">{r.ruleType} {r.className}.{r.ruleName}</div><div className="break-all font-mono text-xs text-muted-foreground">{r.rule}</div>
+      {r.circumstance ? <div className="text-xs">Variant: {r.circumstance}</div> : null}
+      {r.delegatedTo.length ? <div className="text-xs">Delegated to {r.delegatedTo.join(', ')} (provenance only)</div> : null}</td>
     <td className="p-2 whitespace-nowrap">{r.ruleset}:{r.version}<div className="text-xs text-muted-foreground">{r.availability}</div></td>
     <td className="p-2">{OUTCOME_LABEL[r.resolution] ?? r.resolution}</td>
     <td className="p-2"><Badge tone={CONVERSION_TONE[r.conversion]}>{CONVERSION_LABEL[r.conversion] ?? r.conversion}</Badge>{r.reasons.length ? <div className="mt-1 font-mono text-xs text-muted-foreground">{r.reasons.join(', ')}</div> : null}</td>
@@ -124,7 +130,8 @@ function EffectiveRules({ archive }: { archive: Archive }) {
       <tbody>{c.keys.map(k => <tr key={`${k.ruleType} ${k.ruleName}`} className="border-t border-border align-top">
         <td className="p-2">{k.ruleType} {k.ruleName}</td>
         <td className="p-2"><Badge tone={k.status === 'resolved' ? 'success' : 'danger'}>{k.status}</Badge></td>
-        <td className="p-2"><ul className="space-y-1">{k.candidates.map(cd => <li key={cd.rule}><span className="break-all font-mono text-xs">{cd.rule}</span> — {OUTCOME_LABEL[cd.outcome] ?? cd.outcome}</li>)}</ul></td>
+        <td className="p-2"><ul className="space-y-1">{k.candidates.map(cd => <li key={cd.rule}><span className="break-all font-mono text-xs">{cd.rule}</span> — {OUTCOME_LABEL[cd.outcome] ?? cd.outcome}</li>)}</ul>
+          {k.variants?.length ? <p className="mt-1 text-xs">Variants: {k.variants.map(v => `${qualifierText(v as Qualifier)} (${v.rule})`).join('; ')}</p> : null}</td>
       </tr>)}</tbody>
     </table></div>
   </section>)}</div>
@@ -136,7 +143,7 @@ function Inventory({ archive }: { archive: Archive }) {
     <tbody>{archive.entries.map(e => <tr key={e.path} className="border-t border-border align-top">
       <td className="p-2 break-all font-mono text-xs">{e.path}</td>
       <td className="p-2"><Badge tone={e.status === 'refused' ? 'danger' : 'neutral'}>{e.status}</Badge></td>
-      <td className="p-2">{e.status === 'rule' ? `${e.ruleType} ${e.className}.${e.ruleName} ${e.ruleset}:${e.version} (${e.availability}${e.circumstanced ? ', circumstanced' : ''})` : e.status === 'refused' ? `${e.reason}: ${e.detail ?? ''}` : e.ruleType ?? '—'}</td>
+      <td className="p-2">{e.status === 'rule' ? `${e.ruleType} ${e.className}.${e.ruleName} ${e.ruleset}:${e.version} (${e.availability}${e.qualifier ? `, ${qualifierText(e.qualifier as Qualifier)}` : ''})` : e.status === 'refused' ? `${e.reason}: ${e.detail ?? ''}` : e.status === 'delegation' ? 'Rule delegation (provenance only)' : e.ruleType ?? '—'}</td>
       <td className="p-2 font-mono text-xs" title={e.sha256}>{short(e.sha256)}</td>
     </tr>)}</tbody>
   </table></div>
@@ -163,6 +170,11 @@ function Conversion({ job, start, editable }: { job: Job; start: Start; editable
         </Select>
       </div>)}
     </fieldset> : null}
+    {start.subflows.length && editable && !converted ? <section className="space-y-2 rounded-card border border-border bg-surface p-4" aria-label="Child workflows to map">
+      <h3>Child workflows to map</h3>
+      <p className="text-sm text-muted-foreground">Each subflow runs as a separate child request. Publish the child workflow first (a starting flow of this archive can be converted on its own), then map every call below under child workflow mappings with its workflowRef, inputMapping and resultMapping.</p>
+      <ul className="list-disc pl-5 text-sm">{start.subflows.map(s => <li key={s.id}><span className="font-mono">{s.id}</span>: subflow {s.flow} in {s.source}</li>)}</ul>
+    </section> : null}
     <JobReview job={{ ...job, report: start.report }} editable={editable} native={{ pegaStartRule: start.rule, approvalRoutes: routes }} />
   </div>
 }

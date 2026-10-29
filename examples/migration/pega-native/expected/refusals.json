@@ -25,7 +25,8 @@
             }
           ],
           "chosen": "connectors/CreditCheck.xml",
-          "status": "resolved"
+          "status": "resolved",
+          "variants": []
         },
         "Rule-Declare-DecisionTable APPROVALLEVEL": {
           "candidates": [
@@ -39,7 +40,8 @@
             }
           ],
           "chosen": "decisions/ApprovalLevel-01-01-01.xml",
-          "status": "resolved"
+          "status": "resolved",
+          "variants": []
         },
         "Rule-Declare-DecisionTable TIER": {
           "candidates": [
@@ -53,7 +55,8 @@
             }
           ],
           "chosen": null,
-          "status": "blocked"
+          "status": "blocked",
+          "variants": []
         },
         "Rule-Declare-Expressions TOTAL": {
           "candidates": [
@@ -63,7 +66,8 @@
             }
           ],
           "chosen": "declare/TotalExpression.xml",
-          "status": "resolved"
+          "status": "resolved",
+          "variants": []
         },
         "Rule-HTML-Harness NEW": {
           "candidates": [
@@ -73,7 +77,8 @@
             }
           ],
           "chosen": "harness/New.xml",
-          "status": "resolved"
+          "status": "resolved",
+          "variants": []
         },
         "Rule-HTML-Section REQUESTDETAILS": {
           "candidates": [
@@ -83,7 +88,8 @@
             }
           ],
           "chosen": "sections/RequestDetails-Work.xml",
-          "status": "resolved"
+          "status": "resolved",
+          "variants": []
         },
         "Rule-HTML-Section VENDORDETAILS": {
           "candidates": [
@@ -93,7 +99,8 @@
             }
           ],
           "chosen": "sections/VendorDetails.xml",
-          "status": "resolved"
+          "status": "resolved",
+          "variants": []
         },
         "Rule-Obj-Activity SENDNOTICE": {
           "candidates": [
@@ -103,7 +110,8 @@
             }
           ],
           "chosen": "activities/SendNotice.xml",
-          "status": "resolved"
+          "status": "resolved",
+          "variants": []
         },
         "Rule-Obj-Flow ESCALATE": {
           "candidates": [
@@ -113,21 +121,30 @@
             }
           ],
           "chosen": "flows/Escalate.xml",
-          "status": "resolved"
+          "status": "resolved",
+          "variants": []
         },
         "Rule-Obj-FlowAction APPROVE": {
           "candidates": [
             {
-              "outcome": "circumstanced",
+              "outcome": "variant",
               "rule": "flowactions/Approve-circumstanced.xml"
             },
             {
-              "outcome": "baseFallback",
+              "outcome": "selected",
               "rule": "flowactions/Approve.xml"
             }
           ],
-          "chosen": null,
-          "status": "circumstanceUnresolved"
+          "chosen": "flowactions/Approve.xml",
+          "status": "resolved",
+          "variants": [
+            {
+              "kind": "property",
+              "property": ".Category",
+              "rule": "flowactions/Approve-circumstanced.xml",
+              "value": "Services"
+            }
+          ]
         },
         "Rule-Obj-FlowAction REJECT": {
           "candidates": [
@@ -137,7 +154,8 @@
             }
           ],
           "chosen": "flowactions/Reject.xml",
-          "status": "resolved"
+          "status": "resolved",
+          "variants": []
         },
         "Rule-Obj-Model PYDEFAULT": {
           "candidates": [
@@ -147,7 +165,8 @@
             }
           ],
           "chosen": "transforms/pyDefault.xml",
-          "status": "resolved"
+          "status": "resolved",
+          "variants": []
         },
         "Rule-Obj-Property AMOUNT": {
           "candidates": [
@@ -161,7 +180,8 @@
             }
           ],
           "chosen": "properties/Amount.xml",
-          "status": "resolved"
+          "status": "resolved",
+          "variants": []
         },
         "Rule-Obj-Property CATEGORY": {
           "candidates": [
@@ -171,7 +191,8 @@
             }
           ],
           "chosen": "properties/Category.xml",
-          "status": "resolved"
+          "status": "resolved",
+          "variants": []
         },
         "Rule-Obj-Property DESCRIPTION": {
           "candidates": [
@@ -181,7 +202,8 @@
             }
           ],
           "chosen": "properties/Description.xml",
-          "status": "resolved"
+          "status": "resolved",
+          "variants": []
         },
         "Rule-Obj-Property INTERNALNOTE": {
           "candidates": [
@@ -191,7 +213,8 @@
             }
           ],
           "chosen": "properties/InternalNote.xml",
-          "status": "resolved"
+          "status": "resolved",
+          "variants": []
         },
         "Rule-Obj-Property NEEDEDBY": {
           "candidates": [
@@ -201,7 +224,8 @@
             }
           ],
           "chosen": "properties/NeededBy.xml",
-          "status": "resolved"
+          "status": "resolved",
+          "variants": []
         },
         "Rule-Obj-Property VENDOR": {
           "candidates": [
@@ -211,7 +235,8 @@
             }
           ],
           "chosen": "properties/Vendor.xml",
-          "status": "resolved"
+          "status": "resolved",
+          "variants": []
         },
         "Rule-Obj-ServiceLevel BUSINESSDAYSLA": {
           "candidates": [
@@ -221,7 +246,8 @@
             }
           ],
           "chosen": "sla/BusinessDaySLA.xml",
-          "status": "resolved"
+          "status": "resolved",
+          "variants": []
         },
         "Rule-Obj-ServiceLevel MANAGERREVIEWSLA": {
           "candidates": [
@@ -231,7 +257,8 @@
             }
           ],
           "chosen": "sla/ManagerReviewSLA.xml",
-          "status": "resolved"
+          "status": "resolved",
+          "variants": []
         },
         "Rule-Obj-ServiceLevel ORDERSLA": {
           "candidates": [
@@ -241,7 +268,8 @@
             }
           ],
           "chosen": "sla/OrderSLA.xml",
-          "status": "resolved"
+          "status": "resolved",
+          "variants": []
         },
         "Rule-Obj-ServiceLevel REVIEWSTAGESLA": {
           "candidates": [
@@ -251,7 +279,8 @@
             }
           ],
           "chosen": "sla/ReviewStageSLA.xml",
-          "status": "resolved"
+          "status": "resolved",
+          "variants": []
         },
         "Rule-Obj-When NEEDSVENDORCHECK": {
           "candidates": [
@@ -261,7 +290,8 @@
             }
           ],
           "chosen": "when/NeedsVendorCheck-Work.xml",
-          "status": "resolved"
+          "status": "resolved",
+          "variants": []
         }
       }
     }
@@ -278,6 +308,7 @@
       "circumstanced": false,
       "className": "@baseclass",
       "path": "application/Purchasing.xml",
+      "qualifier": null,
       "ruleName": "Purchasing",
       "ruleType": "Rule-Application",
       "ruleset": "Purchasing",
@@ -290,6 +321,7 @@
       "circumstanced": false,
       "className": "ACME-Purchasing-Work-Request",
       "path": "classes/ACME-Purchasing-Work-Request.xml",
+      "qualifier": null,
       "ruleName": "ACME-Purchasing-Work-Request",
       "ruleType": "Rule-Obj-Class",
       "ruleset": "Purchasing",
@@ -302,6 +334,7 @@
       "circumstanced": false,
       "className": "ACME-Purchasing-Work",
       "path": "classes/ACME-Purchasing-Work.xml",
+      "qualifier": null,
       "ruleName": "ACME-Purchasing-Work",
       "ruleType": "Rule-Obj-Class",
       "ruleset": "Purchasing",
@@ -314,6 +347,7 @@
       "circumstanced": false,
       "className": "ACME-Purchasing-Data-Vendor",
       "path": "classes/ACME-Purchasing-Data-Vendor.xml",
+      "qualifier": null,
       "ruleName": "ACME-Purchasing-Data-Vendor",
       "ruleType": "Rule-Obj-Class",
       "ruleset": "Purchasing",
@@ -326,6 +360,7 @@
       "circumstanced": false,
       "className": "ACME-Purchasing-Work",
       "path": "properties/Amount-01-01-01.xml",
+      "qualifier": null,
       "ruleName": "Amount",
       "ruleType": "Rule-Obj-Property",
       "ruleset": "Purchasing",
@@ -338,6 +373,7 @@
       "circumstanced": false,
       "className": "ACME-Purchasing-Work",
       "path": "properties/Amount.xml",
+      "qualifier": null,
       "ruleName": "Amount",
       "ruleType": "Rule-Obj-Property",
       "ruleset": "Purchasing",
@@ -350,6 +386,7 @@
       "circumstanced": false,
       "className": "ACME-Purchasing-Work",
       "path": "properties/Description.xml",
+      "qualifier": null,
       "ruleName": "Description",
       "ruleType": "Rule-Obj-Property",
       "ruleset": "Purchasing",
@@ -362,6 +399,7 @@
       "circumstanced": false,
       "className": "ACME-Purchasing-Work",
       "path": "properties/Category.xml",
+      "qualifier": null,
       "ruleName": "Category",
       "ruleType": "Rule-Obj-Property",
       "ruleset": "Purchasing",
@@ -374,6 +412,7 @@
       "circumstanced": false,
       "className": "ACME-Purchasing-Work",
       "path": "properties/NeededBy.xml",
+      "qualifier": null,
       "ruleName": "NeededBy",
       "ruleType": "Rule-Obj-Property",
       "ruleset": "Purchasing",
@@ -386,6 +425,7 @@
       "circumstanced": false,
       "className": "ACME-Purchasing-Work",
       "path": "properties/Vendor.xml",
+      "qualifier": null,
       "ruleName": "Vendor",
       "ruleType": "Rule-Obj-Property",
       "ruleset": "Purchasing",
@@ -398,6 +438,7 @@
       "circumstanced": false,
       "className": "ACME-Purchasing-Data-Vendor",
       "path": "properties/VendorName.xml",
+      "qualifier": null,
       "ruleName": "Name",
       "ruleType": "Rule-Obj-Property",
       "ruleset": "Purchasing",
@@ -410,6 +451,7 @@
       "circumstanced": false,
       "className": "ACME-Purchasing-Data-Vendor",
       "path": "properties/VendorPreferred.xml",
+      "qualifier": null,
       "ruleName": "Preferred",
       "ruleType": "Rule-Obj-Property",
       "ruleset": "Purchasing",
@@ -422,6 +464,7 @@
       "circumstanced": false,
       "className": "ACME-Purchasing-Work",
       "path": "properties/InternalNote.xml",
+      "qualifier": null,
       "ruleName": "InternalNote",
       "ruleType": "Rule-Obj-Property",
       "ruleset": "Purchasing",
@@ -434,6 +477,7 @@
       "circumstanced": false,
       "className": "ACME-Purchasing-Work",
       "path": "decisions/ApprovalLevel-01-01-01.xml",
+      "qualifier": null,
       "ruleName": "ApprovalLevel",
       "ruleType": "Rule-Declare-DecisionTable",
       "ruleset": "Purchasing",
@@ -446,6 +490,7 @@
       "circumstanced": false,
       "className": "ACME-Purchasing-Work",
       "path": "decisions/ApprovalLevel-01-01-05.xml",
+      "qualifier": null,
       "ruleName": "ApprovalLevel",
       "ruleType": "Rule-Declare-DecisionTable",
       "ruleset": "Purchasing",
@@ -458,6 +503,7 @@
       "circumstanced": false,
       "className": "ACME-Purchasing-Work",
       "path": "when/NeedsVendorCheck-Work.xml",
+      "qualifier": null,
       "ruleName": "NeedsVendorCheck",
       "ruleType": "Rule-Obj-When",
       "ruleset": "Purchasing",
@@ -470,6 +516,7 @@
       "circumstanced": false,
       "className": "ACME-Purchasing-Work-Request",
       "path": "when/NeedsVendorCheck-Request.xml",
+      "qualifier": null,
       "ruleName": "NeedsVendorCheck",
       "ruleType": "Rule-Obj-When",
       "ruleset": "Purchasing",
@@ -482,6 +529,7 @@
       "circumstanced": false,
       "className": "ACME-Purchasing-Work",
       "path": "flowactions/Approve.xml",
+      "qualifier": null,
       "ruleName": "Approve",
       "ruleType": "Rule-Obj-FlowAction",
       "ruleset": "Purchasing",
@@ -494,6 +542,7 @@
       "circumstanced": false,
       "className": "ACME-Purchasing-Work",
       "path": "flowactions/Reject.xml",
+      "qualifier": null,
       "ruleName": "Reject",
       "ruleType": "Rule-Obj-FlowAction",
       "ruleset": "Purchasing",
@@ -506,6 +555,7 @@
       "circumstanced": false,
       "className": "ACME-Purchasing-Work",
       "path": "sla/ManagerReviewSLA.xml",
+      "qualifier": null,
       "ruleName": "ManagerReviewSLA",
       "ruleType": "Rule-Obj-ServiceLevel",
       "ruleset": "Purchasing",
@@ -518,6 +568,7 @@
       "circumstanced": false,
       "className": "ACME-Purchasing-Work",
       "path": "sla/OrderSLA.xml",
+      "qualifier": null,
       "ruleName": "OrderSLA",
       "ruleType": "Rule-Obj-ServiceLevel",
       "ruleset": "Purchasing",
@@ -530,6 +581,7 @@
       "circumstanced": false,
       "className": "ACME-Purchasing-Work",
       "path": "sla/ReviewStageSLA.xml",
+      "qualifier": null,
       "ruleName": "ReviewStageSLA",
       "ruleType": "Rule-Obj-ServiceLevel",
       "ruleset": "Purchasing",
@@ -542,6 +594,7 @@
       "circumstanced": false,
       "className": "ACME-Purchasing-Work",
       "path": "sections/RequestDetails-Work.xml",
+      "qualifier": null,
       "ruleName": "RequestDetails",
       "ruleType": "Rule-HTML-Section",
       "ruleset": "Purchasing",
@@ -554,6 +607,7 @@
       "circumstanced": false,
       "className": "ACME-Purchasing-Work-Request",
       "path": "sections/RequestDetails-Request-01-01-02.xml",
+      "qualifier": null,
       "ruleName": "RequestDetails",
       "ruleType": "Rule-HTML-Section",
       "ruleset": "Purchasing",
@@ -566,6 +620,7 @@
       "circumstanced": false,
       "className": "ACME-Purchasing-Work-Request",
       "path": "sections/RequestDetails-Request-01-01-04.xml",
+      "qualifier": null,
       "ruleName": "RequestDetails",
       "ruleType": "Rule-HTML-Section",
       "ruleset": "Purchasing",
@@ -578,6 +633,7 @@
       "circumstanced": false,
       "className": "ACME-Purchasing-Work",
       "path": "sections/VendorDetails.xml",
+      "qualifier": null,
       "ruleName": "VendorDetails",
       "ruleType": "Rule-HTML-Section",
       "ruleset": "Purchasing",
@@ -590,6 +646,7 @@
       "circumstanced": false,
       "className": "ACME-Purchasing-Work",
       "path": "harness/New.xml",
+      "qualifier": null,
       "ruleName": "New",
       "ruleType": "Rule-HTML-Harness",
       "ruleset": "Purchasing",
@@ -602,6 +659,7 @@
       "circumstanced": false,
       "className": "ACME-Purchasing-Work",
       "path": "transforms/pyDefault.xml",
+      "qualifier": null,
       "ruleName": "pyDefault",
       "ruleType": "Rule-Obj-Model",
       "ruleset": "Purchasing",
@@ -614,6 +672,7 @@
       "circumstanced": false,
       "className": "ACME-Purchasing-Work",
       "path": "activities/SendNotice.xml",
+      "qualifier": null,
       "ruleName": "SendNotice",
       "ruleType": "Rule-Obj-Activity",
       "ruleset": "Purchasing",
@@ -632,6 +691,7 @@
       "circumstanced": false,
       "className": "ACME-Purchasing-Work",
       "path": "flows/Escalate.xml",
+      "qualifier": null,
       "ruleName": "Escalate",
       "ruleType": "Rule-Obj-Flow",
       "ruleset": "Purchasing",
@@ -644,6 +704,7 @@
       "circumstanced": false,
       "className": "ACME-Purchasing-Work",
       "path": "connectors/CreditCheck.xml",
+      "qualifier": null,
       "ruleName": "CreditCheck",
       "ruleType": "Rule-Connect-REST",
       "ruleset": "Purchasing",
@@ -656,6 +717,7 @@
       "circumstanced": false,
       "className": "ACME-Purchasing-Work",
       "path": "sla/BusinessDaySLA.xml",
+      "qualifier": null,
       "ruleName": "BusinessDaySLA",
       "ruleType": "Rule-Obj-ServiceLevel",
       "ruleset": "Purchasing",
@@ -668,6 +730,7 @@
       "circumstanced": false,
       "className": "ACME-Purchasing-Work",
       "path": "decisions/Tier-org.xml",
+      "qualifier": null,
       "ruleName": "Tier",
       "ruleType": "Rule-Declare-DecisionTable",
       "ruleset": "PurchasingOrg",
@@ -680,6 +743,7 @@
       "circumstanced": false,
       "className": "ACME-Purchasing-Work",
       "path": "decisions/Tier.xml",
+      "qualifier": null,
       "ruleName": "Tier",
       "ruleType": "Rule-Declare-DecisionTable",
       "ruleset": "Purchasing",
@@ -692,6 +756,11 @@
       "circumstanced": true,
       "className": "ACME-Purchasing-Work",
       "path": "flowactions/Approve-circumstanced.xml",
+      "qualifier": {
+        "kind": "property",
+        "property": ".Category",
+        "value": "Services"
+      },
       "ruleName": "Approve",
       "ruleType": "Rule-Obj-FlowAction",
       "ruleset": "Purchasing",
@@ -704,6 +773,7 @@
       "circumstanced": false,
       "className": "ACME-Purchasing-Work",
       "path": "declare/TotalExpression.xml",
+      "qualifier": null,
       "ruleName": "Total",
       "ruleType": "Rule-Declare-Expressions",
       "ruleset": "Purchasing",

@@ -284,7 +284,121 @@ def refusals() -> dict[str, bytes]:
     return e
 
 
-FIXTURES = {"purchase-request": purchase_request, "refusals": refusals}
+def table(name: str, version: str, threshold: str, stamp: str, available: str = "Yes", **qualifiers) -> bytes:
+    return page("Rule-Declare-DecisionTable", WORK, name, "Purchasing", version, available, stamp=stamp, extra=qualifiers.get("extra"),
+                circumstance=qualifiers.get("circumstance"), body={
+                    "pyEvaluateAllRows": "false", "pyColumns": PageList([{"pyProperty": ".Amount", "pyColumnDataType": "Decimal"}]),
+                    "pyRows": PageList([{"pyCondition": f"<{threshold}", "pyResult": "Standard"}]), "pyOtherwise": "Finance"})
+
+
+def child_flow(name: str) -> bytes:
+    return page("Rule-Obj-Flow", WORK, name, "Purchasing", "01-01-01", body={
+        "pyIsStartingFlow": "true",
+        "pyShapes": PageList([{"pyShapeID": "Start1", "pyShapeType": "Start", "pyShapeName": "Start"},
+                              {"pyShapeID": "Done", "pyShapeType": "End", "pyShapeName": "Done", "pyStatusWork": "Resolved-Completed"}]),
+        "pyConnectors": PageList([connector("c1", "Start1", "Done", "Always")])})
+
+
+def purchase_advanced() -> dict[str, bytes]:
+    """S115: circumstances, a date range, delegation, subflows, a split-join, a business calendar with escalation,
+    a single-stage case with a case-level service level and an explicit currency."""
+    base = purchase_request()
+    keep = ("META-INF/", "application/", "classes/", "properties/", "flowactions/", "harness/", "transforms/", "data/")
+    e = {k: v for k, v in base.items() if k.startswith(keep) and k != "properties/InternalNote.xml"}
+    e["sections/RequestDetails.xml"] = page("Rule-HTML-Section", WORK, "RequestDetails", "Purchasing", "01-01-03",
+        body={"pyTitle": "Request", "pyColumns": "2", "pyCells": PageList([
+            {"pyProperty": ".Description", "pyControl": "pxTextArea", "pyLabel": "What do you need?", "pyRequired": "true"},
+            {"pyProperty": ".Amount", "pyControl": "pxCurrency", "pyLabel": "Amount", "pyRequired": "true", "pyCurrency": "USD"},
+            {"pyProperty": ".Category", "pyControl": "pxDropdown", "pyLabel": "Category", "pyRequired": "true"}])})
+    e["sections/VendorDetails.xml"] = base["sections/VendorDetails.xml"]
+    # ApprovalLevel: a base rule and a property-circumstanced variant for Services (lower threshold).
+    e["decisions/ApprovalLevel.xml"] = table("ApprovalLevel", "01-01-01", "5000", "20261001T100100.000")
+    e["decisions/ApprovalLevel-Services.xml"] = table("ApprovalLevel", "01-01-01", "2000", "20261001T100200.000",
+                                                      circumstance=(".Category", "Services"))
+    # NeedsVendorCheck: a base when rule and a Software variant.
+    e["when/NeedsVendorCheck.xml"] = page("Rule-Obj-When", REQUEST, "NeedsVendorCheck", "Purchasing", "01-01-03", body={
+        "pyConditions": PageList([{"pyLabel": "A", "pyLeft": ".Vendor.Preferred", "pyOperator": "=", "pyRight": "false"},
+                                  {"pyLabel": "B", "pyLeft": ".Amount", "pyOperator": ">=", "pyRight": "1000"}]),
+        "pyLogicString": "A AND B"})
+    e["when/NeedsVendorCheck-Software.xml"] = page("Rule-Obj-When", REQUEST, "NeedsVendorCheck", "Purchasing", "01-01-03",
+        stamp="20261001T090500.000", circumstance=(".Category", "Software"), body={
+            "pyConditions": PageList([{"pyLabel": "A", "pyLeft": ".Amount", "pyOperator": ">=", "pyRight": "500"}]),
+            "pyLogicString": "A"})
+    # OrderTier: a decision tree and a variant time-qualified to 2020 (expired today).
+    tree = lambda limit: {"pyBranches": PageList([{"pyProperty": ".Amount", "pyOperator": "<", "pyValue": limit, "pyResult": "Express"}]),
+                          "pyOtherwise": "Standard"}
+    e["decisions/OrderTier.xml"] = page("Rule-Declare-DecisionTree", WORK, "OrderTier", "Purchasing", "01-01-01", body=tree("100"))
+    e["decisions/OrderTier-2020.xml"] = page("Rule-Declare-DecisionTree", WORK, "OrderTier", "Purchasing", "01-01-01",
+        stamp="20261001T090600.000", extra={"pyStartDateTime": "20200101T000000.000 GMT", "pyEndDateTime": "20201231T000000.000 GMT"},
+        body=tree("500"))
+    e["sla/BusinessSLA.xml"] = page("Rule-Obj-ServiceLevel", WORK, "BusinessSLA", "Purchasing", "01-01-01", body={
+        "pyGoalHours": "4", "pyDeadlineDays": "2", "pyUseBusinessDays": "true", "pyBusinessCalendar": "ACMEBusiness",
+        "pyDeadlineEscalation": "NotifyAssignee", "pyPassedDeadlineHours": "4", "pyPassedDeadlineLimit": "3"})
+    e["sla/OrderSLA.xml"] = base["sla/OrderSLA.xml"]
+    e["sla/CaseSLA.xml"] = page("Rule-Obj-ServiceLevel", WORK, "CaseSLA", "Purchasing", "01-01-01",
+                                body={"pyDeadlineDays": "5", "pyUseBusinessDays": "false"})
+    e["data/ACMEBusiness.xml"] = data_page("Data-Admin-Calendar", "ACMEBusiness", {
+        "pyCalendarName": "ACMEBusiness", "pyTimeZone": "America/New_York",
+        "pyWorkDays": PropertyList(["Mon", "Tue", "Wed", "Thu", "Fri"]), "pyStartTime": "09:00", "pyEndTime": "17:00",
+        "pyHolidays": PropertyList(["2026-12-25", "2027-01-01"])})
+    e["delegation/ApprovalLevel.xml"] = data_page("System-User-MyRules", "Purchasing:Managers ApprovalLevel", {
+        "pyRuleInsKey": "RULE-DECLARE-DECISIONTABLE ACME-PURCHASING-WORK APPROVALLEVEL #20261001T100100.000 GMT",
+        "pyAccessGroup": "Purchasing:Managers", "pyLabel": "Approval thresholds"})
+    review_shapes = PageList([
+        {"pyShapeID": "Start1", "pyShapeType": "Start", "pyShapeName": "Start"},
+        {"pyShapeID": "Level", "pyShapeType": "Decision", "pyShapeName": "Approval level", "pyDecisionType": "DecisionTable",
+         "pyDecisionName": "ApprovalLevel"},
+        assignment("ManagerReview", "Manager review", "Managers", "BusinessSLA"),
+        {"pyShapeID": "VendorCheck", "pyShapeType": "Decision", "pyShapeName": "Vendor check needed?", "pyDecisionType": "Fork"},
+        {"pyShapeID": "Checks", "pyShapeType": "Split-Join", "pyShapeName": "Budget and vendor checks",
+         "pySplitFlows": PropertyList(["BudgetCheck", "VendorScreen"]), "pyJoinCondition": "All"},
+        assignment("FinanceReview", "Finance review", "Finance"),
+        {"pyShapeID": "Approved", "pyShapeType": "End", "pyShapeName": "Approved"},
+        {"pyShapeID": "Rejected", "pyShapeType": "End", "pyShapeName": "Rejected", "pyStatusWork": "Resolved-Rejected"},
+    ])
+    review_connectors = PageList([
+        connector("r1", "Start1", "Level", "Always"),
+        connector("toManager", "Level", "ManagerReview", "Result", pyResultValue="Standard"),
+        connector("toChecks", "Level", "Checks", "Else"),
+        connector("managerApprove", "ManagerReview", "VendorCheck", "FlowAction", pyFlowActionName="Approve"),
+        connector("managerReject", "ManagerReview", "Rejected", "FlowAction", pyFlowActionName="Reject"),
+        connector("needsCheck", "VendorCheck", "Checks", "When", pyWhenName="NeedsVendorCheck"),
+        connector("noCheck", "VendorCheck", "Approved", "Else"),
+        connector("checksDone", "Checks", "FinanceReview", "Always"),
+        connector("financeApprove", "FinanceReview", "Approved", "FlowAction", pyFlowActionName="Approve"),
+        connector("financeReject", "FinanceReview", "Rejected", "FlowAction", pyFlowActionName="Reject"),
+    ])
+    e["flows/Review.xml"] = page("Rule-Obj-Flow", WORK, "Review", "Purchasing", "01-01-05",
+                                 body={"pyShapes": review_shapes, "pyConnectors": review_connectors})
+    e["flows/Fulfil.xml"] = page("Rule-Obj-Flow", WORK, "Fulfil", "Purchasing", "01-01-05", body={
+        "pyShapes": PageList([{"pyShapeID": "Start1", "pyShapeType": "Start", "pyShapeName": "Start"},
+                              {"pyShapeID": "Tier", "pyShapeType": "Decision", "pyShapeName": "Order tier",
+                               "pyDecisionType": "DecisionTree", "pyDecisionName": "OrderTier"},
+                              assignment("ConfirmOrder", "Confirm order", "Procurement", "OrderSLA"),
+                              {"pyShapeID": "Record", "pyShapeType": "Subprocess", "pyShapeName": "Record the order",
+                               "pyFlowName": "RecordOrder"},
+                              {"pyShapeID": "Ordered", "pyShapeType": "End", "pyShapeName": "Ordered"},
+                              {"pyShapeID": "Cancelled", "pyShapeType": "End", "pyShapeName": "Order cancelled",
+                               "pyStatusWork": "Resolved-Rejected"}]),
+        "pyConnectors": PageList([connector("f1", "Start1", "Tier", "Always"),
+                                  connector("express", "Tier", "Record", "Result", pyResultValue="Express"),
+                                  connector("standard", "Tier", "ConfirmOrder", "Else"),
+                                  connector("confirm", "ConfirmOrder", "Record", "FlowAction", pyFlowActionName="Approve"),
+                                  connector("cancel", "ConfirmOrder", "Cancelled", "FlowAction", pyFlowActionName="Reject"),
+                                  connector("recorded", "Record", "Ordered", "Always")])})
+    for name in ("BudgetCheck", "VendorScreen", "RecordOrder"):
+        e[f"flows/{name}.xml"] = child_flow(name)
+    e["casetypes/PurchaseOrder.xml"] = page("Rule-Obj-CaseType", REQUEST, "PurchaseOrder", "Purchasing", "01-01-05",
+        body={"pyNewHarness": "New", "pyStages": PageList([
+            {"pyStageID": "review", "pyStageName": "Review", "pyProcesses": PageList([{"pyFlowName": "Review"}])},
+            {"pyStageID": "fulfilment", "pyStageName": "Fulfilment", "pyProcesses": PageList([{"pyFlowName": "Fulfil"}])}])})
+    e["casetypes/QuickOrder.xml"] = page("Rule-Obj-CaseType", REQUEST, "QuickOrder", "Purchasing", "01-01-05",
+        body={"pyNewHarness": "New", "pyServiceLevelName": "CaseSLA", "pyStages": PageList([
+            {"pyStageID": "fulfilment", "pyStageName": "Fulfilment", "pyProcesses": PageList([{"pyFlowName": "Fulfil"}])}])})
+    return e
+
+
+FIXTURES = {"purchase-request": purchase_request, "refusals": refusals, "purchase-advanced": purchase_advanced}
 
 
 def generated() -> dict[str, bytes]:

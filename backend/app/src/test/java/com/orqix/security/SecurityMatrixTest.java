@@ -448,6 +448,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "createWorkflow" -> Map.of("key", "foreign-wf", "name", "Foreign");
             case "uploadMigration" -> Map.of("fileName", "foreign.bpmn", "content", "<definitions/>", "sourceFormat", "bpmn");
             case "convertMigration" -> Map.of("key", "foreign-import", "name", "Foreign", "acknowledgeInfo", true);
+            case "convertPegaCaseDefinition" -> Map.of("key", "foreign-case", "name", "Foreign", "pegaStartRule", "casetypes/Foreign.xml", "dryRun", true);
             case "saveBlueprintTranscription" -> Map.of("expectedRevision", 1, "transcription", Map.of("format", "orqix-blueprint-transcription-0.1"));
             case "proposeBlueprintTranscription" -> Map.of();
             case "uploadMigrationProject" -> Map.of("name", "Foreign", "files",

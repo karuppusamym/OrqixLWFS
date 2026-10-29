@@ -156,6 +156,27 @@ public final class RuleResolution {
                 else if (chosen.ruleType().equals("Rule-Obj-Flow") && "true".equals(textOf(chosen.page(), "pyIsStartingFlow")))
                     analysis.starts.add(new Start(chosen.path(), "flow", root));
             }
+            // S117: flows a case type of this context runs as processes (primary, then alternate stages) are starting
+            // points too, so each can be published as the workflow a case definition's workflow task pins.
+            for (Start caseType : List.copyOf(analysis.starts)) {
+                if (!caseType.kind().equals("caseType") || !caseType.context().equals(root)) continue;
+                Page page = analysis.entry(caseType.rule()).page();
+                for (String list : List.of("pyStages", "pyAlternateStages")) {
+                    if (!(page.fields().get(list) instanceof Page.Pages stages)) continue;
+                    for (Page stage : stages.rows()) {
+                        if (!(stage.fields().get("pyProcesses") instanceof Page.Pages processes)) continue;
+                        for (Page process : processes.rows()) {
+                            String name = textOf(process, "pyFlowName");
+                            if (name == null) continue;
+                            Lookup l = c.keys().get("Rule-Obj-Flow " + name.toUpperCase(Locale.ROOT));
+                            if (l == null || l.chosen() == null) continue;
+                            String rule = l.chosen().path();
+                            if (analysis.starts.stream().noneMatch(s -> s.rule().equals(rule) && s.context().equals(root)))
+                                analysis.starts.add(new Start(rule, "process", root));
+                        }
+                    }
+                }
+            }
         }
         return analysis;
     }

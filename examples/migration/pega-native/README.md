@@ -5,8 +5,9 @@ These archives are **synthetic test fixtures, not Pega exports and not customer 
 | File | Purpose |
 |---|---|
 | `purchase-request.zip` | Converts end to end: case type with two stages, decision table, fork with a when rule over a flattened data-page property, three assignments with due times, a two-section harness, a literal `pyDefault`, plus shadowed versions (lower version, not available, withdrawn, closer class, ruleset outside the stack) and unused rules |
-| `refusals.zip` | Every referenced construct blocks with its source path: activity, connector, business-day service level, a Blocked decision table, a circumstanced flow action, an unresolvable flow action, a declare expression and a binary entry |
+| `refusals.zip` | Every referenced construct blocks with its source path: activity, connector without a method (since S117), business-day service level, a Blocked decision table, a circumstanced flow action, an unresolvable flow action, a declare expression and a binary entry |
 | `purchase-advanced.zip` | S115: circumstance and date variants of decision rules and a when rule, a split-join and a subflow (child workflows), three starting child flows, a business calendar with a NotifyAssignee escalation, a single-stage case type with a case-level service level, an explicit USD cell and a delegation record. Convert and publish `flows/RecordOrder.xml` first, then map `Checks_1`, `Checks_2` and `Record` to it |
+| `purchase-connected.zip` | S117: a case type with an optional process, an alternate stage, case and stage service levels and a creation validate rule; flow Order calls connector CreateOrder through a request transform and a response mapping; a read-only data page on that connector. Convert and publish Order (map `PlaceOrder` to a workspace connection), Escalate, Close and Withdraw, then convert the case type to a case definition |
 | `expected/*.json` | Inventory and effective-rule resolution computed by the independent Python implementation (`tools/migration-equivalence/pega_native.py`). `PegaNativeTest` requires the backend to produce exactly the same result |
 
 Generate or verify from the repository root:

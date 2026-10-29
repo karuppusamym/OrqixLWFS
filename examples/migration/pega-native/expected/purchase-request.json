@@ -745,6 +745,16 @@
       "context": "ACME-Purchasing-Work-Request",
       "kind": "caseType",
       "rule": "casetypes/PurchaseRequest.xml"
+    },
+    {
+      "context": "ACME-Purchasing-Work-Request",
+      "kind": "process",
+      "rule": "flows/ApproveRequest.xml"
+    },
+    {
+      "context": "ACME-Purchasing-Work-Request",
+      "kind": "process",
+      "rule": "flows/Fulfil.xml"
     }
   ]
 }

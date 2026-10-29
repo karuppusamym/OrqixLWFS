@@ -58,7 +58,7 @@ class PegaNativeTest {
 
     NativeConversion.Plan plan(byte[] archive) {
         var analysis = RuleResolution.analyze(archive);
-        assertThat(analysis.startingPoints()).hasSize(1);
+        // The case type (or the only starting flow) comes first; S117 adds the case type's process flows after it.
         return NativeConversion.plan(analysis, analysis.startingPoints().getFirst(), json);
     }
 
@@ -136,7 +136,7 @@ class PegaNativeTest {
     @Test void referencedUnsupportedBehaviorBlocksWithSourcePaths() throws Exception {
         var plan = plan(fixture("refusals"));
         assertThat(plan.blocked()).isTrue();
-        assertThat(codes(plan.report())).contains("PEGA_NATIVE_ENTRY_UNDECODED", "PEGA_NATIVE_ACTIVITY_NOT_EXECUTED", "PEGA_NATIVE_CONNECTOR_NOT_EXECUTED",
+        assertThat(codes(plan.report())).contains("PEGA_NATIVE_ENTRY_UNDECODED", "PEGA_NATIVE_ACTIVITY_NOT_EXECUTED", "PEGA_NATIVE_GRAMMAR_UNSUPPORTED",
                 "PEGA_NATIVE_SLA_BUSINESS_DAYS", "PEGA_NATIVE_RULE_BLOCKED", "PEGA_NATIVE_CIRCUMSTANCE_UNSUPPORTED", "PEGA_NATIVE_REFERENCE_UNRESOLVED",
                 "PEGA_NATIVE_DECLARATIVE_UNSUPPORTED");
         assertThat(plan.report().issues()).filteredOn(Report.Issue::blocksPublishing).allSatisfy(i -> assertThat(i.sourcePath()).isNotBlank());
@@ -144,6 +144,11 @@ class PegaNativeTest {
         plan.rules().forEach(r -> byRule.put(r.rule(), r));
         assertThat(byRule.get("activities/SendNotice.xml").conversion()).isEqualTo("blocked");
         assertThat(byRule.get("connectors/CreditCheck.xml").conversion()).isEqualTo("blocked");
+        // Since S117 connectors convert to call steps; this one has no method, so its page is refused.
+        assertThat(plan.report().issues()).anySatisfy(i -> {
+            assertThat(i.sourcePath()).startsWith("connectors/CreditCheck.xml#");
+            assertThat(i.explanation()).contains("method is required");
+        });
         assertThat(byRule.get("decisions/Tier-org.xml").conversion()).isEqualTo("blocked");
     }
 

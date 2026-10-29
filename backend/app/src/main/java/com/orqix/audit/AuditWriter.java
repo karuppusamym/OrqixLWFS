@@ -154,6 +154,7 @@ public class AuditWriter {
             Map.entry("migration.blueprint.ai.proposed", Set.of("migrationId", "profile", "model", "elementCount")),
             Map.entry("migration.project.created", Set.of("fileCount", "issueCount")),
             Map.entry("migration.converted", Set.of("migrationId", "workflowId", "workflowKey")),
+            Map.entry("migration.case.converted", Set.of("migrationId", "caseDefinitionId", "caseKey", "sourceSha256")),
             Map.entry("migration.policy.changed", Set.of("required", "version")),
             Map.entry("migration.review.approved", Set.of("revision", "definitionHash", "reviewVersion")),
             Map.entry("conversation.message", Set.of("stage", "version")),

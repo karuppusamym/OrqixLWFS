@@ -21,6 +21,8 @@ const routeKey = (ws: string, slug: string) => `${ws}:${slug}`
 const base = '*/api/v1/workspaces/:workspaceId/app-pages'
 
 export function resetMockPages(): void { routes.clear(); drafts.clear(); chainRuns.clear() }
+/** Routes of one workspace, for the S114 pin review. */
+export function mockRoutesOf(ws: string): Array<{ slug: string; revision: number; page: { id: string; version: number } | null }> { return [...routes.values()].filter(route => route.ws === ws).map(route => clone({ slug: route.slug, revision: route.revision, page: route.page })) }
 export function snapshotMockPages(): unknown { return { routes: [...routes.values()], drafts: [...drafts.entries()] } }
 export function restoreMockPages(value: unknown): void {
   resetMockPages()
@@ -178,7 +180,7 @@ export function createPageHandlers(currentUser: () => MockUser, published: Publi
       if (previous) return previous.hash === hash ? HttpResponse.json(clone(previous.result)) : problem(409, 'IDEMPOTENCY_KEY_REUSED', 'The Idempotency-Key was used for a different request')
       const lookups = mockPageLookups(ws, found.page, published)
       const steps: Array<{ index: number; action: string; component: string | null; status: string; detail: string | null; problemCode: string | null; runId: string | null }> = []
-      let failed = false, navigateTo: string | null = null, taskVersion: number | null = null
+      let failed = false, navigateTo: string | null = null, taskVersion: number | null = null, caseVersion: number | null = null
       for (const [index, step] of chain.steps.entries()) {
         const component = step.component ? components.find(item => item.id === step.component) : undefined
         if (failed) { steps.push({ index, action: step.action, component: step.component ?? null, status: 'skipped', detail: null, problemCode: null, runId: null }); continue }
@@ -192,6 +194,15 @@ export function createPageHandlers(currentUser: () => MockUser, published: Publi
           return values
         }
         const version = () => { const value = taskVersion ?? input?.expectedVersion; if (!value) throw Object.assign(new Error('Supply the version you loaded.'), { code: 'VALIDATION_FAILED' }); return value }
+        const caseVersionNow = () => { const value = caseVersion ?? input?.expectedVersion; if (!value) throw Object.assign(new Error('Supply the version you loaded.'), { code: 'VALIDATION_FAILED' }); return value }
+        const reason = () => { const value = input?.reason?.trim(); if (!value) throw Object.assign(new Error('Give a reason of 1 to 1000 characters.'), { code: 'VALIDATION_FAILED' }); return value }
+        // Same lookup as the server: the one plan item with this element id on which the caller may take the action now.
+        const planItem = async (verb: string | null) => {
+          const plan = await internal(request, 'GET', `/workspaces/${ws}/cases/instances/${body.context}/plan`) as { items: Array<{ id: string; elementId: string; name: string; type: string; state: string; allowedActions: Record<string, boolean> }> }
+          const found = plan.items.filter(item => item.elementId === step.planItem && (verb === null ? item.state === 'active' && item.type === 'humantask' : item.allowedActions[verb] === true))
+          if (found.length !== 1) throw Object.assign(new Error(found.length ? `More than one ${step.planItem} is available. Open the case to choose one.` : `Plan item ${step.planItem} is not available for this action in the case.`), { code: found.length ? 'VALIDATION_FAILED' : 'TASK_NOT_OPEN' })
+          return found[0]!
+        }
         try {
           let runId: string | null = null
           switch (step.action) {
@@ -204,11 +215,38 @@ export function createPageHandlers(currentUser: () => MockUser, published: Publi
             }
             case 'saveDraft':
               if (!permissionsOf(user, ws).includes('workflow.start')) throw Object.assign(new Error('Forbidden'), { code: 'FORBIDDEN' })
-              drafts.set(`${ws}:${found.route.page!.id}:${component!.id}:${user.id}`, { values: clone(bound('request.')), savedAt: clock.iso() })
+              {
+                // Like the server: uploads are staged for the submit that attaches them, so drafts keep no file references.
+                const files = new Set(view && !isPage(view) ? view.sections.flatMap(section => section.fields).filter(field => field.type === 'file').map(field => field.binding.slice(8)) : [])
+                drafts.set(`${ws}:${found.route.page!.id}:${component!.id}:${user.id}`, { values: Object.fromEntries(Object.entries(clone(bound('request.'))).filter(([name]) => !files.has(name))), savedAt: clock.iso() })
+              }
               break
             case 'claim': taskVersion = Number((await internal(request, 'POST', `/workspaces/${ws}/tasks/${body.context}/claim`, { expectedVersion: version() })).version); break
             case 'approve': case 'reject': await internal(request, 'POST', `/workspaces/${ws}/tasks/${body.context}/decision`, { expectedVersion: version(), action: step.action, ...(input?.reason ? { reason: input.reason } : {}), ...(input?.comment ? { comment: input.comment } : {}) }, `${key}:${index}`); break
-            case 'saveCaseData': await internal(request, 'POST', `/workspaces/${ws}/cases/instances/${body.context}/data`, { expectedVersion: version(), reason: input?.reason, values: bound('case.') }, `${key}:${index}`); break
+            case 'requestCorrection': {
+              const changes = bound('request.')
+              if (!Object.keys(changes).length) throw Object.assign(new Error('Change at least one value.'), { code: 'VALIDATION_FAILED' })
+              taskVersion = Number((await internal(request, 'POST', `/workspaces/${ws}/tasks/${body.context}/correct-input`, { expectedVersion: version(), reason: reason(), changes }, `${key}:${index}`)).version)
+              break
+            }
+            case 'saveCaseData': caseVersion = Number((await internal(request, 'POST', `/workspaces/${ws}/cases/instances/${body.context}/data`, { expectedVersion: caseVersionNow(), reason: input?.reason, values: bound('case.') }, `${key}:${index}`)).version); break
+            case 'suspendCase': case 'resumeCase': case 'closeCase':
+              caseVersion = Number((await internal(request, 'POST', `/workspaces/${ws}/cases/instances/${body.context}/${step.action.slice(0, -4)}`, { expectedVersion: caseVersionNow(), reason: reason() }, `${key}:${index}`)).version)
+              break
+            case 'startPlanItem': case 'planDiscretionaryItem': {
+              const verb = step.action === 'startPlanItem' ? 'start' : 'plan'
+              const item = await planItem(verb)
+              caseVersion = Number((await internal(request, 'POST', `/workspaces/${ws}/cases/instances/${body.context}/plan-items/${item.id}/${verb}`, { expectedVersion: caseVersionNow(), reason: reason() }, `${key}:${index}`)).version)
+              break
+            }
+            case 'completePlanItem': {
+              const item = await planItem(null)
+              const instance = await internal(request, 'GET', `/workspaces/${ws}/cases/instances/${body.context}`) as { tasks: Array<{ id: string; name: string }> }
+              const task = instance.tasks.find(candidate => candidate.name === item.name)
+              if (!task) throw Object.assign(new Error(`Case task ${step.planItem} has no open work.`), { code: 'TASK_NOT_OPEN' })
+              caseVersion = Number((await internal(request, 'POST', `/workspaces/${ws}/cases/instances/${body.context}/tasks/${task.id}/complete`, { expectedVersion: caseVersionNow() }, `${key}:${index}`)).version)
+              break
+            }
           }
           steps.push({ index, action: step.action, component: step.component ?? null, status: 'succeeded', detail: null, problemCode: null, runId })
         } catch (error) {

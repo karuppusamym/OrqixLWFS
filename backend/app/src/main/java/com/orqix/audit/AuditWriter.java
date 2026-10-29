@@ -93,6 +93,7 @@ public class AuditWriter {
             Map.entry("extension.created", Set.of("name")),
             Map.entry("extension.version.submitted", Set.of("version", "sha256")),
             Map.entry("extension.version.decided", Set.of("version", "decision")),
+            Map.entry("view.pins-migrated", Set.of("targetVersion", "items")),
             Map.entry("workflow.draft.saved", Set.of("revision", "source")),
             Map.entry("workflow.published", Set.of("releaseNumber", "draftRevision", "semanticHash", "warningsAcknowledged")),
             Map.entry("workflow.active-release.changed", Set.of("fromReleaseNumber", "toReleaseNumber")),

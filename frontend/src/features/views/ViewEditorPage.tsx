@@ -17,6 +17,7 @@ import { Label } from '@/components/ui/label'
 import { ACTION_TYPES, FIELD_TYPES, pruneTranslations, moveItem, uniqueId, validateView, type ViewAction, type ViewActionType, type ViewDefinition, type ViewField, type ViewFieldType, type ViewSection } from './model'
 import { PresentationEditor } from './PresentationEditor'
 import { ViewPreview } from './ViewPreview'
+import { PinMigration } from './PinMigration'
 import { WorklistAssignment } from './WorklistAssignment'
 import { isPage } from '@/features/pages/model'
 import { PageDesigner } from '@/features/pages/PageDesigner'
@@ -151,6 +152,7 @@ function LoadedViewEditor({ detail }: { detail: ViewDetail }) {
       </div>
       <div className="space-y-4 xl:sticky xl:top-20">
         {draft.definition.kind==='worklist' ? <WorklistAssignment id={viewId} version={version} /> : null}
+        {detail.versions.length ? <PinMigration viewId={viewId} versions={detail.versions.map(item => item.version)} /> : null}
         <section className="space-y-3 rounded-card border border-border bg-surface-muted p-4" aria-label="Validation and bindings"><h2 className="text-lg font-semibold">Bindings and review</h2>
           {issues.length ? <ul className="list-disc space-y-1 pl-5 text-sm text-danger">{issues.map(issue => <li key={issue}>{issue}</li>)}</ul> : <Badge tone="success">Local checks passed</Badge>}
           <p className="text-xs text-muted-foreground">Server validation is authoritative. A published workflow must pin a compatible version.</p>

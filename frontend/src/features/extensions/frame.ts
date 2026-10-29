@@ -7,6 +7,7 @@ export type FrameMessage =
   | { protocol: typeof PROTOCOL; type: 'error'; message: string }
   | { protocol: typeof PROTOCOL; type: 'action'; chainId: string; requestId: string }
   | { protocol: typeof PROTOCOL; type: 'pong'; nonce: string }
+  | { protocol: typeof PROTOCOL; type: 'unloading' }
 
 /** Accepts only well-formed bridge messages; everything else from the frame is ignored. */
 export function parseFrameMessage(data: unknown): FrameMessage | null {
@@ -19,6 +20,7 @@ export function parseFrameMessage(data: unknown): FrameMessage | null {
     case 'error': return { protocol: PROTOCOL, type: 'error', message: typeof message.message === 'string' ? message.message.slice(0, 300) : 'Unknown error' }
     case 'action': return typeof message.chainId === 'string' && typeof message.requestId === 'string' && message.requestId.length <= 32 ? { protocol: PROTOCOL, type: 'action', chainId: message.chainId, requestId: message.requestId } : null
     case 'pong': return typeof message.nonce === 'string' ? { protocol: PROTOCOL, type: 'pong', nonce: message.nonce } : null
+    case 'unloading': return { protocol: PROTOCOL, type: 'unloading' }
     default: return null
   }
 }
@@ -43,6 +45,9 @@ export async function frameSource(ws: string, extensionId: string, version: numb
 
 const STYLE = 'body{margin:0;padding:8px;font:14px/1.45 system-ui,sans-serif;color:CanvasText;background:Canvas}'
 
+/** The iframe `allow` list: the same powerful features the server's Permissions-Policy denies (UiExtensionFrame.PERMISSIONS). */
+export const FRAME_ALLOW = ['camera', 'microphone', 'geolocation', 'payment', 'usb', 'fullscreen', 'display-capture', 'clipboard-read', 'clipboard-write', 'publickey-credentials-get', 'autoplay'].map(feature => `${feature} 'none'`).join('; ')
+
 async function hash(text: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
   let binary = ''
@@ -53,7 +58,7 @@ async function hash(text: string): Promise<string> {
 /** Mirrors UiExtensionFrame.build on the server; `sandbox` and `frame-ancestors` are not allowed in a meta policy. */
 export async function buildFrameDocument(bridge: string, bundle: string): Promise<string> {
   const policy = `default-src 'none'; script-src 'sha256-${await hash(bridge)}' 'sha256-${await hash(bundle)}'; style-src 'unsafe-inline'; img-src data:; font-src 'none'; connect-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; worker-src 'none'; manifest-src 'none'; form-action 'none'; base-uri 'none'`
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${policy}"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Extension</title><style>${STYLE}</style></head><body><div id="root"></div><script>${bridge}</script><script>${bundle}</script></body></html>`
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${policy}"><meta name="referrer" content="no-referrer"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Extension</title><style>${STYLE}</style></head><body><div id="root"></div><script>${bridge}</script><script>${bundle}</script></body></html>`
 }
 
 /** Same rule as the server: the bundle cannot close or open markup inside its inline script element. */

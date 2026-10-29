@@ -69,6 +69,9 @@ public class UiExtensionsController {
                 .header("X-Frame-Options", "SAMEORIGIN")
                 .header("X-Content-Type-Options", "nosniff")
                 .header("Cross-Origin-Resource-Policy", "same-origin")
+                .header("Permissions-Policy", UiExtensionFrame.PERMISSIONS)
+                .header("Referrer-Policy", "no-referrer")
+                .header("Origin-Agent-Cluster", "?1")
                 .body(document.html());
     }
 }

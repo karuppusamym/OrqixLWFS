@@ -64,6 +64,11 @@ public class ApplicationViews {
     }
 
     /** Pages also need their pinned views, workflows and extensions checked (S111); publication requires approval. */
+    /** The draft checks of {@link #save}, for a definition another service is about to save through it. */
+    public String check(UUID ws, JsonNode definition) {
+        return validate(ws, definition, false);
+    }
+
     private String validate(UUID ws, JsonNode definition, boolean publishing) {
         String kind = ViewDefinition.validate(json, definition);
         if (kind.equals("page")) pages.check(ws, definition, publishing);

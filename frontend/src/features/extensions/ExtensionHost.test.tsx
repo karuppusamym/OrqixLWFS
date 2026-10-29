@@ -76,6 +76,22 @@ describe('sandboxed extension host (S111)', () => {
     expect(screen.getByTestId('extension-fallback')).toHaveTextContent('navigated away')
   })
 
+  it('tears the frame down as soon as its document unloads or a second document starts, and denies powerful features (S114)', () => {
+    const first = setup()
+    expect(frame().getAttribute('allow')).toContain("camera 'none'")
+    expect(frame().getAttribute('allow')).toContain("clipboard-read 'none'")
+    fromFrame({ protocol: PROTOCOL, type: 'ready' })
+    first.posted.mockClear()
+    fromFrame({ protocol: PROTOCOL, type: 'unloading' })
+    expect(screen.getByTestId('extension-fallback')).toHaveTextContent('navigated away')
+    expect(screen.queryByTitle('Badge')).not.toBeInTheDocument()
+    first.unmount()
+    setup()
+    fromFrame({ protocol: PROTOCOL, type: 'ready' })
+    fromFrame({ protocol: PROTOCOL, type: 'ready' })
+    expect(screen.getByTestId('extension-fallback')).toHaveTextContent('navigated away')
+  })
+
   it('shows a blocked version without loading a frame and has no axe violations', async () => {
     vi.useRealTimers()
     const { container } = render(<ExtensionHost label="Badge" source={null} data={{}} chains={[]} height={160} blocked="its version is revoked" onRun={vi.fn()} />)

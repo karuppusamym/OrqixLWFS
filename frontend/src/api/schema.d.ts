@@ -623,6 +623,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/views/{viewId}/pins": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                viewId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Review every pin of a view or page against a published version, with compatibility diagnostics and a plan hash (S114)
+         * @description Lists the holders that pin this view: workflow drafts and active releases, the newest version of each case definition, the workspace worklist, page drafts and published pages, and page routes. Each holder is ready, current, newer, blocked (with the diagnostics a move would have) or readOnly (an immutable release or published version, shown for review). The target defaults to the newest published version.
+         */
+        get: operations["listViewPins"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/views/{viewId}/pin-migrations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                viewId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        /** List applied pin migrations of a view, newest first (at most 50) */
+        get: operations["listViewPinMigrations"];
+        put?: never;
+        /**
+         * Move the selected reviewed pins to one published version in a single all-or-nothing operation
+         * @description The plan is read again and must still have the reviewed hash (409 otherwise). Each selected holder must be ready. Workflow and page drafts get a new draft revision, a case gets a new definition version with the same model, data fields and workflow task pins, and the worklist and page routes get a new revision; each through its own operation, so its permission, revision check and audit apply. Published releases and page versions never change. Any failure rolls back every item. A repeated request fails with 409 because the pins have changed.
+         */
+        post: operations["migrateViewPins"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/app-pages": {
         parameters: {
             query?: never;
@@ -5113,6 +5160,55 @@ export interface components {
             sections: components["schemas"]["ViewSection"][];
             actions: components["schemas"]["ViewAction"][];
         };
+        ViewPinItem: {
+            key: string;
+            /** @enum {string} */
+            holderType: "workflowDraft" | "workflowRelease" | "caseDefinition" | "worklist" | "pageDraft" | "pageVersion" | "route";
+            holderId: string;
+            holderName: string;
+            location: string;
+            pinnedVersions: number[];
+            /** @description Draft revision */
+            expected: number | null;
+            /** @enum {string} */
+            status: "ready" | "current" | "newer" | "blocked" | "readOnly";
+            problems: string[];
+            /** @description What applying this item does */
+            effect: string;
+        };
+        ViewPinInventory: {
+            viewId: components["schemas"]["Uuid"];
+            viewName: string;
+            /** @enum {string} */
+            kind: "request" | "approval" | "case" | "worklist" | "page";
+            latestVersion: number;
+            targetVersion: number;
+            planHash: string;
+            items: components["schemas"]["ViewPinItem"][];
+        };
+        MigrateViewPins: {
+            targetVersion: number;
+            planHash: string;
+            items: string[];
+            reason: string;
+        };
+        ViewPinApplied: {
+            key: string;
+            holderType: string;
+            holderName: string;
+            outcome: string;
+        };
+        ViewPinMigration: {
+            id: components["schemas"]["Uuid"];
+            targetVersion: number;
+            reason: string;
+            items: components["schemas"]["ViewPinApplied"][];
+            appliedBy: components["schemas"]["Uuid"];
+            appliedAt: components["schemas"]["Timestamp"];
+        };
+        ViewPinMigrationList: {
+            items: components["schemas"]["ViewPinMigration"][];
+        };
         ViewSummary: {
             id: components["schemas"]["Uuid"];
             name: string;
@@ -5231,9 +5327,14 @@ export interface components {
             action: components["schemas"]["ChainAction"];
             component?: components["schemas"]["ViewElementId"];
             target?: string;
+            /** @description CMMN element id of the plan item */
+            planItem?: string;
         };
-        /** @enum {string} */
-        ChainAction: "submit" | "saveDraft" | "claim" | "approve" | "reject" | "saveCaseData" | "navigate";
+        /**
+         * @description requestCorrection runs correctTaskInput (fields the step lets the holder correct). Case steps run the case lifecycle, plan-item and task-completion operations with the carried case version and the component's reason.
+         * @enum {string}
+         */
+        ChainAction: "submit" | "saveDraft" | "claim" | "requestCorrection" | "approve" | "reject" | "saveCaseData" | "suspendCase" | "resumeCase" | "closeCase" | "startPlanItem" | "completePlanItem" | "planDiscretionaryItem" | "navigate";
         AppPageSlugValue: string;
         AppPageRoute: {
             slug: components["schemas"]["AppPageSlugValue"];
@@ -11362,6 +11463,94 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    listViewPins: {
+        parameters: {
+            query?: {
+                targetVersion?: number;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                viewId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pins and diagnostics */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ViewPinInventory"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listViewPinMigrations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                viewId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Applied migrations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ViewPinMigrationList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    migrateViewPins: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                viewId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MigrateViewPins"];
+            };
+        };
+        responses: {
+            /** @description Applied migration */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ViewPinMigration"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     listAppPages: {

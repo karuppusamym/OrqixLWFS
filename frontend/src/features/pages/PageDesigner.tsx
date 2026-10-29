@@ -15,6 +15,7 @@ import { Dialog } from '@/components/ui/dialog'
 import { Input, Select, Textarea } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { moveItem, type ViewDefinition } from '@/features/views/model'
+import { PinMigration } from '@/features/views/PinMigration'
 import { ChainEditor } from './ChainEditor'
 import { ComponentInspector } from './ComponentInspector'
 import { allComponents, COMPONENT_LABELS, LAYOUT_REGIONS, newComponent, pinKey, STEP_LABELS, validatePage, withLayout, type ComponentType, type ExtensionInfo, type PageComponent, type PageDefinition, type PageLookups } from './model'
@@ -178,6 +179,7 @@ export function PageDesigner({ detail }: { detail: ViewDetail }) {
           </div>
         </section>
         {can('workflow.publish') && detail.publishedVersion ? <RouteAssignment key={detail.publishedVersion} pageId={detail.id} versions={detail.versions.map(version => version.version).sort((a, b) => b - a)} /> : null}
+        {detail.versions.length ? <PinMigration viewId={detail.id} versions={detail.versions.map(version => version.version)} /> : null}
       </div>
     </div>
     <Dialog open={review} onClose={() => setReview(false)} title="Review publication" description="Publishing creates a fixed page version. Routes keep the version they pin until a publisher changes them." footer={<><Button variant="secondary" onClick={() => setReview(false)} disabled={busy}>Cancel</Button><Button onClick={() => void publish()} disabled={dirty || publishIssues.length > 0 || busy} loading={busy}>Publish version {(detail.publishedVersion ?? 0) + 1}</Button></>}>

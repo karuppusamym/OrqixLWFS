@@ -1,12 +1,16 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Puzzle } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { listMyRequests, listTasks } from '@/api/endpoints'
 import { getComponentData, runChain, type AppPageRuntime, type ChainRunResult } from '@/api/pages'
+import { useStartForm } from '@/api/queries'
 import type { components } from '@/api/schema'
 import type { TaskDetail, TaskSummary } from '@/api/types'
+import { isProblemError } from '@/api/problem'
 import { ProblemAlert } from '@/components/common/ProblemAlert'
+import { FormRenderer } from '@/components/form/FormRenderer'
+import { Alert } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input, Select, Textarea } from '@/components/ui/input'
@@ -18,9 +22,11 @@ import { frameSource } from '@/features/extensions/frame'
 import { ConfiguredWorklist } from '@/features/tasks/ConfiguredWorklist'
 import type { ViewDefinition, ViewField } from '@/features/views/model'
 import { formatDateTime } from '@/lib/dates'
+import { buildFields, parseFormSchema, parseFormUi, presentFields } from '@/lib/form/schema'
+import { buildPayload, validateForm, valuesFromJson, type FieldErrors, type RawValues } from '@/lib/form/values'
 import { requestReference, taskTitle } from '@/lib/runText'
 import { uuid } from '@/lib/text'
-import { LAYOUT_REGIONS, pinKey, STEP_LABELS, visible, type ActionChain, type ListSource, type PageComponent, type PageDefinition } from './model'
+import { LAYOUT_REGIONS, needsContext, pinKey, STEP_LABELS, visible, type ActionChain, type ListSource, type PageComponent, type PageDefinition } from './model'
 
 type S = components['schemas']
 type ExtensionUse = S['AppPageExtensionUse']
@@ -58,6 +64,11 @@ const FIXED: Record<PageDefinition['layout'], string> = { single: '', sidebar: '
 type Values = Record<string, Record<string, string>>
 const fieldKey = (field: ViewField) => field.binding.slice(field.binding.indexOf('.') + 1)
 const viewFields = (view: ViewDefinition) => view.sections.flatMap(section => section.fields)
+/** File and row controls use the request form's own renderer, uploads and validation (S114). */
+const usesRichControls = (view: ViewDefinition) => viewFields(view).some(field => field.type === 'file' || field.type === 'row')
+/** Collects a rich form's values; `validate` for a submit, lenient for a saved draft. Null means the form shows errors. */
+type Collect = (validate: boolean) => Record<string, unknown> | null
+const declares = (view: ViewDefinition, type: string) => view.actions.some(action => action.type === type)
 
 function initialValues(page: PageDefinition, views: Map<string, ViewDefinition>, runtime?: RuntimeData): Values {
   const values: Values = {}
@@ -90,14 +101,28 @@ export function PageCanvas({ page, views, extensions, preview, runtime }: PageCa
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<unknown>(null)
   const byId = useMemo(() => new Map(page.regions.flatMap(region => region.components).map(component => [component.id, component])), [page])
+  const forms = useRef(new Map<string, Collect>())
+  const register = useCallback((id: string, collect: Collect | null) => { if (collect) forms.current.set(id, collect); else forms.current.delete(id) }, [])
 
-  const inputFor = (componentId: string) => {
+  const inputFor = (componentId: string, submitting: boolean) => {
     const component = byId.get(componentId)
     const view = component?.view ? views.get(pinKey(component.view)) : undefined
     if (!view) return {}
     const note = notes[componentId] ?? {}
+    const rich = forms.current.get(componentId)
+    if (view.kind === 'request' && rich) {
+      const collected = rich(submitting)
+      if (!collected) throw new Error('Correct the highlighted fields before running this action.')
+      return { values: collected }
+    }
     if (view.kind === 'request') return { values: typed(view, values[componentId]) }
-    if (view.kind === 'approval') return { ...(runtime?.task ? { expectedVersion: runtime.task.version } : {}), ...(note.comment?.trim() ? { comment: note.comment.trim() } : {}), ...(note.reason?.trim() ? { reason: note.reason.trim() } : {}) }
+    if (view.kind === 'approval') {
+      const current = (runtime?.task?.request?.input ?? {}) as Record<string, unknown>
+      const edited = values[componentId] ?? {}
+      const changes = Object.fromEntries(viewFields(view).filter(field => edited[fieldKey(field)] !== undefined && edited[fieldKey(field)] !== String(current[fieldKey(field)] ?? ''))
+        .map(field => [fieldKey(field), field.type === 'number' ? Number(edited[fieldKey(field)]) : field.type === 'boolean' ? edited[fieldKey(field)] === 'true' : edited[fieldKey(field)]]))
+      return { ...(runtime?.task ? { expectedVersion: runtime.task.version } : {}), ...(declares(view, 'requestCorrection') ? { values: changes } : {}), ...(note.comment?.trim() ? { comment: note.comment.trim() } : {}), ...(note.reason?.trim() ? { reason: note.reason.trim() } : {}) }
+    }
     if (view.kind === 'case') return { values: typed(view, values[componentId]), ...(runtime?.caseData ? { expectedVersion: runtime.caseData.version } : {}), ...(note.reason?.trim() ? { reason: note.reason.trim() } : {}) }
     return {}
   }
@@ -107,7 +132,7 @@ export function PageCanvas({ page, views, extensions, preview, runtime }: PageCa
     setBusy(chain.id)
     setError(null)
     try {
-      const inputs = Object.fromEntries([...new Set(chain.steps.flatMap(step => step.component ? [step.component] : []))].map(id => [id, inputFor(id)]))
+      const inputs = Object.fromEntries([...new Set(chain.steps.flatMap(step => step.component ? [step.component] : []))].map(id => [id, inputFor(id, chain.steps.some(step => step.component === id && step.action === 'submit'))]))
       const result = await runChain(runtime.ws, runtime.slug, chain.id, { expectedRevision: runtime.revision, ...(runtime.context ? { context: runtime.context } : {}), ...(source ? { source } : {}), inputs }, uuid())
       setResults(current => ({ ...current, [chain.id]: result }))
       await queryClient.invalidateQueries()
@@ -124,14 +149,15 @@ export function PageCanvas({ page, views, extensions, preview, runtime }: PageCa
   const grid = preview ? (preview.columns === 2 ? FIXED[page.layout] : '') : GRID[page.layout][page.breakpoint]
   const regionLabels = LAYOUT_REGIONS[page.layout]
   return <div className="space-y-4" data-testid="page-canvas">
-    {error ? <ProblemAlert error={error} /> : null}
+    {/* Local form checks stop a chain before the server and say what to fix; server problems keep their own text. */}
+    {error ? isProblemError(error) || !(error instanceof Error) ? <ProblemAlert error={error} /> : <Alert tone="danger">{error.message}</Alert> : null}
     <div className={`grid gap-6 ${grid}`}>
       {page.regions.map((region, index) => <section key={region.id} aria-label={region.label || regionLabels[index]?.label} className="min-w-0 space-y-4">
         {region.components.filter(component => preview || visible(component, runtime?.contextData ?? {})).map(component => <div key={component.id} className="min-w-0">
           <Component component={component} page={page} views={views} extensions={extensions} preview={!!preview} runtime={runtime}
             values={values[component.id] ?? {}} onValue={(key, value) => setValues(current => ({ ...current, [component.id]: { ...current[component.id], [key]: value } }))}
             note={notes[component.id] ?? {}} onNote={note => setNotes(current => ({ ...current, [component.id]: { ...current[component.id], ...note } }))}
-            busy={busy} results={results} onRun={run} />
+            busy={busy} results={results} onRun={run} register={register} />
         </div>)}
       </section>)}
     </div>
@@ -152,6 +178,7 @@ interface ComponentProps {
   busy: string | null
   results: Record<string, ChainRunResult>
   onRun: (chain: ActionChain, source?: string) => Promise<ChainRunResult>
+  register: (id: string, collect: Collect | null) => void
 }
 
 function Component(props: ComponentProps) {
@@ -177,7 +204,7 @@ function display(value: unknown): string {
   return String(value)
 }
 
-function EmbeddedView({ component, views, preview, runtime, values, onValue, note, onNote, page }: ComponentProps) {
+function EmbeddedView({ component, views, preview, runtime, values, onValue, note, onNote, page, register }: ComponentProps) {
   const navigate = useNavigate()
   const view = component.view ? views.get(pinKey(component.view)) : undefined
   const tasks = useQuery({ queryKey: ['tasks', runtime?.ws, 'assigned', 'page'], queryFn: () => listTasks(runtime!.ws, 'assigned', { limit: 25 }), enabled: !!runtime && view?.kind === 'worklist' })
@@ -191,27 +218,86 @@ function EmbeddedView({ component, views, preview, runtime, values, onValue, not
   if (view.kind === 'approval') {
     if (!preview && !runtime?.task) return <p className="rounded-card border border-dashed border-border p-4 text-sm text-muted-foreground">Choose a task to see its request.</p>
     const input = (runtime?.task?.request?.input ?? {}) as Record<string, unknown>
+    const correcting = declares(view, 'requestCorrection')
+    // Only the fields the server says the caller may correct on this task now; the server checks again.
+    const correctable = correcting && !preview ? viewFields(view).filter(field => field.type !== 'file' && field.type !== 'row' && (runtime?.task?.form.correctableFields ?? []).includes(fieldKey(field))) : []
     return <section aria-label={title} className="space-y-3 rounded-card border border-border bg-surface p-4">
-      {view.sections.map(section => <div key={section.id}><h2 className="mb-2 font-semibold">{section.label}</h2><dl className={`grid gap-3 ${section.columns === 2 ? 'sm:grid-cols-2' : ''}`}>{section.fields.map(field => <div key={field.id} className="min-w-0"><dt className="text-sm text-muted-foreground">{field.label}</dt><dd className="wrap-anywhere">{preview ? field.binding : field.options?.find(option => option.value === input[fieldKey(field)])?.label ?? display(input[fieldKey(field)])}</dd></div>)}</dl></div>)}
+      {view.sections.map(section => <div key={section.id}><h2 className="mb-2 font-semibold">{section.label}</h2><dl className={`grid gap-3 ${section.columns === 2 ? 'sm:grid-cols-2' : ''}`}>{section.fields.map(field => <div key={field.id} className="min-w-0"><dt className="text-sm text-muted-foreground">{field.label}</dt><dd className="wrap-anywhere">{preview ? field.binding : <ReadValue field={field} value={input[fieldKey(field)]} />}</dd></div>)}</dl></div>)}
+      {correcting ? <fieldset className="space-y-3"><legend className="font-semibold">Corrections</legend>
+        {preview ? <p className="text-sm text-muted-foreground">Fields the workflow lets the task holder correct appear here.</p>
+          : correctable.length === 0 ? <p className="text-sm text-muted-foreground">No fields can be corrected on this task now.</p>
+            : <div className="grid gap-3 sm:grid-cols-2">{correctable.map(field => <FieldInput key={field.id} id={`${component.id}-correct-${field.id}`} field={field} value={values[fieldKey(field)] ?? (input[fieldKey(field)] === undefined || input[fieldKey(field)] === null ? '' : String(input[fieldKey(field)]))} disabled={false} onChange={value => onValue(fieldKey(field), value)} />)}</div>}
+      </fieldset> : null}
       <div className="grid gap-3 sm:grid-cols-2">
         <div><Label htmlFor={`${component.id}-comment`}>Comment (optional)</Label><Textarea id={`${component.id}-comment`} value={note.comment ?? ''} maxLength={2000} disabled={preview} onChange={event => onNote({ comment: event.target.value })} /></div>
-        <div><Label htmlFor={`${component.id}-reason`}>Reason (needed to reject)</Label><Textarea id={`${component.id}-reason`} value={note.reason ?? ''} maxLength={1000} disabled={preview} onChange={event => onNote({ reason: event.target.value })} /></div>
+        <div><Label htmlFor={`${component.id}-reason`}>{correcting ? 'Reason (needed to reject or correct)' : 'Reason (needed to reject)'}</Label><Textarea id={`${component.id}-reason`} value={note.reason ?? ''} maxLength={1000} disabled={preview} onChange={event => onNote({ reason: event.target.value })} /></div>
       </div>
     </section>
   }
   const editable = !preview && (view.kind === 'request' ? !!runtime?.grants.startWorkflows.includes(component.workflowId ?? '') : !!runtime?.caseData?.canEdit)
   if (view.kind === 'case' && !preview && !runtime?.caseData) return <p className="rounded-card border border-dashed border-border p-4 text-sm text-muted-foreground">Choose a case to see its data.</p>
+  if (view.kind === 'request' && runtime && !preview && usesRichControls(view)) return <section aria-label={title} className="space-y-4 rounded-card border border-border bg-surface p-4">
+    <h2 className="font-semibold">{title}</h2>
+    <RequestForm component={component} view={view} runtime={runtime} editable={editable} register={register} />
+    {!editable ? <p className="text-sm text-muted-foreground">You cannot start this request.</p> : null}
+  </section>
   return <section aria-label={title} className="space-y-4 rounded-card border border-border bg-surface p-4">
     {view.sections.map(section => <fieldset key={section.id} className="space-y-3"><legend className="font-semibold">{section.label}</legend>
       <div className={`grid gap-3 ${section.columns === 2 ? 'sm:grid-cols-2' : ''}`}>{section.fields.map(field => <FieldInput key={field.id} id={`${component.id}-${field.id}`} field={field} value={values[fieldKey(field)] ?? ''} disabled={!editable} onChange={value => onValue(fieldKey(field), value)} />)}</div>
     </fieldset>)}
-    {view.kind === 'case' ? <div><Label htmlFor={`${component.id}-reason`}>Reason for the change</Label><Input id={`${component.id}-reason`} value={note.reason ?? ''} maxLength={500} disabled={!editable} onChange={event => onNote({ reason: event.target.value })} /></div> : null}
+    {view.kind === 'case' ? <div><Label htmlFor={`${component.id}-reason`}>Reason for the change or case action</Label><Input id={`${component.id}-reason`} value={note.reason ?? ''} maxLength={1000} disabled={preview} onChange={event => onNote({ reason: event.target.value })} /></div> : null}
     {!preview && !editable ? <p className="text-sm text-muted-foreground">{view.kind === 'request' ? 'You cannot start this request.' : 'You can read this case data but not change it.'}</p> : null}
   </section>
 }
 
+/** Read-only request value; rows show as a small table, a file only as attached (downloads stay on the request page). */
+function ReadValue({ field, value }: { field: ViewField; value: unknown }) {
+  if (field.type === 'file') return <>{value ? 'A file is attached' : 'Not available'}</>
+  if (field.type === 'row') {
+    const rows = Array.isArray(value) ? value.filter((row): row is Record<string, unknown> => !!row && typeof row === 'object') : []
+    if (rows.length === 0) return <>No rows</>
+    const columns = [...new Set(rows.flatMap(row => Object.keys(row)))]
+    return <Table><caption className="sr-only">{field.label}</caption><THead><TR>{columns.map(column => <TH key={column}>{column}</TH>)}</TR></THead><TBody>{rows.map((row, index) => <TR key={index}>{columns.map(column => <TD key={column}>{display(row[column])}</TD>)}</TR>)}</TBody></Table>
+  }
+  return <>{field.options?.find(option => option.value === value)?.label ?? display(value)}</>
+}
+
+/** A request view with file or row controls, rendered by the request form renderer against the workflow's active form. */
+function RequestForm({ component, view, runtime, editable, register }: { component: PageComponent; view: ViewDefinition; runtime: RuntimeData; editable: boolean; register: ComponentProps['register'] }) {
+  const form = useStartForm(runtime.ws, component.workflowId ?? '')
+  const schema = useMemo(() => parseFormSchema(form.data?.inputSchema), [form.data?.inputSchema])
+  const ui = useMemo(() => parseFormUi(form.data?.inputUi), [form.data?.inputUi])
+  const bound = useMemo(() => new Set(viewFields(view).map(fieldKey)), [view])
+  const fields = useMemo(() => presentFields(buildFields(schema, ui), view).filter(field => bound.has(field.key)), [schema, ui, view, bound])
+  const [edited, setEdited] = useState<RawValues | null>(null)
+  const values = useMemo(() => edited ?? valuesFromJson(fields, runtime.drafts[component.id]), [edited, fields, runtime.drafts, component.id])
+  const [errors, setErrors] = useState<FieldErrors>({})
+  const [uploading, setUploading] = useState<Set<string>>(new Set())
+  const latest = useRef({ schema, ui, fields, values, uploading })
+  useEffect(() => { latest.current = { schema, ui, fields, values, uploading } })
+  useEffect(() => {
+    register(component.id, validate => {
+      const current = latest.current
+      if (current.uploading.size) throw new Error('Wait for the file upload to finish.')
+      // Only the view's own fields go to the server, which repeats every check and attaches the staged uploads on submit.
+      const pick = (payload: Record<string, unknown>) => Object.fromEntries(Object.entries(payload).filter(([key]) => bound.has(key)))
+      if (!validate) return pick(buildPayload(current.fields, current.values).payload)
+      const result = validateForm(current.schema, current.ui, current.values)
+      setErrors(result.valid ? {} : result.errors)
+      return result.valid ? pick(result.payload) : null
+    })
+    return () => register(component.id, null)
+  }, [component.id, register, bound])
+  if (form.isPending) return <p className="text-sm text-muted-foreground" role="status">Loading the request form</p>
+  if (form.isError) return <ProblemAlert error={form.error} />
+  return <FormRenderer view={view} fields={fields} values={values} errors={errors} idPrefix={component.id} disabled={!editable}
+    onChange={(key, value) => { setEdited({ ...values, [key]: value }); if (errors[key]) setErrors(current => ({ ...current, [key]: '' })) }}
+    onFileBusyChange={(key, busy) => setUploading(current => { const next = new Set(current); if (busy) next.add(key); else next.delete(key); return next })} />
+}
+
 function FieldInput({ id, field, value, disabled, onChange }: { id: string; field: ViewField; value: string; disabled: boolean; onChange: (value: string) => void }) {
   const label = <Label htmlFor={id}>{field.label}{field.required ? ' *' : ''}</Label>
+  if (field.type === 'file' || field.type === 'row') return <div className="min-w-0 space-y-1.5"><p className="text-sm font-medium">{field.label}{field.required ? ' *' : ''}</p><p className="text-sm text-muted-foreground">{field.type === 'file' ? 'File upload' : 'Repeating rows'} from the request form.</p></div>
   if (field.type === 'choice' || field.type === 'boolean') {
     const options = field.type === 'boolean' ? [{ value: 'true', label: 'Yes' }, { value: 'false', label: 'No' }] : field.options ?? []
     return <div className="min-w-0 space-y-1.5">{label}<Select id={id} value={value} disabled={disabled} required={field.required} onChange={event => onChange(event.target.value)}><option value="">Choose an option</option>{options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</Select></div>
@@ -263,7 +349,7 @@ function DataList({ component, page, preview, runtime }: ComponentProps) {
 
 function ActionBar({ component, page, preview, runtime, busy, results, onRun }: ComponentProps) {
   const chains = (component.chains ?? []).flatMap(id => page.chains.filter(chain => chain.id === id))
-  const blocked = !preview && runtime && page.context !== 'none' && !runtime.context && chains.some(chain => chain.steps.some(step => ['claim', 'approve', 'reject', 'saveCaseData'].includes(step.action)))
+  const blocked = !preview && runtime && page.context !== 'none' && !runtime.context && chains.some(chain => chain.steps.some(step => needsContext(step.action)))
   return <section aria-label={component.label ?? 'Actions'} className="space-y-3 rounded-card border border-border bg-surface p-4">
     {component.label ? <h2 className="font-semibold">{component.label}</h2> : null}
     <div className="flex flex-wrap gap-2">{chains.map((chain, index) => <Button key={chain.id} variant={index === 0 ? 'primary' : 'secondary'} disabled={preview || !!busy || !!blocked} loading={busy === chain.id} onClick={() => void onRun(chain).catch(() => undefined)}>{chain.label}</Button>)}</div>

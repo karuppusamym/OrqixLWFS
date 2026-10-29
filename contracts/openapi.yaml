@@ -667,6 +667,63 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /workspaces/{workspaceId}/views/{viewId}/pins:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: viewId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    get:
+      tags: [Views]
+      operationId: listViewPins
+      summary: Review every pin of a view or page against a published version, with compatibility diagnostics and a plan hash (S114)
+      description: >-
+        Lists the holders that pin this view: workflow drafts and active releases, the newest version of each case
+        definition, the workspace worklist, page drafts and published pages, and page routes. Each holder is ready,
+        current, newer, blocked (with the diagnostics a move would have) or readOnly (an immutable release or published
+        version, shown for review). The target defaults to the newest published version.
+      x-orqix-permission: workflow.read
+      parameters:
+        - { name: targetVersion, in: query, required: false, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200': { description: Pins and diagnostics, content: { application/json: { schema: { $ref: '#/components/schemas/ViewPinInventory' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/views/{viewId}/pin-migrations:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: viewId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    get:
+      tags: [Views]
+      operationId: listViewPinMigrations
+      summary: List applied pin migrations of a view, newest first (at most 50)
+      x-orqix-permission: workflow.read
+      responses:
+        '200': { description: Applied migrations, content: { application/json: { schema: { $ref: '#/components/schemas/ViewPinMigrationList' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    post:
+      tags: [Views]
+      operationId: migrateViewPins
+      summary: Move the selected reviewed pins to one published version in a single all-or-nothing operation
+      description: >-
+        The plan is read again and must still have the reviewed hash (409 otherwise). Each selected holder must be ready.
+        Workflow and page drafts get a new draft revision, a case gets a new definition version with the same model, data
+        fields and workflow task pins, and the worklist and page routes get a new revision; each through its own operation,
+        so its permission, revision check and audit apply. Published releases and page versions never change. Any failure
+        rolls back every item. A repeated request fails with 409 because the pins have changed.
+      x-orqix-permission: workflow.edit + underlying action permission
+      x-orqix-audit: view.pins-migrated
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/MigrateViewPins' } } } }
+      responses:
+        '200': { description: Applied migration, content: { application/json: { schema: { $ref: '#/components/schemas/ViewPinMigration' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
   /workspaces/{workspaceId}/app-pages:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
     get:
@@ -7117,6 +7174,68 @@ components:
         kind: { type: string, enum: [request, approval, case, worklist] }
         sections: { type: array, items: { $ref: '#/components/schemas/ViewSection' } }
         actions: { type: array, items: { $ref: '#/components/schemas/ViewAction' } }
+    ViewPinItem:
+      type: object
+      additionalProperties: false
+      required: [key, holderType, holderId, holderName, location, pinnedVersions, expected, status, problems, effect]
+      properties:
+        key: { type: string, maxLength: 120 }
+        holderType: { type: string, enum: [workflowDraft, workflowRelease, caseDefinition, worklist, pageDraft, pageVersion, route] }
+        holderId: { type: string }
+        holderName: { type: string }
+        location: { type: string }
+        pinnedVersions: { type: array, items: { type: integer, minimum: 1 } }
+        expected: { type: [integer, 'null'], description: Draft revision, case definition version or route/worklist revision the update expects }
+        status: { type: string, enum: [ready, current, newer, blocked, readOnly] }
+        problems: { type: array, items: { type: string } }
+        effect: { type: string, description: What applying this item does }
+    ViewPinInventory:
+      type: object
+      additionalProperties: false
+      required: [viewId, viewName, kind, latestVersion, targetVersion, planHash, items]
+      properties:
+        viewId: { $ref: '#/components/schemas/Uuid' }
+        viewName: { type: string }
+        kind: { type: string, enum: [request, approval, case, worklist, page] }
+        latestVersion: { type: integer, minimum: 1 }
+        targetVersion: { type: integer, minimum: 1 }
+        planHash: { type: string, pattern: '^[0-9a-f]{64}$' }
+        items: { type: array, items: { $ref: '#/components/schemas/ViewPinItem' } }
+    MigrateViewPins:
+      type: object
+      additionalProperties: false
+      required: [targetVersion, planHash, items, reason]
+      properties:
+        targetVersion: { type: integer, minimum: 1 }
+        planHash: { type: string, pattern: '^[0-9a-f]{64}$' }
+        items: { type: array, minItems: 1, maxItems: 50, uniqueItems: true, items: { type: string, maxLength: 120 } }
+        reason: { type: string, minLength: 1, maxLength: 500 }
+    ViewPinApplied:
+      type: object
+      additionalProperties: false
+      required: [key, holderType, holderName, outcome]
+      properties:
+        key: { type: string }
+        holderType: { type: string }
+        holderName: { type: string }
+        outcome: { type: string }
+    ViewPinMigration:
+      type: object
+      additionalProperties: false
+      required: [id, targetVersion, reason, items, appliedBy, appliedAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        targetVersion: { type: integer, minimum: 1 }
+        reason: { type: string }
+        items: { type: array, items: { $ref: '#/components/schemas/ViewPinApplied' } }
+        appliedBy: { $ref: '#/components/schemas/Uuid' }
+        appliedAt: { $ref: '#/components/schemas/Timestamp' }
+    ViewPinMigrationList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ViewPinMigration' } }
     ViewSummary:
       type: object
       additionalProperties: false
@@ -7282,9 +7401,13 @@ components:
         action: { $ref: '#/components/schemas/ChainAction' }
         component: { $ref: '#/components/schemas/ViewElementId' }
         target: { type: string, maxLength: 200 }
+        planItem: { type: string, pattern: '^[A-Za-z_][A-Za-z0-9._-]{0,63}$', description: CMMN element id of the plan item, for startPlanItem, completePlanItem and planDiscretionaryItem; resolved in the case when the step runs }
     ChainAction:
       type: string
-      enum: [submit, saveDraft, claim, approve, reject, saveCaseData, navigate]
+      description: >-
+        requestCorrection runs correctTaskInput (fields the step lets the holder correct). Case steps run the case
+        lifecycle, plan-item and task-completion operations with the carried case version and the component's reason.
+      enum: [submit, saveDraft, claim, requestCorrection, approve, reject, saveCaseData, suspendCase, resumeCase, closeCase, startPlanItem, completePlanItem, planDiscretionaryItem, navigate]
     AppPageSlugValue:
       type: string
       pattern: '^[a-z][a-z0-9-]{0,38}[a-z0-9]$'

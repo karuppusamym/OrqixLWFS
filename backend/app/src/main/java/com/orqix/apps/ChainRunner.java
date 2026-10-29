@@ -102,6 +102,7 @@ public class ChainRunner {
         List<Step> steps = new ArrayList<>();
         String navigateTo = null;
         Integer taskVersion = null;
+        Integer caseVersion = null;
         boolean failed = false;
         int index = 0;
         for (JsonNode step : chain.path("steps")) {
@@ -130,12 +131,40 @@ public class ChainRunner {
                     }
                     case "saveDraft" -> saveDraft(caller, access, ws, slug, page, component, input);
                     case "claim" -> taskVersion = actions.claim(caller, ws, context, version(input, null));
+                    case "requestCorrection" -> {
+                        Map<String, JsonNode> changes = new java.util.LinkedHashMap<>();
+                        bound(page.views().get(component), "request.", values(input)).properties()
+                                .forEach(e -> changes.put(e.getKey(), e.getValue()));
+                        if (changes.isEmpty()) throw new ApiException(ProblemCode.VALIDATION_FAILED, "Change at least one value.");
+                        taskVersion = actions.correct(caller, ws, context, stepKey, version(input, taskVersion),
+                                reason(input, 500), changes);
+                    }
                     case "approve", "reject" -> actions.decide(caller, ws, context, stepKey, version(input, taskVersion),
                             action, input == null ? null : input.reason(), input == null ? null : input.comment());
                     case "saveCaseData" -> {
                         ApplicationViewQueries.Pinned view = page.views().get(component);
-                        cases.updateData(caller, ws, AppPages.uuid(context), stepKey, new CaseService.UpdateData(
-                                version(input, null), input == null ? null : input.reason(), bound(view, "case.", values(input))));
+                        caseVersion = cases.updateData(caller, ws, AppPages.uuid(context), stepKey, new CaseService.UpdateData(
+                                version(input, caseVersion), input == null ? null : input.reason(),
+                                bound(view, "case.", values(input)))).value().version();
+                    }
+                    case "suspendCase", "resumeCase", "closeCase" -> caseVersion = cases.lifecycle(caller, ws,
+                            AppPages.uuid(context), action.substring(0, action.length() - 4), stepKey,
+                            new CaseService.CaseCommand(version(input, caseVersion), reason(input, 1000))).value().version();
+                    case "startPlanItem", "planDiscretionaryItem" -> {
+                        UUID caseId = AppPages.uuid(context);
+                        String verb = action.equals("startPlanItem") ? "start" : "plan";
+                        String item = planItem(caller, ws, caseId, step.path("planItem").asString(), verb);
+                        caseVersion = cases.planItem(caller, ws, caseId, item, verb, stepKey,
+                                new CaseService.CaseCommand(version(input, caseVersion), reason(input, 1000))).value().version();
+                    }
+                    case "completePlanItem" -> {
+                        UUID caseId = AppPages.uuid(context);
+                        String element = step.path("planItem").asString();
+                        String item = planItem(caller, ws, caseId, element, null);
+                        String task = cases.openTaskId(ws, caseId, item).orElseThrow(() -> new ApiException(
+                                ProblemCode.TASK_NOT_OPEN, "Case task " + element + " has no open work."));
+                        caseVersion = cases.complete(caller, ws, caseId, task, stepKey,
+                                new CaseService.CompleteTask(version(input, caseVersion))).value().version();
                     }
                     default -> throw new ApiException(ProblemCode.VALIDATION_FAILED, "The step is not in the action allowlist.");
                 }
@@ -192,7 +221,14 @@ public class ChainRunner {
             String component, Input input) {
         UUID workflow = UUID.fromString(page.components().get(component).path("workflowId").asString());
         if (!access.canStart(workflow)) throw ApiException.forbidden();
-        JsonNode values = bound(page.views().get(component), "request.", values(input));
+        ApplicationViewQueries.Pinned view = page.views().get(component);
+        ObjectNode values = bound(view, "request.", values(input));
+        // Uploads are staged for the submit that attaches them; a saved draft keeps no file references.
+        for (JsonNode section : view.definition().path("sections")) {
+            for (JsonNode field : section.path("fields")) {
+                if ("file".equals(field.path("type").asString())) values.remove(field.path("binding").asString().substring(8));
+            }
+        }
         String text = json.write(values);
         if (text.length() > 32_768) throw new ApiException(ProblemCode.VALIDATION_FAILED, "The draft is too large.");
         UUID pageId = page.id();
@@ -260,6 +296,33 @@ public class ChainRunner {
         return input.values();
     }
 
+    /**
+     * The one plan item with this CMMN element id on which the caller may take the action now, read through the
+     * case's own authorized plan view. A null verb means an active human task, completed through its open task.
+     */
+    private String planItem(Caller caller, UUID ws, UUID caseId, String elementId, String verb) {
+        List<String> found = cases.plan(caller, ws, caseId).items().stream()
+                .filter(item -> elementId.equals(item.elementId()))
+                .filter(item -> verb == null ? "active".equals(item.state()) && "humantask".equals(item.type())
+                        : Boolean.TRUE.equals(item.allowedActions().get(verb)))
+                .map(CaseService.PlanItem::id).toList();
+        if (found.isEmpty()) {
+            throw new ApiException(ProblemCode.TASK_NOT_OPEN, "Plan item " + elementId + " is not available for this action in the case.");
+        }
+        if (found.size() > 1) {
+            throw new ApiException(ProblemCode.VALIDATION_FAILED, "More than one " + elementId + " is available. Open the case to choose one.");
+        }
+        return found.getFirst();
+    }
+
+    private static String reason(Input input, int max) {
+        String reason = input == null || input.reason() == null ? "" : input.reason().strip();
+        if (reason.isEmpty() || reason.length() > max) {
+            throw new ApiException(ProblemCode.VALIDATION_FAILED, "Give a reason of 1 to " + max + " characters.");
+        }
+        return reason;
+    }
+
     private static int version(Input input, Integer carried) {
         if (carried != null) return carried;
         if (input == null || input.expectedVersion() == null || input.expectedVersion() < 1) {
@@ -270,7 +333,7 @@ public class ChainRunner {
 
     private static boolean needsContext(JsonNode chain) {
         for (JsonNode step : chain.path("steps")) {
-            if (Set.of("claim", "approve", "reject", "saveCaseData").contains(step.path("action").asString())) return true;
+            if (!Set.of("submit", "saveDraft", "navigate").contains(step.path("action").asString())) return true;
         }
         return false;
     }

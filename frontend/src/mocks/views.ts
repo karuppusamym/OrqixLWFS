@@ -4,7 +4,8 @@ import type { ViewDefinition } from '@/features/views/model'
 import { blankView, validateView } from '@/features/views/model'
 import { isPage, type PageDefinition } from '@/features/pages/model'
 import { createExtensionHandlers, resetMockExtensions, restoreMockExtensions, snapshotMockExtensions, SEEDED_EXTENSION_ID } from './extensions'
-import { createPageHandlers, mockPageProblem, resetMockPages, restoreMockPages, snapshotMockPages } from './pages'
+import { createPageHandlers, mockPageProblem, mockRoutesOf, resetMockPages, restoreMockPages, snapshotMockPages } from './pages'
+import { createViewPinHandlers, resetMockPins } from './viewPins'
 import { clock, isMember, newId, permissionsOf, PURCHASE_WORKFLOW_ID, type MockUser, WS_PURCHASING } from './state'
 
 interface StoredView {
@@ -40,6 +41,7 @@ export function resetMockViews(): void {
   views.set(seeded.id, seeded)
   resetMockExtensions()
   resetMockPages()
+  resetMockPins()
   seedPages()
 }
 
@@ -227,6 +229,13 @@ export function createViewHandlers(currentUser: () => MockUser): HttpHandler[] {
       return version ? HttpResponse.json({ viewId: view.id, ...clone(version) }) : notFound()
     }),
     ...createPageHandlers(currentUser, mockPublished),
+    ...createViewPinHandlers(currentUser, {
+      views: ws => [...views.values()].filter(view => view.ws === ws),
+      worklist: ws => { const state = worklists.get(ws); return { revision: state?.revision ?? 0, binding: state?.binding ? { id: state.binding.id, version: state.binding.version } : null } },
+      routes: mockRoutesOf,
+      pageProblem: (ws, page, publishing) => mockPageProblem(ws, page, mockPublished, publishing),
+      viewProblem: definition => validateView(definition)[0] ?? null,
+    }),
     ...createExtensionHandlers(currentUser),
   ]
 }

@@ -4,7 +4,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input, Select } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { moveItem } from '@/features/views/model'
-import { allComponents, chainProblems, STEP_ACTIONS, STEP_LABELS, stepTargets, uniqueComponentId, type ActionChain, type ChainAction, type ChainStep, type PageDefinition, type PageLookups } from './model'
+import { allComponents, chainProblems, PLAN_ITEM_STEPS, STEP_ACTIONS, STEP_LABELS, stepTargets, uniqueComponentId, type ActionChain, type ChainAction, type ChainStep, type PageDefinition, type PageLookups } from './model'
 
 interface ChainEditorProps {
   page: PageDefinition
@@ -29,7 +29,7 @@ export function ChainEditor({ page, lookups, disabled, onChange }: ChainEditorPr
   }
   return <section className="space-y-3 rounded-card border border-border bg-surface p-4" aria-label="Action chains">
     <div className="flex items-center justify-between gap-2"><h2 className="text-lg font-semibold">Action chains</h2><Button size="sm" variant="secondary" disabled={disabled || chains.length >= 10} onClick={add}><Plus aria-hidden="true" /> Add chain</Button></div>
-    <p className="text-sm text-muted-foreground">Each step uses the fixed action list and is checked again by the server. A chain stops at the first failed step; earlier steps are not undone.</p>
+    <p className="text-sm text-muted-foreground">Each step uses the fixed action list and is checked again by the server. A chain stops at the first failed step; earlier steps are not undone. Case steps take the reason entered on their case component and use the case version the page loaded.</p>
     {chains.length === 0 ? <p className="text-sm text-muted-foreground">No chains yet. Add one, then place it on an action bar or grant it to an extension.</p> : null}
     {chains.map((chain, index) => {
       const problems = chainProblems(chain, byId, lookups)
@@ -45,11 +45,12 @@ export function ChainEditor({ page, lookups, disabled, onChange }: ChainEditorPr
           return <li key={stepIndex} className="grid gap-2 rounded bg-surface-muted p-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
             <div><Label htmlFor={`chain-${chain.id}-${stepIndex}-action`}>Step {stepIndex + 1} action</Label><Select id={`chain-${chain.id}-${stepIndex}-action`} value={step.action} disabled={disabled} onChange={event => {
               const action = event.target.value as ChainAction
-              changeStep(index, stepIndex, () => action === 'navigate' ? { action, target: step.target ?? '/w' } : { action, component: stepTargets(page, action, lookups)[0]?.id ?? step.component })
+              changeStep(index, stepIndex, () => action === 'navigate' ? { action, target: step.target ?? '/w' } : { action, component: stepTargets(page, action, lookups)[0]?.id ?? step.component, ...(PLAN_ITEM_STEPS.includes(action) ? { planItem: step.planItem ?? '' } : {}) })
             }}>{STEP_ACTIONS.map(action => <option key={action} value={action}>{STEP_LABELS[action]}</option>)}</Select></div>
             {step.action === 'navigate'
               ? <div><Label htmlFor={`chain-${chain.id}-${stepIndex}-target`}>Same-app path</Label><Input id={`chain-${chain.id}-${stepIndex}-target`} value={step.target ?? ''} placeholder="/w/..." disabled={disabled} onChange={event => changeStep(index, stepIndex, old => ({ ...old, target: event.target.value }))} /></div>
-              : <div><Label htmlFor={`chain-${chain.id}-${stepIndex}-component`}>Target component</Label><Select id={`chain-${chain.id}-${stepIndex}-component`} value={step.component ?? ''} disabled={disabled} onChange={event => changeStep(index, stepIndex, old => ({ ...old, component: event.target.value }))}><option value="">Choose a component</option>{targets.map(component => <option key={component.id} value={component.id}>{component.label ?? component.id}</option>)}{step.component && !targets.some(component => component.id === step.component) ? <option value={step.component}>{step.component} (not compatible)</option> : null}</Select></div>}
+              : <div><Label htmlFor={`chain-${chain.id}-${stepIndex}-component`}>Target component</Label><Select id={`chain-${chain.id}-${stepIndex}-component`} value={step.component ?? ''} disabled={disabled} onChange={event => changeStep(index, stepIndex, old => ({ ...old, component: event.target.value }))}><option value="">Choose a component</option>{targets.map(component => <option key={component.id} value={component.id}>{component.label ?? component.id}</option>)}{step.component && !targets.some(component => component.id === step.component) ? <option value={step.component}>{step.component} (not compatible)</option> : null}</Select>
+                {PLAN_ITEM_STEPS.includes(step.action) ? <div className="mt-2"><Label htmlFor={`chain-${chain.id}-${stepIndex}-item`}>Case task or optional item (CMMN element id)</Label><Input id={`chain-${chain.id}-${stepIndex}-item`} value={step.planItem ?? ''} maxLength={64} placeholder="reviewTask" disabled={disabled} onChange={event => changeStep(index, stepIndex, old => ({ ...old, planItem: event.target.value }))} /></div> : null}</div>}
             <div className="flex items-end gap-1">
               <Button size="icon" variant="ghost" aria-label={`Move ${name} up`} disabled={disabled || stepIndex === 0} onClick={() => change(index, old => ({ ...old, steps: moveItem(old.steps, stepIndex, -1) }))}><ArrowUp aria-hidden="true" /></Button>
               <Button size="icon" variant="ghost" aria-label={`Move ${name} down`} disabled={disabled || stepIndex === chain.steps.length - 1} onClick={() => change(index, old => ({ ...old, steps: moveItem(old.steps, stepIndex, 1) }))}><ArrowDown aria-hidden="true" /></Button>

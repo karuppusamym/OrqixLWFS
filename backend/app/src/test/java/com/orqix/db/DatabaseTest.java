@@ -64,6 +64,8 @@ class DatabaseTest {
                     "DELETE FROM case_definition_view",
                     "UPDATE application_page_route_history SET view_version = 99",
                     "DELETE FROM application_page_route_history",
+                    "UPDATE application_view_pin_migration SET reason = 'x'",
+                    "DELETE FROM application_view_pin_migration",
                     "DELETE FROM application_page_route",
                     "UPDATE ui_extension_version SET source = 'x'",
                     "UPDATE ui_extension_version SET capabilities = '{}'",

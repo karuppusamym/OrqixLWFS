@@ -60,7 +60,12 @@ class UiExtensionsApiTest extends PageTestBase {
         assertThat(policy.split("'sha256-").length).isEqualTo(3);
         assertThat(preview.header("X-Frame-Options")).isEqualTo("SAMEORIGIN");
         assertThat(api("dana.designer").get(EXT, PURCHASING).header("X-Frame-Options")).isEqualTo("DENY");
-        assertThat(new String(preview.bytes(), StandardCharsets.UTF_8)).contains(SOURCE).contains("orqix-extension/1");
+        assertThat(new String(preview.bytes(), StandardCharsets.UTF_8)).contains(SOURCE).contains("orqix-extension/1")
+                .contains("<meta name=\"referrer\" content=\"no-referrer\">").contains("type: 'unloading'");
+        // S114: no form posts or base changes, no powerful features, no referrer for a self-navigation.
+        assertThat(policy).contains("form-action 'none'").contains("base-uri 'none'");
+        assertThat(preview.header("Permissions-Policy")).contains("camera=()").contains("clipboard-read=()").contains("payment=()");
+        assertThat(preview.header("Referrer-Policy")).isEqualTo("no-referrer");
         assertThat(api("rhea.requester").get(EXT + "/{id}/versions/{v}/frame", PURCHASING, id, 1).status()).isEqualTo(403);
         assertThat(api("otto.outsider").get(EXT + "/{id}/versions/{v}/frame", PURCHASING, id, 1).status()).isEqualTo(404);
 

@@ -46,6 +46,16 @@ public class PageActions {
                 new RuntimeDtos.DecisionRequest(expectedVersion, action, reason, comment));
     }
 
+    /**
+     * Corrects request fields the step lets the task holder correct (S42); returns the task version after the
+     * correction, which a following decision must carry.
+     */
+    public int correct(Caller caller, UUID workspaceId, String taskId, String idempotencyKey, int expectedVersion,
+            String reason, Map<String, JsonNode> changes) {
+        return tasks.correctInput(caller, workspaceId, taskId, idempotencyKey,
+                new RuntimeDtos.CorrectTaskInputRequest(expectedVersion, reason, changes)).version();
+    }
+
     public UUID start(Caller caller, UUID workspaceId, String idempotencyKey, UUID workflowId, JsonNode input) {
         return runs.start(caller, workspaceId, idempotencyKey,
                 new RuntimeDtos.StartRunRequest(workflowId, null, null, input)).run().id();

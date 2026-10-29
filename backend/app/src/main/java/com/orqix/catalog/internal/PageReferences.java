@@ -22,10 +22,15 @@ import tools.jackson.databind.JsonNode;
  */
 @Component
 public class PageReferences {
-    private static final Map<String, String> STEP_KIND = Map.of("submit", "request", "saveDraft", "request",
-            "claim", "approval", "approve", "approval", "reject", "approval", "saveCaseData", "case");
+    private static final Map<String, String> STEP_KIND = Map.ofEntries(Map.entry("submit", "request"),
+            Map.entry("saveDraft", "request"), Map.entry("claim", "approval"), Map.entry("requestCorrection", "approval"),
+            Map.entry("approve", "approval"), Map.entry("reject", "approval"), Map.entry("saveCaseData", "case"),
+            Map.entry("suspendCase", "case"), Map.entry("resumeCase", "case"), Map.entry("closeCase", "case"),
+            Map.entry("startPlanItem", "case"), Map.entry("completePlanItem", "case"),
+            Map.entry("planDiscretionaryItem", "case"));
+    /** The view action a step needs on its target view; lifecycle and plan-item steps need none. */
     private static final Map<String, String> STEP_VIEW_ACTION = Map.of("submit", "submit", "saveDraft", "saveDraft",
-            "approve", "approve", "reject", "reject", "saveCaseData", "saveData");
+            "requestCorrection", "requestCorrection", "approve", "approve", "reject", "reject", "saveCaseData", "saveData");
 
     private final JdbcClient jdbc;
     private final Json json;
@@ -68,9 +73,10 @@ public class PageReferences {
                 case "worklist" -> { }
                 default -> throw fail(pin.componentId(), "cannot embed a " + kind + " view");
             }
+            // File and row controls render with the request form's own components (S114); case data has neither.
             for (JsonNode section : view.path("sections")) for (JsonNode field : section.path("fields")) {
-                if (Set.of("file", "row").contains(field.path("type").asString())) {
-                    throw fail(pin.componentId(), "uses a file or row control, which pages do not render; use the request page");
+                if (Set.of("file", "row").contains(field.path("type").asString()) && !Set.of("request", "approval").contains(kind)) {
+                    throw fail(pin.componentId(), "uses a file or row control, which only request and approval views support");
                 }
             }
             if (!kind.equals("request") && component.has("workflowId")) {

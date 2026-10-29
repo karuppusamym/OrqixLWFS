@@ -541,6 +541,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "putGroup" -> Map.of("name", "Foreign", "members", List.of());
             case "assignAppPage" -> Map.of("expectedRevision", 0);
             case "runAppPageChain" -> Map.of("expectedRevision", 1);
+            case "migrateViewPins" -> Map.of("targetVersion", 1, "planHash", "0".repeat(64), "items", List.of("worklist"), "reason", "Foreign");
             case "createUiExtension" -> Map.of("name", "Foreign extension");
             case "submitUiExtensionVersion" -> Map.of("source", "document.body.textContent = 'x';", "capabilities",
                     Map.of("bindings", List.of(), "actions", List.of()), "height", 120);

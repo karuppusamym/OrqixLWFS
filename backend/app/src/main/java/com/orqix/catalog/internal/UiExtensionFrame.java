@@ -16,6 +16,9 @@ import java.util.Base64;
 public final class UiExtensionFrame {
     public static final String BRIDGE = load();
     private static final String STYLE = "body{margin:0;padding:8px;font:14px/1.45 system-ui,sans-serif;color:CanvasText;background:Canvas}";
+    /** Powerful browser features the frame never gets; the host iframe's {@code allow} attribute repeats this list. */
+    public static final String PERMISSIONS = "camera=(), microphone=(), geolocation=(), payment=(), usb=(), fullscreen=(), "
+            + "display-capture=(), clipboard-read=(), clipboard-write=(), publickey-credentials-get=(), autoplay=()";
 
     private UiExtensionFrame() { }
 
@@ -23,6 +26,7 @@ public final class UiExtensionFrame {
 
     public static Document build(String bundle) {
         String html = "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+                + "<meta name=\"referrer\" content=\"no-referrer\">"
                 + "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Extension</title>"
                 + "<style>" + STYLE + "</style></head><body><div id=\"root\"></div>"
                 + "<script>" + BRIDGE + "</script><script>" + bundle + "</script></body></html>";

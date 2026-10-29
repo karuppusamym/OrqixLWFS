@@ -28,8 +28,14 @@ public final class PageDefinition {
             "assignedTasks", TASK_FIELDS, "claimableTasks", TASK_FIELDS,
             "myRequests", Set.of("requestTitle", "reference", "workflowName", "lifecycle", "createdAt", "updatedAt"),
             "cases", Set.of("status", "definitionVersion", "version", "createdAt"));
-    public static final Set<String> STEP_ACTIONS = Set.of("submit", "saveDraft", "claim", "approve", "reject", "saveCaseData",
-            "navigate");
+    public static final Set<String> STEP_ACTIONS = Set.of("submit", "saveDraft", "claim", "requestCorrection", "approve",
+            "reject", "saveCaseData", "suspendCase", "resumeCase", "closeCase", "startPlanItem", "completePlanItem",
+            "planDiscretionaryItem", "navigate");
+    /** Steps that act on one plan item of the case, named by its CMMN element id and resolved when the step runs. */
+    public static final Set<String> PLAN_ITEM_STEPS = Set.of("startPlanItem", "completePlanItem", "planDiscretionaryItem");
+    static final Set<String> CASE_STEPS = Set.of("saveCaseData", "suspendCase", "resumeCase", "closeCase", "startPlanItem",
+            "completePlanItem", "planDiscretionaryItem");
+    static final Pattern ELEMENT = Pattern.compile("[A-Za-z_][A-Za-z0-9._-]{0,63}");
     static final Map<String, List<String>> LAYOUT_REGIONS = Map.of(
             "single", List.of("main"), "sidebar", List.of("main", "side"), "split", List.of("start", "end"));
     private static final Set<String> COMMON = Set.of("id", "type", "visibleWhen");
@@ -171,14 +177,22 @@ public final class PageDefinition {
         if (!steps.isArray() || steps.isEmpty() || steps.size() > 5) fail(path + "/steps", "must contain 1 to 5 steps");
         int decisions = 0;
         boolean claimed = false;
+        boolean corrected = false;
+        boolean closed = false;
         Set<String> submitted = new HashSet<>();
         for (int i = 0; i < steps.size(); i++) {
             JsonNode step = steps.get(i);
             String sp = path + "/steps/" + i;
             object(step, sp);
-            keys(step, sp, Set.of("action", "component", "target"));
-            String action = text(step, "action", 20, sp);
+            keys(step, sp, Set.of("action", "component", "target", "planItem"));
+            String action = text(step, "action", 24, sp);
             if (!STEP_ACTIONS.contains(action)) fail(sp + "/action", "is not in the action allowlist");
+            if (PLAN_ITEM_STEPS.contains(action)) {
+                if (!ELEMENT.matcher(text(step, "planItem", 64, sp)).matches()) fail(sp + "/planItem", "must be a CMMN element id");
+            } else if (step.has("planItem")) {
+                fail(sp + "/planItem", "is only used by plan-item steps");
+            }
+            if (closed && CASE_STEPS.contains(action)) fail(sp, "no case step can follow closing the case");
             if (action.equals("navigate")) {
                 if (step.has("component")) fail(sp + "/component", "is not used by navigation");
                 String target = text(step, "target", 200, sp);
@@ -197,9 +211,14 @@ public final class PageDefinition {
                     if (++decisions > 1) fail(sp, "a chain can contain only one approve or reject step");
                 }
                 case "claim" -> {
-                    if (claimed || decisions > 0) fail(sp, "claim may appear once, before a decision");
+                    if (claimed || corrected || decisions > 0) fail(sp, "claim may appear once, before a correction or decision");
                     claimed = true;
                 }
+                case "requestCorrection" -> {
+                    if (corrected || decisions > 0) fail(sp, "a correction may appear once, before a decision");
+                    corrected = true;
+                }
+                case "closeCase" -> closed = true;
                 case "submit" -> {
                     if (!submitted.add(target)) fail(sp, "a request component can be submitted once per chain");
                 }

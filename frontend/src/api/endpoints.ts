@@ -44,6 +44,12 @@ export const setWorkflowOwner = (ws: string, workflowId: string, body: S['SetWor
 export const archiveWorkflow = (ws: string, workflowId: string, body: S['ArchiveWorkflow']) =>
   call(api.POST('/workspaces/{workspaceId}/workflows/{workflowId}/archive', { params: { path: { workspaceId: ws, workflowId } }, body }))
 
+export const listArchivedWorkflows = (ws: string) =>
+  call(api.GET('/workspaces/{workspaceId}/archived-workflows', { params: { path: { workspaceId: ws } } }))
+
+export const restoreWorkflow = (ws: string, workflowId: string, body: S['RestoreWorkflow']) =>
+  call(api.POST('/workspaces/{workspaceId}/workflows/{workflowId}/restore', { params: { path: { workspaceId: ws, workflowId } }, body }))
+
 export const getWorkflowDiscussion = (ws: string, workflowId: string, elementId?: string) =>
   call(api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/discussion', { params: { path: { workspaceId: ws, workflowId }, query: elementId ? { elementId } : {} } }))
 

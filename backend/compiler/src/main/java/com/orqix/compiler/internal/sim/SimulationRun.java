@@ -320,6 +320,7 @@ final class SimulationRun {
         }
         int items = 0;
         int rejectedItem = 0;
+        int quorum = 0;
         if (n.listDriven()) {
             // One task per list item (S88); the test request's list decides how many.
             Object list = resolve(n.perItem().itemsRef());
@@ -331,10 +332,26 @@ final class SimulationRun {
                 stallWith(n, message, d, "TEST_LIST_EMPTY", message);
                 return null;
             }
-            sentence = Text.quote(n.label()) + " opens one task for each of the " + items + " items in " + groupName
+            quorum = n.perItem().quorum() == null ? items : n.perItem().quorum();
+            if (quorum > items) {
+                String message = "The list " + Text.quote(n.perItem().listKey()) + " of the test request has " + items
+                        + " items, but " + Text.quote(n.label()) + " needs " + quorum + " approved items. A real request"
+                        + " always has at least that many.";
+                stallWith(n, message, d, "TEST_LIST_SHORT", message);
+                return null;
+            }
+            if (n.perItem().quorum() != null) {
+                d.put("quorum", quorum);
+            }
+            sentence = Text.quote(n.label()) + (n.perItem().sequential()
+                    ? " opens one task at a time, in list order, for each of the " : " opens one task for each of the ")
+                    + items + " items in " + groupName
                     + (n.perItem().allowSamePerson() ? "; one person may decide several items"
-                    : "; each item needs a different person") + ", and every item must be approved.";
-            rejectedItem = Math.max(1, Math.min(items, s.path("rejectedItem").asInt(1)));
+                    : "; each item needs a different person")
+                    + (quorum < items ? ", and " + quorum + " of them must be approved." : ", and every item must be approved.");
+            // S104: the rejected item comes before the quorum is reached; with a quorum below the number of items, as
+            // many items are rejected from there on as it takes to make the quorum unreachable.
+            rejectedItem = Math.max(1, Math.min(quorum, s.path("rejectedItem").asInt(1)));
         }
         String note = null;
         if ("timeout".equals(choice) && next(n, Route.TIMED_OUT) == null) {
@@ -350,15 +367,18 @@ final class SimulationRun {
                 }
                 t = next(n, Route.REJECTED);
                 if (n.listDriven()) {
+                    int lastRejected = rejectedItem + (items - quorum);
                     List<String> decisions = new ArrayList<>();
                     for (int i = 1; i <= items; i++) {
-                        decisions.add(i < rejectedItem ? "approved" : i == rejectedItem ? "rejected" : "cancelled");
+                        decisions.add(i < rejectedItem ? "approved" : i <= lastRejected ? "rejected" : "cancelled");
                     }
                     out.put("approvedCount", rejectedItem - 1);
                     out.put("itemDecisions", decisions);
-                    sentence += " In this test item " + rejectedItem + " is rejected" + (reason == null ? ""
-                            : " with the reason " + Text.quote(reason)) + (items > rejectedItem
-                            ? ", so the open items are cancelled." : ".");
+                    sentence += (lastRejected == rejectedItem ? " In this test item " + rejectedItem + " is rejected"
+                            : " In this test items " + rejectedItem + " to " + lastRejected + " are rejected, so "
+                                    + quorum + " approvals can no longer be reached")
+                            + (reason == null ? "" : " with the reason " + Text.quote(reason))
+                            + (items > lastRejected ? ", so the open items are cancelled." : ".");
                 } else {
                     sentence += (n.multiInstance() ? " In this test the first approver rejects it, so the others are"
                             + " cancelled" : " In this test they reject it") + (reason == null ? "." : " with the reason "
@@ -377,9 +397,14 @@ final class SimulationRun {
                 out.put("decision", "approved");
                 t = next(n, Route.APPROVED);
                 if (n.listDriven()) {
-                    out.put("approvedCount", items);
-                    out.put("itemDecisions", java.util.Collections.nCopies(items, "approved"));
-                    sentence += " In this test all " + items + " items are approved.";
+                    List<String> decisions = new ArrayList<>();
+                    for (int i = 1; i <= items; i++) {
+                        decisions.add(i <= quorum ? "approved" : "cancelled");
+                    }
+                    out.put("approvedCount", quorum);
+                    out.put("itemDecisions", decisions);
+                    sentence += quorum < items ? " In this test the first " + quorum + " items are approved, so the"
+                            + " remaining items are cancelled." : " In this test all " + items + " items are approved.";
                 } else {
                     sentence += n.multiInstance() ? " In this test all " + n.approvers() + " approve."
                             : " In this test they approve.";
@@ -1577,8 +1602,16 @@ final class SimulationRun {
                         childInput.set(field, DefaultWorkflowSimulator.json(v));
                     }
                 });
-                if (n.forEach() != null) {
+                if (n.forEach() != null && n.forEach().itemMapping().isEmpty()) {
                     childInput.set(n.forEach().itemInput(), DefaultWorkflowSimulator.json(items.get(i)));
+                } else if (n.forEach() != null && items.get(i) instanceof Map<?, ?> row) {
+                    // S105: the named columns of the current row; an empty column leaves the field out.
+                    n.forEach().itemMapping().forEach((field, column) -> {
+                        Object v = row.get(column);
+                        if (v != null) {
+                            childInput.set(field, DefaultWorkflowSimulator.json(v));
+                        }
+                    });
                 }
                 SimulationResult r = owner.run(childDefinition, StrictJson.write(childInput),
                         StrictJson.write(scenario.path("childScenarios").path(n.id()).isObject() ? scenario.path("childScenarios").path(n.id()) : F.objectNode()), context, depth + 1, budget);

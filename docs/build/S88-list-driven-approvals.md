@@ -53,7 +53,7 @@ Full clean `verify` on this branch (`mvnw -o clean verify`, 25 October 2026) pas
 
 ## Not covered
 
-- Only approvals, only in parallel, only "all must approve / first rejection ends it" (no quorum, no sequential mode, no per-item candidate group or assignee taken from the item, no fan-out of other step kinds; child workflows keep their own S12 `forEach`).
+- Only approvals, only in parallel, only "all must approve / first rejection ends it" (no quorum, no sequential mode, no per-item candidate group or assignee taken from the item, no fan-out of other step kinds; child workflows keep their own S12 `forEach`). **Update:** [S104](S104-restore-callback-limits-per-item-quorum.md) adds a quorum, one item at a time and a proposed approver per item.
 - The item is shown through the task label (and run detail/path); the task form does not render the item's other columns separately.
 - Dispatch (S39) is allowed; with one person per item a dispatcher may still assign two items to the same person, who can decide only one and must return the other (the same limitation as S51).
 - No browser (Edge/axe) journey was run for the new inspector fields.

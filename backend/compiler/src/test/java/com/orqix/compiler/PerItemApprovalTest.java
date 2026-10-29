@@ -19,6 +19,7 @@ class PerItemApprovalTest {
             + "\"items\":{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"description\",\"amount\"],"
             + "\"properties\":{\"description\":{\"type\":\"string\",\"title\":\"Description\",\"minLength\":1,\"maxLength\":80},"
             + "\"amount\":{\"type\":\"number\",\"title\":\"Amount\",\"minimum\":0},"
+            + "\"approver\":{\"type\":\"string\",\"title\":\"Approver email\",\"maxLength\":200},"
             + "\"urgent\":{\"type\":\"boolean\",\"title\":\"Urgent\"}}}}";
     private static final String OFFICES = "{\"type\":\"array\",\"title\":\"Branch offices\",\"minItems\":1,\"maxItems\":3,"
             + "\"items\":{\"type\":\"string\",\"title\":\"Office\",\"enum\":[\"North\",\"South\",\"East\"]}}";
@@ -210,5 +211,89 @@ class PerItemApprovalTest {
                     Compilers.workflowCompiler(), BpmnSourceTest::context);
             assertThat(edited.applicable()).isFalse();
         }
+    }
+
+    // ---------------------------------------------------------------- S104: quorum, one at a time, proposed person
+
+    /** The per-line approval with the list's minimum raised, so a quorum up to {@code minItems} is reachable. */
+    private static ObjectNode perLineAtLeast(int minItems, String perItem) {
+        ObjectNode d = perLine(5);
+        ((ObjectNode) d.path("inputSchema").path("properties").path("lines")).put("minItems", minItems);
+        config(d).set("perItem", n(perItem));
+        return d;
+    }
+
+    @Test
+    void aQuorumOrOneAtATimeStepEndsBySettlingAndWritesItsSettingsOnlyWhenSet() throws Exception {
+        ObjectNode d = perLineAtLeast(2, "{\"itemsRef\":\"/input/lines\",\"itemLabel\":\"description\","
+                + "\"sequential\":true,\"quorum\":2,\"assigneeFrom\":\"approver\"}");
+        assertThat(codes(d)).isEmpty();
+        String bpmn = Compilers.workflowCompiler().compile(d.toString(), SimulatorFixtures.context().workspace())
+                .bpmnXml();
+        assertThat(bpmn).contains("sequential=\"true\"", "quorum=\"2\"", "assigneeFrom=\"approver\"",
+                "isSequential=\"true\"", "nrOfCompletedInstances == nrOfInstances || orqixRoute.itemsSettled(execution, 'finance')");
+        assertThat(bpmn).doesNotContain("|| orqixRoute.rejected(execution, 'finance')");
+
+        // Only a quorum: still parallel, still the settle condition.
+        String quorumOnly = Compilers.workflowCompiler().compile(perLineAtLeast(2,
+                "{\"itemsRef\":\"/input/lines\",\"itemLabel\":\"description\",\"quorum\":2}").toString(),
+                SimulatorFixtures.context().workspace()).bpmnXml();
+        assertThat(quorumOnly).contains("isSequential=\"false\"", "orqixRoute.itemsSettled(execution, 'finance')")
+                .doesNotContain("sequential=\"true\"", "assigneeFrom");
+    }
+
+    @Test
+    void aQuorumMustBeReachableByEveryRequest() {
+        assertThat(codes(perLineAtLeast(1, "{\"itemsRef\":\"/input/lines\",\"itemLabel\":\"description\",\"quorum\":2}")))
+                .contains("WF_PER_ITEM_QUORUM");
+        assertThat(codes(perLineAtLeast(3, "{\"itemsRef\":\"/input/lines\",\"itemLabel\":\"description\",\"quorum\":3}")))
+                .doesNotContain("WF_PER_ITEM_QUORUM");
+        assertThat(codes(perLineAtLeast(1, "{\"itemsRef\":\"/input/lines\",\"itemLabel\":\"description\",\"quorum\":0}")))
+                .isNotEmpty();
+    }
+
+    @Test
+    void theProposedPersonComesFromATextColumnOfAListOfRows() {
+        ObjectNode values = perLine(3);
+        config(values).set("perItem", n("{\"itemsRef\":\"/input/offices\",\"assigneeFrom\":\"office\"}"));
+        assertThat(codes(values)).contains("WF_PER_ITEM_ASSIGNEE");
+        assertThat(codes(perLineAtLeast(1, "{\"itemsRef\":\"/input/lines\",\"itemLabel\":\"description\",\"assigneeFrom\":\"nobody\"}")))
+                .contains("WF_PER_ITEM_ASSIGNEE");
+        assertThat(codes(perLineAtLeast(1, "{\"itemsRef\":\"/input/lines\",\"itemLabel\":\"description\",\"assigneeFrom\":\"amount\"}")))
+                .contains("WF_PER_ITEM_ASSIGNEE");
+        assertThat(codes(perLineAtLeast(1, "{\"itemsRef\":\"/input/lines\",\"itemLabel\":\"description\",\"assigneeFrom\":\"approver\"}")))
+                .isEmpty();
+    }
+
+    @Test
+    void theSimulatorStopsAtTheQuorumAndRejectsOnceItCanNoLongerBeReached() {
+        String text = perLineAtLeast(2, "{\"itemsRef\":\"/input/lines\",\"itemLabel\":\"description\",\"quorum\":2,"
+                + "\"sequential\":true}").toString();
+        JsonNode approved = SimulatorFixtures.run(text, INPUT.formatted(THREE_LINES), "{}");
+        assertThat(approved.toString()).contains("opens one task at a time, in list order, for each of the 3 items",
+                "2 of them must be approved", "the first 2 items are approved",
+                "\"approvedCount\":2", "\"itemDecisions\":[\"approved\",\"approved\",\"cancelled\"]");
+
+        JsonNode rejected = SimulatorFixtures.run(text, INPUT.formatted(THREE_LINES),
+                "{\"approvals\":{\"finance\":{\"outcome\":\"reject\",\"reason\":\"Too much\",\"rejectedItem\":1}}}");
+        assertThat(rejected.toString()).contains("items 1 to 2 are rejected", "2 approvals can no longer be reached",
+                "\"approvedCount\":0", "\"itemDecisions\":[\"rejected\",\"rejected\",\"cancelled\"]");
+    }
+
+    @Test
+    void theBpmnSourceReadsTheNewSettingsBackExactly() throws Exception {
+        ObjectNode d = perLineAtLeast(2, "{\"itemsRef\":\"/input/lines\",\"itemLabel\":\"description\","
+                + "\"sequential\":true,\"quorum\":2,\"assigneeFrom\":\"approver\"}");
+        String json = d.toString();
+        CompiledWorkflow compiled = Compilers.workflowCompiler().compile(json, BpmnSourceTest.context(json));
+        BpmnSource.Export export = BpmnSource.export(json, compiled);
+        assertThat(export.identical()).as(export.differences().toString()).isTrue();
+        BpmnSource.Check again = BpmnSource.check(export.bpmnXml(), json, Compilers.workflowCompiler(),
+                BpmnSourceTest::context);
+        assertThat(again.applicable()).as(again.problems().toString()).isTrue();
+        // Switching the generated loop to parallel without the setting is refused.
+        BpmnSource.Check edited = BpmnSource.check(export.bpmnXml().replace("isSequential=\"true\"", "isSequential=\"false\""),
+                json, Compilers.workflowCompiler(), BpmnSourceTest::context);
+        assertThat(edited.applicable()).isFalse();
     }
 }

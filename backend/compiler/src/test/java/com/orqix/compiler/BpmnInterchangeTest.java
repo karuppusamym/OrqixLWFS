@@ -335,4 +335,19 @@ class BpmnInterchangeTest {
         assertThat(withSubProcess).isGreaterThanOrEqualTo(4);
         assertThat(withBoundary).isGreaterThanOrEqualTo(2);
     }
+
+    @Test
+    void shapeSizesComeFromTheContractFileTheCanvasAlsoReads() throws Exception {
+        // S106: one source for the canvas and the export (contracts/bpmn-shape-sizes.json).
+        JsonNode file = com.orqix.compiler.internal.json.StrictJson.parse(
+                Files.readString(TestSupport.repoRoot().resolve("contracts/bpmn-shape-sizes.json")));
+        assertThat(com.orqix.compiler.internal.bpmn.BpmnShapeSizes.EVENT).isEqualTo(file.at("/event/width").intValue()).isEqualTo(48);
+        assertThat(com.orqix.compiler.internal.bpmn.BpmnShapeSizes.GATEWAY).isEqualTo(file.at("/gateway/width").intValue()).isEqualTo(64);
+        assertThat(com.orqix.compiler.internal.bpmn.BpmnShapeSizes.TASK_WIDTH).isEqualTo(file.at("/task/width").intValue()).isEqualTo(200);
+        assertThat(com.orqix.compiler.internal.bpmn.BpmnShapeSizes.TASK_HEIGHT).isEqualTo(file.at("/task/height").intValue()).isEqualTo(80);
+        // The canvas constant imports the same file instead of repeating the numbers.
+        String canvas = Files.readString(TestSupport.repoRoot().resolve(
+                "frontend/src/features/studio/model/shapeSizes.ts"));
+        assertThat(canvas).contains("contracts/bpmn-shape-sizes.json").doesNotContainPattern("width: [0-9]");
+    }
 }

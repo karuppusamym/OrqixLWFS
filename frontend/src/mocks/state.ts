@@ -403,6 +403,8 @@ export interface MockDb {
   migrationReviews: MockMigrationReview[]
   workflows: Map<string, MockWorkflow>
   workflowFolders: Map<string, MockFolder>
+  /** S104: archived workflows, kept apart so every live lookup ignores them; restore moves them back. */
+  archivedWorkflows?: Map<string, { workflow: MockWorkflow; archivedAt: string; archivedById: string }>
   /** Workflow id -> canary. */
   canaries: Map<string, MockCanary>
   workflowComments: MockComment[]

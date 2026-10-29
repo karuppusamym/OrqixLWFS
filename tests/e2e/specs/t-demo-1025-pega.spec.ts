@@ -9,7 +9,8 @@ import { MOCK } from '../support/env'
  * S86 demo rehearsal: docs/demo-pega-migration.md followed step by step on the real stack. Results go to
  * evidence/demo-1025/results.jsonl. Real backend only (the mock rejects Pega conversion by design).
  */
-test.skip(MOCK, 'Real stack only.')
+// Demo rehearsals need a seeded demo stack (docs/build/S86); the general suite and CI leave them out.
+test.skip(MOCK || process.env.E2E_REHEARSAL !== 'true', 'Demo rehearsal: real seeded stack and E2E_REHEARSAL=true only.')
 test.describe.configure({ mode: 'serial' })
 test.setTimeout(240_000)
 const xpdl = path.resolve('../../examples/migration/pega-xpdl')

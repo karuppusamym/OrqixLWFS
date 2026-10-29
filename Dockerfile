@@ -67,6 +67,11 @@ LABEL org.opencontainers.image.title="orqix" \
       io.openshift.expose-services="8080:http" \
       io.k8s.display-name="Orqix"
 
+# Base-image packages with published security fixes newer than the pinned tag (image scan, 28 October 2026:
+# CVE-2026-19445 and CVE-2026-19553 in python3/python3-libs). Drop this when the base tag already contains them.
+USER 0
+RUN microdnf -y update --nodocs --setopt=install_weak_deps=0 python3 python3-libs && microdnf clean all
+
 WORKDIR /app
 # Root-owned and read-only for every UID; the process never writes below /app.
 COPY --from=backend --chown=0:0 --chmod=0444 /orqix-app.jar /app/orqix-app.jar

@@ -39,7 +39,7 @@ test('two approvers are set in the studio and two different managers must approv
   await openTask(first, ws, title)
   await decideOpenTask(first, 'approve', 'First approval')
   // The same person is not offered the second task.
-  await first.goto(`/w/${ws}/tasks?view=claimable`)
+  await first.goto(`/w/${ws}/tasks?view=claimable&sort=newest`)
   await expect(first.getByRole('link', { name: title, exact: false })).toHaveCount(0)
 
   // Request still waits for the other manager.

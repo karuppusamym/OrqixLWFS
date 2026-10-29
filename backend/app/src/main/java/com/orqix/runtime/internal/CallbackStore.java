@@ -155,6 +155,27 @@ public class CallbackStore {
                 .param("id", id).update();
     }
 
+    /**
+     * Deletes up to {@code limit} closed waits whose closing time (resume, subscription close or request end) is before
+     * {@code before} (S104). SKIP LOCKED so every pod may purge. @return the workspace id of each deleted row
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public List<UUID> purgeClosed(Instant before, int limit) {
+        return jdbc.sql("""
+                WITH doomed AS (
+                    SELECT c.id FROM callback_wait c
+                    JOIN message_subscription s ON s.id = c.subscription_id
+                    JOIN workflow_run r ON r.workspace_id = c.workspace_id AND r.id = c.run_id
+                    WHERE coalesce(c.resumed_at,
+                                   CASE WHEN s.status <> 'waiting' THEN coalesce(s.closed_at, r.ended_at) END,
+                                   r.ended_at) < :before
+                    ORDER BY c.created_at LIMIT :limit
+                    FOR UPDATE OF c SKIP LOCKED)
+                DELETE FROM callback_wait c USING doomed d WHERE c.id = d.id RETURNING c.workspace_id
+                """).param("before", Sql.ts(before)).param("limit", limit)
+                .query((rs, n) -> rs.getObject("workspace_id", UUID.class)).list();
+    }
+
     private Row row(ResultSet rs, int n) throws SQLException {
         String result = rs.getString("resume_result");
         return new Row(rs.getObject("id", UUID.class), rs.getObject("workspace_id", UUID.class),

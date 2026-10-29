@@ -154,6 +154,11 @@ orqix:
     cache-ttl: 50s
   idempotency:
     retention: 30d
+  callbacks:
+    # S104: closed callback waits are deleted after this (their tokens then answer 404); poll + resume calls per token
+    # per minute on each pod.
+    retention: 30d
+    requests-per-minute: 60
   kafka:
     # S99 (c): off by default. stub = no broker, test messages only (demo); live = real consumers.
     mode: "off"

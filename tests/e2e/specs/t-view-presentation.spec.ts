@@ -34,6 +34,9 @@ test('authored languages and responsive tokens reach pinned request and approval
   await page.getByRole('button',{name:'Apply selected version'}).click();await expect(page.getByTestId('save-state')).toContainText('Saved')
   await selectStep(page,'manager');await page.getByRole('button',{name:'Choose approval view'}).click();await page.getByLabel('Published approval view').selectOption(review.body.id)
   await page.getByRole('button',{name:'Apply approval view',exact:true}).click();await expect(page.getByTestId('save-state')).toContainText('Saved')
+  // "Saved" may still be the previous save's text: wait until the server draft holds both pinned views before publishing.
+  await expect.poll(async()=>{const d=await apiGet<{definition:{inputUi?:{viewRef?:{id:string}};nodes:Array<{id:string;config:{viewBinding?:{id:string}}}>}}>(page,`/workspaces/${ws}/workflows/${workflow.id}/draft`)
+    return `${d.definition.inputUi?.viewRef?.id ?? ''}|${d.definition.nodes.find(n=>n.id==='manager')?.config.viewBinding?.id ?? ''}`},{timeout:30_000}).toBe(`${created.body.id}|${review.body.id}`)
   page=await sessions.as('paul.publisher');await publish(page,ws,workflow.id)
   page=await sessions.as('rhea.requester');await page.goto(`/w/${ws}/start/${workflow.id}`)
   await page.getByLabel('View language').selectOption('fr')
@@ -96,7 +99,7 @@ test('worklist language and authored table breakpoint preserve authorized naviga
   const prior=await apiGet<{revision:number;binding:{id:string;version:number}|null}>(page,`/workspaces/${ws}/worklist-view`)
   try {
     expect((await apiSend(page,'PUT',`/workspaces/${ws}/worklist-view`,{expectedRevision:prior.revision,viewRef:{id:created.body.id,version:1}})).status).toBe(200)
-    page=await sessions.as('max.manager');await page.setViewportSize({width:900,height:900});await page.goto(`/w/${ws}/tasks?view=claimable`)
+    page=await sessions.as('max.manager');await page.setViewportSize({width:900,height:900});await page.goto(`/w/${ws}/tasks?view=claimable&sort=newest`)
     await page.getByLabel('View language').selectOption('fr');await expect(page.getByRole('columnheader',{name:'Demande',exact:true})).toBeVisible()
     await page.setViewportSize({width:390,height:844});await expect(page.getByRole('list',{name:'Travail',exact:true})).toBeVisible();await expect(page.getByRole('columnheader',{name:'Demande',exact:true})).toHaveCount(0)
     await expectNoSeriousViolations(page,'Localized worklist mobile')

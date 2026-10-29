@@ -28,7 +28,8 @@ test('HTTP failure routes survive editing, reload and canvas rendering, and acce
   await designer.getByRole('button', { name: 'Fit View', exact: true }).click()
   const card = designer.locator('.react-flow__node[data-id="procure"]')
   await expect(card.locator('[data-handleid="failed"]')).toBeAttached()
-  await expect(card.getByText('Failed', { exact: true })).toBeVisible()
+  // Cards print "Failed" beside the step's failure handle; BPMN shapes (the default since STU01) print it on the route.
+  await expect(designer.locator('.react-flow').getByText('Failed', { exact: true }).first()).toBeVisible()
   const edge = designer.locator(`.react-flow__edge[data-id="${failure.id}"]`)
   await expect(edge).toBeAttached()
   await expect.poll(() => edge.locator('.react-flow__edge-path').evaluate(element => {

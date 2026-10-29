@@ -59,7 +59,7 @@ test('requester screens', async ({ sessions }) => {
 test('approver screens', async ({ sessions }) => {
   const page = await sessions.as('mani.manager')
   const ws = await workspaceId(page)
-  await page.goto(`/w/${ws}/tasks?view=claimable`)
+  await page.goto(`/w/${ws}/tasks?view=claimable&sort=newest`)
   await scan(page, 'tasks: available to claim')
   if (MOCK) {
     await page.getByRole('link', { name: /Accessibility check item|Replacement laptop/ }).first().click()
@@ -104,7 +104,7 @@ test('operator screens', async ({ sessions }) => {
   if (MOCK) {
     const { runUrl } = await submitPurchase(requester, ws, workflowId, { title: 'Axe attention item', purpose: 'Operator scan', costCenter: 'OPS', amount: '75' })
     const manager = await sessions.as('mani.manager')
-    await manager.goto(`/w/${ws}/tasks?view=claimable`)
+    await manager.goto(`/w/${ws}/tasks?view=claimable&sort=newest`)
     await manager.getByRole('link', { name: 'Axe attention item' }).click()
     await manager.getByRole('button', { name: 'Claim task' }).click()
     await manager.getByRole('button', { name: 'Approve', exact: true }).click()
@@ -179,7 +179,9 @@ test('designer and publisher screens', async ({ sessions }) => {
   await expect(page.getByTestId('check-panel')).toBeVisible()
   await expect(page.getByTestId('check-summary')).not.toContainText('Checking')
   await scan(page, 'studio: check panel')
-  await page.getByRole('button', { name: 'Preview form' }).click()
+  // The preview moved into the Studio's More menu.
+  await page.getByRole('button', { name: 'More actions' }).click()
+  await page.getByRole('menuitem', { name: 'Preview the request form' }).click()
   await expect(page.getByRole('dialog', { name: 'Preview of the request form' })).toBeVisible()
   await scan(page, 'studio: preview form dialog')
   await page.keyboard.press('Escape')

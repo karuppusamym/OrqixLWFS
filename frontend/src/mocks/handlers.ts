@@ -1085,7 +1085,33 @@ export function createHandlers(): HttpHandler[] {
       const input = await body<{ expectedVersion?: number; reason?: string }>(request)
       if (input.expectedVersion !== wf.version) return problem(409, 'WORKFLOW_VERSION_CONFLICT', 'The workflow changed since you loaded it')
       db.workflows.delete(wf.id)
+      wf.version += 1
+      db.archivedWorkflows ??= new Map()
+      db.archivedWorkflows.set(wf.id, { workflow: wf, archivedAt: clock.iso(), archivedById: g.user.id })
       return new HttpResponse(null, { status: 204 })
+    }),
+    http.get(`${B}/workspaces/:ws/archived-workflows`, ({ params }) => {
+      const g = guard(params.ws, 'workflow.edit')
+      if (!g.ok) return g.res
+      const items = [...(db.archivedWorkflows?.values() ?? [])].filter((a) => a.workflow.wsId === str(params.ws))
+        .sort((a, b) => b.archivedAt.localeCompare(a.archivedAt))
+        .map((a) => ({ id: a.workflow.id, key: a.workflow.key, name: a.workflow.name, version: a.workflow.version, archivedAt: a.archivedAt,
+          archivedBy: { id: a.archivedById, displayName: userById(a.archivedById)?.displayName ?? 'Unknown user' },
+          activeReleaseNumber: a.workflow.releases.find((r) => r.id === a.workflow.activeReleaseId)?.releaseNumber ?? null }))
+      return HttpResponse.json({ items, truncated: false })
+    }),
+    http.post(`${B}/workspaces/:ws/workflows/:id/restore`, async ({ params, request }) => {
+      const g = guard(params.ws, 'workflow.edit')
+      if (!g.ok) return g.res
+      const archived = db.archivedWorkflows?.get(str(params.id))
+      if (!archived || archived.workflow.wsId !== str(params.ws)) return notFound()
+      const input = await body<{ expectedVersion?: number; reason?: string }>(request)
+      const wf = archived.workflow
+      if (input.expectedVersion !== wf.version) return problem(409, 'WORKFLOW_VERSION_CONFLICT', 'The workflow changed since you loaded it', { currentVersion: wf.version })
+      db.archivedWorkflows!.delete(wf.id)
+      wf.version += 1
+      db.workflows.set(wf.id, wf)
+      return HttpResponse.json({ ...summary(wf, g.perms), version: wf.version, createdAt: wf.createdAt, permissions: g.perms })
     }),
     http.put(`${B}/workspaces/:ws/workflows/:id/owner`, async ({ params, request }) => {
       await slow()

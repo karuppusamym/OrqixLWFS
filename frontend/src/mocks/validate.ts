@@ -218,10 +218,17 @@ export function validateDefinition(def: Definition, ctx: ValidationContext): Iss
         break
       }
       case 'startWorkflow': {
-        const each = c.forEach as { itemsRef?: string } | undefined
+        const each = c.forEach as { itemsRef?: string; itemInput?: string; itemMapping?: Record<string, string> } | undefined
         if (each?.itemsRef?.startsWith('/input/')) {
+          // S105: a list of rows needs an item mapping to existing columns; a list of single values needs one item field.
           const collection = def.inputSchema.properties[each.itemsRef.slice('/input/'.length)]
-          if (collection?.items?.type === 'object') issues.push(issue('WF_FOREACH_COLLECTION', 'blocker', 'Repeating workflows currently accept scalar collections only. Repeating object rows are supported as request data.', nodePath(n, '/config/forEach/itemsRef'), n.id))
+          const rows = collection?.items?.type === 'object'
+          const mapping = each.itemMapping ?? {}
+          if (rows && each.itemInput) issues.push(issue('WF_FOREACH_ITEM_TYPE', 'blocker', `"${collection?.title ?? 'The list'}" is a list of rows. Choose which column fills which field instead of one field for the whole item.`, nodePath(n, '/config/forEach/itemInput'), n.id))
+          if (!rows && Object.keys(mapping).length > 0) issues.push(issue('WF_FOREACH_ITEM_TYPE', 'blocker', `"${collection?.title ?? 'The list'}" is a list of single values, so it has no columns.`, nodePath(n, '/config/forEach/itemMapping'), n.id))
+          if (rows) for (const [field, column] of Object.entries(mapping)) {
+            if (!collection?.items?.properties?.[column]) issues.push(issue('WF_FOREACH_COLUMN', 'blocker', `"${collection?.title ?? 'The list'}" has no column "${column}".`, nodePath(n, `/config/forEach/itemMapping/${field}`), n.id))
+          }
         }
         const ref = c.workflowRef as string | undefined
         if (!ref) issues.push(issue('WF_SCHEMA_INVALID', 'blocker', `"${n.label}" needs a workflow to start.`, nodePath(n, '/config/workflowRef'), n.id))
@@ -460,7 +467,7 @@ function checkCondition(def: Definition, at: WorkflowNode, c: Condition, path: s
 
 /** List-driven approval (docs/build/S88), the same rules as the compiler's PerItemRules. */
 function checkPerItem(def: Definition, n: WorkflowNode, issues: Issue[]): void {
-  const perItem = n.config.perItem as { itemsRef?: string; itemLabel?: string; allowSamePerson?: boolean } | undefined
+  const perItem = n.config.perItem as { itemsRef?: string; itemLabel?: string; allowSamePerson?: boolean; quorum?: number; assigneeFrom?: string } | undefined
   if (!perItem) return
   const index = def.nodes.findIndex((x) => x.id === n.id)
   const path = `/nodes/${index}/config/perItem`
@@ -478,6 +485,13 @@ function checkPerItem(def: Definition, n: WorkflowNode, issues: Issue[]): void {
     const column = rows && perItem.itemLabel ? list.items?.properties?.[perItem.itemLabel] : undefined
     if (!rows && perItem.itemLabel) issues.push(issue('WF_PER_ITEM_LABEL', 'blocker', `"${list.title ?? key}" is a list of single values, so each task shows the value itself. Remove the item label.`, `${path}/itemLabel`, n.id))
     if (rows && (!column || column.type === 'boolean' || column.format === 'attachment')) issues.push(issue('WF_PER_ITEM_LABEL', 'blocker', `Choose the column of "${list.title ?? key}" that names each item on its task.`, `${path}/itemLabel`, n.id))
+    // S104: a quorum must be reachable by every request; the proposed person comes from a text column of rows.
+    const min = typeof list.minItems === 'number' ? list.minItems : 1
+    if (typeof perItem.quorum === 'number' && perItem.quorum > min) issues.push(issue('WF_PER_ITEM_QUORUM', 'blocker', `"${n.label}" needs ${perItem.quorum} approved items, but "${list.title ?? key}" may hold only ${min}. Set the list's minimum to ${perItem.quorum} or more, or lower the number of items that must be approved.`, `${path}/quorum`, n.id))
+    if (perItem.assigneeFrom) {
+      const who = rows ? list.items?.properties?.[perItem.assigneeFrom] : undefined
+      if (!who || who.type !== 'string') issues.push(issue('WF_PER_ITEM_ASSIGNEE', 'blocker', rows ? `Choose a text column of "${list.title ?? key}" that holds the email of the person proposed for each item.` : `"${list.title ?? key}" is a list of single values, so it has no column naming a person.`, `${path}/assigneeFrom`, n.id))
+    }
   }
   const c = n.config
   const combined = [c.multiInstance && 'a number of approvers', c.timeoutAfter && 'a time limit', c.escalation && 'reminders or escalation', Array.isArray(c.correctable) && c.correctable.length > 0 && 'correction of request fields'].filter(Boolean)

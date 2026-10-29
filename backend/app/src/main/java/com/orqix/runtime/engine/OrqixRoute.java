@@ -54,6 +54,17 @@ public class OrqixRoute {
         return positions;
     }
 
+    /**
+     * Completion of a list-driven approval with a quorum or one item at a time (S104): true once the decision service
+     * recorded the settled outcome with the step's {@code itemDecisions}. The decision service settles the step when the
+     * quorum is reached or can no longer be reached.
+     */
+    public boolean itemsSettled(DelegateExecution execution, String approvalNodeId) {
+        return ProcessData.step(execution, json, approvalNodeId)
+                .map(step -> step.path("itemDecisions").isArray())
+                .orElse(false);
+    }
+
     /** Most tasks a list-driven approval opens (the compiler's bound, S88). */
     static final int MAX_ITEMS = 20;
 

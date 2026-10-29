@@ -27,6 +27,16 @@ const KEY = /^[a-z][a-z0-9-]{0,62}[a-z0-9]$/
  * the last error (connection.read), dead letters (run.operate) and, in stub mode, a test message. Brokers and topics come
  * from the installation; only a cluster name, an allow-listed topic and a secret reference are chosen here.
  */
+/** Plain words for the consumer's error codes (S106); an unknown code is shown as it is. */
+export function kafkaErrorText(code: string): string {
+  switch (code) {
+    case 'secret_unavailable': return 'the credentials file is missing or not in the expected form. Retrying.'
+    case 'authentication_failed': return 'the broker refused the credentials. Check the user name and password in the credentials file. Retrying.'
+    case 'consumer_error': return 'the broker could not be reached or the topic could not be read. Retrying.'
+    default: return code
+  }
+}
+
 export function KafkaTriggersPanel() {
   const { workspace, can } = useWorkspace()
   const ws = workspace.id
@@ -126,7 +136,7 @@ export function KafkaTriggersPanel() {
                   Lag {t.status.lag} · {t.status.handled} handled · {t.status.duplicates} duplicates dropped · {t.status.dead} dead letters ·{' '}
                   {t.status.replicas.length === 0 ? 'no replica consuming' : t.status.replicas.map((r) => `${r.instanceId} holds ${r.partitions.length ? r.partitions.join(', ') : 'no partition'}`).join('; ')}
                 </p>
-                {t.status.lastError ? <p className="text-danger">Last error: {t.status.lastError}{t.status.lastErrorAt ? ` at ${formatDateTime(t.status.lastErrorAt)}` : ''}</p> : null}
+                {t.status.lastError ? <p className="text-danger">Last error: {kafkaErrorText(t.status.lastError)}{t.status.lastErrorAt ? ` at ${formatDateTime(t.status.lastErrorAt)}` : ''}</p> : null}
                 <div className="flex flex-wrap items-end gap-2">
                   {manage ? <Button variant="secondary" disabled={pending} onClick={() => void toggle(t)} aria-label={`${t.enabled ? 'Pause' : 'Resume'} ${t.key}`}>{t.enabled ? 'Pause' : 'Resume'}</Button> : null}
                   {manage && !t.enabled ? (confirmDelete === t.id

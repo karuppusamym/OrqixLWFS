@@ -71,7 +71,19 @@ public class ChildRuns {
             if (!items.isArray() || items.isEmpty() || items.size() > each.path("maxItems").asInt())
                 throw new IllegalStateException("Collection is outside its declared iteration bound");
             ObjectNode mapped = (ObjectNode) input.deepCopy();
-            mapped.set(each.path("itemInput").asString(), items.get(occurrence - 1));
+            JsonNode item = items.get(occurrence - 1);
+            JsonNode columns = each.path("itemMapping");
+            if (columns.isObject()) {
+                // S105: a list of rows fills the named child fields from the current row; an empty column is left out.
+                for (var e : columns.properties()) {
+                    JsonNode value = item.path(e.getValue().asString());
+                    if (!value.isMissingNode() && !value.isNull()) {
+                        mapped.set(e.getKey(), value);
+                    }
+                }
+            } else {
+                mapped.set(each.path("itemInput").asString(), item);
+            }
             input = mapped;
         }
         if (pin == null) throw new IllegalStateException("Child release was not pinned at publication");

@@ -300,8 +300,10 @@ public class OrganizationService {
                     + " still open. Let them finish, or cancel them, before archiving.").with("openRequests", open);
         }
         refuseWhileStartedElsewhere(ws, workflowId);
-        jdbc.sql("UPDATE workflow SET archived_at = now(), version = version + 1, updated_at = now() WHERE workspace_id = :ws AND id = :id")
-                .param("ws", ws).param("id", workflowId).update();
+        jdbc.sql("""
+                UPDATE workflow SET archived_at = now(), archived_by = :by, version = version + 1, updated_at = now()
+                WHERE workspace_id = :ws AND id = :id
+                """).param("by", caller.subjectId()).param("ws", ws).param("id", workflowId).update();
         audit.write(new AuditWriter.Entry(ws, AuditWriter.ActorType.USER, caller.subjectId(), "workflow.archived",
                 "workflow", workflowId.toString(), AuditWriter.Outcome.SUCCESS,
                 Map.of("key", row.key(), "reasonLength", request.reason().strip().length())));
@@ -340,5 +342,73 @@ public class OrganizationService {
                     + String.join(", ", triggers) + ". Switch them off in Settings before archiving it.")
                     .with("triggers", triggers);
         }
+    }
+
+    public static final int ARCHIVED_LIST_LIMIT = 200;
+
+    /** An archived workflow as the restore list shows it. {@code archivedBy} is null for workflows archived before V174. */
+    public record ArchivedWorkflow(UUID id, String key, String name, int version, Instant archivedAt,
+            SubjectService.SubjectRef archivedBy, Integer activeReleaseNumber) {
+    }
+
+    public record ArchivedWorkflows(List<ArchivedWorkflow> items, boolean truncated) {
+    }
+
+    /** Archived workflows of the workspace, most recently archived first (S104). Needs {@code workflow.edit}. */
+    @Transactional(readOnly = true)
+    public ArchivedWorkflows archived(Caller caller, UUID ws) {
+        editor(caller, ws, "listArchivedWorkflows");
+        record Row(UUID id, String key, String name, int version, Instant archivedAt, UUID archivedBy, Integer release) {
+        }
+        List<Row> rows = jdbc.sql("""
+                SELECT w.id, w.key, w.name, w.version, w.archived_at, w.archived_by, r.release_number
+                FROM workflow w LEFT JOIN workflow_release r ON r.workspace_id = w.workspace_id AND r.id = w.active_release_id
+                WHERE w.workspace_id = :ws AND w.archived_at IS NOT NULL
+                ORDER BY w.archived_at DESC, w.id LIMIT :limit
+                """).param("ws", ws).param("limit", ARCHIVED_LIST_LIMIT + 1)
+                .query((rs, n) -> new Row(rs.getObject("id", UUID.class), rs.getString("key"), rs.getString("name"),
+                        rs.getInt("version"), rs.getTimestamp("archived_at").toInstant(), rs.getObject("archived_by", UUID.class),
+                        (Integer) rs.getObject("release_number")))
+                .list();
+        boolean truncated = rows.size() > ARCHIVED_LIST_LIMIT;
+        List<Row> page = truncated ? rows.subList(0, ARCHIVED_LIST_LIMIT) : rows;
+        Map<UUID, String> names = subjects.displayNames(page.stream().map(Row::archivedBy).filter(java.util.Objects::nonNull).distinct().toList());
+        return new ArchivedWorkflows(page.stream().map(r -> new ArchivedWorkflow(r.id(), r.key(), r.name(), r.version(), r.archivedAt(),
+                r.archivedBy() == null ? null : subjects.ref(r.archivedBy(), names), r.release())).toList(), truncated);
+    }
+
+    public record RestoreRequest(@NotNull @Min(1) Integer expectedVersion, @NotBlank @Size(min = 3, max = 300) String reason) {
+    }
+
+    /**
+     * Restores an archived workflow (S104): it returns to the catalog in its old folder with its owner, draft and active
+     * release, so it can be started again by the same people as before. Its key was never released, so nothing can clash.
+     */
+    @Transactional
+    public CatalogDtos.WorkflowView restore(Caller caller, UUID ws, UUID workflowId, RestoreRequest request) {
+        WorkspaceAccess access = editor(caller, ws, "restoreWorkflow");
+        if (request.reason().strip().length() < 3) {
+            throw new ApiException(ProblemCode.VALIDATION_FAILED, "Some values are not valid.").withFieldErrors(List.of(
+                    new ApiException.FieldError("/reason", "tooShort", "Say in a few words why it is restored.")));
+        }
+        record Archived(String key, int version) {
+        }
+        Archived row = jdbc.sql("""
+                SELECT key, version FROM workflow WHERE workspace_id = :ws AND id = :id AND archived_at IS NOT NULL FOR UPDATE
+                """).param("ws", ws).param("id", workflowId)
+                .query((rs, n) -> new Archived(rs.getString("key"), rs.getInt("version"))).optional()
+                .orElseThrow(ApiException::notFound);
+        if (row.version() != request.expectedVersion()) {
+            throw new ApiException(ProblemCode.WORKFLOW_VERSION_CONFLICT, "The workflow changed. Reload before restoring it.")
+                    .with("currentVersion", row.version());
+        }
+        jdbc.sql("""
+                UPDATE workflow SET archived_at = NULL, archived_by = NULL, version = version + 1, updated_at = now()
+                WHERE workspace_id = :ws AND id = :id
+                """).param("ws", ws).param("id", workflowId).update();
+        audit.write(new AuditWriter.Entry(ws, AuditWriter.ActorType.USER, caller.subjectId(), "workflow.restored",
+                "workflow", workflowId.toString(), AuditWriter.Outcome.SUCCESS,
+                Map.of("key", row.key(), "reasonLength", request.reason().strip().length())));
+        return workflows.view(store.workflow(ws, workflowId).orElseThrow(ApiException::notFound), access);
     }
 }

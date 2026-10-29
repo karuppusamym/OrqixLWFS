@@ -4,7 +4,8 @@ import { axe, record, shot } from '../support/rehearsal'
 import { MOCK } from '../support/env'
 
 /** S86: demo 1 after an application restart (step 4) and failure/recovery (step 9), on the seeded Purchase approval. */
-test.skip(MOCK, 'Real stack only.')
+// Demo rehearsals need a seeded demo stack (docs/build/S86); the general suite and CI leave them out.
+test.skip(MOCK || process.env.E2E_REHEARSAL !== 'true', 'Demo rehearsal: real seeded stack and E2E_REHEARSAL=true only.')
 test.setTimeout(240_000)
 const stub = process.env.E2E_STUB_URL ?? 'http://localhost:38095'
 

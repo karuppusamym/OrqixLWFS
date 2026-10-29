@@ -404,16 +404,20 @@ class Run {
       t = this.next(n, 'approved')
       sentence += ' In this test they approve.'
     }
-    const perItem = n.config.perItem as { itemsRef?: string } | undefined
+    const perItem = n.config.perItem as { itemsRef?: string; quorum?: number; sequential?: boolean } | undefined
     if (perItem?.itemsRef) {
-      // One task per list item (docs/build/S88), as the server simulator: the first item is the one rejected.
+      // One task per list item (docs/build/S88, S104), as the server simulator: approvals stop at the quorum (default:
+      // every item); a rejection starts at the first item and goes on until the quorum can no longer be reached.
       const list = this.resolve(perItem.itemsRef)
       const items = Array.isArray(list) ? list.length : 0
+      const quorum = Math.min(items, perItem.quorum ?? items)
       d.items = items
       const rejected = out.decision === 'rejected'
-      out.itemDecisions = Array.from({ length: items }, (_, i) => (rejected ? (i === 0 ? 'rejected' : 'cancelled') : 'approved'))
-      out.approvedCount = rejected ? 0 : items
-      sentence += ` It opens one task for each of the ${items} items.`
+      const lastRejected = 1 + (items - quorum)
+      out.itemDecisions = Array.from({ length: items }, (_, i) => (rejected ? (i + 1 <= lastRejected ? 'rejected' : 'cancelled') : (i < quorum ? 'approved' : 'cancelled')))
+      out.approvedCount = rejected ? 0 : quorum
+      sentence += perItem.sequential ? ` It opens one task at a time for each of the ${items} items.` : ` It opens one task for each of the ${items} items.`
+      if (quorum < items) sentence += ` ${quorum} of them must be approved.`
     }
     if (out.decision !== 'timedOut') out.decidedBy = 'Test approver'
     d.decision = out.decision as string
@@ -1019,7 +1023,7 @@ class Run {
       }
     }
     const repeat = n.config.repeat as { maxIterations: number; untilOutcome: string } | undefined
-    const forEach = n.config.forEach as { itemsRef: string; itemInput: string; maxItems: number } | undefined
+    const forEach = n.config.forEach as { itemsRef: string; itemInput?: string; itemMapping?: Record<string, string>; maxItems: number } | undefined
     const untilOutcome = repeat?.untilOutcome ?? null
     let defaultOutcome: ChildOutcome = { label: 'Fulfilled', kind: 'success' }
     if (outcomes.length > 0) {
@@ -1064,7 +1068,11 @@ class Run {
           const v = this.resolve(inputMapping[field] as string)
           if (v !== null && v !== undefined) childInput[field] = v
         }
-        if (forEach) childInput[forEach.itemInput] = items[i]
+        if (forEach?.itemMapping) {
+          // S105: the named columns of the current row; an empty column leaves the field out.
+          const row = (items[i] ?? {}) as Record<string, unknown>
+          for (const [field, column] of Object.entries(forEach.itemMapping)) if (row[column] !== undefined && row[column] !== null) childInput[field] = row[column]
+        } else if (forEach?.itemInput) childInput[forEach.itemInput] = items[i]
         const r = simulateDefinition(child, childInput, this.scenario.childScenarios?.[n.id] ?? {}, this.ctx, this.depth + 1, this.budget)
         if (r.status !== 'ok') {
           const message = `${quote(n.label)}: ${quote(childName)} could not be tested${r.status === 'invalidInput' && r.errors[0] ? `: ${r.errors[0].message}` : '.'}`

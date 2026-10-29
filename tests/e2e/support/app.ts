@@ -68,6 +68,7 @@ export async function submitPurchase(page: Page, ws: string, workflowId: string,
 
 /** Open a task from "Available to claim" or "Assigned to me" by the request title it shows. */
 export async function openTask(page: Page, ws: string, title: string, view: 'claimable' | 'assigned' = 'claimable'): Promise<void> {
+  // Newest first: earlier specs leave open tasks behind, and the default priority order can push a new task off the page.
   await page.goto(`/w/${ws}/tasks?view=${view}&sort=newest`)
   await page.getByRole('link', { name: title, exact: false }).first().click()
   await expect(page.getByTestId('task-actions')).toBeVisible()
@@ -96,8 +97,9 @@ export async function createPurchaseWorkflow(page: Page, ws: string): Promise<st
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }
     if (token) headers['X-XSRF-TOKEN'] = decodeURIComponent(token)
     const response = await fetch('/api/v1/workspaces/' + workspace + '/workflows', {
-      method: 'POST', headers, body: JSON.stringify({ key: 'ui-' + crypto.randomUUID().slice(0, 8),
-        name: 'Purchase approval', templateId: 'purchase-approval' }),
+      // A distinct name, so exact "Purchase approval" lookups in later specs still find only the seeded template.
+      method: 'POST', headers, body: JSON.stringify((() => { const key = 'ui-' + crypto.randomUUID().slice(0, 8)
+        return { key, name: `Purchase approval (${key})`, templateId: 'purchase-approval' } })()),
     })
     if (response.status !== 201) throw new Error('Create isolated workflow: ' + response.status)
     return (await response.json() as { id: string }).id

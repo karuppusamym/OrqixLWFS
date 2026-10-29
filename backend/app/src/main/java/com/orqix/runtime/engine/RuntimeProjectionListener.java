@@ -210,7 +210,7 @@ public class RuntimeProjectionListener implements FlowableEventListener {
                 + " of " + item.count() + ")";
         tasks.insert(task.getId(), workspaceId, runId, element.getId(), label, group, dueAt, now,
                 item == null ? null : item.index(), item == null ? null : item.label(),
-                item == null ? null : item.scope());
+                item == null ? null : item.scope(), item == null ? null : item.count());
         runs.mutate(workspaceId, runId, m -> {
             ObjectNode step = json.object();
             step.put("nodeId", element.getId());
@@ -245,11 +245,37 @@ public class RuntimeProjectionListener implements FlowableEventListener {
             data.put("itemCount", item.count());
         }
         events.append(workspaceId, runId, "TASK_CREATED", element.getId(), null, data);
+        if (item != null && item.proposed() != null && propose(task, element.getId(), workspaceId, runId, item)) {
+            return;
+        }
         dispatch(task, element.getId(), workspaceId, runId);
     }
 
+    /**
+     * S104: assigns the person proposed on the request item when that person may decide the task. Otherwise the task
+     * stays in the group queue (or goes to the step's dispatch policy) and the timeline says so, without the email.
+     */
+    private boolean propose(TaskEntity task, String nodeId, UUID workspaceId, UUID runId, ListItem item) {
+        var choice = dispatcher.proposed(workspaceId, task.getId(), item.proposed());
+        if (choice.isPresent() && dispatcher.assign(workspaceId, task.getId(), choice.get())) {
+            task.setAssignee(choice.get().subjectId().toString());
+            runs.mutate(workspaceId, runId, m -> m.updateStep(nodeId,
+                    step -> step.put("assigneeId", choice.get().subjectId().toString())));
+            Map<String, Object> data = new java.util.LinkedHashMap<>(choice.get().eventData());
+            data.put("itemIndex", item.index());
+            data.put("itemLabel", item.label());
+            events.append(workspaceId, runId, "TASK_DISPATCHED", nodeId, null, data);
+            return true;
+        }
+        Map<String, Object> data = new java.util.LinkedHashMap<>();
+        data.put("itemIndex", item.index());
+        data.put("itemLabel", item.label());
+        events.append(workspaceId, runId, "TASK_PROPOSED_UNAVAILABLE", nodeId, null, data);
+        return false;
+    }
+
     /** The list item of a task of a list-driven approval (S88); {@code scope} groups the item tasks of one visit. */
-    private record ListItem(int index, int count, String label, String scope) {
+    private record ListItem(int index, int count, String label, String scope, String proposed) {
     }
 
     /** Longest item text a task shows (the rest is cut with an ellipsis). */
@@ -277,7 +303,10 @@ public class RuntimeProjectionListener implements FlowableEventListener {
         }
         ExecutionEntity execution = CommandContextUtil.getExecutionEntityManager().findById(task.getExecutionId());
         String scope = execution == null || execution.getParentId() == null ? task.getExecutionId() : execution.getParentId();
-        return new ListItem(index, list.size(), text, scope);
+        // S104: the email in the item's assigneeFrom column, if the step names one.
+        String assigneeFrom = OrqixModel.attribute(perItem, "assigneeFrom");
+        String proposed = assigneeFrom == null ? null : list.path(index).path(assigneeFrom).asString("").strip();
+        return new ListItem(index, list.size(), text, scope, proposed == null || proposed.isEmpty() ? null : proposed);
     }
 
     /** Optional routing of the new task to one eligible person when the approval step declares a dispatch policy (S39). */

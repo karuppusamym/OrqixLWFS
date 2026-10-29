@@ -6,7 +6,8 @@ import { axe, key, record, shot } from '../support/rehearsal'
 import { MOCK } from '../support/env'
 
 /** S86 demo rehearsal, docs/demo-guide.md demos 5 (Camunda import), the Pega decision DMN path, hidden AI, operator and insights screens. */
-test.skip(MOCK, 'Real stack only.')
+// Demo rehearsals need a seeded demo stack (docs/build/S86); the general suite and CI leave them out.
+test.skip(MOCK || process.env.E2E_REHEARSAL !== 'true', 'Demo rehearsal: real seeded stack and E2E_REHEARSAL=true only.')
 test.describe.configure({ mode: 'serial' })
 test.setTimeout(240_000)
 const ex = path.resolve('../../examples/migration')

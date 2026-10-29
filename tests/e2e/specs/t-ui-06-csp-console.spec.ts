@@ -50,7 +50,7 @@ test('a tour of menus, dialogs, the canvas and forms raises no CSP violation or 
   await expect(designer.getByTestId('save-state')).toHaveText(/Saved/)
 
   // Native dialogs and the form validator ---------------------------------------------------------------------------------
-  // The preview moved into the header's More menu (Studio redesign, 2026-10-27).
+  // The preview moved into the Studio's More menu.
   await designer.getByRole('button', { name: 'More actions' }).click()
   await designer.getByRole('menuitem', { name: 'Preview the request form' }).click()
   const preview = designer.getByRole('dialog', { name: 'Preview of the request form' })

@@ -11,7 +11,7 @@ cd tests/e2e && npm ci
 E2E_REALM_FILE=../../deploy/compose/keycloak/orqix-dev-realm.json npx playwright test
 ```
 
-Last run: 13 passed, 1 skipped (the unknown-outcome reconciliation spec needs mock-mode fault injection).
+Last run (29 October 2026, fresh stack, [S106](../../docs/build/S106-shapes-promotion-kafka-e2e.md)): 70 passed, 65 skipped by design (mock-only specs, presenter rehearsals), about 21 minutes. CI runs the same suite after the image job.
 The demo path expects a fresh database; run on a clean stack.
 
 ## Against mock mode
@@ -30,6 +30,8 @@ cd tests/e2e && npm run test:mock     # builds the frontend with --mode mock and
 | `E2E_PASSWORD_<USERNAME>` | — | Password for one dev user, e.g. `E2E_PASSWORD_RHEA_REQUESTER` |
 | `E2E_PASSWORD` | — | One password for every user |
 | `E2E_REALM_FILE` | — | Read the dev-only passwords from the Keycloak realm export instead |
+| `E2E_AI_LIVE` | — | `true` lets `t-ai-02` call the configured AI provider on the real stack; otherwise it checks the agent connection without testing it |
+| `E2E_REHEARSAL` | — | `true` runs the `t-demo-*` presenter rehearsals, which need a seeded demo stack ([S86](../../docs/build/S86-demo-rehearsal-1025.md)); the general suite and CI skip them |
 
 Console-error policy: a 401 logged while a page is still signing in is the SPA's designed unauthenticated probe and is
 ignored; specs that deliberately provoke an error response (for example a stale claim answered with 409) call

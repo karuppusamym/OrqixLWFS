@@ -87,15 +87,40 @@ public class ConversationIntentService {
                 .filter(w -> !w.isEmpty()).toList();
     }
 
+    /** Endings that make another form of the same word ("purchases", "ordered", "ordering"). */
+    private static final List<String> ENDINGS = List.of("s", "es", "ed", "ing", "er", "ers");
+    /** After a silent final e: "approve" / "approved", "approval"; "purchase" / "purchasing". */
+    private static final List<String> AFTER_E = List.of("d", "r", "rs");
+    private static final List<String> INSTEAD_OF_E = List.of("ing", "al", "als", "ion", "ions");
+
     /**
-     * Whole words only, with simple plural/stem tolerance ("purchases" finds "purchase"). A short word never matches the
-     * inside of a longer one, so "app" does not find "approval" and "are" does not find "hardware".
+     * Whole words only, with simple plural/stem tolerance ("purchases" finds "purchase", "approve" finds "approval"). A
+     * word never matches the inside of a longer one ("app" does not find "approval", "are" not "hardware"), and a shared
+     * start alone is not enough ("form" does not find "formal", "test" not "testament").
      */
     private static boolean sameWord(String said, String named) {
         if (said.equals(named)) {
             return true;
         }
-        return said.length() >= 4 && named.length() >= 4 && (said.startsWith(named) || named.startsWith(said));
+        String shorter = said.length() <= named.length() ? said : named;
+        String longer = shorter == said ? named : said;
+        if (shorter.length() < 4) {
+            return false;
+        }
+        for (String ending : ENDINGS) {
+            if (longer.equals(shorter + ending)) {
+                return true;
+            }
+        }
+        if (shorter.endsWith("e")) {
+            String stem = shorter.substring(0, shorter.length() - 1);
+            if (AFTER_E.stream().anyMatch(e -> longer.equals(shorter + e))
+                    || INSTEAD_OF_E.stream().anyMatch(e -> longer.equals(stem + e))) {
+                return true;
+            }
+        }
+        // "policy" / "policies".
+        return shorter.endsWith("y") && longer.equals(shorter.substring(0, shorter.length() - 1) + "ies");
     }
 
     /** Nothing fits (or no model is available): show what can be started instead of an error. */

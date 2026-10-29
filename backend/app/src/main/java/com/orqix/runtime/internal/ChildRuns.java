@@ -31,9 +31,11 @@ public class ChildRuns {
     private final JdbcClient jdbc;
     private final Json json;
     private final Clock clock;
+    private final RunQuota quota;
 
     public ChildRuns(RunStore runs, TaskStore tasks, RunEvents events, ReleaseQueries releases,
-            EngineCommands engine, FormValidator forms, JdbcClient jdbc, Json json, Clock clock) {
+            EngineCommands engine, FormValidator forms, JdbcClient jdbc, Json json, Clock clock, RunQuota quota) {
+        this.quota = quota;
         this.runs = runs;
         this.tasks = tasks;
         this.events = events;
@@ -69,7 +71,19 @@ public class ChildRuns {
             if (!items.isArray() || items.isEmpty() || items.size() > each.path("maxItems").asInt())
                 throw new IllegalStateException("Collection is outside its declared iteration bound");
             ObjectNode mapped = (ObjectNode) input.deepCopy();
-            mapped.set(each.path("itemInput").asString(), items.get(occurrence - 1));
+            JsonNode item = items.get(occurrence - 1);
+            JsonNode columns = each.path("itemMapping");
+            if (columns.isObject()) {
+                // S105: a list of rows fills the named child fields from the current row; an empty column is left out.
+                for (var e : columns.properties()) {
+                    JsonNode value = item.path(e.getValue().asString());
+                    if (!value.isMissingNode() && !value.isNull()) {
+                        mapped.set(e.getKey(), value);
+                    }
+                }
+            } else {
+                mapped.set(each.path("itemInput").asString(), item);
+            }
             input = mapped;
         }
         if (pin == null) throw new IllegalStateException("Child release was not pinned at publication");
@@ -77,7 +91,12 @@ public class ChildRuns {
         if (!forms.validate(json.write(child.inputSchema()), json.write(input),json.write(child.inputUi())).isEmpty()) {
             throw new IllegalStateException("Mapped child input does not satisfy the published request form");
         }
-        if (runs.countActive(workspaceId, child.workflowId()) >= child.maxConcurrentRuns()) {
+        // An archived workflow takes no new requests, also not as a child of a parent published before it was archived.
+        if (releases.workflow(workspaceId, child.workflowId()).isEmpty()) {
+            throw new IllegalStateException("Child workflow has been archived");
+        }
+        // The same exact open-request limit as a top-level start (RunQuota).
+        if (!quota.hasRoom(workspaceId, child.workflowId(), child.maxConcurrentRuns())) {
             throw new IllegalStateException("Child workflow has reached its concurrent run limit");
         }
         UUID id = Ids.newId();

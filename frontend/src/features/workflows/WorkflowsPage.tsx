@@ -17,7 +17,7 @@ import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table'
 import { useListFilters } from '@/lib/useListFilters'
 import { NewWorkflowDialog } from './NewWorkflowDialog'
 import { PinnedWorkflows, PinWorkflowButton } from './PinnedWorkflows'
-import { folderName, ManageFoldersButton, OrganizationFilters, OrganizeWorkflowDialog } from './Organization'
+import { ArchivedWorkflowsButton, folderName, ManageFoldersButton, OrganizationFilters, OrganizeWorkflowDialog } from './Organization'
 
 /** Workflow list with "New workflow" (docs/build/S7-frontend.md section 2). */
 export function WorkflowsPage() {
@@ -45,6 +45,7 @@ export function WorkflowsPage() {
           can('workflow.edit') ? (
             <div className="flex flex-wrap gap-2">
             <ManageFoldersButton />
+            <ArchivedWorkflowsButton />
             <Button asChild size="lg"><Link to={`/w/${ws}/migrations`}>Import workflow</Link></Button>
             <Button variant="primary" size="lg" onClick={() => setCreating(true)}>
               <FilePlus2 aria-hidden="true" /> New workflow

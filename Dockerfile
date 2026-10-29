@@ -53,6 +53,11 @@ RUN --mount=type=cache,target=/root/.m2 \
 # ---------------------------------------------------------------------------------------------------------------------
 FROM ${RUNTIME_IMAGE}
 
+# Apply the base image's pending OS security updates (the CI image scan blocks on fixed HIGH/CRITICAL findings, such as
+# python3 in ubi9/openjdk-21-runtime:1.24). The user is set back to the non-root default below.
+USER 0
+RUN microdnf -y update --nodocs --setopt=install_weak_deps=0 && microdnf clean all
+
 ARG VERSION=dev
 ARG REVISION=unknown
 LABEL org.opencontainers.image.title="orqix" \
@@ -61,6 +66,11 @@ LABEL org.opencontainers.image.title="orqix" \
       org.opencontainers.image.revision="${REVISION}" \
       io.openshift.expose-services="8080:http" \
       io.k8s.display-name="Orqix"
+
+# Base-image packages with published security fixes newer than the pinned tag (image scan, 28 October 2026:
+# CVE-2026-19445 and CVE-2026-19553 in python3/python3-libs). Drop this when the base tag already contains them.
+USER 0
+RUN microdnf -y update --nodocs --setopt=install_weak_deps=0 python3 python3-libs && microdnf clean all
 
 WORKDIR /app
 # Root-owned and read-only for every UID; the process never writes below /app.

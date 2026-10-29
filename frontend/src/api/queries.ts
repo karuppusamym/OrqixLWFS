@@ -68,6 +68,10 @@ export function useWorkflowOrganization(ws: string, enabled = true) {
   return useQuery({ queryKey: ['ws', ws, 'workflow-organization'] as const, queryFn: () => endpoints.getWorkflowOrganization(ws), enabled })
 }
 
+export function useArchivedWorkflows(ws: string, enabled = true) {
+  return useQuery({ queryKey: ['ws', ws, 'archived-workflows'] as const, queryFn: () => endpoints.listArchivedWorkflows(ws), enabled, staleTime: 0 })
+}
+
 export function useWorkflowOwnerCandidates(ws: string, enabled = true) {
   return useQuery({ queryKey: ['ws', ws, 'workflow-owner-candidates'] as const, queryFn: () => endpoints.listWorkflowOwnerCandidates(ws), enabled, staleTime: 0 })
 }

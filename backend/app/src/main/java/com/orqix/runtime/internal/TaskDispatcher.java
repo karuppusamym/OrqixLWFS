@@ -115,6 +115,26 @@ public class TaskDispatcher {
         return Optional.of(new Choice(chosen.id(), chosen.name(), policy, eligible.size(), chosen.open(), rule));
     }
 
+    /** Policy name recorded when the person was proposed on the request item (S104). */
+    public static final String PROPOSED = "proposed";
+
+    /**
+     * The person proposed for one item of a list-driven approval (S104), when that person may decide the task now:
+     * exactly one active person with that email, who passes the same eligibility as any dispatch (candidate group,
+     * required skills, {@code task.act}, self-approval and separation of duties). Empty otherwise; nothing is written.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public Optional<Choice> proposed(UUID workspaceId, String taskId, String email) {
+        TaskStore.TaskRow task = tasks.find(workspaceId, taskId).orElse(null);
+        if (task == null || !task.isOpen() || task.assignee() != null) {
+            return Optional.empty();
+        }
+        return subjects.findActiveByEmail(email)
+                .filter(subject -> taskService.eligibleSubject(workspaceId, task, subject.id()))
+                .map(subject -> new Choice(subject.id(), subject.displayName(), PROPOSED, 1, 0,
+                        "Proposed for this item on the request."));
+    }
+
     /** Records the choice on the task row. The caller sets the engine assignee and updates the run projection. */
     @Transactional(propagation = Propagation.MANDATORY)
     public boolean assign(UUID workspaceId, String taskId, Choice choice) {

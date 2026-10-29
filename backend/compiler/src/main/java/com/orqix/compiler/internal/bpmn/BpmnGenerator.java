@@ -235,19 +235,29 @@ public final class BpmnGenerator {
                     x.leaf("orqix", "perItem", ORQIX_NS).attr("itemsRef", a.perItem().itemsRef());
                     if (a.perItem().itemLabel() != null) x.attr("itemLabel", a.perItem().itemLabel());
                     if (a.perItem().allowSamePerson()) x.attr("allowSamePerson", "true");
+                    // S104: written only when set, so S88 steps generate exactly the BPMN they did.
+                    if (a.perItem().sequential()) x.attr("sequential", "true");
+                    if (a.perItem().quorum() != null) x.attr("quorum", a.perItem().quorum().toString());
+                    if (a.perItem().assigneeFrom() != null) x.attr("assigneeFrom", a.perItem().assigneeFrom());
                 }
                 x.close();
                 if (a.listDriven()) {
                     // One task per list item (S88): Flowable iterates the item positions of the request list; the
                     // step ends when every item is approved or at the first rejection, like several approvers (S51).
-                    x.open("", "multiInstanceLoopCharacteristics", BPMN_NS).attr("isSequential", "false")
+                    x.open("", "multiInstanceLoopCharacteristics", BPMN_NS)
+                            .attr("isSequential", String.valueOf(a.perItem().sequential()))
                             .attr("flowable", FLOWABLE_NS, "collection", "${orqixRoute.itemPositions(execution, '"
                                     + a.id() + "')}")
                             .attr("flowable", FLOWABLE_NS, "elementVariable", ITEM_VARIABLE);
+                    // S104: a quorum or one-at-a-time step ends when its outcome is settled (the runtime records that
+                    // with the decision); the S88 condition stays for every other list approval.
                     x.openInline("", "completionCondition", BPMN_NS)
                             .attr("xsi", XSI_NS, "type", "tFormalExpression")
-                            .cdata("${nrOfCompletedInstances == nrOfInstances || orqixRoute.rejected(execution, '"
-                                    + a.id() + "')}")
+                            .cdata(a.perItem().settles()
+                                    ? "${nrOfCompletedInstances == nrOfInstances || orqixRoute.itemsSettled(execution, '"
+                                            + a.id() + "')}"
+                                    : "${nrOfCompletedInstances == nrOfInstances || orqixRoute.rejected(execution, '"
+                                            + a.id() + "')}")
                             .closeInline();
                     x.close();
                 } else if (a.multiInstance()) {

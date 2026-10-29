@@ -227,7 +227,22 @@ public sealed interface Node {
     /** Bounded sequential child occurrences; the outer workflow remains acyclic. */
     record Repeat(int maxIterations, String untilOutcome) { }
 
-    record ForEach(String itemsRef, String itemInput, int maxItems, boolean parallel) { }
+    /**
+     * Collection iteration (S14). A list of single values gives each child its item through {@code itemInput}; a list of
+     * rows (S105) copies the columns named in {@code itemMapping} (child field -> row column) instead. Exactly one of the
+     * two is set; {@code itemMapping} is empty for a list of single values.
+     */
+    record ForEach(String itemsRef, String itemInput, int maxItems, boolean parallel,
+            java.util.Map<String, String> itemMapping) {
+        public ForEach(String itemsRef, String itemInput, int maxItems, boolean parallel) {
+            this(itemsRef, itemInput, maxItems, parallel, java.util.Map.of());
+        }
+
+        /** @return true when the child request field is filled from the current item */
+        public boolean fills(String childField) {
+            return childField.equals(itemInput) || itemMapping.containsKey(childField);
+        }
+    }
 
     /**
      * List-driven approval (S88, {@code config.perItem}): one task per item of the request list {@code itemsRef}.
@@ -235,9 +250,22 @@ public sealed interface Node {
      * value is shown). {@code allowSamePerson} lets one person decide several items; by default each item needs a
      * different person (the S51 rule).
      */
-    record PerItem(String itemsRef, String itemLabel, boolean allowSamePerson) {
+    record PerItem(String itemsRef, String itemLabel, boolean allowSamePerson, boolean sequential, Integer quorum,
+            String assigneeFrom) {
         /** Most items a list-driven approval may open tasks for. */
         public static final int MAX_ITEMS = 20;
+
+        public PerItem(String itemsRef, String itemLabel, boolean allowSamePerson) {
+            this(itemsRef, itemLabel, allowSamePerson, false, null, null);
+        }
+
+        /**
+         * @return true when the step ends by the S104 settle rule (a quorum or one item at a time) rather than the S88
+         *         "all approved or first rejection" condition; S88 steps keep generating exactly the BPMN they did
+         */
+        public boolean settles() {
+            return sequential || quorum != null;
+        }
 
         /** @return the request field key of the list */
         public String listKey() {

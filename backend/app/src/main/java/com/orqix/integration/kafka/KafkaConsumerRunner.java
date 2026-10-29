@@ -192,9 +192,10 @@ public class KafkaConsumerRunner implements DisposableBean {
                     try (KafkaConsumer<byte[], byte[]> c = new KafkaConsumer<>(props)) {
                         consumer = c;
                         c.subscribe(List.of(trigger.topic()), new Rebalance(c));
-                        backoff = 1000;
                         while (running) {
                             ConsumerRecords<byte[], byte[]> records = c.poll(Duration.ofMillis(500));
+                            // S106: back off again only after the broker answered, so a failing sign-in keeps backing off.
+                            backoff = 1000;
                             process(c, records);
                             resumeDue(c);
                             report(c);
@@ -204,8 +205,17 @@ public class KafkaConsumerRunner implements DisposableBean {
                     }
                 } catch (WakeupException e) {
                     // stop() was called
+                } catch (org.apache.kafka.common.errors.AuthenticationException e) {
+                    // S106: the broker refused the credentials (SASL or TLS); say so, keep retrying with backoff.
+                    error("authentication_failed");
+                    status(List.of(), true);
+                    LOG.warn("Kafka trigger {} could not sign in to the broker; retrying ({})", trigger.key(),
+                            e.getClass().getSimpleName());
+                    sleep(backoff);
+                    backoff = Math.min(60_000, backoff * 2);
                 } catch (RuntimeException e) {
                     error("consumer_error");
+                    status(List.of(), true); // S106: also when the consumer never reached the broker
                     LOG.warn("Kafka trigger {} consumer failed; reconnecting ({})", trigger.key(), e.getClass().getSimpleName());
                     sleep(backoff);
                     backoff = Math.min(60_000, backoff * 2);

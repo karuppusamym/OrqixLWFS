@@ -72,6 +72,33 @@ describe('studio (Steps tab, inspector, autosave, check, conflicts)', () => {
     expect(saved.config.forEach).toMatchObject({ mode: 'parallel', maxItems: 3, itemsRef: '/input/items' })
     expect(saved.config.collectionMapping).toEqual({ outcomeItems: 'outcome' })
   })
+  it('maps row columns into the started workflow when the collection is a list of rows (S105)', async () => {
+    signInAs('dana.designer')
+    const source = db.workflows.get(PURCHASE_WORKFLOW_ID)!
+    const childId = 'cccccccc-0000-4000-8000-0000000000c5'
+    db.workflows.set(childId, { ...structuredClone(source), id: childId, key: 'line-review', name: 'Line review' })
+    const draft = source.drafts.at(-1)!.definition
+    const node = draft.nodes.find((n) => n.id === 'procure')!
+    node.type = 'startWorkflow'
+    node.config = { workflowRef: 'line-review', inputMapping: { title: '/input/title' }, resultMapping: {}, forEach: { itemsRef: '/input/lines', maxItems: 3 } }
+    draft.inputSchema.properties.lines = { type: 'array', title: 'Lines', minItems: 1, maxItems: 3, items: { type: 'object', title: 'Line', additionalProperties: false, required: ['item', 'price'], properties: { item: { type: 'string', title: 'Item' }, price: { type: 'number', title: 'Price' } } } }
+    draft.inputSchema.required = [...(draft.inputSchema.required ?? []), 'lines']
+    const user = userEvent.setup()
+    await renderAppReady(EDIT)
+    await openSteps(user)
+    await user.click(stepButton('procure'))
+    const rows = await screen.findByRole('group', { name: 'Fill from each row' })
+    expect(screen.queryByLabelText(/Child field receiving each item/)).toBeNull()
+    const title = await within(rows).findByLabelText(/What are you buying/)
+    expect([...title.querySelectorAll('option')].map((o) => o.textContent)).toEqual(['Not from the row', 'Item', 'Price'])
+    await user.selectOptions(title, 'item')
+    await user.selectOptions(within(rows).getByLabelText(/Amount \(USD\)/), 'price')
+    await waitFor(() => expect(screen.getByTestId('save-state')).toHaveTextContent('Saved'), { timeout: 5000 })
+    const saved = db.workflows.get(PURCHASE_WORKFLOW_ID)!.drafts.at(-1)!.definition.nodes.find((n) => n.id === 'procure')!
+    expect(saved.config.forEach).toEqual({ itemsRef: '/input/lines', maxItems: 3, itemMapping: { title: 'item', amount: 'price' } })
+    // A field filled from the row no longer comes from a request value.
+    expect(saved.config.inputMapping).toEqual({})
+  }, 30000)
   it('edits a wait duration and saves the timer configuration', async () => {
     signInAs('dana.designer')
     const draft = db.workflows.get(PURCHASE_WORKFLOW_ID)!.drafts.at(-1)!.definition

@@ -287,12 +287,15 @@ jobs:
     name: "5 E2E"
     needs: [image, procurement-stub]
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    # The general suite runs one spec at a time against one stack (about 25 minutes plus stack start).
+    timeout-minutes: 60
     env:
       ORQIX_IMAGE: orqix/orqix:ci
       E2E_BASE_URL: http://localhost:8080
       E2E_KEYCLOAK_URL: http://localhost:8180
       E2E_STUB_URL: http://localhost:8095
+      # Dev-only passwords of the realm the compose Keycloak imports (tests/e2e/README.md); no secret is involved.
+      E2E_REALM_FILE: ${{ github.workspace }}/deploy/compose/keycloak/orqix-dev-realm.json
     steps:
       - uses: actions/checkout@v7.0.1
 
@@ -311,6 +314,8 @@ jobs:
         working-directory: deploy/compose
         run: |
           gunzip -c ../../orqix-image.tar.gz | docker load
+          # The app image comes from the image job; the procurement stub has no published image, so build it here.
+          docker compose build procurement-stub
           docker compose --profile app up -d --no-build
           for _ in $(seq 1 60); do
             status=$(docker compose ps orqix --format '{{.Health}}')

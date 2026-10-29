@@ -307,3 +307,19 @@ Notes: [S98](build/S98-callback-tokens-and-triggers.md), [S99](build/S99-webhook
 ## Ask Orqix (Ctrl+K) and the Assistant - 28 October 2026
 
 Press **Ctrl+K** (Cmd+K on a Mac) on any page. Type a page name to jump to it (only pages you may open are listed) or type a question and choose **Ask the Assistant**. Your question opens the **Assistant** page in its message box; **nothing is sent until you press Send there**, and the question never appears in the address bar. The Assistant page keeps the conversation in the middle with the composer at the bottom (**Talk** dictates), and two cards on the right: **This request** (what is being built or decided) and **Tips**. A list of earlier conversations is not shown because the server keeps one open conversation per person. List pages (workflows, requests, cases, insights) are unchanged: a chat box would not help there.
+
+## Restoring workflows and per-item approval rules (designers) - 28 October 2026
+
+[S104](build/S104-restore-callback-limits-per-item-quorum.md).
+
+**Restore an archived workflow.** **Workflows → Archived workflows** lists archived workflows, newest first, with who archived them and the published version. Choose **Restore…**, say why and confirm: the workflow returns to the catalog with its folder, owner, draft and published version, and the same people can start it again. Needs `workflow.edit`.
+
+**One approval per list item: new choices.** Under *One approval per list item* in the approval step:
+- **Decide items one at a time, in list order**: the next item opens only after the previous one is decided. Items not reached when the step ends are recorded as `cancelled`.
+- **Items that must be approved**: leave empty for every item. With a number (for example 2 of 3), the step is approved as soon as that many items are approved and rejected as soon as that number can no longer be reached; the open items are cancelled. The request list must always have at least that many items (set its minimum), otherwise Check workflow reports `WF_PER_ITEM_QUORUM`.
+- **Proposed approver**: a text column of the list holding an email. When the item's task opens, that person gets it if they could pick it up themselves (right group, skills, permission, not their own request, not kept apart by separation of duties). Otherwise the item waits in the group queue and the timeline says so.
+
+**Start a workflow once per row** ([S105](build/S105-row-iteration.md)). In a *Start another workflow* step, **Collection iteration** now also accepts a list of rows (for example order lines with an item and a price). Choose the list, then under **Fill from each row** pick which column fills each field of the started workflow. Fields not filled from the row take their value from **Request values** as before. Check workflow reports a column that does not exist (`WF_FOREACH_COLUMN`) or does not fit the field (`WF_FOREACH_ITEM_TYPE`), including an optional column feeding a required field.
+
+**Promotion notifications** ([S106](build/S106-shapes-promotion-kafka-e2e.md)). If you can approve promotions into a workspace, the bell tells you when someone asks to promote a workflow there; the notification opens **Promotions**. If you asked, the bell in your own workspace tells you when your request was approved or rejected, with the approver's note.
+

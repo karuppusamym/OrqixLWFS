@@ -5,7 +5,8 @@ import { axe, key, record, shot } from '../support/rehearsal'
 import { MOCK } from '../support/env'
 
 /** S86: attachment flow on the real stack with the "Loan application case" template. */
-test.skip(MOCK, 'Real stack only.')
+// Demo rehearsals need a seeded demo stack (docs/build/S86); the general suite and CI leave them out.
+test.skip(MOCK || process.env.E2E_REHEARSAL !== 'true', 'Demo rehearsal: real seeded stack and E2E_REHEARSAL=true only.')
 test.setTimeout(240_000)
 
 test('loan case template: publish, attach files, request completes stage flow', async ({ sessions }) => {

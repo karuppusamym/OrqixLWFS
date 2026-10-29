@@ -39,3 +39,23 @@ One clean run per mode; message and Kafka figures move between runs by about a t
 - `PinnedWorkflows.test.tsx`: the test clicked the catalog's Unpin button while the pinned link was navigating to the overview; it now waits for the overview. Three full frontend runs in a row passed.
 - The demo's stale "Sample - Document review" draft is archived through the new endpoint.
 - The other session's branch (CI fixes, code-review fixes, simpler New workflow flow, whole-word Assistant matching) is merged into `main`; one conflict (the same flaky test fixed in both) was resolved by keeping both waits.
+
+## 4. Review fixes (29 October 2026)
+
+A deep review of everything since r0-2026-10-29 found twelve issues; all are fixed.
+
+| # | Issue | Fix |
+|---|---|---|
+| 1 | `fast` numbering took the number in a `REQUIRES_NEW` transaction, so each start needed a second connection from the same 15-connection pool; 15+ simultaneous starts would starve it | The number comes from one auto-committed statement on a small pool of its own (`orqix.runs.reference-pool-size`, default 4). `RunReferencesFastModeTest` now runs 24 starts at once |
+| 2 | A parent workflow could still start an archived child | Archive is refused while another workflow's active or canary release starts it as a step; a child start of an archived workflow fails |
+| 3 | Archive ignored switched-on Kafka and inbound triggers that start the workflow | Refused until they are switched off (`RESOURCE_IN_USE`, naming them) |
+| 4 | The exact open-request limit depended on "pool size x replicas < 64", unchecked | `RunQuota`: `orqix.runs.quota-margin` (64) must exceed the pool size times `orqix.runs.expected-replicas` (4), checked at startup |
+| 5 | Child starts checked the limit without the per-workflow lock | Child starts use the same `RunQuota` check |
+| 6 | Organize > Archive fetched the latest version just before archiving, so the version check always passed | The version is taken when the dialog opens |
+| 7 | "Answer a few questions" created the workflow, then saved its draft; a failed save left an empty workflow and a retry said the name was taken | A retry saves only the draft of the workflow already created; Back is locked meanwhile |
+| 8 | Deleting a Kafka trigger right after pausing it could race a consumer that had not stopped yet | Refused while a replica reported its consumer running in the last minute; the delete notice says that Kafka keeps the consumer group's position |
+| 9 | Assistant name matching took any shared 4-letter start ("form" found "Formal") | Only plural and simple word endings ("purchases", "approve"/"approval", "policies") |
+| 10 | Removing a question silently made a conditional approval run always | The dialog says which approval now runs for every request |
+| 11 | A missing number came back as 0 (ORQ-0) | It fails with an error |
+| 12 | A reason of only spaces passed archive validation | Refused (422) |
+

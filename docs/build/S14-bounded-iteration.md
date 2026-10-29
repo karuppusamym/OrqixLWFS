@@ -52,4 +52,4 @@ Publish `examples/simple-review.json` first. The medium and complex examples ref
 
 ## Remaining work
 
-Arbitrary graph cycles; mutable correction forms between iterations; nested/object collections; dynamic repeat conditions beyond a child outcome; business-calendar deadlines; native imported BPMN loop characteristics. These are not implied by bounded child repetition.
+Arbitrary graph cycles; mutable correction forms between iterations; nested collections (lists of rows are supported since [S105](S105-row-iteration.md) with `itemMapping`); dynamic repeat conditions beyond a child outcome; business-calendar deadlines; native imported BPMN loop characteristics. These are not implied by bounded child repetition.

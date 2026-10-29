@@ -49,13 +49,11 @@ const edgeColor = (on: RouteKind): string => `var(--edge-${on === 'timedOut' ? '
 export const PALETTE_MIME = 'application/x-orqix-node'
 
 /**
- * The first view fits the whole workflow, but never smaller than this zoom: step text is 17 to 18 px, so at 0.85 it
- * is still 14 px or more on screen. A longer workflow starts at the request form at this zoom and is panned; the
- * Fit view button (bottom left) shows all of it.
+ * The first view fits the whole workflow, but never smaller than this zoom, so step text is 14 px or more on screen:
+ * cards use 17 to 18 px text (0.85), BPMN shapes 15 px labels (0.94, S106). A longer workflow starts at the request
+ * form at this zoom and is panned; the Fit view button (bottom left) shows all of it.
  */
-const FIT_MIN_ZOOM = 0.85
-/** BPMN shapes print task names at 15 px, so their first view zooms out no further than 14 px on screen (S94). */
-const BPMN_FIT_MIN_ZOOM = 0.94
+const FIT_MIN_ZOOM: Record<Notation, number> = { cards: 0.85, bpmn: 0.94 }
 const FIT = { padding: 0.12, maxZoom: 1 } as const
 const FIT_ALL = { ...FIT, minZoom: 0.1 } as const
 
@@ -88,6 +86,9 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
   const nodesInitialized = useNodesInitialized()
   const { active: playActive, current: playCurrent, visited: playVisited, reached: playReached, edges: playEdges } = usePlayback()
   const [notation, setNotation] = useNotation()
+  // Read by the "bring into view" effects without re-running them when the notation changes (S106).
+  const minZoomRef = useRef(FIT_MIN_ZOOM[notation])
+  useEffect(() => { minZoomRef.current = FIT_MIN_ZOOM[notation] }, [notation])
 
   const counts = useMemo(() => countByNode(def, issues), [def, issues])
   const key = useMemo(() => structureKey(def), [def])
@@ -225,9 +226,6 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
     },
     [announce, notation, readOnly, setNotation, store],
   )
-  // The smallest zoom of the first view and of focusing a step, by notation (kept in a ref for the effects below).
-  const minZoomRef = useRef(FIT_MIN_ZOOM)
-  useEffect(() => { minZoomRef.current = notation === 'bpmn' ? BPMN_FIT_MIN_ZOOM : FIT_MIN_ZOOM }, [notation])
   useEffect(() => {
     if (!fitPending.current || !nodesInitialized || !prepared) return
     fitPending.current = false
@@ -240,7 +238,7 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
       if (!box || all.length === 0) return
       const bounds = getNodesBounds(all)
       const whole = getViewportForBounds(bounds, box.width, box.height, 0.1, FIT.maxZoom, FIT.padding)
-      const minZoom = minZoomRef.current
+      const minZoom = FIT_MIN_ZOOM[notation]
       if (whole.zoom >= minZoom) {
         void flow.setViewport(whole, { duration })
         return

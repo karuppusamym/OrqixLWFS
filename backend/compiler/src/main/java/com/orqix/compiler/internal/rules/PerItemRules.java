@@ -39,6 +39,8 @@ final class PerItemRules {
                             + Node.PerItem.MAX_ITEMS + " or fewer.");
                 }
                 label(rc, a, list, path);
+                quorum(rc, a, list, path);
+                assignee(rc, a, list, path);
             }
             if (a.multiInstance()) {
                 unsupported(rc, a, path, "a number of approvers");
@@ -74,6 +76,46 @@ final class PerItemRules {
                 || col.type() == FieldKind.BOOLEAN) {
             rc.issues().blocker("WF_PER_ITEM_LABEL", path + "/itemLabel", a.id(), null, "The column " + q(col.title())
                     + " cannot name an item. Choose a text, number or date column.");
+        }
+    }
+
+    /**
+     * S104: a quorum must be reachable by every request, so the list must always hold at least that many items. A
+     * quorum equal to the list maximum is allowed (it is the default rule written out).
+     */
+    private static void quorum(RuleContext rc, Node.Approval a, FormSchema.Field list, String path) {
+        Integer quorum = a.perItem().quorum();
+        if (quorum == null) {
+            return;
+        }
+        int min = list.minItems() == null ? 1 : list.minItems();
+        if (quorum > min) {
+            rc.issues().blocker("WF_PER_ITEM_QUORUM", path + "/quorum", a.id(), null, q(a) + " needs " + quorum
+                    + " approved items, but " + q(list.title()) + " may hold only " + min + ". Set the list's minimum"
+                    + " to " + quorum + " or more, or lower the number of items that must be approved.");
+        }
+    }
+
+    /** S104: the proposed person for each item comes from a plain text column of a list of rows (an email). */
+    private static void assignee(RuleContext rc, Node.Approval a, FormSchema.Field list, String path) {
+        String column = a.perItem().assigneeFrom();
+        if (column == null) {
+            return;
+        }
+        if (!list.rows()) {
+            rc.issues().blocker("WF_PER_ITEM_ASSIGNEE", path + "/assigneeFrom", a.id(), null, q(list.title())
+                    + " is a list of single values, so it has no column naming a person. Use a list of rows with an"
+                    + " email column, or remove the proposed person.");
+            return;
+        }
+        FormSchema.Field col = list.items().rowFields().get(column);
+        if (col == null) {
+            rc.issues().blocker("WF_PER_ITEM_ASSIGNEE", path + "/assigneeFrom", a.id(), null, "Choose the column of "
+                    + q(list.title()) + " that holds the email of the person proposed for each item. Columns: "
+                    + String.join(", ", list.items().rowFields().keySet()) + ".");
+        } else if (col.type() != FieldKind.STRING) {
+            rc.issues().blocker("WF_PER_ITEM_ASSIGNEE", path + "/assigneeFrom", a.id(), null, "The column "
+                    + q(col.title()) + " cannot hold an email. Choose a text column.");
         }
     }
 

@@ -112,6 +112,23 @@ class ConversationIntentServiceTest {
         var plural = intents.interpret(caller, workspace, json.parse("{\"message\":\"I need two purchases\"}"));
         assertThat(plural.choices()).containsExactly(purchase);
         assertThat(plural.message()).isEmpty();
+        var stem = intents.interpret(caller, workspace, json.parse("{\"message\":\"please approve this\"}"));
+        assertThat(stem.choices()).containsExactly(purchase);
+    }
+
+    @Test
+    void aSharedStartAloneDoesNotMatchALongerWord() {
+        var formal = new StartableWorkflows.Choice(UUID.randomUUID(), "formal-complaint", "Formal complaint");
+        var testament = new StartableWorkflows.Choice(UUID.randomUUID(), "testament-review", "Testament review");
+        when(workflows.find(caller, workspace, null)).thenReturn(List.of(formal, testament));
+        when(model.unavailableReason()).thenReturn("AI is not configured: no provider key is set.");
+
+        // "form" is the start of "formal" and "test" of "testament", but they are different words.
+        var noisy = intents.interpret(caller, workspace, json.parse("{\"message\":\"I need a form to test\"}"));
+        assertThat(noisy.message()).contains("Here is what you can start");
+
+        var plural = intents.interpret(caller, workspace, json.parse("{\"message\":\"I need to file two complaints\"}"));
+        assertThat(plural.choices()).containsExactly(formal);
     }
 
     @Test

@@ -1,5 +1,5 @@
 import { expect, test } from '../support/fixtures'
-import { workspaceId } from '../support/app'
+import { workflowIdByKey, workspaceId } from '../support/app'
 import { expectNoSeriousViolations } from '../support/axe'
 import { MOCK } from '../support/env'
 
@@ -7,10 +7,13 @@ test('personal workflow pins survive searches and reloads and can be removed fro
   if (MOCK) await sessions.mockCall('reset', { demo: true })
   const page = await sessions.as('dana.designer')
   const ws = await workspaceId(page)
-  await page.goto(`/w/${ws}/workflows`)
+  // Search by the seeded key: by now other specs have created many workflows, newest first, so the seeded template is
+  // not on the first page, and their copies of the template are also called "Purchase approval".
+  await page.goto(`/w/${ws}/workflows?q=purchase-approval`)
   const panel = page.getByRole('region', { name: 'Pinned workflows' })
-  // Other specs leave copies named "Purchase approval" in a shared database; any one of them serves here.
-  await page.getByRole('button', { name: 'Pin Purchase approval', exact: true }).first().click()
+  const seededId = await workflowIdByKey(page, ws)
+  const seededRow = page.getByRole('row').filter({ has: page.locator(`a[href$="/workflows/${seededId}"]`) })
+  await seededRow.getByRole('button', { name: 'Pin Purchase approval', exact: true }).click()
   await expect(panel.getByRole('link', { name: 'Purchase approval', exact: true })).toBeVisible()
   const saved = await page.evaluate(() => {
     const key = Object.keys(localStorage).find(value => value.startsWith('orqix.workflowPins.v1:'))!
@@ -27,8 +30,7 @@ test('personal workflow pins survive searches and reloads and can be removed fro
   await expect(panel.getByRole('link', { name: 'Purchase approval', exact: true })).toBeVisible()
   await expectNoSeriousViolations(page, 'Pinned workflows with an empty catalog search')
   await page.setViewportSize({ width: 375, height: 812 })
-  // The layout reflows after the resize; wait for it rather than measuring the old width.
-  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true)
   await expectNoSeriousViolations(page, 'Pinned workflows on mobile')
   await page.setViewportSize({ width: 1440, height: 900 })
   await panel.getByRole('link', { name: 'Purchase approval', exact: true }).click()

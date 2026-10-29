@@ -179,7 +179,7 @@ test('designer and publisher screens', async ({ sessions }) => {
   await expect(page.getByTestId('check-panel')).toBeVisible()
   await expect(page.getByTestId('check-summary')).not.toContainText('Checking')
   await scan(page, 'studio: check panel')
-  // The preview moved into the header's More menu (Studio redesign, 2026-10-27).
+  // The preview moved into the Studio's More menu.
   await page.getByRole('button', { name: 'More actions' }).click()
   await page.getByRole('menuitem', { name: 'Preview the request form' }).click()
   await expect(page.getByRole('dialog', { name: 'Preview of the request form' })).toBeVisible()

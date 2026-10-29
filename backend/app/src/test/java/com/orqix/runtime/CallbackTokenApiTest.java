@@ -437,4 +437,57 @@ class CallbackTokenApiTest extends RuntimeTestBase {
                 .param("t", "%" + com.orqix.shared.json.Json.sha256Hex(token) + "%").query(Long.class).single()).isZero();
         assertThat(output.getAll()).doesNotContain(secretPart).doesNotContain("PAY-SECRET");
     }
+
+    @Test
+    void closedWaitsArePurgedAfterTheRetentionSoTheirTokensBecomeUnknownWhileOpenWaitsStay() throws Exception {
+        UUID wf = publishExternalWait("P1D");
+        UUID done = startOrder(wf);
+        UUID open = startOrder(wf);
+        UUID doneWait = UUID.fromString(waitOf(done).path("id").asString());
+        UUID openWait = UUID.fromString(waitOf(open).path("id").asString());
+        String doneToken = issue(doneWait).path("token").asString();
+        String openToken = issue(openWait).path("token").asString();
+        String key = UUID.randomUUID().toString();
+        assertThat(resume(PURCHASING, doneToken, key, paid()).status()).isEqualTo(200);
+        awaitLifecycleSwept(done, "completed");
+
+        // Within the retention nothing closed recently is removed, and the replay still works.
+        callbackSweeper.purge(Instant.now());
+        assertThat(resume(PURCHASING, doneToken, key, paid()).status()).isEqualTo(200);
+
+        // 31 days later (retention 30 days) the resumed wait is gone; the open one stays and still works.
+        int purged = callbackSweeper.purge(Instant.now().plus(Duration.ofDays(31)));
+        assertThat(purged).isGreaterThanOrEqualTo(1);
+        assertThat(jdbc.sql("SELECT count(*) FROM callback_wait WHERE id = :id").param("id", doneWait).query(Long.class).single()).isZero();
+        assertThat(poll(PURCHASING, doneToken, null).status()).isEqualTo(404);
+        assertThat(resume(PURCHASING, doneToken, key, paid()).status()).isEqualTo(404);
+        assertThat(poll(PURCHASING, openToken, null).body().path("state").asString()).isEqualTo("waiting");
+        String meta = jdbc.sql("""
+                SELECT metadata::text FROM audit_event WHERE action = 'callback.waits-purged' AND workspace_id = :ws
+                ORDER BY occurred_at DESC LIMIT 1
+                """).param("ws", PURCHASING).query(String.class).single();
+        assertThat(meta).contains("\"count\"").contains("\"retentionSeconds\": 2592000").doesNotContain(doneToken.substring(4, 20));
+    }
+
+    @Test
+    void eachTokenIsLimitedToSixtyCallsAMinuteAndOtherTokensAreUnaffected() throws Exception {
+        UUID wf = publishExternalWait("P1D");
+        UUID waitA = UUID.fromString(waitOf(startOrder(wf)).path("id").asString());
+        UUID waitB = UUID.fromString(waitOf(startOrder(wf)).path("id").asString());
+        String tokenA = issue(waitA).path("token").asString();
+        String tokenB = issue(waitB).path("token").asString();
+        String etag = poll(PURCHASING, tokenA, null).header("ETag");
+        for (int i = 1; i < 60; i++) {
+            assertThat(poll(PURCHASING, tokenA, etag).status()).as("call %d", i + 1).isIn(200, 304);
+        }
+        Response limited = poll(PURCHASING, tokenA, etag);
+        assertThat(limited.status()).isEqualTo(429);
+        assertThat(limited.code()).isEqualTo("RATE_LIMITED");
+        assertThat(Integer.parseInt(limited.header("Retry-After"))).isBetween(1, 60);
+        assertThat(resume(PURCHASING, tokenA, UUID.randomUUID().toString(), paid()).status()).isEqualTo(429);
+        assertThat(limited.toString()).doesNotContain(tokenA.substring(4, 20));
+        // Unknown tokens are 404, not counted, and other tokens keep working.
+        assertThat(poll(PURCHASING, "ocb_" + "B".repeat(43), null).status()).isEqualTo(404);
+        assertThat(poll(PURCHASING, tokenB, null).status()).isEqualTo(200);
+    }
 }

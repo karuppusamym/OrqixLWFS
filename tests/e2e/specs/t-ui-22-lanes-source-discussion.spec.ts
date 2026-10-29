@@ -17,6 +17,12 @@ async function openDiscussion(page: Page): Promise<void> {
  * draft as YAML, refuses invalid edits with line numbers and applies valid ones; each step has a threaded discussion
  * that can be replied to and resolved. A viewer can read but not post.
  */
+/** The Discussion card of the side panel is collapsible (UX01) and may start closed. */
+async function openDiscussion(page: import('@playwright/test').Page): Promise<void> {
+  const toggle = page.getByRole('button', { name: 'Discussion', exact: true })
+  if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click()
+}
+
 test('lanes, YAML source and step discussion in the studio', async ({ sessions }) => {
   if (MOCK) await sessions.mockCall('reset', { demo: true })
   const page = await sessions.as('dana.designer')

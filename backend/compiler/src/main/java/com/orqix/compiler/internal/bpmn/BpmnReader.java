@@ -568,6 +568,20 @@ public final class BpmnReader {
                     each.put("allowSamePerson", same);
                 }
             }
+            if (perItem.attr("sequential") != null) {
+                // S104: like allowSamePerson, only "true" is written.
+                Boolean sequential = bool(id, "sequential", perItem.attr("sequential"));
+                if (sequential != null) {
+                    each.put("sequential", sequential);
+                }
+            }
+            if (perItem.attr("quorum") != null) {
+                Integer quorum = integer(id, "quorum", perItem.attr("quorum"));
+                if (quorum != null) {
+                    each.put("quorum", quorum);
+                }
+            }
+            putText(each, "assigneeFrom", perItem.attr("assigneeFrom"));
             if (loop == null) {
                 unsupported(id, "The list approval '" + id + "' needs its multiInstanceLoopCharacteristics (one task "
                         + "per list item).");

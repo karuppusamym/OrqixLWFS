@@ -1458,6 +1458,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/archived-workflows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Archived workflows of the workspace, most recently archived first (up to 200) */
+        get: operations["listArchivedWorkflows"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/workflow-owner-candidates": {
         parameters: {
             query?: never;
@@ -1845,9 +1864,33 @@ export interface paths {
         /**
          * Archive a workflow so it leaves the catalog, the start lists and child-workflow choices
          * @description Refused while requests of the workflow are still open (409 RESOURCE_IN_USE). Finished requests,
-         *     releases and the audit trail stay readable through their own links. There is no un-archive in this version.
+         *     releases and the audit trail stay readable through their own links. `restoreWorkflow` brings it back.
          */
         post: operations["archiveWorkflow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore an archived workflow to the catalog with its folder, owner, draft and active release
+         * @description The workflow can be started again by the same people as before archiving. 404 when the workflow is
+         *     not archived (or does not exist); 409 WORKFLOW_VERSION_CONFLICT when the version is stale.
+         */
+        post: operations["restoreWorkflow"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2539,8 +2582,10 @@ export interface paths {
         /**
          * Poll the wait a callback token belongs to (no session; the token is the credential)
          * @description States waiting, resumed, expired or cancelled (with reason timedOut, requestEnded or answeredElsewhere). Send
-         *     the ETag back in If-None-Match to get 304 while nothing changed. An unknown, revoked or replaced token, or a
-         *     token of another workspace, is 404.
+         *     the ETag back in If-None-Match to get 304 while nothing changed. An unknown, revoked, replaced or purged token,
+         *     or a token of another workspace, is 404. Polls and resumes together are limited per token (default 60 a minute
+         *     on each server; 429 with Retry-After). A closed wait is purged after the deployment's retention (default 30
+         *     days), after which its token is unknown.
          */
         get: operations["pollCallbackWait"];
         put?: never;
@@ -2567,7 +2612,7 @@ export interface paths {
          * @description The result must match the waiting step's declared values (at most 16 KiB, flat scalars). It is delivered through
          *     the same path as sendMessage. 409 CALLBACK_ALREADY_RESUMED for a different key or body after a resume,
          *     CALLBACK_NOT_WAITING when the wait closed or the token expired, RUN_SUSPENDED while an operator suspended the
-         *     request (repeat it after resumeRun).
+         *     request (repeat it after resumeRun). Counts toward the per-token limit shared with polling (429).
          */
         post: operations["resumeCallbackWait"];
         delete?: never;
@@ -6101,6 +6146,7 @@ export interface components {
             handled: number;
             duplicates: number;
             dead: number;
+            /** @description A code, never a message: secret_unavailable (the secretRef file is missing or not {username, password}), authentication_failed (the broker refused the credentials), consumer_error (any other broker or network failure); the consumer keeps retrying */
             lastError?: string | null;
             /** Format: date-time */
             lastErrorAt?: string | null;
@@ -6739,6 +6785,26 @@ export interface components {
             /** @description The workflow version */
             expectedVersion: number;
             reason: string;
+        };
+        RestoreWorkflow: {
+            /** @description The archived workflow version */
+            expectedVersion: number;
+            reason: string;
+        };
+        ArchivedWorkflow: {
+            id: components["schemas"]["Uuid"];
+            key: string;
+            name: string;
+            version: number;
+            /** Format: date-time */
+            archivedAt: string;
+            /** @description Null for workflows archived before this was recorded */
+            archivedBy?: components["schemas"]["SubjectRef"] | null;
+            activeReleaseNumber?: number | null;
+        };
+        ArchivedWorkflows: {
+            items: components["schemas"]["ArchivedWorkflow"][];
+            truncated: boolean;
         };
         SetWorkflowOwner: {
             ownerSubjectId: components["schemas"]["Uuid"];
@@ -8327,13 +8393,16 @@ export interface components {
             runReference?: string | null;
             /** @description Title of the request runId (see Run.requestTitle); null when the recipient may not read the request data */
             requestTitle?: string | null;
-            /** @enum {string} */
-            kind: "workflowMessage" | "runAttention" | "discussionMention";
+            /**
+             * @description promotionRequest: a promotion into this workspace waits for approval (open Promotions); promotionDecision: your promotion request was approved or rejected (workflowId is the source workflow)
+             * @enum {string}
+             */
+            kind: "workflowMessage" | "runAttention" | "discussionMention" | "promotionRequest" | "promotionDecision";
             /** @description For discussionMention: who mentioned the recipient, on which step and workflow; never the comment text */
             message: string;
             createdAt: components["schemas"]["Timestamp"];
             readAt: components["schemas"]["Timestamp"] | null;
-            /** @description discussionMention only: the workflow whose discussion mentions the recipient */
+            /** @description discussionMention: the workflow whose discussion mentions the recipient; promotionDecision: the promoted source workflow */
             workflowId?: components["schemas"]["Uuid"] | null;
             /** @description discussionMention only: the step or connection ID of the discussion */
             elementId?: string | null;
@@ -9464,7 +9533,7 @@ export interface components {
                 multiInstance?: {
                     approvers: number;
                 };
-                /** @description One approval task per item of a request list (docs/build/S88): itemsRef names a required, unconditional request list of at most 20 items; each task shows its item (the value, or the itemLabel column of a list of rows). All items must be approved; the first rejection rejects the step and cancels the open items. Extra outputs: approvedCount and itemDecisions (approved, rejected or cancelled per item, in list order). Each item needs a different person unless allowSamePerson is true. Not combined with several approvers, a time limit, escalation, correctable fields or (without allowSamePerson) dispatch. */
+                /** @description One approval task per item of a request list (docs/build/S88, S104): itemsRef names a required, unconditional request list of at most 20 items; each task shows its item (the value, or the itemLabel column of a list of rows). By default all items must be approved and the first rejection rejects the step; with quorum k the step is approved as soon as k items are approved and rejected as soon as k can no longer be reached, and the open items are cancelled. sequential opens one item at a time in list order. assigneeFrom names a text column of a list of rows holding the email of the person proposed for each item; that person is assigned when eligible, otherwise the task stays in the group queue (or goes to the dispatch policy). Extra outputs: approvedCount and itemDecisions (approved, rejected or cancelled per item, in list order; cancelled = not decided because the step had ended). Each item needs a different person unless allowSamePerson is true. Not combined with several approvers, a time limit, escalation or correctable fields. */
                 perItem?: {
                     itemsRef: string;
                     itemLabel?: components["schemas"]["fieldKey"];
@@ -9473,6 +9542,15 @@ export interface components {
                      * @constant
                      */
                     allowSamePerson?: true;
+                    /**
+                     * @description Present (true) only when the items are decided one at a time, in list order; leave it out for all items at once.
+                     * @constant
+                     */
+                    sequential?: true;
+                    /** @description How many items must be approved for the step to be approved (default: all). The list's minimum number of items must be at least this. */
+                    quorum?: number;
+                    /** @description A text column of the list of rows holding the email of the person proposed for each item. Assigned only when that person may decide the task; otherwise the task stays in the group queue. */
+                    assigneeFrom?: components["schemas"]["fieldKey"];
                 };
                 /** @description Request fields the person holding this task may correct before deciding (docs/build/S42). Scalar request fields only. Publishing proves that no earlier step has used them, so a correction can never contradict work that already happened. */
                 correctable?: components["schemas"]["fieldKey"][];
@@ -9622,17 +9700,21 @@ export interface components {
                 resultMapping: {
                     [key: string]: components["schemas"]["fieldKey"];
                 };
-                /** @description Sequentially start one pinned child per scalar item. The collection must contain 1 to 25 items. Inputs share inputMapping and itemInput receives the current item. Results are the last child result plus iterations and limitReached=false. */
+                /** @description Start one pinned child per item of a required request list of 1 to 25 items (docs/build/S14, S105). Inputs share inputMapping; for a list of single values itemInput receives the current item, for a list of rows itemMapping copies the named columns of the current row into child request fields (exactly one of the two). Results are the last child result plus iterations, limitReached=false and allSucceeded. */
                 forEach?: {
                     itemsRef: string;
-                    itemInput: components["schemas"]["fieldKey"];
+                    itemInput?: components["schemas"]["fieldKey"];
+                    /** @description List of rows only: child request field -> column of the current row (1 to 10 fields). A column that is empty in a row leaves the field out. */
+                    itemMapping?: {
+                        [key: string]: components["schemas"]["fieldKey"];
+                    };
                     maxItems: number;
                     /**
                      * @default sequential
                      * @enum {unknown}
                      */
                     mode: "sequential" | "parallel";
-                };
+                } & (unknown | unknown);
                 /** @description Collected output name -> guaranteed scalar child result field, or outcome/outcomeKind/reference. For collection iteration only. Values follow input item order. */
                 collectionMapping?: {
                     [key: string]: components["schemas"]["fieldKey"];
@@ -10090,7 +10172,7 @@ export interface components {
                         multiInstance?: {
                             approvers: number;
                         };
-                        /** @description One approval task per item of a request list (docs/build/S88): itemsRef names a required, unconditional request list of at most 20 items; each task shows its item (the value, or the itemLabel column of a list of rows). All items must be approved; the first rejection rejects the step and cancels the open items. Extra outputs: approvedCount and itemDecisions (approved, rejected or cancelled per item, in list order). Each item needs a different person unless allowSamePerson is true. Not combined with several approvers, a time limit, escalation, correctable fields or (without allowSamePerson) dispatch. */
+                        /** @description One approval task per item of a request list (docs/build/S88, S104): itemsRef names a required, unconditional request list of at most 20 items; each task shows its item (the value, or the itemLabel column of a list of rows). By default all items must be approved and the first rejection rejects the step; with quorum k the step is approved as soon as k items are approved and rejected as soon as k can no longer be reached, and the open items are cancelled. sequential opens one item at a time in list order. assigneeFrom names a text column of a list of rows holding the email of the person proposed for each item; that person is assigned when eligible, otherwise the task stays in the group queue (or goes to the dispatch policy). Extra outputs: approvedCount and itemDecisions (approved, rejected or cancelled per item, in list order; cancelled = not decided because the step had ended). Each item needs a different person unless allowSamePerson is true. Not combined with several approvers, a time limit, escalation or correctable fields. */
                         perItem?: {
                             itemsRef: string;
                             itemLabel?: components["schemas"]["fieldKey"];
@@ -10099,6 +10181,15 @@ export interface components {
                              * @constant
                              */
                             allowSamePerson?: true;
+                            /**
+                             * @description Present (true) only when the items are decided one at a time, in list order; leave it out for all items at once.
+                             * @constant
+                             */
+                            sequential?: true;
+                            /** @description How many items must be approved for the step to be approved (default: all). The list's minimum number of items must be at least this. */
+                            quorum?: number;
+                            /** @description A text column of the list of rows holding the email of the person proposed for each item. Assigned only when that person may decide the task; otherwise the task stays in the group queue. */
+                            assigneeFrom?: components["schemas"]["fieldKey"];
                         };
                         /** @description Request fields the person holding this task may correct before deciding (docs/build/S42). Scalar request fields only. Publishing proves that no earlier step has used them, so a correction can never contradict work that already happened. */
                         correctable?: components["schemas"]["fieldKey"][];
@@ -10250,17 +10341,21 @@ export interface components {
                         resultMapping: {
                             [key: string]: components["schemas"]["fieldKey"];
                         };
-                        /** @description Sequentially start one pinned child per scalar item. The collection must contain 1 to 25 items. Inputs share inputMapping and itemInput receives the current item. Results are the last child result plus iterations and limitReached=false. */
+                        /** @description Start one pinned child per item of a required request list of 1 to 25 items (docs/build/S14, S105). Inputs share inputMapping; for a list of single values itemInput receives the current item, for a list of rows itemMapping copies the named columns of the current row into child request fields (exactly one of the two). Results are the last child result plus iterations, limitReached=false and allSucceeded. */
                         forEach?: {
                             itemsRef: string;
-                            itemInput: components["schemas"]["fieldKey"];
+                            itemInput?: components["schemas"]["fieldKey"];
+                            /** @description List of rows only: child request field -> column of the current row (1 to 10 fields). A column that is empty in a row leaves the field out. */
+                            itemMapping?: {
+                                [key: string]: components["schemas"]["fieldKey"];
+                            };
                             maxItems: number;
                             /**
                              * @default sequential
                              * @enum {unknown}
                              */
                             mode: "sequential" | "parallel";
-                        };
+                        } & (unknown | unknown);
                         /** @description Collected output name -> guaranteed scalar child result field, or outcome/outcomeKind/reference. For collection iteration only. Values follow input item order. */
                         collectionMapping?: {
                             [key: string]: components["schemas"]["fieldKey"];
@@ -13471,6 +13566,31 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    listArchivedWorkflows: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Archived workflows; `truncated` is true when more than 200 exist */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArchivedWorkflows"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     listWorkflowOwnerCandidates: {
         parameters: {
             query?: never;
@@ -14080,6 +14200,39 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    restoreWorkflow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RestoreWorkflow"];
+            };
+        };
+        responses: {
+            /** @description The restored workflow */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Workflow"];
+                };
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthenticated"];
@@ -15210,6 +15363,7 @@ export interface operations {
                 content?: never;
             };
             404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
         };
     };
     resumeCallbackWait: {
@@ -15246,6 +15400,7 @@ export interface operations {
             409: components["responses"]["Conflict"];
             413: components["responses"]["PayloadTooLarge"];
             422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
         };
     };
     listKafkaTriggers: {

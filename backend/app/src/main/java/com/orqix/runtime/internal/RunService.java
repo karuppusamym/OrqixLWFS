@@ -63,12 +63,14 @@ public class RunService {
     private final RunAttachments attachments;
     private final RunStages stages;
     private final RunSuspensions suspensions;
+    private final RunQuota quota;
 
     public RunService(PolicyService policy, ReleaseQueries releases, FormValidator formValidator, RunStore runs,
             RunEvents events, RunQueries runQueries, TaskStore tasks, TaskQueries taskQueries, RunAccess runAccess,
             RuntimeViews views, EngineCommands engine, EffectJournal journal, IdempotencyService idempotency,
             AuditWriter audit, RuntimeMetrics metrics, CursorCodec cursors, OrqixProperties properties, Json json,
-            RunAttachments attachments, RunStages stages, RunSuspensions suspensions) {
+            RunAttachments attachments, RunStages stages, RunSuspensions suspensions, RunQuota quota) {
+        this.quota = quota;
         this.suspensions = suspensions;
         this.attachments = attachments;
         this.stages = stages;
@@ -93,9 +95,6 @@ public class RunService {
     }
 
     // ---------------------------------------------------------------- start (S5 section 3)
-
-    /** Distance from the open-request limit at which starts of one workflow start queueing (see start). */
-    static final int QUOTA_MARGIN = 64;
 
     @Transactional
     public Started start(Caller caller, UUID workspaceId, String idempotencyKey, RuntimeDtos.StartRunRequest request) {
@@ -158,15 +157,8 @@ public class RunService {
         }
         // Files chosen on the form (fields of format attachment): must be the caller's own and fit the field (S17).
         RunAttachments.StartPlan files = attachments.planStart(caller, workspaceId, release.inputSchema(), request.input());
-        // Open-request limit (S101, S103). Far below the limit starts do not wait for each other; within QUOTA_MARGIN of it
-        // they queue behind a per-workflow lock and count again, so the limit is exact. The margin must exceed the number
-        // of starts that can be in flight at once (connection pool size times replicas).
-        int active = runs.countActive(workspaceId, workflow.id());
-        if (active >= release.maxConcurrentRuns() - QUOTA_MARGIN) {
-            runs.lockQuota(workflow.id());
-            active = runs.countActive(workspaceId, workflow.id());
-        }
-        if (active >= release.maxConcurrentRuns()) {
+        // Open-request limit (S101, S103): exact near the limit, without making far-off starts wait (RunQuota).
+        if (!quota.hasRoom(workspaceId, workflow.id(), release.maxConcurrentRuns())) {
             throw new ApiException(ProblemCode.QUOTA_EXCEEDED, "Too many requests of this workflow are in progress.")
                     .withHeader("Retry-After", "60");
         }

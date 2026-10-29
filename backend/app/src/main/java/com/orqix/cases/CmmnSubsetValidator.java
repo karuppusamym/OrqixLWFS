@@ -44,8 +44,17 @@ public class CmmnSubsetValidator {
     public static final String WORKFLOW_NS = "urn:orqix:workflow";
     /** Suffixes of the elements generated for a discretionary item at deployment. */
     public static final String PLANNER = "__planner";
-    private static final Set<String> WORK = Set.of("humanTask", "processTask", "milestone", "stage", "userEventListener");
-    private static final Set<String> PLAN_CHILDREN = Set.of("planItem", "sentry", "humanTask", "processTask", "milestone", "stage",
+    /** Namespace of the QName in a caseTask caseRef that names a workspace case definition by key (prefix:key). */
+    public static final String CASE_NS = "urn:orqix:case";
+    private static final Set<String> WORK = Set.of("humanTask", "processTask", "caseTask", "milestone", "stage", "userEventListener", "timerEventListener");
+    private static final Set<String> LISTENERS = Set.of("userEventListener", "timerEventListener");
+    private static final Set<String> CALLS = Set.of("processTask", "caseTask");
+    /** One comparison of an if-part: a case data field (mirrored as engine variable cd_field) with a literal. */
+    private static final String CLAUSE = "cd_([A-Za-z][A-Za-z0-9_]{0,63})\\s*(?:==|!=|<=|>=|<|>)\\s*(?:-?\\d{1,15}(?:\\.\\d{1,6})?|'[^'\\\\$#{}]{0,120}'|true|false)";
+    private static final java.util.regex.Pattern CLAUSE_PATTERN = java.util.regex.Pattern.compile(CLAUSE);
+    private static final java.util.regex.Pattern CONDITION = java.util.regex.Pattern.compile(
+            "\\$\\{\\s*" + CLAUSE + "(?:\\s*&&\\s*" + CLAUSE + "){0,9}\\s*\\}|\\$\\{\\s*" + CLAUSE + "(?:\\s*\\|\\|\\s*" + CLAUSE + "){0,9}\\s*\\}");
+    private static final Set<String> PLAN_CHILDREN = Set.of("planItem", "sentry", "humanTask", "processTask", "caseTask", "timerEventListener", "milestone", "stage",
             "userEventListener", "planningTable");
     private static final Map<String, Set<String>> CHILDREN = Map.ofEntries(
             Map.entry("definitions", Set.of("case", "process")),
@@ -61,7 +70,11 @@ public class CmmnSubsetValidator {
             Map.entry("discretionaryItem", Set.of("itemControl")),
             Map.entry("entryCriterion", Set.of()),
             Map.entry("exitCriterion", Set.of()),
-            Map.entry("sentry", Set.of("planItemOnPart")),
+            Map.entry("sentry", Set.of("planItemOnPart", "ifPart")),
+            Map.entry("ifPart", Set.of("condition")),
+            Map.entry("caseTask", Set.of("defaultControl")),
+            Map.entry("timerEventListener", Set.of("timerExpression")),
+            Map.entry("timerExpression", Set.of()),
             Map.entry("planItemOnPart", Set.of("standardEvent")),
             Map.entry("standardEvent", Set.of()),
             Map.entry("humanTask", Set.of("defaultControl")),
@@ -88,6 +101,10 @@ public class CmmnSubsetValidator {
             Map.entry("entryCriterion", Set.of("id", "sentryRef")),
             Map.entry("exitCriterion", Set.of("id", "sentryRef")),
             Map.entry("sentry", Set.of("id")),
+            Map.entry("ifPart", Set.of("id")),
+            Map.entry("caseTask", Set.of("id", "name", "caseRef", "isBlocking")),
+            Map.entry("timerEventListener", Set.of("id", "name")),
+            Map.entry("timerExpression", Set.of("id")),
             Map.entry("planItemOnPart", Set.of("id", "sourceRef")),
             Map.entry("standardEvent", Set.of()),
             Map.entry("humanTask", Set.of("id", "name")),
@@ -137,7 +154,9 @@ public class CmmnSubsetValidator {
             var plans = children(cases.getFirst(), "casePlanModel");
             if (plans.size() != 1) throw invalid("Exactly one case plan model is required.");
             long count = ids.values().stream().filter(e -> Set.of("planItem","discretionaryItem").contains(e.getLocalName())).count();
-            boolean workflows = ids.values().stream().anyMatch(e -> "processTask".equals(e.getLocalName()));
+            boolean workflows = ids.values().stream().anyMatch(e -> CALLS.contains(e.getLocalName()));
+            for (var task : ids.values()) if ("caseTask".equals(task.getLocalName()) && key.equals(caseKey(task)))
+                throw invalid("Case task " + task.getAttribute("id") + " cannot start its own case definition.");
             if (count < 1 || count > 30 || groups.isEmpty() && !workflows)
                 throw invalid("The case needs 1 to 30 plan and discretionary items and at least one assigned human task, workflow task or authorized user event.");
             for (var element : List.copyOf(ids.values())) if ("discretionaryItem".equals(element.getLocalName())) {
@@ -307,7 +326,8 @@ public class CmmnSubsetValidator {
     public String engineXml(String xml) {
         try {
             var document=parse(xml);
-            for(var task:list(document.getElementsByTagNameNS(CMMN,"processTask"))) {
+            var calls=list(document.getElementsByTagNameNS(CMMN,"processTask")); calls.addAll(list(document.getElementsByTagNameNS(CMMN,"caseTask")));
+            for(var task:calls) {
                 var replacement=document.createElementNS(CMMN,"task");
                 replacement.setAttribute("id",task.getAttribute("id"));
                 if(task.hasAttribute("name")) replacement.setAttribute("name",task.getAttribute("name"));
@@ -352,6 +372,64 @@ public class CmmnSubsetValidator {
             out.transform(new DOMSource(document),new StreamResult(writer));
             return writer.toString();
         } catch(ApiException ex) { throw ex; } catch(Exception ex) { throw invalid("The case model could not be prepared for the engine."); }
+    }
+
+    /** The case definition key a case task names: caseRef is a QName in the Orqix case namespace. */
+    private static String caseKey(Element task) {
+        String ref = task.getAttribute("caseRef").strip();
+        int colon = ref.indexOf(':');
+        String prefix = colon < 0 ? null : ref.substring(0, colon), key = colon < 0 ? ref : ref.substring(colon + 1);
+        if (prefix != null && !prefix.matches("[A-Za-z_][A-Za-z0-9_.-]*")) prefix = "-";
+        String namespace = "-".equals(prefix) ? null : task.lookupNamespaceURI(prefix);
+        if (!CASE_NS.equals(namespace) || !key.matches("[a-z][a-z0-9-]{1,62}"))
+            throw invalid("Case task " + task.getAttribute("id") + " must name a workspace case definition: caseRef=\"prefix:case-key\" with the prefix bound to " + CASE_NS + ".");
+        return key;
+    }
+
+    /** A timer waits an ISO-8601 duration (days, hours, minutes, seconds) of 1 minute to 366 days after it becomes available. */
+    private static java.time.Duration timerDuration(Element expression) {
+        String text = expression.getTextContent().strip();
+        java.time.Duration duration;
+        try {
+            if (!text.matches("P(?:\\d{1,3}D)?(?:T(?:\\d{1,4}H)?(?:\\d{1,6}M)?(?:\\d{1,8}S)?)?") || text.equals("P") || text.endsWith("T"))
+                throw new IllegalArgumentException();
+            duration = java.time.Duration.parse(text);
+        } catch (RuntimeException ex) {
+            throw invalid("Timer expressions are ISO-8601 durations such as PT4H or P2D (no months, years, dates or expressions).");
+        }
+        if (duration.compareTo(java.time.Duration.ofMinutes(1)) < 0 || duration.compareTo(java.time.Duration.ofDays(366)) > 0)
+            throw invalid("A timer waits from 1 minute to 366 days.");
+        return duration;
+    }
+
+    /** Case definition key named by every case task, keyed by the case task definition ID. */
+    public Map<String,String> caseTasks(String xml) {
+        try {
+            var result=new LinkedHashMap<String,String>();
+            for(var task:list(parse(xml).getElementsByTagNameNS(CMMN,"caseTask"))) result.put(task.getAttribute("id"),caseKey(task));
+            return java.util.Collections.unmodifiableMap(result);
+        } catch(ApiException ex) { throw ex; } catch(Exception ex) { throw invalid("The pinned case tasks cannot be read."); }
+    }
+
+    /** Case data fields that if-part conditions read (mirrored into engine variables named cd_<field>). */
+    public Set<String> conditionFields(String xml) {
+        try {
+            var fields=new java.util.TreeSet<String>();
+            for(var part:list(parse(xml).getElementsByTagNameNS(CMMN,"ifPart"))) {
+                var matcher=CLAUSE_PATTERN.matcher(part.getTextContent());
+                while(matcher.find()) fields.add(matcher.group(1));
+            }
+            return java.util.Collections.unmodifiableSet(fields);
+        } catch(Exception ex) { throw invalid("The pinned case conditions cannot be read."); }
+    }
+
+    /** IDs of timer event listener definitions. */
+    public Set<String> timers(String xml) {
+        try {
+            var out=new HashSet<String>();
+            for(var timer:list(parse(xml).getElementsByTagNameNS(CMMN,"timerEventListener"))) out.add(timer.getAttribute("id"));
+            return Set.copyOf(out);
+        } catch(Exception ex) { throw invalid("The pinned timers cannot be read."); }
     }
 
     /** The workflow key of a process whose externalRef is a QName in the Orqix workflow namespace. */
@@ -421,8 +499,9 @@ public class CmmnSubsetValidator {
         if (plan.hasAttribute("autoComplete") && !Set.of("true", "false").contains(plan.getAttribute("autoComplete")))
             throw invalid("Stage autoComplete must be a literal boolean.");
         if((plan.getElementsByTagNameNS(CMMN,"repetitionRule").getLength()>0 || plan.getElementsByTagNameNS(CMMN,"discretionaryItem").getLength()>0
-                || plan.getElementsByTagNameNS(CMMN,"processTask").getLength()>0) && !"false".equals(plan.getAttribute("autoComplete")))
-            throw invalid("Stage " + plan.getAttribute("id") + " contains repeated, discretionary or workflow work and requires explicit autoComplete=false.");
+                || plan.getElementsByTagNameNS(CMMN,"processTask").getLength()>0 || plan.getElementsByTagNameNS(CMMN,"caseTask").getLength()>0
+                || plan.getElementsByTagNameNS(CMMN,"timerEventListener").getLength()>0 || plan.getElementsByTagNameNS(CMMN,"ifPart").getLength()>0) && !"false".equals(plan.getAttribute("autoComplete")))
+            throw invalid("Stage " + plan.getAttribute("id") + " contains repeated, discretionary, workflow, case, timer or data-triggered work and requires explicit autoComplete=false.");
         var items = children(plan, "planItem");
         var tables = children(plan, "planningTable");
         if (tables.size() > 1) throw invalid("A stage may contain only one planning table.");
@@ -445,24 +524,24 @@ public class CmmnSubsetValidator {
                 for (var control : children(item,"itemControl"))
                     if (!children(control,"manualActivationRule").isEmpty()) throw invalid("Milestones cannot be manually activated.");
             }
-            if ("userEventListener".equals(definition.getLocalName()) && (!children(item,"entryCriterion").isEmpty()
+            if (LISTENERS.contains(definition.getLocalName()) && (!children(item,"entryCriterion").isEmpty()
                     || !children(item,"exitCriterion").isEmpty() || !children(item,"itemControl").isEmpty()))
-                throw invalid("User event listeners cannot have criteria, required/manual controls or repetition.");
-            if ("processTask".equals(definition.getLocalName())) {
+                throw invalid("User event and timer listeners cannot have criteria, required/manual controls or repetition.");
+            if (CALLS.contains(definition.getLocalName())) {
                 var controls=new ArrayList<>(children(item,"itemControl")); controls.addAll(children(definition,"defaultControl"));
                 if (controls.stream().anyMatch(control->!children(control,"manualActivationRule").isEmpty()))
-                    throw invalid("Workflow task " + item.getAttribute("id") + " starts automatically; manual activation is not supported. Use a discretionary item to let people decide.");
+                    throw invalid("Workflow or case task " + item.getAttribute("id") + " starts automatically; manual activation is not supported. Use a discretionary item to let people decide.");
             }
             if (repeated(item, definition)) {
-                if ("userEventListener".equals(definition.getLocalName()))
-                    throw invalid("User event listeners cannot repeat.");
+                if (LISTENERS.contains(definition.getLocalName()))
+                    throw invalid("User event and timer listeners cannot repeat.");
                 if (!children(item,"exitCriterion").isEmpty())
                     throw invalid("Repeated item " + item.getAttribute("id") + " cannot also have an exit criterion: the pinned engine does not evaluate repetition on termination.");
                 if ("milestone".equals(definition.getLocalName()) && children(item,"entryCriterion").isEmpty())
                     throw invalid("A repeated milestone needs an entry criterion; it repeats each time the criterion is satisfied again.");
             }
             boolean stageHuman = "stage".equals(definition.getLocalName()) && validatePlan(definition, ids, depth + 1);
-            if (children(item, "entryCriterion").isEmpty() && (Set.of("humanTask","processTask","userEventListener").contains(definition.getLocalName()) || stageHuman))
+            if (children(item, "entryCriterion").isEmpty() && (Set.of("humanTask","processTask","caseTask","userEventListener","timerEventListener").contains(definition.getLocalName()) || stageHuman))
                 initialHuman = true;
             for (var criterion : children(item)) {
                 if ("itemControl".equals(criterion.getLocalName())) continue;
@@ -475,16 +554,16 @@ public class CmmnSubsetValidator {
         }
         for (var item : discretionary) {
             var definition = ids.get(item.getAttribute("definitionRef"));
-            if (definition == null || definition.getParentNode() != plan || !Set.of("humanTask","processTask").contains(definition.getLocalName()))
-                throw invalid("Discretionary item " + item.getAttribute("id") + " must reference a human task or workflow task defined in its own stage.");
+            if (definition == null || definition.getParentNode() != plan || !Set.of("humanTask","processTask","caseTask").contains(definition.getLocalName()))
+                throw invalid("Discretionary item " + item.getAttribute("id") + " must reference a human, workflow or case task defined in its own stage.");
             if (!used.add(definition.getAttribute("id")))
                 throw invalid("Each task definition may be planned or instantiated only once in this subset.");
             if (repeated(item, definition))
                 throw invalid("Discretionary item " + item.getAttribute("id") + " cannot repeat: it is planned once per stage instance.");
-            if ("processTask".equals(definition.getLocalName())) {
+            if (CALLS.contains(definition.getLocalName())) {
                 var controls=new ArrayList<>(children(item,"itemControl")); controls.addAll(children(definition,"defaultControl"));
                 if (controls.stream().anyMatch(control->!children(control,"manualActivationRule").isEmpty()))
-                    throw invalid("Workflow task " + item.getAttribute("id") + " starts when planned; manual activation is not supported.");
+                    throw invalid("Workflow or case task " + item.getAttribute("id") + " starts when planned; manual activation is not supported.");
             }
         }
         for (var definition : children(plan)) {
@@ -492,14 +571,17 @@ public class CmmnSubsetValidator {
                 throw invalid("Every task, milestone or stage definition needs a plan item or discretionary item in its own stage (" + definition.getAttribute("id") + ").");
         }
         for (var sentry : children(plan, "sentry")) {
-            if (children(sentry, "planItemOnPart").isEmpty()) throw invalid("Empty sentries are unsupported.");
+            if (children(sentry, "planItemOnPart").isEmpty() && children(sentry, "ifPart").isEmpty()) throw invalid("Empty sentries are unsupported.");
+            if (children(sentry, "ifPart").size() > 1) throw invalid("Sentry " + sentry.getAttribute("id") + " may have only one if-part.");
+            for (var onPart : children(sentry)) if ("ifPart".equals(onPart.getLocalName()) && onPart != children(sentry).getLast())
+                throw invalid("The if-part of sentry " + sentry.getAttribute("id") + " must follow its on-parts.");
             for (var onPart : children(sentry, "planItemOnPart")) {
                 var source = ids.get(onPart.getAttribute("sourceRef"));
                 var events = children(onPart, "standardEvent");
                 if (source == null || source.getParentNode() != plan || !"planItem".equals(source.getLocalName()) || events.size() != 1)
                     throw invalid("Sentry " + sentry.getAttribute("id") + " must reference a plan item in its own stage.");
                 var sourceDefinition = ids.get(source.getAttribute("definitionRef"));
-                String expected = sourceDefinition != null && Set.of("milestone","userEventListener").contains(sourceDefinition.getLocalName()) ? "occur" : "complete";
+                String expected = sourceDefinition != null && Set.of("milestone","userEventListener","timerEventListener").contains(sourceDefinition.getLocalName()) ? "occur" : "complete";
                 if (!expected.equals(events.getFirst().getTextContent().trim()))
                     throw invalid("Sentries support task/stage completion or milestone/user event occurrence events (" + sentry.getAttribute("id") + ").");
             }
@@ -527,7 +609,7 @@ public class CmmnSubsetValidator {
         }
         String id = element.getAttribute("id");
         if (!id.isEmpty() && ids.putIfAbsent(id, element) != null) throw invalid("Duplicate CMMN ID: " + id);
-        if (Set.of("planItem","humanTask","processTask","process","sentry","case","stage","milestone","casePlanModel","role","userEventListener","discretionaryItem","planningTable").contains(kind) && id.isEmpty())
+        if (Set.of("planItem","humanTask","processTask","caseTask","timerEventListener","process","sentry","case","stage","milestone","casePlanModel","role","userEventListener","discretionaryItem","planningTable").contains(kind) && id.isEmpty())
             throw invalid("A required CMMN ID is missing on " + kind + ".");
         if (!id.isEmpty() && !id.matches("[A-Za-z_][A-Za-z0-9_.-]{0,63}"))
             throw invalid("CMMN ID " + id + " must start with a letter or underscore and use at most 64 letters, digits, '_', '.' or '-'.");
@@ -538,6 +620,13 @@ public class CmmnSubsetValidator {
         if (kind.equals("processTask") && (element.getAttribute("processRef").isEmpty()
                 || element.hasAttribute("isBlocking") && !"true".equals(element.getAttribute("isBlocking"))))
             throw invalid("Workflow task " + id + " needs a processRef and must be blocking.");
+        if (kind.equals("caseTask")) {
+            if (element.hasAttribute("isBlocking") && !"true".equals(element.getAttribute("isBlocking"))) throw invalid("Case task " + id + " must be blocking.");
+            caseKey(element);
+        }
+        if (kind.equals("timerEventListener") && children(element, "timerExpression").size() != 1)
+            throw invalid("Timer " + id + " needs exactly one timerExpression.");
+        if (kind.equals("timerExpression")) timerDuration(element);
         if (kind.equals("planItem") || kind.equals("discretionaryItem")) {
             boolean criterion=false;
             for(var child:children(element)) {
@@ -558,7 +647,7 @@ public class CmmnSubsetValidator {
             if ("milestone".equals(controlled.getLocalName()) && !children(element,"manualActivationRule").isEmpty())
                 throw invalid("Milestones cannot be manually activated.");
         }
-        if (Set.of("planItem","discretionaryItem","humanTask","processTask","stage","milestone").contains(kind)
+        if (Set.of("planItem","discretionaryItem","humanTask","processTask","caseTask","stage","milestone").contains(kind)
                 && (children(element,"itemControl").size()>1 || children(element,"defaultControl").size()>1))
             throw invalid("A plan item or definition may have only one control.");
         if (Set.of("repetitionRule","manualActivationRule","requiredRule").contains(kind) && children(element,"condition").size()>1)
@@ -568,6 +657,11 @@ public class CmmnSubsetValidator {
         if (kind.equals("condition") && "repetitionRule".equals(element.getParentNode().getLocalName())) {
             if(!element.getTextContent().strip().matches("\\$\\{repetitionCounter < (?:[2-9]|[12][0-9]|30)\\}"))
                 throw invalid("Use a finite repetitionCounter < N condition with N from 2 to 30.");
+        } else if (kind.equals("condition") && "ifPart".equals(element.getParentNode().getLocalName())) {
+            if (!CONDITION.matcher(element.getTextContent().strip()).matches())
+                throw invalid("If-part conditions compare case data fields with literals, for example ${cd_amount > 5000 && cd_region == 'EU'}; nothing else is evaluated.");
+        } else if (kind.equals("timerExpression")) {
+            // Checked by timerDuration.
         } else if (kind.equals("condition")) {
             if (!Set.of("${true}","${false}").contains(element.getTextContent().strip()))
                 throw invalid("Item controls currently support only constant boolean conditions.");
@@ -682,7 +776,7 @@ public class CmmnSubsetValidator {
         for (int i = 0; i < nodes.getLength(); i++) {
             Node node = nodes.item(i);
             if (node instanceof Element element) result.add(element);
-            else if (node.getNodeType() == Node.TEXT_NODE && !node.getTextContent().isBlank() && !Set.of("standardEvent","condition").contains(parent.getLocalName()))
+            else if (node.getNodeType() == Node.TEXT_NODE && !node.getTextContent().isBlank() && !Set.of("standardEvent","condition","timerExpression").contains(parent.getLocalName()))
                 throw invalid("Unexpected CMMN text.");
         }
         return result;

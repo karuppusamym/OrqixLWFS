@@ -36,22 +36,26 @@ import com.orqix.shared.web.Sql;
 @Service
 public class CaseService {
     public record Definition(UUID id, String key, String name, int version, Instant createdAt, List<CaseDataModel.Field> dataFields, ApplicationViewQueries.Pinned viewBinding) {}
-    public record DefinitionDetail(UUID id, String key, String name, int version, Instant createdAt, String sourceXml, List<CaseDataModel.Field> dataFields, ApplicationViewQueries.Pinned viewBinding, List<WorkflowPin> workflowTasks) {}
+    public record DefinitionDetail(UUID id, String key, String name, int version, Instant createdAt, String sourceXml, List<CaseDataModel.Field> dataFields, ApplicationViewQueries.Pinned viewBinding, List<WorkflowPin> workflowTasks, List<ChildPin> caseTasks) {}
+    /** The child case definition version a case task starts, pinned at publication, with explicit data mappings. */
+    public record ChildPin(String taskId, UUID childDefinitionId, String childKey, String childName, int childVersion,
+            Map<String,String> inputMapping, Map<String,String> resultMapping) {}
     /** Explicit mappings of one workflow task: workflow input field from case data field, case data field from workflow result. */
     public record WorkflowTaskMapping(String taskId, Map<String,String> inputMapping, Map<String,String> resultMapping) {}
     /** The release a workflow task of a published definition runs, pinned at publication. */
     public record WorkflowPin(String taskId, UUID workflowId, String workflowKey, String workflowName, UUID releaseId,
             int releaseNumber, Map<String,String> inputMapping, Map<String,String> resultMapping) {}
     /** The latest attempt to run the workflow of an active or finished workflow task. */
-    public record WorkflowStatus(int attempt, String status, UUID runId, String reference, String outcome, String detail) {}
+    public record WorkflowStatus(int attempt, String status, UUID runId, String reference, String outcome, String detail, UUID caseId) {}
     public record Task(String id, String name, String status, List<String> candidateGroups, boolean eligible) {}
     public record Instance(UUID id, UUID definitionId, int definitionVersion, String status, int version,
             List<Task> tasks, Instant createdAt, Boolean canRead) {}
     public record Result<T>(T value, boolean replayed) {}
-    public record CreateDefinition(String key, String name, String sourceXml, List<CaseDataModel.Field> dataFields, ApplicationViewQueries.Pin viewRef, List<WorkflowTaskMapping> workflowTasks) {
-        public CreateDefinition(String key,String name,String sourceXml,List<CaseDataModel.Field> dataFields,ApplicationViewQueries.Pin viewRef) { this(key,name,sourceXml,dataFields,viewRef,null); }
-        public CreateDefinition(String key,String name,String sourceXml,List<CaseDataModel.Field> dataFields) { this(key,name,sourceXml,dataFields,null,null); }
-        public CreateDefinition(String key,String name,String sourceXml) { this(key,name,sourceXml,null,null,null); }
+    public record CreateDefinition(String key, String name, String sourceXml, List<CaseDataModel.Field> dataFields, ApplicationViewQueries.Pin viewRef, List<WorkflowTaskMapping> workflowTasks, List<WorkflowTaskMapping> caseTasks) {
+        public CreateDefinition(String key,String name,String sourceXml,List<CaseDataModel.Field> dataFields,ApplicationViewQueries.Pin viewRef,List<WorkflowTaskMapping> workflowTasks) { this(key,name,sourceXml,dataFields,viewRef,workflowTasks,null); }
+        public CreateDefinition(String key,String name,String sourceXml,List<CaseDataModel.Field> dataFields,ApplicationViewQueries.Pin viewRef) { this(key,name,sourceXml,dataFields,viewRef,null,null); }
+        public CreateDefinition(String key,String name,String sourceXml,List<CaseDataModel.Field> dataFields) { this(key,name,sourceXml,dataFields,null,null,null); }
+        public CreateDefinition(String key,String name,String sourceXml) { this(key,name,sourceXml,null,null,null,null); }
     }
     public record StartCase(tools.jackson.databind.JsonNode data) {
         @Override public String toString() { return "Start case [data redacted]"; }
@@ -85,7 +89,7 @@ public class CaseService {
     private record DefinitionRow(UUID id, UUID workspaceId, String key, String name, int version,
             Instant createdAt, String sourceXml, String engineDefinitionId, List<CaseDataModel.Field> dataFields, ApplicationViewQueries.Pinned viewBinding) {
         Definition summary() { return new Definition(id, key, name, version, createdAt, dataFields, viewBinding); }
-        DefinitionDetail detail(List<WorkflowPin> pins) { return new DefinitionDetail(id, key, name, version, createdAt, sourceXml, dataFields, viewBinding, pins); }
+        DefinitionDetail detail(List<WorkflowPin> pins, List<ChildPin> children) { return new DefinitionDetail(id, key, name, version, createdAt, sourceXml, dataFields, viewBinding, pins, children); }
     }
     private record InstanceRow(UUID id, UUID definitionId, int definitionVersion, String engineInstanceId,
             String status, int version, Instant createdAt, UUID startedBy) {}
@@ -142,6 +146,11 @@ public class CaseService {
         if (found != groups.size())
             throw new ApiException(ProblemCode.VALIDATION_FAILED, "Every candidate group must exist in this workspace.");
         var pins = pinWorkflows(ws, xml, dataFields, request.workflowTasks());
+        var childPins = pinChildCases(ws, request.key(), xml, dataFields, request.caseTasks());
+        var keys = dataFields.stream().map(CaseDataModel.Field::key).collect(java.util.stream.Collectors.toSet());
+        for (String field : validator.conditionFields(xml))
+            if (!keys.contains(field)) throw new ApiException(ProblemCode.VALIDATION_FAILED, "An if-part reads case data field " + field + ", which this definition does not declare.");
+        boolean hasTimers = !validator.timers(xml).isEmpty();
         UUID catalog = Ids.newId();
         jdbc.sql("INSERT INTO case_catalog(id,workspace_id,key) VALUES(:id,:ws,:key) ON CONFLICT (workspace_id,key) DO NOTHING")
                 .param("id",catalog).param("ws",ws).param("key",request.key()).update();
@@ -165,9 +174,9 @@ public class CaseService {
         catch (Exception ex) { throw new IllegalStateException(ex); }
         jdbc.sql("""
                 INSERT INTO case_definition(id,workspace_id,catalog_id,version,name,source_xml,source_sha256,
-                    engine_definition_id,engine_deployment_id,created_by,data_fields)
-                VALUES(:id,:ws,:catalog,:version,:name,:xml,:sha,:engine,:deployment,:actor,CAST(:fields AS jsonb))
-                """)
+                    engine_definition_id,engine_deployment_id,created_by,data_fields,has_timers)
+                VALUES(:id,:ws,:catalog,:version,:name,:xml,:sha,:engine,:deployment,:actor,CAST(:fields AS jsonb),:timers)
+                """).param("timers",hasTimers)
                 .param("id",id).param("ws",ws).param("catalog",existing.getKey()).param("version",version)
                 .param("name",request.name().strip()).param("xml",xml).param("sha",sha)
                 .param("engine",engineDefinition.getId()).param("deployment",deployment.getId())
@@ -179,6 +188,11 @@ public class CaseService {
                 VALUES(:ws,:id,:task,:workflow,:release,CAST(:input AS jsonb),CAST(:result AS jsonb))
                 """).param("ws",ws).param("id",id).param("task",pin.taskId()).param("workflow",pin.workflowId())
                 .param("release",pin.releaseId()).param("input",json.write(pin.inputMapping())).param("result",json.write(pin.resultMapping())).update();
+        for (var pin : childPins) jdbc.sql("""
+                INSERT INTO case_definition_child(workspace_id,definition_id,task_id,child_definition_id,input_mapping,result_mapping)
+                VALUES(:ws,:id,:task,:child,CAST(:input AS jsonb),CAST(:result AS jsonb))
+                """).param("ws",ws).param("id",id).param("task",pin.taskId()).param("child",pin.childDefinitionId())
+                .param("input",json.write(pin.inputMapping())).param("result",json.write(pin.resultMapping())).update();
         jdbc.sql("UPDATE case_catalog SET current_version=:v WHERE id=:id")
                 .param("v",version).param("id",existing.getKey()).update();
         audit.write(new AuditWriter.Entry(ws,AuditWriter.ActorType.USER,caller.subjectId(),"case.definition.created",
@@ -241,6 +255,87 @@ public class CaseService {
         return List.copyOf(pins);
     }
 
+    /** Every case task names a published case definition of this workspace; its current version is pinned with checked mappings. */
+    private List<ChildPin> pinChildCases(UUID ws, String parentKey, String xml, List<CaseDataModel.Field> fields, List<WorkflowTaskMapping> mappings) {
+        var tasks = validator.caseTasks(xml);
+        var byTask = new java.util.LinkedHashMap<String,WorkflowTaskMapping>();
+        for (var mapping : mappings == null ? List.<WorkflowTaskMapping>of() : mappings)
+            if (mapping == null || mapping.taskId() == null || byTask.put(mapping.taskId(), mapping) != null)
+                throw new ApiException(ProblemCode.VALIDATION_FAILED, "Give each case task one mapping.");
+        if (!byTask.keySet().equals(tasks.keySet()))
+            throw new ApiException(ProblemCode.VALIDATION_FAILED, "Case task mappings must match the case tasks of the model exactly: " + tasks.keySet() + ".");
+        var parentTypes = types(fields);
+        var pins = new ArrayList<ChildPin>();
+        for (var task : tasks.entrySet()) {
+            if (task.getValue().equals(parentKey)) throw new ApiException(ProblemCode.VALIDATION_FAILED, "A case cannot start itself.");
+            var child = jdbc.sql("""
+                    SELECT d.id FROM case_definition d JOIN case_catalog c ON c.workspace_id=d.workspace_id AND c.id=d.catalog_id
+                    WHERE d.workspace_id=:ws AND c.key=:key AND d.version=c.current_version
+                    """).param("ws",ws).param("key",task.getValue()).query(UUID.class).optional()
+                    .orElseThrow(() -> new ApiException(ProblemCode.VALIDATION_FAILED, "Case task " + task.getKey() + " names case \"" + task.getValue() + "\", which has no published definition in this workspace."));
+            var childDefinition = definition(ws, child);
+            var childTypes = types(childDefinition.dataFields());
+            var mapping = byTask.get(task.getKey());
+            var input = mapping.inputMapping() == null ? Map.<String,String>of() : Map.copyOf(mapping.inputMapping());
+            var result = mapping.resultMapping() == null ? Map.<String,String>of() : Map.copyOf(mapping.resultMapping());
+            for (var e : input.entrySet()) {
+                String to = childTypes.get(e.getKey()), from = parentTypes.get(e.getValue());
+                if (to == null || from == null || !compatible(from, to))
+                    throw new ApiException(ProblemCode.VALIDATION_FAILED, "Case task " + task.getKey() + " cannot fill child field " + e.getKey() + " from " + e.getValue() + ".");
+            }
+            for (var field : childDefinition.dataFields())
+                if (Boolean.TRUE.equals(field.required()) && !input.containsKey(field.key()))
+                    throw new ApiException(ProblemCode.VALIDATION_FAILED, "Case task " + task.getKey() + " must fill the required field " + field.key() + " of \"" + childDefinition.name() + "\".");
+            for (var e : result.entrySet()) {
+                String to = parentTypes.get(e.getKey()), from = "outcome".equals(e.getValue()) ? "string" : childTypes.get(e.getValue());
+                if (to == null || from == null || !compatible(from, to))
+                    throw new ApiException(ProblemCode.VALIDATION_FAILED, "Case task " + task.getKey() + " cannot write " + e.getKey() + " from child field " + e.getValue() + ".");
+            }
+            pins.add(new ChildPin(task.getKey(), child, task.getValue(), childDefinition.name(), childDefinition.version(),
+                    new java.util.TreeMap<>(input), new java.util.TreeMap<>(result)));
+        }
+        return List.copyOf(pins);
+    }
+
+    private static Map<String,String> types(List<CaseDataModel.Field> fields) {
+        var types = new java.util.HashMap<String,String>();
+        for (var field : fields) types.put(field.key(), switch (field.type()) { case "text","date","choice" -> "string"; default -> field.type(); });
+        return types;
+    }
+
+    private List<ChildPin> childPins(UUID ws, UUID definitionId) {
+        return jdbc.sql("""
+                SELECT p.task_id,p.child_definition_id,c.key,d.name,d.version,p.input_mapping::text AS input,p.result_mapping::text AS result
+                FROM case_definition_child p JOIN case_definition d ON d.workspace_id=p.workspace_id AND d.id=p.child_definition_id
+                JOIN case_catalog c ON c.workspace_id=d.workspace_id AND c.id=d.catalog_id
+                WHERE p.workspace_id=:ws AND p.definition_id=:id ORDER BY p.task_id
+                """).param("ws",ws).param("id",definitionId).query((rs,n)->new ChildPin(rs.getString("task_id"),Sql.uuid(rs,"child_definition_id"),
+                        rs.getString("key"),rs.getString("name"),rs.getInt("version"),stringMap(rs.getString("input")),stringMap(rs.getString("result")))).list();
+    }
+
+    /** Engine variables cd_<field> for the fields if-parts read; every other field stays out of the engine. */
+    private Map<String,Object> conditionVariables(UUID ws, UUID definitionId, tools.jackson.databind.JsonNode data) {
+        var out = new java.util.HashMap<String,Object>();
+        for (String field : validator.conditionFields(source(ws, definitionId))) {
+            var value = data == null ? null : data.get(field);
+            out.put("cd_" + field, value == null || value.isNull() ? null : value.isNumber() ? value.decimalValue()
+                    : value.isBoolean() ? (Object) value.asBoolean() : value.asString());
+        }
+        return out;
+    }
+
+    /** After case data changed: mirror the fields if-parts read and let the engine evaluate data-triggered sentries. */
+    private void afterDataChange(UUID ws, UUID caseId, tools.jackson.databind.JsonNode values, UUID actor) {
+        var row = instanceRow(ws, caseId, false);
+        var variables = conditionVariables(ws, row.definitionId(), values);
+        if (variables.isEmpty() || !row.status().equals("active")) return;
+        runtime.setVariables(row.engineInstanceId(), variables);
+        runtime.evaluateCriteria(row.engineInstanceId());
+        if (runtime.createCaseInstanceQuery().caseInstanceId(row.engineInstanceId()).singleResult() == null)
+            jdbc.sql("UPDATE case_instance SET status='completed',completed_at=now() WHERE workspace_id=:ws AND id=:id").param("ws",ws).param("id",caseId).update();
+        else dispatchWorkflows(ws, caseId, actor);
+    }
+
     private static boolean compatible(String from, String to) {
         return from.equals(to) || "integer".equals(from) && "number".equals(to);
     }
@@ -279,7 +374,7 @@ public class CaseService {
     @Transactional(readOnly=true)
     public DefinitionDetail definition(Caller caller, UUID ws, UUID id) {
         access(caller,ws,Permission.WORKFLOW_EDIT,"getCaseDefinition");
-        return definition(ws,id).detail(pins(ws,id));
+        return definition(ws,id).detail(pins(ws,id),childPins(ws,id));
     }
 
     private DefinitionRow definition(UUID ws, UUID id) {
@@ -322,7 +417,8 @@ public class CaseService {
         }
         UUID id=Ids.newId();
         var engine=runtime.createCaseInstanceBuilder().caseDefinitionId(definition.engineDefinitionId())
-                .tenantId(access.workspace().engineTenantId()).businessKey(id.toString()).start();
+                .tenantId(access.workspace().engineTenantId()).businessKey(id.toString())
+                .variables(conditionVariables(ws,definitionId,initialData)).start();
         boolean engineActive = runtime.createCaseInstanceQuery().caseInstanceId(engine.getId()).singleResult()!=null;
         jdbc.sql("INSERT INTO case_instance(id,workspace_id,definition_id,engine_instance_id,status,started_by,completed_at,data_values) VALUES(:id,:ws,:definition,:engine,:status,:actor,CASE WHEN :active THEN NULL ELSE now() END,CAST(:data AS jsonb))")
                 .param("id",id).param("ws",ws).param("definition",definitionId).param("engine",engine.getId())
@@ -390,7 +486,8 @@ public class CaseService {
         var row = instanceRow(ws, id, false);
         if (!canRead(row, access)) throw ApiException.notFound();
         var planners = discretionary(row, ws);
-        var workflowIds = workflowTaskIds(row, ws);
+        var workflowIds = callTaskIds(row, ws);
+        var childIds = childTaskIds(row, ws);
         var statuses = workflowIds.isEmpty() ? Map.<String,WorkflowStatus>of() : workflowStatuses(ws, id);
         var items = history.createHistoricPlanItemInstanceQuery().planItemInstanceCaseInstanceId(row.engineInstanceId())
                 .list().stream().map(item -> {
@@ -402,7 +499,7 @@ public class CaseService {
                             actions(row,item.getId(),access), null);
                     boolean workflow = workflowIds.contains(item.getPlanItemDefinitionId());
                     return new PlanItem(item.getId(), item.getElementId(), item.getName(),
-                        workflow ? "processTask" : item.getPlanItemDefinitionType(), item.getState(), item.getStageInstanceId(),
+                        workflow ? (childIds.contains(item.getPlanItemDefinitionId()) ? "caseTask" : "processTask") : item.getPlanItemDefinitionType(), item.getState(), item.getStageInstanceId(),
                         instant(item.getCreateTime()), instant(item.getEndedTime()), required(row,item.getElementId(),access.workspaceId()), actions(row,item.getId(),access),
                         workflow ? statuses.get(item.getId()) : null);
                 })
@@ -580,7 +677,7 @@ public class CaseService {
                 && access.has(Permission.TASK_ACT) && userEventGroups(row,access.workspaceId()).getOrDefault(item.getPlanItemDefinitionId(),Set.of()).stream().anyMatch(access.groupKeys()::contains);
         boolean operator=access.has(Permission.RUN_OPERATE);
         boolean planner=discretionary(row,access.workspaceId()).containsKey(item.getPlanItemDefinitionId());
-        boolean workflow=workflowTaskIds(row,access.workspaceId()).contains(item.getPlanItemDefinitionId());
+        boolean workflow=callTaskIds(row,access.workspaceId()).contains(item.getPlanItemDefinitionId());
         String latest=workflow?latestStatus(access.workspaceId(),itemId):null;
         var result=new java.util.LinkedHashMap<String,Boolean>();
         result.put("occur",eventWorker && !planner && "available".equals(item.getState()));
@@ -610,6 +707,16 @@ public class CaseService {
                 .param("ws",ws).param("id",row.definitionId()).query(String.class).list());
     }
 
+    private Set<String> childTaskIds(InstanceRow row,UUID ws) {
+        return Set.copyOf(jdbc.sql("SELECT task_id FROM case_definition_child WHERE workspace_id=:ws AND definition_id=:id")
+                .param("ws",ws).param("id",row.definitionId()).query(String.class).list());
+    }
+
+    /** Workflow tasks and case tasks: blocking tasks Orqix drives by starting a run or a child case. */
+    private Set<String> callTaskIds(InstanceRow row,UUID ws) {
+        var all=new java.util.HashSet<>(workflowTaskIds(row,ws)); all.addAll(childTaskIds(row,ws)); return Set.copyOf(all);
+    }
+
     // ---------------------------------------------------------------- workflow tasks (WM04, S110)
 
     private int latestAttempt(UUID ws,String planItemInstanceId) {
@@ -625,11 +732,11 @@ public class CaseService {
     private Map<String,WorkflowStatus> workflowStatuses(UUID ws,UUID caseId) {
         var out=new java.util.HashMap<String,WorkflowStatus>();
         jdbc.sql("""
-                SELECT DISTINCT ON (t.plan_item_instance_id) t.plan_item_instance_id,t.attempt,t.status,t.run_id,r.reference,t.outcome,t.detail
+                SELECT DISTINCT ON (t.plan_item_instance_id) t.plan_item_instance_id,t.attempt,t.status,t.run_id,r.reference,t.outcome,t.detail,t.child_case_id
                 FROM case_workflow_task t LEFT JOIN workflow_run r ON r.workspace_id=t.workspace_id AND r.id=t.run_id
                 WHERE t.workspace_id=:ws AND t.case_id=:id ORDER BY t.plan_item_instance_id,t.attempt DESC
                 """).param("ws",ws).param("id",caseId).query((rs,n)->Map.entry(rs.getString(1),new WorkflowStatus(rs.getInt("attempt"),
-                        rs.getString("status"),Sql.uuid(rs,"run_id"),rs.getString("reference"),rs.getString("outcome"),rs.getString("detail"))))
+                        rs.getString("status"),Sql.uuid(rs,"run_id"),rs.getString("reference"),rs.getString("outcome"),rs.getString("detail"),Sql.uuid(rs,"child_case_id"))))
                 .list().forEach(e->out.put(e.getKey(),e.getValue()));
         return out;
     }
@@ -653,7 +760,7 @@ public class CaseService {
     private void dispatchWorkflows(UUID ws,UUID caseId,UUID actor) {
         var row=instanceRow(ws,caseId,false);
         if(!row.status().equals("active")) return;
-        var taskIds=workflowTaskIds(row,ws);
+        var taskIds=callTaskIds(row,ws);
         if(taskIds.isEmpty()) return;
         var active=new java.util.HashMap<String,String>();
         for(var item:runtime.createPlanItemInstanceQuery().caseInstanceId(row.engineInstanceId()).planItemInstanceStateActive().list())
@@ -667,6 +774,7 @@ public class CaseService {
 
     private void startWorkflowAttempt(UUID ws,UUID caseId,String planItemInstanceId,String taskId,int attempt,UUID actor) {
         var row=instanceRow(ws,caseId,false);
+        if(childTaskIds(row,ws).contains(taskId)) { startChildAttempt(ws,row,planItemInstanceId,taskId,attempt,actor); return; }
         var pin=pins(ws,row.definitionId()).stream().filter(p->p.taskId().equals(taskId)).findFirst().orElseThrow();
         var data=json.parse(jdbc.sql("SELECT data_values::text FROM case_instance WHERE workspace_id=:ws AND id=:id")
                 .param("ws",ws).param("id",caseId).query(String.class).single());
@@ -687,18 +795,107 @@ public class CaseService {
         }
     }
 
+    /** Starts the pinned child case of an active case task, on behalf of the parent's starter. */
+    private void startChildAttempt(UUID ws,InstanceRow parent,String planItemInstanceId,String taskId,int attempt,UUID actor) {
+        var pin=childPins(ws,parent.definitionId()).stream().filter(p->p.taskId().equals(taskId)).findFirst().orElseThrow();
+        var data=json.parse(jdbc.sql("SELECT data_values::text FROM case_instance WHERE workspace_id=:ws AND id=:id")
+                .param("ws",ws).param("id",parent.id()).query(String.class).single());
+        int depth=jdbc.sql("SELECT depth FROM case_instance WHERE workspace_id=:ws AND id=:id").param("ws",ws).param("id",parent.id()).query(Integer.class).single();
+        var input=json.object();
+        pin.inputMapping().forEach((field,source)->{ var value=data.get(source); if(value!=null && !value.isNull()) input.set(field,value); });
+        UUID taskRow=Ids.newId();
+        String problem=null;
+        tools.jackson.databind.JsonNode childData=null;
+        var child=definition(ws,pin.childDefinitionId());
+        if(depth>=3) problem="Cases can be nested at most three levels deep.";
+        else try { childData=dataModel.values(child.dataFields(),input); }
+        catch(ApiException ex) { problem="The case data mapped to \""+child.name()+"\" does not fit it: "+ex.getMessage(); }
+        if(problem!=null) {
+            jdbc.sql("INSERT INTO case_workflow_task(id,workspace_id,case_id,plan_item_instance_id,task_id,attempt,status,detail,ended_at) VALUES(:id,:ws,:case,:item,:task,:attempt,'failed',:detail,now())")
+                    .param("id",taskRow).param("ws",ws).param("case",parent.id()).param("item",planItemInstanceId).param("task",taskId)
+                    .param("attempt",attempt).param("detail",truncate(problem)).update();
+            systemEvent(ws,parent.id(),"childCaseNotStarted",planItemInstanceId,actor,null);
+            return;
+        }
+        UUID id=Ids.newId();
+        String tenant=jdbc.sql("SELECT engine_tenant_id FROM workspace WHERE id=:ws").param("ws",ws).query(String.class).single();
+        var engine=runtime.createCaseInstanceBuilder().caseDefinitionId(child.engineDefinitionId()).tenantId(tenant).businessKey(id.toString())
+                .variables(conditionVariables(ws,child.id(),childData)).start();
+        boolean active=runtime.createCaseInstanceQuery().caseInstanceId(engine.getId()).singleResult()!=null;
+        jdbc.sql("""
+                INSERT INTO case_instance(id,workspace_id,definition_id,engine_instance_id,status,started_by,completed_at,data_values,parent_case_id,parent_plan_item_id,depth)
+                VALUES(:id,:ws,:definition,:engine,:status,:actor,CASE WHEN :active THEN NULL ELSE now() END,CAST(:data AS jsonb),:parent,:item,:depth)
+                """).param("id",id).param("ws",ws).param("definition",child.id()).param("engine",engine.getId()).param("status",active?"active":"completed")
+                .param("actor",parent.startedBy()).param("active",active).param("data",json.write(childData)).param("parent",parent.id())
+                .param("item",planItemInstanceId).param("depth",depth+1).update();
+        appendEvent(ws,id,1,"started",null,null,active?"active":"completed",parent.startedBy(),null);
+        appendDataEvent(ws,id,1,json.object(),childData);
+        jdbc.sql("INSERT INTO case_workflow_task(id,workspace_id,case_id,plan_item_instance_id,task_id,attempt,child_case_id,status) VALUES(:id,:ws,:case,:item,:task,:attempt,:child,'running')")
+                .param("id",taskRow).param("ws",ws).param("case",parent.id()).param("item",planItemInstanceId).param("task",taskId)
+                .param("attempt",attempt).param("child",id).update();
+        systemEvent(ws,parent.id(),"childCaseStarted",planItemInstanceId,actor,null);
+        audit.write(new AuditWriter.Entry(ws,AuditWriter.ActorType.SYSTEM,null,"case.instance.started","caseInstance",id.toString(),
+                AuditWriter.Outcome.SUCCESS,Map.of("definitionId",child.id().toString(),"version",child.version())));
+        if(active) dispatchWorkflows(ws,id,parent.startedBy());
+    }
+
+    /** Ends a child case (and what it started) because its parent task or case ended. */
+    private void terminateChildCase(UUID ws,UUID childId,String reason) {
+        var child=instanceRow(ws,childId,true);
+        if(!Set.of("active","suspended").contains(child.status())) return;
+        if(runtime.createCaseInstanceQuery().caseInstanceId(child.engineInstanceId()).singleResult()!=null) runtime.terminateCaseInstance(child.engineInstanceId());
+        cancelWorkflowRuns(ws,childId,null,reason);
+        jdbc.sql("UPDATE case_instance SET version=version+1,status='terminated',completed_at=now() WHERE workspace_id=:ws AND id=:id").param("ws",ws).param("id",childId).update();
+        jdbc.sql("INSERT INTO case_termination(workspace_id,case_id,reason,terminated_by) VALUES(:ws,:id,:reason,:actor)")
+                .param("ws",ws).param("id",childId).param("reason",reason).param("actor",child.startedBy()).update();
+        appendEvent(ws,childId,child.version()+1,"terminated",null,child.status(),"terminated",child.startedBy(),reason);
+    }
+
+    // ---------------------------------------------------------------- timers (S113)
+
+    @Transactional(readOnly=true)
+    public List<UUID[]> casesWithTimers(int limit) {
+        return jdbc.sql("""
+                SELECT i.workspace_id,i.id FROM case_instance i JOIN case_definition d ON d.workspace_id=i.workspace_id AND d.id=i.definition_id
+                WHERE d.has_timers AND i.status='active' ORDER BY i.created_at LIMIT :limit
+                """).param("limit",limit).query((rs,n)->new UUID[]{Sql.uuid(rs,"workspace_id"),Sql.uuid(rs,"id")}).list();
+    }
+
+    /**
+     * Records timer occurrences the engine fired on its own (in its job executor, outside any Orqix command) in the
+     * case history, then starts the work they released. Each occurrence is recorded once.
+     */
+    @Transactional
+    public int syncTimers(UUID ws,UUID caseId) {
+        var row=instanceRow(ws,caseId,true);
+        if(!row.status().equals("active")) return 0;
+        var recorded=new java.util.HashSet<>(jdbc.sql("SELECT plan_item_id FROM case_event WHERE workspace_id=:ws AND case_id=:id AND action='timerOccurred'")
+                .param("ws",ws).param("id",caseId).query(String.class).list());
+        int added=0;
+        for(var item:history.createHistoricPlanItemInstanceQuery().planItemInstanceCaseInstanceId(row.engineInstanceId()).list()) {
+            if(!"timereventlistener".equalsIgnoreCase(item.getPlanItemDefinitionType()) || !"completed".equals(item.getState()) || recorded.contains(item.getId())) continue;
+            systemEvent(ws,caseId,"timerOccurred",item.getId(),row.startedBy(),null);
+            added++;
+        }
+        if(added==0) return 0;
+        if(runtime.createCaseInstanceQuery().caseInstanceId(row.engineInstanceId()).singleResult()==null)
+            jdbc.sql("UPDATE case_instance SET status='completed',completed_at=now() WHERE workspace_id=:ws AND id=:id").param("ws",ws).param("id",caseId).update();
+        else dispatchWorkflows(ws,caseId,row.startedBy());
+        return added;
+    }
+
     private static String truncate(String value) { return value==null?null:value.length()>1000?value.substring(0,1000):value; }
 
     /** Cancels running workflows of one plan item (or of the whole case when planItemInstanceId is null). */
     private void cancelWorkflowRuns(UUID ws,UUID caseId,String planItemInstanceId,String reason) {
-        var running=jdbc.sql("SELECT id,run_id FROM case_workflow_task WHERE workspace_id=:ws AND case_id=:id AND status='running'"
+        var running=jdbc.sql("SELECT id,run_id,child_case_id FROM case_workflow_task WHERE workspace_id=:ws AND case_id=:id AND status='running'"
                         +(planItemInstanceId==null?"":" AND plan_item_instance_id=:item")+" FOR UPDATE")
                 .param("ws",ws).param("id",caseId);
         if(planItemInstanceId!=null) running=running.param("item",planItemInstanceId);
-        for(var task:running.query((rs,n)->Map.entry(Sql.uuid(rs,"id"),Sql.uuid(rs,"run_id"))).list()) {
-            workflowRuns.cancel(ws,task.getValue(),reason);
+        for(var task:running.query((rs,n)->new UUID[]{Sql.uuid(rs,"id"),Sql.uuid(rs,"run_id"),Sql.uuid(rs,"child_case_id")}).list()) {
+            if(task[2]!=null) terminateChildCase(ws,task[2],reason); else workflowRuns.cancel(ws,task[1],reason);
             jdbc.sql("UPDATE case_workflow_task SET status='cancelled',detail=:detail,ended_at=now() WHERE id=:id")
-                    .param("id",task.getKey()).param("detail",reason).update();
+                    .param("id",task[0]).param("detail",reason).update();
         }
     }
 
@@ -721,16 +918,16 @@ public class CaseService {
         if(candidate.isEmpty()) return false;
         instanceRow(candidate.get()[0],candidate.get()[1],true);
         var pending=jdbc.sql("""
-                SELECT id,workspace_id,case_id,plan_item_instance_id,task_id,run_id FROM case_workflow_task
+                SELECT id,workspace_id,case_id,plan_item_instance_id,task_id,run_id,child_case_id FROM case_workflow_task
                 WHERE id=:id AND status='running' FOR UPDATE
                 """).param("id",workflowTaskId).query((rs,n)->new Object[]{Sql.uuid(rs,"id"),Sql.uuid(rs,"workspace_id"),Sql.uuid(rs,"case_id"),
-                        rs.getString("plan_item_instance_id"),rs.getString("task_id"),Sql.uuid(rs,"run_id")}).list();
+                        rs.getString("plan_item_instance_id"),rs.getString("task_id"),Sql.uuid(rs,"run_id"),Sql.uuid(rs,"child_case_id")}).list();
         boolean applied=false;
         for(var task:pending) {
-            UUID taskRow=(UUID)task[0],ws=(UUID)task[1],caseId=(UUID)task[2],runId=(UUID)task[5];
+            UUID taskRow=(UUID)task[0],ws=(UUID)task[1],caseId=(UUID)task[2],runId=(UUID)task[5],childId=(UUID)task[6];
             String itemId=(String)task[3];
             var row=instanceRow(ws,caseId,true);
-            var state=workflowRuns.state(ws,runId).orElse(null);
+            var state=childId!=null?childState(ws,childId):workflowRuns.state(ws,runId).orElse(null);
             if(state==null || state.active() || row.status().equals("suspended")) continue;
             var item=runtime.createPlanItemInstanceQuery().planItemInstanceId(itemId).singleResult();
             boolean itemActive=item!=null && "active".equals(item.getState());
@@ -742,16 +939,18 @@ public class CaseService {
                 continue;
             }
             if(!"completed".equals(state.lifecycle())) {
-                jdbc.sql("UPDATE case_workflow_task SET status='cancelled',detail='The workflow request was cancelled before it finished.',ended_at=now() WHERE id=:id")
-                        .param("id",taskRow).update();
-                systemEvent(ws,caseId,"workflowCancelled",itemId,row.startedBy(),null);
+                jdbc.sql("UPDATE case_workflow_task SET status='cancelled',detail=:detail,ended_at=now() WHERE id=:id")
+                        .param("id",taskRow).param("detail",childId!=null?"The child case was terminated before it finished.":"The workflow request was cancelled before it finished.").update();
+                systemEvent(ws,caseId,childId!=null?"childCaseTerminated":"workflowCancelled",itemId,row.startedBy(),null);
                 applied=true;
                 continue;
             }
-            var pin=pins(ws,row.definitionId()).stream().filter(p->p.taskId().equals(task[4])).findFirst().orElseThrow();
+            Map<String,String> resultMapping=childId!=null
+                    ?childPins(ws,row.definitionId()).stream().filter(p->p.taskId().equals(task[4])).findFirst().orElseThrow().resultMapping()
+                    :pins(ws,row.definitionId()).stream().filter(p->p.taskId().equals(task[4])).findFirst().orElseThrow().resultMapping();
             var before=json.parse(jdbc.sql("SELECT data_values::text FROM case_instance WHERE workspace_id=:ws AND id=:id").param("ws",ws).param("id",caseId).query(String.class).single());
             var proposed=(tools.jackson.databind.node.ObjectNode)before.deepCopy();
-            pin.resultMapping().forEach((field,source)->{
+            resultMapping.forEach((field,source)->{
                 tools.jackson.databind.JsonNode value=switch(source) {
                     case "outcome" -> state.outcome()==null?null:tools.jackson.databind.node.JsonNodeFactory.instance.stringNode(state.outcome());
                     case "outcomeKind" -> state.outcomeKind()==null?null:tools.jackson.databind.node.JsonNodeFactory.instance.stringNode(state.outcomeKind());
@@ -769,7 +968,7 @@ public class CaseService {
                 applied=true;
                 continue;
             }
-            int version=systemEvent(ws,caseId,"workflowCompleted",itemId,row.startedBy(),null);
+            int version=systemEvent(ws,caseId,childId!=null?"childCaseCompleted":"workflowCompleted",itemId,row.startedBy(),null);
             if(!values.equals(before)) {
                 jdbc.sql("UPDATE case_instance SET data_values=CAST(:data AS jsonb) WHERE workspace_id=:ws AND id=:id")
                         .param("data",json.write(values)).param("ws",ws).param("id",caseId).update();
@@ -777,16 +976,32 @@ public class CaseService {
             }
             jdbc.sql("UPDATE case_workflow_task SET status='completed',outcome=:outcome,ended_at=now() WHERE id=:id")
                     .param("id",taskRow).param("outcome",state.outcome()).update();
+            if(!values.equals(before)) {
+                var variables=conditionVariables(ws,row.definitionId(),values);
+                if(!variables.isEmpty()) runtime.setVariables(row.engineInstanceId(),variables);
+            }
             runtime.triggerPlanItemInstance(itemId);
+            if(runtime.createCaseInstanceQuery().caseInstanceId(row.engineInstanceId()).singleResult()!=null) runtime.evaluateCriteria(row.engineInstanceId());
             boolean caseActive=runtime.createCaseInstanceQuery().caseInstanceId(row.engineInstanceId()).singleResult()!=null;
             if(!caseActive) jdbc.sql("UPDATE case_instance SET status='completed',completed_at=now() WHERE workspace_id=:ws AND id=:id")
                     .param("ws",ws).param("id",caseId).update();
             else dispatchWorkflows(ws,caseId,row.startedBy());
             audit.write(new AuditWriter.Entry(ws,AuditWriter.ActorType.SYSTEM,null,"case.workflow.completed","caseInstance",caseId.toString(),
-                    AuditWriter.Outcome.SUCCESS,Map.of("planItemId",itemId,"runId",runId.toString(),"version",version)));
+                    AuditWriter.Outcome.SUCCESS,Map.of("planItemId",itemId,"runId",(childId!=null?childId:runId).toString(),"version",version)));
             applied=true;
         }
         return applied;
+    }
+
+    /** A child case seen like a run: active while it works; completed with its data as the result; terminated as cancelled. */
+    private CaseWorkflowRuns.State childState(UUID ws,UUID childId) {
+        return jdbc.sql("SELECT status,data_values::text AS data FROM case_instance WHERE workspace_id=:ws AND id=:id")
+                .param("ws",ws).param("id",childId).query((rs,n)->{
+                    String status=rs.getString("status");
+                    boolean done="completed".equals(status);
+                    return new CaseWorkflowRuns.State(childId,null,done?"completed":"terminated".equals(status)?"cancelled":status,
+                            Set.of("active","suspended").contains(status),done?"Completed":null,done?"success":null,json.parse(rs.getString("data")));
+                }).optional().orElse(null);
     }
 
     /** Plan item states that are waiting rather than working; CMMN lets a plan with autoComplete=false complete over them. */
@@ -1007,6 +1222,7 @@ public class CaseService {
                 .param("data",json.write(values)).param("ws",ws).param("id",id).update();
         appendEvent(ws,id,row.version()+1,"dataUpdated",null,row.status(),row.status(),caller,request.reason().strip());
         appendDataEvent(ws,id,row.version()+1,before,values);
+        afterDataChange(ws,id,values,caller.subjectId());
         var changed=new java.util.TreeSet<String>(); before.propertyNames().forEach(changed::add);values.propertyNames().forEach(changed::add);
         changed.removeIf(field->java.util.Objects.equals(before.get(field),values.get(field)));
         audit.write(new AuditWriter.Entry(ws,AuditWriter.ActorType.USER,caller.subjectId(),"case.data.updated","caseInstance",id.toString(),AuditWriter.Outcome.SUCCESS,Map.of("version",row.version()+1,"fields",changed)));
@@ -1020,11 +1236,15 @@ public class CaseService {
     }
 
     private void appendEvent(UUID ws,UUID id,int version,String action,String itemId,String before,String after,Caller caller,String reason) {
+        appendEvent(ws,id,version,action,itemId,before,after,caller.subjectId(),reason);
+    }
+
+    private void appendEvent(UUID ws,UUID id,int version,String action,String itemId,String before,String after,UUID actor,String reason) {
         jdbc.sql("""
                 INSERT INTO case_event(workspace_id,case_id,version,action,plan_item_id,from_status,to_status,actor_subject_id,reason)
                 VALUES(:ws,:id,:version,:action,:item,:before,:after,:actor,:reason)
                 """).param("ws",ws).param("id",id).param("version",version).param("action",action).param("item",itemId)
-                .param("before",before).param("after",after).param("actor",caller.subjectId()).param("reason",reason).update();
+                .param("before",before).param("after",after).param("actor",actor).param("reason",reason).update();
     }
 
     private Instance replayed(IdempotencyService.Claim claim, WorkspaceAccess access) {

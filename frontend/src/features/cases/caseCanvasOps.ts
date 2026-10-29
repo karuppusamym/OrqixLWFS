@@ -83,7 +83,7 @@ export function connectionProblem(items: CaseModelItem[], sourceId: string, targ
   if (parentOf(items, sourceId) !== parentOf(items, targetId)) return 'Rules connect items of the same stage. Move both items into one stage first.'
   if (source.discretionary) return 'Rules cannot wait for a discretionary item.'
   if (target.discretionary) return 'A discretionary item starts when someone plans it, so it cannot have rules.'
-  if (target.kind === 'userEventListener') return 'A user event cannot have entry or exit rules.'
+  if (target.kind === 'userEventListener' || target.kind === 'timerEventListener') return 'A user event or timer cannot have entry or exit rules.'
   if (kind === 'exit') {
     if (target.kind === 'milestone') return 'A milestone cannot have an exit rule.'
     if (target.repetitions) return 'A repeated item cannot also have an exit rule.'
@@ -109,7 +109,7 @@ export function connect(items: CaseModelItem[], sourceId: string, targetId: stri
   return mapItems(items, item => {
     if (item.id !== targetId) return item
     if (kind === 'exit') return { ...item, exitAfter: sourceId }
-    if (!item.after) return { ...item, after: sourceId, repetitions: item.kind === 'humanTask' || item.kind === 'processTask' || item.kind === 'stage' || item.kind === 'milestone' ? item.repetitions : undefined }
+    if (!item.after) return { ...item, after: sourceId }
     return { ...item, afterAll: [...(item.afterAll ?? []), sourceId] }
   })
 }
@@ -122,7 +122,7 @@ export function disconnect(items: CaseModelItem[], sourceId: string, targetId: s
     const next: CaseModelItem = { ...item, after: remaining[0], afterAll: remaining.length > 1 ? remaining.slice(1) : undefined }
     if (!next.after) delete next.after
     if (!next.afterAll) delete next.afterAll
-    if (next.kind === 'milestone' && !next.after) delete next.repetitions
+    if (next.kind === 'milestone' && !next.after && !next.when) delete next.repetitions
     return next
   })
 }

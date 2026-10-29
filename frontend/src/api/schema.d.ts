@@ -4698,6 +4698,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/migrations/{migrationId}/pega-rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                migrationId: components["parameters"]["MigrationId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Inventory, effective-rule resolution and per-rule conversion results of a native Pega rule archive (docs/build/S112)
+         * @description Recomputed from the immutable archive bytes. Lists every archive entry with its SHA-256 and decoded identity or refusal reason, the application ruleset stack, each case context's class chain with the chosen and shadowed candidates of every rule key, and for every starting point the compatibility report and per-rule conversion results with target fragment hashes. After conversion, the recorded per-rule results of the converted starting point are included. 404 for other source formats.
+         */
+        get: operations["getPegaRuleArchive"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/migrations/{migrationId}/convert": {
         parameters: {
             query?: never;
@@ -4982,6 +5005,21 @@ export interface components {
             sourceXml: string;
             dataFields?: components["schemas"]["CaseDataField"][];
             workflowTasks?: components["schemas"]["CaseWorkflowTaskMapping"][];
+            /** @description One mapping per CMMN caseTask (caseRef prefix:key bound to urn:orqix:case); inputMapping is child field to parent field, resultMapping is parent field to child field or outcome */
+            caseTasks?: components["schemas"]["CaseWorkflowTaskMapping"][];
+        };
+        CaseChildPin: {
+            taskId: string;
+            childDefinitionId: components["schemas"]["Uuid"];
+            childKey: string;
+            childName: string;
+            childVersion: number;
+            inputMapping: {
+                [key: string]: string;
+            };
+            resultMapping: {
+                [key: string]: string;
+            };
         };
         /** @description Mapping of one CMMN processTask whose process names a workspace workflow (externalRef orqix:workflow:<key>). */
         CaseWorkflowTaskMapping: {
@@ -5010,6 +5048,8 @@ export interface components {
             };
         };
         CaseWorkflowStatus: {
+            /** @description The child case a case task started */
+            caseId: components["schemas"]["Uuid"] | null;
             attempt: number;
             /** @enum {string} */
             status: "running" | "completed" | "failed" | "cancelled" | "fenced";
@@ -5037,6 +5077,7 @@ export interface components {
             sourceXml: string;
             dataFields?: components["schemas"]["CaseDataField"][];
             workflowTasks?: components["schemas"]["CaseWorkflowPin"][];
+            caseTasks?: components["schemas"]["CaseChildPin"][];
         };
         CasePlanItem: {
             id: string;
@@ -8658,6 +8699,149 @@ export interface components {
             transcription: components["schemas"]["BlueprintTranscription"];
             report: components["schemas"]["CompatibilityReport"];
         };
+        PegaRuleArchive: {
+            migrationId: components["schemas"]["Uuid"];
+            /** @enum {string} */
+            status: "analyzed" | "converted" | "failed";
+            /** @description Decoder and resolver version */
+            decoder: string;
+            adapterVersion: string;
+            sourceSha256: string;
+            /** @description Rule-Application name and version declared in the archive; not proof of a certified Pega release */
+            application?: string | null;
+            /** @description Application ruleset stack in precedence order */
+            stack: {
+                name: string;
+                version: string;
+            }[];
+            archiveBlockers: {
+                code: string;
+                paths: string[];
+            }[];
+            entries: components["schemas"]["PegaRuleEntry"][];
+            contexts: components["schemas"]["PegaRuleContext"][];
+            startingPoints: components["schemas"]["PegaRuleStartingPoint"][];
+            convertedStartRule?: string | null;
+            /** @description Recorded per-rule results of the converted starting point (empty before conversion) */
+            conversion: {
+                rule: string;
+                startRule: string;
+                resolution: string;
+                /** @enum {string} */
+                conversion: "converted" | "review" | "blocked" | "notUsed" | "shadowed" | "supported";
+                targetKind?: string | null;
+                targets: string[];
+                targetSha256?: string | null;
+                reasons: string[];
+            }[];
+        };
+        PegaRuleEntry: {
+            path: string;
+            sha256: string;
+            /**
+             * @description delegation is a System-User-MyRules record kept as provenance
+             * @enum {string}
+             */
+            status: "manifest" | "rule" | "data" | "delegation" | "refused";
+            /** @description Refusal reason code */
+            reason?: string | null;
+            detail?: string | null;
+            ruleType?: string | null;
+            className?: string | null;
+            ruleName?: string | null;
+            ruleset?: string | null;
+            version?: string | null;
+            /** @description Yes, No, Blocked, Withdrawn or Final */
+            availability?: string | null;
+            /** @description The rule has a qualifier (property or date circumstance, or a date range) */
+            circumstanced: boolean;
+            /** @description kind property (property, value), date (property, date YYYYMMDD), dateRange (from, to as YYYYMMDDTHHMMSS.mmm GMT) or multivariate (parts) */
+            qualifier?: null | ({
+                /** @enum {string} */
+                kind: "property" | "date" | "dateRange" | "multivariate";
+            } & {
+                [key: string]: unknown;
+            });
+        };
+        PegaRuleContext: {
+            className: string;
+            /** @description Class inheritance searched, closest first */
+            chain: string[];
+            keys: {
+                ruleType: string;
+                ruleName: string;
+                /** @enum {string} */
+                status: "resolved" | "noCandidate" | "circumstanceUnresolved" | "ambiguous" | "blocked" | "finalOverridden";
+                /** @description Entry path of the effective rule */
+                chosen?: string | null;
+                /** @description Circumstance and date variants of the chosen base rule, with their qualifier (S115) */
+                variants?: ({
+                    rule: string;
+                    kind: string;
+                } & {
+                    [key: string]: unknown;
+                })[];
+                candidates: {
+                    rule: string;
+                    outcome: string;
+                }[];
+            }[];
+        };
+        PegaRuleStartingPoint: {
+            rule: string;
+            /** @enum {string} */
+            kind: "caseType" | "flow";
+            context: string;
+            name: string;
+            label: string;
+            blocked: boolean;
+            report: components["schemas"]["CompatibilityReport"];
+            rules: components["schemas"]["PegaRuleResult"][];
+            /** @description Assignments to map: the work queue needs a groupMappings entry, and one of the two flow actions is chosen as approval in approvalRoutes (never inferred) */
+            assignments: {
+                id: string;
+                label: string;
+                workQueue: string;
+                flow: string;
+                actions: {
+                    connectorId: string;
+                    flowAction: string;
+                }[];
+            }[];
+            /** @description Subflow calls that become child workflow steps; each id needs a childWorkflowMappings entry naming a published workflow */
+            subflows: {
+                id: string;
+                label: string;
+                /** @description Subflow rule name */
+                flow: string;
+                /** @description Flow that calls it */
+                source: string;
+            }[];
+        };
+        PegaRuleResult: {
+            rule: string;
+            ruleType: string;
+            className: string;
+            ruleName: string;
+            ruleset: string;
+            version: string;
+            availability: string;
+            sourceSha256: string;
+            role?: string | null;
+            /** @description selected, a shadowing outcome, or outsideContext */
+            resolution: string;
+            /** @enum {string} */
+            conversion: "converted" | "review" | "blocked" | "notUsed" | "shadowed" | "supported";
+            targetKind?: string | null;
+            targets: string[];
+            /** @description SHA-256 of the mapping-independent target fragment */
+            targetSha256?: string | null;
+            reasons: string[];
+            /** @description The rule qualifier in words (for example .Category = Services) */
+            circumstance?: string | null;
+            /** @description Access groups the rule is delegated to (provenance only) */
+            delegatedTo: string[];
+        };
         MigrationJob: {
             id: components["schemas"]["Uuid"];
             fileName: string;
@@ -8711,6 +8895,8 @@ export interface components {
             };
             /** @description DMN migrations only: the decision to convert; optional when the file has exactly one decision */
             decisionId?: string;
+            /** @description Native Pega rule archives (pegaRules) only: the archive entry path of the starting point to convert (an effective case type or starting flow); optional when the archive has exactly one. For these archives only workflowKey, name, groupMappings, approvalRoutes, childWorkflowMappings, the acknowledgements and pegaStartRule are accepted. */
+            pegaStartRule?: string;
             /** @description Pega Blueprint PDF migrations only (required there): the transcriptionSha256 of the reviewed transcription revision being converted. Routes, request fields and steps come from that transcription, so approvalRoutes, inputSchema and other mappings except groupMappings are refused. */
             transcriptionSha256?: string;
             /** @description Reviewed canonical request schema; otherwise inferred from BPMN comparisons and service input mappings */
@@ -18086,14 +18272,14 @@ export interface operations {
             content: {
                 "application/json": {
                     fileName: string;
-                    /** @description BPMN, DMN, CMMN or XPDL XML, form or mapping JSON text; base64 for Pega archives. Decoded sources are limited to 1 MiB. */
+                    /** @description BPMN, DMN, CMMN or XPDL XML, form or mapping JSON text; base64 for Pega archives and native Pega rule archives. Decoded sources are limited to 1 MiB. */
                     content: string;
                     /**
-                     * @description bpmn is Camunda 7/8 BPMN 2.0; dmn is a Camunda DMN 1.1-1.4 file with decision tables; camundaForm is a Camunda Forms .form JSON file attached through formMappings. pegaXpdl is a bounded XPDL 2.0 flow export; it does not resolve native RAP rule pages. cmmn inventories a CMMN 1.1 file but cannot convert or deploy it.
+                     * @description bpmn is Camunda 7/8 BPMN 2.0; dmn is a Camunda DMN 1.1-1.4 file with decision tables; camundaForm is a Camunda Forms .form JSON file attached through formMappings. pegaXpdl is a bounded XPDL 2.0 flow export; it does not resolve native RAP rule pages. cmmn inventories a CMMN 1.1 file but cannot convert or deploy it. pegaRules (base64) is a native Pega rule archive (ZIP/RAP/JAR of pagedata rule pages), decoded with a strict synthetic grammar, resolved against its own application stack and converted per starting point (docs/build/S112); grammar fidelity against genuine exports is customer qualification.
                      * @default bpmn
                      * @enum {string}
                      */
-                    sourceFormat?: "bpmn" | "dmn" | "camundaForm" | "pegaArchive" | "pegaMapping" | "pegaXpdl" | "cmmn";
+                    sourceFormat?: "bpmn" | "dmn" | "camundaForm" | "pegaArchive" | "pegaMapping" | "pegaXpdl" | "cmmn" | "pegaRules";
                 };
             };
         };
@@ -18137,6 +18323,32 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getPegaRuleArchive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                migrationId: components["parameters"]["MigrationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native rule archive view */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PegaRuleArchive"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
         };
     };

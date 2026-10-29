@@ -36,6 +36,13 @@ public class CaseWorkflowReconciler {
                 LOG.warn("Case workflow task {} could not be reconciled yet ({}: {})", task, e.getClass().getSimpleName(), e.getMessage(), e);
             }
         }
+        for (UUID[] item : cases.casesWithTimers(200)) {
+            try {
+                applied += cases.syncTimers(item[0], item[1]);
+            } catch (RuntimeException e) {
+                LOG.warn("Timers of case {} could not be synchronized yet ({}: {})", item[1], e.getClass().getSimpleName(), e.getMessage(), e);
+            }
+        }
         return applied;
     }
 }

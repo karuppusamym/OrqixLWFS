@@ -176,7 +176,7 @@ export function createCaseHandlers(getUser: () => MockUser): HttpHandler[] {
       if (row.planned) items.push({ id: `${row.value.id}-expert-task`, elementId: 'expert', name: 'Expert opinion', type: 'humantask', state: active ? 'active' : 'terminated', required: true, allowedActions: {}, parentStageId: null, createdAt: row.value.createdAt, endedAt: null, workflow: null })
       items.push({ id: `${row.value.id}-supplier`, elementId: 'supplierCheck', name: 'Supplier check', type: 'processTask', state: row.step > 0 ? 'completed' : active ? 'active' : 'terminated',
         required: true, allowedActions: {}, parentStageId: null, createdAt: row.value.createdAt, endedAt: row.step > 0 ? row.value.createdAt : null,
-        workflow: { attempt: 1, status: row.step > 0 ? 'completed' : active ? 'running' : 'cancelled', runId: null, reference: 'ORQ-1042', outcome: row.step > 0 ? 'Approved' : null, detail: null } })
+        workflow: { attempt: 1, status: row.step > 0 ? 'completed' : active ? 'running' : 'cancelled', runId: null, reference: 'ORQ-1042', outcome: row.step > 0 ? 'Approved' : null, detail: null, caseId: null } })
       const milestones = row.value.status === 'completed' ? [{ id: `${row.value.id}-milestone`, elementId: 'done', name: 'Reviewed', achievedAt: row.value.createdAt }] : []
       return HttpResponse.json({ items, milestones, events: (row.events ?? []).map(event => ({ ...event, reason: permissionsOf(user, ws).includes('run.read-data') ? event.reason : null })), canClose: row.value.status === 'active' && !row.value.tasks.length && permissionsOf(user, ws).includes('run.operate') })
     }),

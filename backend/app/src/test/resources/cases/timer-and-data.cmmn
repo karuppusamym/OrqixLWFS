@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/CMMN/20151109/MODEL" xmlns:flowable="http://flowable.org/cmmn" targetNamespace="urn:orqix:triggers">
+  <case id="triggerCase" name="Timed and data-driven review">
+    <casePlanModel id="plan" name="Timed and data-driven review" autoComplete="false">
+      <planItem id="review" name="Review" definitionRef="reviewTask"/>
+      <planItem id="reminder" name="Reminder after one hour" definitionRef="reminderTimer"/>
+      <planItem id="chase" name="Chase the reviewer" definitionRef="chaseTask"><entryCriterion id="chaseEntry" sentryRef="timerFired"/></planItem>
+      <planItem id="escalate" name="Escalate large amount" definitionRef="escalateTask"><entryCriterion id="escalateEntry" sentryRef="largeAmount"/></planItem>
+      <planItem id="approved" name="Approved in EU" definitionRef="approvedMilestone"><entryCriterion id="approvedEntry" sentryRef="reviewedInEu"/></planItem>
+      <sentry id="timerFired"><planItemOnPart id="timerFiredOn" sourceRef="reminder"><standardEvent>occur</standardEvent></planItemOnPart></sentry>
+      <sentry id="largeAmount"><ifPart id="largeAmountIf"><condition>${cd_amount &gt; 5000}</condition></ifPart></sentry>
+      <sentry id="reviewedInEu"><planItemOnPart id="reviewedOn" sourceRef="review"><standardEvent>complete</standardEvent></planItemOnPart><ifPart id="euIf"><condition>${cd_region == 'EU' &amp;&amp; cd_amount &lt;= 5000}</condition></ifPart></sentry>
+      <humanTask id="reviewTask" name="Review" flowable:candidateGroups="managers"/>
+      <timerEventListener id="reminderTimer" name="Reminder after one hour"><timerExpression>PT1H</timerExpression></timerEventListener>
+      <humanTask id="chaseTask" name="Chase the reviewer" flowable:candidateGroups="managers"/>
+      <humanTask id="escalateTask" name="Escalate large amount" flowable:candidateGroups="finance-approvers"/>
+      <milestone id="approvedMilestone" name="Approved in EU"/>
+    </casePlanModel>
+  </case>
+</definitions>

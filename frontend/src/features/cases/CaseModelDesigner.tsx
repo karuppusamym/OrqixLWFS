@@ -1,3 +1,4 @@
+import { useQuery } from '@tanstack/react-query'
 import { useRef, useState } from 'react'
 import { downloadBlob } from '@/lib/download'
 import { useGroups, useStartForm, useWorkflows } from '@/api/queries'
@@ -5,7 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Input, Select, Textarea } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Alert } from '@/components/ui/alert'
-import { KIND_LABEL, WORKFLOW_RESULT_SOURCES, caseItems, caseModelWorkflowTasks, caseModelXml, entrySources, occurs, type CaseItemKind, type CaseModelItem, type CaseModelOptions } from './caseModel'
+import { CONDITION_OPERATORS, KIND_LABEL, WORKFLOW_RESULT_SOURCES, caseItems, caseModelCaseTasks, caseModelWorkflowTasks, caseModelXml, durationMinutes, entrySources, isListener, occurs, type CaseConditionClause, type CaseItemKind, type CaseModelItem, type CaseModelOptions, type ConditionOperator } from './caseModel'
+import { listCaseDefinitions } from './api'
 import { findItem, fitStages, parentOf, placement } from './caseCanvasOps'
 import { importCaseModel, type ImportDiagnostic } from './cmmnImport'
 import { CaseCanvas } from './CaseCanvas'
@@ -13,11 +15,88 @@ import { CmmnPreview } from './CmmnPreview'
 import type { DataField } from './CaseDataFields'
 
 export type WorkflowTaskMapping = ReturnType<typeof caseModelWorkflowTasks>[number]
+export type CaseTaskMapping = ReturnType<typeof caseModelCaseTasks>[number]
 type Group = { key: string; name: string }
 type Change = (items: CaseModelItem[]) => CaseModelItem[]
 
-const ADDABLE: CaseItemKind[] = ['humanTask', 'processTask', 'stage', 'milestone', 'userEventListener']
-const ADD_LABEL: Record<CaseItemKind, string> = { humanTask: 'human task', processTask: 'workflow task', stage: 'stage', milestone: 'milestone', userEventListener: 'user event' }
+const ADDABLE: CaseItemKind[] = ['humanTask', 'processTask', 'caseTask', 'stage', 'milestone', 'userEventListener', 'timerEventListener']
+const ADD_LABEL: Record<CaseItemKind, string> = { humanTask: 'human task', processTask: 'workflow task', caseTask: 'case task', stage: 'stage', milestone: 'milestone', userEventListener: 'user event', timerEventListener: 'timer' }
+const OPERATOR_LABEL: Record<ConditionOperator, string> = { '==': 'is', '!=': 'is not', '<': 'is less than', '<=': 'is at most', '>': 'is more than', '>=': 'is at least' }
+
+/** The case task's child case and its mappings: child field from case field, case field from child field or outcome. */
+function ChildCaseMapping({ ws, item, dataFields, onPatch }: { ws: string; item: CaseModelItem; dataFields: DataField[]; onPatch: (patch: Partial<CaseModelItem>) => void }) {
+  const definitions = useQuery({ queryKey: ['ws', ws, 'case-definitions'], queryFn: () => listCaseDefinitions(ws) })
+  const latest = new Map<string, NonNullable<typeof definitions.data>[number]>()
+  for (const definition of definitions.data ?? []) if (!latest.has(definition.key) || latest.get(definition.key)!.version < definition.version) latest.set(definition.key, definition)
+  const ref = item.childCase ?? { key: '', input: {}, result: {} }
+  const chosen = latest.get(ref.key)
+  const set = (part: 'input' | 'result', key: string, value: string) => {
+    const next = { ...ref[part] }
+    if (value) next[key] = value; else delete next[key]
+    onPatch({ childCase: { ...ref, [part]: next } })
+  }
+  return <div className="space-y-3">
+    <div><Label htmlFor={`case-model-${item.id}-child`}>Case for {item.id}</Label>
+      <Select id={`case-model-${item.id}-child`} value={ref.key} onChange={event => onPatch({ childCase: { key: event.target.value, input: {}, result: {} } })}>
+        <option value="">Choose a case definition</option>
+        {[...latest.values()].map(definition => <option key={definition.key} value={definition.key}>{definition.name} (version {definition.version})</option>)}
+        {ref.key && !chosen ? <option value={ref.key}>{ref.key} (not found)</option> : null}
+      </Select>
+      <p className="text-xs text-muted-foreground">The version that is current when this definition is created is pinned. The child case starts for whoever started this case; when it completes, this task completes.</p></div>
+    {chosen ? <div className="space-y-3 rounded border border-border p-3">
+      <p className="text-sm font-semibold">Data of the child case</p>
+      {(chosen.dataFields ?? []).length ? (chosen.dataFields ?? []).map(field => <div key={field.key}>
+        <Label htmlFor={`case-model-${item.id}-cin-${field.key}`}>{field.label}{field.required ? ' (required)' : ''} for {item.id}</Label>
+        <Select id={`case-model-${item.id}-cin-${field.key}`} value={ref.input[field.key] ?? ''} onChange={event => set('input', field.key, event.target.value)}>
+          <option value="">Not filled</option>{dataFields.map(data => <option key={data.key} value={data.key}>Case data: {data.label}</option>)}
+        </Select></div>) : <p className="text-sm text-muted-foreground">The child case has no data fields.</p>}
+      {dataFields.length ? <>
+        <p className="text-sm font-semibold">Write the child case's result into case data</p>
+        {dataFields.map(data => <div key={data.key}><Label htmlFor={`case-model-${item.id}-cout-${data.key}`}>Case data {data.label} from {item.id}</Label>
+          <Select id={`case-model-${item.id}-cout-${data.key}`} value={ref.result[data.key] ?? ''} onChange={event => set('result', data.key, event.target.value)}>
+            <option value="">Not written</option><option value="outcome">Outcome</option>{(chosen.dataFields ?? []).map(field => <option key={field.key} value={field.key}>Child data: {field.label}</option>)}
+          </Select></div>)}
+      </> : null}
+    </div> : null}
+  </div>
+}
+
+/** Timer duration as a number and a unit, stored as an ISO-8601 duration. */
+function TimerField({ item, onPatch }: { item: CaseModelItem; onPatch: (patch: Partial<CaseModelItem>) => void }) {
+  const minutes = durationMinutes(item.timer ?? '') ?? 60
+  const unit = minutes % 1440 === 0 ? 'days' : minutes % 60 === 0 ? 'hours' : 'minutes'
+  const amount = unit === 'days' ? minutes / 1440 : unit === 'hours' ? minutes / 60 : minutes
+  const set = (value: number, next: string) => onPatch({ timer: next === 'days' ? `P${value}D` : next === 'hours' ? `PT${value}H` : `PT${value}M` })
+  return <div className="grid gap-2 sm:grid-cols-2">
+    <div><Label htmlFor={`case-model-${item.id}-wait`}>Wait for {item.id}</Label><Input id={`case-model-${item.id}-wait`} type="number" min={1} max={unit === 'days' ? 366 : 9999} value={amount} onChange={event => set(Math.max(1, Math.round(Number(event.target.value) || 1)), unit)} /></div>
+    <div><Label htmlFor={`case-model-${item.id}-unit`}>Unit for {item.id}</Label><Select id={`case-model-${item.id}-unit`} value={unit} onChange={event => set(amount, event.target.value)}><option value="minutes">Minutes</option><option value="hours">Hours</option><option value="days">Days</option></Select></div>
+    <p className="text-xs text-muted-foreground sm:col-span-2">Counted from when its stage starts. When it fires, items that start after it become available.</p>
+  </div>
+}
+
+/** "Only when case data …": the CMMN if-part of the entry rule, built from field comparisons. */
+function ConditionFields({ item, dataFields, onPatch }: { item: CaseModelItem; dataFields: DataField[]; onPatch: (patch: Partial<CaseModelItem>) => void }) {
+  const condition = item.when
+  const set = (clauses: CaseConditionClause[], join = condition?.join ?? 'all') => onPatch({ when: clauses.length ? { join, clauses } : undefined })
+  const typed = (field: string, raw: string): CaseConditionClause['value'] => {
+    const type = dataFields.find(data => data.key === field)?.type
+    if (type === 'number' || type === 'integer') return Number(raw) || 0
+    if (type === 'boolean') return raw === 'true'
+    return raw
+  }
+  if (!dataFields.length) return <p className="text-xs text-muted-foreground">Add case data fields to make this item depend on case data.</p>
+  return <fieldset className="space-y-2 rounded border border-border p-2"><legend className="px-1 text-sm font-semibold">Only when case data matches ({item.id})</legend>
+    {condition?.clauses.length && condition.clauses.length > 1 ? <div><Label htmlFor={`case-model-${item.id}-join`}>Combine comparisons for {item.id}</Label><Select id={`case-model-${item.id}-join`} value={condition.join} onChange={event => set(condition.clauses, event.target.value as 'all' | 'any')}><option value="all">All must hold</option><option value="any">Any may hold</option></Select></div> : null}
+    {(condition?.clauses ?? []).map((clause, index) => <div key={index} className="grid gap-2 sm:grid-cols-[1fr_auto_1fr_auto]">
+      <Select aria-label={`Field ${index + 1} for ${item.id}`} value={clause.field} onChange={event => set(condition!.clauses.map((c, i) => i === index ? { ...c, field: event.target.value, value: typed(event.target.value, String(c.value)) } : c))}>{dataFields.map(data => <option key={data.key} value={data.key}>{data.label}</option>)}</Select>
+      <Select aria-label={`Comparison ${index + 1} for ${item.id}`} value={clause.op} onChange={event => set(condition!.clauses.map((c, i) => i === index ? { ...c, op: event.target.value as ConditionOperator } : c))}>{CONDITION_OPERATORS.map(op => <option key={op} value={op}>{OPERATOR_LABEL[op]}</option>)}</Select>
+      <Input aria-label={`Value ${index + 1} for ${item.id}`} value={String(clause.value)} maxLength={120} onChange={event => set(condition!.clauses.map((c, i) => i === index ? { ...c, value: typed(c.field, event.target.value) } : c))} />
+      <Button type="button" variant="ghost" onClick={() => set(condition!.clauses.filter((_, i) => i !== index))}>Remove comparison {index + 1}</Button>
+    </div>)}
+    <Button type="button" variant="secondary" disabled={(condition?.clauses.length ?? 0) >= 10} onClick={() => set([...(condition?.clauses ?? []), { field: dataFields[0]!.key, op: '==', value: typed(dataFields[0]!.key, '') }])}>Add data comparison to {item.id}</Button>
+    <p className="text-xs text-muted-foreground">{item.after ? 'Checked when the start-after event happens.' : 'The item starts as soon as case data makes this true.'} Only fields and literal values are compared.</p>
+  </fieldset>
+}
 
 function patchItem(items: CaseModelItem[], id: string, patch: Partial<CaseModelItem>): CaseModelItem[] {
   return items.map(item => item.id === id ? { ...item, ...patch } : item.children ? { ...item, children: patchItem(item.children, id, patch) } : item)
@@ -66,9 +145,11 @@ function ItemFields({ ws, item, siblings, groups, dataFields, onPatch }: { ws: s
   const chosen = published.find(workflow => workflow.key === item.workflow?.key)
   const others = siblings.filter(other => other.id !== item.id && !other.discretionary)
   const sources = entrySources(item)
-  const canDiscretionary = item.kind === 'humanTask' || item.kind === 'processTask'
+  const canDiscretionary = item.kind === 'humanTask' || item.kind === 'processTask' || item.kind === 'caseTask'
   return <div className="space-y-3">
     <div><Label htmlFor={`case-model-${item.id}-label`}>Name for {item.id}</Label><Input id={`case-model-${item.id}-label`} value={item.label} maxLength={120} onChange={event => onPatch({ label: event.target.value })} /></div>
+    {item.kind === 'caseTask' ? <ChildCaseMapping ws={ws} item={item} dataFields={dataFields} onPatch={onPatch} /> : null}
+    {item.kind === 'timerEventListener' ? <TimerField item={item} onPatch={onPatch} /> : null}
     {item.kind === 'humanTask' || item.kind === 'userEventListener' ? <div><Label htmlFor={`case-model-${item.id}-group`}>Eligible group for {item.id}</Label><Select id={`case-model-${item.id}-group`} value={item.group ?? ''} onChange={event => onPatch({ group: event.target.value })}><option value="">Choose a group</option>{groups.map(group => <option key={group.key} value={group.key}>{group.name}</option>)}</Select></div> : null}
     {item.kind === 'processTask' ? <>
       <div><Label htmlFor={`case-model-${item.id}-workflow`}>Workflow for {item.id}</Label>
@@ -80,16 +161,17 @@ function ItemFields({ ws, item, siblings, groups, dataFields, onPatch }: { ws: s
         <p className="text-xs text-muted-foreground">The release that is active when the definition is created is pinned. The workflow runs on behalf of whoever starts the case and finishes the task when it ends.</p></div>
       {chosen && item.workflow ? <WorkflowMapping ws={ws} item={item} dataFields={dataFields} workflowId={chosen.id} onPatch={onPatch} /> : null}
     </> : null}
-    {canDiscretionary ? <label className="flex items-center gap-2"><input type="checkbox" checked={!!item.discretionary} onChange={event => onPatch(event.target.checked ? { discretionary: true, planners: item.planners ?? [], after: undefined, afterAll: undefined, exitAfter: undefined, repetitions: undefined } : { discretionary: undefined, planners: undefined })} />Discretionary {item.id}: people decide during the case whether it is needed</label> : null}
+    {canDiscretionary ? <label className="flex items-center gap-2"><input type="checkbox" checked={!!item.discretionary} onChange={event => onPatch(event.target.checked ? { discretionary: true, planners: item.planners ?? [], after: undefined, afterAll: undefined, exitAfter: undefined, repetitions: undefined, when: undefined } : { discretionary: undefined, planners: undefined })} />Discretionary {item.id}: people decide during the case whether it is needed</label> : null}
     {item.discretionary ? <fieldset className="space-y-1"><legend className="text-sm font-semibold">Who may plan {item.label}</legend>
       {groups.map(group => <label key={group.key} className="flex items-center gap-2"><input type="checkbox" checked={item.planners?.includes(group.key) ?? false} onChange={event => onPatch({ planners: event.target.checked ? [...(item.planners ?? []), group.key] : (item.planners ?? []).filter(value => value !== group.key) })} />{group.name}</label>)}
     </fieldset> : null}
-    {item.kind !== 'userEventListener' && !item.discretionary ? <div><Label htmlFor={`case-model-${item.id}-after`}>Start after for {item.id}</Label><Select id={`case-model-${item.id}-after`} value={item.after ?? ''} onChange={event => onPatch({ after: event.target.value || undefined, afterAll: event.target.value ? item.afterAll?.filter(value => value !== event.target.value) : undefined, ...(event.target.value || item.kind !== 'milestone' ? {} : { repetitions: undefined }) })}><option value="">Available when its stage starts</option>{others.map(source => <option key={source.id} value={source.id}>{source.label} {occurs(source) ? 'occurs' : 'completes'}</option>)}</Select>
+    {!isListener(item) && !item.discretionary ? <ConditionFields item={item} dataFields={dataFields} onPatch={onPatch} /> : null}
+    {!isListener(item) && !item.discretionary ? <div><Label htmlFor={`case-model-${item.id}-after`}>Start after for {item.id}</Label><Select id={`case-model-${item.id}-after`} value={item.after ?? ''} onChange={event => onPatch({ after: event.target.value || undefined, afterAll: event.target.value ? item.afterAll?.filter(value => value !== event.target.value) : undefined, ...(event.target.value || item.kind !== 'milestone' ? {} : { repetitions: undefined }) })}><option value="">Available when its stage starts</option>{others.map(source => <option key={source.id} value={source.id}>{source.label} {occurs(source) ? 'occurs' : 'completes'}</option>)}</Select>
       {sources.length > 1 ? <p className="text-xs text-muted-foreground">Also waits for: {sources.slice(1).map(id => siblings.find(other => other.id === id)?.label ?? id).join(', ')}. <button type="button" className="underline" onClick={() => onPatch({ afterAll: undefined })}>Wait only for the first</button></p> : null}</div> : null}
-    {item.kind !== 'userEventListener' && item.kind !== 'milestone' && !item.discretionary ? <div><Label htmlFor={`case-model-${item.id}-exit`}>Ends when for {item.id}</Label><Select id={`case-model-${item.id}-exit`} value={item.exitAfter ?? ''} disabled={!!item.repetitions} onChange={event => onPatch({ exitAfter: event.target.value || undefined })}><option value="">Not ended by another item</option>{others.map(source => <option key={source.id} value={source.id}>{source.label} {occurs(source) ? 'occurs' : 'completes'}</option>)}</Select></div> : null}
-    {item.kind !== 'userEventListener' ? <label className="flex items-center gap-2"><input type="checkbox" checked={!!item.required} onChange={event => onPatch({ required: event.target.checked })} />Required work {item.id}</label> : null}
-    {item.kind !== 'milestone' && item.kind !== 'userEventListener' && item.kind !== 'processTask' ? <label className="flex items-center gap-2"><input type="checkbox" checked={!!item.manual} onChange={event => onPatch({ manual: event.target.checked })} />Manual activation {item.id}</label> : null}
-    {item.kind !== 'userEventListener' && !item.discretionary ? <div><Label htmlFor={`case-model-${item.id}-repeat`}>Executions for {item.id}</Label><Select id={`case-model-${item.id}-repeat`} value={item.repetitions ?? 1} disabled={!!item.exitAfter || item.kind === 'milestone' && !item.after} onChange={event => onPatch({ repetitions: Number(event.target.value) === 1 ? undefined : Number(event.target.value) })}>{Array.from({ length: 30 }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1}</option>)}</Select><p className="text-xs text-muted-foreground">{item.after ? 'Repeats each time its start-after rule is met again, up to this many times.' : 'Repeats one after another, up to this many times. Each occurrence fires its own completion event.'}</p></div> : null}
+    {!isListener(item) && item.kind !== 'milestone' && !item.discretionary ? <div><Label htmlFor={`case-model-${item.id}-exit`}>Ends when for {item.id}</Label><Select id={`case-model-${item.id}-exit`} value={item.exitAfter ?? ''} disabled={!!item.repetitions} onChange={event => onPatch({ exitAfter: event.target.value || undefined })}><option value="">Not ended by another item</option>{others.map(source => <option key={source.id} value={source.id}>{source.label} {occurs(source) ? 'occurs' : 'completes'}</option>)}</Select></div> : null}
+    {!isListener(item) ? <label className="flex items-center gap-2"><input type="checkbox" checked={!!item.required} onChange={event => onPatch({ required: event.target.checked })} />Required work {item.id}</label> : null}
+    {item.kind !== 'milestone' && !isListener(item) && item.kind !== 'processTask' && item.kind !== 'caseTask' ? <label className="flex items-center gap-2"><input type="checkbox" checked={!!item.manual} onChange={event => onPatch({ manual: event.target.checked })} />Manual activation {item.id}</label> : null}
+    {!isListener(item) && !item.discretionary ? <div><Label htmlFor={`case-model-${item.id}-repeat`}>Executions for {item.id}</Label><Select id={`case-model-${item.id}-repeat`} value={item.repetitions ?? 1} disabled={!!item.exitAfter || item.kind === 'milestone' && !item.after && !item.when} onChange={event => onPatch({ repetitions: Number(event.target.value) === 1 ? undefined : Number(event.target.value) })}>{Array.from({ length: 30 }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1}</option>)}</Select><p className="text-xs text-muted-foreground">{item.after ? 'Repeats each time its start-after rule is met again, up to this many times.' : 'Repeats one after another, up to this many times. Each occurrence fires its own completion event.'}</p></div> : null}
   </div>
 }
 
@@ -100,7 +182,7 @@ export interface CaseModelDesignerProps {
   disabled: boolean
   dataFields?: DataField[]
   /** The generated CMMN and the workflow mappings it needs, or null after an edit invalidated them. */
-  onApply: (xml: string | null, workflowTasks?: WorkflowTaskMapping[]) => void
+  onApply: (xml: string | null, workflowTasks?: WorkflowTaskMapping[], caseTasks?: CaseTaskMapping[]) => void
   /** Called after a file import with the case key and name it contained. */
   onImported?: (key: string, name: string) => void
 }
@@ -119,7 +201,7 @@ export function CaseModelDesigner({ ws, caseKey, name, onApply, disabled, dataFi
   const nextId = () => { let index = 1; const used = new Set(caseItems(items).map(item => item.id)); while (used.has(`item${index}`)) index++; return `item${index}` }
   const replace = (id: string, patch: Partial<CaseModelItem>) => edit(nodes => patchItem(nodes, id, patch))
   const add = (kind: CaseItemKind, parent?: string) => edit(nodes => {
-    const item: CaseModelItem = { id: nextId(), kind, label: `New ${ADD_LABEL[kind]}`, ...(kind === 'humanTask' ? { group: '', manual: true } : kind === 'userEventListener' ? { group: '' } : kind === 'processTask' ? { workflow: { key: '', input: {}, result: {} } } : {}), ...(kind === 'stage' ? { children: [] } : {}) }
+    const item: CaseModelItem = { id: nextId(), kind, label: `New ${ADD_LABEL[kind]}`, ...(kind === 'humanTask' ? { group: '', manual: true } : kind === 'userEventListener' ? { group: '' } : kind === 'processTask' ? { workflow: { key: '', input: {}, result: {} } } : kind === 'caseTask' ? { childCase: { key: '', input: {}, result: {} } } : kind === 'timerEventListener' ? { timer: 'PT1H' } : {}), ...(kind === 'stage' ? { children: [] } : {}) }
     if (view === 'canvas' || caseItems(nodes).some(node => node.layout)) item.layout = placement(nodes, parent ?? null, kind)
     if (!parent) return fitStages([...nodes, item])
     const stage = caseItems(nodes).find(node => node.id === parent)!; stage.children = [...(stage.children ?? []), item]; return fitStages(nodes)
@@ -129,6 +211,7 @@ export function CaseModelDesigner({ ws, caseKey, name, onApply, disabled, dataFi
     const filter = (list: CaseModelItem[]): CaseModelItem[] => list.filter(item => !removed.has(item.id)).map(item => {
       const sources = entrySources(item).filter(source => !removed.has(source))
       const next: CaseModelItem = { ...item, after: sources[0], afterAll: sources.length > 1 ? sources.slice(1) : undefined, exitAfter: item.exitAfter && removed.has(item.exitAfter) ? undefined : item.exitAfter, children: item.children ? filter(item.children) : undefined }
+      if (!next.after) delete next.after
       return next
     })
     return filter(nodes)
@@ -154,8 +237,7 @@ export function CaseModelDesigner({ ws, caseKey, name, onApply, disabled, dataFi
   const generate = () => {
     try {
       const generated = caseModelXml(caseKey, name, items, { ...options, diagram: view === 'canvas' || options.diagram || caseItems(items).some(item => item.layout) })
-      const tasks = caseModelWorkflowTasks(items)
-      setXml(generated); onApply(generated, tasks); setError(undefined)
+      setXml(generated); onApply(generated, caseModelWorkflowTasks(items), caseModelCaseTasks(items)); setError(undefined)
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'The case model is invalid.') }
   }
   const selectedItem = selected ? findItem(items, selected) : undefined
@@ -170,7 +252,7 @@ export function CaseModelDesigner({ ws, caseKey, name, onApply, disabled, dataFi
   </li>)}</ol>
 
   return <fieldset disabled={disabled} className="space-y-4 rounded border p-4"><legend className="font-semibold">Case model designer</legend>
-    <p className="text-sm text-muted-foreground">Draw the case plan on the canvas, or use the form. Plan human tasks, workflow tasks that run a published workflow, nested stages, milestones and authorized user events; mark work discretionary so people add it when needed; repeat items; and connect items with start-after and ends-when rules. The server validates the generated CMMN before creating a definition.</p>
+    <p className="text-sm text-muted-foreground">Draw the case plan on the canvas, or use the form. Plan human tasks, workflow tasks that run a published workflow, case tasks that start another case, nested stages, milestones, timers and authorized user events; mark work discretionary so people add it when needed; repeat items; connect items with start-after and ends-when rules; and make work depend on case data. The server validates the generated CMMN before creating a definition.</p>
     {groups.isError ? <Alert tone="danger">Workspace groups could not be loaded. <Button type="button" variant="ghost" onClick={() => void groups.refetch()}>Retry groups</Button></Alert> : null}
     <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Designer view">
       <Button type="button" variant={view === 'canvas' ? 'primary' : 'secondary'} aria-pressed={view === 'canvas'} onClick={() => setView('canvas')}>Canvas view</Button>

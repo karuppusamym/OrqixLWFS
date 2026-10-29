@@ -1,10 +1,35 @@
-import type { CaseItemLayout, CaseModelItem, CaseModelOptions } from './caseModel'
+import { durationMinutes, type CaseCondition, type CaseConditionClause, type CaseItemLayout, type CaseModelItem, type CaseModelOptions, type ConditionOperator } from './caseModel'
 
 const CMMN = 'http://www.omg.org/spec/CMMN/20151109/MODEL'
 const CMMNDI = 'http://www.omg.org/spec/CMMN/20151109/CMMNDI'
 const DC = 'http://www.omg.org/spec/CMMN/20151109/DC'
 const FLOWABLE = 'http://flowable.org/cmmn'
 const WORKFLOW_NS = 'urn:orqix:workflow'
+const CASE_NS = 'urn:orqix:case'
+const CLAUSE = /^cd_([A-Za-z][A-Za-z0-9_]{0,63})\s*(==|!=|<=|>=|<|>)\s*(-?\d{1,15}(?:\.\d{1,6})?|'[^'\\$#{}]{0,120}'|true|false)$/
+
+/** Reads an if-part condition in the admitted grammar (case data fields compared with literals, joined by && or ||). */
+export function parseCondition(text: string): CaseCondition | null {
+  const body = /^\$\{(.*)\}$/s.exec(text.trim())?.[1]?.trim()
+  if (!body) return null
+  const join = body.includes('||') ? 'any' : 'all'
+  if (body.includes('&&') && body.includes('||')) return null
+  const clauses: CaseConditionClause[] = []
+  for (const part of body.split(join === 'all' ? '&&' : '||')) {
+    const match = CLAUSE.exec(part.trim())
+    if (!match) return null
+    const raw = match[3]!
+    clauses.push({ field: match[1]!, op: match[2] as ConditionOperator, value: raw.startsWith("'") ? raw.slice(1, -1) : raw === 'true' ? true : raw === 'false' ? false : Number(raw) })
+  }
+  return clauses.length && clauses.length <= 10 ? { join, clauses } : null
+}
+
+function qnameKey(element: Element, attribute: string, namespace: string): string {
+  const ref = element.getAttribute(attribute)?.trim() ?? ''
+  const colon = ref.indexOf(':')
+  const prefix = colon < 0 ? null : ref.slice(0, colon), local = colon < 0 ? ref : ref.slice(colon + 1)
+  return element.lookupNamespaceURI(prefix) === namespace && /^[a-z][a-z0-9-]{1,62}$/.test(local) ? local : ''
+}
 
 /** One finding about the imported file, linked to the element it concerns. */
 export interface ImportDiagnostic {
@@ -104,11 +129,11 @@ export function importCaseModel(xml: string): ImportedCaseModel {
       if (!definition) { report('error', reference, 'Its definition is missing from this stage, so it was left out.'); return null }
       used.add(definition.getAttribute('id') ?? '')
       const kind = definition.localName
-      if (!['humanTask', 'processTask', 'milestone', 'stage', 'userEventListener'].includes(kind)) {
+      if (!['humanTask', 'processTask', 'caseTask', 'milestone', 'stage', 'userEventListener', 'timerEventListener'].includes(kind)) {
         report('error', definition, `<${kind}> is not supported by the executable case subset and was left out.`)
         return null
       }
-      if (discretionary && !['humanTask', 'processTask'].includes(kind)) { report('error', reference, 'Only human tasks and workflow tasks can be discretionary; this item was left out.'); return null }
+      if (discretionary && !['humanTask', 'processTask', 'caseTask'].includes(kind)) { report('error', reference, 'Only human, workflow and case tasks can be discretionary; this item was left out.'); return null }
       const controls = [...elements(reference, 'itemControl'), ...elements(definition, 'defaultControl')]
       const id = reference.getAttribute('id') ?? ''
       const item: CaseModelItem = {
@@ -151,6 +176,20 @@ export function importCaseModel(xml: string): ImportedCaseModel {
         if (elements(definition, 'parameterMapping').length) report('warning', definition, 'Parameter mappings were left out; map case data to the workflow request explicitly.')
         report('warning', definition, 'Map case data to the workflow request and its result before publishing.')
       }
+      if (kind === 'caseTask') {
+        const childKey = qnameKey(definition, 'caseRef', CASE_NS)
+        item.childCase = { key: childKey, input: {}, result: {} }
+        if (!childKey) report('warning', definition, `The case "${definition.getAttribute('caseRef') ?? ''}" is not a workspace case definition; choose the case it should start.`)
+        if (elements(definition, 'parameterMapping').length) report('warning', definition, 'Parameter mappings were left out; map case data to the child case explicitly.')
+        report('warning', definition, 'Map case data to the child case and its result before publishing.')
+      }
+      if (kind === 'timerEventListener') {
+        const expression = elements(definition, 'timerExpression')[0]?.textContent?.trim() ?? ''
+        const minutes = durationMinutes(expression)
+        if (minutes === null || minutes < 1 || minutes > 366 * 1440) { report('error', definition, `Timer "${expression}" is not a duration from 1 minute to 366 days (dates, cycles and expressions are not supported); the timer was left out.`); return null }
+        item.timer = expression
+        if (elements(definition, 'planItemStartTrigger').length || elements(definition, 'caseFileItemStartTrigger').length) report('warning', definition, 'The timer start trigger was left out; the timer counts from when its stage starts.')
+      }
       if (kind === 'stage') {
         if (definition.getAttribute('autoComplete') === 'true') report('warning', definition, 'The stage completed automatically; the designer uses explicit completion (autoComplete=false).')
         item.children = depth >= 4 ? [] : readPlan(definition, depth + 1)
@@ -170,8 +209,10 @@ export function importCaseModel(xml: string): ImportedCaseModel {
           const sentry = sentries.get(entry.getAttribute('sentryRef') ?? '')
           if (!sentry) report('error', entry, 'Its sentry is missing from this stage.')
           else {
-            const sources = readSentry(sentry)
-            if (sources.length) { item.after = sources[0]; if (sources.length > 1) item.afterAll = sources.slice(1); item.ids = { ...item.ids, entry: entry.getAttribute('id') ?? undefined, sentry: keepSentry(sentry, entry) } }
+            const { sources, when } = readSentry(sentry)
+            if (sources.length) { item.after = sources[0]; if (sources.length > 1) item.afterAll = sources.slice(1) }
+            if (when) item.when = when
+            if (sources.length || when) item.ids = { ...item.ids, entry: entry.getAttribute('id') ?? undefined, sentry: keepSentry(sentry, entry) }
           }
         }
         const exits = elements(reference, 'exitCriterion')
@@ -179,7 +220,9 @@ export function importCaseModel(xml: string): ImportedCaseModel {
         const exit = exits[0]
         if (exit) {
           const sentry = sentries.get(exit.getAttribute('sentryRef') ?? '')
-          const sources = sentry ? readSentry(sentry) : []
+          const read = sentry ? readSentry(sentry) : { sources: [], when: undefined }
+          const sources = read.sources
+          if (read.when) report('error', exit, 'Conditions on exit criteria are not supported; the exit waits only for its event.')
           if (sources.length > 1) report('error', exit, 'An exit criterion waiting for several items is not supported; the first was kept.')
           if (sources[0]) { item.exitAfter = sources[0]; item.ids = { ...item.ids, exit: exit.getAttribute('id') ?? undefined, exitSentry: keepSentry(sentry!, exit) } }
         }
@@ -196,17 +239,23 @@ export function importCaseModel(xml: string): ImportedCaseModel {
       report('warning', criterion, `Sentry ${id} is shared by several criteria; this criterion gets its own copy with a new ID.`)
       return undefined
     }
-    function readSentry(sentry: Element): string[] {
+    function readSentry(sentry: Element): { sources: string[]; when?: CaseCondition } {
       const sources: string[] = []
+      let when: CaseCondition | undefined
       for (const child of elements(sentry)) {
         if (child.localName === 'planItemOnPart') {
           const source = child.getAttribute('sourceRef') ?? ''
           const event = elements(child, 'standardEvent')[0]?.textContent?.trim()
           if (!['complete', 'occur'].includes(event ?? '')) report('error', child, `The "${event ?? 'missing'}" event is not supported; rules wait for completion or occurrence.`)
           if (source) sources.push(source)
-        } else report('error', child, child.localName === 'ifPart' ? 'Conditions (ifPart) are not supported; the rule waits only for its events.' : `<${child.localName}> in a sentry is not supported.`)
+        } else if (child.localName === 'ifPart') {
+          const text = elements(child, 'condition')[0]?.textContent ?? ''
+          const parsed = parseCondition(text)
+          if (parsed && !child.getAttribute('contextRef')) when = parsed
+          else report('error', child, `The condition "${text.trim()}" is not supported; conditions compare case data fields (cd_<field>) with literal values. It was left out.`)
+        } else report('error', child, child.localName === 'caseFileItemOnPart' ? 'Case file item events are not supported; use a data condition (if-part) on case data instead.' : `<${child.localName}> in a sentry is not supported.`)
       }
-      return sources
+      return { sources, when }
     }
     for (const child of elements(container)) {
       if (child.localName === 'planItem') { const item = readItem(child, false); if (item) items.push(item) }

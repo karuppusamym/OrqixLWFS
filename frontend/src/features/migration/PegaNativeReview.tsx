@@ -104,7 +104,9 @@ function RuleResults({ start, recorded }: { start: Start; recorded: Archive['con
       </Select></div>
       {recorded.length ? <p className="text-sm text-muted-foreground">Recorded at conversion: {recorded.length} rules.</p> : null}
     </div>
-    <div className="overflow-x-auto"><table className="w-full text-left text-sm">
+    {/* Scrollable, so it is focusable for keyboard scrolling (axe scrollable-region-focusable, WCAG 2.1.1). */}
+    {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a focusable scroll region is required for keyboard users */}
+    <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Per-rule results table"><table className="w-full text-left text-sm">
       <thead><tr><th scope="col" className="p-2">Rule</th><th scope="col" className="p-2">Version</th><th scope="col" className="p-2">Resolution</th><th scope="col" className="p-2">Result</th><th scope="col" className="p-2">Target</th><th scope="col" className="p-2">Source SHA-256</th><th scope="col" className="p-2">Target SHA-256</th></tr></thead>
       <tbody>{rows.map(r => <RuleRow key={r.rule} r={r} recorded={recordedHash.get(r.rule)} />)}</tbody>
     </table></div>
@@ -130,7 +132,8 @@ function EffectiveRules({ archive }: { archive: Archive }) {
   return <div className="space-y-5">{archive.contexts.map(c => <section key={c.className} className="space-y-2" aria-label={`Rules resolved for ${c.className}`}>
     <h3>{c.className}</h3>
     <p className="text-sm text-muted-foreground">Classes searched, closest first: {c.chain.join(' → ')}</p>
-    <div className="overflow-x-auto"><table className="w-full text-left text-sm">
+    {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a focusable scroll region is required for keyboard users */}
+    <div className="overflow-x-auto" tabIndex={0} role="region" aria-label={`Rules resolved for ${c.className} table`}><table className="w-full text-left text-sm">
       <thead><tr><th scope="col" className="p-2">Rule</th><th scope="col" className="p-2">Status</th><th scope="col" className="p-2">Candidates</th></tr></thead>
       <tbody>{c.keys.map(k => <tr key={`${k.ruleType} ${k.ruleName}`} className="border-t border-border align-top">
         <td className="p-2">{k.ruleType} {k.ruleName}</td>
@@ -143,7 +146,8 @@ function EffectiveRules({ archive }: { archive: Archive }) {
 }
 
 function Inventory({ archive }: { archive: Archive }) {
-  return <div className="overflow-x-auto"><table className="w-full text-left text-sm">
+  // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a focusable scroll region is required for keyboard users
+  return <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Archive entries table"><table className="w-full text-left text-sm">
     <thead><tr><th scope="col" className="p-2">Entry</th><th scope="col" className="p-2">Kind</th><th scope="col" className="p-2">Identity or reason</th><th scope="col" className="p-2">SHA-256</th></tr></thead>
     <tbody>{archive.entries.map(e => <tr key={e.path} className="border-t border-border align-top">
       <td className="p-2 break-all font-mono text-xs">{e.path}</td>

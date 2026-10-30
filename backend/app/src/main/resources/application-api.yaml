@@ -1,0 +1,13 @@
+# API role (docs/adr/0004): serves users only. Combine with an environment profile, for example "prod,api".
+# The engine job executor (BPMN and CMMN) is off, and scheduled jobs and Kafka consumers are not enabled
+# (TaskReminderSchedulingConfiguration), so timers, retries, callbacks, webhooks, reminders and Kafka run only on
+# worker pods. An API deployment without at least one worker is invalid. Synchronous steps still run in the request.
+flowable:
+  async-executor-activate: false
+
+spring:
+  modulith:
+    moments:
+      # Spring Modulith Moments (on by default through the starter, unused by Orqix) carries its own @EnableScheduling,
+      # which would run every @Scheduled job on API pods too. SplitRolesTest asserts that no scheduler exists here.
+      enabled: false

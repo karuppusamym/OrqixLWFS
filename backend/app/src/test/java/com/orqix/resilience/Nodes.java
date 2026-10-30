@@ -55,4 +55,16 @@ public final class Nodes {
     @TestPropertySource(properties = "orqix.runtime.lock-owner=node-b")
     public static class NodeB extends Base {
     }
+
+    /** API role (docs/adr/0004): serves requests, runs no engine jobs and no scheduled work. */
+    @ActiveProfiles("api")
+    @TestPropertySource(properties = "orqix.runtime.lock-owner=node-api")
+    public static class ApiNode extends Base {
+    }
+
+    /** Worker role (docs/adr/0004): runs engine jobs and scheduled work. */
+    @ActiveProfiles("worker")
+    @TestPropertySource(properties = "orqix.runtime.lock-owner=node-worker")
+    public static class WorkerNode extends Base {
+    }
 }

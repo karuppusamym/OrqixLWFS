@@ -21,7 +21,8 @@ export interface SavedCase {
   assertions: CaseAssertions
 }
 
-export const MAX_CASES = 10
+/** As many as one "Run all" (simulateWorkflowCases) and the shared suite take. */
+export const MAX_CASES = 20
 export const MAX_CASE_BYTES = 64 * 1024
 export const MAX_IMPORT_BYTES = 1024 * 1024
 const FORMAT = 'orqix-test-cases'

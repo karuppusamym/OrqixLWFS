@@ -74,6 +74,10 @@ public final class Node {
         return context.getBean(type);
     }
 
+    public boolean hasBean(Class<?> type) {
+        return context.getBeanNamesForType(type).length > 0;
+    }
+
     /** Closes the application context and evicts it from the test cache; returns the shutdown time in ms. */
     public long stop() {
         if (context == null) {

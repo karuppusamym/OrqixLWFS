@@ -27,8 +27,6 @@ configMapGenerator:
         app.kubernetes.io/part-of: orqix
         orqix.io/stage: prerequisites
 
-# The image name used in the manifests is a placeholder; overlays map it to a registry path and a tag or digest.
-images:
-  - name: orqix
-    newName: registry.example.com/REPLACE/orqix
-    newTag: latest
+# The manifests use the bare image name "orqix"; every overlay maps it to a registry path and a tag or digest. The base
+# must not rename it: an earlier base mapping to registry.example.com/REPLACE/orqix:latest meant the overlays' "orqix"
+# entries never matched, so every overlay rendered :latest and prod's digest pin was ignored.

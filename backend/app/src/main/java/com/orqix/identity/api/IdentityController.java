@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.web.bind.annotation.GetMapping;
@@ -19,6 +20,7 @@ import com.orqix.identity.Permission;
 import com.orqix.identity.PolicyService;
 import com.orqix.identity.SubjectService;
 import com.orqix.identity.WorkspaceAccess;
+import com.orqix.identity.WorkspaceFeatures;
 import com.orqix.shared.problem.ApiException;
 import com.orqix.shared.problem.ProblemCode;
 
@@ -34,12 +36,13 @@ public class IdentityController {
     }
 
     public record WorkspaceMembership(UUID id, String key, String name, String organizationName, boolean isTest,
-            List<String> permissions) {
+            List<String> permissions, List<WorkspaceFeatures.Feature> disabledFeatures) {
 
-        static WorkspaceMembership of(WorkspaceAccess access) {
+        static WorkspaceMembership of(WorkspaceAccess access, Set<WorkspaceFeatures.Feature> disabled) {
             WorkspaceAccess.Workspace w = access.workspace();
             return new WorkspaceMembership(w.id(), w.key(), w.name(), w.organizationName(), w.isTest(),
-                    permissionValues(access.permissions(), access.canStartAnything()));
+                    permissionValues(access.permissions(), access.canStartAnything()),
+                    disabled.stream().sorted().toList());
         }
     }
 
@@ -58,19 +61,25 @@ public class IdentityController {
     private final PolicyService policy;
     private final GroupDirectory groups;
     private final SubjectService subjects;
+    private final WorkspaceFeatures features;
 
     public IdentityController(CallerResolver callers, PolicyService policy, GroupDirectory groups,
-            SubjectService subjects) {
+            SubjectService subjects, WorkspaceFeatures features) {
         this.callers = callers;
         this.policy = policy;
         this.groups = groups;
         this.subjects = subjects;
+        this.features = features;
     }
 
     @GetMapping("/me")
     public Me getMe() {
         Caller caller = callers.current();
-        List<WorkspaceMembership> workspaces = policy.memberships(caller).stream().map(WorkspaceMembership::of).toList();
+        List<WorkspaceAccess> memberships = policy.memberships(caller);
+        Map<UUID, Set<WorkspaceFeatures.Feature>> off = features.disabled(
+                memberships.stream().map(WorkspaceAccess::workspaceId).toList());
+        List<WorkspaceMembership> workspaces = memberships.stream()
+                .map(a -> WorkspaceMembership.of(a, off.getOrDefault(a.workspaceId(), Set.of()))).toList();
         return new Me(new MeSubject(caller.subjectId(), caller.displayName(), caller.email()),
                 policy.isPlatformAdmin(caller), workspaces);
     }
@@ -78,7 +87,7 @@ public class IdentityController {
     @GetMapping("/workspaces/{workspaceId}")
     public WorkspaceMembership getWorkspace(@PathVariable UUID workspaceId) {
         Caller caller = callers.current();
-        return WorkspaceMembership.of(policy.requireVisible(caller, workspaceId));
+        return WorkspaceMembership.of(policy.requireVisible(caller, workspaceId), features.disabled(workspaceId));
     }
 
     @GetMapping("/workspaces/{workspaceId}/groups")

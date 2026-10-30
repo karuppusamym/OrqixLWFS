@@ -17,6 +17,7 @@ import { AiJobToasts } from '@/features/ai/AiJobToasts'
 import { cn } from '@/lib/cn'
 import { initials } from '@/lib/text'
 import { useIsDesktop } from '@/lib/useMediaQuery'
+import { FeatureOffNotice, featureOfPath } from '@/components/common/FeatureOffNotice'
 import { CommandPalette } from './CommandPalette'
 import { useWorkspace } from './workspace'
 
@@ -36,10 +37,11 @@ interface NavItem {
 /**
  * Application shell (docs/build/S7-frontend.md section 1): 224 px navigation (collapsible below 1024 px),
  * top bar with workspace switcher, notifications and user menu, and the test-workspace banner.
- * Navigation items are shown by permission; hiding is convenience and the server enforces.
+ * Navigation items are shown by permission and by the workspace feature switches (S127); hiding is convenience and
+ * the server enforces.
  */
 export function Shell() {
-  const { workspace, can, me } = useWorkspace()
+  const { workspace, can, isOn, me } = useWorkspace()
   const desktop = useIsDesktop()
   const [navOpenPath, setNavOpenPath] = useState<string | null>(null)
   const location = useLocation()
@@ -80,11 +82,11 @@ export function Shell() {
     // S126: case type authoring sits next to workflow authoring, for the people who may author (workflow.edit).
     { to: `${base}/case-designs`, label: 'Case types', icon: Shapes, visible: can('workflow.edit') },
     { to: `${base}/runs`, label: 'Runs', icon: Activity, visible: can('run.read') },
-    { to: `${base}/cases`, label: 'Cases', icon: Layers3, visible: can('workflow.read', 'workflow.start', 'run.read', 'task.act') },
-    { to: `${base}/apps`, label: 'Apps', icon: AppWindow, visible: true },
+    { to: `${base}/cases`, label: 'Cases', icon: Layers3, visible: isOn('cases') && can('workflow.read', 'workflow.start', 'run.read', 'task.act') },
+    { to: `${base}/apps`, label: 'Apps', icon: AppWindow, visible: isOn('apps') },
     { to: `${base}/views`, label: 'Views', icon: PanelsTopLeft, visible: can('workflow.read') },
     { to: `${base}/insights`, label: 'Insights', icon: BarChart3, visible: can('run.read') },
-    { to: `${base}/agent-writes`, label: 'Agent writes', icon: Send, visible: can('agent.approve-write-tool', 'run.operate') },
+    { to: `${base}/agent-writes`, label: 'Agent writes', icon: Send, visible: isOn('agents') && can('agent.approve-write-tool', 'run.operate') },
     { to: `${base}/promotions`, label: 'Promotions', icon: Rocket, visible: can('workflow.approve-promotion', 'workspace.manage-access', 'workflow.edit') },
     { to: `${base}/settings`, label: 'Settings', icon: Settings, visible: can('workspace.manage-access', 'connection.read') },
   ]
@@ -188,6 +190,7 @@ export function Shell() {
             </div>
           ) : null}
           <main id="main" tabIndex={-1} className={cn('min-w-0 flex-1 outline-none', fullBleed ? 'min-h-0 overflow-hidden' : 'mx-auto w-full max-w-[1200px] px-4 py-6 lg:px-8 lg:py-8')}>
+            <FeatureOffNotice feature={featureOfPath(pathname)} className={fullBleed ? 'm-4' : 'mb-6'} />
             <Outlet />
           </main>
           <AiJobToasts />

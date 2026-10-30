@@ -31,7 +31,7 @@ describe('case type drafts (S126)', () => {
 
   it('turns a published version into the draft that edits it', () => {
     expect(draftFromDefinition({ id: 'v1', key: 'claim', name: 'Claim', version: 3, createdAt: '2026-10-30T12:00:00Z', sourceXml: '<definitions/>',
-      viewBinding: { id: 'view', version: 2, definition: {} }, workflowTasks: [{ taskId: 't', workflowId: 'w', workflowKey: 'k', workflowName: 'K', releaseId: 'r', releaseNumber: 1, inputMapping: { a: 'b' }, resultMapping: {} }] }))
+      viewBinding: { id: 'view', version: 2, definition: {} as never }, workflowTasks: [{ taskId: 't', workflowId: 'w', workflowKey: 'k', workflowName: 'K', releaseId: 'r', releaseNumber: 1, inputMapping: { a: 'b' }, resultMapping: {} }] }))
       .toEqual({ key: 'claim', name: 'Claim', sourceXml: '<definitions/>', designerModel: null, dataFields: [], viewRef: { id: 'view', version: 2 },
         workflowTasks: [{ taskId: 't', inputMapping: { a: 'b' }, resultMapping: {} }], caseTasks: [], decisionTasks: [] })
   })

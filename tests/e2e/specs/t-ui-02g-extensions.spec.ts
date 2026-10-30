@@ -1,6 +1,6 @@
 import { type Page } from '@playwright/test'
 import { expect, test } from '../support/fixtures'
-import { MOCK } from '../support/env'
+import { BASE_URL, MOCK } from '../support/env'
 import { apiGet, workspaceId } from '../support/app'
 import { apiSend, createWorkflow, publish, uniq } from '../support/api'
 import { expectNoSeriousViolations } from '../support/axe'
@@ -133,6 +133,12 @@ test('approved extensions run sandboxed with granted data, fall back when they l
   const run = await apiGet<{ tasks: Array<{ id: string; nodeId: string }> }>(page, `/workspaces/${ws}/runs/${started.body.id}`)
   const taskId = run.tasks.find((task) => task.nodeId === 'manager')!.id
 
+  // The leaving extension reloads itself. Its sandboxed frame has an opaque origin, so the reload carries no session
+  // cookie (SameSite=Lax) and the server answers 401 under the application policy (frame-ancestors 'none'). The host
+  // removes the frame on the bridge's "unloading" message, usually before that answer arrives; when the answer comes
+  // first, Chromium blocks it and logs these two errors. Either way no second document runs in the frame.
+  sessions.allowConsoleError(`Framing '${new URL(BASE_URL).origin}/' violates the following Content Security Policy directive: "frame-ancestors 'none'". The request has been blocked.`)
+  sessions.allowConsoleError('Failed to load resource: the server responded with a status of 401 ()', 'chrome-error://chromewebdata/')
   page = await sessions.as('mani.manager')
   await page.goto(`/w/${ws}/apps/${slug}/${taskId}`)
   await expect(page.getByRole('heading', { level: 1, name: 'Extension desk' })).toBeVisible()

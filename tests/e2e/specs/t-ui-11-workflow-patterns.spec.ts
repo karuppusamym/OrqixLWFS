@@ -43,9 +43,9 @@ test.describe('workflow patterns (mock API)', () => {
       await expect(designer.locator(`.react-flow__node[data-id="${id}"]`)).toBeVisible()
     }
 
-    // The palette offers the three new steps.
+    // The palette offers the three new steps. The step list starts collapsed to icons named "Add: <label>".
     for (const name of ['Run in parallel', 'Wait', 'Start another workflow']) {
-      await expect(designer.getByRole('button', { name: new RegExp(`^${name}`) }).first()).toBeVisible()
+      await expect(designer.getByRole('button', { name: new RegExp(`^(Add: )?${name}`) }).first()).toBeVisible()
     }
 
     // Wait inspector: duration with a reading in plain language.

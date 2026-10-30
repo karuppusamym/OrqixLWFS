@@ -111,3 +111,5 @@ Application pages, composed actions and sandboxed extensions (UI02g): [S111](S11
 Application designer completion (UI02h): [S114](S114-application-designer-completion.md) (V193).
 Application designer round 3 (UI02i): [S116](S116-application-designer-round-3.md) (V194-V195).
 DMN parity (DMN01): [S121](S121-dmn-parity.md) (lists and ranges, ANY/PRIORITY/COLLECT, standard DMN download and upload; no migration).
+
+Workspace feature switches (administrators turn AI, cases, import, agents, apps and Kafka on or off per workspace; `409 FEATURE_DISABLED`): [S127](S127-workspace-feature-switches.md) (V208).

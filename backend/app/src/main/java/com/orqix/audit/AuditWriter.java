@@ -73,6 +73,8 @@ public class AuditWriter {
             Map.entry("access.grant.created", Set.of("permission", "workflowId", "principalType", "principalValue")),
             Map.entry("access.grant.deleted", Set.of("permission", "workflowId", "principalType", "principalValue")),
             Map.entry("access.group.updated", Set.of("groupKey", "memberCount", "revision")),
+            // S127: workspace feature switches.
+            Map.entry("workspace.feature.updated", Set.of("feature", "enabled")),
             Map.entry("workflow.created", Set.of("key", "templateId", "source")),
             Map.entry("case.definition.created", Set.of("version")),
             // S126: case type drafts; the key and draft version only, never the model or its fields.

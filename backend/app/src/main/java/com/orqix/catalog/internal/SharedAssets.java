@@ -43,7 +43,7 @@ import tools.jackson.databind.node.ObjectNode;
 /**
  * PL01 shared reusable assets (docs/build/S61). Four kinds share one index, owner and archive model: shared decision
  * tables ({@code decision_asset}), document templates (DOC08 registry), connection definitions (V1) and shared forms
- * ({@code form_asset}, docs/build/S127). Each is identified by kind and key inside one workspace, has immutable numbered
+ * ({@code form_asset}, docs/build/S128). Each is identified by kind and key inside one workspace, has immutable numbered
  * versions, an owner and an archive flag.
  * <p>
  * Authorization is per kind and never derived from a reference or an owner: decisions, templates and forms are read with

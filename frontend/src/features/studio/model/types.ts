@@ -75,7 +75,7 @@ export interface AssetRef {
   key: string
   version: number
   target: string
-  /** Kind form only (docs/build/S127): each copied question, from its shared key to its key in this workflow. */
+  /** Kind form only (docs/build/S128): each copied question, from its shared key to its key in this workflow. */
   fields?: Record<string, string>
 }
 

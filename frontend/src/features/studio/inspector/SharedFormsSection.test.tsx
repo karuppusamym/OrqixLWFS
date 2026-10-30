@@ -45,7 +45,7 @@ async function sharePurchaseForm() {
   await endpoints.createFormAsset(WS, { key: 'purchase-request', name: 'Purchase request', content: formContentOf(purchaseDef) })
 }
 
-describe('shared forms on the Form tab (docs/build/S127)', () => {
+describe('shared forms on the Form tab (docs/build/S128)', () => {
   it('saves the request form as a shared form and links its questions', async () => {
     signInAs('dana.designer')
     const store = setup()

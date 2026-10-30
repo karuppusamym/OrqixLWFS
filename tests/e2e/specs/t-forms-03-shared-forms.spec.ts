@@ -5,7 +5,7 @@ import { openFormTab, workspaceId } from '../support/app'
 import { expectNoSeriousViolations } from '../support/axe'
 
 /**
- * Shared forms (docs/build/S127): a designer saves the Purchase approval request form as a shared form, inserts it into
+ * Shared forms (docs/build/S128): a designer saves the Purchase approval request form as a shared form, inserts it into
  * a new workflow that already asks its own "title" question (the clash is renamed, never overwritten), both workflows
  * are published, and Settings > Shared assets lists both under "Where it is used".
  *

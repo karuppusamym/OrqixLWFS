@@ -20,6 +20,10 @@ info:
     * Errors: RFC 9457 `application/problem+json` with the extension members `code` and `correlationId`.
     * Lists: cursor pagination, `limit` 1–100 (default 25). Cursors are opaque and expire with their data.
     * `x-orqix-audit` names the audit action written for the operation (success, denial and failure).
+    * Feature switches (docs/build/S127): `x-orqix-feature` names the workspace module(s) an operation belongs to.
+      While a workspace administrator has switched that module off, the operation returns 409 FEATURE_DISABLED
+      (with `feature`) after the 404 visibility check; `x-orqix-feature-when`
+      limits this to one kind of resource. Reads stay available and work already running continues.
 servers:
   - url: /api/v1
 security:
@@ -88,6 +92,7 @@ paths:
     post:
       tags: [Cases]
       operationId: createCaseDefinition
+      x-orqix-feature: cases
       summary: Deploy a reviewed bounded CMMN case model
       description: Initial delivery accepts only the validated human-task, sentry and milestone subset. It does not imply full CMMN conformance.
       x-orqix-permission: workflow.edit
@@ -122,6 +127,7 @@ paths:
     post:
       tags: [Cases]
       operationId: startCaseInstance
+      x-orqix-feature: cases
       summary: Start a case pinned to this definition version
       x-orqix-permission: workflow.start
       x-orqix-audit: case.instance.started
@@ -861,6 +867,7 @@ paths:
     put:
       tags: [Views]
       operationId: assignAppPage
+      x-orqix-feature: apps
       summary: Pin an exact published page version to a route, or remove the route
       x-orqix-permission: workflow.publish
       x-orqix-audit: page.route-assigned
@@ -929,6 +936,7 @@ paths:
     post:
       tags: [Views]
       operationId: runAppPageChain
+      x-orqix-feature: apps
       summary: Run a pinned action chain; each step is authorized again by its own operation and the chain stops at the first failure
       x-orqix-permission: workspace.member + underlying action permission
       x-orqix-audit: page.chain.run
@@ -957,6 +965,7 @@ paths:
     post:
       tags: [Views]
       operationId: createUiExtension
+      x-orqix-feature: apps
       summary: Register a UI extension
       x-orqix-permission: workflow.edit
       x-orqix-audit: extension.created
@@ -976,6 +985,7 @@ paths:
     post:
       tags: [Views]
       operationId: submitUiExtensionVersion
+      x-orqix-feature: apps
       summary: Submit an immutable bundle version with declared capabilities for admin approval
       x-orqix-permission: workflow.edit
       x-orqix-audit: extension.version.submitted
@@ -987,6 +997,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Unprocessable' }
+        '409': { $ref: '#/components/responses/FeatureDisabled' }
   /workspaces/{workspaceId}/ui-extensions/{extensionId}/versions/{version}:
     parameters:
       - { $ref: '#/components/parameters/WorkspaceId' }
@@ -1010,6 +1021,7 @@ paths:
     post:
       tags: [Views]
       operationId: decideUiExtensionVersion
+      x-orqix-feature: apps
       summary: Approve, reject or revoke an extension version; the submitter cannot decide their own version
       x-orqix-permission: workspace.manage-access
       x-orqix-audit: extension.version.decided
@@ -1240,6 +1252,7 @@ paths:
       tags:
       - Migrations
       operationId: uploadMigrationProject
+      x-orqix-feature: migration
       x-orqix-permission: workflow.edit
       x-orqix-audit: migration.project.created
       responses:
@@ -1315,6 +1328,7 @@ paths:
       tags:
       - Migrations
       operationId: convertMigrationProjectNext
+      x-orqix-feature: migration
       x-orqix-permission: workflow.edit
       x-orqix-audit: migration.converted
       responses:
@@ -2458,7 +2472,7 @@ paths:
       summary: Create a shared form (a set of request questions with rules and groups) with its first version (at most 200 per workspace)
       description: |
         content holds request questions in the workflow inputSchema shape and their rules and groups in the inputUi shape
-        (docs/build/S127). The content is checked with the publishing compiler on a minimal workflow that holds only this
+        (docs/build/S128). The content is checked with the publishing compiler on a minimal workflow that holds only this
         form, so a shared form never holds a question or rule a workflow could not publish. Workflows copy a version into
         their own request form and pin it; the compiler checks every copy again when that workflow is validated or
         published. Keys and names are unique in the workspace. The caller becomes the owner.
@@ -3780,6 +3794,7 @@ paths:
     post:
       tags: [Adapters]
       operationId: createKafkaTrigger
+      x-orqix-feature: kafka
       summary: Consume an allow-listed topic of a named cluster to start a workflow or send a message (at most 5 per workspace)
       description: |
         The creator becomes the run-as person and must hold workflow.start for the workflow (start) or message.send
@@ -3811,6 +3826,7 @@ paths:
     put:
       tags: [Adapters]
       operationId: updateKafkaTrigger
+      x-orqix-feature: kafka
       summary: Edit, enable or disable a Kafka trigger (expectedVersion must match; enabling makes the caller the run-as person)
       x-orqix-permission: connection.manage
       x-orqix-audit: kafka.trigger-updated
@@ -3853,6 +3869,7 @@ paths:
     post:
       tags: [Adapters]
       operationId: sendKafkaTestMessage
+      x-orqix-feature: kafka
       summary: Stub mode only - push one JSON value through the trigger's record handler without a broker
       x-orqix-permission: connection.manage
       x-orqix-audit: kafka.test-message
@@ -3872,6 +3889,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Unprocessable' }
+        '409': { $ref: '#/components/responses/FeatureDisabled' }
 
   /workspaces/{workspaceId}/kafka-dead-letters:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
@@ -5631,6 +5649,8 @@ paths:
     post:
       tags: [Adapters]
       operationId: createAdapter
+      x-orqix-feature: kafka
+      x-orqix-feature-when: kind kafka
       summary: Define an adapter with exact allowlists and a secret reference
       description: Closed configuration per kind; unknown fields (including anything resembling a secret) are refused. Teams base URLs pass the egress policy. Only the local stub transport exists in this build.
       x-orqix-permission: connection.manage
@@ -5663,6 +5683,8 @@ paths:
     put:
       tags: [Adapters]
       operationId: updateAdapter
+      x-orqix-feature: kafka
+      x-orqix-feature-when: kind kafka
       summary: Edit or disable an adapter (docs/build/S73)
       description: |
         Kind and key never change. The configuration is validated exactly like on creation. `expectedVersion` must equal
@@ -5699,6 +5721,8 @@ paths:
     post:
       tags: [Adapters]
       operationId: testAdapterSend
+      x-orqix-feature: kafka
+      x-orqix-feature-when: kind kafka
       summary: Validate a request against the adapter rules and deliver it to the local stub only
       description: No remote system is contacted; the outcome is always stubbed. Live acceptance is an external gate.
       x-orqix-permission: connection.manage
@@ -5719,6 +5743,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Unprocessable' }
+        '409': { $ref: '#/components/responses/FeatureDisabled' }
 
   /workspaces/{workspaceId}/inbound-triggers:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
@@ -5739,6 +5764,8 @@ paths:
     post:
       tags: [Adapters]
       operationId: createInboundTrigger
+      x-orqix-feature: kafka
+      x-orqix-feature-when: source kafka
       summary: Define a signed inbound trigger that maps payload values into a workflow's start input
       description: A received event never starts a run by itself; a person with workflow.start starts it.
       x-orqix-permission: connection.manage
@@ -5771,6 +5798,8 @@ paths:
     put:
       tags: [Adapters]
       operationId: updateInboundTrigger
+      x-orqix-feature: kafka
+      x-orqix-feature-when: source kafka
       summary: Edit or disable an inbound trigger (docs/build/S73)
       description: |
         Source, key and target workflow never change. A disabled trigger answers 404 to senders; events already received
@@ -5806,6 +5835,8 @@ paths:
     post:
       tags: [Adapters]
       operationId: receiveInboundEvent
+      x-orqix-feature: kafka
+      x-orqix-feature-when: source kafka
       summary: Receive one signed event (no session or token)
       description: |
         Authenticated by `X-Orqix-Signature: sha256=<hex HMAC-SHA256(secret, timestamp + "." + rawBody)>` with
@@ -5840,6 +5871,7 @@ paths:
         '422': { $ref: '#/components/responses/Unprocessable' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
         '503': { $ref: '#/components/responses/Unavailable' }
+        '409': { $ref: '#/components/responses/FeatureDisabled' }
 
   /workspaces/{workspaceId}/inbound-events:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
@@ -5910,6 +5942,7 @@ paths:
     post:
       tags: [Agent write tools]
       operationId: approveAgentWriteTool
+      x-orqix-feature: agents
       summary: Approve one agent write tool for one workflow
       description: |
         Needs the grant-only permission agent.approve-write-tool (no role carries it). The approval covers exactly this
@@ -6144,6 +6177,8 @@ paths:
     post:
       tags: [Connections]
       operationId: registerConnectionVersion
+      x-orqix-feature: agents
+      x-orqix-feature-when: kind agent
       summary: Register a new immutable connection definition version
       x-orqix-permission: connection.manage
       x-orqix-audit: connection.version.created
@@ -6176,6 +6211,8 @@ paths:
     put:
       tags: [Connections]
       operationId: putConnectionBinding
+      x-orqix-feature: agents
+      x-orqix-feature-when: kind agent
       summary: Set this environment's endpoint and credential reference
       description: |
         The base URL host must be on the platform egress allowlist (S6). secretRef names a mounted secret; the
@@ -6207,6 +6244,7 @@ paths:
         '412': { $ref: '#/components/responses/PreconditionFailed' }
         '422': { $ref: '#/components/responses/Unprocessable' }
         '428': { $ref: '#/components/responses/PreconditionRequired' }
+        '409': { $ref: '#/components/responses/FeatureDisabled' }
 
   /workspaces/{workspaceId}/connections/{connectionKey}/oauth:
     parameters:
@@ -6339,6 +6377,8 @@ paths:
     post:
       tags: [Connections]
       operationId: testConnection
+      x-orqix-feature: agents
+      x-orqix-feature-when: kind agent
       summary: Invoke a testable (readOnly) operation through the real binding and egress policy
       x-orqix-permission: connection.manage
       x-orqix-audit: connection.tested
@@ -6366,6 +6406,61 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Unprocessable' }
+        '409': { $ref: '#/components/responses/FeatureDisabled' }
+
+  /workspaces/{workspaceId}/features:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [Access]
+      operationId: getWorkspaceFeatures
+      summary: Which product modules are switched on in this workspace (S127)
+      description: |
+        Every module is on until a workspace administrator switches it off. Members read this so the menu can hide
+        switched-off modules; the same list is on each WorkspaceMembership of getMe as disabledFeatures.
+      x-orqix-permission: workspace.member
+      responses:
+        '200':
+          description: One entry per module, in a fixed order
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceFeatures' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/features/{feature}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: feature
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/WorkspaceFeature' }
+    put:
+      tags: [Access]
+      operationId: setWorkspaceFeature
+      summary: Switch one product module on or off for this workspace (S128)
+      description: |
+        Takes effect on the next request on every replica (no cache). Switching off blocks new authoring and new starts
+        in the module (operations marked x-orqix-feature return 409 FEATURE_DISABLED); nothing is deleted, reads stay
+        available, and work already running keeps running. Kafka triggers of the workspace pause: messages stay on the
+        topic and are read when the module is switched back on. Setting the current value again changes nothing and
+        writes no audit record.
+      x-orqix-permission: workspace.manage-access
+      x-orqix-audit: workspace.feature.updated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetWorkspaceFeature' }
+      responses:
+        '200':
+          description: Saved; all modules with their current state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceFeatures' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /workspaces/{workspaceId}/access:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
@@ -6564,6 +6659,7 @@ paths:
     post:
       tags: [AI]
       operationId: generateAiDraft
+      x-orqix-feature: ai
       summary: Start generating a workflow draft from a description (async; never publishes)
       description: |
         Checks and authorizes synchronously (400, 403, 404, 422 AI_NOT_CONFIGURED or AI_MODEL_NOT_ALLOWED, 429 budget or
@@ -6633,6 +6729,7 @@ paths:
     post:
       tags: [AI]
       operationId: explainWorkflow
+      x-orqix-feature: ai
       summary: Explain a draft revision or release in plain business language
       x-orqix-permission: workflow.read
       x-orqix-audit: ai.workflow.explained
@@ -6658,6 +6755,7 @@ paths:
         '422': { $ref: '#/components/responses/Unprocessable' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
         '503': { $ref: '#/components/responses/Unavailable' }
+        '409': { $ref: '#/components/responses/FeatureDisabled' }
 
   /workspaces/{workspaceId}/workflows/{workflowId}/ai/form-suggestions:
     parameters:
@@ -6666,6 +6764,7 @@ paths:
     post:
       tags: [AI]
       operationId: suggestFormChanges
+      x-orqix-feature: ai
       summary: Suggest request-form changes from a short description (reviewable, never applied by the server)
       description: >-
         S90 (G4). Sends the description and the request form as the editor shows it to the configured AI profile, then
@@ -6705,6 +6804,7 @@ paths:
         '422': { $ref: '#/components/responses/Unprocessable' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
         '503': { $ref: '#/components/responses/Unavailable' }
+        '409': { $ref: '#/components/responses/FeatureDisabled' }
 
   /workspaces/{workspaceId}/workflows/{workflowId}/ai/draft-edits:
     parameters:
@@ -6713,6 +6813,7 @@ paths:
     post:
       tags: [AI]
       operationId: proposeDraftEdits
+      x-orqix-feature: ai
       summary: Propose structured, validated edits to the current draft from a conversation turn (never applied by the server)
       description: >-
         STU02 (docs/build/S95). Sends a bounded, redacted summary of the latest draft revision, the last conversation
@@ -6813,6 +6914,7 @@ paths:
     post:
       tags: [Migration]
       operationId: uploadMigration
+      x-orqix-feature: migration
       summary: Analyze Camunda BPMN, a Pega archive, or a Pega manual mapping package
       x-orqix-permission: workflow.edit
       x-orqix-audit: migration.uploaded
@@ -6840,6 +6942,7 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
         '422': { $ref: '#/components/responses/Unprocessable' }
+        '409': { $ref: '#/components/responses/FeatureDisabled' }
 
   /workspaces/{workspaceId}/migrations/{migrationId}:
     parameters:
@@ -6891,6 +6994,7 @@ paths:
     post:
       tags: [Migration]
       operationId: convertPegaCaseDefinition
+      x-orqix-feature: [migration, cases]
       summary: Convert a native Pega case type to a CMMN case definition (docs/build/S117)
       description: >-
         Builds a CMMN case definition in the case designer's admitted subset from a case type of a native rule archive:
@@ -6931,6 +7035,7 @@ paths:
     post:
       tags: [Migration]
       operationId: convertMigration
+      x-orqix-feature: migration
       summary: Apply designer mappings and create a workflow draft
       x-orqix-permission: workflow.edit
       x-orqix-audit: migration.converted
@@ -6963,6 +7068,7 @@ paths:
     post:
       tags: [Migration]
       operationId: uploadBlueprintMigration
+      x-orqix-feature: migration
       summary: Upload a Pega Blueprint PDF and transcribe it for review (docs/build/S91)
       description: >-
         The PDF (at most 25 MiB and 60 pages, starting with %PDF-) is read page by page in the isolated extraction worker:
@@ -7002,6 +7108,7 @@ paths:
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
         '422': { $ref: '#/components/responses/Unprocessable' }
         '503': { $ref: '#/components/responses/Unavailable' }
+        '409': { $ref: '#/components/responses/FeatureDisabled' }
 
   /workspaces/{workspaceId}/migrations/{migrationId}/blueprint:
     parameters:
@@ -7023,6 +7130,7 @@ paths:
     put:
       tags: [Migration]
       operationId: saveBlueprintTranscription
+      x-orqix-feature: migration
       summary: Save a reviewed or edited transcription as the next immutable revision
       description: >-
         Elements whose content differs from the extracted transcription cannot stay mapped and are stored as
@@ -7060,6 +7168,7 @@ paths:
     post:
       tags: [Migration]
       operationId: proposeBlueprintTranscription
+      x-orqix-feature: [migration, ai]
       summary: Optional AI structuring of the stored page texts, returned for review and never applied
       description: >-
         Uses the workspace AI profiles, price caps and budget (docs/build/S10). Page texts are redacted and sent as
@@ -7097,6 +7206,7 @@ paths:
         '422': { $ref: '#/components/responses/Unprocessable' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
         '503': { $ref: '#/components/responses/Unavailable' }
+        '409': { $ref: '#/components/responses/FeatureDisabled' }
 
   /workspaces/{workspaceId}/document-sources:
     parameters:
@@ -7482,6 +7592,9 @@ components:
       content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } }
     Conflict:
       description: Version, idempotency or state conflict; currentVersion/currentState may be included
+      content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } }
+    FeatureDisabled:
+      description: FEATURE_DISABLED - the module named by `feature` is switched off in this workspace (S127), or another state conflict
       content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } }
     PreconditionFailed:
       description: Stale If-Match; currentRevision included
@@ -9692,6 +9805,7 @@ components:
             - MIGRATION_BLOCKED
             - ATTACHMENT_BLOCKED
             - ATTACHMENT_LIMIT_REACHED
+            - FEATURE_DISABLED
             - INTERNAL_ERROR
         correlationId: { type: string }
         fieldErrors:
@@ -9710,6 +9824,9 @@ components:
           type: array
           description: importDecisionDmn and convertDecisionDmn only - the decisions of the file, to choose one with decisionId
           items: { $ref: '#/components/schemas/DecisionDmnChoice' }
+        feature:
+          description: FEATURE_DISABLED only - the switched-off module
+          allOf: [{ $ref: '#/components/schemas/WorkspaceFeature' }]
     FieldError:
       type: object
       required: [pointer, code, message]
@@ -9758,7 +9875,7 @@ components:
           items: { $ref: '#/components/schemas/WorkspaceMembership' }
     WorkspaceMembership:
       type: object
-      required: [id, key, name, organizationName, isTest, permissions]
+      required: [id, key, name, organizationName, isTest, permissions, disabledFeatures]
       properties:
         id: { $ref: '#/components/schemas/Uuid' }
         key: { $ref: '#/components/schemas/Key' }
@@ -9768,6 +9885,41 @@ components:
         permissions:
           type: array
           items: { $ref: '#/components/schemas/Permission' }
+        disabledFeatures:
+          type: array
+          description: Modules a workspace administrator switched off (S127); empty when everything is on
+          items: { $ref: '#/components/schemas/WorkspaceFeature' }
+    WorkspaceFeature:
+      type: string
+      enum: [ai, cases, migration, agents, apps, kafka]
+      description: |
+        A product module that can be switched off per workspace (S127). ai - AI assistance (drafts, explanations, form
+        and edit suggestions, Blueprint proposals). cases - case types and starting cases. migration - Camunda and Pega
+        import. agents - agent connections (MCP and A2A behind them) and approving agent write tools. apps - application
+        pages and UI extensions. kafka - Kafka triggers, Kafka adapters and Kafka-sourced inbound triggers.
+    WorkspaceFeatureState:
+      type: object
+      additionalProperties: false
+      required: [feature, enabled, updatedAt, updatedBy]
+      properties:
+        feature: { $ref: '#/components/schemas/WorkspaceFeature' }
+        enabled: { type: boolean }
+        updatedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }], description: 'null until first switched' }
+        updatedBy: { oneOf: [{ $ref: '#/components/schemas/SubjectRef' }, { type: 'null' }] }
+    WorkspaceFeatures:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/WorkspaceFeatureState' }
+    SetWorkspaceFeature:
+      type: object
+      additionalProperties: false
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
     Organization:
       type: object
       required: [id, key, name, createdAt]
@@ -11287,7 +11439,7 @@ components:
       additionalProperties: false
       required: [inputSchema]
       description: |
-        A reusable set of request questions (docs/build/S127): the questions in the workflow inputSchema shape and their
+        A reusable set of request questions (docs/build/S128): the questions in the workflow inputSchema shape and their
         presentation and rules in a subset of the workflow inputUi shape (order, widgets, visibleWhen, requiredWhen and
         layout.sections, the form groups). Rule conditions refer to the form's own questions (/input/<key>). A workflow
         copies these into its request form; the submit label, help text position and pinned request view stay the

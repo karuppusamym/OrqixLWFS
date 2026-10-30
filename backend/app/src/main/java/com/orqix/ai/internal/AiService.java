@@ -28,6 +28,7 @@ import com.orqix.identity.Caller;
 import com.orqix.identity.Permission;
 import com.orqix.identity.PolicyService;
 import com.orqix.identity.WorkspaceAccess;
+import com.orqix.identity.WorkspaceFeatures;
 import com.orqix.shared.Ids;
 import com.orqix.shared.idempotency.IdempotencyService;
 import com.orqix.shared.json.Json;
@@ -58,6 +59,8 @@ public class AiService {
     private static final String FORM_OPERATION = "suggestFormChanges";
     private static final String DRAFT_EDIT_OPERATION = "proposeDraftEdits";
     public static final String REASON_BUDGET = "The monthly AI budget is used up.";
+    /** S127: a workspace administrator switched AI assistance off in Settings, Features. */
+    public static final String REASON_SWITCHED_OFF = "AI assistance is switched off in this workspace.";
 
     /** An accepted generation: the job as it is now, and whether this response replays an earlier identical request. */
     public record Accepted(AiDtos.Job job, boolean replayed) {
@@ -90,11 +93,14 @@ public class AiService {
     private final DraftEdits editRules;
     private final java.util.concurrent.ConcurrentHashMap<UUID, Boolean> editsInFlight =
             new java.util.concurrent.ConcurrentHashMap<>();
+    private final WorkspaceFeatures features;
 
     public AiService(AiProperties properties, ModelPolicy models, Generator generator, WorkflowCompiler compiler,
             WorkspaceFacts facts, AiLedger ledger, AiJobStore jobs, AiJobRunner runner, DraftAuthoring drafts,
             PolicyService policy, IdempotencyService idempotency, AuditWriter audit,
-            PlatformTransactionManager transactions, MeterRegistry meters, Json json, Clock clock) {
+            PlatformTransactionManager transactions, MeterRegistry meters, Json json, Clock clock,
+            WorkspaceFeatures features) {
+        this.features = features;
         this.properties = properties;
         this.models = models;
         this.generator = generator;
@@ -127,8 +133,9 @@ public class AiService {
                     false, ApiException.forbidden());
         }
         BigDecimal spent = ledger.monthToDate();
-        String reason = models.disabledReason();
-        List<AiDtos.Profile> profiles = properties.keyConfigured() ? models.enabledProfiles().stream()
+        boolean switchedOff = !features.enabled(workspaceId, WorkspaceFeatures.Feature.AI);
+        String reason = switchedOff ? REASON_SWITCHED_OFF : models.disabledReason();
+        List<AiDtos.Profile> profiles = properties.keyConfigured() && !switchedOff ? models.enabledProfiles().stream()
                 .map(p -> new AiDtos.Profile(p.id(), p.label(), p.model(), p.variablePrice())).toList() : List.of();
         if (reason == null && spent.compareTo(properties.budget().monthlyUsd()) >= 0) {
             reason = REASON_BUDGET;

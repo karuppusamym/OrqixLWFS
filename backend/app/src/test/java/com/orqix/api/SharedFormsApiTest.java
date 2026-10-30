@@ -18,7 +18,7 @@ import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
 /**
- * Shared forms (docs/build/S127): a fourth kind of shared asset. A form version is checked with the publishing compiler
+ * Shared forms (docs/build/S128): a fourth kind of shared asset. A form version is checked with the publishing compiler
  * when it is saved; a workflow copies its questions into the request form and pins the version. The copy is checked at
  * validation and publish like a shared decision (missing, archived, edited, newer) and by the compiler like any other
  * request question, so reuse never bypasses a publishing rule. Where-used lists every workflow that copied it.

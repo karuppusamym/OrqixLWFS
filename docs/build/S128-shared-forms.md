@@ -1,4 +1,4 @@
-# S127: Shared forms
+# S128: Shared forms
 
 30 October 2026. Follow-up to the forms, cases and AI review ([docs/26](../26-forms-cases-ai-review.md)) and the 30 October regression review: one workflow can hold several forms (the request form and per-step forms, [S120](S120-studio-form-tab.md), [S123](S123-step-forms.md)), but a form could only be reused in another workflow through a pinned request-view layout ([S79](S79-pinned-approval-views.md)), which works only when the target already has identical questions. This slice makes a **form a fourth kind of shared asset** next to decision tables, document templates and connections ([S61](S61-shared-assets.md)), reusing the S61 index, owner, archive, where-used and reference check instead of building a new system. Migration **V207**.
 

@@ -1155,7 +1155,7 @@ public final class DraftEdits {
         }
         JsonNode assets = doc.path("dependencies").path("assets");
         if (assets.isArray()) {
-            // A shared form link (S127) targets the request form, never a step, so removing a step keeps it.
+            // A shared form link (S128) targets the request form, never a step, so removing a step keeps it.
             filter((ArrayNode) assets, a -> switch (a.path("kind").asString("")) {
                 case "decision" -> droppedDecisions.contains(a.path("target").asString());
                 case "form" -> false;

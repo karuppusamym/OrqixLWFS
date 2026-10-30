@@ -27,7 +27,7 @@ import tools.jackson.databind.node.NullNode;
 import tools.jackson.databind.node.ObjectNode;
 
 /**
- * Shared form content (docs/build/S127): request questions in the workflow {@code inputSchema} shape plus their order,
+ * Shared form content (docs/build/S128): request questions in the workflow {@code inputSchema} shape plus their order,
  * widgets, rules ({@code visibleWhen}, {@code requiredWhen}) and groups ({@code layout.sections}) in the {@code inputUi}
  * shape. A version is checked with the publishing compiler on the smallest workflow that holds only this form, so a
  * shared form never holds a question or rule a workflow could not publish.

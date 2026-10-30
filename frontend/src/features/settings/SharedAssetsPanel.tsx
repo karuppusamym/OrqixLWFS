@@ -42,7 +42,7 @@ const POLICY_WORDS: Record<string, string> = {
 }
 
 /**
- * Shared assets (PL01, docs/build/S61, S127): one place to find the decision tables, document templates, connections
+ * Shared assets (PL01, docs/build/S61, S128): one place to find the decision tables, document templates, connections
  * and forms that workflows reuse, by name, key or owner, and to see where each is used. Only the kinds you may read are searched.
  * Owners are labels: changing one, or a workflow referencing an asset, never gives anyone access.
  */

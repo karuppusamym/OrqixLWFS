@@ -3,7 +3,7 @@ import { canonical } from '@/lib/canonicalJson'
 import type { AssetRef, Condition, Definition, InputUiDoc } from './types'
 
 /**
- * Shared forms in the Studio (docs/build/S127). A shared form is a set of request questions with their widgets, rules and
+ * Shared forms in the Studio (docs/build/S128). A shared form is a set of request questions with their widgets, rules and
  * groups. Inserting one copies the questions into this workflow's request form and records a link: the pinned version
  * and, per copied question, the key it has here (renamed when this form already had that key). A later change to the
  * shared form never reaches this workflow until a designer updates the copy. These functions are pure; the server

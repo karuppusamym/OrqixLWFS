@@ -8,6 +8,7 @@ import { makeRelease } from './seed'
 import { attachStartFiles, planStartFiles } from './caseFiles'
 import { evaluate, migrationOptions } from './releaseMigration'
 import { migrationPublishDenial } from './migration'
+import { disabledFeaturesOf } from './features'
 import { normalizeDefinition, type DecisionTable, type Definition, type Literal } from '@/features/studio/model/types'
 import { buildFields, parseFormSchema, parseFormUi } from '@/lib/form/schema'
 import { validateJsonForm } from '@/lib/form/validate'
@@ -141,7 +142,7 @@ function idempotent(request: Request, user: MockUser, operation: string, payload
 
 function membership(user: MockUser, wsId: string) {
   const ws = WORKSPACES.find((w) => w.id === wsId)!
-  return { id: ws.id, key: ws.key, name: ws.name, organizationName: ws.organizationName, isTest: ws.isTest, permissions: permissionsOf(user, wsId) }
+  return { id: ws.id, key: ws.key, name: ws.name, organizationName: ws.organizationName, isTest: ws.isTest, permissions: permissionsOf(user, wsId), disabledFeatures: disabledFeaturesOf(wsId) }
 }
 
 function workflowsOf(wsId: string): MockWorkflow[] {

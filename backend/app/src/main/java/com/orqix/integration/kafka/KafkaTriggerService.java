@@ -343,9 +343,17 @@ public class KafkaTriggerService {
 
     // ---------------------------------------------------------------- for the runner and handler
 
+    /**
+     * Enabled triggers the runner should consume. Triggers of a workspace where Kafka is switched off (S127) are left
+     * out, so their consumers stop within one reconcile: messages stay on the topic, the committed offset is kept, and
+     * reading continues from there once the module is switched on again.
+     */
     @Transactional(readOnly = true)
     public List<Trigger> enabled() {
-        return jdbc.sql(TRIGGER + " WHERE enabled ORDER BY workspace_id, key").query(this::trigger).list();
+        return jdbc.sql(TRIGGER + """
+                 WHERE enabled AND NOT EXISTS (SELECT 1 FROM workspace_feature f
+                     WHERE f.workspace_id = kafka_trigger.workspace_id AND f.feature = 'kafka' AND NOT f.enabled)
+                 ORDER BY workspace_id, key""").query(this::trigger).list();
     }
 
     @Transactional(readOnly = true)

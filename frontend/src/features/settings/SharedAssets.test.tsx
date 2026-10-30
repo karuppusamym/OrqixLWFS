@@ -23,7 +23,7 @@ async function openAssets(user: ReturnType<typeof userEvent.setup>) {
 const names = () => screen.getAllByTestId('asset-row').map((row) => row.querySelector('span')?.textContent)
 
 describe('shared assets (PL01)', () => {
-  it('lists shared forms with their questions and where they are used (S127)', async () => {
+  it('lists shared forms with their questions and where they are used (S128)', async () => {
     signInAs('dana.designer')
     const purchase = db.workflows.get(PURCHASE_WORKFLOW_ID)!.drafts.at(-1)!.definition
     const content = formContentOf(purchase)

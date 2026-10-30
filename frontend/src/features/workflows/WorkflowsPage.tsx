@@ -21,7 +21,7 @@ import { ArchivedWorkflowsButton, folderName, ManageFoldersButton, OrganizationF
 
 /** Workflow list with "New workflow" (docs/build/S7-frontend.md section 2). */
 export function WorkflowsPage() {
-  const { workspace, can } = useWorkspace()
+  const { workspace, can, isOn } = useWorkspace()
   const ws = workspace.id
   const { params, update } = useListFilters()
   const applied = params.get('q') ?? ''
@@ -46,7 +46,7 @@ export function WorkflowsPage() {
             <div className="flex flex-wrap gap-2">
             <ManageFoldersButton />
             <ArchivedWorkflowsButton />
-            <Button asChild size="lg"><Link to={`/w/${ws}/migrations`}>Import workflow</Link></Button>
+            {isOn('migration') ? <Button asChild size="lg"><Link to={`/w/${ws}/migrations`}>Import workflow</Link></Button> : null}
             <Button variant="primary" size="lg" onClick={() => setCreating(true)}>
               <FilePlus2 aria-hidden="true" /> New workflow
             </Button>

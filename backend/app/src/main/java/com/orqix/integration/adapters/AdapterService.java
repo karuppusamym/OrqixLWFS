@@ -22,6 +22,7 @@ import com.orqix.identity.Caller;
 import com.orqix.identity.Permission;
 import com.orqix.identity.PolicyService;
 import com.orqix.identity.WorkspaceAccess;
+import com.orqix.identity.WorkspaceFeatures;
 import com.orqix.integration.EgressPolicy;
 import com.orqix.shared.Ids;
 import com.orqix.shared.json.Json;
@@ -74,8 +75,11 @@ public class AdapterService {
     private final Json json;
     private final Clock clock;
 
+    private final WorkspaceFeatures features;
+
     public AdapterService(PolicyService policy, EgressPolicy egress, AdapterTransport transport, AuditWriter audit,
-            JdbcClient jdbc, Json json, Clock clock) {
+            JdbcClient jdbc, Json json, Clock clock, WorkspaceFeatures features) {
+        this.features = features;
         this.policy = policy;
         this.egress = egress;
         this.transport = transport;
@@ -99,6 +103,13 @@ public class AdapterService {
                 Sql.instant(rs, "created_at"), Sql.instant(rs, "updated_at"))).list());
     }
 
+    /** S127: Kafka adapters need the kafka module on (x-orqix-feature-when kind kafka). Running sends are not gated. */
+    private void requireKafkaWhenKafka(UUID workspaceId, AdapterRules.Kind kind) {
+        if (kind == AdapterRules.Kind.KAFKA) {
+            features.require(workspaceId, WorkspaceFeatures.Feature.KAFKA);
+        }
+    }
+
     @Transactional
     public View create(Caller caller, UUID workspaceId, CreateRequest request) {
         WorkspaceAccess access = policy.freshAccess(caller, workspaceId).filter(WorkspaceAccess::visible)
@@ -106,6 +117,7 @@ public class AdapterService {
         policy.require(access, Permission.CONNECTION_MANAGE, "createAdapter", true);
         com.orqix.integration.SecretNamespaces.refuseReserved(request.secretRef(), "/secretRef");
         AdapterRules.Kind kind = AdapterRules.Kind.of(request.kind());
+        requireKafkaWhenKafka(workspaceId, kind);
         ObjectNode config;
         try {
             config = AdapterRules.validateConfig(kind, request.config(), this::checkEgress);
@@ -157,6 +169,7 @@ public class AdapterService {
                     "The adapter changed since you loaded it (now version " + current.version() + ").");
         }
         AdapterRules.Kind kind = AdapterRules.Kind.of(current.kind());
+        requireKafkaWhenKafka(workspaceId, kind);
         ObjectNode config;
         try {
             config = AdapterRules.validateConfig(kind, request.config(), this::checkEgress);
@@ -195,6 +208,7 @@ public class AdapterService {
             throw new ApiException(ProblemCode.VALIDATION_FAILED, "The adapter is disabled.");
         }
         AdapterRules.Kind kind = AdapterRules.Kind.of(head[0]);
+        requireKafkaWhenKafka(workspaceId, kind);
         JsonNode config = json.parse(row.getValue());
         ObjectNode payload;
         try {

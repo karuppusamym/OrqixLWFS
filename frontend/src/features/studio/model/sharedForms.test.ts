@@ -32,7 +32,7 @@ function withUrgent(): Definition {
   return def
 }
 
-describe('shared forms (docs/build/S127)', () => {
+describe('shared forms (docs/build/S128)', () => {
   it('saves the request form as content without workflow-level settings', () => {
     const def = purchaseTemplate()
     def.inputUi = { ...def.inputUi, submitLabel: 'Send', visibleWhen: { purpose: { fieldRef: '/input/amount', operator: 'gte', value: 100 } } }

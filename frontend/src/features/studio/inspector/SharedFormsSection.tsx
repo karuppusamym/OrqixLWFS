@@ -51,7 +51,7 @@ function useAction() {
 }
 
 /**
- * Shared forms on the Form tab (docs/build/S127). Insert copies a shared form's questions, rules and groups into this
+ * Shared forms on the Form tab (docs/build/S128). Insert copies a shared form's questions, rules and groups into this
  * request form and pins the version; a later change to the shared form never reaches this workflow until a designer
  * updates it here. Save as shared form makes this request form reusable by other workflows.
  */

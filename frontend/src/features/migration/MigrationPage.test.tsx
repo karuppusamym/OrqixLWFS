@@ -97,7 +97,8 @@ describe('migration workbench', () => {
     await user.selectOptions(await screen.findByLabelText('Map source assignment: source-managers'), 'managers')
     await user.click(screen.getByRole('checkbox', { name: /I reviewed the assumptions/ }))
     await user.click(screen.getByRole('button', { name: 'Convert to draft' }))
-    await waitFor(() => expect(router.state.location.pathname).toContain(`/workflows/${PURCHASE_WORKFLOW_ID}/edit`))
+    // Conversion, cache update and navigation take several renders; under a loaded machine they exceed the 1 s default.
+    await waitFor(() => expect(router.state.location.pathname).toContain(`/workflows/${PURCHASE_WORKFLOW_ID}/edit`), { timeout: 8000 })
     expect(body).toMatchObject({ groupMappings: { 'source-managers': 'managers' }, acknowledgeInfo: true })
     expect(await screen.findByText(/Imported from camunda7/)).toBeInTheDocument()
   })
@@ -149,6 +150,7 @@ describe('migration workbench', () => {
     server.use(http.get('*/api/v1/workspaces/:ws/migrations/:id', () => HttpResponse.json(source)))
     renderApp(`/w/${WS}/migrations/${id}`)
     expect(await screen.findByRole('region', { name: 'Generated decision checks' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Table of decision check results' })).toHaveAttribute('tabindex', '0')
     expect(screen.getByText('at 5000')).toBeInTheDocument()
     expect(screen.getByText('passed')).toBeInTheDocument()
     expect(screen.queryByLabelText('Request schema (optional JSON)')).not.toBeInTheDocument()

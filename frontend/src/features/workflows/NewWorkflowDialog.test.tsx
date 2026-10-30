@@ -1,8 +1,10 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { http, HttpResponse } from 'msw'
 import { afterEach, describe, expect, it } from 'vitest'
 import { aiMock } from '@/features/ai/mocks'
 import { db } from '@/mocks/state'
+import { server } from '@/test/server'
 import { renderApp, signInAs, WS } from '@/test/utils'
 
 async function open() {
@@ -117,5 +119,46 @@ describe('New workflow: choose how to start', () => {
     const guide = await screen.findByRole('dialog', { name: 'Answer a few questions' })
     await user.click(within(guide).getByRole('button', { name: /Other ways to start/ }))
     expect(await screen.findByRole('dialog', { name: 'New workflow' })).toBeInTheDocument()
+  })
+
+  it('a few questions: if saving the draft fails, trying again saves it without creating a second workflow', async () => {
+    let failures = 1
+    server.use(
+      http.put('*/api/v1/workspaces/:ws/workflows/:id/draft', () => {
+        if (failures-- > 0) return HttpResponse.json({ type: 'about:blank', title: 'Unavailable', status: 503, code: 'DEPENDENCY_UNAVAILABLE', correlationId: 'c-1' }, { status: 503 })
+        return undefined
+      }),
+    )
+    const { user, router, dialog } = await open()
+    await user.click(within(dialog).getByRole('button', { name: 'Answer a few questions' }))
+    const guide = await screen.findByRole('dialog', { name: 'Answer a few questions' })
+    await user.type(within(guide).getByLabelText(/What is the workflow called/), 'Retry request')
+    for (let i = 0; i < 3; i++) await user.click(within(guide).getByRole('button', { name: 'Next' }))
+    await user.click(within(guide).getByRole('button', { name: 'Create draft' }))
+    expect(await within(guide).findByText(/only its draft still needs saving/)).toBeInTheDocument()
+    expect(within(guide).getByRole('button', { name: /Back/ })).toBeDisabled()
+    await user.click(within(guide).getByRole('button', { name: 'Create draft' }))
+    await waitFor(() => expect(router.state.location.pathname).toMatch(/\/workflows\/[^/]+\/edit$/))
+    expect([...db.workflows.values()].filter((w) => w.name === 'Retry request')).toHaveLength(1)
+    expect(draftOf('Retry request').nodes.map((n) => n.id)).toEqual(['start', 'finished'])
+  })
+
+  it('a few questions: removing the question an approval depends on says that the approval now always runs', async () => {
+    const { user, dialog } = await open()
+    await user.click(within(dialog).getByRole('button', { name: 'Answer a few questions' }))
+    const guide = await screen.findByRole('dialog', { name: 'Answer a few questions' })
+    await user.type(within(guide).getByLabelText(/What is the workflow called/), 'Notice request')
+    await user.click(within(guide).getByRole('button', { name: 'Next' }))
+    await user.click(within(guide).getByRole('button', { name: /Add a question/ }))
+    await user.type(within(guide).getByLabelText('Question 2'), 'Amount')
+    await user.selectOptions(within(guide).getAllByLabelText('Answer type')[1]!, 'number')
+    await user.click(within(guide).getByRole('button', { name: 'Next' }))
+    await user.click(await within(guide).findByRole('button', { name: /Add an approval/ }))
+    await user.type(within(guide).getByLabelText('Approval 1'), 'Director review')
+    await user.selectOptions(within(guide).getByLabelText('Who approves?'), 'finance-approvers')
+    await user.selectOptions(within(guide).getByLabelText('Needed'), '1')
+    await user.click(within(guide).getByRole('button', { name: 'Back' }))
+    await user.click(within(guide).getByRole('button', { name: 'Remove question 2' }))
+    expect(within(guide).getByTestId('quick-notice')).toHaveTextContent('Director review depended on "Amount" and now runs for every request.')
   })
 })

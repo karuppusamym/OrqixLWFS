@@ -227,6 +227,7 @@ public class TaskService {
             throw new ApiException(ProblemCode.TASK_NOT_OPEN, "This task was already decided.");
         }
         suspensions.requireNotSuspended(workspaceId, task.runId());
+        requireNotSentBack(workspaceId, taskId);
         boolean reject = "reject".equals(request.action());
         if (reject && (request.reason() == null || request.reason().isBlank())) {
             throw new ApiException(ProblemCode.REASON_REQUIRED, "Give a reason for the rejection.")
@@ -265,27 +266,23 @@ public class TaskService {
         output.put("decidedAt", now.toString());
 
         tasks.end(workspaceId, taskId, "completed", now);
-        // A rejection ends a step with several approvers at once: the other approvers' open tasks are cancelled (S51).
-        int cancelledSiblings = reject ? tasks.cancelOpenForNode(workspaceId, task.runId(), task.nodeId(), now) : 0;
-        // A list-driven approval (S88): once no item is open (all approved, or this rejection cancelled the rest), the
-        // step's output also carries the number of approved items and the decision of every item in list order.
         TaskStore.Item item = tasks.item(workspaceId, taskId).orElse(null);
-        if (item != null) {
-            List<TaskStore.ItemState> items = tasks.items(workspaceId, item.scope());
-            if (items.stream().noneMatch(i -> "open".equals(i.status()))) {
-                var decisions = output.putArray("itemDecisions");
-                int approvedCount = 0;
-                for (TaskStore.ItemState i : items) {
-                    String value = "cancelled".equals(i.status()) ? "cancelled"
-                            : "reject".equals(i.action()) ? "rejected" : "approved";
-                    approvedCount += "approved".equals(value) ? 1 : 0;
-                    decisions.add(value);
-                }
-                output.put("approvedCount", approvedCount);
-            }
+        int cancelledSiblings;
+        boolean stepEnds;
+        if (item == null) {
+            // A rejection ends a step with several approvers at once: the other approvers' open tasks are cancelled (S51).
+            cancelledSiblings = reject ? tasks.cancelOpenForNode(workspaceId, task.runId(), task.nodeId(), now) : 0;
+            stepEnds = reject;
+        } else {
+            // A list-driven approval (S88, S104): settled once the quorum (default: every item) is approved, or once it
+            // can no longer be reached. Then the open items are cancelled, items never opened (one at a time) count as
+            // cancelled, and the step's output carries its decision, approvedCount and itemDecisions in list order.
+            Integer settled = settleItems(workspaceId, visible.run(), task.nodeId(), item, output, now);
+            cancelledSiblings = settled == null ? 0 : settled;
+            stepEnds = settled != null;
         }
         runs.mutate(workspaceId, task.runId(), m -> {
-            if (reject) {
+            if (stepEnds) {
                 m.removeStep(task.nodeId());
             } else {
                 m.removeStepOfTask(task.nodeId(), taskId);
@@ -322,6 +319,42 @@ public class TaskService {
         metrics.taskDecided(request.action());
         TaskQueries.DecisionRow decision = taskQueries.decision(workspaceId, decisionId).orElseThrow();
         return new Decided(views.decision(decision, task.label(), names(decision)), false);
+    }
+
+    /**
+     * Settles a list-driven approval after one item was decided (S104). With {@code n} items and quorum {@code k}
+     * (default {@code n}) the step is approved at {@code k} approvals and rejected at {@code n - k + 1} rejections. When
+     * settled, writes {@code decision}, {@code approvedCount} and {@code itemDecisions} into {@code output} and cancels
+     * the open items. For an S88 step ({@code k = n}) this is exactly the earlier rule: every item approved, or the
+     * first rejection.
+     *
+     * @return the number of open items cancelled when the step is settled, or null while it is not
+     */
+    private Integer settleItems(UUID workspaceId, RunStore.RunRow run, String nodeId, TaskStore.Item item,
+            ObjectNode output, Instant now) {
+        List<TaskStore.ItemState> items = tasks.items(workspaceId, item.scope());
+        int n = item.count() != null ? item.count() : items.size();
+        tools.jackson.databind.JsonNode node = releases.require(workspaceId, run.releaseId()).node(nodeId);
+        tools.jackson.databind.JsonNode configured = node == null ? null : node.path("config").path("perItem").path("quorum");
+        int k = configured != null && configured.isIntegralNumber() ? Math.min(Math.max(1, configured.intValue()), n) : n;
+        long approved = items.stream().filter(i -> "approve".equals(i.action())).count();
+        long rejected = items.stream().filter(i -> "reject".equals(i.action())).count();
+        if (approved < k && rejected <= n - k) {
+            return null;
+        }
+        int cancelled = tasks.cancelOpenForScope(workspaceId, item.scope(), now);
+        Map<Integer, String> byIndex = new java.util.HashMap<>();
+        for (TaskStore.ItemState i : tasks.items(workspaceId, item.scope())) {
+            byIndex.put(i.index(), "reject".equals(i.action()) ? "rejected" : "approve".equals(i.action()) ? "approved"
+                    : "cancelled");
+        }
+        var decisions = output.putArray("itemDecisions");
+        for (int index = 0; index < n; index++) {
+            decisions.add(byIndex.getOrDefault(index, "cancelled"));
+        }
+        output.put("approvedCount", approved);
+        output.put("decision", approved >= k ? "approved" : "rejected");
+        return cancelled;
     }
 
     @Transactional
@@ -421,13 +454,13 @@ public class TaskService {
     record VisibleTask(WorkspaceAccess access, TaskStore.TaskRow task, RunStore.RunRow run) {
     }
 
-    private VisibleTask visible(Caller caller, UUID workspaceId, String taskId) {
+    VisibleTask visible(Caller caller, UUID workspaceId, String taskId) {
         WorkspaceAccess access = freshVisible(caller, workspaceId);
         TaskStore.TaskRow task = tasks.find(workspaceId, taskId).orElseThrow(ApiException::notFound);
         return check(access, task);
     }
 
-    private VisibleTask visibleLocked(Caller caller, UUID workspaceId, String taskId) {
+    VisibleTask visibleLocked(Caller caller, UUID workspaceId, String taskId) {
         WorkspaceAccess access = freshVisible(caller, workspaceId);
         TaskStore.TaskRow snapshot = tasks.find(workspaceId, taskId).orElseThrow(ApiException::notFound);
         check(access, snapshot);
@@ -451,7 +484,7 @@ public class TaskService {
         return new VisibleTask(access, task, run);
     }
 
-    private void requireEligible(WorkspaceAccess access, TaskStore.TaskRow task, String operationId) {
+    void requireEligible(WorkspaceAccess access, TaskStore.TaskRow task, String operationId) {
         if (!access.has(Permission.TASK_ACT)) {
             throw policy.deny(access.workspaceId(), access.subjectId(), "task.act", operationId, true,
                     new ApiException(ProblemCode.FORBIDDEN));
@@ -471,7 +504,7 @@ public class TaskService {
         }
     }
 
-    private static void requireVersion(TaskStore.TaskRow task, int expected) {
+    static void requireVersion(TaskStore.TaskRow task, int expected) {
         if (task.version() != expected) {
             throw new ApiException(ProblemCode.TASK_VERSION_CONFLICT, "The task changed since you loaded it.")
                     .with("currentVersion", task.version());
@@ -498,7 +531,7 @@ public class TaskService {
                 && policy.groupKeys(workspaceId, subjectId, other.groups()).contains(task.candidateGroupKey());
     }
 
-    private RuntimeDtos.TaskDetail detail(VisibleTask visible) {
+    RuntimeDtos.TaskDetail detail(VisibleTask visible) {
         TaskStore.TaskRow task = visible.task();
         RunStore.RunRow run = visible.run();
         WorkspaceAccess access = visible.access();
@@ -526,7 +559,7 @@ public class TaskService {
                 summary.decision(),
                 new RuntimeDtos.TaskRequest(input, release.inputSchema(),
                         release.inputUi().isMissingNode() ? null : release.inputUi()),
-                historyViews, new RuntimeDtos.TaskForm(reasonRequired, correctableFor(access, task, node, run)),
+                historyViews, new RuntimeDtos.TaskForm(reasonRequired, correctableFor(access, task, node, run), taskQueries.openSendBack(task.workspaceId(), task.taskId()).orElse(null)),
                 allowed(access, task, suspensions.isSuspended(task.workspaceId(), task.runId())),
                 own == null ? null : views.ref(own.actor(), names),
                 node == null || !node.path("config").has("viewBinding") ? null : node.path("config").path("viewBinding").path("definition"));
@@ -580,20 +613,61 @@ public class TaskService {
         }
         suspensions.requireNotSuspended(workspaceId, task.runId());
         requireVersion(task, request.expectedVersion());
-        RunStore.RunRow run = runs.lock(workspaceId, task.runId()).orElseThrow(ApiException::notFound);
-        ReleaseQueries.ReleaseView release = releases.require(workspaceId, run.releaseId());
-        JsonNode node = release.node(task.nodeId());
+        requireNotSentBack(workspaceId, taskId);
+        int version = applyCorrection(caller, workspaceId, task, request.changes(), declaredCorrectable(workspaceId, task),
+                request.reason(), null);
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("taskId", taskId);
+        metadata.put("nodeId", task.nodeId());
+        metadata.put("fields", request.changes().size());
+        audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.USER, caller.subjectId(),
+                "task.input-corrected", "task", taskId, AuditWriter.Outcome.SUCCESS, metadata));
+        idempotency.complete(claim, "taskInputCorrection", Integer.toString(version), 200);
+        return detail(visible(caller, workspaceId, taskId));
+    }
+
+    /** The fields the task's step declares correctable in its pinned release (S42). */
+    List<String> declaredCorrectable(UUID workspaceId, TaskStore.TaskRow task) {
+        RunStore.RunRow run = runs.find(workspaceId, task.runId()).orElseThrow(ApiException::notFound);
+        JsonNode node = releases.require(workspaceId, run.releaseId()).node(task.nodeId());
         List<String> allowed = new ArrayList<>();
         if (node != null) {
             node.path("config").path("correctable").forEach(f -> allowed.add(f.asString()));
         }
-        if (request.changes().isEmpty() || request.changes().size() > 10) {
+        return allowed;
+    }
+
+    /** While the request is with its requester (S116), the task holder neither decides nor corrects it. */
+    void requireNotSentBack(UUID workspaceId, String taskId) {
+        if (sendBackOpen(workspaceId, taskId)) {
+            throw new ApiException(ProblemCode.TASK_NOT_OPEN,
+                    "The request is with its requester for corrections. Wait for the answer or withdraw the send-back.");
+        }
+    }
+
+    boolean sendBackOpen(UUID workspaceId, String taskId) {
+        return taskQueries.sendBackOpen(workspaceId, taskId);
+    }
+
+    /**
+     * Applies single-value changes of {@code allowed} fields to the request while its task is open, validated against the
+     * pinned form, through the engine; records before and after with the reason and bumps the task version so a decision
+     * prepared on the old data is refused. Shared by the holder's correction (S42) and the requester's send-back answer.
+     */
+    int applyCorrection(Caller caller, UUID workspaceId, TaskStore.TaskRow task, Map<String, JsonNode> changes,
+            List<String> allowed, String reason, String source) {
+        if (reason == null || reason.isBlank() || reason.length() > 500) {
+            throw new ApiException(ProblemCode.VALIDATION_FAILED, "Give a reason of 1 to 500 characters.");
+        }
+        if (changes == null || changes.isEmpty() || changes.size() > 10) {
             throw ApiException.malformed("changes must contain 1..10 request fields.");
         }
+        RunStore.RunRow run = runs.lock(workspaceId, task.runId()).orElseThrow(ApiException::notFound);
+        ReleaseQueries.ReleaseView release = releases.require(workspaceId, run.releaseId());
         tools.jackson.databind.node.ObjectNode corrected = (tools.jackson.databind.node.ObjectNode) run.input().deepCopy();
         tools.jackson.databind.node.ObjectNode before = json.object();
         tools.jackson.databind.node.ObjectNode after = json.object();
-        for (var change : request.changes().entrySet()) {
+        for (var change : changes.entrySet()) {
             JsonNode value = change.getValue();
             if (!allowed.contains(change.getKey()) || value == null || !value.isValueNode() || value.isNull()) {
                 throw new ApiException(ProblemCode.VALIDATION_FAILED,
@@ -622,22 +696,17 @@ public class TaskService {
         }
         int version = runs.correctInputWhileActive(workspaceId, run.id(), run.version(), corrected);
         // A decision loaded before the correction must not go through on the old data.
-        tasks.bumpVersion(workspaceId, taskId, task.version());
+        TaskStore.TaskRow current = tasks.find(workspaceId, task.taskId()).orElseThrow();
+        tasks.bumpVersion(workspaceId, task.taskId(), current.version());
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("before", before);
         data.put("after", after);
-        data.put("reason", request.reason().trim());
-        data.put("fields", request.changes().size());
+        data.put("reason", reason.trim());
+        data.put("fields", changes.size());
         data.put("version", version);
+        if (source != null) data.put("source", source);
         events.append(workspaceId, run.id(), "INPUT_CORRECTED", task.nodeId(), caller.subjectId(), data);
-        Map<String, Object> metadata = new LinkedHashMap<>();
-        metadata.put("taskId", taskId);
-        metadata.put("nodeId", task.nodeId());
-        metadata.put("fields", request.changes().size());
-        audit.write(new AuditWriter.Entry(workspaceId, AuditWriter.ActorType.USER, caller.subjectId(),
-                "task.input-corrected", "task", taskId, AuditWriter.Outcome.SUCCESS, metadata));
-        idempotency.complete(claim, "taskInputCorrection", Integer.toString(version), 200);
-        return detail(visible(caller, workspaceId, taskId));
+        return version;
     }
 
     private static String nodeLabel(ReleaseQueries.ReleaseView release, String nodeId) {

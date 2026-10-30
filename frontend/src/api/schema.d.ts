@@ -269,6 +269,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+                planItemId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Plan a discretionary item of a stage's planning table into the case
+         * @description Requires task.act and current membership of a case role authorized on the discretionary item, mapped to a workspace group. The item must be available to plan in an active stage. The planned item then follows its own required and manual activation rules. Expected version, reason, idempotency and case hold checks apply. Audit metadata excludes the reason.
+         */
+        post: operations["planCaseDiscretionaryItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/retryWorkflow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+                planItemId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start the pinned workflow of an active workflow task again after it could not start or was cancelled
+         * @description Requires run.operate. The workflow task must be active and its latest attempt failed or cancelled; at most 20 attempts. The input is mapped again from current case data, so correct the data first. Expected version, reason, idempotency and case hold checks apply.
+         */
+        post: operations["retryCaseWorkflowTask"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/start": {
         parameters: {
             query?: never;
@@ -567,6 +615,315 @@ export interface paths {
         };
         /** Get an immutable published view version */
         get: operations["getViewVersion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/views/{viewId}/pins": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                viewId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Review every pin of a view or page against a published version, with compatibility diagnostics and a plan hash (S114)
+         * @description Lists the holders that pin this view: workflow drafts and active releases, the newest version of each case definition, the workspace worklist, page drafts and published pages, and page routes. Each holder is ready, current, newer, blocked (with the diagnostics a move would have) or readOnly (an immutable release or published version, shown for review). The target defaults to the newest published version.
+         */
+        get: operations["listViewPins"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/views/{viewId}/pin-migrations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                viewId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        /** List applied pin migrations of a view, newest first (at most 50) */
+        get: operations["listViewPinMigrations"];
+        put?: never;
+        /**
+         * Move the selected reviewed pins to one published version in a single all-or-nothing operation
+         * @description The plan is read again and must still have the reviewed hash (409 otherwise). Each selected holder must be ready. Workflow and page drafts get a new draft revision, a case gets a new definition version with the same model, data fields and workflow task pins, and the worklist and page routes get a new revision; each through its own operation, so its permission, revision check and audit apply. Published releases and page versions never change. Any failure rolls back every item. A repeated request fails with 409 because the pins have changed.
+         */
+        post: operations["migrateViewPins"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/app-pages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** List application page routes and their pinned published page versions (S111) */
+        get: operations["listAppPages"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/app-pages/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                slug: components["parameters"]["AppPageSlug"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Read the exact published page pinned to this route with its pinned views, extension uses and caller grants
+         * @description Returns presentation only. Business data is read through the existing authorized task, request and case operations or the component data operation; every action runs through runAppPageChain.
+         */
+        get: operations["getAppPage"];
+        /** Pin an exact published page version to a route, or remove the route */
+        put: operations["assignAppPage"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/app-pages/{slug}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                slug: components["parameters"]["AppPageSlug"];
+            };
+            cookie?: never;
+        };
+        /** Append-only history of the versions pinned to a route */
+        get: operations["listAppPageHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/app-pages/{slug}/drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                slug: components["parameters"]["AppPageSlug"];
+            };
+            cookie?: never;
+        };
+        /** The caller's own saved request drafts for this page */
+        get: operations["listAppPageDrafts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/app-pages/{slug}/components/{componentId}/data": {
+        parameters: {
+            query?: {
+                context?: string;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                slug: components["parameters"]["AppPageSlug"];
+                componentId: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Server-filtered data for an extension component's granted bindings
+         * @description Reads the page context with the caller's own task or case read permission and returns only the bindings the pinned page grants to this extension component. A version that is no longer approved returns 403.
+         */
+        get: operations["getAppPageComponentData"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/app-pages/{slug}/chains/{chainId}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                slug: components["parameters"]["AppPageSlug"];
+                chainId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run a pinned action chain; each step is authorized again by its own operation and the chain stops at the first failure */
+        post: operations["runAppPageChain"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/ui-extensions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** List registered UI extension bundles and their versions */
+        get: operations["listUiExtensions"];
+        put?: never;
+        /** Register a UI extension */
+        post: operations["createUiExtension"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/ui-extensions/{extensionId}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                extensionId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit an immutable bundle version with declared capabilities for admin approval */
+        post: operations["submitUiExtensionVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/ui-extensions/{extensionId}/versions/{version}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                extensionId: components["schemas"]["Uuid"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        /** Read an extension version including its source for review */
+        get: operations["getUiExtensionVersion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/ui-extensions/{extensionId}/versions/{version}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                extensionId: components["schemas"]["Uuid"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve, reject or revoke an extension version; the submitter cannot decide their own version */
+        post: operations["decideUiExtensionVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/ui-extensions/{extensionId}/versions/{version}/files/{token}/{path}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                extensionId: components["schemas"]["Uuid"];
+                version: number;
+                token: string;
+                path: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * One file of a multi-file extension bundle, loaded by its sandboxed frame (S116; no session, the signed path is the credential)
+         * @description The frame document's policy names this version's signed file prefix, minted for a caller allowed to load the version and valid for twelve hours. Only approved or pending versions are served; revoked or rejected versions, expired or forged paths and unknown files are 404. Readable cross-origin because the frame has an opaque origin.
+         */
+        get: operations["getUiExtensionFile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/ui-extensions/{extensionId}/versions/{version}/frame": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                extensionId: components["schemas"]["Uuid"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        /**
+         * The sandboxed frame document for an extension version
+         * @description An HTML document whose Content-Security-Policy sandboxes it without same-origin access, admits no network, forms, frames or navigation, and lets only the bridge and the stored bundle run by SHA-256. Approved versions are served to members; pending versions only to designers and workspace administrators for review.
+         */
+        get: operations["getUiExtensionFrame"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1058,6 +1415,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/decisions/{decisionKey}/dmn": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+                decisionKey: components["parameters"]["DecisionKey"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Download a decision table of a draft as a standard DMN 1.3 file (docs/build/S121)
+         * @description The portable form of the table: the authored hit policy (with aggregation for COLLECT and outputValues for
+         *     PRIORITY), FEEL unary tests (>= 5000, "EU","UK", [1000..5000), not("x")), each output's defaultOutputEntry and
+         *     effective dates as a submissionDate column. The engine DMN that publishing deploys is a separate artifact. A
+         *     malformed table is refused with 422. Latest revision unless `revision` is given. Audited as workflow.exported
+         *     with format dmn and the revision.
+         */
+        get: operations["exportDecisionDmn"];
+        /**
+         * Replace a decision table of the latest draft with a decision table of a DMN file (a draft change only)
+         * @description The body is the DMN 1.1 to 1.5 file, `Content-Type: application/xml`, at most 512 KiB, read safely (no DTDs or
+         *     entities). `decisionId` chooses the decision when the file has several; without it such a file is refused with
+         *     422 and the problem lists `decisions`. The reader is strict: hit policies UNIQUE, FIRST, ANY, PRIORITY (one
+         *     output's outputValues) and COLLECT with SUM, MIN, MAX or COUNT; literal, comparison, range, list and not(...)
+         *     unary tests; literal outputs; input expressions that name a field. Anything else is a fieldError with its place
+         *     in the file, never approximated. The table key and version stay. The compiler then validates the draft with the
+         *     new table and a blocker inside it refuses the import (fieldError pointer /dmn/rows/...). On success a normal draft
+         *     revision is saved like saveDraft (If-Match, 412 on a stale revision, audit workflow.draft.saved with source
+         *     decisionDmn). Nothing is published.
+         */
+        put: operations["importDecisionDmn"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/workflows/{workflowId}/decisions/{decisionKey}/csv-template": {
         parameters: {
             query?: never;
@@ -1093,6 +1490,25 @@ export interface paths {
          * @description Folders are labels only. They grant and restrict nothing; the counts describe workflows every caller with workflow.read can already list.
          */
         get: operations["getWorkflowOrganization"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/archived-workflows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** Archived workflows of the workspace, most recently archived first (up to 200) */
+        get: operations["listArchivedWorkflows"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1303,7 +1719,7 @@ export interface paths {
         put?: never;
         /**
          * Create a shared decision table with its first version (at most 200 per workspace)
-         * @description content holds hitPolicy, rows and default exactly as in a workflow decision table, without its key and version.
+         * @description content holds hitPolicy (with aggregation or priority), rows and default exactly as in a workflow decision table, without its key and version.
          *     Only the structure is checked here; the compiler checks each copy in full in the workflow that uses it, because
          *     conditions name that workflow's fields. Keys and names are unique in the workspace. The caller becomes the owner.
          */
@@ -1331,6 +1747,56 @@ export interface paths {
          * @description A version identical to the latest and a version of an archived asset are refused (422). Workflows keep the version they pinned until a designer updates them.
          */
         post: operations["addDecisionAssetVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/shared-assets/decision/dmn": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Convert a decision table of a DMN file into shared decision content for review (nothing is stored)
+         * @description The body is the DMN file, `Content-Type: application/xml`, read like importDecisionDmn. When the file has
+         *     several decisions and `decisionId` is absent, the result lists `decisions` with `decisionId` and `content` null so
+         *     the caller can choose. Otherwise `content` is the converted table (structure checked like createDecisionAsset);
+         *     create the shared decision or its next version with createDecisionAsset or addDecisionAssetVersion. `notes`
+         *     name the parts of the file that carry no meaning for Orqix and were left out (annotations, descriptions).
+         */
+        post: operations["convertDecisionDmn"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/shared-assets/decision/{assetKey}/versions/{version}/dmn": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                assetKey: components["schemas"]["Key"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        /**
+         * Download a version of a shared decision as a standard DMN 1.3 file (docs/build/S121)
+         * @description The same portable form as exportDecisionDmn, named after the shared decision.
+         */
+        get: operations["exportSharedDecisionDmn"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1488,9 +1954,33 @@ export interface paths {
         /**
          * Archive a workflow so it leaves the catalog, the start lists and child-workflow choices
          * @description Refused while requests of the workflow are still open (409 RESOURCE_IN_USE). Finished requests,
-         *     releases and the audit trail stay readable through their own links. There is no un-archive in this version.
+         *     releases and the audit trail stay readable through their own links. `restoreWorkflow` brings it back.
          */
         post: operations["archiveWorkflow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore an archived workflow to the catalog with its folder, owner, draft and active release
+         * @description The workflow can be started again by the same people as before archiving. 404 when the workflow is
+         *     not archived (or does not exist); 409 WORKFLOW_VERSION_CONFLICT when the version is stale.
+         */
+        post: operations["restoreWorkflow"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2054,6 +2544,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/releases/{releaseId}/decisions/{decisionKey}/dmn": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+                releaseId: components["parameters"]["ReleaseId"];
+                decisionKey: components["parameters"]["DecisionKey"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Download a decision table of a published release as a standard DMN 1.3 file (docs/build/S121)
+         * @description The same portable form as exportDecisionDmn, written from the table the release was published with. Same
+         *     permission and audit as the release BPMN (`workflow.export`, audit workflow.exported with format dmn and the
+         *     release number); outsiders get 404.
+         */
+        get: operations["exportReleaseDecisionDmn"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/workflows/{workflowId}/active-release": {
         parameters: {
             query?: never;
@@ -2182,8 +2699,10 @@ export interface paths {
         /**
          * Poll the wait a callback token belongs to (no session; the token is the credential)
          * @description States waiting, resumed, expired or cancelled (with reason timedOut, requestEnded or answeredElsewhere). Send
-         *     the ETag back in If-None-Match to get 304 while nothing changed. An unknown, revoked or replaced token, or a
-         *     token of another workspace, is 404.
+         *     the ETag back in If-None-Match to get 304 while nothing changed. An unknown, revoked, replaced or purged token,
+         *     or a token of another workspace, is 404. Polls and resumes together are limited per token (default 60 a minute
+         *     on each server; 429 with Retry-After). A closed wait is purged after the deployment's retention (default 30
+         *     days), after which its token is unknown.
          */
         get: operations["pollCallbackWait"];
         put?: never;
@@ -2210,7 +2729,7 @@ export interface paths {
          * @description The result must match the waiting step's declared values (at most 16 KiB, flat scalars). It is delivered through
          *     the same path as sendMessage. 409 CALLBACK_ALREADY_RESUMED for a different key or body after a resume,
          *     CALLBACK_NOT_WAITING when the wait closed or the token expired, RUN_SUSPENDED while an operator suspended the
-         *     request (repeat it after resumeRun).
+         *     request (repeat it after resumeRun). Counts toward the per-token limit shared with polling (429).
          */
         post: operations["resumeCallbackWait"];
         delete?: never;
@@ -2428,6 +2947,50 @@ export interface paths {
         get: operations["getRun"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/runs/{runId}/send-backs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        /** Send-backs of a request (S116), newest first; field values only for callers who may read the request data */
+        get: operations["listRunSendBacks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/runs/{runId}/send-backs/{sendBackId}/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["schemas"]["Uuid"];
+                sendBackId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * The requester corrects the returned fields; the send-back closes and the task version changes
+         * @description Only the requester, while the send-back and its task are open and the request is not suspended, with the task version shown. Only the returned fields, as single values, validated against the pinned form; before and after values are recorded. A decision prepared on the old data is refused.
+         */
+        post: operations["answerSendBack"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3328,6 +3891,51 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["claimTask"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/tasks/{taskId}/send-back": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                /** @description Engine task identifier; always resolved through the workspace's task projection first. */
+                taskId: components["parameters"]["TaskId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send the request back to its requester for the fields the step declares correctable (S116)
+         * @description Only the eligible holder of an open task whose step declares correctable fields. At most one send-back is open per task; while it is open the task cannot be decided or corrected by the holder. Bumps the task version.
+         */
+        post: operations["sendTaskBack"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/tasks/{taskId}/send-back/withdraw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                /** @description Engine task identifier; always resolved through the workspace's task projection first. */
+                taskId: components["parameters"]["TaskId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Withdraw the open send-back of a task (holder or operator) */
+        post: operations["withdrawTaskSendBack"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4367,6 +4975,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/migrations/{migrationId}/pega-rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                migrationId: components["parameters"]["MigrationId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Inventory, effective-rule resolution and per-rule conversion results of a native Pega rule archive (docs/build/S112)
+         * @description Recomputed from the immutable archive bytes. Lists every archive entry with its SHA-256 and decoded identity or refusal reason, the application ruleset stack, each case context's class chain with the chosen and shadowed candidates of every rule key, and for every starting point the compatibility report and per-rule conversion results with target fragment hashes. After conversion, the recorded per-rule results of the converted starting point are included. 404 for other source formats.
+         */
+        get: operations["getPegaRuleArchive"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/migrations/{migrationId}/case-definition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                migrationId: components["parameters"]["MigrationId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Convert a native Pega case type to a CMMN case definition (docs/build/S117)
+         * @description Builds a CMMN case definition in the case designer's admitted subset from a case type of a native rule archive: stages, workflow tasks pinned to the published workflows converted from each process flow (workflowMappings), discretionary items for optional processes and user events for alternate stages (roleMappings), service level timers with deadline milestones, and typed case data fields. With dryRun the proposal is returned and checked against the subset; otherwise the definition is created through the case definition API, which deploys it and pins the workflow releases. The same request again returns the recorded definition; a different one is a conflict.
+         */
+        post: operations["convertPegaCaseDefinition"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/migrations/{migrationId}/convert": {
         parameters: {
             query?: never;
@@ -4400,7 +5054,7 @@ export interface paths {
         put?: never;
         /**
          * Upload a Pega Blueprint PDF and transcribe it for review (docs/build/S91)
-         * @description The PDF (at most 25 MiB and 60 pages, starting with %PDF-) is read page by page in the isolated extraction worker; no JavaScript, form action or embedded file is executed or opened, and encrypted or damaged PDFs are refused. A generic outline layout proposes a structured transcription with source page references; every element starts as proposed and must be reviewed. Nothing is converted or published by this call. The layout is generic and does not claim compatibility with Pega's own Blueprint export layout.
+         * @description The PDF (at most 25 MiB and 60 pages, starting with %PDF-) is read page by page in the isolated extraction worker: page text, the position and font of each text run, and the colour of small shapes such as step icons. No JavaScript, form action or embedded file is executed or opened, images are not decoded, and encrypted or damaged PDFs are refused. A layout proposes a structured transcription with source page references; every element starts as proposed and must be reviewed. Pega's "Application Overview Document" Blueprint export is read with the pega-blueprint layout (written against one genuine export), which also stores each page in reading order (stage by stage); other documents are read with the generic outline layout. An export can define several case types and one upload transcribes one: caseType names it (default the first); an unknown name is refused with the names the document has (400). Nothing is converted or published by this call.
          */
         post: operations["uploadBlueprintMigration"];
         delete?: never;
@@ -4650,6 +5304,74 @@ export interface components {
             /** @description Bounded CMMN 1.1 XML source (64 KiB UTF-8) */
             sourceXml: string;
             dataFields?: components["schemas"]["CaseDataField"][];
+            workflowTasks?: components["schemas"]["CaseWorkflowTaskMapping"][];
+            /** @description One mapping per CMMN caseTask (caseRef prefix:key bound to urn:orqix:case); inputMapping is child field to parent field, resultMapping is parent field to child field or outcome */
+            caseTasks?: components["schemas"]["CaseWorkflowTaskMapping"][];
+            /** @description One mapping per CMMN decisionTask (decision externalRef prefix:key bound to urn:orqix:decision); inputMapping is table fieldRef to case field, resultMapping is case field to table output */
+            decisionTasks?: components["schemas"]["CaseWorkflowTaskMapping"][];
+        };
+        CaseDecisionPin: {
+            taskId: string;
+            assetId: components["schemas"]["Uuid"];
+            decisionKey: string;
+            decisionName: string;
+            decisionVersion: number;
+            inputMapping: {
+                [key: string]: string;
+            };
+            resultMapping: {
+                [key: string]: string;
+            };
+        };
+        CaseChildPin: {
+            taskId: string;
+            childDefinitionId: components["schemas"]["Uuid"];
+            childKey: string;
+            childName: string;
+            childVersion: number;
+            inputMapping: {
+                [key: string]: string;
+            };
+            resultMapping: {
+                [key: string]: string;
+            };
+        };
+        /** @description Mapping of one CMMN processTask whose process names a workspace workflow (externalRef orqix:workflow:<key>). */
+        CaseWorkflowTaskMapping: {
+            taskId: string;
+            /** @description Workflow request field to case data field */
+            inputMapping?: {
+                [key: string]: string;
+            };
+            /** @description Case data field to workflow result field, or outcome, outcomeKind or reference */
+            resultMapping?: {
+                [key: string]: string;
+            };
+        };
+        CaseWorkflowPin: {
+            taskId: string;
+            workflowId: components["schemas"]["Uuid"];
+            workflowKey: string;
+            workflowName: string;
+            releaseId: components["schemas"]["Uuid"];
+            releaseNumber: number;
+            inputMapping: {
+                [key: string]: string;
+            };
+            resultMapping: {
+                [key: string]: string;
+            };
+        };
+        CaseWorkflowStatus: {
+            /** @description The child case a case task started */
+            caseId: components["schemas"]["Uuid"] | null;
+            attempt: number;
+            /** @enum {string} */
+            status: "running" | "completed" | "failed" | "cancelled" | "fenced";
+            runId: components["schemas"]["Uuid"] | null;
+            reference: string | null;
+            outcome: string | null;
+            detail: string | null;
         };
         CaseDefinition: {
             viewBinding?: components["schemas"]["PinnedCaseView"] | null;
@@ -4669,6 +5391,9 @@ export interface components {
             createdAt: components["schemas"]["Timestamp"];
             sourceXml: string;
             dataFields?: components["schemas"]["CaseDataField"][];
+            workflowTasks?: components["schemas"]["CaseWorkflowPin"][];
+            caseTasks?: components["schemas"]["CaseChildPin"][];
+            decisionTasks?: components["schemas"]["CaseDecisionPin"][];
         };
         CasePlanItem: {
             id: string;
@@ -4684,6 +5409,7 @@ export interface components {
             allowedActions: {
                 [key: string]: boolean;
             };
+            workflow?: components["schemas"]["CaseWorkflowStatus"] | null;
         };
         CaseEvent: {
             version: number;
@@ -4791,12 +5517,61 @@ export interface components {
             sections: components["schemas"]["ViewSection"][];
             actions: components["schemas"]["ViewAction"][];
         };
+        ViewPinItem: {
+            key: string;
+            /** @enum {string} */
+            holderType: "workflowDraft" | "workflowRelease" | "caseDefinition" | "caseVersion" | "worklist" | "pageDraft" | "pageVersion" | "route";
+            holderId: string;
+            holderName: string;
+            location: string;
+            pinnedVersions: number[];
+            /** @description Draft revision, case definition version or route/worklist revision the update expects */
+            expected: number | null;
+            /** @enum {string} */
+            status: "ready" | "current" | "newer" | "blocked" | "readOnly";
+            problems: string[];
+            /** @description What applying this item does */
+            effect: string;
+        };
+        ViewPinInventory: {
+            viewId: components["schemas"]["Uuid"];
+            viewName: string;
+            /** @enum {string} */
+            kind: "request" | "approval" | "case" | "worklist" | "page";
+            latestVersion: number;
+            targetVersion: number;
+            planHash: string;
+            items: components["schemas"]["ViewPinItem"][];
+        };
+        MigrateViewPins: {
+            targetVersion: number;
+            planHash: string;
+            items: string[];
+            reason: string;
+        };
+        ViewPinApplied: {
+            key: string;
+            holderType: string;
+            holderName: string;
+            outcome: string;
+        };
+        ViewPinMigration: {
+            id: components["schemas"]["Uuid"];
+            targetVersion: number;
+            reason: string;
+            items: components["schemas"]["ViewPinApplied"][];
+            appliedBy: components["schemas"]["Uuid"];
+            appliedAt: components["schemas"]["Timestamp"];
+        };
+        ViewPinMigrationList: {
+            items: components["schemas"]["ViewPinMigration"][];
+        };
         ViewSummary: {
             id: components["schemas"]["Uuid"];
             name: string;
             description: string | null;
             /** @enum {string} */
-            kind: "request" | "approval" | "case" | "worklist";
+            kind: "request" | "approval" | "case" | "worklist" | "page";
             draftRevision: number;
             publishedVersion: number | null;
             createdAt: components["schemas"]["Timestamp"];
@@ -4816,7 +5591,7 @@ export interface components {
             description: string | null;
             draftRevision: number;
             publishedVersion: number | null;
-            definition: components["schemas"]["ViewDefinition"];
+            definition: components["schemas"]["LibraryViewDefinition"];
             versions: components["schemas"]["ViewVersionSummary"][];
         };
         ViewVersion: {
@@ -4824,13 +5599,13 @@ export interface components {
             version: number;
             name: string;
             description: string | null;
-            definition: components["schemas"]["ViewDefinition"];
+            definition: components["schemas"]["LibraryViewDefinition"];
             publishedAt: components["schemas"]["Timestamp"];
         };
         CreateView: {
             name: string;
             description?: string;
-            definition: components["schemas"]["ViewDefinition"];
+            definition: components["schemas"]["LibraryViewDefinition"];
         };
         CopyView: {
             name: string;
@@ -4839,10 +5614,278 @@ export interface components {
             expectedRevision: number;
             name: string;
             description?: string;
-            definition: components["schemas"]["ViewDefinition"];
+            definition: components["schemas"]["LibraryViewDefinition"];
         };
         PublishView: {
             expectedRevision: number;
+        };
+        /** @description A form view (request, approval, case or worklist) or an application page (S111). */
+        LibraryViewDefinition: components["schemas"]["ViewDefinition"] | components["schemas"]["PageDefinition"];
+        ViewElementId: string;
+        /** @description Data-only application page (S111). Regions are fixed by the layout; components pin exact published view and extension versions; chains use the fixed server-checked step allowlist and always stop at the first failure. */
+        PageDefinition: {
+            /** @enum {integer} */
+            schemaVersion: 1;
+            /** @enum {string} */
+            kind: "page";
+            title: string;
+            /** @enum {string} */
+            context: "none" | "task" | "case";
+            /** @enum {string} */
+            layout: "single" | "sidebar" | "split";
+            /** @enum {string} */
+            breakpoint: "sm" | "md" | "lg";
+            regions: components["schemas"]["PageRegion"][];
+            chains: components["schemas"]["ActionChain"][];
+        };
+        PageRegion: {
+            /** @enum {string} */
+            id: "main" | "side" | "start" | "end";
+            label: string;
+            components: components["schemas"]["PageComponent"][];
+        };
+        /** @description One page component. Allowed properties depend on `type`; the server rejects properties that do not belong to it. */
+        PageComponent: {
+            id: components["schemas"]["ViewElementId"];
+            /** @enum {string} */
+            type: "heading" | "text" | "view" | "list" | "details" | "actions" | "extension";
+            text?: string;
+            label?: string;
+            view?: components["schemas"]["CaseViewRef"];
+            workflowId?: components["schemas"]["Uuid"];
+            /** @enum {string} */
+            source?: "assignedTasks" | "claimableTasks" | "myRequests" | "cases" | "task" | "case";
+            columns?: components["schemas"]["PageField"][];
+            fields?: components["schemas"]["PageField"][];
+            limit?: number;
+            chains?: components["schemas"]["ViewElementId"][];
+            extension?: components["schemas"]["CaseViewRef"];
+            bindings?: string[];
+            height?: number;
+            visibleWhen?: components["schemas"]["PageCondition"];
+        };
+        PageField: {
+            field: string;
+            label: string;
+        };
+        /** @description Presentation-only visibility; hiding a component never grants or denies an operation. */
+        PageCondition: {
+            binding: string;
+            equals: string | number | boolean;
+        };
+        ActionChain: {
+            id: components["schemas"]["ViewElementId"];
+            label: string;
+            /** @description Must be true; later steps never run after a failed step. */
+            stopOnFailure: boolean;
+            steps: components["schemas"]["ChainStep"][];
+        };
+        ChainStep: {
+            action: components["schemas"]["ChainAction"];
+            component?: components["schemas"]["ViewElementId"];
+            target?: string;
+            /** @description CMMN element id of the plan item, for startPlanItem, completePlanItem and planDiscretionaryItem; resolved in the case when the step runs */
+            planItem?: string;
+            /**
+             * @description Plan-item steps only. With several available occurrences: single stops (default), newest takes the most recently created, choose takes the one the person picked (ChainInput.planItems).
+             * @enum {string}
+             */
+            occurrence?: "single" | "newest" | "choose";
+            /**
+             * @description The step's own inverse, run (authorized again) when a later step fails: submit→cancelRequest (needs run.operate), saveDraft→restoreDraft, claim→releaseTask, saveCaseData→restoreCaseData, suspendCase→resumeCase, resumeCase→suspendCase, sendBack→withdrawSendBack. Other steps cannot be undone. Absent means no compensation.
+             * @enum {string}
+             */
+            compensate?: "cancelRequest" | "restoreDraft" | "releaseTask" | "restoreCaseData" | "resumeCase" | "suspendCase" | "withdrawSendBack";
+        };
+        /**
+         * @description requestCorrection runs correctTaskInput (fields the step lets the holder correct). Case steps run the case lifecycle, plan-item and task-completion operations with the carried case version and the component's reason.
+         * @enum {string}
+         */
+        ChainAction: "submit" | "saveDraft" | "claim" | "requestCorrection" | "sendBack" | "approve" | "reject" | "saveCaseData" | "suspendCase" | "resumeCase" | "closeCase" | "startPlanItem" | "completePlanItem" | "planDiscretionaryItem" | "navigate";
+        AppPageSlugValue: string;
+        AppPageRoute: {
+            slug: components["schemas"]["AppPageSlugValue"];
+            revision: number;
+            title: string | null;
+            page: components["schemas"]["CaseViewRef"] | null;
+            changedAt: components["schemas"]["Timestamp"];
+        };
+        AppPageRouteList: {
+            items: components["schemas"]["AppPageRoute"][];
+            canAssign: boolean;
+        };
+        AssignAppPage: {
+            expectedRevision: number;
+            viewRef?: components["schemas"]["CaseViewRef"] | null;
+        };
+        AppPageHistory: {
+            items: {
+                revision: number;
+                page: components["schemas"]["CaseViewRef"] | null;
+                changedBy: components["schemas"]["Uuid"];
+                changedAt: components["schemas"]["Timestamp"];
+            }[];
+        };
+        AppPageRuntime: {
+            slug: components["schemas"]["AppPageSlugValue"];
+            revision: number;
+            page: {
+                id: components["schemas"]["Uuid"];
+                version: number;
+                definition: components["schemas"]["PageDefinition"];
+            };
+            views: components["schemas"]["PinnedCaseView"][];
+            extensions: components["schemas"]["AppPageExtensionUse"][];
+            grants: components["schemas"]["AppPageGrants"];
+        };
+        AppPageExtensionUse: {
+            id: components["schemas"]["Uuid"];
+            version: number;
+            name: string;
+            status: components["schemas"]["UiExtensionStatus"];
+            sha256: string;
+            capabilities: components["schemas"]["UiExtensionCapabilities"];
+            height: number;
+        };
+        /** @description Hints for presentation; every chain step is authorized again by its own operation. */
+        AppPageGrants: {
+            startWorkflows: components["schemas"]["Uuid"][];
+            taskAct: boolean;
+            readCases: boolean;
+        };
+        AppPageDraftList: {
+            items: {
+                componentId: components["schemas"]["ViewElementId"];
+                values: {
+                    [key: string]: unknown;
+                };
+                savedAt: components["schemas"]["Timestamp"];
+            }[];
+        };
+        AppPageComponentData: {
+            /** @description Granted binding to value; bindings the caller cannot read are omitted. */
+            values: {
+                [key: string]: unknown;
+            };
+        };
+        ChainRunRequest: {
+            expectedRevision: number;
+            context?: string;
+            source?: components["schemas"]["ViewElementId"];
+            inputs?: {
+                [key: string]: components["schemas"]["ChainInput"];
+            };
+        };
+        ChainInput: {
+            values?: {
+                [key: string]: unknown;
+            };
+            expectedVersion?: number;
+            reason?: string;
+            comment?: string;
+            /** @description CMMN element id to the chosen plan item, for plan-item steps whose occurrence is choose */
+            planItems?: {
+                [key: string]: string;
+            };
+        };
+        ChainRunResult: {
+            completed: boolean;
+            navigateTo: string | null;
+            steps: {
+                index: number;
+                action: components["schemas"]["ChainAction"];
+                component: string | null;
+                /** @enum {string} */
+                status: "succeeded" | "failed" | "skipped";
+                detail: string | null;
+                problemCode: string | null;
+                runId: components["schemas"]["Uuid"] | null;
+                /** @description What ran to undo this succeeded step after a later step failed; null when it declares none */
+                compensation?: null | {
+                    action: string;
+                    /** @enum {string} */
+                    status: "succeeded" | "failed";
+                    detail: string | null;
+                    problemCode: string | null;
+                };
+            }[];
+        };
+        /** @enum {string} */
+        UiExtensionStatus: "pending" | "approved" | "rejected" | "revoked";
+        UiExtensionCapabilities: {
+            bindings: string[];
+            actions: components["schemas"]["ChainAction"][];
+        };
+        UiExtensionVersionSummary: {
+            version: number;
+            status: components["schemas"]["UiExtensionStatus"];
+            sha256: string;
+            capabilities: components["schemas"]["UiExtensionCapabilities"];
+            height: number;
+            submittedBy: components["schemas"]["SubjectRef"];
+            submittedAt: components["schemas"]["Timestamp"];
+            decidedBy: components["schemas"]["SubjectRef"] | null;
+            decidedAt: components["schemas"]["Timestamp"] | null;
+            decisionNote: string | null;
+        };
+        UiExtension: {
+            id: components["schemas"]["Uuid"];
+            name: string;
+            description: string | null;
+            createdAt: components["schemas"]["Timestamp"];
+            versions: components["schemas"]["UiExtensionVersionSummary"][];
+        };
+        UiExtensionList: {
+            items: components["schemas"]["UiExtension"][];
+            canApprove: boolean;
+        };
+        UiExtensionVersion: {
+            /** @description Module the frame loads from the bundle's files (S116) */
+            entry: string | null;
+            /** @description Bundle files with the SHA-256 recorded at submission; the version hash covers them all */
+            files: {
+                path: string;
+                contentType: string;
+                size: number;
+                sha256: string;
+            }[];
+            extensionId: components["schemas"]["Uuid"];
+            name: string;
+            source: string;
+            version: number;
+            status: components["schemas"]["UiExtensionStatus"];
+            sha256: string;
+            capabilities: components["schemas"]["UiExtensionCapabilities"];
+            height: number;
+            submittedBy: components["schemas"]["SubjectRef"];
+            submittedAt: components["schemas"]["Timestamp"];
+            decidedBy: components["schemas"]["SubjectRef"] | null;
+            decidedAt: components["schemas"]["Timestamp"] | null;
+            decisionNote: string | null;
+        };
+        CreateUiExtension: {
+            name: string;
+            description?: string;
+        };
+        SubmitUiExtensionVersion: {
+            /** @description Inline classic script; may be empty when an entry module is named */
+            source?: string;
+            capabilities: components["schemas"]["UiExtensionCapabilities"];
+            height: number;
+            /** @description The module the frame loads (one of files) */
+            entry?: string;
+            /** @description JavaScript modules, stylesheets, fonts and images (flat names, no SVG), 1 byte to 256 KiB each, 1 MiB in all; imports resolve only inside the bundle */
+            files?: {
+                path: string;
+                /** @description Base64 file bytes */
+                content: string;
+            }[];
+        };
+        UiExtensionDecision: {
+            /** @enum {string} */
+            decision: "approve" | "reject" | "revoke";
+            note: string;
+            expectedStatus: components["schemas"]["UiExtensionStatus"];
         };
         CorrectRunInputRequest: {
             expectedVersion: number;
@@ -5220,6 +6263,7 @@ export interface components {
             handled: number;
             duplicates: number;
             dead: number;
+            /** @description A code, never a message: secret_unavailable (the secretRef file is missing or not {username, password}), authentication_failed (the broker refused the credentials), consumer_error (any other broker or network failure); the consumer keeps retrying */
             lastError?: string | null;
             /** Format: date-time */
             lastErrorAt?: string | null;
@@ -5688,6 +6732,8 @@ export interface components {
             openItems?: components["schemas"]["CompatibilityIssue"][];
             currentRevision?: number;
             currentVersion?: number;
+            /** @description importDecisionDmn and convertDecisionDmn only - the decisions of the file, to choose one with decisionId */
+            decisions?: components["schemas"]["DecisionDmnChoice"][];
         };
         FieldError: {
             /** @description JSON Pointer into the request body, e.g. /input/amount */
@@ -5858,6 +6904,26 @@ export interface components {
             /** @description The workflow version */
             expectedVersion: number;
             reason: string;
+        };
+        RestoreWorkflow: {
+            /** @description The archived workflow version */
+            expectedVersion: number;
+            reason: string;
+        };
+        ArchivedWorkflow: {
+            id: components["schemas"]["Uuid"];
+            key: string;
+            name: string;
+            version: number;
+            /** Format: date-time */
+            archivedAt: string;
+            /** @description Null for workflows archived before this was recorded */
+            archivedBy?: components["schemas"]["SubjectRef"] | null;
+            activeReleaseNumber?: number | null;
+        };
+        ArchivedWorkflows: {
+            items: components["schemas"]["ArchivedWorkflow"][];
+            truncated: boolean;
         };
         SetWorkflowOwner: {
             ownerSubjectId: components["schemas"]["Uuid"];
@@ -6101,12 +7167,14 @@ export interface components {
             };
         };
         DecisionEvaluateResult: {
-            /** @description Zero-based row index, null when the default applied */
+            /** @description Zero-based row index, null when the default applied; under COLLECT the first matching row */
             matchedRow: number | null;
             usedDefault: boolean;
             output: {
                 [key: string]: string | number | boolean;
             };
+            /** @description Zero-based indexes of every row that applies, in table order (several only under COLLECT, whose results are combined; empty when the default applied) */
+            matchedRows?: number[];
         };
         WorkflowTestCase: {
             id: string;
@@ -6845,13 +7913,37 @@ export interface components {
         /** @description The shareable part of a workflow decision table (contracts/workflow-v0.schema.json decisionTable without key and version) */
         DecisionAssetContent: {
             /** @enum {string} */
-            hitPolicy: "UNIQUE" | "FIRST";
+            hitPolicy: "UNIQUE" | "FIRST" | "ANY" | "PRIORITY" | "COLLECT";
+            /**
+             * @description COLLECT only, required there
+             * @enum {string}
+             */
+            aggregation?: "SUM" | "MIN" | "MAX" | "COUNT";
+            /** @description PRIORITY only, required there - the output that decides and its values from the highest to the lowest priority */
+            priority?: {
+                output: string;
+                order: (string | number | boolean)[];
+            };
             rows: {
                 [key: string]: unknown;
             }[];
             default: {
                 [key: string]: unknown;
             };
+        };
+        DecisionDmnChoice: {
+            id: string;
+            name: string;
+            /** @description false when the decision is not a decision table */
+            table: boolean;
+        };
+        DecisionDmnConversion: {
+            decisions: components["schemas"]["DecisionDmnChoice"][];
+            /** @description The decision read; null when the file has several and none was chosen */
+            decisionId: string | null;
+            name: string | null;
+            content: components["schemas"]["DecisionAssetContent"] | null;
+            notes: string[];
         };
         CreateDecisionAsset: {
             key: components["schemas"]["Key"];
@@ -7175,6 +8267,56 @@ export interface components {
             retryable: boolean;
             retryAfterSeconds?: number;
         };
+        SendBackOpen: {
+            id: components["schemas"]["Uuid"];
+            reason: string;
+            fields: string[];
+            sentAt: components["schemas"]["Timestamp"];
+        };
+        SendBackRequest: {
+            expectedVersion: number;
+            reason: string;
+        };
+        WithdrawSendBackRequest: {
+            expectedVersion: number;
+            note?: string;
+        };
+        AnswerSendBackRequest: {
+            /** @description Task version shown with the send-back */
+            expectedVersion: number;
+            changes: {
+                [key: string]: unknown;
+            };
+            note?: string;
+        };
+        SendBack: {
+            id: components["schemas"]["Uuid"];
+            taskId: string;
+            nodeId: string;
+            stepLabel: string;
+            /** @enum {string} */
+            status: "open" | "answered" | "withdrawn";
+            reason: string;
+            fields: {
+                key: string;
+                title: string;
+                schema: {
+                    [key: string]: unknown;
+                } | null;
+                /** @description Current value; null without access to the request data */
+                value: unknown;
+            }[];
+            sentBy: components["schemas"]["SubjectRef"];
+            sentAt: components["schemas"]["Timestamp"];
+            /** Format: date-time */
+            closedAt: string | null;
+            note: string | null;
+            taskVersion: number;
+            canAnswer: boolean;
+        };
+        SendBackList: {
+            items: components["schemas"]["SendBack"][];
+        };
         CorrectTaskInputRequest: {
             expectedVersion: number;
             reason: string;
@@ -7341,6 +8483,8 @@ export interface components {
                 rejectReasonRequired: boolean;
                 /** @description Request fields the caller may correct on this task now (holder or operator, task open, not suspended); empty otherwise. */
                 correctableFields?: string[];
+                /** @description The open send-back of this task (S116); while it is open the task is neither decided nor corrected by the holder */
+                sendBack?: components["schemas"]["SendBackOpen"] | null;
             };
             allowedActions: {
                 claim: components["schemas"]["ActionAvailability"];
@@ -7394,13 +8538,16 @@ export interface components {
             runReference?: string | null;
             /** @description Title of the request runId (see Run.requestTitle); null when the recipient may not read the request data */
             requestTitle?: string | null;
-            /** @enum {string} */
-            kind: "workflowMessage" | "runAttention" | "discussionMention";
+            /**
+             * @description promotionRequest: a promotion into this workspace waits for approval (open Promotions); promotionDecision: your promotion request was approved or rejected (workflowId is the source workflow)
+             * @enum {string}
+             */
+            kind: "workflowMessage" | "runAttention" | "discussionMention" | "promotionRequest" | "promotionDecision";
             /** @description For discussionMention: who mentioned the recipient, on which step and workflow; never the comment text */
             message: string;
             createdAt: components["schemas"]["Timestamp"];
             readAt: components["schemas"]["Timestamp"] | null;
-            /** @description discussionMention only: the workflow whose discussion mentions the recipient */
+            /** @description discussionMention: the workflow whose discussion mentions the recipient; promotionDecision: the promoted source workflow */
             workflowId?: components["schemas"]["Uuid"] | null;
             /** @description discussionMention only: the step or connection ID of the discussion */
             elementId?: string | null;
@@ -7995,6 +9142,7 @@ export interface components {
             /** Format: date-time */
             savedAt: string;
             layout: {
+                /** @description pega-blueprint (Pega Blueprint export) or generic-outline */
                 id: string;
                 revision: string;
             };
@@ -8005,12 +9153,235 @@ export interface components {
             embeddedFiles: boolean;
             pages: {
                 number: number;
+                /** @description Extracted page text; with the pega-blueprint layout, the page in reading order (lifecycle stage by stage, steps indented under their stage, table cells separated by tabs) */
                 text: string;
                 sha256: string;
                 unclassifiedLines: number;
             }[];
             transcription: components["schemas"]["BlueprintTranscription"];
             report: components["schemas"]["CompatibilityReport"];
+        };
+        PegaRuleArchive: {
+            migrationId: components["schemas"]["Uuid"];
+            /** @enum {string} */
+            status: "analyzed" | "converted" | "failed";
+            /** @description Decoder and resolver version */
+            decoder: string;
+            adapterVersion: string;
+            sourceSha256: string;
+            /** @description Rule-Application name and version declared in the archive; not proof of a certified Pega release */
+            application?: string | null;
+            /** @description Application ruleset stack in precedence order */
+            stack: {
+                name: string;
+                version: string;
+            }[];
+            archiveBlockers: {
+                code: string;
+                paths: string[];
+            }[];
+            entries: components["schemas"]["PegaRuleEntry"][];
+            contexts: components["schemas"]["PegaRuleContext"][];
+            startingPoints: components["schemas"]["PegaRuleStartingPoint"][];
+            convertedStartRule?: string | null;
+            /** @description The case definition created from a case type of this archive (S117) */
+            caseConversion?: null | {
+                startRule: string;
+                caseDefinitionId: components["schemas"]["Uuid"];
+                caseKey: string;
+                caseVersion: number;
+                sourceSha256: string;
+            };
+            /** @description Recorded per-rule results of the converted starting point (empty before conversion) */
+            conversion: {
+                rule: string;
+                startRule: string;
+                resolution: string;
+                /** @enum {string} */
+                conversion: "converted" | "review" | "blocked" | "notUsed" | "shadowed" | "supported";
+                targetKind?: string | null;
+                targets: string[];
+                targetSha256?: string | null;
+                reasons: string[];
+            }[];
+        };
+        PegaRuleEntry: {
+            path: string;
+            sha256: string;
+            /**
+             * @description delegation is a System-User-MyRules record kept as provenance
+             * @enum {string}
+             */
+            status: "manifest" | "rule" | "data" | "delegation" | "refused";
+            /** @description Refusal reason code */
+            reason?: string | null;
+            detail?: string | null;
+            ruleType?: string | null;
+            className?: string | null;
+            ruleName?: string | null;
+            ruleset?: string | null;
+            version?: string | null;
+            /** @description Yes, No, Blocked, Withdrawn or Final */
+            availability?: string | null;
+            /** @description The rule has a qualifier (property or date circumstance, or a date range) */
+            circumstanced: boolean;
+            /** @description kind property (property, value), date (property, date YYYYMMDD), dateRange (from, to as YYYYMMDDTHHMMSS.mmm GMT) or multivariate (parts) */
+            qualifier?: null | ({
+                /** @enum {string} */
+                kind: "property" | "date" | "dateRange" | "multivariate";
+            } & {
+                [key: string]: unknown;
+            });
+        };
+        PegaRuleContext: {
+            className: string;
+            /** @description Class inheritance searched, closest first */
+            chain: string[];
+            keys: {
+                ruleType: string;
+                ruleName: string;
+                /** @enum {string} */
+                status: "resolved" | "noCandidate" | "circumstanceUnresolved" | "ambiguous" | "blocked" | "finalOverridden";
+                /** @description Entry path of the effective rule */
+                chosen?: string | null;
+                /** @description Circumstance and date variants of the chosen base rule, with their qualifier (S115) */
+                variants?: ({
+                    rule: string;
+                    kind: string;
+                } & {
+                    [key: string]: unknown;
+                })[];
+                candidates: {
+                    rule: string;
+                    outcome: string;
+                }[];
+            }[];
+        };
+        PegaRuleStartingPoint: {
+            rule: string;
+            /**
+             * @description process is a flow a case type runs as a process; convert and publish it so a case definition can pin it (S117)
+             * @enum {string}
+             */
+            kind: "caseType" | "flow" | "process";
+            context: string;
+            name: string;
+            label: string;
+            blocked: boolean;
+            report: components["schemas"]["CompatibilityReport"];
+            rules: components["schemas"]["PegaRuleResult"][];
+            /** @description Assignments to map: the work queue needs a groupMappings entry, and one of the two flow actions is chosen as approval in approvalRoutes (never inferred) */
+            assignments: {
+                id: string;
+                label: string;
+                workQueue: string;
+                flow: string;
+                actions: {
+                    connectorId: string;
+                    flowAction: string;
+                }[];
+            }[];
+            /** @description Subflow calls that become child workflow steps; each id needs a childWorkflowMappings entry naming a published workflow */
+            subflows: {
+                id: string;
+                label: string;
+                /** @description Subflow rule name */
+                flow: string;
+                /** @description Flow that calls it */
+                source: string;
+            }[];
+            /** @description Connector and data page calls that become call steps (S117); each id needs a connectionMappings entry naming a workspace connection operation */
+            calls: {
+                id: string;
+                label: string;
+                connector: string;
+                dataPage?: string | null;
+                method: string;
+                /** @description Source endpoint, shown for review only */
+                endpoint?: string | null;
+                inputMapping: {
+                    [key: string]: string;
+                };
+                resultMapping: {
+                    [key: string]: string;
+                };
+                timeoutSeconds: number;
+                flow: string;
+            }[];
+            /** @description For a case type: the processes and alternate stages a case definition conversion needs mappings for (S117) */
+            caseTarget?: null | {
+                processes: {
+                    taskId: string;
+                    stageId: string;
+                    stageLabel: string;
+                    flow: string;
+                    rule?: string | null;
+                    optional: boolean;
+                    alternate: boolean;
+                }[];
+                alternates: {
+                    stageId: string;
+                    label: string;
+                }[];
+            };
+        };
+        PegaCaseDefinitionRequest: {
+            key: string;
+            name: string;
+            /** @description Entry path of the case type */
+            pegaStartRule: string;
+            /** @description Process flow name to the key of the published workflow converted from it */
+            workflowMappings?: {
+                [key: string]: string;
+            };
+            /** @description Optional process flow name or alternate stage id to the workspace group that plans it or moves the case there */
+            roleMappings?: {
+                [key: string]: string;
+            };
+            /**
+             * @description Build and check the proposal without creating anything
+             * @default false
+             */
+            dryRun: boolean;
+            acknowledgeInfo?: boolean;
+            acknowledgeReview?: boolean;
+        };
+        PegaCaseDefinitionResult: {
+            dryRun: boolean;
+            key: string;
+            name: string;
+            /** @description Generated CMMN 1.1 in the case designer subset */
+            sourceXml: string;
+            sourceSha256: string;
+            dataFields: components["schemas"]["CaseDataField"][];
+            workflowTasks: components["schemas"]["CaseWorkflowTaskMapping"][];
+            report: components["schemas"]["CompatibilityReport"];
+            /** @description The created case definition (absent for a dry run) */
+            definition?: components["schemas"]["CaseDefinition"] | null;
+        };
+        PegaRuleResult: {
+            rule: string;
+            ruleType: string;
+            className: string;
+            ruleName: string;
+            ruleset: string;
+            version: string;
+            availability: string;
+            sourceSha256: string;
+            role?: string | null;
+            /** @description selected, a shadowing outcome, or outsideContext */
+            resolution: string;
+            /** @enum {string} */
+            conversion: "converted" | "review" | "blocked" | "notUsed" | "shadowed" | "supported";
+            targetKind?: string | null;
+            targets: string[];
+            /** @description SHA-256 of the mapping-independent target fragment */
+            targetSha256?: string | null;
+            reasons: string[];
+            /** @description The rule qualifier in words (for example .Category = Services) */
+            circumstance?: string | null;
+            /** @description Access groups the rule is delegated to (provenance only) */
+            delegatedTo: string[];
         };
         MigrationJob: {
             id: components["schemas"]["Uuid"];
@@ -8065,6 +9436,17 @@ export interface components {
             };
             /** @description DMN migrations only: the decision to convert; optional when the file has exactly one decision */
             decisionId?: string;
+            /** @description Native Pega rule archives (pegaRules) only: the archive entry path of the starting point to convert (an effective case type or starting flow); optional when the archive has exactly one. For these archives only workflowKey, name, groupMappings, approvalRoutes, childWorkflowMappings, connectionMappings, the acknowledgements and pegaStartRule are accepted. */
+            pegaStartRule?: string;
+            /** @description Native Pega rule archives only (S117): call step id to the workspace connection operation it runs; request and result mappings come from the connector */
+            connectionMappings?: {
+                [key: string]: {
+                    connectionRef: components["schemas"]["Key"];
+                    operation: string;
+                    definitionVersion?: number;
+                    timeoutSeconds?: number;
+                };
+            };
             /** @description Pega Blueprint PDF migrations only (required there): the transcriptionSha256 of the reviewed transcription revision being converted. Routes, request fields and steps come from that transcription, so approvalRoutes, inputSchema and other mappings except groupMappings are refused. */
             transcriptionSha256?: string;
             /** @description Reviewed canonical request schema; otherwise inferred from BPMN comparisons and service input mappings */
@@ -8226,10 +9608,31 @@ export interface components {
             title?: string;
             required?: boolean;
         };
-        decisionCondition: components["schemas"]["atomicCondition"] | {
-            all: components["schemas"]["atomicCondition"][];
+        /** @description True when the field equals one of 1 to 20 distinct texts or numbers, all of one type (FEEL "EU","UK"). */
+        inCondition: {
+            fieldRef: components["schemas"]["fieldRef"];
+            /** @constant */
+            operator: "in";
+            value: (string | number)[];
+        };
+        /** @description True when a number field lies in the range; each bound is included unless includeFrom or includeTo is false (FEEL [1000..5000)). from must be smaller than to. */
+        betweenCondition: {
+            fieldRef: components["schemas"]["fieldRef"];
+            /** @constant */
+            operator: "between";
+            value: {
+                from: number;
+                to: number;
+                includeFrom?: boolean;
+                includeTo?: boolean;
+            };
+        };
+        /** @description One comparison of a decision row: a plain comparison, a list (in) or a number range (between). Lists and ranges are accepted in decision rows only (docs/build/S121). */
+        decisionTerm: components["schemas"]["atomicCondition"] | components["schemas"]["inCondition"] | components["schemas"]["betweenCondition"];
+        decisionCondition: components["schemas"]["decisionTerm"] | {
+            all: components["schemas"]["decisionTerm"][];
         } | {
-            any: components["schemas"]["atomicCondition"][];
+            any: components["schemas"]["decisionTerm"][];
         };
         decisionOutput: {
             [key: string]: components["schemas"]["literal"];
@@ -8298,7 +9701,7 @@ export interface components {
                 multiInstance?: {
                     approvers: number;
                 };
-                /** @description One approval task per item of a request list (docs/build/S88): itemsRef names a required, unconditional request list of at most 20 items; each task shows its item (the value, or the itemLabel column of a list of rows). All items must be approved; the first rejection rejects the step and cancels the open items. Extra outputs: approvedCount and itemDecisions (approved, rejected or cancelled per item, in list order). Each item needs a different person unless allowSamePerson is true. Not combined with several approvers, a time limit, escalation, correctable fields or (without allowSamePerson) dispatch. */
+                /** @description One approval task per item of a request list (docs/build/S88, S104): itemsRef names a required, unconditional request list of at most 20 items; each task shows its item (the value, or the itemLabel column of a list of rows). By default all items must be approved and the first rejection rejects the step; with quorum k the step is approved as soon as k items are approved and rejected as soon as k can no longer be reached, and the open items are cancelled. sequential opens one item at a time in list order. assigneeFrom names a text column of a list of rows holding the email of the person proposed for each item; that person is assigned when eligible, otherwise the task stays in the group queue (or goes to the dispatch policy). Extra outputs: approvedCount and itemDecisions (approved, rejected or cancelled per item, in list order; cancelled = not decided because the step had ended). Each item needs a different person unless allowSamePerson is true. Not combined with several approvers, a time limit, escalation or correctable fields. */
                 perItem?: {
                     itemsRef: string;
                     itemLabel?: components["schemas"]["fieldKey"];
@@ -8307,6 +9710,15 @@ export interface components {
                      * @constant
                      */
                     allowSamePerson?: true;
+                    /**
+                     * @description Present (true) only when the items are decided one at a time, in list order; leave it out for all items at once.
+                     * @constant
+                     */
+                    sequential?: true;
+                    /** @description How many items must be approved for the step to be approved (default: all). The list's minimum number of items must be at least this. */
+                    quorum?: number;
+                    /** @description A text column of the list of rows holding the email of the person proposed for each item. Assigned only when that person may decide the task; otherwise the task stays in the group queue. */
+                    assigneeFrom?: components["schemas"]["fieldKey"];
                 };
                 /** @description Request fields the person holding this task may correct before deciding (docs/build/S42). Scalar request fields only. Publishing proves that no earlier step has used them, so a correction can never contradict work that already happened. */
                 correctable?: components["schemas"]["fieldKey"][];
@@ -8456,17 +9868,21 @@ export interface components {
                 resultMapping: {
                     [key: string]: components["schemas"]["fieldKey"];
                 };
-                /** @description Sequentially start one pinned child per scalar item. The collection must contain 1 to 25 items. Inputs share inputMapping and itemInput receives the current item. Results are the last child result plus iterations and limitReached=false. */
+                /** @description Start one pinned child per item of a required request list of 1 to 25 items (docs/build/S14, S105). Inputs share inputMapping; for a list of single values itemInput receives the current item, for a list of rows itemMapping copies the named columns of the current row into child request fields (exactly one of the two). Results are the last child result plus iterations, limitReached=false and allSucceeded. */
                 forEach?: {
                     itemsRef: string;
-                    itemInput: components["schemas"]["fieldKey"];
+                    itemInput?: components["schemas"]["fieldKey"];
+                    /** @description List of rows only: child request field -> column of the current row (1 to 10 fields). A column that is empty in a row leaves the field out. */
+                    itemMapping?: {
+                        [key: string]: components["schemas"]["fieldKey"];
+                    };
                     maxItems: number;
                     /**
                      * @default sequential
                      * @enum {unknown}
                      */
                     mode: "sequential" | "parallel";
-                };
+                } & (unknown | unknown);
                 /** @description Collected output name -> guaranteed scalar child result field, or outcome/outcomeKind/reference. For collection iteration only. Values follow input item order. */
                 collectionMapping?: {
                     [key: string]: components["schemas"]["fieldKey"];
@@ -8623,15 +10039,25 @@ export interface components {
             label?: string;
             condition?: components["schemas"]["condition"];
         };
-        /** @description Authoring semantics: at most one row matches (UNIQUE); the default applies only when no row matches. Scalar rows test the same field; conjunctive All rows support 2 to 8 distinct fields. Rows must be pairwise disjoint (WF_DECISION_OVERLAP). Compiled to DMN as FIRST with a trailing catch-all row. */
+        /** @description Authoring semantics depend on hitPolicy (docs/build/S40, S121); the default applies when no row matches. Scalar rows test the same field; conjunctive All rows support 2 to 8 distinct fields. UNIQUE rows must be pairwise disjoint (WF_DECISION_OVERLAP); ANY rows may overlap only when they give the same results. Compiled to DMN as FIRST with a trailing catch-all row (PRIORITY rows sorted by priority), or as COLLECT with its aggregation. */
         decisionTable: {
             key: components["schemas"]["key"];
             version: number;
             /**
-             * @description UNIQUE: at most one row can match, proven at publish time. FIRST: rows are tried in order and the first match wins, so rows may overlap (docs/build/S40).
+             * @description UNIQUE: at most one row can match, proven at publish time. FIRST: rows are tried in order and the first match wins, so rows may overlap (docs/build/S40). ANY: rows may overlap when they give the same results. PRIORITY: of the matching rows, the one whose priority output ranks highest in priority.order wins; equal ranks keep table order. COLLECT: every matching row counts; its single number result is combined by aggregation (docs/build/S121).
              * @enum {unknown}
              */
-            hitPolicy: "UNIQUE" | "FIRST";
+            hitPolicy: "UNIQUE" | "FIRST" | "ANY" | "PRIORITY" | "COLLECT";
+            /**
+             * @description COLLECT only, required there: how the number results of the matching rows combine. COUNT is the number of matching rows.
+             * @enum {unknown}
+             */
+            aggregation?: "SUM" | "MIN" | "MAX" | "COUNT";
+            /** @description PRIORITY only, required there: the output that decides between matching rows and its values from the highest to the lowest priority. Every value a row or the default gives must be listed. */
+            priority?: {
+                output: components["schemas"]["fieldKey"];
+                order: components["schemas"]["literal"][];
+            };
             rows: {
                 when: components["schemas"]["decisionCondition"];
                 then: components["schemas"]["decisionOutput"];
@@ -8924,7 +10350,7 @@ export interface components {
                         multiInstance?: {
                             approvers: number;
                         };
-                        /** @description One approval task per item of a request list (docs/build/S88): itemsRef names a required, unconditional request list of at most 20 items; each task shows its item (the value, or the itemLabel column of a list of rows). All items must be approved; the first rejection rejects the step and cancels the open items. Extra outputs: approvedCount and itemDecisions (approved, rejected or cancelled per item, in list order). Each item needs a different person unless allowSamePerson is true. Not combined with several approvers, a time limit, escalation, correctable fields or (without allowSamePerson) dispatch. */
+                        /** @description One approval task per item of a request list (docs/build/S88, S104): itemsRef names a required, unconditional request list of at most 20 items; each task shows its item (the value, or the itemLabel column of a list of rows). By default all items must be approved and the first rejection rejects the step; with quorum k the step is approved as soon as k items are approved and rejected as soon as k can no longer be reached, and the open items are cancelled. sequential opens one item at a time in list order. assigneeFrom names a text column of a list of rows holding the email of the person proposed for each item; that person is assigned when eligible, otherwise the task stays in the group queue (or goes to the dispatch policy). Extra outputs: approvedCount and itemDecisions (approved, rejected or cancelled per item, in list order; cancelled = not decided because the step had ended). Each item needs a different person unless allowSamePerson is true. Not combined with several approvers, a time limit, escalation or correctable fields. */
                         perItem?: {
                             itemsRef: string;
                             itemLabel?: components["schemas"]["fieldKey"];
@@ -8933,6 +10359,15 @@ export interface components {
                              * @constant
                              */
                             allowSamePerson?: true;
+                            /**
+                             * @description Present (true) only when the items are decided one at a time, in list order; leave it out for all items at once.
+                             * @constant
+                             */
+                            sequential?: true;
+                            /** @description How many items must be approved for the step to be approved (default: all). The list's minimum number of items must be at least this. */
+                            quorum?: number;
+                            /** @description A text column of the list of rows holding the email of the person proposed for each item. Assigned only when that person may decide the task; otherwise the task stays in the group queue. */
+                            assigneeFrom?: components["schemas"]["fieldKey"];
                         };
                         /** @description Request fields the person holding this task may correct before deciding (docs/build/S42). Scalar request fields only. Publishing proves that no earlier step has used them, so a correction can never contradict work that already happened. */
                         correctable?: components["schemas"]["fieldKey"][];
@@ -9084,17 +10519,21 @@ export interface components {
                         resultMapping: {
                             [key: string]: components["schemas"]["fieldKey"];
                         };
-                        /** @description Sequentially start one pinned child per scalar item. The collection must contain 1 to 25 items. Inputs share inputMapping and itemInput receives the current item. Results are the last child result plus iterations and limitReached=false. */
+                        /** @description Start one pinned child per item of a required request list of 1 to 25 items (docs/build/S14, S105). Inputs share inputMapping; for a list of single values itemInput receives the current item, for a list of rows itemMapping copies the named columns of the current row into child request fields (exactly one of the two). Results are the last child result plus iterations, limitReached=false and allSucceeded. */
                         forEach?: {
                             itemsRef: string;
-                            itemInput: components["schemas"]["fieldKey"];
+                            itemInput?: components["schemas"]["fieldKey"];
+                            /** @description List of rows only: child request field -> column of the current row (1 to 10 fields). A column that is empty in a row leaves the field out. */
+                            itemMapping?: {
+                                [key: string]: components["schemas"]["fieldKey"];
+                            };
                             maxItems: number;
                             /**
                              * @default sequential
                              * @enum {unknown}
                              */
                             mode: "sequential" | "parallel";
-                        };
+                        } & (unknown | unknown);
                         /** @description Collected output name -> guaranteed scalar child result field, or outcome/outcomeKind/reference. For collection iteration only. Values follow input item order. */
                         collectionMapping?: {
                             [key: string]: components["schemas"]["fieldKey"];
@@ -9152,20 +10591,51 @@ export interface components {
                     label?: string;
                     condition?: components["schemas"]["condition"];
                 };
-                decisionCondition: components["schemas"]["atomicCondition"] | {
-                    all: components["schemas"]["atomicCondition"][];
+                decisionCondition: components["schemas"]["decisionTerm"] | {
+                    all: components["schemas"]["decisionTerm"][];
                 } | {
-                    any: components["schemas"]["atomicCondition"][];
+                    any: components["schemas"]["decisionTerm"][];
                 };
-                /** @description Authoring semantics: at most one row matches (UNIQUE); the default applies only when no row matches. Scalar rows test the same field; conjunctive All rows support 2 to 8 distinct fields. Rows must be pairwise disjoint (WF_DECISION_OVERLAP). Compiled to DMN as FIRST with a trailing catch-all row. */
+                /** @description One comparison of a decision row: a plain comparison, a list (in) or a number range (between). Lists and ranges are accepted in decision rows only (docs/build/S121). */
+                decisionTerm: components["schemas"]["atomicCondition"] | components["schemas"]["inCondition"] | components["schemas"]["betweenCondition"];
+                /** @description True when the field equals one of 1 to 20 distinct texts or numbers, all of one type (FEEL "EU","UK"). */
+                inCondition: {
+                    fieldRef: components["schemas"]["fieldRef"];
+                    /** @constant */
+                    operator: "in";
+                    value: (string | number)[];
+                };
+                /** @description True when a number field lies in the range; each bound is included unless includeFrom or includeTo is false (FEEL [1000..5000)). from must be smaller than to. */
+                betweenCondition: {
+                    fieldRef: components["schemas"]["fieldRef"];
+                    /** @constant */
+                    operator: "between";
+                    value: {
+                        from: number;
+                        to: number;
+                        includeFrom?: boolean;
+                        includeTo?: boolean;
+                    };
+                };
+                /** @description Authoring semantics depend on hitPolicy (docs/build/S40, S121); the default applies when no row matches. Scalar rows test the same field; conjunctive All rows support 2 to 8 distinct fields. UNIQUE rows must be pairwise disjoint (WF_DECISION_OVERLAP); ANY rows may overlap only when they give the same results. Compiled to DMN as FIRST with a trailing catch-all row (PRIORITY rows sorted by priority), or as COLLECT with its aggregation. */
                 decisionTable: {
                     key: components["schemas"]["key"];
                     version: number;
                     /**
-                     * @description UNIQUE: at most one row can match, proven at publish time. FIRST: rows are tried in order and the first match wins, so rows may overlap (docs/build/S40).
+                     * @description UNIQUE: at most one row can match, proven at publish time. FIRST: rows are tried in order and the first match wins, so rows may overlap (docs/build/S40). ANY: rows may overlap when they give the same results. PRIORITY: of the matching rows, the one whose priority output ranks highest in priority.order wins; equal ranks keep table order. COLLECT: every matching row counts; its single number result is combined by aggregation (docs/build/S121).
                      * @enum {unknown}
                      */
-                    hitPolicy: "UNIQUE" | "FIRST";
+                    hitPolicy: "UNIQUE" | "FIRST" | "ANY" | "PRIORITY" | "COLLECT";
+                    /**
+                     * @description COLLECT only, required there: how the number results of the matching rows combine. COUNT is the number of matching rows.
+                     * @enum {unknown}
+                     */
+                    aggregation?: "SUM" | "MIN" | "MAX" | "COUNT";
+                    /** @description PRIORITY only, required there: the output that decides between matching rows and its values from the highest to the lowest priority. Every value a row or the default gives must be listed. */
+                    priority?: {
+                        output: components["schemas"]["fieldKey"];
+                        order: components["schemas"]["literal"][];
+                    };
                     rows: {
                         when: components["schemas"]["decisionCondition"];
                         then: components["schemas"]["decisionOutput"];
@@ -9735,6 +11205,7 @@ export interface components {
     parameters: {
         /** @description The callback token issued once for this wait (docs/build/S98); never put it in a URL. */
         CallbackToken: string;
+        AppPageSlug: string;
         WorkspaceId: components["schemas"]["Uuid"];
         WorkflowId: components["schemas"]["Uuid"];
         GenerationId: components["schemas"]["Uuid"];
@@ -10209,6 +11680,80 @@ export interface operations {
         };
     };
     occurCaseUserEvent: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+                planItemId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CaseCommand"];
+            };
+        };
+        responses: {
+            /** @description Updated case or replay */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseInstance"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    planCaseDiscretionaryItem: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                instanceId: components["schemas"]["Uuid"];
+                planItemId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CaseCommand"];
+            };
+        };
+        responses: {
+            /** @description Updated case or replay */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseInstance"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    retryCaseWorkflowTask: {
         parameters: {
             query?: never;
             header: {
@@ -10737,6 +12282,510 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ViewVersion"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listViewPins: {
+        parameters: {
+            query?: {
+                targetVersion?: number;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                viewId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pins and diagnostics */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ViewPinInventory"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listViewPinMigrations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                viewId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Applied migrations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ViewPinMigrationList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    migrateViewPins: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                viewId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MigrateViewPins"];
+            };
+        };
+        responses: {
+            /** @description Applied migration */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ViewPinMigration"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listAppPages: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Page routes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppPageRouteList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getAppPage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                slug: components["parameters"]["AppPageSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pinned page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppPageRuntime"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    assignAppPage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                slug: components["parameters"]["AppPageSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssignAppPage"];
+            };
+        };
+        responses: {
+            /** @description Updated route */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppPageRoute"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listAppPageHistory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                slug: components["parameters"]["AppPageSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Route history */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppPageHistory"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listAppPageDrafts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                slug: components["parameters"]["AppPageSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Saved drafts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppPageDraftList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getAppPageComponentData: {
+        parameters: {
+            query?: {
+                context?: string;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                slug: components["parameters"]["AppPageSlug"];
+                componentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Granted values */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppPageComponentData"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    runAppPageChain: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                slug: components["parameters"]["AppPageSlug"];
+                chainId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChainRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Step results */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChainRunResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listUiExtensions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Extensions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UiExtensionList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createUiExtension: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateUiExtension"];
+            };
+        };
+        responses: {
+            /** @description Registered extension */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UiExtension"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    submitUiExtensionVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                extensionId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubmitUiExtensionVersion"];
+            };
+        };
+        responses: {
+            /** @description Pending version */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UiExtensionVersion"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    getUiExtensionVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                extensionId: components["schemas"]["Uuid"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Extension version */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UiExtensionVersion"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    decideUiExtensionVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                extensionId: components["schemas"]["Uuid"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UiExtensionDecision"];
+            };
+        };
+        responses: {
+            /** @description Decided version */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UiExtensionVersion"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    getUiExtensionFile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                extensionId: components["schemas"]["Uuid"];
+                version: number;
+                token: string;
+                path: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description File bytes with their type */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/javascript": string;
+                    "text/css": string;
+                    "font/woff2": string;
+                    "font/woff": string;
+                    "image/png": string;
+                    "image/jpeg": string;
+                    "image/webp": string;
+                    "image/gif": string;
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getUiExtensionFrame: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                extensionId: components["schemas"]["Uuid"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Frame document */
+            200: {
+                headers: {
+                    "Content-Security-Policy"?: string;
+                    "X-Content-Type-Options"?: "nosniff";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
                 };
             };
             401: components["responses"]["Unauthenticated"];
@@ -11673,6 +13722,79 @@ export interface operations {
             428: components["responses"]["PreconditionRequired"];
         };
     };
+    exportDecisionDmn: {
+        parameters: {
+            query?: {
+                revision?: number;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+                decisionKey: components["parameters"]["DecisionKey"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The DMN file */
+            200: {
+                headers: {
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/xml": string;
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    importDecisionDmn: {
+        parameters: {
+            query?: {
+                decisionId?: string;
+            };
+            header: {
+                /** @description ETag of the revision being replaced. */
+                "If-Match": components["parameters"]["IfMatch"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+                decisionKey: components["parameters"]["DecisionKey"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/xml": string;
+            };
+        };
+        responses: {
+            /** @description Saved; body is the new revision */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowDraft"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
+            428: components["responses"]["PreconditionRequired"];
+        };
+    };
     getDecisionCsvTemplate: {
         parameters: {
             query?: never;
@@ -11719,6 +13841,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkflowOrganization"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listArchivedWorkflows: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Archived workflows; `truncated` is true when more than 200 exist */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArchivedWorkflows"];
                 };
             };
             401: components["responses"]["Unauthenticated"];
@@ -12119,6 +14266,69 @@ export interface operations {
             422: components["responses"]["Unprocessable"];
         };
     };
+    convertDecisionDmn: {
+        parameters: {
+            query?: {
+                decisionId?: string;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/xml": string;
+            };
+        };
+        responses: {
+            /** @description The converted table, or the decisions to choose from */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DecisionDmnConversion"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    exportSharedDecisionDmn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                assetKey: components["schemas"]["Key"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The DMN file */
+            200: {
+                headers: {
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/xml": string;
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
     getSharedAsset: {
         parameters: {
             query?: never;
@@ -12335,6 +14545,39 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    restoreWorkflow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RestoreWorkflow"];
+            };
+        };
+        responses: {
+            /** @description The restored workflow */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Workflow"];
+                };
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthenticated"];
@@ -13253,6 +15496,36 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    exportReleaseDecisionDmn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+                releaseId: components["parameters"]["ReleaseId"];
+                decisionKey: components["parameters"]["DecisionKey"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The DMN file */
+            200: {
+                headers: {
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/xml": string;
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
     setActiveRelease: {
         parameters: {
             query?: never;
@@ -13465,6 +15738,7 @@ export interface operations {
                 content?: never;
             };
             404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
         };
     };
     resumeCallbackWait: {
@@ -13501,6 +15775,7 @@ export interface operations {
             409: components["responses"]["Conflict"];
             413: components["responses"]["PayloadTooLarge"];
             422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
         };
     };
     listKafkaTriggers: {
@@ -13953,6 +16228,67 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    listRunSendBacks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Send-backs */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SendBackList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    answerSendBack: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["schemas"]["Uuid"];
+                sendBackId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnswerSendBackRequest"];
+            };
+        };
+        responses: {
+            /** @description Answered send-back (or replay) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SendBack"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     listRunComments: {
@@ -15357,6 +17693,75 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    sendTaskBack: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated, unique per logical command (UUID recommended). Retained 30 days. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                /** @description Engine task identifier; always resolved through the workspace's task projection first. */
+                taskId: components["parameters"]["TaskId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SendBackRequest"];
+            };
+        };
+        responses: {
+            /** @description Task with its open send-back (or replay) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskDetail"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    withdrawTaskSendBack: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                /** @description Engine task identifier; always resolved through the workspace's task projection first. */
+                taskId: components["parameters"]["TaskId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WithdrawSendBackRequest"];
+            };
+        };
+        responses: {
+            /** @description Task */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskDetail"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     correctTaskInput: {
@@ -16895,14 +19300,14 @@ export interface operations {
             content: {
                 "application/json": {
                     fileName: string;
-                    /** @description BPMN, DMN, CMMN or XPDL XML, form or mapping JSON text; base64 for Pega archives. Decoded sources are limited to 1 MiB. */
+                    /** @description BPMN, DMN, CMMN or XPDL XML, form or mapping JSON text; base64 for Pega archives and native Pega rule archives. Decoded sources are limited to 1 MiB. */
                     content: string;
                     /**
-                     * @description bpmn is Camunda 7/8 BPMN 2.0; dmn is a Camunda DMN 1.1-1.4 file with decision tables; camundaForm is a Camunda Forms .form JSON file attached through formMappings. pegaXpdl is a bounded XPDL 2.0 flow export; it does not resolve native RAP rule pages. cmmn inventories a CMMN 1.1 file but cannot convert or deploy it.
+                     * @description bpmn is Camunda 7/8 BPMN 2.0; dmn is a Camunda DMN 1.1-1.4 file with decision tables; camundaForm is a Camunda Forms .form JSON file attached through formMappings. pegaXpdl is a bounded XPDL 2.0 flow export; it does not resolve native RAP rule pages. cmmn inventories a CMMN 1.1 file but cannot convert or deploy it. pegaRules (base64) is a native Pega rule archive (ZIP/RAP/JAR of pagedata rule pages), decoded with a strict synthetic grammar, resolved against its own application stack and converted per starting point (docs/build/S112); grammar fidelity against genuine exports is customer qualification.
                      * @default bpmn
                      * @enum {string}
                      */
-                    sourceFormat?: "bpmn" | "dmn" | "camundaForm" | "pegaArchive" | "pegaMapping" | "pegaXpdl" | "cmmn";
+                    sourceFormat?: "bpmn" | "dmn" | "camundaForm" | "pegaArchive" | "pegaMapping" | "pegaXpdl" | "cmmn" | "pegaRules";
                 };
             };
         };
@@ -16947,6 +19352,74 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    getPegaRuleArchive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                migrationId: components["parameters"]["MigrationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native rule archive view */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PegaRuleArchive"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    convertPegaCaseDefinition: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                migrationId: components["parameters"]["MigrationId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PegaCaseDefinitionRequest"];
+            };
+        };
+        responses: {
+            /** @description Dry run proposal */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PegaCaseDefinitionResult"];
+                };
+            };
+            /** @description Case definition created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PegaCaseDefinitionResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     convertMigration: {
@@ -16999,6 +19472,8 @@ export interface operations {
             content: {
                 "multipart/form-data": {
                     file: string;
+                    /** @description Name of the case type to transcribe when the blueprint defines several (case and punctuation are ignored); the first when omitted or blank */
+                    caseType?: string;
                 };
             };
         };

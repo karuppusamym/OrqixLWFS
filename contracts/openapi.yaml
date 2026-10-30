@@ -311,6 +311,57 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/plan:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: instanceId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+      - { name: planItemId, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Cases]
+      operationId: planCaseDiscretionaryItem
+      summary: Plan a discretionary item of a stage's planning table into the case
+      description: >-
+        Requires task.act and current membership of a case role authorized on the discretionary item, mapped to a
+        workspace group. The item must be available to plan in an active stage. The planned item then follows its own
+        required and manual activation rules. Expected version, reason, idempotency and case hold checks apply. Audit
+        metadata excludes the reason.
+      x-orqix-permission: task.act
+      x-orqix-audit: case.planitem.changed
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CaseCommand' } } } }
+      responses:
+        '200': { description: Updated case or replay, content: { application/json: { schema: { $ref: '#/components/schemas/CaseInstance' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/retryWorkflow:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: instanceId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+      - { name: planItemId, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Cases]
+      operationId: retryCaseWorkflowTask
+      summary: Start the pinned workflow of an active workflow task again after it could not start or was cancelled
+      description: >-
+        Requires run.operate. The workflow task must be active and its latest attempt failed or cancelled; at most 20
+        attempts. The input is mapped again from current case data, so correct the data first. Expected version,
+        reason, idempotency and case hold checks apply.
+      x-orqix-permission: run.operate
+      x-orqix-audit: case.planitem.changed
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CaseCommand' } } } }
+      responses:
+        '200': { description: Updated case or replay, content: { application/json: { schema: { $ref: '#/components/schemas/CaseInstance' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
   /workspaces/{workspaceId}/cases/instances/{instanceId}/plan-items/{planItemId}/start:
     parameters:
       - { $ref: '#/components/parameters/WorkspaceId' }
@@ -613,6 +664,312 @@ paths:
       x-orqix-permission: workflow.read
       responses:
         '200': { description: Published view, content: { application/json: { schema: { $ref: '#/components/schemas/ViewVersion' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workspaces/{workspaceId}/views/{viewId}/pins:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: viewId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    get:
+      tags: [Views]
+      operationId: listViewPins
+      summary: Review every pin of a view or page against a published version, with compatibility diagnostics and a plan hash (S114)
+      description: >-
+        Lists the holders that pin this view: workflow drafts and active releases, the newest version of each case
+        definition, the workspace worklist, page drafts and published pages, and page routes. Each holder is ready,
+        current, newer, blocked (with the diagnostics a move would have) or readOnly (an immutable release or published
+        version, shown for review). The target defaults to the newest published version.
+      x-orqix-permission: workflow.read
+      parameters:
+        - { name: targetVersion, in: query, required: false, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200': { description: Pins and diagnostics, content: { application/json: { schema: { $ref: '#/components/schemas/ViewPinInventory' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/views/{viewId}/pin-migrations:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: viewId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    get:
+      tags: [Views]
+      operationId: listViewPinMigrations
+      summary: List applied pin migrations of a view, newest first (at most 50)
+      x-orqix-permission: workflow.read
+      responses:
+        '200': { description: Applied migrations, content: { application/json: { schema: { $ref: '#/components/schemas/ViewPinMigrationList' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    post:
+      tags: [Views]
+      operationId: migrateViewPins
+      summary: Move the selected reviewed pins to one published version in a single all-or-nothing operation
+      description: >-
+        The plan is read again and must still have the reviewed hash (409 otherwise). Each selected holder must be ready.
+        Workflow and page drafts get a new draft revision, a case gets a new definition version with the same model, data
+        fields and workflow task pins, and the worklist and page routes get a new revision; each through its own operation,
+        so its permission, revision check and audit apply. Published releases and page versions never change. Any failure
+        rolls back every item. A repeated request fails with 409 because the pins have changed.
+      x-orqix-permission: workflow.edit + underlying action permission
+      x-orqix-audit: view.pins-migrated
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/MigrateViewPins' } } } }
+      responses:
+        '200': { description: Applied migration, content: { application/json: { schema: { $ref: '#/components/schemas/ViewPinMigration' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/app-pages:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [Views]
+      operationId: listAppPages
+      summary: List application page routes and their pinned published page versions (S111)
+      x-orqix-permission: workspace.member
+      responses:
+        '200': { description: Page routes, content: { application/json: { schema: { $ref: '#/components/schemas/AppPageRouteList' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workspaces/{workspaceId}/app-pages/{slug}:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { $ref: '#/components/parameters/AppPageSlug' }
+    get:
+      tags: [Views]
+      operationId: getAppPage
+      summary: Read the exact published page pinned to this route with its pinned views, extension uses and caller grants
+      description: >-
+        Returns presentation only. Business data is read through the existing authorized task, request and case
+        operations or the component data operation; every action runs through runAppPageChain.
+      x-orqix-permission: workspace.member
+      responses:
+        '200': { description: Pinned page, content: { application/json: { schema: { $ref: '#/components/schemas/AppPageRuntime' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Views]
+      operationId: assignAppPage
+      summary: Pin an exact published page version to a route, or remove the route
+      x-orqix-permission: workflow.publish
+      x-orqix-audit: page.route-assigned
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AssignAppPage' } } } }
+      responses:
+        '200': { description: Updated route, content: { application/json: { schema: { $ref: '#/components/schemas/AppPageRoute' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/app-pages/{slug}/history:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { $ref: '#/components/parameters/AppPageSlug' }
+    get:
+      tags: [Views]
+      operationId: listAppPageHistory
+      summary: Append-only history of the versions pinned to a route
+      x-orqix-permission: workflow.read
+      responses:
+        '200': { description: Route history, content: { application/json: { schema: { $ref: '#/components/schemas/AppPageHistory' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workspaces/{workspaceId}/app-pages/{slug}/drafts:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { $ref: '#/components/parameters/AppPageSlug' }
+    get:
+      tags: [Views]
+      operationId: listAppPageDrafts
+      summary: The caller's own saved request drafts for this page
+      x-orqix-permission: workspace.member
+      responses:
+        '200': { description: Saved drafts, content: { application/json: { schema: { $ref: '#/components/schemas/AppPageDraftList' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workspaces/{workspaceId}/app-pages/{slug}/components/{componentId}/data:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { $ref: '#/components/parameters/AppPageSlug' }
+      - { name: componentId, in: path, required: true, schema: { type: string, pattern: '^[A-Za-z][A-Za-z0-9_-]{0,63}$' } }
+      - { name: context, in: query, required: false, schema: { type: string, pattern: '^[A-Za-z0-9-]{1,64}$' } }
+    get:
+      tags: [Views]
+      operationId: getAppPageComponentData
+      summary: Server-filtered data for an extension component's granted bindings
+      description: >-
+        Reads the page context with the caller's own task or case read permission and returns only the bindings the
+        pinned page grants to this extension component. A version that is no longer approved returns 403.
+      x-orqix-permission: workspace.member + underlying read permission
+      responses:
+        '200': { description: Granted values, content: { application/json: { schema: { $ref: '#/components/schemas/AppPageComponentData' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/app-pages/{slug}/chains/{chainId}/run:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { $ref: '#/components/parameters/AppPageSlug' }
+      - { name: chainId, in: path, required: true, schema: { type: string, pattern: '^[A-Za-z][A-Za-z0-9_-]{0,63}$' } }
+    post:
+      tags: [Views]
+      operationId: runAppPageChain
+      summary: Run a pinned action chain; each step is authorized again by its own operation and the chain stops at the first failure
+      x-orqix-permission: workspace.member + underlying action permission
+      x-orqix-audit: page.chain.run
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ChainRunRequest' } } } }
+      responses:
+        '200': { description: Step results, content: { application/json: { schema: { $ref: '#/components/schemas/ChainRunResult' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/ui-extensions:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [Views]
+      operationId: listUiExtensions
+      summary: List registered UI extension bundles and their versions
+      x-orqix-permission: workflow.read | workspace.manage-access
+      responses:
+        '200': { description: Extensions, content: { application/json: { schema: { $ref: '#/components/schemas/UiExtensionList' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Views]
+      operationId: createUiExtension
+      summary: Register a UI extension
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: extension.created
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateUiExtension' } } } }
+      responses:
+        '201': { description: Registered extension, content: { application/json: { schema: { $ref: '#/components/schemas/UiExtension' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/ui-extensions/{extensionId}/versions:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: extensionId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [Views]
+      operationId: submitUiExtensionVersion
+      summary: Submit an immutable bundle version with declared capabilities for admin approval
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: extension.version.submitted
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/SubmitUiExtensionVersion' } } } }
+      responses:
+        '201': { description: Pending version, content: { application/json: { schema: { $ref: '#/components/schemas/UiExtensionVersion' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/ui-extensions/{extensionId}/versions/{version}:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: extensionId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+      - { name: version, in: path, required: true, schema: { type: integer, minimum: 1 } }
+    get:
+      tags: [Views]
+      operationId: getUiExtensionVersion
+      summary: Read an extension version including its source for review
+      x-orqix-permission: workflow.read | workspace.manage-access
+      responses:
+        '200': { description: Extension version, content: { application/json: { schema: { $ref: '#/components/schemas/UiExtensionVersion' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workspaces/{workspaceId}/ui-extensions/{extensionId}/versions/{version}/decision:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: extensionId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+      - { name: version, in: path, required: true, schema: { type: integer, minimum: 1 } }
+    post:
+      tags: [Views]
+      operationId: decideUiExtensionVersion
+      summary: Approve, reject or revoke an extension version; the submitter cannot decide their own version
+      x-orqix-permission: workspace.manage-access
+      x-orqix-audit: extension.version.decided
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/UiExtensionDecision' } } } }
+      responses:
+        '200': { description: Decided version, content: { application/json: { schema: { $ref: '#/components/schemas/UiExtensionVersion' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/ui-extensions/{extensionId}/versions/{version}/files/{token}/{path}:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: extensionId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+      - { name: version, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      - { name: token, in: path, required: true, schema: { type: string, pattern: '^[0-9]{1,12}\.[0-9a-f]{64}$' } }
+      - { name: path, in: path, required: true, schema: { type: string, pattern: '^[a-z0-9][a-z0-9_-]{0,60}\.(js|mjs|css|woff2|woff|png|jpg|jpeg|webp|gif)$' } }
+    get:
+      tags: [Views]
+      operationId: getUiExtensionFile
+      summary: One file of a multi-file extension bundle, loaded by its sandboxed frame (S116; no session, the signed path is the credential)
+      description: >-
+        The frame document's policy names this version's signed file prefix, minted for a caller allowed to load the
+        version and valid for twelve hours. Only approved or pending versions are served; revoked or rejected versions,
+        expired or forged paths and unknown files are 404. Readable cross-origin because the frame has an opaque origin.
+      security: []
+      x-orqix-permission: extensionFileToken
+      responses:
+        '200':
+          description: File bytes with their type
+          content:
+            text/javascript: { schema: { type: string } }
+            text/css: { schema: { type: string } }
+            font/woff2: { schema: { type: string, format: binary } }
+            font/woff: { schema: { type: string, format: binary } }
+            image/png: { schema: { type: string, format: binary } }
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/webp: { schema: { type: string, format: binary } }
+            image/gif: { schema: { type: string, format: binary } }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workspaces/{workspaceId}/ui-extensions/{extensionId}/versions/{version}/frame:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: extensionId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+      - { name: version, in: path, required: true, schema: { type: integer, minimum: 1 } }
+    get:
+      tags: [Views]
+      operationId: getUiExtensionFrame
+      summary: The sandboxed frame document for an extension version
+      description: >-
+        An HTML document whose Content-Security-Policy sandboxes it without same-origin access, admits no network,
+        forms, frames or navigation, and lets only the bridge and the stored bundle run by SHA-256. Approved versions are
+        served to members; pending versions only to designers and workspace administrators for review.
+      x-orqix-permission: workspace.member | workflow.edit | workspace.manage-access
+      responses:
+        '200':
+          description: Frame document
+          headers:
+            Content-Security-Policy: { schema: { type: string } }
+            X-Content-Type-Options: { schema: { type: string, enum: [nosniff] } }
+          content:
+            text/html:
+              schema: { type: string }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -1462,6 +1819,83 @@ paths:
         '422': { $ref: '#/components/responses/Unprocessable' }
         '428': { $ref: '#/components/responses/PreconditionRequired' }
 
+  /workspaces/{workspaceId}/workflows/{workflowId}/decisions/{decisionKey}/dmn:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+      - $ref: '#/components/parameters/DecisionKey'
+    get:
+      tags: [Workflows]
+      operationId: exportDecisionDmn
+      summary: Download a decision table of a draft as a standard DMN 1.3 file (docs/build/S121)
+      description: |
+        The portable form of the table: the authored hit policy (with aggregation for COLLECT and outputValues for
+        PRIORITY), FEEL unary tests (>= 5000, "EU","UK", [1000..5000), not("x")), each output's defaultOutputEntry and
+        effective dates as a submissionDate column. The engine DMN that publishing deploys is a separate artifact. A
+        malformed table is refused with 422. Latest revision unless `revision` is given. Audited as workflow.exported
+        with format dmn and the revision.
+      x-orqix-permission: workflow.read
+      x-orqix-audit: workflow.exported
+      parameters:
+        - in: query
+          name: revision
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: The DMN file
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            application/xml:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    put:
+      tags: [Workflows]
+      operationId: importDecisionDmn
+      summary: Replace a decision table of the latest draft with a decision table of a DMN file (a draft change only)
+      description: |
+        The body is the DMN 1.1 to 1.5 file, `Content-Type: application/xml`, at most 512 KiB, read safely (no DTDs or
+        entities). `decisionId` chooses the decision when the file has several; without it such a file is refused with
+        422 and the problem lists `decisions`. The reader is strict: hit policies UNIQUE, FIRST, ANY, PRIORITY (one
+        output's outputValues) and COLLECT with SUM, MIN, MAX or COUNT; literal, comparison, range, list and not(...)
+        unary tests; literal outputs; input expressions that name a field. Anything else is a fieldError with its place
+        in the file, never approximated. The table key and version stay. The compiler then validates the draft with the
+        new table and a blocker inside it refuses the import (fieldError pointer /dmn/rows/...). On success a normal draft
+        revision is saved like saveDraft (If-Match, 412 on a stale revision, audit workflow.draft.saved with source
+        decisionDmn). Nothing is published.
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: workflow.draft.saved
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - in: query
+          name: decisionId
+          schema: { type: string, minLength: 1, maxLength: 200 }
+      requestBody:
+        required: true
+        content:
+          application/xml:
+            schema: { type: string }
+      responses:
+        '200':
+          description: Saved; body is the new revision
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkflowDraft' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '428': { $ref: '#/components/responses/PreconditionRequired' }
+
   /workspaces/{workspaceId}/workflows/{workflowId}/decisions/{decisionKey}/csv-template:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -1499,6 +1933,23 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/WorkflowOrganization' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/archived-workflows:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [Workflows]
+      operationId: listArchivedWorkflows
+      summary: Archived workflows of the workspace, most recently archived first (up to 200)
+      x-orqix-permission: workflow.edit
+      responses:
+        '200':
+          description: Archived workflows; `truncated` is true when more than 200 exist
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ArchivedWorkflows' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -1782,7 +2233,7 @@ paths:
       operationId: createDecisionAsset
       summary: Create a shared decision table with its first version (at most 200 per workspace)
       description: |
-        content holds hitPolicy, rows and default exactly as in a workflow decision table, without its key and version.
+        content holds hitPolicy (with aggregation or priority), rows and default exactly as in a workflow decision table, without its key and version.
         Only the structure is checked here; the compiler checks each copy in full in the workflow that uses it, because
         conditions name that workflow's fields. Keys and names are unique in the workspace. The caller becomes the owner.
       x-orqix-permission: workflow.edit
@@ -1832,6 +2283,66 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/shared-assets/decision/dmn:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    post:
+      tags: [Workflows]
+      operationId: convertDecisionDmn
+      summary: Convert a decision table of a DMN file into shared decision content for review (nothing is stored)
+      description: |
+        The body is the DMN file, `Content-Type: application/xml`, read like importDecisionDmn. When the file has
+        several decisions and `decisionId` is absent, the result lists `decisions` with `decisionId` and `content` null so
+        the caller can choose. Otherwise `content` is the converted table (structure checked like createDecisionAsset);
+        create the shared decision or its next version with createDecisionAsset or addDecisionAssetVersion. `notes`
+        name the parts of the file that carry no meaning for Orqix and were left out (annotations, descriptions).
+      x-orqix-permission: workflow.edit
+      parameters:
+        - in: query
+          name: decisionId
+          schema: { type: string, minLength: 1, maxLength: 200 }
+      requestBody:
+        required: true
+        content:
+          application/xml:
+            schema: { type: string }
+      responses:
+        '200':
+          description: The converted table, or the decisions to choose from
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DecisionDmnConversion' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/shared-assets/decision/{assetKey}/versions/{version}/dmn:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: assetKey, in: path, required: true, schema: { $ref: '#/components/schemas/Key' } }
+      - { name: version, in: path, required: true, schema: { type: integer, minimum: 1 } }
+    get:
+      tags: [Workflows]
+      operationId: exportSharedDecisionDmn
+      summary: Download a version of a shared decision as a standard DMN 1.3 file (docs/build/S121)
+      description: The same portable form as exportDecisionDmn, named after the shared decision.
+      x-orqix-permission: workflow.read
+      responses:
+        '200':
+          description: The DMN file
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            application/xml:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Unprocessable' }
 
   /workspaces/{workspaceId}/shared-assets/{assetKind}/{assetKey}:
@@ -2014,7 +2525,7 @@ paths:
       summary: Archive a workflow so it leaves the catalog, the start lists and child-workflow choices
       description: |
         Refused while requests of the workflow are still open (409 RESOURCE_IN_USE). Finished requests,
-        releases and the audit trail stay readable through their own links. There is no un-archive in this version.
+        releases and the audit trail stay readable through their own links. `restoreWorkflow` brings it back.
       x-orqix-permission: workflow.edit
       x-orqix-audit: workflow.archived
       requestBody:
@@ -2024,6 +2535,37 @@ paths:
             schema: { $ref: '#/components/schemas/ArchiveWorkflow' }
       responses:
         '204': { description: Archived }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/workflows/{workflowId}/restore:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+    post:
+      tags: [Workflows]
+      operationId: restoreWorkflow
+      summary: Restore an archived workflow to the catalog with its folder, owner, draft and active release
+      description: |
+        The workflow can be started again by the same people as before archiving. 404 when the workflow is
+        not archived (or does not exist); 409 WORKFLOW_VERSION_CONFLICT when the version is stale.
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: workflow.restored
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RestoreWorkflow' }
+      responses:
+        '200':
+          description: The restored workflow
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Workflow' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -2812,6 +3354,36 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /workspaces/{workspaceId}/workflows/{workflowId}/releases/{releaseId}/decisions/{decisionKey}/dmn:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+      - $ref: '#/components/parameters/ReleaseId'
+      - $ref: '#/components/parameters/DecisionKey'
+    get:
+      tags: [Releases]
+      operationId: exportReleaseDecisionDmn
+      summary: Download a decision table of a published release as a standard DMN 1.3 file (docs/build/S121)
+      description: |
+        The same portable form as exportDecisionDmn, written from the table the release was published with. Same
+        permission and audit as the release BPMN (`workflow.export`, audit workflow.exported with format dmn and the
+        release number); outsiders get 404.
+      x-orqix-permission: workflow.export
+      x-orqix-audit: workflow.exported
+      responses:
+        '200':
+          description: The DMN file
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            application/xml:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
   /workspaces/{workspaceId}/workflows/{workflowId}/active-release:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -2967,8 +3539,10 @@ paths:
       summary: Poll the wait a callback token belongs to (no session; the token is the credential)
       description: |
         States waiting, resumed, expired or cancelled (with reason timedOut, requestEnded or answeredElsewhere). Send
-        the ETag back in If-None-Match to get 304 while nothing changed. An unknown, revoked or replaced token, or a
-        token of another workspace, is 404.
+        the ETag back in If-None-Match to get 304 while nothing changed. An unknown, revoked, replaced or purged token,
+        or a token of another workspace, is 404. Polls and resumes together are limited per token (default 60 a minute
+        on each server; 429 with Retry-After). A closed wait is purged after the deployment's retention (default 30
+        days), after which its token is unknown.
       security: []
       x-orqix-permission: callbackToken
       parameters:
@@ -2984,6 +3558,7 @@ paths:
               schema: { $ref: '#/components/schemas/CallbackWaitState' }
         '304': { description: Not modified since the given ETag }
         '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
 
   /workspaces/{workspaceId}/callbacks/wait/resume:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
@@ -2995,7 +3570,7 @@ paths:
         The result must match the waiting step's declared values (at most 16 KiB, flat scalars). It is delivered through
         the same path as sendMessage. 409 CALLBACK_ALREADY_RESUMED for a different key or body after a resume,
         CALLBACK_NOT_WAITING when the wait closed or the token expired, RUN_SUSPENDED while an operator suspended the
-        request (repeat it after resumeRun).
+        request (repeat it after resumeRun). Counts toward the per-token limit shared with polling (429).
       security: []
       x-orqix-permission: callbackToken
       x-orqix-audit: callback.resumed
@@ -3018,6 +3593,7 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
         '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
 
   /workspaces/{workspaceId}/kafka-triggers:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
@@ -3373,6 +3949,44 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /workspaces/{workspaceId}/runs/{runId}/send-backs:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: runId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    get:
+      tags: [Runs]
+      operationId: listRunSendBacks
+      summary: Send-backs of a request (S116), newest first; field values only for callers who may read the request data
+      x-orqix-permission: initiator | taskParticipant | run.read
+      responses:
+        '200': { description: Send-backs, content: { application/json: { schema: { $ref: '#/components/schemas/SendBackList' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workspaces/{workspaceId}/runs/{runId}/send-backs/{sendBackId}/answer:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: runId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+      - { name: sendBackId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [Runs]
+      operationId: answerSendBack
+      summary: The requester corrects the returned fields; the send-back closes and the task version changes
+      description: >-
+        Only the requester, while the send-back and its task are open and the request is not suspended, with the task
+        version shown. Only the returned fields, as single values, validated against the pinned form; before and after
+        values are recorded. A decision prepared on the old data is refused.
+      x-orqix-permission: initiator
+      x-orqix-audit: task.send-back.answered
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AnswerSendBackRequest' } } } }
+      responses:
+        '200': { description: Answered send-back (or replay), content: { application/json: { schema: { $ref: '#/components/schemas/SendBack' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
   /workspaces/{workspaceId}/runs/{runId}/comments:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -4565,6 +5179,47 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
 
+  /workspaces/{workspaceId}/tasks/{taskId}/send-back:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/TaskId'
+    post:
+      tags: [Tasks]
+      operationId: sendTaskBack
+      summary: Send the request back to its requester for the fields the step declares correctable (S116)
+      description: >-
+        Only the eligible holder of an open task whose step declares correctable fields. At most one send-back is open
+        per task; while it is open the task cannot be decided or corrected by the holder. Bumps the task version.
+      x-orqix-permission: task.act + assignee
+      x-orqix-audit: task.sent-back
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/SendBackRequest' } } } }
+      responses:
+        '200': { description: Task with its open send-back (or replay), content: { application/json: { schema: { $ref: '#/components/schemas/TaskDetail' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/tasks/{taskId}/send-back/withdraw:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/TaskId'
+    post:
+      tags: [Tasks]
+      operationId: withdrawTaskSendBack
+      summary: Withdraw the open send-back of a task (holder or operator)
+      x-orqix-permission: task.act + assignee | run.operate
+      x-orqix-audit: task.send-back.withdrawn
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/WithdrawSendBackRequest' } } } }
+      responses:
+        '200': { description: Task, content: { application/json: { schema: { $ref: '#/components/schemas/TaskDetail' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
   /workspaces/{workspaceId}/tasks/{taskId}/correct-input:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -5943,8 +6598,8 @@ paths:
               required: [fileName, content]
               properties:
                 fileName: { type: string, minLength: 1, maxLength: 200 }
-                content: { type: string, minLength: 1, maxLength: 1398104, description: 'BPMN, DMN, CMMN or XPDL XML, form or mapping JSON text; base64 for Pega archives. Decoded sources are limited to 1 MiB.' }
-                sourceFormat: { type: string, enum: [bpmn, dmn, camundaForm, pegaArchive, pegaMapping, pegaXpdl, cmmn], default: bpmn, description: 'bpmn is Camunda 7/8 BPMN 2.0; dmn is a Camunda DMN 1.1-1.4 file with decision tables; camundaForm is a Camunda Forms .form JSON file attached through formMappings. pegaXpdl is a bounded XPDL 2.0 flow export; it does not resolve native RAP rule pages. cmmn inventories a CMMN 1.1 file but cannot convert or deploy it.' }
+                content: { type: string, minLength: 1, maxLength: 1398104, description: 'BPMN, DMN, CMMN or XPDL XML, form or mapping JSON text; base64 for Pega archives and native Pega rule archives. Decoded sources are limited to 1 MiB.' }
+                sourceFormat: { type: string, enum: [bpmn, dmn, camundaForm, pegaArchive, pegaMapping, pegaXpdl, cmmn, pegaRules], default: bpmn, description: 'bpmn is Camunda 7/8 BPMN 2.0; dmn is a Camunda DMN 1.1-1.4 file with decision tables; camundaForm is a Camunda Forms .form JSON file attached through formMappings. pegaXpdl is a bounded XPDL 2.0 flow export; it does not resolve native RAP rule pages. cmmn inventories a CMMN 1.1 file but cannot convert or deploy it. pegaRules (base64) is a native Pega rule archive (ZIP/RAP/JAR of pagedata rule pages), decoded with a strict synthetic grammar, resolved against its own application stack and converted per starting point (docs/build/S112); grammar fidelity against genuine exports is customer qualification.' }
       responses:
         '201':
           description: Job created with its compatibility report
@@ -5975,6 +6630,71 @@ paths:
               schema: { $ref: '#/components/schemas/MigrationJob' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/migrations/{migrationId}/pega-rules:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/MigrationId'
+    get:
+      tags: [Migration]
+      operationId: getPegaRuleArchive
+      summary: Inventory, effective-rule resolution and per-rule conversion results of a native Pega rule archive (docs/build/S112)
+      description: >-
+        Recomputed from the immutable archive bytes. Lists every archive entry with its SHA-256 and decoded identity or refusal
+        reason, the application ruleset stack, each case context's class chain with the chosen and shadowed candidates of every
+        rule key, and for every starting point the compatibility report and per-rule conversion results with target fragment
+        hashes. After conversion, the recorded per-rule results of the converted starting point are included. 404 for other
+        source formats.
+      x-orqix-permission: workflow.read
+      responses:
+        '200':
+          description: Native rule archive view
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PegaRuleArchive' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{workspaceId}/migrations/{migrationId}/case-definition:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/MigrationId'
+    post:
+      tags: [Migration]
+      operationId: convertPegaCaseDefinition
+      summary: Convert a native Pega case type to a CMMN case definition (docs/build/S117)
+      description: >-
+        Builds a CMMN case definition in the case designer's admitted subset from a case type of a native rule archive:
+        stages, workflow tasks pinned to the published workflows converted from each process flow (workflowMappings),
+        discretionary items for optional processes and user events for alternate stages (roleMappings), service level
+        timers with deadline milestones, and typed case data fields. With dryRun the proposal is returned and checked
+        against the subset; otherwise the definition is created through the case definition API, which deploys it and
+        pins the workflow releases. The same request again returns the recorded definition; a different one is a conflict.
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: migration.case.converted
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PegaCaseDefinitionRequest' }
+      responses:
+        '200':
+          description: Dry run proposal
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PegaCaseDefinitionResult' }
+        '201':
+          description: Case definition created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PegaCaseDefinitionResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
 
   /workspaces/{workspaceId}/migrations/{migrationId}/convert:
     parameters:
@@ -6017,11 +6737,15 @@ paths:
       operationId: uploadBlueprintMigration
       summary: Upload a Pega Blueprint PDF and transcribe it for review (docs/build/S91)
       description: >-
-        The PDF (at most 25 MiB and 60 pages, starting with %PDF-) is read page by page in the isolated extraction worker;
-        no JavaScript, form action or embedded file is executed or opened, and encrypted or damaged PDFs are refused.
-        A generic outline layout proposes a structured transcription with source page references; every element starts
-        as proposed and must be reviewed. Nothing is converted or published by this call. The layout is generic and does
-        not claim compatibility with Pega's own Blueprint export layout.
+        The PDF (at most 25 MiB and 60 pages, starting with %PDF-) is read page by page in the isolated extraction worker:
+        page text, the position and font of each text run, and the colour of small shapes such as step icons. No
+        JavaScript, form action or embedded file is executed or opened, images are not decoded, and encrypted or damaged
+        PDFs are refused. A layout proposes a structured transcription with source page references; every element starts
+        as proposed and must be reviewed. Pega's "Application Overview Document" Blueprint export is read with the
+        pega-blueprint layout (written against one genuine export), which also stores each page in reading order (stage by
+        stage); other documents are read with the generic outline layout. An export can define several case types and
+        one upload transcribes one: caseType names it (default the first); an unknown name is refused with the names the
+        document has (400). Nothing is converted or published by this call.
       x-orqix-permission: workflow.edit
       x-orqix-audit: migration.uploaded
       requestBody:
@@ -6033,6 +6757,10 @@ paths:
               required: [file]
               properties:
                 file: { type: string, contentEncoding: base64, contentMediaType: application/pdf }
+                caseType:
+                  type: string
+                  maxLength: 200
+                  description: Name of the case type to transcribe when the blueprint defines several (case and punctuation are ignored); the first when omitted or blank
       responses:
         '201':
           description: Job created with the findings of the proposed transcription
@@ -6398,6 +7126,11 @@ components:
       required: false
       description: The callback token issued once for this wait (docs/build/S98); never put it in a URL.
       schema: { type: string, maxLength: 100 }
+    AppPageSlug:
+      name: slug
+      in: path
+      required: true
+      schema: { type: string, pattern: '^[a-z][a-z0-9-]{0,38}[a-z0-9]$' }
     WorkspaceId:
       name: workspaceId
       in: path
@@ -6627,6 +7360,67 @@ components:
         name: { type: string, minLength: 1, maxLength: 200 }
         sourceXml: { type: string, minLength: 1, maxLength: 65536, description: Bounded CMMN 1.1 XML source (64 KiB UTF-8) }
         dataFields: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseDataField' } }
+        workflowTasks: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseWorkflowTaskMapping' } }
+        caseTasks: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseWorkflowTaskMapping' }, description: 'One mapping per CMMN caseTask (caseRef prefix:key bound to urn:orqix:case); inputMapping is child field to parent field, resultMapping is parent field to child field or outcome' }
+        decisionTasks: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseWorkflowTaskMapping' }, description: 'One mapping per CMMN decisionTask (decision externalRef prefix:key bound to urn:orqix:decision); inputMapping is table fieldRef to case field, resultMapping is case field to table output' }
+    CaseDecisionPin:
+      type: object
+      additionalProperties: false
+      required: [taskId, assetId, decisionKey, decisionName, decisionVersion, inputMapping, resultMapping]
+      properties:
+        taskId: { type: string }
+        assetId: { $ref: '#/components/schemas/Uuid' }
+        decisionKey: { type: string }
+        decisionName: { type: string }
+        decisionVersion: { type: integer, minimum: 1 }
+        inputMapping: { type: object, additionalProperties: { type: string } }
+        resultMapping: { type: object, additionalProperties: { type: string } }
+    CaseChildPin:
+      type: object
+      additionalProperties: false
+      required: [taskId, childDefinitionId, childKey, childName, childVersion, inputMapping, resultMapping]
+      properties:
+        taskId: { type: string }
+        childDefinitionId: { $ref: '#/components/schemas/Uuid' }
+        childKey: { type: string }
+        childName: { type: string }
+        childVersion: { type: integer, minimum: 1 }
+        inputMapping: { type: object, additionalProperties: { type: string } }
+        resultMapping: { type: object, additionalProperties: { type: string } }
+    CaseWorkflowTaskMapping:
+      type: object
+      additionalProperties: false
+      required: [taskId]
+      description: Mapping of one CMMN processTask whose process names a workspace workflow (externalRef orqix:workflow:<key>).
+      properties:
+        taskId: { type: string, maxLength: 64 }
+        inputMapping: { type: object, maxProperties: 50, description: Workflow request field to case data field, additionalProperties: { type: string } }
+        resultMapping: { type: object, maxProperties: 30, description: 'Case data field to workflow result field, or outcome, outcomeKind or reference', additionalProperties: { type: string } }
+    CaseWorkflowPin:
+      type: object
+      additionalProperties: false
+      required: [taskId, workflowId, workflowKey, workflowName, releaseId, releaseNumber, inputMapping, resultMapping]
+      properties:
+        taskId: { type: string }
+        workflowId: { $ref: '#/components/schemas/Uuid' }
+        workflowKey: { type: string }
+        workflowName: { type: string }
+        releaseId: { $ref: '#/components/schemas/Uuid' }
+        releaseNumber: { type: integer, minimum: 1 }
+        inputMapping: { type: object, additionalProperties: { type: string } }
+        resultMapping: { type: object, additionalProperties: { type: string } }
+    CaseWorkflowStatus:
+      type: object
+      additionalProperties: false
+      required: [attempt, status, runId, reference, outcome, detail, caseId]
+      properties:
+        caseId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }], description: The child case a case task started }
+        attempt: { type: integer, minimum: 1 }
+        status: { type: string, enum: [running, completed, failed, cancelled, fenced] }
+        runId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }] }
+        reference: { type: [string, 'null'] }
+        outcome: { type: [string, 'null'] }
+        detail: { type: [string, 'null'] }
     CaseDefinition:
       type: object
       additionalProperties: false
@@ -6652,6 +7446,9 @@ components:
         createdAt: { $ref: '#/components/schemas/Timestamp' }
         sourceXml: { type: string }
         dataFields: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseDataField' } }
+        workflowTasks: { type: array, items: { $ref: '#/components/schemas/CaseWorkflowPin' } }
+        caseTasks: { type: array, items: { $ref: '#/components/schemas/CaseChildPin' } }
+        decisionTasks: { type: array, items: { $ref: '#/components/schemas/CaseDecisionPin' } }
     CasePlanItem:
       type: object
       additionalProperties: false
@@ -6667,6 +7464,7 @@ components:
         endedAt: { type: [string, 'null'], format: date-time }
         required: { type: boolean }
         allowedActions: { type: object, additionalProperties: { type: boolean } }
+        workflow: { oneOf: [{ $ref: '#/components/schemas/CaseWorkflowStatus' }, { type: 'null' }] }
     CaseEvent:
       type: object
       additionalProperties: false
@@ -6806,6 +7604,68 @@ components:
         kind: { type: string, enum: [request, approval, case, worklist] }
         sections: { type: array, items: { $ref: '#/components/schemas/ViewSection' } }
         actions: { type: array, items: { $ref: '#/components/schemas/ViewAction' } }
+    ViewPinItem:
+      type: object
+      additionalProperties: false
+      required: [key, holderType, holderId, holderName, location, pinnedVersions, expected, status, problems, effect]
+      properties:
+        key: { type: string, maxLength: 120 }
+        holderType: { type: string, enum: [workflowDraft, workflowRelease, caseDefinition, caseVersion, worklist, pageDraft, pageVersion, route] }
+        holderId: { type: string }
+        holderName: { type: string }
+        location: { type: string }
+        pinnedVersions: { type: array, items: { type: integer, minimum: 1 } }
+        expected: { type: [integer, 'null'], description: 'Draft revision, case definition version or route/worklist revision the update expects' }
+        status: { type: string, enum: [ready, current, newer, blocked, readOnly] }
+        problems: { type: array, items: { type: string } }
+        effect: { type: string, description: What applying this item does }
+    ViewPinInventory:
+      type: object
+      additionalProperties: false
+      required: [viewId, viewName, kind, latestVersion, targetVersion, planHash, items]
+      properties:
+        viewId: { $ref: '#/components/schemas/Uuid' }
+        viewName: { type: string }
+        kind: { type: string, enum: [request, approval, case, worklist, page] }
+        latestVersion: { type: integer, minimum: 1 }
+        targetVersion: { type: integer, minimum: 1 }
+        planHash: { type: string, pattern: '^[0-9a-f]{64}$' }
+        items: { type: array, items: { $ref: '#/components/schemas/ViewPinItem' } }
+    MigrateViewPins:
+      type: object
+      additionalProperties: false
+      required: [targetVersion, planHash, items, reason]
+      properties:
+        targetVersion: { type: integer, minimum: 1 }
+        planHash: { type: string, pattern: '^[0-9a-f]{64}$' }
+        items: { type: array, minItems: 1, maxItems: 50, uniqueItems: true, items: { type: string, maxLength: 120 } }
+        reason: { type: string, minLength: 1, maxLength: 500 }
+    ViewPinApplied:
+      type: object
+      additionalProperties: false
+      required: [key, holderType, holderName, outcome]
+      properties:
+        key: { type: string }
+        holderType: { type: string }
+        holderName: { type: string }
+        outcome: { type: string }
+    ViewPinMigration:
+      type: object
+      additionalProperties: false
+      required: [id, targetVersion, reason, items, appliedBy, appliedAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        targetVersion: { type: integer, minimum: 1 }
+        reason: { type: string }
+        items: { type: array, items: { $ref: '#/components/schemas/ViewPinApplied' } }
+        appliedBy: { $ref: '#/components/schemas/Uuid' }
+        appliedAt: { $ref: '#/components/schemas/Timestamp' }
+    ViewPinMigrationList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ViewPinMigration' } }
     ViewSummary:
       type: object
       additionalProperties: false
@@ -6814,7 +7674,7 @@ components:
         id: { $ref: '#/components/schemas/Uuid' }
         name: { type: string }
         description: { type: [string, 'null'] }
-        kind: { type: string, enum: [request, approval, case, worklist] }
+        kind: { type: string, enum: [request, approval, case, worklist, page] }
         draftRevision: { type: integer, minimum: 1 }
         publishedVersion: { type: [integer, 'null'], minimum: 1 }
         createdAt: { $ref: '#/components/schemas/Timestamp' }
@@ -6843,7 +7703,7 @@ components:
         description: { type: [string, 'null'] }
         draftRevision: { type: integer, minimum: 1 }
         publishedVersion: { type: [integer, 'null'], minimum: 1 }
-        definition: { $ref: '#/components/schemas/ViewDefinition' }
+        definition: { $ref: '#/components/schemas/LibraryViewDefinition' }
         versions: { type: array, items: { $ref: '#/components/schemas/ViewVersionSummary' } }
     ViewVersion:
       type: object
@@ -6854,7 +7714,7 @@ components:
         version: { type: integer, minimum: 1 }
         name: { type: string }
         description: { type: [string, 'null'] }
-        definition: { $ref: '#/components/schemas/ViewDefinition' }
+        definition: { $ref: '#/components/schemas/LibraryViewDefinition' }
         publishedAt: { $ref: '#/components/schemas/Timestamp' }
     CreateView:
       type: object
@@ -6863,7 +7723,7 @@ components:
       properties:
         name: { type: string, minLength: 1, maxLength: 80 }
         description: { type: string, maxLength: 300 }
-        definition: { $ref: '#/components/schemas/ViewDefinition' }
+        definition: { $ref: '#/components/schemas/LibraryViewDefinition' }
     CopyView:
       type: object
       additionalProperties: false
@@ -6878,13 +7738,383 @@ components:
         expectedRevision: { type: integer, minimum: 1 }
         name: { type: string, minLength: 1, maxLength: 80 }
         description: { type: string, maxLength: 300 }
-        definition: { $ref: '#/components/schemas/ViewDefinition' }
+        definition: { $ref: '#/components/schemas/LibraryViewDefinition' }
     PublishView:
       type: object
       additionalProperties: false
       required: [expectedRevision]
       properties:
         expectedRevision: { type: integer, minimum: 1 }
+    LibraryViewDefinition:
+      description: A form view (request, approval, case or worklist) or an application page (S111).
+      oneOf:
+        - { $ref: '#/components/schemas/ViewDefinition' }
+        - { $ref: '#/components/schemas/PageDefinition' }
+    ViewElementId:
+      type: string
+      pattern: '^[A-Za-z][A-Za-z0-9_-]{0,63}$'
+    PageDefinition:
+      description: >-
+        Data-only application page (S111). Regions are fixed by the layout; components pin exact published view and
+        extension versions; chains use the fixed server-checked step allowlist and always stop at the first failure.
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, kind, title, context, layout, breakpoint, regions, chains]
+      properties:
+        schemaVersion: { type: integer, enum: [1] }
+        kind: { type: string, enum: [page] }
+        title: { type: string, minLength: 1, maxLength: 120 }
+        context: { type: string, enum: [none, task, case] }
+        layout: { type: string, enum: [single, sidebar, split] }
+        breakpoint: { type: string, enum: [sm, md, lg] }
+        regions: { type: array, minItems: 1, maxItems: 2, items: { $ref: '#/components/schemas/PageRegion' } }
+        chains: { type: array, maxItems: 10, items: { $ref: '#/components/schemas/ActionChain' } }
+    PageRegion:
+      type: object
+      additionalProperties: false
+      required: [id, label, components]
+      properties:
+        id: { type: string, enum: [main, side, start, end] }
+        label: { type: string, minLength: 1, maxLength: 120 }
+        components: { type: array, maxItems: 12, items: { $ref: '#/components/schemas/PageComponent' } }
+    PageComponent:
+      description: >-
+        One page component. Allowed properties depend on `type`; the server rejects properties that do not belong to it.
+      type: object
+      additionalProperties: false
+      required: [id, type]
+      properties:
+        id: { $ref: '#/components/schemas/ViewElementId' }
+        type: { type: string, enum: [heading, text, view, list, details, actions, extension] }
+        text: { type: string, minLength: 1, maxLength: 1000 }
+        label: { type: string, minLength: 1, maxLength: 120 }
+        view: { $ref: '#/components/schemas/CaseViewRef' }
+        workflowId: { $ref: '#/components/schemas/Uuid' }
+        source: { type: string, enum: [assignedTasks, claimableTasks, myRequests, cases, task, case] }
+        columns: { type: array, minItems: 1, maxItems: 10, items: { $ref: '#/components/schemas/PageField' } }
+        fields: { type: array, minItems: 1, maxItems: 20, items: { $ref: '#/components/schemas/PageField' } }
+        limit: { type: integer, minimum: 1, maximum: 50 }
+        chains: { type: array, maxItems: 10, items: { $ref: '#/components/schemas/ViewElementId' } }
+        extension: { $ref: '#/components/schemas/CaseViewRef' }
+        bindings: { type: array, maxItems: 20, items: { type: string, maxLength: 72 } }
+        height: { type: integer, minimum: 80, maximum: 800 }
+        visibleWhen: { $ref: '#/components/schemas/PageCondition' }
+    PageField:
+      type: object
+      additionalProperties: false
+      required: [field, label]
+      properties:
+        field: { type: string, maxLength: 72 }
+        label: { type: string, minLength: 1, maxLength: 120 }
+    PageCondition:
+      description: Presentation-only visibility; hiding a component never grants or denies an operation.
+      type: object
+      additionalProperties: false
+      required: [binding, equals]
+      properties:
+        binding: { type: string, maxLength: 72 }
+        equals: { type: [string, number, boolean] }
+    ActionChain:
+      type: object
+      additionalProperties: false
+      required: [id, label, stopOnFailure, steps]
+      properties:
+        id: { $ref: '#/components/schemas/ViewElementId' }
+        label: { type: string, minLength: 1, maxLength: 80 }
+        stopOnFailure: { type: boolean, description: Must be true; later steps never run after a failed step. }
+        steps: { type: array, minItems: 1, maxItems: 5, items: { $ref: '#/components/schemas/ChainStep' } }
+    ChainStep:
+      type: object
+      additionalProperties: false
+      required: [action]
+      properties:
+        action: { $ref: '#/components/schemas/ChainAction' }
+        component: { $ref: '#/components/schemas/ViewElementId' }
+        target: { type: string, maxLength: 200 }
+        planItem: { type: string, pattern: '^[A-Za-z_][A-Za-z0-9._-]{0,63}$', description: 'CMMN element id of the plan item, for startPlanItem, completePlanItem and planDiscretionaryItem; resolved in the case when the step runs' }
+        occurrence: { type: string, enum: [single, newest, choose], description: 'Plan-item steps only. With several available occurrences: single stops (default), newest takes the most recently created, choose takes the one the person picked (ChainInput.planItems).' }
+        compensate:
+          type: string
+          enum: [cancelRequest, restoreDraft, releaseTask, restoreCaseData, resumeCase, suspendCase, withdrawSendBack]
+          description: >-
+            The step's own inverse, run (authorized again) when a later step fails: submit→cancelRequest (needs run.operate),
+            saveDraft→restoreDraft, claim→releaseTask, saveCaseData→restoreCaseData, suspendCase→resumeCase,
+            resumeCase→suspendCase, sendBack→withdrawSendBack. Other steps cannot be undone. Absent means no compensation.
+    ChainAction:
+      type: string
+      description: >-
+        requestCorrection runs correctTaskInput (fields the step lets the holder correct). Case steps run the case
+        lifecycle, plan-item and task-completion operations with the carried case version and the component's reason.
+      enum: [submit, saveDraft, claim, requestCorrection, sendBack, approve, reject, saveCaseData, suspendCase, resumeCase, closeCase, startPlanItem, completePlanItem, planDiscretionaryItem, navigate]
+    AppPageSlugValue:
+      type: string
+      pattern: '^[a-z][a-z0-9-]{0,38}[a-z0-9]$'
+    AppPageRoute:
+      type: object
+      additionalProperties: false
+      required: [slug, revision, title, page, changedAt]
+      properties:
+        slug: { $ref: '#/components/schemas/AppPageSlugValue' }
+        revision: { type: integer, minimum: 1 }
+        title: { type: [string, 'null'] }
+        page: { oneOf: [{ $ref: '#/components/schemas/CaseViewRef' }, { type: 'null' }] }
+        changedAt: { $ref: '#/components/schemas/Timestamp' }
+    AppPageRouteList:
+      type: object
+      additionalProperties: false
+      required: [items, canAssign]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AppPageRoute' } }
+        canAssign: { type: boolean }
+    AssignAppPage:
+      type: object
+      additionalProperties: false
+      required: [expectedRevision]
+      properties:
+        expectedRevision: { type: integer, minimum: 0 }
+        viewRef: { oneOf: [{ $ref: '#/components/schemas/CaseViewRef' }, { type: 'null' }] }
+    AppPageHistory:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [revision, page, changedBy, changedAt]
+            properties:
+              revision: { type: integer, minimum: 1 }
+              page: { oneOf: [{ $ref: '#/components/schemas/CaseViewRef' }, { type: 'null' }] }
+              changedBy: { $ref: '#/components/schemas/Uuid' }
+              changedAt: { $ref: '#/components/schemas/Timestamp' }
+    AppPageRuntime:
+      type: object
+      additionalProperties: false
+      required: [slug, revision, page, views, extensions, grants]
+      properties:
+        slug: { $ref: '#/components/schemas/AppPageSlugValue' }
+        revision: { type: integer, minimum: 1 }
+        page:
+          type: object
+          additionalProperties: false
+          required: [id, version, definition]
+          properties:
+            id: { $ref: '#/components/schemas/Uuid' }
+            version: { type: integer, minimum: 1 }
+            definition: { $ref: '#/components/schemas/PageDefinition' }
+        views: { type: array, items: { $ref: '#/components/schemas/PinnedCaseView' } }
+        extensions: { type: array, items: { $ref: '#/components/schemas/AppPageExtensionUse' } }
+        grants: { $ref: '#/components/schemas/AppPageGrants' }
+    AppPageExtensionUse:
+      type: object
+      additionalProperties: false
+      required: [id, version, name, status, sha256, capabilities, height]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        version: { type: integer, minimum: 1 }
+        name: { type: string }
+        status: { $ref: '#/components/schemas/UiExtensionStatus' }
+        sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        capabilities: { $ref: '#/components/schemas/UiExtensionCapabilities' }
+        height: { type: integer, minimum: 80, maximum: 800 }
+    AppPageGrants:
+      description: Hints for presentation; every chain step is authorized again by its own operation.
+      type: object
+      additionalProperties: false
+      required: [startWorkflows, taskAct, readCases]
+      properties:
+        startWorkflows: { type: array, items: { $ref: '#/components/schemas/Uuid' } }
+        taskAct: { type: boolean }
+        readCases: { type: boolean }
+    AppPageDraftList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [componentId, values, savedAt]
+            properties:
+              componentId: { $ref: '#/components/schemas/ViewElementId' }
+              values: { type: object, additionalProperties: true }
+              savedAt: { $ref: '#/components/schemas/Timestamp' }
+    AppPageComponentData:
+      type: object
+      additionalProperties: false
+      required: [values]
+      properties:
+        values: { type: object, additionalProperties: true, description: Granted binding to value; bindings the caller cannot read are omitted. }
+    ChainRunRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedRevision]
+      properties:
+        expectedRevision: { type: integer, minimum: 1 }
+        context: { type: string, pattern: '^[A-Za-z0-9-]{1,64}$' }
+        source: { $ref: '#/components/schemas/ViewElementId' }
+        inputs:
+          type: object
+          maxProperties: 10
+          additionalProperties: { $ref: '#/components/schemas/ChainInput' }
+    ChainInput:
+      type: object
+      additionalProperties: false
+      properties:
+        values: { type: object, additionalProperties: true }
+        expectedVersion: { type: integer, minimum: 1 }
+        reason: { type: string, maxLength: 1000 }
+        comment: { type: string, maxLength: 2000 }
+        planItems:
+          type: object
+          maxProperties: 5
+          description: CMMN element id to the chosen plan item, for plan-item steps whose occurrence is choose
+          additionalProperties: { type: string, maxLength: 128 }
+    ChainRunResult:
+      type: object
+      additionalProperties: false
+      required: [completed, navigateTo, steps]
+      properties:
+        completed: { type: boolean }
+        navigateTo: { type: [string, 'null'] }
+        steps:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [index, action, component, status, detail, problemCode, runId]
+            properties:
+              index: { type: integer, minimum: 0 }
+              action: { $ref: '#/components/schemas/ChainAction' }
+              component: { type: [string, 'null'] }
+              status: { type: string, enum: [succeeded, failed, skipped] }
+              detail: { type: [string, 'null'] }
+              problemCode: { type: [string, 'null'] }
+              runId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }] }
+              compensation:
+                description: What ran to undo this succeeded step after a later step failed; null when it declares none
+                oneOf:
+                  - type: 'null'
+                  - type: object
+                    additionalProperties: false
+                    required: [action, status, detail, problemCode]
+                    properties:
+                      action: { type: string }
+                      status: { type: string, enum: [succeeded, failed] }
+                      detail: { type: [string, 'null'] }
+                      problemCode: { type: [string, 'null'] }
+    UiExtensionStatus:
+      type: string
+      enum: [pending, approved, rejected, revoked]
+    UiExtensionCapabilities:
+      type: object
+      additionalProperties: false
+      required: [bindings, actions]
+      properties:
+        bindings: { type: array, maxItems: 20, items: { type: string, maxLength: 72 } }
+        actions: { type: array, maxItems: 15, items: { $ref: '#/components/schemas/ChainAction' } }
+    UiExtensionVersionSummary:
+      type: object
+      additionalProperties: false
+      required: [version, status, sha256, capabilities, height, submittedBy, submittedAt, decidedBy, decidedAt, decisionNote]
+      properties:
+        version: { type: integer, minimum: 1 }
+        status: { $ref: '#/components/schemas/UiExtensionStatus' }
+        sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        capabilities: { $ref: '#/components/schemas/UiExtensionCapabilities' }
+        height: { type: integer, minimum: 80, maximum: 800 }
+        submittedBy: { $ref: '#/components/schemas/SubjectRef' }
+        submittedAt: { $ref: '#/components/schemas/Timestamp' }
+        decidedBy: { oneOf: [{ $ref: '#/components/schemas/SubjectRef' }, { type: 'null' }] }
+        decidedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+        decisionNote: { type: [string, 'null'] }
+    UiExtension:
+      type: object
+      additionalProperties: false
+      required: [id, name, description, createdAt, versions]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        name: { type: string }
+        description: { type: [string, 'null'] }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+        versions: { type: array, items: { $ref: '#/components/schemas/UiExtensionVersionSummary' } }
+    UiExtensionList:
+      type: object
+      additionalProperties: false
+      required: [items, canApprove]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/UiExtension' } }
+        canApprove: { type: boolean }
+    UiExtensionVersion:
+      type: object
+      additionalProperties: false
+      required: [extensionId, name, source, version, status, sha256, capabilities, height, submittedBy, submittedAt, decidedBy, decidedAt, decisionNote, entry, files]
+      properties:
+        entry: { type: [string, 'null'], description: Module the frame loads from the bundle's files (S116) }
+        files:
+          type: array
+          description: Bundle files with the SHA-256 recorded at submission; the version hash covers them all
+          items:
+            type: object
+            additionalProperties: false
+            required: [path, contentType, size, sha256]
+            properties:
+              path: { type: string }
+              contentType: { type: string }
+              size: { type: integer, minimum: 1 }
+              sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        extensionId: { $ref: '#/components/schemas/Uuid' }
+        name: { type: string }
+        source: { type: string }
+        version: { type: integer, minimum: 1 }
+        status: { $ref: '#/components/schemas/UiExtensionStatus' }
+        sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        capabilities: { $ref: '#/components/schemas/UiExtensionCapabilities' }
+        height: { type: integer, minimum: 80, maximum: 800 }
+        submittedBy: { $ref: '#/components/schemas/SubjectRef' }
+        submittedAt: { $ref: '#/components/schemas/Timestamp' }
+        decidedBy: { oneOf: [{ $ref: '#/components/schemas/SubjectRef' }, { type: 'null' }] }
+        decidedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+        decisionNote: { type: [string, 'null'] }
+    CreateUiExtension:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+        description: { type: string, maxLength: 300 }
+    SubmitUiExtensionVersion:
+      type: object
+      additionalProperties: false
+      required: [capabilities, height]
+      properties:
+        source: { type: string, maxLength: 65536, description: Inline classic script; may be empty when an entry module is named }
+        capabilities: { $ref: '#/components/schemas/UiExtensionCapabilities' }
+        height: { type: integer, minimum: 80, maximum: 800 }
+        entry: { type: string, pattern: '^[a-z0-9][a-z0-9_-]{0,60}\.(js|mjs)$', description: The module the frame loads (one of files) }
+        files:
+          type: array
+          maxItems: 30
+          description: 'JavaScript modules, stylesheets, fonts and images (flat names, no SVG), 1 byte to 256 KiB each, 1 MiB in all; imports resolve only inside the bundle'
+          items:
+            type: object
+            additionalProperties: false
+            required: [path, content]
+            properties:
+              path: { type: string, pattern: '^[a-z0-9][a-z0-9_-]{0,60}\.(js|mjs|css|woff2|woff|png|jpg|jpeg|webp|gif)$' }
+              content: { type: string, maxLength: 349528, description: Base64 file bytes }
+    UiExtensionDecision:
+      type: object
+      additionalProperties: false
+      required: [decision, note, expectedStatus]
+      properties:
+        decision: { type: string, enum: [approve, reject, revoke] }
+        note: { type: string, minLength: 1, maxLength: 500 }
+        expectedStatus: { $ref: '#/components/schemas/UiExtensionStatus' }
     CorrectRunInputRequest:
       type: object
       additionalProperties: false
@@ -7456,7 +8686,7 @@ components:
         handled: { type: integer, minimum: 0 }
         duplicates: { type: integer, minimum: 0 }
         dead: { type: integer, minimum: 0 }
-        lastError: { type: [string, 'null'] }
+        lastError: { type: [string, 'null'], description: 'A code, never a message: secret_unavailable (the secretRef file is missing or not {username, password}), authentication_failed (the broker refused the credentials), consumer_error (any other broker or network failure); the consumer keeps retrying' }
         lastErrorAt: { type: [string, 'null'], format: date-time }
         replicas: { type: array, items: { $ref: '#/components/schemas/KafkaReplicaStatus' } }
     KafkaTrigger:
@@ -8141,6 +9371,10 @@ components:
           items: { $ref: '#/components/schemas/CompatibilityIssue' }
         currentRevision: { type: integer }
         currentVersion: { type: integer }
+        decisions:
+          type: array
+          description: importDecisionDmn and convertDecisionDmn only - the decisions of the file, to choose one with decisionId
+          items: { $ref: '#/components/schemas/DecisionDmnChoice' }
     FieldError:
       type: object
       required: [pointer, code, message]
@@ -8380,6 +9614,34 @@ components:
       properties:
         expectedVersion: { type: integer, minimum: 1, description: 'The workflow version' }
         reason: { type: string, minLength: 3, maxLength: 300 }
+    RestoreWorkflow:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, reason]
+      properties:
+        expectedVersion: { type: integer, minimum: 1, description: 'The archived workflow version' }
+        reason: { type: string, minLength: 3, maxLength: 300 }
+    ArchivedWorkflow:
+      type: object
+      required: [id, key, name, version, archivedAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        key: { type: string }
+        name: { type: string }
+        version: { type: integer }
+        archivedAt: { type: string, format: date-time }
+        archivedBy:
+          description: Null for workflows archived before this was recorded
+          oneOf:
+            - { $ref: '#/components/schemas/SubjectRef' }
+            - { type: 'null' }
+        activeReleaseNumber: { type: [integer, 'null'] }
+    ArchivedWorkflows:
+      type: object
+      required: [items, truncated]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ArchivedWorkflow' } }
+        truncated: { type: boolean }
     SetWorkflowOwner:
       type: object
       additionalProperties: false
@@ -8705,9 +9967,13 @@ components:
       type: object
       required: [matchedRow, usedDefault, output]
       properties:
-        matchedRow: { type: [integer, 'null'], description: 'Zero-based row index, null when the default applied' }
+        matchedRow: { type: [integer, 'null'], description: 'Zero-based row index, null when the default applied; under COLLECT the first matching row' }
         usedDefault: { type: boolean }
         output: { type: object, additionalProperties: { type: [string, number, boolean] } }
+        matchedRows:
+          type: array
+          description: Zero-based indexes of every row that applies, in table order (several only under COLLECT, whose results are combined; empty when the default applied)
+          items: { type: integer, minimum: 0 }
 
     WorkflowTestCase:
       type: object
@@ -9629,9 +10895,39 @@ components:
       required: [hitPolicy, rows, default]
       description: The shareable part of a workflow decision table (contracts/workflow-v0.schema.json decisionTable without key and version)
       properties:
-        hitPolicy: { type: string, enum: [UNIQUE, FIRST] }
+        hitPolicy: { type: string, enum: [UNIQUE, FIRST, ANY, PRIORITY, COLLECT] }
+        aggregation: { type: string, enum: [SUM, MIN, MAX, COUNT], description: 'COLLECT only, required there' }
+        priority:
+          type: object
+          description: PRIORITY only, required there - the output that decides and its values from the highest to the lowest priority
+          additionalProperties: false
+          required: [output, order]
+          properties:
+            output: { type: string }
+            order: { type: array, minItems: 2, maxItems: 20, items: { type: [string, number, boolean] } }
         rows: { type: array, minItems: 1, maxItems: 50, items: { type: object, additionalProperties: true } }
         default: { type: object, additionalProperties: true }
+    DecisionDmnChoice:
+      type: object
+      additionalProperties: false
+      required: [id, name, table]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        table: { type: boolean, description: false when the decision is not a decision table }
+    DecisionDmnConversion:
+      type: object
+      additionalProperties: false
+      required: [decisions, decisionId, name, content, notes]
+      properties:
+        decisions: { type: array, items: { $ref: '#/components/schemas/DecisionDmnChoice' } }
+        decisionId: { type: [string, 'null'], description: The decision read; null when the file has several and none was chosen }
+        name: { type: [string, 'null'] }
+        content:
+          oneOf:
+            - { $ref: '#/components/schemas/DecisionAssetContent' }
+            - { type: 'null' }
+        notes: { type: array, items: { type: string } }
     CreateDecisionAsset:
       type: object
       additionalProperties: false
@@ -10012,6 +11308,71 @@ components:
         message: { type: string, minLength: 1, maxLength: 500 }
         retryable: { type: boolean }
         retryAfterSeconds: { type: integer, minimum: 0, maximum: 86400 }
+    SendBackOpen:
+      type: object
+      additionalProperties: false
+      required: [id, reason, fields, sentAt]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        reason: { type: string }
+        fields: { type: array, items: { type: string } }
+        sentAt: { $ref: '#/components/schemas/Timestamp' }
+    SendBackRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, reason]
+      properties:
+        expectedVersion: { type: integer, minimum: 1 }
+        reason: { type: string, minLength: 1, maxLength: 500 }
+    WithdrawSendBackRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: { type: integer, minimum: 1 }
+        note: { type: string, maxLength: 500 }
+    AnswerSendBackRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, changes]
+      properties:
+        expectedVersion: { type: integer, minimum: 1, description: Task version shown with the send-back }
+        changes: { type: object, minProperties: 1, maxProperties: 10, additionalProperties: true }
+        note: { type: string, maxLength: 500 }
+    SendBack:
+      type: object
+      additionalProperties: false
+      required: [id, taskId, nodeId, stepLabel, status, reason, fields, sentBy, sentAt, closedAt, note, taskVersion, canAnswer]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        taskId: { type: string }
+        nodeId: { type: string }
+        stepLabel: { type: string }
+        status: { type: string, enum: [open, answered, withdrawn] }
+        reason: { type: string }
+        fields:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [key, title, schema, value]
+            properties:
+              key: { type: string }
+              title: { type: string }
+              schema: { type: [object, 'null'], additionalProperties: true }
+              value: { description: Current value; null without access to the request data }
+        sentBy: { $ref: '#/components/schemas/SubjectRef' }
+        sentAt: { $ref: '#/components/schemas/Timestamp' }
+        closedAt: { type: [string, 'null'], format: date-time }
+        note: { type: [string, 'null'] }
+        taskVersion: { type: integer, minimum: 0 }
+        canAnswer: { type: boolean }
+    SendBackList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/SendBack' } }
     CorrectTaskInputRequest:
       type: object
       additionalProperties: false
@@ -10235,6 +11596,9 @@ components:
                   description: Request fields the caller may correct on this task now (holder or operator, task open, not suspended); empty otherwise.
                   type: array
                   items: { type: string }
+                sendBack:
+                  description: The open send-back of this task (S116); while it is open the task is neither decided nor corrected by the holder
+                  oneOf: [{ $ref: '#/components/schemas/SendBackOpen' }, { type: 'null' }]
             allowedActions:
               type: object
               required: [claim, release, decide, reassign, priority]
@@ -10302,11 +11666,11 @@ components:
         runId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }] }
         runReference: { type: [string, 'null'], description: 'Human request reference of runId, e.g. ORQ-1043' }
         requestTitle: { type: [string, 'null'], description: 'Title of the request runId (see Run.requestTitle); null when the recipient may not read the request data' }
-        kind: { type: string, enum: [workflowMessage, runAttention, discussionMention] }
+        kind: { type: string, enum: [workflowMessage, runAttention, discussionMention, promotionRequest, promotionDecision], description: 'promotionRequest: a promotion into this workspace waits for approval (open Promotions); promotionDecision: your promotion request was approved or rejected (workflowId is the source workflow)' }
         message: { type: string, description: 'For discussionMention: who mentioned the recipient, on which step and workflow; never the comment text' }
         createdAt: { $ref: '#/components/schemas/Timestamp' }
         readAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
-        workflowId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }], description: 'discussionMention only: the workflow whose discussion mentions the recipient' }
+        workflowId: { oneOf: [{ $ref: '#/components/schemas/Uuid' }, { type: 'null' }], description: 'discussionMention: the workflow whose discussion mentions the recipient; promotionDecision: the promoted source workflow' }
         elementId: { type: [string, 'null'], description: 'discussionMention only: the step or connection ID of the discussion' }
 
     ConnectionSummary:
@@ -10988,7 +12352,7 @@ components:
           type: object
           required: [id, revision]
           properties:
-            id: { type: string }
+            id: { type: string, description: 'pega-blueprint (Pega Blueprint export) or generic-outline' }
             revision: { type: string }
         pageCount: { type: integer, minimum: 1, maximum: 60 }
         javascript: { type: boolean, description: 'The PDF contained JavaScript or automatic actions; they were ignored' }
@@ -11000,11 +12364,233 @@ components:
             required: [number, text, sha256, unclassifiedLines]
             properties:
               number: { type: integer, minimum: 1 }
-              text: { type: string }
+              text: { type: string, description: 'Extracted page text; with the pega-blueprint layout, the page in reading order (lifecycle stage by stage, steps indented under their stage, table cells separated by tabs)' }
               sha256: { type: string }
               unclassifiedLines: { type: integer, minimum: 0 }
         transcription: { $ref: '#/components/schemas/BlueprintTranscription' }
         report: { $ref: '#/components/schemas/CompatibilityReport' }
+    PegaRuleArchive:
+      type: object
+      required: [migrationId, status, decoder, adapterVersion, sourceSha256, stack, archiveBlockers, entries, contexts, startingPoints, conversion]
+      properties:
+        migrationId: { $ref: '#/components/schemas/Uuid' }
+        status: { type: string, enum: [analyzed, converted, failed] }
+        decoder: { type: string, description: Decoder and resolver version }
+        adapterVersion: { type: string }
+        sourceSha256: { type: string }
+        application: { type: [string, 'null'], description: 'Rule-Application name and version declared in the archive; not proof of a certified Pega release' }
+        stack:
+          type: array
+          description: Application ruleset stack in precedence order
+          items: { type: object, required: [name, version], properties: { name: { type: string }, version: { type: string } } }
+        archiveBlockers:
+          type: array
+          items: { type: object, required: [code, paths], properties: { code: { type: string }, paths: { type: array, items: { type: string } } } }
+        entries:
+          type: array
+          items: { $ref: '#/components/schemas/PegaRuleEntry' }
+        contexts:
+          type: array
+          items: { $ref: '#/components/schemas/PegaRuleContext' }
+        startingPoints:
+          type: array
+          items: { $ref: '#/components/schemas/PegaRuleStartingPoint' }
+        convertedStartRule: { type: [string, 'null'] }
+        caseConversion:
+          description: The case definition created from a case type of this archive (S117)
+          oneOf:
+            - type: 'null'
+            - type: object
+              required: [startRule, caseDefinitionId, caseKey, caseVersion, sourceSha256]
+              properties:
+                startRule: { type: string }
+                caseDefinitionId: { $ref: '#/components/schemas/Uuid' }
+                caseKey: { type: string }
+                caseVersion: { type: integer }
+                sourceSha256: { type: string }
+        conversion:
+          type: array
+          description: Recorded per-rule results of the converted starting point (empty before conversion)
+          items:
+            type: object
+            required: [rule, startRule, resolution, conversion, targets, reasons]
+            properties:
+              rule: { type: string }
+              startRule: { type: string }
+              resolution: { type: string }
+              conversion: { type: string, enum: [converted, review, blocked, notUsed, shadowed, supported] }
+              targetKind: { type: [string, 'null'] }
+              targets: { type: array, items: { type: string } }
+              targetSha256: { type: [string, 'null'] }
+              reasons: { type: array, items: { type: string } }
+    PegaRuleEntry:
+      type: object
+      required: [path, sha256, status, circumstanced]
+      properties:
+        path: { type: string }
+        sha256: { type: string }
+        status: { type: string, enum: [manifest, rule, data, delegation, refused], description: 'delegation is a System-User-MyRules record kept as provenance' }
+        reason: { type: [string, 'null'], description: Refusal reason code }
+        detail: { type: [string, 'null'] }
+        ruleType: { type: [string, 'null'] }
+        className: { type: [string, 'null'] }
+        ruleName: { type: [string, 'null'] }
+        ruleset: { type: [string, 'null'] }
+        version: { type: [string, 'null'] }
+        availability: { type: [string, 'null'], description: 'Yes, No, Blocked, Withdrawn or Final' }
+        circumstanced: { type: boolean, description: 'The rule has a qualifier (property or date circumstance, or a date range)' }
+        qualifier:
+          description: 'kind property (property, value), date (property, date YYYYMMDD), dateRange (from, to as YYYYMMDDTHHMMSS.mmm GMT) or multivariate (parts)'
+          oneOf: [{ type: 'null' }, { type: object, required: [kind], additionalProperties: true, properties: { kind: { type: string, enum: [property, date, dateRange, multivariate] } } }]
+    PegaRuleContext:
+      type: object
+      required: [className, chain, keys]
+      properties:
+        className: { type: string }
+        chain: { type: array, description: 'Class inheritance searched, closest first', items: { type: string } }
+        keys:
+          type: array
+          items:
+            type: object
+            required: [ruleType, ruleName, status, candidates]
+            properties:
+              ruleType: { type: string }
+              ruleName: { type: string }
+              status: { type: string, enum: [resolved, noCandidate, circumstanceUnresolved, ambiguous, blocked, finalOverridden] }
+              chosen: { type: [string, 'null'], description: Entry path of the effective rule }
+              variants:
+                type: array
+                description: 'Circumstance and date variants of the chosen base rule, with their qualifier (S115)'
+                items: { type: object, required: [rule, kind], additionalProperties: true, properties: { rule: { type: string }, kind: { type: string } } }
+              candidates:
+                type: array
+                items: { type: object, required: [rule, outcome], properties: { rule: { type: string }, outcome: { type: string } } }
+    PegaRuleStartingPoint:
+      type: object
+      required: [rule, kind, context, name, label, blocked, report, rules, assignments, subflows, calls]
+      properties:
+        rule: { type: string }
+        kind: { type: string, enum: [caseType, flow, process], description: 'process is a flow a case type runs as a process; convert and publish it so a case definition can pin it (S117)' }
+        context: { type: string }
+        name: { type: string }
+        label: { type: string }
+        blocked: { type: boolean }
+        report: { $ref: '#/components/schemas/CompatibilityReport' }
+        rules:
+          type: array
+          items: { $ref: '#/components/schemas/PegaRuleResult' }
+        assignments:
+          type: array
+          description: 'Assignments to map: the work queue needs a groupMappings entry, and one of the two flow actions is chosen as approval in approvalRoutes (never inferred)'
+          items:
+            type: object
+            required: [id, label, workQueue, flow, actions]
+            properties:
+              id: { type: string }
+              label: { type: string }
+              workQueue: { type: string }
+              flow: { type: string }
+              actions:
+                type: array
+                items: { type: object, required: [connectorId, flowAction], properties: { connectorId: { type: string }, flowAction: { type: string } } }
+        subflows:
+          type: array
+          description: 'Subflow calls that become child workflow steps; each id needs a childWorkflowMappings entry naming a published workflow'
+          items:
+            type: object
+            required: [id, label, flow, source]
+            properties:
+              id: { type: string }
+              label: { type: string }
+              flow: { type: string, description: Subflow rule name }
+              source: { type: string, description: Flow that calls it }
+        calls:
+          type: array
+          description: 'Connector and data page calls that become call steps (S117); each id needs a connectionMappings entry naming a workspace connection operation'
+          items:
+            type: object
+            required: [id, label, connector, method, inputMapping, resultMapping, timeoutSeconds, flow]
+            properties:
+              id: { type: string }
+              label: { type: string }
+              connector: { type: string }
+              dataPage: { type: [string, 'null'] }
+              method: { type: string }
+              endpoint: { type: [string, 'null'], description: 'Source endpoint, shown for review only' }
+              inputMapping: { type: object, additionalProperties: { type: string } }
+              resultMapping: { type: object, additionalProperties: { type: string } }
+              timeoutSeconds: { type: integer }
+              flow: { type: string }
+        caseTarget:
+          description: 'For a case type: the processes and alternate stages a case definition conversion needs mappings for (S117)'
+          oneOf:
+            - type: 'null'
+            - type: object
+              required: [processes, alternates]
+              properties:
+                processes:
+                  type: array
+                  items:
+                    type: object
+                    required: [taskId, stageId, stageLabel, flow, optional, alternate]
+                    properties:
+                      taskId: { type: string }
+                      stageId: { type: string }
+                      stageLabel: { type: string }
+                      flow: { type: string }
+                      rule: { type: [string, 'null'] }
+                      optional: { type: boolean }
+                      alternate: { type: boolean }
+                alternates:
+                  type: array
+                  items: { type: object, required: [stageId, label], properties: { stageId: { type: string }, label: { type: string } } }
+    PegaCaseDefinitionRequest:
+      type: object
+      additionalProperties: false
+      required: [key, name, pegaStartRule]
+      properties:
+        key: { type: string, pattern: '^[a-z][a-z0-9-]{1,62}$' }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        pegaStartRule: { type: string, description: Entry path of the case type }
+        workflowMappings: { type: object, description: 'Process flow name to the key of the published workflow converted from it', additionalProperties: { type: string } }
+        roleMappings: { type: object, description: 'Optional process flow name or alternate stage id to the workspace group that plans it or moves the case there', additionalProperties: { type: string } }
+        dryRun: { type: boolean, default: false, description: Build and check the proposal without creating anything }
+        acknowledgeInfo: { type: boolean }
+        acknowledgeReview: { type: boolean }
+    PegaCaseDefinitionResult:
+      type: object
+      required: [dryRun, key, name, sourceXml, sourceSha256, dataFields, workflowTasks, report]
+      properties:
+        dryRun: { type: boolean }
+        key: { type: string }
+        name: { type: string }
+        sourceXml: { type: string, description: Generated CMMN 1.1 in the case designer subset }
+        sourceSha256: { type: string }
+        dataFields: { type: array, items: { $ref: '#/components/schemas/CaseDataField' } }
+        workflowTasks: { type: array, items: { $ref: '#/components/schemas/CaseWorkflowTaskMapping' } }
+        report: { $ref: '#/components/schemas/CompatibilityReport' }
+        definition: { oneOf: [{ $ref: '#/components/schemas/CaseDefinition' }, { type: 'null' }], description: The created case definition (absent for a dry run) }
+    PegaRuleResult:
+      type: object
+      required: [rule, ruleType, className, ruleName, ruleset, version, availability, sourceSha256, resolution, conversion, targets, reasons, delegatedTo]
+      properties:
+        rule: { type: string }
+        ruleType: { type: string }
+        className: { type: string }
+        ruleName: { type: string }
+        ruleset: { type: string }
+        version: { type: string }
+        availability: { type: string }
+        sourceSha256: { type: string }
+        role: { type: [string, 'null'] }
+        resolution: { type: string, description: 'selected, a shadowing outcome, or outsideContext' }
+        conversion: { type: string, enum: [converted, review, blocked, notUsed, shadowed, supported] }
+        targetKind: { type: [string, 'null'] }
+        targets: { type: array, items: { type: string } }
+        targetSha256: { type: [string, 'null'], description: SHA-256 of the mapping-independent target fragment }
+        reasons: { type: array, items: { type: string } }
+        circumstance: { type: [string, 'null'], description: 'The rule qualifier in words (for example .Category = Services)' }
+        delegatedTo: { type: array, items: { type: string }, description: 'Access groups the rule is delegated to (provenance only)' }
     MigrationJob:
       type: object
       required: [id, fileName, status, report, createdAt]
@@ -11069,6 +12655,19 @@ components:
             properties:
               migrationId: { $ref: '#/components/schemas/Uuid' }
         decisionId: { type: string, minLength: 1, maxLength: 128, description: 'DMN migrations only: the decision to convert; optional when the file has exactly one decision' }
+        pegaStartRule: { type: string, minLength: 1, maxLength: 500, description: 'Native Pega rule archives (pegaRules) only: the archive entry path of the starting point to convert (an effective case type or starting flow); optional when the archive has exactly one. For these archives only workflowKey, name, groupMappings, approvalRoutes, childWorkflowMappings, connectionMappings, the acknowledgements and pegaStartRule are accepted.' }
+        connectionMappings:
+          type: object
+          description: 'Native Pega rule archives only (S117): call step id to the workspace connection operation it runs; request and result mappings come from the connector'
+          additionalProperties:
+            type: object
+            additionalProperties: false
+            required: [connectionRef, operation]
+            properties:
+              connectionRef: { $ref: '#/components/schemas/Key' }
+              operation: { type: string, pattern: '^[a-z][A-Za-z0-9]{0,63}$' }
+              definitionVersion: { type: integer, minimum: 1 }
+              timeoutSeconds: { type: integer, minimum: 1, maximum: 30 }
         transcriptionSha256: { type: string, pattern: '^[0-9a-f]{64}$', description: 'Pega Blueprint PDF migrations only (required there): the transcriptionSha256 of the reviewed transcription revision being converted. Routes, request fields and steps come from that transcription, so approvalRoutes, inputSchema and other mappings except groupMappings are refused.' }
         inputSchema:
           type: object

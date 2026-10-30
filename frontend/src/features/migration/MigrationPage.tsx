@@ -12,14 +12,16 @@ import { Input, Select } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { BlueprintReview } from './BlueprintReview'
 import { JobReview } from './JobReview'
+import { PegaNativeReview } from './PegaNativeReview'
 import { ProjectImportForm } from './ProjectImportForm'
 
 export function MigrationPage() {
   const { workspace, can } = useWorkspace()
   const { migrationId } = useParams()
   const navigate = useNavigate()
-  const [format, setFormat] = useState<'bpmn' | 'dmn' | 'camundaForm' | 'pegaArchive' | 'pegaMapping' | 'pegaXpdl' | 'cmmn' | 'pegaBlueprint'>('bpmn')
+  const [format, setFormat] = useState<'bpmn' | 'dmn' | 'camundaForm' | 'pegaArchive' | 'pegaMapping' | 'pegaXpdl' | 'cmmn' | 'pegaBlueprint' | 'pegaRules'>('bpmn')
   const [file, setFile] = useState<File | null>(null)
+  const [caseType, setCaseType] = useState('')
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const job = useQuery({ queryKey: ['ws', workspace.id, 'migration', migrationId],
@@ -31,13 +33,13 @@ export function MigrationPage() {
     try {
       if (format === 'pegaBlueprint') {
         if (file.size > 25 * 1_048_576) throw new Error('Choose a PDF of at most 25 MiB.')
-        const result = await endpoints.uploadBlueprintMigration(workspace.id, file)
+        const result = await endpoints.uploadBlueprintMigration(workspace.id, file, caseType)
         navigate(`/w/${workspace.id}/migrations/${result.id}`)
         return
       }
       if (file.size > 1_048_576) throw new Error('Choose a source file of at most 1 MiB.')
       let content: string
-      if (format === 'pegaArchive') {
+      if (format === 'pegaArchive' || format === 'pegaRules') {
         const bytes = new Uint8Array(await file.arrayBuffer())
         let binary = ''
         for (let offset = 0; offset < bytes.length; offset += 8192) binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192))
@@ -50,23 +52,29 @@ export function MigrationPage() {
   }
   return <>
     <PageHeader title="Import workflow" description="Analyze source behavior, resolve mappings, then create a draft for review." actions={<Button asChild><Link to={`/w/${workspace.id}/workflows`}>Back to workflows</Link></Button>} />
-    <Alert tone="info" live="off">Camunda 7/8 BPMN and DMN tables can be converted within the supported subset. CMMN 1.1 case files can be inventoried but cannot be converted or published yet. Pega XPDL 2.0 flow exports have a bounded automatic converter with explicit assignment and route review. A Pega Blueprint PDF is transcribed from its page text for mandatory human review; only the reviewed transcription is converted. Native Pega archives still require a reviewed checksum-linked mapping package; RAP rule resolution is not implemented. Live instances, history and credentials stay in the source system.</Alert>
+    <Alert tone="info" live="off">Camunda 7/8 BPMN and DMN tables can be converted within the supported subset. CMMN 1.1 case files can be inventoried but cannot be converted or published yet. Pega XPDL 2.0 flow exports have a bounded automatic converter with explicit assignment and route review. A Pega Blueprint PDF is transcribed from its page text and layout for mandatory human review, one case type at a time; only the reviewed transcription is converted. A native Pega rule archive is decoded with a strict synthetic grammar, resolved against its own ruleset stack and class inheritance, and converted per rule with explicit group and approval mappings; unsupported rules block. Native Pega archives can also be inventoried for a reviewed checksum-linked mapping package. Live instances, history and credentials stay in the source system.</Alert>
     {can('workflow.edit') ? <form className="my-6 space-y-4 rounded-card border border-border bg-surface p-5" onSubmit={(event) => { event.preventDefault(); void upload() }}>
       <h2>Analyze a source file</h2>
       <Label htmlFor="migration-format">Source format</Label>
-      <Select id="migration-format" value={format} onChange={(e) => { setFormat(e.target.value as typeof format); setFile(null); setError(null) }}>
+      <Select id="migration-format" value={format} onChange={(e) => { setFormat(e.target.value as typeof format); setFile(null); setCaseType(''); setError(null) }}>
         <option value="bpmn">Camunda 7 / Camunda 8 / BPMN</option>
         <option value="dmn">Camunda DMN decision table (.dmn)</option>
         <option value="camundaForm">Camunda form (.form), to attach to a BPMN file</option>
         <option value="cmmn">CMMN 1.1 case model (.cmmn), inventory only</option>
-        <option value="pegaArchive">Pega application archive (.zip)</option>
+        <option value="pegaRules">Native Pega rule archive, automatic conversion (.zip/.rap/.jar)</option>
+        <option value="pegaArchive">Pega application archive for manual mapping (.zip)</option>
         <option value="pegaXpdl">Pega flow export (XPDL 2.0, .xpdl/.xml)</option>
         <option value="pegaBlueprint">Pega Blueprint (PDF)</option>
         <option value="pegaMapping">Reviewed Pega mapping package (.json)</option>
       </Select>
       <Label htmlFor="migration-file">{format === 'pegaBlueprint' ? 'Source file (PDF, maximum 25 MiB and 60 pages)' : 'Source file (maximum 1 MiB)'}</Label>
-      <Input key={format} id="migration-file" type="file" accept={format === 'bpmn' ? '.bpmn,.xml' : format === 'dmn' ? '.dmn,.xml' : format === 'camundaForm' ? '.form,.json' : format === 'cmmn' ? '.cmmn,.xml' : format === 'pegaArchive' ? '.zip,.rap' : format === 'pegaXpdl' ? '.xpdl,.xml' : format === 'pegaBlueprint' ? '.pdf,application/pdf' : '.json'} onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-      {format === 'pegaBlueprint' ? <p className="text-sm text-muted-foreground">Only page text is read; scripts, attachments and images are ignored, and encrypted PDFs are refused. The generic outline reader is not a parser of Pega&apos;s own Blueprint export layout: every transcribed element must be reviewed against its source page.</p> : null}
+      <Input key={format} id="migration-file" type="file" accept={format === 'bpmn' ? '.bpmn,.xml' : format === 'dmn' ? '.dmn,.xml' : format === 'camundaForm' ? '.form,.json' : format === 'cmmn' ? '.cmmn,.xml' : format === 'pegaArchive' ? '.zip,.rap' : format === 'pegaRules' ? '.zip,.rap,.jar' : format === 'pegaXpdl' ? '.xpdl,.xml' : format === 'pegaBlueprint' ? '.pdf,application/pdf' : '.json'} onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+      {format === 'pegaBlueprint' ? <>
+        <p className="text-sm text-muted-foreground">Only page text, its layout and the colour of step icons are read; scripts, attachments and images are ignored, and encrypted PDFs are refused. Pega&apos;s Blueprint export (&ldquo;Application Overview Document&rdquo;) is read stage by stage; other PDFs are read as a generic outline. Every transcribed element must be reviewed against its source page.</p>
+        <Label htmlFor="migration-case-type">Case type (optional)</Label>
+        <Input id="migration-case-type" value={caseType} maxLength={200} placeholder="The first case type in the blueprint" onChange={(e) => setCaseType(e.target.value)} aria-describedby="migration-case-type-hint" />
+        <p id="migration-case-type-hint" className="text-sm text-muted-foreground">A blueprint can define several case types; one import transcribes one. Enter its name as the blueprint shows it, or leave this empty for the first. The findings name the others.</p>
+      </> : null}
       <Button type="submit" variant="primary" loading={pending} disabled={!file}>Analyze source</Button>
       {error ? <Alert tone="danger">{error}</Alert> : null}
     </form> : null}
@@ -74,6 +82,7 @@ export function MigrationPage() {
     {migrationId && job.isPending ? <LoadingBlock label="Loading compatibility report" /> : null}
     {job.isError ? <QueryError error={job.error} onRetry={() => void job.refetch()} what="the migration report" /> : null}
     {job.data ? job.data.report.adapterVersion.startsWith('pega-blueprint-pdf') ? <BlueprintReview key={job.data.id} job={job.data} editable={can('workflow.edit')} />
+      : job.data.report.adapterVersion.startsWith('pega-native-') ? <PegaNativeReview key={job.data.id} job={job.data} editable={can('workflow.edit')} />
       : <JobReview key={job.data.id} job={job.data} editable={can('workflow.edit')} /> : null}
   </>
 }

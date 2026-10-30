@@ -4,7 +4,8 @@ import { axe, record, shot } from '../support/rehearsal'
 import { MOCK } from '../support/env'
 
 /** S86: demo 1 after an application restart (step 4) and failure/recovery (step 9), on the seeded Purchase approval. */
-test.skip(MOCK, 'Real stack only.')
+// Demo rehearsals need a seeded demo stack (docs/build/S86); the general suite and CI leave them out.
+test.skip(MOCK || process.env.E2E_REHEARSAL !== 'true', 'Demo rehearsal: real seeded stack and E2E_REHEARSAL=true only.')
 test.setTimeout(240_000)
 const stub = process.env.E2E_STUB_URL ?? 'http://localhost:38095'
 
@@ -12,7 +13,7 @@ test('after restart: waiting request survives, manager approves, request fulfill
   const rq = await sessions.as('rhea.requester')
   const ws = await workspaceId(rq)
   const mgr = await sessions.as('mani.manager')
-  await mgr.goto(`/w/${ws}/tasks?view=claimable`)
+  await mgr.goto(`/w/${ws}/tasks?view=claimable&sort=newest`)
   await expect(mgr.getByRole('link', { name: 'Ergonomic chairs (12)' })).toBeVisible()
   record('restart: seeded waiting task still present after app restart', 'PASS')
   await openTask(mgr, ws, 'Ergonomic chairs (12)')

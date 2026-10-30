@@ -224,4 +224,140 @@ class ListDrivenApprovalTest extends RuntimeTestBase {
         var findings = com.orqix.runtime.internal.ReleaseCompatibility.check(source, source, List.of("finance"));
         assertThat(findings).extracting(f -> f.code()).contains("PER_ITEM");
     }
+
+    // ---------------------------------------------------------------- S104: quorum, one at a time, proposed person
+
+    /** {@link #perLine} plus S104 settings, a list minimum and an approver email column on each line. */
+    private static Consumer<ObjectNode> perLineWith(boolean allowSamePerson, int minItems, String settings) {
+        return perLine(allowSamePerson).andThen(d -> {
+            ObjectNode lines = (ObjectNode) d.path("inputSchema").path("properties").path("lines");
+            lines.put("minItems", minItems);
+            ((ObjectNode) lines.path("items").path("properties")).set("approver",
+                    n("{\"type\":\"string\",\"title\":\"Approver email\",\"maxLength\":200}"));
+            for (JsonNode node : d.path("nodes")) {
+                if ("finance".equals(node.path("id").asString())) {
+                    ((ObjectNode) node.path("config").path("perItem")).setAll((ObjectNode) n(settings));
+                }
+            }
+        });
+    }
+
+    private String output(UUID run, String field) throws Exception {
+        return run(PURCHASING, run).path("output").path(field).toString();
+    }
+
+    @Test
+    void aQuorumApprovesTheStepAsSoonAsItIsReachedAndCancelsTheRest() throws Exception {
+        UUID workflow = publishPurchase(PURCHASING, perLineWith(false, 3, "{\"quorum\":2}"));
+        UUID run = atFinance(workflow, "Laptop", "Monitor", "Chair");
+        List<String> tasks = openItems(run);
+        assertThat(claim("mani.manager", PURCHASING, tasks.get(0)).status()).isEqualTo(200);
+        assertThat(decide("mani.manager", PURCHASING, tasks.get(0), "approve", null).status()).isEqualTo(201);
+        assertThat(lifecycle(PURCHASING, run)).isEqualTo("waiting");
+        assertThat(claim("max.manager", PURCHASING, tasks.get(1)).status()).isEqualTo(200);
+        assertThat(decide("max.manager", PURCHASING, tasks.get(1), "approve", null).status()).isEqualTo(201);
+        awaitLifecycle(PURCHASING, run, "completed");
+        assertThat(run(PURCHASING, run).path("outcomeKind").asString()).isEqualTo("success");
+        assertThat(output(run, "approvedItems")).isEqualTo("2");
+        assertThat(output(run, "itemDecisions")).isEqualTo("[\"approved\",\"approved\",\"cancelled\"]");
+        assertThat(openItems(run)).isEmpty();
+        assertThat(managementService.createJobQuery().processInstanceId(processInstance(PURCHASING, run)).count()).isZero();
+        assertThat(financeVisits(run)).extracting(v -> v.path("itemLabel").asString() + "=" + v.path("outcome").asString())
+                .containsExactlyInAnyOrder("Laptop=approved", "Monitor=approved", "Chair=cancelled");
+    }
+
+    @Test
+    void aRejectionBelowTheQuorumKeepsTheStepOpenUntilTheQuorumIsDecided() throws Exception {
+        UUID workflow = publishPurchase(PURCHASING, perLineWith(true, 3, "{\"quorum\":2}"));
+        UUID run = atFinance(workflow, "Laptop", "Monitor", "Chair");
+        List<String> tasks = openItems(run);
+        assertThat(claim("max.manager", PURCHASING, tasks.get(0)).status()).isEqualTo(200);
+        assertThat(decide("max.manager", PURCHASING, tasks.get(0), "reject", "Not this one").status()).isEqualTo(201);
+        // One rejection still leaves two approvals possible: the other items stay open.
+        assertThat(lifecycle(PURCHASING, run)).isEqualTo("waiting");
+        assertThat(openItems(run)).containsExactly(tasks.get(1), tasks.get(2));
+        assertThat(claim("max.manager", PURCHASING, tasks.get(1)).status()).isEqualTo(200);
+        assertThat(decide("max.manager", PURCHASING, tasks.get(1), "reject", "Nor this one").status()).isEqualTo(201);
+        // Two rejections of three: a quorum of two can no longer be reached.
+        awaitLifecycle(PURCHASING, run, "completed");
+        assertThat(run(PURCHASING, run).path("outcomeKind").asString()).isEqualTo("rejected");
+        assertThat(output(run, "itemDecisions")).isEqualTo("[\"rejected\",\"rejected\",\"cancelled\"]");
+        assertThat(output(run, "approvedItems")).isEqualTo("0");
+    }
+
+    @Test
+    void oneAtATimeOpensTheNextItemOnlyAfterTheLastAndKeepsOnePersonPerItem() throws Exception {
+        UUID workflow = publishPurchase(PURCHASING, perLineWith(false, 1, "{\"sequential\":true}"));
+        Response started = submit(workflow, lines("Laptop", "Monitor"));
+        UUID run = UUID.fromString(started.body().path("id").asString());
+        approve("mani.manager", PURCHASING, run, "manager");
+        Awaitility.await().atMost(Duration.ofSeconds(30)).until(() -> openItems(run).size() == 1);
+        String first = openItems(run).get(0);
+        assertThat(jdbc.sql("SELECT label FROM task_context WHERE engine_task_id = :t").param("t", first).query(String.class).single())
+                .isEqualTo("Finance review: Laptop (item 1 of 2)");
+        assertThat(claim("mani.manager", PURCHASING, first).status()).isEqualTo(200);
+        assertThat(decide("mani.manager", PURCHASING, first, "approve", null).status()).isEqualTo(201);
+        Awaitility.await().atMost(Duration.ofSeconds(30)).until(() -> openItems(run).size() == 1 && !openItems(run).get(0).equals(first));
+        String second = openItems(run).get(0);
+        assertThat(jdbc.sql("SELECT label FROM task_context WHERE engine_task_id = :t").param("t", second).query(String.class).single())
+                .isEqualTo("Finance review: Monitor (item 2 of 2)");
+        Response refused = claim("mani.manager", PURCHASING, second);
+        assertThat(refused.status()).isEqualTo(403);
+        assertThat(refused.body().path("code").asString()).isEqualTo("SEPARATION_OF_DUTIES");
+        assertThat(claim("max.manager", PURCHASING, second).status()).isEqualTo(200);
+        assertThat(decide("max.manager", PURCHASING, second, "approve", null).status()).isEqualTo(201);
+        awaitLifecycle(PURCHASING, run, "completed");
+        assertThat(output(run, "itemDecisions")).isEqualTo("[\"approved\",\"approved\"]");
+    }
+
+    @Test
+    void oneAtATimeStopsAtTheFirstRejectionWithoutOpeningTheRest() throws Exception {
+        UUID workflow = publishPurchase(PURCHASING, perLineWith(false, 1, "{\"sequential\":true}"));
+        Response started = submit(workflow, lines("Laptop", "Monitor", "Chair"));
+        UUID run = UUID.fromString(started.body().path("id").asString());
+        approve("mani.manager", PURCHASING, run, "manager");
+        Awaitility.await().atMost(Duration.ofSeconds(30)).until(() -> openItems(run).size() == 1);
+        String first = openItems(run).get(0);
+        assertThat(claim("max.manager", PURCHASING, first).status()).isEqualTo(200);
+        assertThat(decide("max.manager", PURCHASING, first, "reject", "No").status()).isEqualTo(201);
+        awaitLifecycle(PURCHASING, run, "completed");
+        assertThat(run(PURCHASING, run).path("outcomeKind").asString()).isEqualTo("rejected");
+        assertThat(output(run, "itemDecisions")).isEqualTo("[\"rejected\",\"cancelled\",\"cancelled\"]");
+        assertThat(jdbc.sql("SELECT count(*) FROM task_context WHERE run_id = :run AND node_id = 'finance'")
+                .param("run", run).query(Long.class).single()).isEqualTo(1L);
+    }
+
+    @Test
+    void theProposedPersonIsAssignedOnlyWhenEligibleOtherwiseTheItemWaitsInTheQueue() throws Exception {
+        // Make sure both managers are known people before the request names them.
+        api("max.manager").get("/workspaces/{ws}/tasks?view=claimable&limit=1", PURCHASING);
+        api("mani.manager").get("/workspaces/{ws}/tasks?view=claimable&limit=1", PURCHASING);
+        UUID workflow = publishPurchase(PURCHASING, perLineWith(true, 1, "{\"assigneeFrom\":\"approver\"}"));
+        List<Map<String, Object>> rows = List.of(
+                Map.of("description", "Laptop", "amount", new BigDecimal("2500"), "approver", "MAX.manager@orqix.example"),
+                Map.of("description", "Monitor", "amount", new BigDecimal("400"), "approver", "rhea.requester@orqix.example"),
+                Map.of("description", "Chair", "amount", new BigDecimal("300"), "approver", "nobody@elsewhere.example"),
+                Map.of("description", "Desk", "amount", new BigDecimal("600")));
+        Response started = submit(workflow, rows);
+        assertThat(started.status()).as(started.toString()).isEqualTo(201);
+        UUID run = UUID.fromString(started.body().path("id").asString());
+        approve("mani.manager", PURCHASING, run, "manager");
+        Awaitility.await().atMost(Duration.ofSeconds(30)).until(() -> openItems(run).size() == 4);
+        UUID max = jdbc.sql("SELECT id FROM subject WHERE email = 'max.manager@orqix.example'").query(UUID.class).single();
+        List<String> assignees = jdbc.sql("""
+                SELECT coalesce(assignee_subject_id::text, '-') FROM task_context
+                WHERE run_id = :run AND node_id = 'finance' ORDER BY item_index
+                """).param("run", run).query(String.class).list();
+        // Max is eligible (case does not matter); the requester may not approve their own request; an unknown email and
+        // an empty column leave the item in the group queue.
+        assertThat(assignees).containsExactly(max.toString(), "-", "-", "-");
+        assertThat(jdbc.sql("SELECT data::text FROM run_event WHERE run_id = :run AND type = 'TASK_DISPATCHED'")
+                .param("run", run).query(String.class).single()).contains("\"policy\": \"proposed\"", "\"itemIndex\": 0");
+        List<String> unavailable = jdbc.sql("SELECT data::text FROM run_event WHERE run_id = :run AND type = 'TASK_PROPOSED_UNAVAILABLE' ORDER BY seq")
+                .param("run", run).query(String.class).list();
+        assertThat(unavailable).hasSize(2);
+        assertThat(String.join(" ", unavailable)).doesNotContain("@");
+        // Max decides the assigned item without claiming it.
+        assertThat(decide("max.manager", PURCHASING, openItems(run).get(0), "approve", null).status()).isEqualTo(201);
+    }
 }

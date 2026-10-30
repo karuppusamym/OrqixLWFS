@@ -50,10 +50,10 @@ test.describe('wait until a date (mock API)', () => {
     await designer.goto(`/w/${ws}/workflows/${id}/edit`)
     await expect(designer.getByTestId('studio')).toBeVisible()
 
-    // The canvas card reads in plain language.
+    // The canvas step reads in plain language. The canvas opens in BPMN notation, where the summary is the shape's title.
     const card = designer.locator('.react-flow__node[data-id="untilStart"]')
     await expect(card).toBeVisible()
-    await expect(card).toContainText('Until Start date, 09:00 UTC')
+    await expect(card.locator('[data-notation="bpmn"]')).toHaveAttribute('title', /Until Start date, 09:00 UTC/)
 
     // The wait inspector: until a date, the date question, a UTC time and the preview.
     await designer.getByRole('tab', { name: 'Steps' }).click()
@@ -120,7 +120,7 @@ test.describe('wait until a date (mock API)', () => {
     const runUrl = (await requester.getByRole('link', { name: 'View your request' }).getAttribute('href')) ?? ''
 
     const manager = await sessions.as('mani.manager')
-    const tasks = await apiGet<{ items: Array<{ id: string; label: string; version: number }> }>(manager, `/workspaces/${ws}/tasks?view=claimable`)
+    const tasks = await apiGet<{ items: Array<{ id: string; label: string; version: number }> }>(manager, `/workspaces/${ws}/tasks?view=claimable&sort=newest`)
     const task = tasks.items.find((t) => t.label === 'Confirm the start')!
     expect((await call(manager, 'POST', `/workspaces/${ws}/tasks/${task.id}/claim`, { expectedVersion: task.version })).status).toBe(200)
     expect((await call(manager, 'POST', `/workspaces/${ws}/tasks/${task.id}/decision`, { expectedVersion: task.version + 1, action: 'approve' })).status).toBe(201)
@@ -145,7 +145,7 @@ test.describe('wait until a date (mock API)', () => {
     const started = await call(requester, 'POST', `/workspaces/${ws}/runs`, { workflowId: id, input: { employeeName: 'Grace Hopper', startDate: isoDay(-10) } })
     expect(started.status, JSON.stringify(started.body)).toBe(201)
     const manager = await sessions.as('mani.manager')
-    const tasks = await apiGet<{ items: Array<{ id: string; label: string; version: number }> }>(manager, `/workspaces/${ws}/tasks?view=claimable`)
+    const tasks = await apiGet<{ items: Array<{ id: string; label: string; version: number }> }>(manager, `/workspaces/${ws}/tasks?view=claimable&sort=newest`)
     const task = tasks.items.find((t) => t.label === 'Confirm the start')!
     await call(manager, 'POST', `/workspaces/${ws}/tasks/${task.id}/claim`, { expectedVersion: task.version })
     await call(manager, 'POST', `/workspaces/${ws}/tasks/${task.id}/decision`, { expectedVersion: task.version + 1, action: 'approve' })

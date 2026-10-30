@@ -24,7 +24,9 @@ import com.orqix.identity.GroupDirectory;
 import com.orqix.identity.Permission;
 import com.orqix.identity.PolicyService;
 import com.orqix.identity.WorkspaceAccess;
+import com.orqix.identity.SubjectService;
 import com.orqix.integration.ConnectionService;
+import com.orqix.notification.NotificationService;
 import com.orqix.shared.Ids;
 import com.orqix.shared.json.Json;
 import com.orqix.shared.problem.ApiException;
@@ -104,12 +106,15 @@ public class PromotionService {
     private final ConnectionService connections;
     private final GroupDirectory groups;
     private final AuditWriter audit;
+    private final SubjectService subjects;
+    private final NotificationService notifications;
     private final Json json;
     private final Clock clock;
 
     public PromotionService(JdbcClient jdbc, CatalogStore store, WorkflowService workflows, PolicyService policy,
             WorkflowCompiler compiler, CompileContextFactory contexts, ConnectionService connections,
-            GroupDirectory groups, AuditWriter audit, Json json, Clock clock) {
+            GroupDirectory groups, AuditWriter audit, SubjectService subjects, NotificationService notifications,
+            Json json, Clock clock) {
         this.jdbc = jdbc;
         this.store = store;
         this.workflows = workflows;
@@ -119,6 +124,8 @@ public class PromotionService {
         this.connections = connections;
         this.groups = groups;
         this.audit = audit;
+        this.subjects = subjects;
+        this.notifications = notifications;
         this.json = json;
         this.clock = clock;
     }
@@ -494,11 +501,80 @@ public class PromotionService {
                 "release.promotion.requested", "release", releaseId.toString(), AuditWriter.Outcome.SUCCESS,
                 Map.of("releaseNumber", p.release().releaseNumber(), "targetWorkspaceId", target.toString(),
                         "requestId", id.toString())));
+        int notified = notifyApprovers(target, id, caller, p.workflow().key(), p.release().releaseNumber(),
+                p.source().workspace().key());
         audit.write(new AuditWriter.Entry(target, AuditWriter.ActorType.USER, caller.subjectId(),
                 "release.promotion.approval-requested", "promotionRequest", id.toString(), AuditWriter.Outcome.SUCCESS,
                 Map.of("releaseNumber", p.release().releaseNumber(), "sourceWorkspaceId", ws.toString(),
-                        "requestId", id.toString())));
+                        "requestId", id.toString(), "approversNotified", notified)));
         return requestView(target, id);
+    }
+
+    /** Most people one promotion request notifies (the first known people who may approve, never the requester). */
+    static final int MAX_APPROVERS_NOTIFIED = 50;
+
+    /**
+     * PL02a (S106): an in-app notification to each person who may approve promotions in the target right now (fresh
+     * access, explicit grant), never the requester. The message names the workflow, release and source workspace only.
+     *
+     * @return how many people were notified
+     */
+    private int notifyApprovers(UUID target, UUID requestId, Caller requester, String workflowKey, int releaseNumber,
+            String sourceWorkspaceKey) {
+        int notified = 0;
+        for (UUID candidate : approverCandidates(target, requester.subjectId())) {
+            if (notified >= MAX_APPROVERS_NOTIFIED) {
+                break;
+            }
+            SubjectService.Subject s = subjects.find(candidate).orElse(null);
+            if (s == null || s.disabled()) {
+                continue;
+            }
+            boolean approver = policy.freshAccess(new Caller(s.id(), s.displayName(), s.email(), s.issuer(),
+                    s.externalSubject(), subjects.storedGroups(s.id()), false), target)
+                    .filter(WorkspaceAccess::visible)
+                    .map(a -> a.has(Permission.WORKFLOW_APPROVE_PROMOTION)).orElse(false);
+            if (approver && notifications.createPromotion(target, s.id(), null, NotificationService.Kind.PROMOTION_REQUEST,
+                    "promotion-request:" + requestId + ":" + s.id(), requester.displayName() + " asks to promote "
+                            + workflowKey + " release " + releaseNumber + " from " + sourceWorkspaceKey + ".")) {
+                notified++;
+            }
+        }
+        return notified;
+    }
+
+    /**
+     * The people the target's {@code workflow.approve-promotion} grants name, directly or through an identity-provider
+     * group they belong to (no role carries that permission). Enabled people only, never the requester, in a stable
+     * order and bounded. The caller still checks each one's fresh access, so a grant alone never notifies anyone.
+     */
+    private List<UUID> approverCandidates(UUID target, UUID requester) {
+        return jdbc.sql("""
+                SELECT s.id FROM subject s
+                WHERE s.disabled_at IS NULL AND s.id <> :requester
+                  AND (s.id IN (SELECT CAST(pg.principal_value AS uuid) FROM permission_grant pg
+                                WHERE pg.workspace_id = :ws AND pg.permission = 'workflow.approve-promotion'
+                                  AND pg.workflow_id IS NULL AND pg.principal_type = 'subject')
+                       OR jsonb_exists_any(s.idp_groups, ARRAY(SELECT pg.principal_value FROM permission_grant pg
+                                WHERE pg.workspace_id = :ws AND pg.permission = 'workflow.approve-promotion'
+                                  AND pg.workflow_id IS NULL AND pg.principal_type = 'idpGroup')))
+                ORDER BY s.id LIMIT :limit
+                """).param("ws", target).param("requester", requester).param("limit", MAX_APPROVERS_NOTIFIED * 4)
+                .query(UUID.class).list();
+    }
+
+    /** PL02a (S106): tells the requester, in the source workspace, that the request was approved or rejected. */
+    private void notifyRequester(LockedRequest request, UUID target, boolean approved, String note) {
+        String workflowKey = jdbc.sql("SELECT source_workflow_key FROM promotion_request WHERE id = :id")
+                .param("id", request.id()).query(String.class).single();
+        String targetKey = jdbc.sql("SELECT key FROM workspace WHERE id = :id").param("id", target)
+                .query(String.class).single();
+        boolean workflowStillThere = store.workflow(request.sourceWorkspaceId(), request.sourceWorkflowId()).isPresent();
+        notifications.createPromotion(request.sourceWorkspaceId(), request.requestedBy(),
+                workflowStillThere ? request.sourceWorkflowId() : null, NotificationService.Kind.PROMOTION_DECISION,
+                "promotion-decision:" + request.id(), "Your promotion of " + workflowKey + " release "
+                        + request.releaseNumber() + " to " + targetKey + " was " + (approved ? "approved" : "rejected")
+                        + (note == null ? "." : ": " + note));
     }
 
     private static String blankToNull(String value) {
@@ -564,6 +640,7 @@ public class PromotionService {
                 "release.promotion.approved", "promotionRequest", requestId.toString(), AuditWriter.Outcome.SUCCESS,
                 Map.of("releaseNumber", request.releaseNumber(), "requestId", requestId.toString(),
                         "requestedBy", request.requestedBy().toString(), "draftRevision", promotion.draftRevision())));
+        notifyRequester(request, ws, true, blankToNull(body == null ? null : body.note()));
         return requestView(ws, requestId);
     }
 
@@ -585,6 +662,7 @@ public class PromotionService {
                 "release.promotion.rejected", "promotionRequest", requestId.toString(), AuditWriter.Outcome.SUCCESS,
                 Map.of("releaseNumber", request.releaseNumber(), "requestId", requestId.toString(),
                         "requestedBy", request.requestedBy().toString())));
+        notifyRequester(request, ws, false, blankToNull(body.note()));
         return requestView(ws, requestId);
     }
 

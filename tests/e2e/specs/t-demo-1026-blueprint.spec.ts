@@ -16,7 +16,8 @@ import { MOCK } from '../support/env'
  * FAILS the test on serious/critical violations (soft, so the flow continues). Results: $REHEARSAL_OUT/results.jsonl.
  * Set REHEARSAL_OUT=../../evidence/rehearsal-1026 and E2E_DB_CONTAINER=<postgres container> for the "no job created" count.
  */
-test.skip(MOCK, 'Real stack only.')
+// Demo rehearsals need a seeded demo stack (docs/build/S86); the general suite and CI leave them out.
+test.skip(MOCK || process.env.E2E_REHEARSAL !== 'true', 'Demo rehearsal: real seeded stack and E2E_REHEARSAL=true only.')
 test.describe.configure({ mode: 'serial' })
 test.setTimeout(300_000)
 
@@ -172,7 +173,7 @@ async function submit(page: Page, amount: string, ref: string): Promise<{ url: s
 }
 
 async function decide(page: Page, ref: string, action: 'approve' | 'reject', label: string): Promise<void> {
-  await page.goto(`/w/${state.ws}/tasks?view=claimable`)
+  await page.goto(`/w/${state.ws}/tasks?view=claimable&sort=newest`)
   await page.getByRole('row').filter({ hasText: ref }).getByRole('link').first().click({ timeout: 60_000 })
   await expect(page.getByTestId('task-actions')).toBeVisible()
   await shot(page, `bp-task-${label}`)
@@ -204,7 +205,7 @@ test('6,000 -> manager then finance -> Approved; 4,999.99 -> manager only -> App
   const fin = await sessions.as('fin.finance')
   await decide(mgr, big.ref, 'approve', 'manager-6000')
   await decide(mgr, small.ref, 'approve', 'manager-4999')
-  await fin.goto(`/w/${state.ws}/tasks?view=claimable`)
+  await fin.goto(`/w/${state.ws}/tasks?view=claimable&sort=newest`)
   await fin.getByRole('row').filter({ hasText: big.ref }).first().waitFor({ timeout: 60_000 })
   const leaked = await fin.getByRole('row').filter({ hasText: small.ref }).count()
   record('blueprint: 6,000 reaches finance, 4,999.99 does not', leaked === 0 ? 'PASS' : 'FAIL', `finance sees 4,999.99: ${leaked}`)

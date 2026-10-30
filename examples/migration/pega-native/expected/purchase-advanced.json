@@ -1,0 +1,1114 @@
+{
+  "archiveBlockers": [],
+  "contexts": {
+    "ACME-Purchasing-Work": {
+      "chain": [
+        "ACME-Purchasing-Work",
+        "ACME-Purchasing",
+        "ACME",
+        "Work-Cover-",
+        "@baseclass"
+      ],
+      "keys": {
+        "Rule-Declare-DecisionTable APPROVALLEVEL": {
+          "candidates": [
+            {
+              "outcome": "variant",
+              "rule": "decisions/ApprovalLevel-Services.xml"
+            },
+            {
+              "outcome": "selected",
+              "rule": "decisions/ApprovalLevel.xml"
+            }
+          ],
+          "chosen": "decisions/ApprovalLevel.xml",
+          "status": "resolved",
+          "variants": [
+            {
+              "kind": "property",
+              "property": ".Category",
+              "rule": "decisions/ApprovalLevel-Services.xml",
+              "value": "Services"
+            }
+          ]
+        },
+        "Rule-Declare-DecisionTree ORDERTIER": {
+          "candidates": [
+            {
+              "outcome": "variant",
+              "rule": "decisions/OrderTier-2020.xml"
+            },
+            {
+              "outcome": "selected",
+              "rule": "decisions/OrderTier.xml"
+            }
+          ],
+          "chosen": "decisions/OrderTier.xml",
+          "status": "resolved",
+          "variants": [
+            {
+              "from": "20200101T000000.000 GMT",
+              "kind": "dateRange",
+              "rule": "decisions/OrderTier-2020.xml",
+              "to": "20201231T000000.000 GMT"
+            }
+          ]
+        },
+        "Rule-HTML-Harness NEW": {
+          "candidates": [
+            {
+              "outcome": "selected",
+              "rule": "harness/New.xml"
+            }
+          ],
+          "chosen": "harness/New.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-HTML-Section REQUESTDETAILS": {
+          "candidates": [
+            {
+              "outcome": "selected",
+              "rule": "sections/RequestDetails.xml"
+            }
+          ],
+          "chosen": "sections/RequestDetails.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-HTML-Section VENDORDETAILS": {
+          "candidates": [
+            {
+              "outcome": "selected",
+              "rule": "sections/VendorDetails.xml"
+            }
+          ],
+          "chosen": "sections/VendorDetails.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-Obj-Flow BUDGETCHECK": {
+          "candidates": [
+            {
+              "outcome": "selected",
+              "rule": "flows/BudgetCheck.xml"
+            }
+          ],
+          "chosen": "flows/BudgetCheck.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-Obj-Flow FULFIL": {
+          "candidates": [
+            {
+              "outcome": "selected",
+              "rule": "flows/Fulfil.xml"
+            }
+          ],
+          "chosen": "flows/Fulfil.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-Obj-Flow RECORDORDER": {
+          "candidates": [
+            {
+              "outcome": "selected",
+              "rule": "flows/RecordOrder.xml"
+            }
+          ],
+          "chosen": "flows/RecordOrder.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-Obj-Flow REVIEW": {
+          "candidates": [
+            {
+              "outcome": "selected",
+              "rule": "flows/Review.xml"
+            }
+          ],
+          "chosen": "flows/Review.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-Obj-Flow VENDORSCREEN": {
+          "candidates": [
+            {
+              "outcome": "selected",
+              "rule": "flows/VendorScreen.xml"
+            }
+          ],
+          "chosen": "flows/VendorScreen.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-Obj-FlowAction APPROVE": {
+          "candidates": [
+            {
+              "outcome": "selected",
+              "rule": "flowactions/Approve.xml"
+            }
+          ],
+          "chosen": "flowactions/Approve.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-Obj-FlowAction REJECT": {
+          "candidates": [
+            {
+              "outcome": "selected",
+              "rule": "flowactions/Reject.xml"
+            }
+          ],
+          "chosen": "flowactions/Reject.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-Obj-Model PYDEFAULT": {
+          "candidates": [
+            {
+              "outcome": "selected",
+              "rule": "transforms/pyDefault.xml"
+            }
+          ],
+          "chosen": "transforms/pyDefault.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-Obj-Property AMOUNT": {
+          "candidates": [
+            {
+              "outcome": "lowerRanked",
+              "rule": "properties/Amount-01-01-01.xml"
+            },
+            {
+              "outcome": "selected",
+              "rule": "properties/Amount.xml"
+            }
+          ],
+          "chosen": "properties/Amount.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-Obj-Property CATEGORY": {
+          "candidates": [
+            {
+              "outcome": "selected",
+              "rule": "properties/Category.xml"
+            }
+          ],
+          "chosen": "properties/Category.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-Obj-Property DESCRIPTION": {
+          "candidates": [
+            {
+              "outcome": "selected",
+              "rule": "properties/Description.xml"
+            }
+          ],
+          "chosen": "properties/Description.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-Obj-Property NEEDEDBY": {
+          "candidates": [
+            {
+              "outcome": "selected",
+              "rule": "properties/NeededBy.xml"
+            }
+          ],
+          "chosen": "properties/NeededBy.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-Obj-Property VENDOR": {
+          "candidates": [
+            {
+              "outcome": "selected",
+              "rule": "properties/Vendor.xml"
+            }
+          ],
+          "chosen": "properties/Vendor.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-Obj-ServiceLevel BUSINESSSLA": {
+          "candidates": [
+            {
+              "outcome": "selected",
+              "rule": "sla/BusinessSLA.xml"
+            }
+          ],
+          "chosen": "sla/BusinessSLA.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-Obj-ServiceLevel CASESLA": {
+          "candidates": [
+            {
+              "outcome": "selected",
+              "rule": "sla/CaseSLA.xml"
+            }
+          ],
+          "chosen": "sla/CaseSLA.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-Obj-ServiceLevel ORDERSLA": {
+          "candidates": [
+            {
+              "outcome": "selected",
+              "rule": "sla/OrderSLA.xml"
+            }
+          ],
+          "chosen": "sla/OrderSLA.xml",
+          "status": "resolved",
+          "variants": []
+        }
+      }
+    },
+    "ACME-Purchasing-Work-Request": {
+      "chain": [
+        "ACME-Purchasing-Work-Request",
+        "ACME-Purchasing-Work",
+        "ACME-Purchasing",
+        "ACME",
+        "Work-Cover-",
+        "@baseclass"
+      ],
+      "keys": {
+        "Rule-Declare-DecisionTable APPROVALLEVEL": {
+          "candidates": [
+            {
+              "outcome": "variant",
+              "rule": "decisions/ApprovalLevel-Services.xml"
+            },
+            {
+              "outcome": "selected",
+              "rule": "decisions/ApprovalLevel.xml"
+            }
+          ],
+          "chosen": "decisions/ApprovalLevel.xml",
+          "status": "resolved",
+          "variants": [
+            {
+              "kind": "property",
+              "property": ".Category",
+              "rule": "decisions/ApprovalLevel-Services.xml",
+              "value": "Services"
+            }
+          ]
+        },
+        "Rule-Declare-DecisionTree ORDERTIER": {
+          "candidates": [
+            {
+              "outcome": "variant",
+              "rule": "decisions/OrderTier-2020.xml"
+            },
+            {
+              "outcome": "selected",
+              "rule": "decisions/OrderTier.xml"
+            }
+          ],
+          "chosen": "decisions/OrderTier.xml",
+          "status": "resolved",
+          "variants": [
+            {
+              "from": "20200101T000000.000 GMT",
+              "kind": "dateRange",
+              "rule": "decisions/OrderTier-2020.xml",
+              "to": "20201231T000000.000 GMT"
+            }
+          ]
+        },
+        "Rule-HTML-Harness NEW": {
+          "candidates": [
+            {
+              "outcome": "selected",
+              "rule": "harness/New.xml"
+            }
+          ],
+          "chosen": "harness/New.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-HTML-Section REQUESTDETAILS": {
+          "candidates": [
+            {
+              "outcome": "selected",
+              "rule": "sections/RequestDetails.xml"
+            }
+          ],
+          "chosen": "sections/RequestDetails.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-HTML-Section VENDORDETAILS": {
+          "candidates": [
+            {
+              "outcome": "selected",
+              "rule": "sections/VendorDetails.xml"
+            }
+          ],
+          "chosen": "sections/VendorDetails.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-Obj-CaseType PURCHASEORDER": {
+          "candidates": [
+            {
+              "outcome": "selected",
+              "rule": "casetypes/PurchaseOrder.xml"
+            }
+          ],
+          "chosen": "casetypes/PurchaseOrder.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-Obj-CaseType QUICKORDER": {
+          "candidates": [
+            {
+              "outcome": "selected",
+              "rule": "casetypes/QuickOrder.xml"
+            }
+          ],
+          "chosen": "casetypes/QuickOrder.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-Obj-Flow BUDGETCHECK": {
+          "candidates": [
+            {
+              "outcome": "selected",
+              "rule": "flows/BudgetCheck.xml"
+            }
+          ],
+          "chosen": "flows/BudgetCheck.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-Obj-Flow FULFIL": {
+          "candidates": [
+            {
+              "outcome": "selected",
+              "rule": "flows/Fulfil.xml"
+            }
+          ],
+          "chosen": "flows/Fulfil.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-Obj-Flow RECORDORDER": {
+          "candidates": [
+            {
+              "outcome": "selected",
+              "rule": "flows/RecordOrder.xml"
+            }
+          ],
+          "chosen": "flows/RecordOrder.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-Obj-Flow REVIEW": {
+          "candidates": [
+            {
+              "outcome": "selected",
+              "rule": "flows/Review.xml"
+            }
+          ],
+          "chosen": "flows/Review.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-Obj-Flow VENDORSCREEN": {
+          "candidates": [
+            {
+              "outcome": "selected",
+              "rule": "flows/VendorScreen.xml"
+            }
+          ],
+          "chosen": "flows/VendorScreen.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-Obj-FlowAction APPROVE": {
+          "candidates": [
+            {
+              "outcome": "selected",
+              "rule": "flowactions/Approve.xml"
+            }
+          ],
+          "chosen": "flowactions/Approve.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-Obj-FlowAction REJECT": {
+          "candidates": [
+            {
+              "outcome": "selected",
+              "rule": "flowactions/Reject.xml"
+            }
+          ],
+          "chosen": "flowactions/Reject.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-Obj-Model PYDEFAULT": {
+          "candidates": [
+            {
+              "outcome": "selected",
+              "rule": "transforms/pyDefault.xml"
+            }
+          ],
+          "chosen": "transforms/pyDefault.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-Obj-Property AMOUNT": {
+          "candidates": [
+            {
+              "outcome": "lowerRanked",
+              "rule": "properties/Amount-01-01-01.xml"
+            },
+            {
+              "outcome": "selected",
+              "rule": "properties/Amount.xml"
+            }
+          ],
+          "chosen": "properties/Amount.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-Obj-Property CATEGORY": {
+          "candidates": [
+            {
+              "outcome": "selected",
+              "rule": "properties/Category.xml"
+            }
+          ],
+          "chosen": "properties/Category.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-Obj-Property DESCRIPTION": {
+          "candidates": [
+            {
+              "outcome": "selected",
+              "rule": "properties/Description.xml"
+            }
+          ],
+          "chosen": "properties/Description.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-Obj-Property NEEDEDBY": {
+          "candidates": [
+            {
+              "outcome": "selected",
+              "rule": "properties/NeededBy.xml"
+            }
+          ],
+          "chosen": "properties/NeededBy.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-Obj-Property VENDOR": {
+          "candidates": [
+            {
+              "outcome": "selected",
+              "rule": "properties/Vendor.xml"
+            }
+          ],
+          "chosen": "properties/Vendor.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-Obj-ServiceLevel BUSINESSSLA": {
+          "candidates": [
+            {
+              "outcome": "selected",
+              "rule": "sla/BusinessSLA.xml"
+            }
+          ],
+          "chosen": "sla/BusinessSLA.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-Obj-ServiceLevel CASESLA": {
+          "candidates": [
+            {
+              "outcome": "selected",
+              "rule": "sla/CaseSLA.xml"
+            }
+          ],
+          "chosen": "sla/CaseSLA.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-Obj-ServiceLevel ORDERSLA": {
+          "candidates": [
+            {
+              "outcome": "selected",
+              "rule": "sla/OrderSLA.xml"
+            }
+          ],
+          "chosen": "sla/OrderSLA.xml",
+          "status": "resolved",
+          "variants": []
+        },
+        "Rule-Obj-When NEEDSVENDORCHECK": {
+          "candidates": [
+            {
+              "outcome": "variant",
+              "rule": "when/NeedsVendorCheck-Software.xml"
+            },
+            {
+              "outcome": "selected",
+              "rule": "when/NeedsVendorCheck.xml"
+            }
+          ],
+          "chosen": "when/NeedsVendorCheck.xml",
+          "status": "resolved",
+          "variants": [
+            {
+              "kind": "property",
+              "property": ".Category",
+              "rule": "when/NeedsVendorCheck-Software.xml",
+              "value": "Software"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "decoder": "pega-native-0.1",
+  "entries": [
+    {
+      "path": "META-INF/MANIFEST.MF",
+      "sha256": "c9039d7b78df63f77658caad2a58db4e31f85e4127e8b81c03a6b2b5841775da",
+      "status": "manifest"
+    },
+    {
+      "availability": "Yes",
+      "circumstanced": false,
+      "className": "@baseclass",
+      "path": "application/Purchasing.xml",
+      "qualifier": null,
+      "ruleName": "Purchasing",
+      "ruleType": "Rule-Application",
+      "ruleset": "Purchasing",
+      "sha256": "04ed88fc180e358fcff52922da874c3e246658a96318239d16371f34e78e8817",
+      "status": "rule",
+      "version": "01-01-01"
+    },
+    {
+      "availability": "Yes",
+      "circumstanced": false,
+      "className": "ACME-Purchasing-Work-Request",
+      "path": "classes/ACME-Purchasing-Work-Request.xml",
+      "qualifier": null,
+      "ruleName": "ACME-Purchasing-Work-Request",
+      "ruleType": "Rule-Obj-Class",
+      "ruleset": "Purchasing",
+      "sha256": "a151026e05ef7c079343a8a7a9654ca18033a6ffec3bc6cb26a43ce986d1aca5",
+      "status": "rule",
+      "version": "01-01-01"
+    },
+    {
+      "availability": "Yes",
+      "circumstanced": false,
+      "className": "ACME-Purchasing-Work",
+      "path": "classes/ACME-Purchasing-Work.xml",
+      "qualifier": null,
+      "ruleName": "ACME-Purchasing-Work",
+      "ruleType": "Rule-Obj-Class",
+      "ruleset": "Purchasing",
+      "sha256": "8a5f5f3518cefb934b67591ae096c36461aed19ff7b99a4ec9c83ee633683321",
+      "status": "rule",
+      "version": "01-01-01"
+    },
+    {
+      "availability": "Yes",
+      "circumstanced": false,
+      "className": "ACME-Purchasing-Data-Vendor",
+      "path": "classes/ACME-Purchasing-Data-Vendor.xml",
+      "qualifier": null,
+      "ruleName": "ACME-Purchasing-Data-Vendor",
+      "ruleType": "Rule-Obj-Class",
+      "ruleset": "Purchasing",
+      "sha256": "a08bfc68566f244e6e03f0adb3ae5a83afb85f3c9b8e110f06beca359539d43f",
+      "status": "rule",
+      "version": "01-01-01"
+    },
+    {
+      "availability": "Yes",
+      "circumstanced": false,
+      "className": "ACME-Purchasing-Work",
+      "path": "properties/Amount-01-01-01.xml",
+      "qualifier": null,
+      "ruleName": "Amount",
+      "ruleType": "Rule-Obj-Property",
+      "ruleset": "Purchasing",
+      "sha256": "fc3cf1643ff61787bc0ed522b01f1e572a6594c23c9ed189965988e6d37ad855",
+      "status": "rule",
+      "version": "01-01-01"
+    },
+    {
+      "availability": "Yes",
+      "circumstanced": false,
+      "className": "ACME-Purchasing-Work",
+      "path": "properties/Amount.xml",
+      "qualifier": null,
+      "ruleName": "Amount",
+      "ruleType": "Rule-Obj-Property",
+      "ruleset": "Purchasing",
+      "sha256": "5a4e14be8551bdce9dc47a767200efec2c704ac8d9bae0a883e30035f018c84e",
+      "status": "rule",
+      "version": "01-01-05"
+    },
+    {
+      "availability": "Yes",
+      "circumstanced": false,
+      "className": "ACME-Purchasing-Work",
+      "path": "properties/Description.xml",
+      "qualifier": null,
+      "ruleName": "Description",
+      "ruleType": "Rule-Obj-Property",
+      "ruleset": "Purchasing",
+      "sha256": "2be4ec467b7a9788ed74aa558328ae6097b364d44b53060d2a87d97d840f6af9",
+      "status": "rule",
+      "version": "01-01-05"
+    },
+    {
+      "availability": "Yes",
+      "circumstanced": false,
+      "className": "ACME-Purchasing-Work",
+      "path": "properties/Category.xml",
+      "qualifier": null,
+      "ruleName": "Category",
+      "ruleType": "Rule-Obj-Property",
+      "ruleset": "Purchasing",
+      "sha256": "0deee57f5a0ff93ceadf3c6fd26b91746e5b225ec8c1737b7c9bd8f3ddde2d96",
+      "status": "rule",
+      "version": "01-01-05"
+    },
+    {
+      "availability": "Yes",
+      "circumstanced": false,
+      "className": "ACME-Purchasing-Work",
+      "path": "properties/NeededBy.xml",
+      "qualifier": null,
+      "ruleName": "NeededBy",
+      "ruleType": "Rule-Obj-Property",
+      "ruleset": "Purchasing",
+      "sha256": "566e1b417d723e7517a1204c6de4f012aebb4da9f8c147d2f62cc8952cee767f",
+      "status": "rule",
+      "version": "01-01-05"
+    },
+    {
+      "availability": "Yes",
+      "circumstanced": false,
+      "className": "ACME-Purchasing-Work",
+      "path": "properties/Vendor.xml",
+      "qualifier": null,
+      "ruleName": "Vendor",
+      "ruleType": "Rule-Obj-Property",
+      "ruleset": "Purchasing",
+      "sha256": "d36a63e5032b78d1fe7739aa2c75dbe3d8dbdf124523b434348f164f900a653a",
+      "status": "rule",
+      "version": "01-01-05"
+    },
+    {
+      "availability": "Yes",
+      "circumstanced": false,
+      "className": "ACME-Purchasing-Data-Vendor",
+      "path": "properties/VendorName.xml",
+      "qualifier": null,
+      "ruleName": "Name",
+      "ruleType": "Rule-Obj-Property",
+      "ruleset": "Purchasing",
+      "sha256": "10f713786c0272e7d8dc9a1d8d86e3ec2d685689affb1e21bd38edb2bc3ecb0d",
+      "status": "rule",
+      "version": "01-01-05"
+    },
+    {
+      "availability": "Yes",
+      "circumstanced": false,
+      "className": "ACME-Purchasing-Data-Vendor",
+      "path": "properties/VendorPreferred.xml",
+      "qualifier": null,
+      "ruleName": "Preferred",
+      "ruleType": "Rule-Obj-Property",
+      "ruleset": "Purchasing",
+      "sha256": "e227c4bdbebb3df6442622e27968357b1ecf94f9338724fad176cccb4eac4285",
+      "status": "rule",
+      "version": "01-01-05"
+    },
+    {
+      "availability": "Yes",
+      "circumstanced": false,
+      "className": "ACME-Purchasing-Work",
+      "path": "flowactions/Approve.xml",
+      "qualifier": null,
+      "ruleName": "Approve",
+      "ruleType": "Rule-Obj-FlowAction",
+      "ruleset": "Purchasing",
+      "sha256": "f2044b135585cb806822b0272d22a6419e1f6bd7e5c02ab2e721aa17b9368d54",
+      "status": "rule",
+      "version": "01-01-01"
+    },
+    {
+      "availability": "Yes",
+      "circumstanced": false,
+      "className": "ACME-Purchasing-Work",
+      "path": "flowactions/Reject.xml",
+      "qualifier": null,
+      "ruleName": "Reject",
+      "ruleType": "Rule-Obj-FlowAction",
+      "ruleset": "Purchasing",
+      "sha256": "96ae748832ffa3ee3dcb7459dfdc8bd787e3c8927f2c39a1826e13844c402e05",
+      "status": "rule",
+      "version": "01-01-01"
+    },
+    {
+      "availability": "Yes",
+      "circumstanced": false,
+      "className": "ACME-Purchasing-Work",
+      "path": "harness/New.xml",
+      "qualifier": null,
+      "ruleName": "New",
+      "ruleType": "Rule-HTML-Harness",
+      "ruleset": "Purchasing",
+      "sha256": "ed2e655745730bc974776fbaab2260322cf113b996da9dad71e0697c1b1ae68a",
+      "status": "rule",
+      "version": "01-01-03"
+    },
+    {
+      "availability": "Yes",
+      "circumstanced": false,
+      "className": "ACME-Purchasing-Work",
+      "path": "transforms/pyDefault.xml",
+      "qualifier": null,
+      "ruleName": "pyDefault",
+      "ruleType": "Rule-Obj-Model",
+      "ruleset": "Purchasing",
+      "sha256": "5d013c87e49685d43adf0505e060712163909d8d2fc09e6a6fe89f195298ef0c",
+      "status": "rule",
+      "version": "01-01-01"
+    },
+    {
+      "path": "data/Managers.xml",
+      "ruleType": "Data-Admin-WorkBasket",
+      "sha256": "3f86290e1b1fff9e938924468172ec565f5e878bb132ff3f24ded7954d2233f6",
+      "status": "data"
+    },
+    {
+      "availability": "Yes",
+      "circumstanced": false,
+      "className": "ACME-Purchasing-Work",
+      "path": "sections/RequestDetails.xml",
+      "qualifier": null,
+      "ruleName": "RequestDetails",
+      "ruleType": "Rule-HTML-Section",
+      "ruleset": "Purchasing",
+      "sha256": "471983c51b4307c122722547394e603b3cb1b7c66d85af125a6a103719d0b8d7",
+      "status": "rule",
+      "version": "01-01-03"
+    },
+    {
+      "availability": "Yes",
+      "circumstanced": false,
+      "className": "ACME-Purchasing-Work",
+      "path": "sections/VendorDetails.xml",
+      "qualifier": null,
+      "ruleName": "VendorDetails",
+      "ruleType": "Rule-HTML-Section",
+      "ruleset": "Purchasing",
+      "sha256": "e392f447613fee5a2de0f4981855730a1f4ed3d751b8cbf058839b2b0f152574",
+      "status": "rule",
+      "version": "01-01-03"
+    },
+    {
+      "availability": "Yes",
+      "circumstanced": false,
+      "className": "ACME-Purchasing-Work",
+      "path": "decisions/ApprovalLevel.xml",
+      "qualifier": null,
+      "ruleName": "ApprovalLevel",
+      "ruleType": "Rule-Declare-DecisionTable",
+      "ruleset": "Purchasing",
+      "sha256": "6a0303b29a93da07fee95c62df6823d98356c26cdb9a92ca2bbd3f9914ebdc57",
+      "status": "rule",
+      "version": "01-01-01"
+    },
+    {
+      "availability": "Yes",
+      "circumstanced": true,
+      "className": "ACME-Purchasing-Work",
+      "path": "decisions/ApprovalLevel-Services.xml",
+      "qualifier": {
+        "kind": "property",
+        "property": ".Category",
+        "value": "Services"
+      },
+      "ruleName": "ApprovalLevel",
+      "ruleType": "Rule-Declare-DecisionTable",
+      "ruleset": "Purchasing",
+      "sha256": "4bc8de96049bf0ca47c4e5f1b692562e22710541abeab7b4c51c274375fee963",
+      "status": "rule",
+      "version": "01-01-01"
+    },
+    {
+      "availability": "Yes",
+      "circumstanced": false,
+      "className": "ACME-Purchasing-Work-Request",
+      "path": "when/NeedsVendorCheck.xml",
+      "qualifier": null,
+      "ruleName": "NeedsVendorCheck",
+      "ruleType": "Rule-Obj-When",
+      "ruleset": "Purchasing",
+      "sha256": "b9aa1c05527d44a1b671e540966fb9da7dd177517057b737a2f71e6e5a7c39b9",
+      "status": "rule",
+      "version": "01-01-03"
+    },
+    {
+      "availability": "Yes",
+      "circumstanced": true,
+      "className": "ACME-Purchasing-Work-Request",
+      "path": "when/NeedsVendorCheck-Software.xml",
+      "qualifier": {
+        "kind": "property",
+        "property": ".Category",
+        "value": "Software"
+      },
+      "ruleName": "NeedsVendorCheck",
+      "ruleType": "Rule-Obj-When",
+      "ruleset": "Purchasing",
+      "sha256": "e8f7c7dd8190d63fbdc4d156fc985add37ab0ccf234668711cce48c4bdf660ce",
+      "status": "rule",
+      "version": "01-01-03"
+    },
+    {
+      "availability": "Yes",
+      "circumstanced": false,
+      "className": "ACME-Purchasing-Work",
+      "path": "decisions/OrderTier.xml",
+      "qualifier": null,
+      "ruleName": "OrderTier",
+      "ruleType": "Rule-Declare-DecisionTree",
+      "ruleset": "Purchasing",
+      "sha256": "8508ad554c82947302e490f63a95eb8098d1b48f6c7817eba8cf215121eddd7d",
+      "status": "rule",
+      "version": "01-01-01"
+    },
+    {
+      "availability": "Yes",
+      "circumstanced": true,
+      "className": "ACME-Purchasing-Work",
+      "path": "decisions/OrderTier-2020.xml",
+      "qualifier": {
+        "from": "20200101T000000.000 GMT",
+        "kind": "dateRange",
+        "to": "20201231T000000.000 GMT"
+      },
+      "ruleName": "OrderTier",
+      "ruleType": "Rule-Declare-DecisionTree",
+      "ruleset": "Purchasing",
+      "sha256": "f5cfd0af10515a92f164f8ba21bc266d0af047b253f632c045d79258aa607887",
+      "status": "rule",
+      "version": "01-01-01"
+    },
+    {
+      "availability": "Yes",
+      "circumstanced": false,
+      "className": "ACME-Purchasing-Work",
+      "path": "sla/BusinessSLA.xml",
+      "qualifier": null,
+      "ruleName": "BusinessSLA",
+      "ruleType": "Rule-Obj-ServiceLevel",
+      "ruleset": "Purchasing",
+      "sha256": "7dc800a4cf7968de0fb83171c1312e7c0b56a4f1bd6c85c42accf75b30767359",
+      "status": "rule",
+      "version": "01-01-01"
+    },
+    {
+      "availability": "Yes",
+      "circumstanced": false,
+      "className": "ACME-Purchasing-Work",
+      "path": "sla/OrderSLA.xml",
+      "qualifier": null,
+      "ruleName": "OrderSLA",
+      "ruleType": "Rule-Obj-ServiceLevel",
+      "ruleset": "Purchasing",
+      "sha256": "c14d687a9756e5922453acedb804234add3721adacbe9d36bb1561a59cab6429",
+      "status": "rule",
+      "version": "01-01-01"
+    },
+    {
+      "availability": "Yes",
+      "circumstanced": false,
+      "className": "ACME-Purchasing-Work",
+      "path": "sla/CaseSLA.xml",
+      "qualifier": null,
+      "ruleName": "CaseSLA",
+      "ruleType": "Rule-Obj-ServiceLevel",
+      "ruleset": "Purchasing",
+      "sha256": "aaafd8d702dfb784177130e24e6637a772069e3fcd7d63fd76f7a4a40d4c9f82",
+      "status": "rule",
+      "version": "01-01-01"
+    },
+    {
+      "path": "data/ACMEBusiness.xml",
+      "ruleType": "Data-Admin-Calendar",
+      "sha256": "0b94d69d9dc5ed99970fe1c9139bea03fd3968102343676bc81898d718aae099",
+      "status": "data"
+    },
+    {
+      "path": "delegation/ApprovalLevel.xml",
+      "ruleType": "System-User-MyRules",
+      "sha256": "b2b9adc6f8f14e90271584af644e79faeac146d4aaefe36ec809f97220d793e3",
+      "status": "delegation"
+    },
+    {
+      "availability": "Yes",
+      "circumstanced": false,
+      "className": "ACME-Purchasing-Work",
+      "path": "flows/Review.xml",
+      "qualifier": null,
+      "ruleName": "Review",
+      "ruleType": "Rule-Obj-Flow",
+      "ruleset": "Purchasing",
+      "sha256": "4ce4f7cbe6f43545bff4b5e3162a7677fb9a4ed62924809e9564bb7f4f1c7bc0",
+      "status": "rule",
+      "version": "01-01-05"
+    },
+    {
+      "availability": "Yes",
+      "circumstanced": false,
+      "className": "ACME-Purchasing-Work",
+      "path": "flows/Fulfil.xml",
+      "qualifier": null,
+      "ruleName": "Fulfil",
+      "ruleType": "Rule-Obj-Flow",
+      "ruleset": "Purchasing",
+      "sha256": "a8fe6f4d591604a8fb62d0074d714ada2060424c068dd02607c4a875642f33ef",
+      "status": "rule",
+      "version": "01-01-05"
+    },
+    {
+      "availability": "Yes",
+      "circumstanced": false,
+      "className": "ACME-Purchasing-Work",
+      "path": "flows/BudgetCheck.xml",
+      "qualifier": null,
+      "ruleName": "BudgetCheck",
+      "ruleType": "Rule-Obj-Flow",
+      "ruleset": "Purchasing",
+      "sha256": "afebfb1bf5989cf7117460c65a8fb4bf3f69e1e264ebd9a4e4bcd4f56336600a",
+      "status": "rule",
+      "version": "01-01-01"
+    },
+    {
+      "availability": "Yes",
+      "circumstanced": false,
+      "className": "ACME-Purchasing-Work",
+      "path": "flows/VendorScreen.xml",
+      "qualifier": null,
+      "ruleName": "VendorScreen",
+      "ruleType": "Rule-Obj-Flow",
+      "ruleset": "Purchasing",
+      "sha256": "ddcf13f6a7ffbc1a117df968ca5464ea1c60e529dc9b7abe21126c60e941d35c",
+      "status": "rule",
+      "version": "01-01-01"
+    },
+    {
+      "availability": "Yes",
+      "circumstanced": false,
+      "className": "ACME-Purchasing-Work",
+      "path": "flows/RecordOrder.xml",
+      "qualifier": null,
+      "ruleName": "RecordOrder",
+      "ruleType": "Rule-Obj-Flow",
+      "ruleset": "Purchasing",
+      "sha256": "cdac2b4985abe2b25fd5029cd8f3ace3c39f115d194f9137bf0d6ef6e88077f3",
+      "status": "rule",
+      "version": "01-01-01"
+    },
+    {
+      "availability": "Yes",
+      "circumstanced": false,
+      "className": "ACME-Purchasing-Work-Request",
+      "path": "casetypes/PurchaseOrder.xml",
+      "qualifier": null,
+      "ruleName": "PurchaseOrder",
+      "ruleType": "Rule-Obj-CaseType",
+      "ruleset": "Purchasing",
+      "sha256": "b6863d5cc678722c682b5d806c734168df8acca28b1f5344e5441de5923ecf4e",
+      "status": "rule",
+      "version": "01-01-05"
+    },
+    {
+      "availability": "Yes",
+      "circumstanced": false,
+      "className": "ACME-Purchasing-Work-Request",
+      "path": "casetypes/QuickOrder.xml",
+      "qualifier": null,
+      "ruleName": "QuickOrder",
+      "ruleType": "Rule-Obj-CaseType",
+      "ruleset": "Purchasing",
+      "sha256": "084e18e4f9a268a080b263a5ea3a6140118e00b51e1b56a79c699a282f1547a2",
+      "status": "rule",
+      "version": "01-01-05"
+    }
+  ],
+  "sourceSha256": "c78da7f5029221dc9373f2443b202f9de5a0e2fc1d7a615b16da87fec6cbede4",
+  "stack": [
+    [
+      "PurchasingOrg",
+      "01-02-01"
+    ],
+    [
+      "Purchasing",
+      "01-01-10"
+    ]
+  ],
+  "startingPoints": [
+    {
+      "context": "ACME-Purchasing-Work",
+      "kind": "flow",
+      "rule": "flows/BudgetCheck.xml"
+    },
+    {
+      "context": "ACME-Purchasing-Work",
+      "kind": "flow",
+      "rule": "flows/RecordOrder.xml"
+    },
+    {
+      "context": "ACME-Purchasing-Work",
+      "kind": "flow",
+      "rule": "flows/VendorScreen.xml"
+    },
+    {
+      "context": "ACME-Purchasing-Work-Request",
+      "kind": "caseType",
+      "rule": "casetypes/PurchaseOrder.xml"
+    },
+    {
+      "context": "ACME-Purchasing-Work-Request",
+      "kind": "caseType",
+      "rule": "casetypes/QuickOrder.xml"
+    },
+    {
+      "context": "ACME-Purchasing-Work-Request",
+      "kind": "process",
+      "rule": "flows/Review.xml"
+    },
+    {
+      "context": "ACME-Purchasing-Work-Request",
+      "kind": "process",
+      "rule": "flows/Fulfil.xml"
+    }
+  ]
+}

@@ -17,10 +17,12 @@ async function write(page: Page, method: string, route: string, body: unknown, h
 }
 
 async function draft(page: Page, ws: string, key: string, attachment = false) {
-  const created = await write(page, 'POST', `/workspaces/${ws}/workflows`, { key, name: 'Purchase approval' })
+  // A distinct name, so exact "Purchase approval" lookups in other specs find only the seeded template.
+  const created = await write(page, 'POST', `/workspaces/${ws}/workflows`, { key, name: `Purchase approval (${key})` })
   expect(created.status).toBe(201)
   const definition = structuredClone(purchase)
   definition.workflowKey = key
+  definition.name = `Purchase approval (${key})`
   if (attachment) {
     definition.inputSchema.properties.supplierQuote = { type: 'string', title: 'Supplier quote', format: 'attachment', acceptTypes: ['txt'], maxFileBytes: 1024 }
     definition.inputSchema.required.push('supplierQuote')

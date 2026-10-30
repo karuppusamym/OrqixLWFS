@@ -8,7 +8,7 @@ import { makeRelease } from './seed'
 import { attachStartFiles, planStartFiles } from './caseFiles'
 import { evaluate, migrationOptions } from './releaseMigration'
 import { migrationPublishDenial } from './migration'
-import { normalizeDefinition, type Definition, type Literal } from '@/features/studio/model/types'
+import { normalizeDefinition, type DecisionTable, type Definition, type Literal } from '@/features/studio/model/types'
 import { buildFields, parseFormSchema, parseFormUi } from '@/lib/form/schema'
 import { validateJsonForm } from '@/lib/form/validate'
 import { waitHorizonErrors } from './dateWait'
@@ -16,6 +16,7 @@ import { validateDefinition, type ValidationContext } from './validate'
 import { mockBpmnFile, mockCheckBpmn, mockDraftBpmn } from './bpmnSource'
 import { assetIssues } from './sharedAssets'
 import { exportCsv, parseCsv, templateCsv } from './decisionCsv'
+import { exportDmn, readDmn } from './decisionDmn'
 import { ScenarioError, simulateDefinition, type SimConnection, type SimContext, type SimulationScenario } from './simulator'
 import { AssertionError, evaluateAssertions, validateAssertions, type Assertions } from './assertions'
 import {
@@ -284,7 +285,7 @@ function taskDetail(user: MockUser, perms: Permission[], run: MockRun, task: Moc
     request: { input: run.input, inputSchema: rel.definition.inputSchema as never, inputUi: (rel.definition.inputUi ?? {}) as never },
     history: run.tasks.filter((t) => t.decision).map((t) => t.decision!).sort((a, b) => a.decidedAt.localeCompare(b.decidedAt)),
     approvalView: rel.definition.nodes.find(node => node.id === task.nodeId)?.config.viewBinding ? (rel.definition.nodes.find(node => node.id === task.nodeId)!.config.viewBinding as { definition: unknown }).definition : undefined,
-    form: { rejectReasonRequired: true, correctableFields: open && !run.suspension && (isAssignee && eligibleGroup || perms.includes('run.operate') && perms.includes('run.read-data')) ? correctableOf(run, task) : [] },
+    form: { sendBack: (() => { const open = run.sendBacks?.find((item) => item.taskId === task.id && item.status === 'open'); return open ? { id: open.id, reason: open.reason, fields: open.fields, sentAt: open.sentAt } : null })(), rejectReasonRequired: true, correctableFields: open && !run.suspension && (isAssignee && eligibleGroup || perms.includes('run.operate') && perms.includes('run.read-data')) ? correctableOf(run, task) : [] },
     completedBy: task.completedById ? subjectRef(userById(task.completedById)) : null,
     allowedActions: {
       claim: claimAllowed ? { allowed: true } : { allowed: false, reasonCode: !open ? 'TASK_NOT_OPEN' : task.assigneeId ? 'TASK_ALREADY_CLAIMED' : own ? 'SELF_APPROVAL_DENIED' : separated ? 'SEPARATION_OF_DUTIES' : 'NOT_ELIGIBLE' },
@@ -294,6 +295,20 @@ function taskDetail(user: MockUser, perms: Permission[], run: MockRun, task: Moc
       reassign: open && perms.includes('run.operate') ? { allowed: true } : { allowed: false, reasonCode: 'FORBIDDEN' },
     },
   } as unknown as TaskDetail
+}
+
+function sendBackViews(user: MockUser, run: MockRun) {
+  const rel = currentRelease(run)
+  const properties = ((rel.definition.inputSchema as { properties?: Record<string, { title?: string }> }).properties ?? {})
+  return [...(run.sendBacks ?? [])].reverse().map((item) => {
+    const task = run.tasks.find((candidate) => candidate.id === item.taskId)
+    return {
+      id: item.id, taskId: item.taskId, nodeId: item.nodeId, stepLabel: task?.label ?? item.nodeId, status: item.status, reason: item.reason,
+      fields: item.fields.map((key) => ({ key, title: properties[key]?.title ?? key, schema: (properties[key] ?? null) as Record<string, unknown> | null, value: (run.input[key] ?? null) as never })),
+      sentBy: subjectRef(userById(item.sentById)), sentAt: item.sentAt, closedAt: item.closedAt, note: item.note, taskVersion: task?.version ?? 0,
+      canAnswer: run.initiatorId === user.id && item.status === 'open' && task?.status === 'open' && !run.suspension,
+    }
+  })
 }
 
 function findTask(wsId: string, taskId: string): { run: MockRun; task: MockTask } | undefined {
@@ -598,6 +613,69 @@ export function createHandlers(): HttpHandler[] {
           const row = /\/rows\/(\d+)/.exec(b.path ?? '')
           return { line: row ? (parsed.ruleLines[Number(row[1])] ?? 1) : 1, column: row ? 4 : 1, code: b.code, message: b.message }
         }))
+      }
+      const next = { revision: latest.revision + 1, savedAt: clock.iso(), savedById: g.user.id, definition: normalizeDefinition(definition) }
+      wf.drafts.push(next)
+      wf.updatedAt = next.savedAt
+      return HttpResponse.json(
+        { workflowId: wf.id, revision: next.revision, savedAt: next.savedAt, savedBy: subjectRef(g.user), definition: next.definition },
+        { headers: { ETag: `"r${next.revision}"` } },
+      )
+    }),
+    // Decision table DMN (docs/build/S121): a simplified double, see ./decisionDmn.ts --------------------------------
+    http.get(`${B}/workspaces/:ws/workflows/:id/decisions/:key/dmn`, async ({ params }) => {
+      await slow()
+      const g = guard(params.ws, 'workflow.read')
+      if (!g.ok) return g.res
+      const wf = findWorkflow(str(params.ws), str(params.id))
+      const draft = wf?.drafts.at(-1)
+      const table = draft?.definition.decisions.find((d) => d.key === str(params.key))
+      if (!wf || !draft || !table) return notFound()
+      const label = draft.definition.nodes.find((n) => n.type === 'decision' && n.config.decisionRef === table.key)?.label
+      return new HttpResponse(exportDmn(table, table.key, label), { headers: { 'Content-Type': 'application/xml', 'Content-Disposition': `attachment; filename="${wf.key}-${table.key}-draft-${draft.revision}.dmn"` } })
+    }),
+    http.get(`${B}/workspaces/:ws/workflows/:id/releases/:rid/decisions/:key/dmn`, async ({ params }) => {
+      await slow()
+      const g = guard(params.ws, 'workflow.export')
+      if (!g.ok) return g.res
+      const wf = findWorkflow(str(params.ws), str(params.id))
+      const rel = wf?.releases.find((r) => r.id === str(params.rid))
+      const table = rel?.definition.decisions.find((d) => d.key === str(params.key))
+      if (!wf || !rel || !table) return notFound()
+      return new HttpResponse(exportDmn(table, table.key), { headers: { 'Content-Type': 'application/xml', 'Content-Disposition': `attachment; filename="${wf.key}-${table.key}-r${rel.releaseNumber}.dmn"` } })
+    }),
+    http.put(`${B}/workspaces/:ws/workflows/:id/decisions/:key/dmn`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws, 'workflow.edit')
+      if (!g.ok) return g.res
+      const wf = findWorkflow(str(params.ws), str(params.id))
+      if (!wf) return notFound()
+      const ifMatch = request.headers.get('If-Match')
+      if (!ifMatch) return problem(428, 'PRECONDITION_REQUIRED', 'If-Match header required')
+      const latest = wf.drafts.at(-1)!
+      if (ifMatch !== `"r${latest.revision}"`) return problem(412, 'STALE_REVISION', 'The draft changed', { currentRevision: latest.revision })
+      const index = latest.definition.decisions.findIndex((d) => d.key === str(params.key))
+      if (index < 0) return notFound()
+      const type = (request.headers.get('Content-Type') ?? '').toLowerCase()
+      if (!type.startsWith('application/xml') && !type.startsWith('text/xml')) return problem(400, 'MALFORMED_REQUEST', 'Send the file as Content-Type: application/xml.')
+      const text = await request.text()
+      if (text.length > 512 * 1024) return problem(413, 'PAYLOAD_TOO_LARGE', 'The file is larger than 512 KiB.')
+      const read = readDmn(text, new URL(request.url).searchParams.get('decisionId'))
+      if (!read.content) {
+        return problem(422, 'VALIDATION_FAILED', 'Some values are not valid', {
+          detail: read.problems.length ? `The DMN file cannot be imported: ${read.problems[0]}` : `The file has ${read.decisions.length} decisions. Choose the one to import with decisionId.`,
+          ...(read.problems.length ? { fieldErrors: read.problems.map((message) => ({ pointer: '/dmn', code: 'DMN_NOT_IMPORTED', message })) } : {}),
+          ...(read.decisions.length ? { decisions: read.decisions } : {}),
+        })
+      }
+      const old = latest.definition.decisions[index]!
+      const definition = { ...latest.definition, decisions: latest.definition.decisions.map((d, i) => (i === index ? { key: old.key, version: old.version, ...(read.content as unknown as Pick<DecisionTable, 'hitPolicy' | 'rows' | 'default'>) } : d)) }
+      const blockers = validateDefinition(definition, validationContext(wf.wsId)).filter((i) => i.severity === 'blocker' && (i.path === `/decisions/${index}` || i.path?.startsWith(`/decisions/${index}/`)))
+      if (blockers.length) {
+        return problem(422, 'VALIDATION_FAILED', 'Some values are not valid', {
+          detail: `The DMN file cannot be imported: ${blockers[0]!.message}`,
+          fieldErrors: blockers.map((b) => ({ pointer: `/dmn${(b.path ?? '').slice(`/decisions/${index}`.length)}`, code: b.code, message: b.message })),
+        })
       }
       const next = { revision: latest.revision + 1, savedAt: clock.iso(), savedById: g.user.id, definition: normalizeDefinition(definition) }
       wf.drafts.push(next)
@@ -1085,7 +1163,33 @@ export function createHandlers(): HttpHandler[] {
       const input = await body<{ expectedVersion?: number; reason?: string }>(request)
       if (input.expectedVersion !== wf.version) return problem(409, 'WORKFLOW_VERSION_CONFLICT', 'The workflow changed since you loaded it')
       db.workflows.delete(wf.id)
+      wf.version += 1
+      db.archivedWorkflows ??= new Map()
+      db.archivedWorkflows.set(wf.id, { workflow: wf, archivedAt: clock.iso(), archivedById: g.user.id })
       return new HttpResponse(null, { status: 204 })
+    }),
+    http.get(`${B}/workspaces/:ws/archived-workflows`, ({ params }) => {
+      const g = guard(params.ws, 'workflow.edit')
+      if (!g.ok) return g.res
+      const items = [...(db.archivedWorkflows?.values() ?? [])].filter((a) => a.workflow.wsId === str(params.ws))
+        .sort((a, b) => b.archivedAt.localeCompare(a.archivedAt))
+        .map((a) => ({ id: a.workflow.id, key: a.workflow.key, name: a.workflow.name, version: a.workflow.version, archivedAt: a.archivedAt,
+          archivedBy: { id: a.archivedById, displayName: userById(a.archivedById)?.displayName ?? 'Unknown user' },
+          activeReleaseNumber: a.workflow.releases.find((r) => r.id === a.workflow.activeReleaseId)?.releaseNumber ?? null }))
+      return HttpResponse.json({ items, truncated: false })
+    }),
+    http.post(`${B}/workspaces/:ws/workflows/:id/restore`, async ({ params, request }) => {
+      const g = guard(params.ws, 'workflow.edit')
+      if (!g.ok) return g.res
+      const archived = db.archivedWorkflows?.get(str(params.id))
+      if (!archived || archived.workflow.wsId !== str(params.ws)) return notFound()
+      const input = await body<{ expectedVersion?: number; reason?: string }>(request)
+      const wf = archived.workflow
+      if (input.expectedVersion !== wf.version) return problem(409, 'WORKFLOW_VERSION_CONFLICT', 'The workflow changed since you loaded it', { currentVersion: wf.version })
+      db.archivedWorkflows!.delete(wf.id)
+      wf.version += 1
+      db.workflows.set(wf.id, wf)
+      return HttpResponse.json({ ...summary(wf, g.perms), version: wf.version, createdAt: wf.createdAt, permissions: g.perms })
     }),
     http.put(`${B}/workspaces/:ws/workflows/:id/owner`, async ({ params, request }) => {
       await slow()
@@ -1527,6 +1631,7 @@ export function createHandlers(): HttpHandler[] {
         if (run.suspension) return problem(409, 'RUN_SUSPENDED', 'The request is suspended; resume it first')
         if (input.expectedVersion !== task.version) return problem(409, 'TASK_VERSION_CONFLICT', 'The task changed', { currentVersion: task.version })
         if (task.assigneeId !== g.user.id) return problem(409, 'TASK_NOT_CLAIMED_BY_CALLER', 'Claim the task first')
+        if (run.sendBacks?.some((item) => item.taskId === task.id && item.status === 'open')) return problem(409, 'TASK_NOT_OPEN', 'The request is with its requester for corrections. Wait for the answer or withdraw the send-back.')
         if (!inGroup(g.user,task.candidateGroup) || !hasTaskSkills(run,task,g.user)) return problem(403,'NOT_ELIGIBLE','This task requires every skill group')
         if (input.action === 'reject' && !input.reason?.trim()) return problem(422, 'REASON_REQUIRED', 'A reason is required to reject', { fieldErrors: [{ pointer: '/reason', code: 'required', message: 'Add a reason so the requester knows what to change.' }] })
         const decision = decide(run, task, g.user, input.action, input.action === 'reject' ? (input.reason?.trim() ?? null) : null, input.comment?.trim() || null)
@@ -1546,6 +1651,84 @@ export function createHandlers(): HttpHandler[] {
         && permissionsOf(user, run.wsId).includes('task.act') && inGroup(user, task.candidateGroup) && hasTaskSkills(run,task,user)
         && (user.id !== run.initiatorId || selfApprovalAllowed(run, currentRelease(run))))
       return HttpResponse.json(candidates.slice(0, 100).map((user) => ({ id: user.id, displayName: user.displayName })))
+    }),
+    // S116 send back to the requester: holder sends, holder or operator withdraws, requester answers the declared fields.
+    http.post(`${B}/workspaces/:ws/tasks/:id/send-back`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws, 'task.act')
+      if (!g.ok) return g.res
+      const found = findTask(str(params.ws), str(params.id))
+      if (!found) return notFound()
+      const { run, task } = found
+      const input = await body<{ expectedVersion: number; reason: string }>(request)
+      return idempotent(request, g.user, 'sendTaskBack', input, () => {
+        if (task.assigneeId !== g.user.id) return problem(409, 'TASK_NOT_CLAIMED_BY_CALLER', 'Claim the task before sending it back')
+        if (task.status !== 'open') return problem(409, 'TASK_NOT_OPEN', 'The task is no longer open')
+        if (input.expectedVersion !== task.version) return problem(409, 'TASK_VERSION_CONFLICT', 'The task changed', { currentVersion: task.version })
+        if (run.sendBacks?.some((item) => item.taskId === task.id && item.status === 'open')) return problem(409, 'TASK_NOT_OPEN', 'The request is already with its requester')
+        const fields = correctableOf(run, task)
+        if (fields.length === 0) return problem(422, 'VALIDATION_FAILED', 'This step declares no request fields the requester may correct.')
+        if (!input.reason?.trim()) return problem(422, 'VALIDATION_FAILED', 'Give a reason of 1 to 500 characters.')
+        run.sendBacks = [...(run.sendBacks ?? []), { id: crypto.randomUUID(), taskId: task.id, nodeId: task.nodeId, status: 'open', reason: input.reason.trim(), fields, sentById: g.user.id, sentAt: new Date().toISOString(), closedAt: null, note: null }]
+        task.version += 1
+        addEvent(run, 'TASK_SENT_BACK', { actorId: g.user.id, nodeId: task.nodeId, data: { fields: fields.length, reason: input.reason.trim() } })
+        return { status: 200, body: taskDetail(g.user, g.perms, run, task) }
+      })
+    }),
+    http.post(`${B}/workspaces/:ws/tasks/:id/send-back/withdraw`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws, 'task.act', 'run.operate')
+      if (!g.ok) return g.res
+      const found = findTask(str(params.ws), str(params.id))
+      if (!found) return notFound()
+      const { run, task } = found
+      const input = await body<{ expectedVersion: number; note?: string }>(request)
+      if (task.assigneeId !== g.user.id && !g.perms.includes('run.operate')) return problem(403, 'FORBIDDEN', 'Only the holder or an operator can withdraw it')
+      if (input.expectedVersion !== task.version) return problem(409, 'TASK_VERSION_CONFLICT', 'The task changed', { currentVersion: task.version })
+      const open = run.sendBacks?.find((item) => item.taskId === task.id && item.status === 'open')
+      if (!open) return problem(409, 'TASK_NOT_OPEN', 'This task has no open send-back.')
+      Object.assign(open, { status: 'withdrawn', closedAt: new Date().toISOString(), note: input.note?.trim() || null })
+      task.version += 1
+      addEvent(run, 'TASK_SEND_BACK_WITHDRAWN', { actorId: g.user.id, nodeId: task.nodeId })
+      return HttpResponse.json(taskDetail(g.user, g.perms, run, task))
+    }),
+    http.get(`${B}/workspaces/:ws/runs/:id/send-backs`, ({ params }) => {
+      const g = guard(params.ws)
+      if (!g.ok) return g.res
+      const run = db.runs.get(str(params.id))
+      if (!run || run.wsId !== str(params.ws) || !canReadRun(g.user, g.perms, run)) return notFound()
+      return HttpResponse.json({ items: sendBackViews(g.user, run) })
+    }),
+    http.post(`${B}/workspaces/:ws/runs/:id/send-backs/:sendBackId/answer`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws)
+      if (!g.ok) return g.res
+      const run = db.runs.get(str(params.id))
+      if (!run || run.wsId !== str(params.ws) || !canReadRun(g.user, g.perms, run)) return notFound()
+      const input = await body<{ expectedVersion: number; changes: Record<string, Literal>; note?: string }>(request)
+      return idempotent(request, g.user, 'answerSendBack', input, () => {
+        if (run.initiatorId !== g.user.id) return problem(403, 'FORBIDDEN', 'Only the requester answers a send-back.')
+        const item = run.sendBacks?.find((candidate) => candidate.id === str(params.sendBackId))
+        if (!item) return notFound()
+        const task = run.tasks.find((candidate) => candidate.id === item.taskId)
+        if (item.status !== 'open' || !task || task.status !== 'open') return problem(409, 'TASK_NOT_OPEN', 'This send-back was already closed.')
+        if (input.expectedVersion !== task.version) return problem(409, 'TASK_VERSION_CONFLICT', 'The task changed', { currentVersion: task.version })
+        const changes = Object.entries(input.changes ?? {})
+        const bad = changes.filter(([k, v]) => !item.fields.includes(k) || v === null || typeof v === 'object')
+        if (changes.length === 0 || bad.length > 0) return problem(422, 'VALIDATION_FAILED', 'Some values are not valid', { fieldErrors: bad.map(([k]) => ({ pointer: `/changes/${k}`, code: 'enum', message: 'Not a field the approver returned' })) })
+        const rel = currentRelease(run)
+        const corrected = { ...run.input, ...Object.fromEntries(changes) }
+        const issues = validateJsonForm(parseFormSchema(rel.definition.inputSchema), parseFormUi(rel.definition.inputUi), corrected)
+        if (issues.length > 0) return problem(422, 'VALIDATION_FAILED', 'The corrected request does not match its form', { fieldErrors: issues.map((i) => ({ pointer: `/changes${i.pointer}`, code: i.keyword, message: `${i.pointer.slice(1)} is not valid (${i.keyword}).` })) })
+        const before = Object.fromEntries(changes.map(([k]) => [k, run.input[k]]))
+        run.input = corrected as typeof run.input
+        run.version += 1
+        task.version += 1
+        Object.assign(item, { status: 'answered', closedAt: new Date().toISOString(), note: input.note?.trim() || null })
+        addEvent(run, 'INPUT_CORRECTED', { actorId: g.user.id, nodeId: task.nodeId, data: { before, after: Object.fromEntries(changes), reason: input.note?.trim() || `Corrected as requested: ${item.reason}`, fields: changes.length, version: run.version, source: 'sendBack' } })
+        addEvent(run, 'TASK_SEND_BACK_ANSWERED', { actorId: g.user.id, nodeId: task.nodeId, data: { fields: changes.length } })
+        return { status: 200, body: sendBackViews(g.user, run).find((view) => view.id === item.id)! }
+      })
     }),
     http.post(`${B}/workspaces/:ws/tasks/:id/correct-input`, async ({ params, request }) => {
       await slow()

@@ -50,9 +50,12 @@ public class RuntimeController {
     private final NotificationService notifications;
     private final PolicyService policy;
     private final CursorCodec cursors;
+    private final com.orqix.runtime.internal.SendBacks sendBacks;
 
     public RuntimeController(CallerResolver callers, RunService runs, TaskService tasks, OperatorService operator,
-            NotificationService notifications, PolicyService policy, CursorCodec cursors) {
+            NotificationService notifications, PolicyService policy, CursorCodec cursors,
+            com.orqix.runtime.internal.SendBacks sendBacks) {
+        this.sendBacks = sendBacks;
         this.callers = callers;
         this.runs = runs;
         this.tasks = tasks;
@@ -245,6 +248,31 @@ public class RuntimeController {
             @RequestHeader(name = IdempotencyService.HEADER, required = false) String idempotencyKey,
             @Valid @RequestBody RuntimeDtos.CorrectTaskInputRequest request) {
         return tasks.correctInput(callers.current(), workspaceId, taskId(taskId), idempotencyKey, request);
+    }
+
+    @PostMapping("/tasks/{taskId}/send-back")
+    public RuntimeDtos.TaskDetail sendTaskBack(@PathVariable UUID workspaceId, @PathVariable String taskId,
+            @RequestHeader(name = IdempotencyService.HEADER, required = false) String idempotencyKey,
+            @Valid @RequestBody RuntimeDtos.SendBackRequest request) {
+        return sendBacks.send(callers.current(), workspaceId, taskId(taskId), idempotencyKey, request);
+    }
+
+    @PostMapping("/tasks/{taskId}/send-back/withdraw")
+    public RuntimeDtos.TaskDetail withdrawTaskSendBack(@PathVariable UUID workspaceId, @PathVariable String taskId,
+            @Valid @RequestBody RuntimeDtos.WithdrawSendBackRequest request) {
+        return sendBacks.withdraw(callers.current(), workspaceId, taskId(taskId), request);
+    }
+
+    @GetMapping("/runs/{runId}/send-backs")
+    public RuntimeDtos.SendBackList listSendBacks(@PathVariable UUID workspaceId, @PathVariable UUID runId) {
+        return sendBacks.list(callers.current(), workspaceId, runId);
+    }
+
+    @PostMapping("/runs/{runId}/send-backs/{sendBackId}/answer")
+    public RuntimeDtos.SendBack answerSendBack(@PathVariable UUID workspaceId, @PathVariable UUID runId,
+            @PathVariable UUID sendBackId, @RequestHeader(name = IdempotencyService.HEADER, required = false) String idempotencyKey,
+            @Valid @RequestBody RuntimeDtos.AnswerSendBackRequest request) {
+        return sendBacks.answer(callers.current(), workspaceId, runId, sendBackId, idempotencyKey, request);
     }
 
     @GetMapping("/tasks/{taskId}/delegates")

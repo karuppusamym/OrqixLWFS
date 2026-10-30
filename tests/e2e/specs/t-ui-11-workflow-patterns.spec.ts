@@ -43,9 +43,9 @@ test.describe('workflow patterns (mock API)', () => {
       await expect(designer.locator(`.react-flow__node[data-id="${id}"]`)).toBeVisible()
     }
 
-    // The palette offers the three new steps.
+    // The palette offers the three new steps. The step list starts collapsed to icons named "Add: <label>".
     for (const name of ['Run in parallel', 'Wait', 'Start another workflow']) {
-      await expect(designer.getByRole('button', { name: new RegExp(`^${name}`) }).first()).toBeVisible()
+      await expect(designer.getByRole('button', { name: new RegExp(`^(Add: )?${name}`) }).first()).toBeVisible()
     }
 
     // Wait inspector: duration with a reading in plain language.
@@ -95,7 +95,7 @@ test.describe('workflow patterns (mock API)', () => {
     // Both groups decide; the request now waits on its timer.
     const approve = async (user: Username, label: string) => {
       const page = await sessions.as(user)
-      const tasks = await apiGet<{ items: Array<{ id: string; label: string; version: number }> }>(page, `/workspaces/${ws}/tasks?view=claimable`)
+      const tasks = await apiGet<{ items: Array<{ id: string; label: string; version: number }> }>(page, `/workspaces/${ws}/tasks?view=claimable&sort=newest`)
       const task = tasks.items.find((t) => t.label === label)!
       expect((await send(page, 'POST', `/workspaces/${ws}/tasks/${task.id}/claim`, { expectedVersion: task.version })).status).toBe(200)
       expect((await send(page, 'POST', `/workspaces/${ws}/tasks/${task.id}/decision`, { expectedVersion: task.version + 1, action: 'approve' })).status).toBe(201)

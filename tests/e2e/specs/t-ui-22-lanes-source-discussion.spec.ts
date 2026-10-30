@@ -9,6 +9,12 @@ import { expectNoSeriousViolations } from '../support/axe'
  * draft as YAML, refuses invalid edits with line numbers and applies valid ones; each step has a threaded discussion
  * that can be replied to and resolved. A viewer can read but not post.
  */
+/** The Discussion card of the side panel is collapsible (UX01) and may start closed. */
+async function openDiscussion(page: import('@playwright/test').Page): Promise<void> {
+  const toggle = page.getByRole('button', { name: 'Discussion', exact: true })
+  if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click()
+}
+
 test('lanes, YAML source and step discussion in the studio', async ({ sessions }) => {
   if (MOCK) await sessions.mockCall('reset', { demo: true })
   const page = await sessions.as('dana.designer')
@@ -51,6 +57,7 @@ test('lanes, YAML source and step discussion in the studio', async ({ sessions }
   // Discussion on a step: comment, reply, resolve, reopen.
   await page.getByRole('tab', { name: 'Steps' }).click()
   await selectStep(page, 'start')
+  await openDiscussion(page)
   const discussion = page.getByTestId('discussion')
   await expect(discussion).toBeVisible()
   const note = uniq('Is this field needed')
@@ -71,6 +78,7 @@ test('lanes, YAML source and step discussion in the studio', async ({ sessions }
   await viewer.goto(`/w/${ws}/workflows/${wf.id}/edit`)
   await viewer.getByRole('tab', { name: 'Steps' }).click()
   await selectStep(viewer, 'start')
+  await openDiscussion(viewer)
   await expect(viewer.getByTestId('discussion')).toContainText(note)
   await expect(viewer.getByTestId('discussion').getByLabel('New comment')).toHaveCount(0)
 })

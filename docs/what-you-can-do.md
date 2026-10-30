@@ -56,4 +56,4 @@ Roles and per-workflow rights, groups, workspaces and test workspaces, promotion
 
 ## What is not done
 
-Full CMMN case management; a general application designer; real Pega Blueprint PDFs and native Pega rules; production identity, high availability and bank-scale capacity (one workspace starts requests one after another at roughly 14 per second per workflow).
+Full CMMN case management; a general application designer; real Pega Blueprint PDFs and native Pega rules; production identity, high availability and bank-scale capacity (starts measured at 54 per second, 82 with fast numbering, on one laptop; not a production capacity figure).

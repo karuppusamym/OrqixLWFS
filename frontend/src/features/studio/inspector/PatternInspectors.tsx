@@ -116,7 +116,12 @@ export function ChildInspector({ node }: { node: WorkflowNode }) {
   const inputs = cfg<Record<string, string>>(node, 'inputMapping') ?? {}
   const results = cfg<Record<string, string>>(node, 'resultMapping') ?? {}
   const repeat = cfg<{ maxIterations: number; untilOutcome: string }>(node, 'repeat')
-  const each = cfg<{ itemsRef: string; itemInput: string; maxItems: number; mode?: 'sequential' | 'parallel' }>(node, 'forEach')
+  const each = cfg<{ itemsRef: string; itemInput?: string; itemMapping?: Record<string, string>; maxItems: number; mode?: 'sequential' | 'parallel' }>(node, 'forEach')
+  // S105: a list of rows fills child fields from named columns of each row instead of one field per item.
+  const eachList = each?.itemsRef ? def.inputSchema.properties[each.itemsRef.replace(/^\/input\//, '')] : undefined
+  const eachRows = eachList?.items?.type === 'object'
+  const rowColumns = eachRows ? Object.entries(eachList?.items?.properties ?? {}) : []
+  const filledByItem = (key: string) => key === each?.itemInput || !!each?.itemMapping?.[key]
   const collections = cfg<Record<string, string>>(node, 'collectionMapping') ?? {}
   const fields = availableFields(def, node.id, connections)
   const patch = (p: Record<string, unknown>) => store.getState().updateNodeConfig(node.id, p)
@@ -171,20 +176,41 @@ export function ChildInspector({ node }: { node: WorkflowNode }) {
       </div>
       {each ? <>
         <FormField label="Request collection" required id={`foreach-items-${node.id}`}>
-          {(ids) => <Select id={ids.input} value={each.itemsRef} disabled={readOnly} onChange={(e) => patch({ forEach: { ...each, itemsRef: e.target.value } })}>
+          {(ids) => <Select id={ids.input} value={each.itemsRef} disabled={readOnly} onChange={(e) => {
+            // Switching between a list of single values and a list of rows starts the item settings again.
+            const { itemInput: _input, itemMapping: _mapping, ...rest } = each
+            patch({ forEach: { ...rest, itemsRef: e.target.value, ...(def.inputSchema.properties[e.target.value.replace(/^\/input\//, '')]?.items?.type === 'object' ? {} : { itemInput: '' }) } })
+          }}>
             <option value="">Choose a required collection</option>
             {Object.entries(def.inputSchema.properties).filter(([key, field]) => field.type === 'array' && def.inputSchema.required?.includes(key)).map(([key, field]) => <option key={key} value={`/input/${key}`}>{field.title || key}</option>)}
           </Select>}
         </FormField>
-        <FormField label="Child field receiving each item" required id={`foreach-input-${node.id}`}>
-          {(ids) => <Select id={ids.input} value={each.itemInput} disabled={readOnly} onChange={(e) => {
+        {eachRows ? <fieldset className="space-y-3">
+          <legend className="text-sm font-medium">Fill from each row</legend>
+          <p className="text-xs text-muted-foreground">Choose which column of the row fills each field of the started workflow. A column that is empty in a row leaves the field out.</p>
+          {Object.entries(childDef?.inputSchema.properties ?? {}).filter(([, field]) => field.type !== 'array').map(([key, field]) => <FormField key={key} label={field.title || key} optionalText id={`foreach-column-${node.id}-${key}`}>
+            {(ids) => <Select id={ids.input} value={each.itemMapping?.[key] ?? ''} disabled={readOnly} onChange={(e) => {
+              const mapping = { ...(each.itemMapping ?? {}) }
+              if (e.target.value) mapping[key] = e.target.value
+              else delete mapping[key]
+              const next = { ...inputs }
+              if (e.target.value) delete next[key]
+              const { itemMapping: _omit, ...rest } = each
+              patch({ forEach: Object.keys(mapping).length > 0 ? { ...rest, itemMapping: mapping } : rest, inputMapping: next })
+            }}>
+              <option value="">Not from the row</option>
+              {rowColumns.map(([column, c]) => <option key={column} value={column}>{c.title || column}</option>)}
+            </Select>}
+          </FormField>)}
+        </fieldset> : <FormField label="Child field receiving each item" required id={`foreach-input-${node.id}`}>
+          {(ids) => <Select id={ids.input} value={each.itemInput ?? ''} disabled={readOnly} onChange={(e) => {
             const next = { ...inputs }; delete next[e.target.value]
             patch({ forEach: { ...each, itemInput: e.target.value }, inputMapping: next })
           }}>
             <option value="">Choose a request field</option>
             {Object.entries(childDef?.inputSchema.properties ?? {}).filter(([, field]) => field.type !== 'array').map(([key, field]) => <option key={key} value={key}>{field.title || key}</option>)}
           </Select>}
-        </FormField>
+        </FormField>}
         <FormField label="Execution order" id={`foreach-mode-${node.id}`} description="Parallel starts all bounded items together and waits for every result. Collected results always follow input order.">
           {(ids) => <Select id={ids.input} value={each.mode ?? 'sequential'} disabled={readOnly} onChange={(e) => patch({ forEach: { ...each, mode: e.target.value } })}>
             <option value="sequential">One item at a time</option><option value="parallel">All items in parallel</option>
@@ -210,7 +236,7 @@ export function ChildInspector({ node }: { node: WorkflowNode }) {
     </InspectorSection>
     {childDef ? <>
       <InspectorSection title="Request values">
-        {Object.entries(childDef.inputSchema.properties).filter(([key]) => key !== each?.itemInput).map(([key, field]) => <FormField key={key} label={field.title || key} required={childDef.inputSchema.required?.includes(key)} id={`child-input-${node.id}-${key}`}>
+        {Object.entries(childDef.inputSchema.properties).filter(([key]) => !filledByItem(key)).map(([key, field]) => <FormField key={key} label={field.title || key} required={childDef.inputSchema.required?.includes(key)} id={`child-input-${node.id}-${key}`}>
           {(ids) => <Select id={ids.input} value={inputs[key] ?? ''} disabled={readOnly} onChange={(e) => {
             const next = { ...inputs }
             if (e.target.value) next[key] = e.target.value

@@ -17,7 +17,10 @@ import { Label } from '@/components/ui/label'
 import { ACTION_TYPES, FIELD_TYPES, pruneTranslations, moveItem, uniqueId, validateView, type ViewAction, type ViewActionType, type ViewDefinition, type ViewField, type ViewFieldType, type ViewSection } from './model'
 import { PresentationEditor } from './PresentationEditor'
 import { ViewPreview } from './ViewPreview'
+import { PinMigration } from './PinMigration'
 import { WorklistAssignment } from './WorklistAssignment'
+import { isPage } from '@/features/pages/model'
+import { PageDesigner } from '@/features/pages/PageDesigner'
 
 interface Draft { name: string; description: string; definition: ViewDefinition }
 
@@ -29,6 +32,7 @@ export function ViewEditorPage() {
   if (!can('workflow.read')) return <p role="alert">You do not have permission to read views.</p>
   if (query.isError) return <QueryError error={query.error} onRetry={() => void query.refetch()} what="view" />
   if (query.isPending) return <LoadingBlock label="Loading view" />
+  if (isPage(query.data.definition)) return <PageDesigner key={`${ws}:${viewId}:${query.data.draftRevision}`} detail={query.data} />
   return <LoadedViewEditor key={`${ws}:${viewId}:${query.data.draftRevision}`} detail={query.data} />
 }
 
@@ -37,7 +41,7 @@ function LoadedViewEditor({ detail }: { detail: ViewDetail }) {
   const ws = workspace.id
   const viewId = detail.id
   const queryClient = useQueryClient()
-  const [draft, setDraft] = useState<Draft>(() => ({ name: detail.name, description: detail.description ?? '', definition: detail.definition }))
+  const [draft, setDraft] = useState<Draft>(() => ({ name: detail.name, description: detail.description ?? '', definition: detail.definition as ViewDefinition }))
   const [history, setHistory] = useState<Draft[]>([])
   const [dirty, setDirty] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -92,7 +96,7 @@ function LoadedViewEditor({ detail }: { detail: ViewDetail }) {
   const controls = FIELD_TYPES.filter(type => draft.definition.kind === 'worklist' ? type === 'text' || type === 'number' : draft.definition.kind === 'case' ? type !== 'file' && type !== 'row' : type !== 'boolean')
   const actions = ACTION_TYPES.filter(type => draft.definition.kind === 'worklist' ? type === 'openTask' : draft.definition.kind === 'case' ? type === 'saveData' || type === 'navigate' : type !== 'saveData' && type !== 'openTask')
   const editable = can('workflow.edit')
-  const preview = version === null ? draft.definition : published.data?.definition
+  const preview = version === null ? draft.definition : published.data?.definition as ViewDefinition | undefined
 
   return <>
     <Link to={`/w/${ws}/views`} className="mb-4 inline-flex items-center gap-1 text-sm"><ArrowLeft className="size-4" aria-hidden="true" /> All views</Link>
@@ -148,6 +152,7 @@ function LoadedViewEditor({ detail }: { detail: ViewDetail }) {
       </div>
       <div className="space-y-4 xl:sticky xl:top-20">
         {draft.definition.kind==='worklist' ? <WorklistAssignment id={viewId} version={version} /> : null}
+        {detail.versions.length ? <PinMigration viewId={viewId} versions={detail.versions.map(item => item.version)} /> : null}
         <section className="space-y-3 rounded-card border border-border bg-surface-muted p-4" aria-label="Validation and bindings"><h2 className="text-lg font-semibold">Bindings and review</h2>
           {issues.length ? <ul className="list-disc space-y-1 pl-5 text-sm text-danger">{issues.map(issue => <li key={issue}>{issue}</li>)}</ul> : <Badge tone="success">Local checks passed</Badge>}
           <p className="text-xs text-muted-foreground">Server validation is authoritative. A published workflow must pin a compatible version.</p>

@@ -62,7 +62,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
                             || "markAllNotificationsRead".equals(operationId)
                             || "validateDraft".equals(operationId) || "evaluateDecision".equals(operationId)
                             || "checkReleasePromotion".equals(operationId)
-                            || "checkDraftBpmn".equals(operationId)
+                            || "checkDraftBpmn".equals(operationId) || "convertDecisionDmn".equals(operationId)
                             || "fetchExternalJobs".equals(operationId) || "extendExternalJobLock".equals(operationId))
                             .as(operationId + " declares x-orqix-audit").isTrue();
                 }
@@ -345,6 +345,15 @@ class SecurityMatrixTest extends RuntimeTestBase {
                 "events", List.of("request.completed"), "enabled", false), "/workspaces/{ws}/webhook-subscriptions",
                 PURCHASING).body().path("id").asString());
         ids.put("planItemId", UUID.randomUUID().toString());
+        // S111: the workspace is invisible to foreign principals, so unknown page routes and extensions prove the 404.
+        ids.put("slug", "matrix-page");
+        ids.put("componentId", "matrix");
+        ids.put("chainId", "matrix");
+        ids.put("extensionId", UUID.randomUUID().toString());
+        // S116: unknown send-backs and a well-formed but unsigned file path are 404 for foreign principals.
+        ids.put("sendBackId", UUID.randomUUID().toString());
+        ids.put("token", "1." + "0".repeat(64));
+        ids.put("path", "main.js");
         // IN04: the workspace is invisible to foreign principals, so unknown ids prove the 404 as well as real ones.
         ids.put("approvalId", UUID.randomUUID().toString());
         ids.put("writeId", UUID.randomUUID().toString());
@@ -439,6 +448,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "createWorkflow" -> Map.of("key", "foreign-wf", "name", "Foreign");
             case "uploadMigration" -> Map.of("fileName", "foreign.bpmn", "content", "<definitions/>", "sourceFormat", "bpmn");
             case "convertMigration" -> Map.of("key", "foreign-import", "name", "Foreign", "acknowledgeInfo", true);
+            case "convertPegaCaseDefinition" -> Map.of("key", "foreign-case", "name", "Foreign", "pegaStartRule", "casetypes/Foreign.xml", "dryRun", true);
             case "saveBlueprintTranscription" -> Map.of("expectedRevision", 1, "transcription", Map.of("format", "orqix-blueprint-transcription-0.1"));
             case "proposeBlueprintTranscription" -> Map.of();
             case "uploadMigrationProject" -> Map.of("name", "Foreign", "files",
@@ -476,7 +486,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "checkReleasePromotion", "promoteRelease", "requestReleasePromotion" -> Map.of("targetWorkspaceId", UUID.randomUUID().toString());
             case "rejectPromotionRequest" -> Map.of("note", "Foreign attempt");
             case "setWorkflowOwner" -> Map.of("ownerSubjectId", UUID.randomUUID().toString(), "expectedVersion", 1);
-            case "archiveWorkflow" -> Map.of("expectedVersion", 1, "reason", "Foreign attempt");
+            case "archiveWorkflow", "restoreWorkflow" -> Map.of("expectedVersion", 1, "reason", "Foreign attempt");
             case "saveWorkflowTestSuite" -> Map.of("expectedVersion", 0, "cases", List.of());
             case "runWorkflowTestSuite" -> Map.of("revision", 1, "suiteVersion", 1);
             case "correctRunInput" -> Map.of("expectedVersion", 1, "reason", "Foreign attempt", "changes", Map.of("title", "Corrected"));
@@ -534,6 +544,16 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "createRoleBinding" -> Map.of("role", "VIEWER", "principal", principal);
             case "createPermissionGrant" -> Map.of("permission", "workflow.start", "principal", principal);
             case "putGroup" -> Map.of("name", "Foreign", "members", List.of());
+            case "assignAppPage" -> Map.of("expectedRevision", 0);
+            case "runAppPageChain" -> Map.of("expectedRevision", 1);
+            case "sendTaskBack" -> Map.of("expectedVersion", 1, "reason", "Foreign attempt");
+            case "withdrawTaskSendBack" -> Map.of("expectedVersion", 1);
+            case "answerSendBack" -> Map.of("expectedVersion", 1, "changes", Map.of("amount", 1));
+            case "migrateViewPins" -> Map.of("targetVersion", 1, "planHash", "0".repeat(64), "items", List.of("worklist"), "reason", "Foreign");
+            case "createUiExtension" -> Map.of("name", "Foreign extension");
+            case "submitUiExtensionVersion" -> Map.of("source", "document.body.textContent = 'x';", "capabilities",
+                    Map.of("bindings", List.of(), "actions", List.of()), "height", 120);
+            case "decideUiExtensionVersion" -> Map.of("decision", "approve", "note", "Foreign attempt", "expectedStatus", "pending");
             default -> null;
         };
     }

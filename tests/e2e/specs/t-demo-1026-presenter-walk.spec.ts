@@ -11,7 +11,8 @@ import { MOCK, type Username } from '../support/env'
  * page title/h1 and axe serious/critical findings. Operator also opens the Runs list and the needs-attention run (ORQ-1009)
  * and must not see the consistency-findings 500 (defect D1). Real stack only.
  */
-test.skip(MOCK, 'Real stack only.')
+// Demo rehearsals need a seeded demo stack (docs/build/S86); the general suite and CI leave them out.
+test.skip(MOCK || process.env.E2E_REHEARSAL !== 'true', 'Demo rehearsal: real seeded stack and E2E_REHEARSAL=true only.')
 test.describe.configure({ mode: 'serial' })
 test.setTimeout(240_000)
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']

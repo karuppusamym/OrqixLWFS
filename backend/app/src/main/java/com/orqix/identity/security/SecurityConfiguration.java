@@ -26,7 +26,10 @@ import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.security.web.savedrequest.HttpSessionRequestCache;
 import org.springframework.security.web.csrf.CsrfToken;
+import org.springframework.security.web.header.writers.DelegatingRequestMatcherHeaderWriter;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
+import org.springframework.security.web.header.writers.frameoptions.XFrameOptionsHeaderWriter;
+import org.springframework.security.web.util.matcher.NegatedRequestMatcher;
 import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -51,6 +54,19 @@ public class SecurityConfiguration {
         return header != null && header.regionMatches(true, 0, "Bearer ", 0, 7);
     };
 
+    /**
+     * S111: the sandboxed UI extension frame document is the one browser response that may be framed, and only by this
+     * origin (its own policy says frame-ancestors 'self' and sandbox). Every other response keeps X-Frame-Options DENY.
+     */
+    private static final java.util.regex.Pattern EXTENSION_FRAME = java.util.regex.Pattern
+            .compile("^/api/v1/workspaces/[^/]+/ui-extensions/[^/]+/versions/[0-9]+/frame$");
+    static final RequestMatcher EXTENSION_FRAME_REQUEST = request -> "GET".equals(request.getMethod())
+            && EXTENSION_FRAME.matcher(request.getRequestURI()).matches();
+
+    /** S116: files of a multi-file extension bundle; the signed path is the credential (frames send no session). */
+    private static final java.util.regex.Pattern EXTENSION_FILE = java.util.regex.Pattern
+            .compile("^/api/v1/workspaces/[^/]+/ui-extensions/[^/]+/versions/[0-9]+/files/[0-9]{1,12}[.][0-9a-f]{64}/[a-z0-9][a-z0-9_.-]{0,70}$");
+
     private static final java.util.regex.Pattern INBOUND = java.util.regex.Pattern
             .compile("^/api/v1/workspaces/[^/]+/inbound/[^/]+$");
 
@@ -72,7 +88,8 @@ public class SecurityConfiguration {
         http.securityMatcher(request -> "POST".equals(request.getMethod())
                         && (INBOUND.matcher(request.getRequestURI()).matches()
                                 || CALLBACK_RESUME.matcher(request.getRequestURI()).matches())
-                        || "GET".equals(request.getMethod()) && CALLBACK_POLL.matcher(request.getRequestURI()).matches())
+                        || "GET".equals(request.getMethod()) && (CALLBACK_POLL.matcher(request.getRequestURI()).matches()
+                                || EXTENSION_FILE.matcher(request.getRequestURI()).matches()))
                 .authorizeHttpRequests(a -> a.anyRequest().permitAll())
                 .csrf(c -> c.disable())
                 .requestCache(c -> c.disable())
@@ -158,7 +175,10 @@ public class SecurityConfiguration {
                 .sessionManagement(s -> s.sessionFixation(f -> f.changeSessionId()))
                 .headers(h -> h.contentSecurityPolicy(csp -> csp.policyDirectives(CSP))
                         .referrerPolicy(r -> r.policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.NO_REFERRER))
-                        .frameOptions(f -> f.deny()));
+                        .frameOptions(f -> f.disable())
+                        .addHeaderWriter(new DelegatingRequestMatcherHeaderWriter(
+                                new NegatedRequestMatcher(EXTENSION_FRAME_REQUEST),
+                                new XFrameOptionsHeaderWriter(XFrameOptionsHeaderWriter.XFrameOptionsMode.DENY))));
         return http.build();
     }
 

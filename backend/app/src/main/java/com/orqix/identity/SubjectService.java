@@ -111,6 +111,26 @@ public class SubjectService {
                 .optional();
     }
 
+    /**
+     * The one active person with this email (case-insensitive), or empty when there is none or more than one (S104:
+     * the proposed approver of a list item). Never matches a disabled person.
+     */
+    @Transactional(readOnly = true)
+    public Optional<Subject> findActiveByEmail(String email) {
+        if (email == null || email.isBlank() || email.length() > 320) {
+            return Optional.empty();
+        }
+        List<Subject> found = jdbc.sql("""
+                SELECT id, issuer, external_subject, display_name, email, disabled_at FROM subject
+                WHERE lower(email) = lower(:email) AND disabled_at IS NULL ORDER BY id LIMIT 2
+                """)
+                .param("email", email.strip())
+                .query((rs, n) -> new Subject(Sql.uuid(rs, "id"), rs.getString("issuer"), rs.getString("external_subject"),
+                        rs.getString("display_name"), rs.getString("email"), false))
+                .list();
+        return found.size() == 1 ? Optional.of(found.get(0)) : Optional.empty();
+    }
+
     @Transactional(readOnly = true)
     public Optional<Subject> find(UUID id) {
         return jdbc.sql("SELECT id, issuer, external_subject, display_name, email, disabled_at FROM subject WHERE id = :id")

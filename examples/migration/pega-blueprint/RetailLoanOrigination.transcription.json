@@ -1,0 +1,910 @@
+{
+  "format" : "orqix-blueprint-transcription-0.1",
+  "caseType" : {
+    "name" : "Home Loan Application",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Home Loan Application",
+    "disposition" : "proposed"
+  },
+  "start" : "step-collect-applicant-information",
+  "stages" : [ {
+    "id" : "stage-capture-borrower-s-information",
+    "name" : "Capture Borrower's Information",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Capture Borrower's Information",
+    "disposition" : "proposed"
+  }, {
+    "id" : "stage-mortgage-application-submission",
+    "name" : "Mortgage Application Submission",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Mortgage Application Submission",
+    "disposition" : "proposed"
+  }, {
+    "id" : "stage-evidence-provision",
+    "name" : "Evidence Provision",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Evidence Provision",
+    "disposition" : "proposed"
+  }, {
+    "id" : "stage-verification-of-data",
+    "name" : "Verification of Data",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Verification of Data",
+    "disposition" : "proposed"
+  }, {
+    "id" : "stage-credit-assessment",
+    "name" : "Credit Assessment",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Credit Assessment",
+    "disposition" : "proposed"
+  }, {
+    "id" : "stage-property-assessment-and-loan-approval",
+    "name" : "Property Assessment and Loan Approval",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Property Assessment and Loan Approval",
+    "disposition" : "proposed"
+  }, {
+    "id" : "stage-loan-agreement",
+    "name" : "Loan Agreement",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Loan Agreement",
+    "disposition" : "proposed"
+  }, {
+    "id" : "stage-loan-disbursement",
+    "name" : "Loan Disbursement",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Loan Disbursement",
+    "disposition" : "proposed"
+  } ],
+  "roles" : [ {
+    "id" : "role-mortgage-advisor",
+    "name" : "Mortgage Advisor",
+    "sourcePage" : 10,
+    "sourceExcerpt" : "Mortgage Advisor",
+    "disposition" : "proposed"
+  }, {
+    "id" : "role-underwriter",
+    "name" : "Underwriter",
+    "sourcePage" : 10,
+    "sourceExcerpt" : "Underwriter",
+    "disposition" : "proposed"
+  }, {
+    "id" : "role-customer-service-representative",
+    "name" : "Customer Service Representative",
+    "sourcePage" : 10,
+    "sourceExcerpt" : "Customer Service Representative",
+    "disposition" : "proposed"
+  }, {
+    "id" : "role-credit-risk-analyst",
+    "name" : "Credit Risk Analyst",
+    "sourcePage" : 10,
+    "sourceExcerpt" : "Credit Risk Analyst",
+    "disposition" : "proposed"
+  }, {
+    "id" : "role-operational-risk-analyst",
+    "name" : "Operational Risk Analyst",
+    "sourcePage" : 10,
+    "sourceExcerpt" : "Operational Risk Analyst",
+    "disposition" : "proposed"
+  }, {
+    "id" : "role-applicant-borrower",
+    "name" : "Applicant/Borrower",
+    "sourcePage" : 10,
+    "sourceExcerpt" : "Applicant/Borrower",
+    "disposition" : "proposed"
+  } ],
+  "fields" : [ {
+    "id" : "applicantAddress",
+    "name" : "Applicant Address",
+    "type" : "string",
+    "required" : false,
+    "sourcePage" : 3,
+    "sourceExcerpt" : "Applicant Address\tApplicant Address\tText",
+    "disposition" : "proposed"
+  }, {
+    "id" : "applicantContactNumber",
+    "name" : "Applicant Contact Number",
+    "type" : "string",
+    "required" : false,
+    "sourcePage" : 3,
+    "sourceExcerpt" : "Applicant Contact Number\tApplicant Contact Number\tText",
+    "disposition" : "proposed"
+  }, {
+    "id" : "applicantEmail",
+    "name" : "Applicant Email",
+    "type" : "string",
+    "required" : false,
+    "sourcePage" : 3,
+    "sourceExcerpt" : "Applicant Email\tApplicant Email\tText",
+    "disposition" : "proposed"
+  }, {
+    "id" : "applicantName",
+    "name" : "Applicant Name",
+    "type" : "string",
+    "required" : false,
+    "sourcePage" : 3,
+    "sourceExcerpt" : "Applicant Name\tApplicant Name\tText",
+    "disposition" : "proposed"
+  }, {
+    "id" : "caseId",
+    "name" : "Case ID",
+    "type" : "string",
+    "required" : false,
+    "sourcePage" : 3,
+    "sourceExcerpt" : "Case ID\tUnique identifier this individual case instance\tText",
+    "disposition" : "proposed"
+  }, {
+    "id" : "caseLabel",
+    "name" : "Case Label",
+    "type" : "string",
+    "required" : false,
+    "sourcePage" : 3,
+    "sourceExcerpt" : "Case Label\tLabel for this individual case instance\tText",
+    "disposition" : "proposed"
+  }, {
+    "id" : "creditScore",
+    "name" : "Credit Score",
+    "type" : "string",
+    "required" : false,
+    "sourcePage" : 3,
+    "sourceExcerpt" : "Credit Score\tCredit Score\tText",
+    "disposition" : "proposed"
+  }, {
+    "id" : "employmentDetails",
+    "name" : "Employment Details",
+    "type" : "string",
+    "required" : false,
+    "sourcePage" : 3,
+    "sourceExcerpt" : "Employment Details\tEmployment Details\tText",
+    "disposition" : "proposed"
+  }, {
+    "id" : "loanAmount",
+    "name" : "Loan Amount",
+    "type" : "string",
+    "required" : false,
+    "sourcePage" : 3,
+    "sourceExcerpt" : "Loan Amount\tLoan Amount\tText",
+    "disposition" : "proposed"
+  }, {
+    "id" : "loanPurpose",
+    "name" : "Loan Purpose",
+    "type" : "string",
+    "required" : false,
+    "sourcePage" : 3,
+    "sourceExcerpt" : "Loan Purpose\tLoan Purpose\tText",
+    "disposition" : "proposed"
+  }, {
+    "id" : "propertyAddress",
+    "name" : "Property Address",
+    "type" : "string",
+    "required" : false,
+    "sourcePage" : 3,
+    "sourceExcerpt" : "Property Address\tProperty Address\tText",
+    "disposition" : "proposed"
+  }, {
+    "id" : "propertyValue",
+    "name" : "Property Value",
+    "type" : "string",
+    "required" : false,
+    "sourcePage" : 3,
+    "sourceExcerpt" : "Property Value\tProperty Value\tText",
+    "disposition" : "proposed"
+  }, {
+    "id" : "urgency",
+    "name" : "Urgency",
+    "type" : "number",
+    "required" : false,
+    "sourcePage" : 3,
+    "sourceExcerpt" : "Urgency\tPriority/urgency of the case\tDecimal",
+    "disposition" : "proposed"
+  }, {
+    "id" : "workStatus",
+    "name" : "Work Status",
+    "type" : "string",
+    "required" : false,
+    "sourcePage" : 3,
+    "sourceExcerpt" : "Work Status\tWork status of the case\tText",
+    "disposition" : "proposed"
+  }, {
+    "id" : "approvalDate",
+    "name" : "Approval Date",
+    "type" : "string",
+    "required" : false,
+    "sourcePage" : 3,
+    "sourceExcerpt" : "Approval Date\tApproval Date\tText",
+    "disposition" : "proposed"
+  }, {
+    "id" : "createdBy",
+    "name" : "Created by",
+    "type" : "string",
+    "required" : false,
+    "sourcePage" : 3,
+    "sourceExcerpt" : "Created by\tUser that created the case\tText",
+    "disposition" : "proposed"
+  }, {
+    "id" : "createdDateTime",
+    "name" : "Created date/time",
+    "type" : "string",
+    "required" : false,
+    "sourcePage" : 4,
+    "sourceExcerpt" : "Created date/time\tDate/time case was created\tText",
+    "disposition" : "proposed"
+  }, {
+    "id" : "description",
+    "name" : "Description",
+    "type" : "string",
+    "required" : false,
+    "sourcePage" : 4,
+    "sourceExcerpt" : "Description\tDescription for this individual case instance\tText",
+    "disposition" : "proposed"
+  }, {
+    "id" : "disbursementDate",
+    "name" : "Disbursement Date",
+    "type" : "string",
+    "required" : false,
+    "sourcePage" : 4,
+    "sourceExcerpt" : "Disbursement Date\tDisbursement Date\tText",
+    "disposition" : "proposed"
+  }, {
+    "id" : "interestRate",
+    "name" : "Interest Rate",
+    "type" : "string",
+    "required" : false,
+    "sourcePage" : 4,
+    "sourceExcerpt" : "Interest Rate\tInterest Rate\tText",
+    "disposition" : "proposed"
+  }, {
+    "id" : "loanStatus",
+    "name" : "Loan Status",
+    "type" : "string",
+    "required" : false,
+    "sourcePage" : 4,
+    "sourceExcerpt" : "Loan Status\tLoan Status\tText",
+    "disposition" : "proposed"
+  }, {
+    "id" : "loanTerm",
+    "name" : "Loan Term",
+    "type" : "string",
+    "required" : false,
+    "sourcePage" : 4,
+    "sourceExcerpt" : "Loan Term\tLoan Term\tText",
+    "disposition" : "proposed"
+  }, {
+    "id" : "resolvedBy",
+    "name" : "Resolved by",
+    "type" : "string",
+    "required" : false,
+    "sourcePage" : 4,
+    "sourceExcerpt" : "Resolved by\tUser that resolved the case\tText",
+    "disposition" : "proposed"
+  }, {
+    "id" : "resolvedDateTime",
+    "name" : "Resolved date/time",
+    "required" : false,
+    "sourcePage" : 4,
+    "sourceExcerpt" : "Resolved date/time\tDate/time case was resolved\tDateTime",
+    "disposition" : "proposed"
+  } ],
+  "steps" : [ {
+    "id" : "step-collect-applicant-information",
+    "name" : "Collect Applicant Information",
+    "stage" : "stage-capture-borrower-s-information",
+    "type" : "task",
+    "next" : "step-existing-customer",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Collect Applicant Information",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-existing-customer",
+    "name" : "Existing Customer?",
+    "stage" : "stage-capture-borrower-s-information",
+    "type" : "task",
+    "next" : "step-existing-pre-qualification",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Existing Customer?",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-existing-pre-qualification",
+    "name" : "Existing pre-qualification?",
+    "stage" : "stage-capture-borrower-s-information",
+    "type" : "task",
+    "next" : "step-select-product-purpose",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Existing pre-qualification?",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-select-product-purpose",
+    "name" : "Select product & purpose",
+    "stage" : "stage-capture-borrower-s-information",
+    "type" : "automated",
+    "next" : "decision-check-initial-eligibility-criteria",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Select product & purpose",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-in-principal-approval-or-reject",
+    "name" : "In-principal Approval or Reject",
+    "stage" : "stage-capture-borrower-s-information",
+    "type" : "approval",
+    "next" : "step-notify-customer-on-outcome-of-pre-qualification-checks",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "In-principal Approval or Reject",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-notify-customer-on-outcome-of-pre-qualification-checks",
+    "name" : "Notify Customer on Outcome of Pre-Qualification Checks",
+    "stage" : "stage-capture-borrower-s-information",
+    "type" : "automated",
+    "next" : "step-collect-applicant-information-2",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Notify Customer on Outcome of Pre-Qualification Checks",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-collect-applicant-information-2",
+    "name" : "Collect Applicant Information",
+    "stage" : "stage-mortgage-application-submission",
+    "type" : "task",
+    "next" : "step-collect-income-details",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Collect Applicant Information",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-collect-income-details",
+    "name" : "Collect Income Details",
+    "stage" : "stage-mortgage-application-submission",
+    "type" : "task",
+    "next" : "step-collect-expenses-dependents",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Collect Income Details",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-collect-expenses-dependents",
+    "name" : "Collect Expenses & Dependents",
+    "stage" : "stage-mortgage-application-submission",
+    "type" : "task",
+    "next" : "step-collect-other-assets",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Collect Expenses & Dependents",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-collect-other-assets",
+    "name" : "Collect Other Assets",
+    "stage" : "stage-mortgage-application-submission",
+    "type" : "task",
+    "next" : "step-upload-documents",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Collect Other Assets",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-upload-documents",
+    "name" : "Upload Documents",
+    "stage" : "stage-mortgage-application-submission",
+    "type" : "task",
+    "next" : "step-validate-applicant-information",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Upload Documents",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-validate-applicant-information",
+    "name" : "Validate Applicant Information",
+    "stage" : "stage-mortgage-application-submission",
+    "type" : "task",
+    "next" : "step-orchestrate-consent",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Validate Applicant Information",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-orchestrate-consent",
+    "name" : "Orchestrate Consent",
+    "stage" : "stage-mortgage-application-submission",
+    "type" : "automated",
+    "next" : "step-check-income",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Orchestrate Consent",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-check-income",
+    "name" : "Check Income",
+    "stage" : "stage-mortgage-application-submission",
+    "type" : "automated",
+    "next" : "step-check-employment-history",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Check Income",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-check-employment-history",
+    "name" : "Check Employment History",
+    "stage" : "stage-mortgage-application-submission",
+    "type" : "automated",
+    "next" : "step-request-additional-information",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Check Employment History",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-request-additional-information",
+    "name" : "Request Additional Information",
+    "stage" : "stage-mortgage-application-submission",
+    "type" : "task",
+    "next" : "step-confirm-source-of-application",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Request Additional Information",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-confirm-source-of-application",
+    "name" : "Confirm Source of Application",
+    "stage" : "stage-evidence-provision",
+    "type" : "task",
+    "next" : "step-collect-guarantor-information",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Confirm Source of Application",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-collect-guarantor-information",
+    "name" : "Collect Guarantor Information",
+    "stage" : "stage-evidence-provision",
+    "type" : "task",
+    "next" : "step-collect-guarantor-income",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Collect Guarantor Information",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-collect-guarantor-income",
+    "name" : "Collect Guarantor Income",
+    "stage" : "stage-evidence-provision",
+    "type" : "task",
+    "next" : "step-collect-guarantor-expenses",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Collect Guarantor Income",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-collect-guarantor-expenses",
+    "name" : "Collect Guarantor Expenses",
+    "stage" : "stage-evidence-provision",
+    "type" : "task",
+    "next" : "step-collect-guarantor-collateral",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Collect Guarantor Expenses",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-collect-guarantor-collateral",
+    "name" : "Collect Guarantor Collateral",
+    "stage" : "stage-evidence-provision",
+    "type" : "task",
+    "next" : "step-upload-documents-2",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Collect Guarantor Collateral",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-upload-documents-2",
+    "name" : "Upload Documents",
+    "stage" : "stage-evidence-provision",
+    "type" : "task",
+    "next" : "step-collect-property-details",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Upload Documents",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-collect-property-details",
+    "name" : "Collect Property Details",
+    "stage" : "stage-evidence-provision",
+    "type" : "task",
+    "next" : "step-verify-identify-kyc",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Collect Property Details",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-verify-identify-kyc",
+    "name" : "Verify Identify/KYC",
+    "stage" : "stage-verification-of-data",
+    "type" : "automated",
+    "next" : "step-check-aml-terrorism-sanctions",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Verify Identify/KYC",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-check-aml-terrorism-sanctions",
+    "name" : "Check AML/Terrorism/Sanctions",
+    "stage" : "stage-verification-of-data",
+    "type" : "automated",
+    "next" : "step-perform-fraud-checks",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Check AML/Terrorism/Sanctions",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-perform-fraud-checks",
+    "name" : "Perform Fraud Checks",
+    "stage" : "stage-verification-of-data",
+    "type" : "automated",
+    "next" : "step-foreign-tax-checks-crs",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Perform Fraud Checks",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-foreign-tax-checks-crs",
+    "name" : "Foreign Tax Checks (CRS)",
+    "stage" : "stage-verification-of-data",
+    "type" : "automated",
+    "next" : "step-mark-customer-as-verified",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Foreign Tax Checks (CRS)",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-mark-customer-as-verified",
+    "name" : "Mark Customer as Verified",
+    "stage" : "stage-verification-of-data",
+    "type" : "automated",
+    "next" : "step-auto-verify-income",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Mark Customer as Verified",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-auto-verify-income",
+    "name" : "Auto Verify Income",
+    "stage" : "stage-verification-of-data",
+    "type" : "automated",
+    "next" : "step-auto-verify-expenses",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Auto Verify Income",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-auto-verify-expenses",
+    "name" : "Auto Verify Expenses",
+    "stage" : "stage-verification-of-data",
+    "type" : "automated",
+    "next" : "step-auto-verify-assets",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Auto Verify Expenses",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-auto-verify-assets",
+    "name" : "Auto Verify Assets",
+    "stage" : "stage-verification-of-data",
+    "type" : "automated",
+    "next" : "step-auto-verify-liabilities",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Auto Verify Assets",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-auto-verify-liabilities",
+    "name" : "Auto Verify Liabilities",
+    "stage" : "stage-verification-of-data",
+    "type" : "automated",
+    "next" : "step-verify-ccr-data",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Auto Verify Liabilities",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-verify-ccr-data",
+    "name" : "Verify CCR Data",
+    "stage" : "stage-verification-of-data",
+    "type" : "automated",
+    "next" : "step-check-collateral-management-system",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Verify CCR Data",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-check-collateral-management-system",
+    "name" : "Check Collateral Management System",
+    "stage" : "stage-verification-of-data",
+    "type" : "automated",
+    "next" : "step-perform-title-search",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Check Collateral Management System",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-perform-title-search",
+    "name" : "Perform Title Search",
+    "stage" : "stage-verification-of-data",
+    "type" : "automated",
+    "next" : "step-get-credit-score",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Perform Title Search",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-get-credit-score",
+    "name" : "Get Credit Score",
+    "stage" : "stage-credit-assessment",
+    "type" : "automated",
+    "next" : "step-analyze-income-and-expenses",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Get Credit Score",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-analyze-income-and-expenses",
+    "name" : "Analyze Income and Expenses",
+    "stage" : "stage-credit-assessment",
+    "type" : "automated",
+    "next" : "step-review-credit-history",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Analyze Income and Expenses",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-review-credit-history",
+    "name" : "Review Credit History",
+    "stage" : "stage-credit-assessment",
+    "type" : "automated",
+    "next" : "decision-validate-debt-to-income-ratio",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Review Credit History",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-conditional-approval-reject",
+    "name" : "Conditional Approval/Reject",
+    "stage" : "stage-credit-assessment",
+    "type" : "approval",
+    "next" : "step-assess-property-value",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Conditional Approval/Reject",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-assess-property-value",
+    "name" : "Assess Property Value",
+    "stage" : "stage-property-assessment-and-loan-approval",
+    "type" : "task",
+    "next" : "decision-assess-loan-amount",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Assess Property Value",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-approve-reject-loan",
+    "name" : "Approve/Reject Loan",
+    "stage" : "stage-property-assessment-and-loan-approval",
+    "type" : "approval",
+    "next" : "step-apply-standard-pricing",
+    "sourcePage" : 3,
+    "sourceExcerpt" : "Approve/Reject Loan",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-apply-standard-pricing",
+    "name" : "Apply Standard Pricing",
+    "stage" : "stage-property-assessment-and-loan-approval",
+    "type" : "automated",
+    "next" : "step-bundle-products",
+    "sourcePage" : 3,
+    "sourceExcerpt" : "Apply Standard Pricing",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-bundle-products",
+    "name" : "Bundle Products",
+    "stage" : "stage-property-assessment-and-loan-approval",
+    "type" : "automated",
+    "next" : "step-send-offer-to-customer",
+    "sourcePage" : 3,
+    "sourceExcerpt" : "Bundle Products",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-send-offer-to-customer",
+    "name" : "Send Offer to Customer",
+    "stage" : "stage-property-assessment-and-loan-approval",
+    "type" : "automated",
+    "next" : "step-receive-customer-acceptance-on-offer",
+    "sourcePage" : 3,
+    "sourceExcerpt" : "Send Offer to Customer",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-receive-customer-acceptance-on-offer",
+    "name" : "Receive Customer Acceptance on Offer",
+    "stage" : "stage-property-assessment-and-loan-approval",
+    "type" : "automated",
+    "next" : "decision-accept-pricing-and-fees",
+    "sourcePage" : 3,
+    "sourceExcerpt" : "Receive Customer Acceptance on Offer",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-finalize-total-loan-amount",
+    "name" : "Finalize Total Loan Amount",
+    "stage" : "stage-property-assessment-and-loan-approval",
+    "type" : "automated",
+    "next" : "step-generate-payment-schedule",
+    "sourcePage" : 3,
+    "sourceExcerpt" : "Finalize Total Loan Amount",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-generate-payment-schedule",
+    "name" : "Generate Payment Schedule",
+    "stage" : "stage-loan-agreement",
+    "type" : "automated",
+    "next" : "step-generate-loan-contract",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Generate Payment Schedule",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-generate-loan-contract",
+    "name" : "Generate Loan Contract",
+    "stage" : "stage-loan-agreement",
+    "type" : "automated",
+    "next" : "step-review-loan-contract",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Generate Loan Contract",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-review-loan-contract",
+    "name" : "Review Loan Contract",
+    "stage" : "stage-loan-agreement",
+    "type" : "automated",
+    "next" : "step-approval-loan-contract",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Review Loan Contract",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-approval-loan-contract",
+    "name" : "Approval Loan Contract",
+    "stage" : "stage-loan-agreement",
+    "type" : "approval",
+    "next" : "step-send-contract-for-esignature",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Approval Loan Contract",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-send-contract-for-esignature",
+    "name" : "Send Contract for eSignature",
+    "stage" : "stage-loan-agreement",
+    "type" : "automated",
+    "next" : "step-send-confirmation",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Send Contract for eSignature",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-send-confirmation",
+    "name" : "Send Confirmation",
+    "stage" : "stage-loan-agreement",
+    "type" : "automated",
+    "next" : "step-receive-electronic-signature",
+    "sourcePage" : 3,
+    "sourceExcerpt" : "Send Confirmation",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-receive-electronic-signature",
+    "name" : "Receive Electronic Signature",
+    "stage" : "stage-loan-agreement",
+    "type" : "automated",
+    "next" : "step-check-signed-contract",
+    "sourcePage" : 3,
+    "sourceExcerpt" : "Receive Electronic Signature",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-check-signed-contract",
+    "name" : "Check Signed Contract",
+    "stage" : "stage-loan-agreement",
+    "type" : "automated",
+    "next" : "step-update-master-customer-data",
+    "sourcePage" : 3,
+    "sourceExcerpt" : "Check Signed Contract",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-update-master-customer-data",
+    "name" : "Update Master Customer Data",
+    "stage" : "stage-loan-disbursement",
+    "type" : "automated",
+    "next" : "step-document-lodging",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Update Master Customer Data",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-document-lodging",
+    "name" : "Document Lodging",
+    "stage" : "stage-loan-disbursement",
+    "type" : "automated",
+    "next" : "step-disburse-loan",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Document Lodging",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-disburse-loan",
+    "name" : "Disburse Loan",
+    "stage" : "stage-loan-disbursement",
+    "type" : "automated",
+    "next" : "step-notify-loan-disbursement",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Disburse Loan",
+    "disposition" : "proposed"
+  }, {
+    "id" : "step-notify-loan-disbursement",
+    "name" : "Notify Loan Disbursement",
+    "stage" : "stage-loan-disbursement",
+    "type" : "automated",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Notify Loan Disbursement",
+    "disposition" : "proposed"
+  } ],
+  "decisions" : [ {
+    "id" : "decision-check-initial-eligibility-criteria",
+    "name" : "Check Initial Eligibility Criteria",
+    "rules" : [ ],
+    "otherwise" : "step-in-principal-approval-or-reject",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Check Initial Eligibility Criteria",
+    "disposition" : "proposed"
+  }, {
+    "id" : "decision-validate-debt-to-income-ratio",
+    "name" : "Validate Debt-to-Income Ratio",
+    "rules" : [ ],
+    "otherwise" : "step-conditional-approval-reject",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Validate Debt-to-Income Ratio",
+    "disposition" : "proposed"
+  }, {
+    "id" : "decision-assess-loan-amount",
+    "name" : "Assess Loan Amount",
+    "rules" : [ ],
+    "otherwise" : "decision-check-property-value",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Assess Loan Amount",
+    "disposition" : "proposed"
+  }, {
+    "id" : "decision-check-property-value",
+    "name" : "Check Property Value",
+    "rules" : [ ],
+    "otherwise" : "decision-assess-loan-to-value",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Check Property Value",
+    "disposition" : "proposed"
+  }, {
+    "id" : "decision-assess-loan-to-value",
+    "name" : "Assess Loan-to-Value",
+    "rules" : [ ],
+    "otherwise" : "step-approve-reject-loan",
+    "sourcePage" : 2,
+    "sourceExcerpt" : "Assess Loan-to-Value",
+    "disposition" : "proposed"
+  }, {
+    "id" : "decision-accept-pricing-and-fees",
+    "name" : "Accept Pricing and Fees",
+    "rules" : [ ],
+    "otherwise" : "step-finalize-total-loan-amount",
+    "sourcePage" : 3,
+    "sourceExcerpt" : "Accept Pricing and Fees",
+    "disposition" : "proposed"
+  } ],
+  "slas" : [ ],
+  "outcomes" : [ ],
+  "integrations" : [ {
+    "id" : "integration-loan-application",
+    "name" : "Loan Application",
+    "target" : "backend loan management system or core banking applications",
+    "sourcePage" : 9,
+    "sourceExcerpt" : "Loan Application",
+    "disposition" : "proposed"
+  }, {
+    "id" : "integration-applicant",
+    "name" : "Applicant",
+    "target" : "Customer Relationship Management (CRM) system",
+    "sourcePage" : 9,
+    "sourceExcerpt" : "Applicant",
+    "disposition" : "proposed"
+  }, {
+    "id" : "integration-loan-product",
+    "name" : "Loan Product",
+    "target" : "Product Catalog",
+    "sourcePage" : 9,
+    "sourceExcerpt" : "Loan Product",
+    "disposition" : "proposed"
+  }, {
+    "id" : "integration-credit-score",
+    "name" : "Credit Score",
+    "sourcePage" : 9,
+    "sourceExcerpt" : "Credit Score",
+    "disposition" : "proposed"
+  }, {
+    "id" : "integration-loan-approval",
+    "name" : "Loan Approval",
+    "target" : "Loan Approval System",
+    "sourcePage" : 9,
+    "sourceExcerpt" : "Loan Approval",
+    "disposition" : "proposed"
+  }, {
+    "id" : "integration-loan-disbursement",
+    "name" : "Loan Disbursement",
+    "target" : "Disbursement System",
+    "sourcePage" : 9,
+    "sourceExcerpt" : "Loan Disbursement",
+    "disposition" : "proposed"
+  }, {
+    "id" : "integration-loan-document",
+    "name" : "Loan Document",
+    "target" : "Document Management System",
+    "sourcePage" : 9,
+    "sourceExcerpt" : "Loan Document",
+    "disposition" : "proposed"
+  } ]
+}

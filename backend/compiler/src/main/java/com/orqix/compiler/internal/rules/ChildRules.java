@@ -91,22 +91,34 @@ final class ChildRules {
             Node.ForEach each = n.forEach();
             String key = each.itemsRef().substring("/input/".length());
             FormSchema.Field source = rc.definition().inputSchema().properties().get(key);
-            FormSchema.Field target = in.properties().get(each.itemInput());
+            boolean usable = false;
             if (source == null || source.type() != FieldKind.ARRAY || !rc.definition().inputSchema().required().contains(key)) {
                 rc.issues().blocker("WF_FOREACH_COLLECTION", n.configPath("forEach") + "/itemsRef", n.id(), null,
-                        "Choose a required request collection with bounded scalar items.");
+                        "Choose a required request collection with bounded items.");
             } else if (source.maxItems() > each.maxItems()) {
                 rc.issues().blocker("WF_FOREACH_BOUND", n.configPath("forEach") + "/maxItems", n.id(), null,
                         "The iteration limit must cover the collection's maximum item count (" + source.maxItems() + ").");
-            } else if (target != null) {
-                FormSchema.Field item = source.items();
-                String problem = FieldTypes.incompatibility(new FieldType(item.type(), item.enumValues() == null ? null : new TreeSet<>(item.enumValues()), false, item.minimum(), item.maximum()),
-                        target.type(), target.enumValues() == null ? null : new TreeSet<>(target.enumValues()));
-                if (problem != null) rc.issues().blocker("WF_FOREACH_ITEM_TYPE", n.configPath("forEach") + "/itemInput", n.id(), null, problem);
+            } else {
+                usable = true;
             }
-            if (target == null || n.inputMapping().containsKey(each.itemInput())) {
-                rc.issues().blocker("WF_FOREACH_INPUT", n.configPath("forEach") + "/itemInput", n.id(), null,
-                        "Choose an existing child request field which is not also supplied by inputMapping.");
+            if (!each.itemMapping().isEmpty()) {
+                rowMapping(rc, n, each, usable ? source : null, in);
+            } else {
+                FormSchema.Field target = each.itemInput() == null ? null : in.properties().get(each.itemInput());
+                if (usable && source.rows()) {
+                    rc.issues().blocker("WF_FOREACH_ITEM_TYPE", n.configPath("forEach") + "/itemInput", n.id(), null,
+                            q(source.title()) + " is a list of rows. Choose which column fills which field of "
+                                    + q(child.name()) + " (item mapping) instead of one field for the whole item.");
+                } else if (usable && target != null) {
+                    FormSchema.Field item = source.items();
+                    String problem = FieldTypes.incompatibility(new FieldType(item.type(), item.enumValues() == null ? null : new TreeSet<>(item.enumValues()), false, item.minimum(), item.maximum()),
+                            target.type(), target.enumValues() == null ? null : new TreeSet<>(target.enumValues()));
+                    if (problem != null) rc.issues().blocker("WF_FOREACH_ITEM_TYPE", n.configPath("forEach") + "/itemInput", n.id(), null, problem);
+                }
+                if (target == null || n.inputMapping().containsKey(each.itemInput())) {
+                    rc.issues().blocker("WF_FOREACH_INPUT", n.configPath("forEach") + "/itemInput", n.id(), null,
+                            "Choose an existing child request field which is not also supplied by inputMapping.");
+                }
             }
         }
         String name = q(child.name());
@@ -131,7 +143,7 @@ final class ChildRules {
         List<String> required = in.required();
         for (String key : required) {
             if (!n.inputMapping().containsKey(key) && in.properties().containsKey(key)
-                    && (n.forEach() == null || !key.equals(n.forEach().itemInput()))) {
+                    && (n.forEach() == null || !n.forEach().fills(key))) {
                 rc.issues().blocker("WF_CHILD_MAPPING_MISSING_REQUIRED", n.configPath("inputMapping"), n.id(), null,
                         name + " requires " + q(in.properties().get(key).title()) + ", but " + q(n)
                                 + " does not provide it.");
@@ -161,6 +173,51 @@ final class ChildRules {
                     rc.issues().blocker("WF_COLLECTION_RESULT", path, n.id(), null,
                             "Choose a scalar child result guaranteed on every completion path.");
                 }
+            }
+        }
+    }
+
+    /**
+     * S105: a for-each over a list of rows copies named columns of the current row into child request fields. Each
+     * target must exist, not also come from inputMapping, and accept the column's type; a column a row may leave empty
+     * cannot fill a required child field.
+     */
+    private static void rowMapping(RuleContext rc, Node.StartWorkflow n, Node.ForEach each, FormSchema.Field source,
+            FormSchema in) {
+        String base = n.configPath("forEach") + "/itemMapping";
+        if (source != null && !source.rows()) {
+            rc.issues().blocker("WF_FOREACH_ITEM_TYPE", base, n.id(), null, q(source.title()) + " is a list of single"
+                    + " values, so it has no columns. Choose the child field that receives each item instead.");
+            return;
+        }
+        for (java.util.Map.Entry<String, String> e : each.itemMapping().entrySet()) {
+            String path = JsonPointers.append(base, e.getKey());
+            FormSchema.Field target = in.properties().get(e.getKey());
+            if (target == null || n.inputMapping().containsKey(e.getKey())) {
+                rc.issues().blocker("WF_FOREACH_INPUT", path, n.id(), null, target == null
+                        ? "The started workflow has no request field " + q(e.getKey()) + ". It asks for: "
+                                + String.join(", ", in.properties().keySet()) + "."
+                        : q(target.title()) + " is already filled by a request value, so it cannot also come from each row.");
+                continue;
+            }
+            if (source == null) {
+                continue;
+            }
+            FormSchema.Field column = source.items().rowFields().get(e.getValue());
+            if (column == null) {
+                rc.issues().blocker("WF_FOREACH_COLUMN", path, n.id(), null, q(source.title()) + " has no column "
+                        + q(e.getValue()) + ". Columns: " + String.join(", ", source.items().rowFields().keySet()) + ".");
+                continue;
+            }
+            boolean optional = !source.items().rowRequired().contains(e.getValue());
+            String problem = FieldTypes.incompatibility(new FieldType(column.type(), column.enumValues() == null ? null
+                    : new TreeSet<>(column.enumValues()), optional, column.minimum(), column.maximum()), target);
+            if (problem == null && optional && in.required().contains(e.getKey())) {
+                problem = "is required, but the column " + q(column.title()) + " may be empty in a row";
+            }
+            if (problem != null) {
+                rc.issues().blocker("WF_FOREACH_ITEM_TYPE", path, n.id(), null, "The field " + q(target.title())
+                        + " " + problem + ".");
             }
         }
     }

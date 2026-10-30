@@ -200,6 +200,11 @@ export function describeEvent(event: RunEvent, ctx: EventContext): string {
       return `${actorName(event, ctx)} picked up ${label}`
     case 'TASK_DISPATCHED':
       return `${str(event.data.assignee) ?? 'Someone'} was assigned ${label}${str(event.data.rule) ? `: ${str(event.data.rule)}` : ''}`
+    case 'TASK_PROPOSED_UNAVAILABLE': {
+      // S104: the person named on the request item cannot decide it; the email is never in the event.
+      const item = str(event.data.itemLabel)
+      return `The person proposed for ${label}${item ? ` (${item})` : ''} cannot decide it, so it waits in the group queue`
+    }
     case 'TASK_RELEASED':
       return `${actorName(event, ctx)} returned ${label} to ${groupName(str(event.data.candidateGroup), ctx)}`
     case 'TASK_REASSIGNED': {
@@ -208,6 +213,12 @@ export function describeEvent(event: RunEvent, ctx: EventContext): string {
     }
     case 'TASK_PRIORITY_CHANGED':
       return `${actorName(event, ctx)} changed ${label} priority from ${event.data.from} to ${event.data.to}${str(event.data.reason) ? `: ${str(event.data.reason)}` : ''}`
+    case 'TASK_SENT_BACK':
+      return `${actorName(event, ctx)} sent ${label} back to the requester${str(event.data.reason) ? `: ${str(event.data.reason)}` : ''}`
+    case 'TASK_SEND_BACK_WITHDRAWN':
+      return `${actorName(event, ctx)} withdrew the send-back of ${label}`
+    case 'TASK_SEND_BACK_ANSWERED':
+      return `${actorName(event, ctx)} answered the send-back of ${label}`
     case 'INPUT_CORRECTED':
       return `${actorName(event,ctx)} corrected ${event.data.fields} request field${event.data.fields===1 ? '' : 's'}${str(event.data.reason) ? `: ${str(event.data.reason)}` : ''}`
     case 'TASK_DECIDED': {

@@ -44,6 +44,12 @@ export const setWorkflowOwner = (ws: string, workflowId: string, body: S['SetWor
 export const archiveWorkflow = (ws: string, workflowId: string, body: S['ArchiveWorkflow']) =>
   call(api.POST('/workspaces/{workspaceId}/workflows/{workflowId}/archive', { params: { path: { workspaceId: ws, workflowId } }, body }))
 
+export const listArchivedWorkflows = (ws: string) =>
+  call(api.GET('/workspaces/{workspaceId}/archived-workflows', { params: { path: { workspaceId: ws } } }))
+
+export const restoreWorkflow = (ws: string, workflowId: string, body: S['RestoreWorkflow']) =>
+  call(api.POST('/workspaces/{workspaceId}/workflows/{workflowId}/restore', { params: { path: { workspaceId: ws, workflowId } }, body }))
+
 export const getWorkflowDiscussion = (ws: string, workflowId: string, elementId?: string) =>
   call(api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/discussion', { params: { path: { workspaceId: ws, workflowId }, query: elementId ? { elementId } : {} } }))
 
@@ -150,6 +156,55 @@ export async function importDecisionCsv(ws: string, workflowId: string, decision
   )
   return { draft: data, etag: etagOf(response) ?? revisionEtag(data.revision) }
 }
+
+// Decision table DMN (docs/build/S121)
+/** Standard DMN 1.3 file of a draft table; workflow.read. */
+export async function exportDecisionDmn(ws: string, workflowId: string, decisionKey: string) {
+  const { data, response } = await callWithResponse(
+    api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/decisions/{decisionKey}/dmn', { params: { path: { workspaceId: ws, workflowId, decisionKey } }, parseAs: 'blob' }),
+  )
+  return { blob: data as unknown as Blob, filename: filenameOf(response, `${decisionKey}.dmn`) }
+}
+
+/** Standard DMN 1.3 file of a published release's table; workflow.export. */
+export async function exportReleaseDecisionDmn(ws: string, workflowId: string, releaseId: string, decisionKey: string) {
+  const { data, response } = await callWithResponse(
+    api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/releases/{releaseId}/decisions/{decisionKey}/dmn', { params: { path: { workspaceId: ws, workflowId, releaseId, decisionKey } }, parseAs: 'blob' }),
+  )
+  return { blob: data as unknown as Blob, filename: filenameOf(response, `${decisionKey}.dmn`) }
+}
+
+/** Standard DMN 1.3 file of a shared decision version. */
+export async function exportSharedDecisionDmn(ws: string, assetKey: string, version: number) {
+  const { data, response } = await callWithResponse(
+    api.GET('/workspaces/{workspaceId}/shared-assets/decision/{assetKey}/versions/{version}/dmn', { params: { path: { workspaceId: ws, assetKey, version } }, parseAs: 'blob' }),
+  )
+  return { blob: data as unknown as Blob, filename: filenameOf(response, `${assetKey}-v${version}.dmn`) }
+}
+
+/** Replaces a draft table with a decision table of a DMN file; never publishes, saves the next draft revision. */
+export async function importDecisionDmn(ws: string, workflowId: string, decisionKey: string, revision: number, xml: string, decisionId?: string) {
+  const { data, response } = await callWithResponse(
+    api.PUT('/workspaces/{workspaceId}/workflows/{workflowId}/decisions/{decisionKey}/dmn', {
+      params: { path: { workspaceId: ws, workflowId, decisionKey }, query: decisionId ? { decisionId } : {}, header: { 'If-Match': revisionEtag(revision) } },
+      body: xml,
+      bodySerializer: (b: unknown) => b as BodyInit,
+      headers: { 'Content-Type': 'application/xml' },
+    }),
+  )
+  return { draft: data, etag: etagOf(response) ?? revisionEtag(data.revision) }
+}
+
+/** Converts a DMN file into shared decision content for review; nothing is stored. */
+export const convertDecisionDmn = (ws: string, xml: string, decisionId?: string) =>
+  call(
+    api.POST('/workspaces/{workspaceId}/shared-assets/decision/dmn', {
+      params: { path: { workspaceId: ws }, query: decisionId ? { decisionId } : {} },
+      body: xml,
+      bodySerializer: (b: unknown) => b as BodyInit,
+      headers: { 'Content-Type': 'application/xml' },
+    }),
+  )
 
 export const validateDraft = (ws: string, workflowId: string, revision: number) =>
   call(
@@ -500,16 +555,21 @@ export const getAccessOverview = (ws: string) => call(api.GET('/workspaces/{work
 export const listGroups = (ws: string) => call(api.GET('/workspaces/{workspaceId}/groups', { params: { path: { workspaceId: ws } } }))
 
 // Migration sources are immutable; conversion creates a validated draft, never a release.
-export const uploadMigration = (ws: string, body: { fileName: string; content: string; sourceFormat?: 'bpmn' | 'dmn' | 'camundaForm' | 'pegaArchive' | 'pegaMapping' | 'pegaXpdl' | 'cmmn' }) =>
+export const uploadMigration = (ws: string, body: { fileName: string; content: string; sourceFormat?: 'bpmn' | 'dmn' | 'camundaForm' | 'pegaArchive' | 'pegaMapping' | 'pegaXpdl' | 'cmmn' | 'pegaRules' }) =>
   call(api.POST('/workspaces/{workspaceId}/migrations', { params: { path: { workspaceId: ws } }, body }))
 export const getMigration = (ws: string, migrationId: string) =>
   call(api.GET('/workspaces/{workspaceId}/migrations/{migrationId}', { params: { path: { workspaceId: ws, migrationId } } }))
+// Native Pega rule archive (docs/build/S112): inventory, effective rules and per-rule conversion results.
+export const getPegaRuleArchive = (ws: string, migrationId: string) =>
+  call(api.GET('/workspaces/{workspaceId}/migrations/{migrationId}/pega-rules', { params: { path: { workspaceId: ws, migrationId } } }))
+export const convertPegaCaseDefinition = (ws: string, migrationId: string, body: S['PegaCaseDefinitionRequest']) =>
+  call(api.POST('/workspaces/{workspaceId}/migrations/{migrationId}/case-definition', { params: { path: { workspaceId: ws, migrationId } }, body }))
 export const convertMigration = (ws: string, migrationId: string, body: S['ConvertMigrationRequest']) =>
   call(api.POST('/workspaces/{workspaceId}/migrations/{migrationId}/convert', { params: { path: { workspaceId: ws, migrationId } }, body }))
 
 // Pega Blueprint PDF (docs/build/S91): multipart upload, reviewed transcription revisions, optional AI proposal (never applied).
-export const uploadBlueprintMigration = (ws: string, file: File) =>
-  uploadFile<S['MigrationJob']>(`/workspaces/${ws}/migrations/blueprints`, file)
+export const uploadBlueprintMigration = (ws: string, file: File, caseType?: string) =>
+  uploadFile<S['MigrationJob']>(`/workspaces/${ws}/migrations/blueprints`, file, { fields: caseType?.trim() ? { caseType: caseType.trim() } : {} })
 export const getBlueprintTranscription = (ws: string, migrationId: string) =>
   call(api.GET('/workspaces/{workspaceId}/migrations/{migrationId}/blueprint', { params: { path: { workspaceId: ws, migrationId } } }))
 export const saveBlueprintTranscription = (ws: string, migrationId: string, body: { expectedRevision: number; transcription: S['BlueprintTranscription'] }) =>

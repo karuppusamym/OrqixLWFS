@@ -5,7 +5,7 @@
  * catalog's public facade; nothing imported becomes executable without the normal validate and publish steps.
  */
 @ApplicationModule(displayName = "Migration",
-        allowedDependencies = {"shared", "identity", "audit", "catalog", "compiler", "integration"})
+        allowedDependencies = {"shared", "identity", "audit", "catalog", "compiler", "integration", "cases"})
 package com.orqix.migration;
 
 import org.springframework.modulith.ApplicationModule;

@@ -364,6 +364,11 @@ class OutboundWebhookApiTest extends RuntimeTestBase {
         } finally {
             pool.shutdownNow();
         }
+        // The application's own scheduled dispatcher runs too (a third pod): it may still hold a claim when the rounds
+        // end, so let any send in flight finish before checking that every row was delivered exactly once.
+        org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(30))
+                .pollInterval(java.time.Duration.ofMillis(250))
+                .until(() -> rows.stream().allMatch(r -> "delivered".equals(status(r))));
         for (UUID row : rows) {
             assertThat(status(row)).as(row.toString()).isEqualTo("delivered");
             assertThat(received(row)).as(row.toString()).isEqualTo(1);

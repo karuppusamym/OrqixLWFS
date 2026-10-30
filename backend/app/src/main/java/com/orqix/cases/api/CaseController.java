@@ -151,6 +151,20 @@ public class CaseController {
         return response(service.planItem(callers.current(),workspaceId,instanceId,planItemId,"occur",key,request));
     }
 
+    @PostMapping("/instances/{instanceId}/plan-items/{planItemId}/plan")
+    public ResponseEntity<CaseService.Instance> planDiscretionaryItem(@PathVariable UUID workspaceId,@PathVariable UUID instanceId,
+            @PathVariable String planItemId,@RequestHeader(name=IdempotencyService.HEADER,required=false) String key,
+            @RequestBody CaseService.CaseCommand request) {
+        return response(service.planItem(callers.current(),workspaceId,instanceId,planItemId,"plan",key,request));
+    }
+
+    @PostMapping("/instances/{instanceId}/plan-items/{planItemId}/retryWorkflow")
+    public ResponseEntity<CaseService.Instance> retryWorkflowTask(@PathVariable UUID workspaceId,@PathVariable UUID instanceId,
+            @PathVariable String planItemId,@RequestHeader(name=IdempotencyService.HEADER,required=false) String key,
+            @RequestBody CaseService.CaseCommand request) {
+        return response(service.planItem(callers.current(),workspaceId,instanceId,planItemId,"retryWorkflow",key,request));
+    }
+
     private static ResponseEntity<CaseService.Instance> response(CaseService.Result<CaseService.Instance> result) {
         var response=ResponseEntity.ok();
         if(result.replayed()) response.header(IdempotencyService.REPLAYED_HEADER,"true");

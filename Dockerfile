@@ -54,7 +54,8 @@ RUN --mount=type=cache,target=/root/.m2 \
 FROM ${RUNTIME_IMAGE}
 
 # Apply the base image's pending OS security updates (the CI image scan blocks on fixed HIGH/CRITICAL findings, such as
-# python3 in ubi9/openjdk-21-runtime:1.24). The user is set back to the non-root default below.
+# CVE-2026-19445 and CVE-2026-19553 in python3/python3-libs of ubi9/openjdk-21-runtime:1.24). The user is set back to
+# the non-root default below.
 USER 0
 RUN microdnf -y update --nodocs --setopt=install_weak_deps=0 && microdnf clean all
 

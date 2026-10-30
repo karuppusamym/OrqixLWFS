@@ -1,6 +1,8 @@
 package com.orqix.runtime.internal;
 
 import java.time.Clock;
+import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -15,8 +17,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 import com.orqix.audit.AuditWriter;
 
 /**
- * Audits callback tokens that expired unused (S98 D5, D12), once each. Safe on every pod: rows are claimed with
- * {@code FOR UPDATE SKIP LOCKED}. Expiry itself needs no sweep: the poll and resume compute it from the stored time.
+ * Audits callback tokens that expired unused (S98 D5, D12), once each, and deletes closed waits older than
+ * {@code orqix.callbacks.retention} (S104). Safe on every pod: rows are claimed with {@code FOR UPDATE SKIP LOCKED}.
+ * Expiry itself needs no sweep: the poll and resume compute it from the stored time.
  */
 @Component
 @Profile("!migrate")
@@ -27,12 +30,18 @@ public class CallbackSweeper {
     private final CallbackStore store;
     private final AuditWriter audit;
     private final TransactionTemplate transactions;
+    private final CallbackSettings settings;
     private final Clock clock;
+    /** The purge looks at old rows only, and the retention is at least an hour: every ten minutes is plenty. */
+    static final java.time.Duration PURGE_EVERY = java.time.Duration.ofMinutes(10);
+    private Instant lastPurge = Instant.MIN;
 
-    public CallbackSweeper(CallbackStore store, AuditWriter audit, TransactionTemplate transactions, Clock clock) {
+    public CallbackSweeper(CallbackStore store, AuditWriter audit, TransactionTemplate transactions,
+            CallbackSettings settings, Clock clock) {
         this.store = store;
         this.audit = audit;
         this.transactions = transactions;
+        this.settings = settings;
         this.clock = clock;
     }
 
@@ -40,6 +49,11 @@ public class CallbackSweeper {
     public void sweep() {
         try {
             run();
+            Instant now = clock.instant();
+            if (!now.isBefore(lastPurge.plus(PURGE_EVERY))) {
+                lastPurge = now;
+                purge(now);
+            }
         } catch (RuntimeException e) {
             LOG.warn("Callback expiry sweep failed; it runs again shortly ({})", e.getClass().getSimpleName());
         }
@@ -58,5 +72,35 @@ public class CallbackSweeper {
             return expired.size();
         });
         return count == null ? 0 : count;
+    }
+
+    static final int PURGE_BATCH = 500;
+
+    /**
+     * Deletes closed waits whose closing time is older than the retention, as of {@code now} (also called by tests),
+     * in batches of 500 (at most 20 per pass), with one audit entry per workspace and batch.
+     *
+     * @return the number of waits deleted
+     */
+    public int purge(Instant now) {
+        Instant before = now.minus(settings.retention());
+        int total = 0;
+        for (int batch = 0; batch < 20; batch++) {
+            Integer deleted = transactions.execute(status -> {
+                List<UUID> workspaces = store.purgeClosed(before, PURGE_BATCH);
+                Map<UUID, Integer> counts = new LinkedHashMap<>();
+                workspaces.forEach(ws -> counts.merge(ws, 1, Integer::sum));
+                counts.forEach((ws, n) -> audit.write(new AuditWriter.Entry(ws, AuditWriter.ActorType.SYSTEM, null,
+                        "callback.waits-purged", "workspace", ws.toString(), AuditWriter.Outcome.SUCCESS,
+                        Map.of("count", n, "retentionSeconds", settings.retention().toSeconds()))));
+                return workspaces.size();
+            });
+            int n = deleted == null ? 0 : deleted;
+            total += n;
+            if (n < PURGE_BATCH) {
+                break;
+            }
+        }
+        return total;
     }
 }

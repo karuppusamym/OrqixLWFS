@@ -43,6 +43,17 @@ public class OrganizationController {
         return ResponseEntity.noContent().build();
     }
 
+    @GetMapping("/archived-workflows")
+    public OrganizationService.ArchivedWorkflows archived(@PathVariable UUID workspaceId) {
+        return service.archived(callers.current(), workspaceId);
+    }
+
+    @PostMapping("/workflows/{workflowId}/restore")
+    public com.orqix.catalog.api.CatalogDtos.WorkflowView restore(@PathVariable UUID workspaceId, @PathVariable UUID workflowId,
+            @Valid @RequestBody OrganizationService.RestoreRequest request) {
+        return service.restore(callers.current(), workspaceId, workflowId, request);
+    }
+
     @GetMapping("/workflow-owner-candidates")
     public java.util.Map<String, java.util.List<com.orqix.identity.SubjectService.SubjectRef>> ownerCandidates(
             @PathVariable UUID workspaceId) {

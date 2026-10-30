@@ -35,6 +35,8 @@ public final class BpmnGenerator {
     public static final String ITEM_VARIABLE = "orqix_item";
     /** Suffix of the outcome gateway generated after an approval task. */
     public static final String APPROVAL_ROUTE = "__route";
+    /** Exclusive merge generated in front of a parallel split that more than one route reaches. */
+    public static final String SPLIT_MERGE = "__merge";
     /** Suffix of the interrupting timer boundary event generated for an approval with a time limit. */
     public static final String APPROVAL_TIMEOUT = "__timeout";
 
@@ -233,19 +235,29 @@ public final class BpmnGenerator {
                     x.leaf("orqix", "perItem", ORQIX_NS).attr("itemsRef", a.perItem().itemsRef());
                     if (a.perItem().itemLabel() != null) x.attr("itemLabel", a.perItem().itemLabel());
                     if (a.perItem().allowSamePerson()) x.attr("allowSamePerson", "true");
+                    // S104: written only when set, so S88 steps generate exactly the BPMN they did.
+                    if (a.perItem().sequential()) x.attr("sequential", "true");
+                    if (a.perItem().quorum() != null) x.attr("quorum", a.perItem().quorum().toString());
+                    if (a.perItem().assigneeFrom() != null) x.attr("assigneeFrom", a.perItem().assigneeFrom());
                 }
                 x.close();
                 if (a.listDriven()) {
                     // One task per list item (S88): Flowable iterates the item positions of the request list; the
                     // step ends when every item is approved or at the first rejection, like several approvers (S51).
-                    x.open("", "multiInstanceLoopCharacteristics", BPMN_NS).attr("isSequential", "false")
+                    x.open("", "multiInstanceLoopCharacteristics", BPMN_NS)
+                            .attr("isSequential", String.valueOf(a.perItem().sequential()))
                             .attr("flowable", FLOWABLE_NS, "collection", "${orqixRoute.itemPositions(execution, '"
                                     + a.id() + "')}")
                             .attr("flowable", FLOWABLE_NS, "elementVariable", ITEM_VARIABLE);
+                    // S104: a quorum or one-at-a-time step ends when its outcome is settled (the runtime records that
+                    // with the decision); the S88 condition stays for every other list approval.
                     x.openInline("", "completionCondition", BPMN_NS)
                             .attr("xsi", XSI_NS, "type", "tFormalExpression")
-                            .cdata("${nrOfCompletedInstances == nrOfInstances || orqixRoute.rejected(execution, '"
-                                    + a.id() + "')}")
+                            .cdata(a.perItem().settles()
+                                    ? "${nrOfCompletedInstances == nrOfInstances || orqixRoute.itemsSettled(execution, '"
+                                            + a.id() + "')}"
+                                    : "${nrOfCompletedInstances == nrOfInstances || orqixRoute.rejected(execution, '"
+                                            + a.id() + "')}")
                             .closeInline();
                     x.close();
                 } else if (a.multiInstance()) {
@@ -437,6 +449,12 @@ public final class BpmnGenerator {
                 x.close();
             }
             case Node.ParallelSplit p -> {
+                if (scopes.merged(p.id())) {
+                    x.leaf("", "exclusiveGateway", BPMN_NS).attr("id", p.id() + SPLIT_MERGE).attr("name", p.label());
+                    x.leaf("", "sequenceFlow", BPMN_NS).attr("id", p.id() + SPLIT_MERGE + "__out")
+                            .attr("sourceRef", p.id() + SPLIT_MERGE).attr("targetRef", p.id());
+                    map.node(p.id(), p.id() + SPLIT_MERGE);
+                }
                 x.leaf("", p.inclusive() ? "inclusiveGateway" : "parallelGateway", BPMN_NS).attr("id", p.id())
                         .attr("name", p.label());
                 if (p.inclusive() && branchDefault.containsKey(p.id())) {
@@ -618,7 +636,7 @@ public final class BpmnGenerator {
             }
         }
         String begin = id + "__begin";
-        x.leaf("", "sequenceFlow", BPMN_NS).attr("id", begin).attr("sourceRef", start).attr("targetRef", entry);
+        x.leaf("", "sequenceFlow", BPMN_NS).attr("id", begin).attr("sourceRef", start).attr("targetRef", scopes.entry(entry));
         map.node(id, begin);
         for (Transition t : d.transitions()) {
             if (scopes.container(t) == s) {
@@ -726,6 +744,7 @@ public final class BpmnGenerator {
         private final Map<String, WorkflowDefinition.Subprocess> scopeOf = new HashMap<>();
         private final Map<String, String> entries = new HashMap<>();
         private final Map<String, WorkflowDefinition.Subprocess> entryOf = new HashMap<>();
+        private final java.util.Set<String> mergedSplits = new java.util.HashSet<>();
 
         Scopes(WorkflowDefinition d) {
             this.d = d;
@@ -745,6 +764,23 @@ public final class BpmnGenerator {
                     }
                 }
             }
+            // Canonical workflows merge implicitly, but a BPMN parallel or inclusive gateway with several incoming flows
+            // also joins them and would wait for every route. Such a split gets an exclusive merge in front.
+            for (Node n : d.nodes()) {
+                if (!(n instanceof Node.ParallelSplit)) continue;
+                long incoming = d.transitions().stream().filter(t -> t.to().equals(n.id()) && scopeOf.get(t.from()) == scopeOf.get(n.id())).count()
+                        + (entries.containsValue(n.id()) ? 1 : 0);
+                if (incoming > 1) mergedSplits.add(n.id());
+            }
+        }
+
+        /** @return the element that receives flows into this step: the generated merge in front of a merged split. */
+        String entry(String nodeId) {
+            return mergedSplits.contains(nodeId) ? nodeId + SPLIT_MERGE : nodeId;
+        }
+
+        boolean merged(String nodeId) {
+            return mergedSplits.contains(nodeId);
         }
 
         WorkflowDefinition.Subprocess scopeOf(String nodeId) {
@@ -765,7 +801,7 @@ public final class BpmnGenerator {
             WorkflowDefinition.Subprocess from = scopeOf.get(t.from());
             WorkflowDefinition.Subprocess to = scopeOf.get(t.to());
             if (from == to) {
-                return t.to();
+                return entry(t.to());
             }
             if (from != null) {
                 return from.id() + SCOPE_END + t.to();
@@ -958,6 +994,9 @@ public final class BpmnGenerator {
                 if (d.transitions().stream().anyMatch(t -> t.on() == Route.FAILED && t.from().equals(n.id()))) {
                     centre.put(n.id() + FAILED_BOUNDARY, new BigDecimal[] {cx, cy.add(BOUNDARY_OFFSET)});
                 }
+                if (scopes.merged(n.id())) {
+                    centre.put(n.id() + SPLIT_MERGE, new BigDecimal[] {cx.subtract(HELPER_OFFSET), cy});
+                }
                 if (n instanceof Node.WaitForMessage m && m.timeoutAfter() != null) {
                     centre.put(n.id() + MESSAGE_CATCH, new BigDecimal[] {cx.add(HELPER_OFFSET), cy.subtract(BOUNDARY_OFFSET)});
                     centre.put(n.id() + MESSAGE_TIMEOUT, new BigDecimal[] {cx.add(HELPER_OFFSET), cy.add(BOUNDARY_OFFSET)});
@@ -976,6 +1015,10 @@ public final class BpmnGenerator {
                     default -> new int[] {100, 80};
                 };
                 shape(x, n.id(), centre.get(n.id()), size[0], size[1]);
+                if (scopes.merged(n.id())) {
+                    shape(x, n.id() + SPLIT_MERGE, centre.get(n.id() + SPLIT_MERGE), 40, 40);
+                    edge(x, n.id() + SPLIT_MERGE + "__out", centre.get(n.id() + SPLIT_MERGE), centre.get(n.id()));
+                }
                 if (centre.containsKey(n.id() + FAILED_BOUNDARY)) {
                     shape(x, n.id() + FAILED_BOUNDARY, centre.get(n.id() + FAILED_BOUNDARY), 36, 36);
                 }

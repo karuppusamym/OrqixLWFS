@@ -24,7 +24,11 @@ public class NotificationService {
     public enum Kind {
         WORKFLOW_MESSAGE("workflowMessage"), RUN_ATTENTION("runAttention"),
         /** CMP01 (docs/build/S87): someone mentioned the recipient in a step or connection discussion. */
-        DISCUSSION_MENTION("discussionMention");
+        DISCUSSION_MENTION("discussionMention"),
+        /** PL02a (docs/build/S106): a promotion into this workspace waits for the recipient's approval. */
+        PROMOTION_REQUEST("promotionRequest"),
+        /** PL02a: the recipient's promotion request was approved or rejected (points at the source workflow). */
+        PROMOTION_DECISION("promotionDecision");
 
         private final String value;
 
@@ -85,6 +89,31 @@ public class NotificationService {
                 .param("kind", Kind.DISCUSSION_MENTION.value()).param("dedup", dedupKey).param("message", text)
                 .param("at", Sql.ts(clock.instant())).param("wf", workflowId).param("el", elementId)
                 .param("comment", commentId)
+                .update() == 1;
+    }
+
+    /**
+     * PL02a (S106): a promotion notification. {@code workflowId} is the workflow it points at in {@code workspaceId}
+     * (the source workflow for a decision) or null. Idempotent through the dedup key.
+     *
+     * @return true when a new notification was created
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public boolean createPromotion(UUID workspaceId, UUID recipient, UUID workflowId, Kind kind, String dedupKey,
+            String message) {
+        if (kind != Kind.PROMOTION_REQUEST && kind != Kind.PROMOTION_DECISION) {
+            throw new IllegalArgumentException("Not a promotion notification: " + kind);
+        }
+        String text = message.length() > 500 ? message.substring(0, 500) : message;
+        return jdbc.sql("""
+                INSERT INTO notification (id, workspace_id, recipient_subject_id, kind, dedup_key, message, created_at,
+                                          workflow_id)
+                VALUES (:id, :ws, :recipient, :kind, :dedup, :message, :at, :wf)
+                ON CONFLICT (dedup_key) DO NOTHING
+                """)
+                .param("id", Ids.newId()).param("ws", workspaceId).param("recipient", recipient)
+                .param("kind", kind.value()).param("dedup", dedupKey).param("message", text)
+                .param("at", Sql.ts(clock.instant())).param("wf", workflowId)
                 .update() == 1;
     }
 

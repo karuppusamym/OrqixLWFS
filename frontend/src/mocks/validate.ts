@@ -3,7 +3,7 @@ import { isCalendarDate } from '@/lib/dates'
 import { FormPattern } from '@/lib/form/pattern'
 import { allFields, availableFields, parseRef } from '@/features/studio/model/fieldRefs'
 import { hasCycle, incoming, nodeById, outgoing, reachableFrom, startNode } from '@/features/studio/model/graph'
-import { conditionTerms, isAtomicCondition, type Condition, type Definition, type DecisionTable, type Literal, type WorkflowNode } from '@/features/studio/model/types'
+import { conditionTerms, isAtomicCondition, isRangeValue, type AtomicCondition, type Condition, type Definition, type DecisionTable, type Literal, type WorkflowNode } from '@/features/studio/model/types'
 
 /**
  * A faithful-enough subset of the compiler rule catalog (docs/build/S4-workflow-compiler.md section 5)
@@ -42,11 +42,39 @@ function isNumericRange(op: string): boolean {
   return op === 'gte' || op === 'lt'
 }
 
-function interval(c: Condition): { lo: number; loOpen: boolean; hi: number; hiOpen: boolean } | null {
-  if (typeof c.value !== 'number') return null
-  if (c.operator === 'eq') return { lo: c.value, loOpen: false, hi: c.value, hiOpen: false }
-  if (c.operator === 'gte') return { lo: c.value, loOpen: false, hi: Infinity, hiOpen: true }
-  return { lo: -Infinity, loOpen: true, hi: c.value, hiOpen: true }
+type Interval = { lo: number; loOpen: boolean; hi: number; hiOpen: boolean }
+
+/** Number set of a comparison as intervals (lists are points, a range one interval); null for text and booleans. */
+function intervals(c: AtomicCondition): Interval[] | null {
+  const v = c.value
+  if (c.operator === 'between') return isRangeValue(v) ? [{ lo: v.from, loOpen: v.includeFrom === false, hi: v.to, hiOpen: v.includeTo === false }] : null
+  if (c.operator === 'in') return Array.isArray(v) && v.every(x => typeof x === 'number') ? (v as number[]).map(x => ({ lo: x, loOpen: false, hi: x, hiOpen: false })) : null
+  if (typeof v !== 'number') return null
+  switch (c.operator) {
+    case 'eq': return [{ lo: v, loOpen: false, hi: v, hiOpen: false }]
+    case 'ne': return [{ lo: -Infinity, loOpen: true, hi: v, hiOpen: true }, { lo: v, loOpen: true, hi: Infinity, hiOpen: true }]
+    case 'gte': return [{ lo: v, loOpen: false, hi: Infinity, hiOpen: true }]
+    case 'gt': return [{ lo: v, loOpen: true, hi: Infinity, hiOpen: true }]
+    case 'lte': return [{ lo: -Infinity, loOpen: true, hi: v, hiOpen: false }]
+    default: return [{ lo: -Infinity, loOpen: true, hi: v, hiOpen: true }]
+  }
+}
+
+function intersects(ia: Interval, ib: Interval): boolean {
+  const lo = Math.max(ia.lo, ib.lo)
+  const hi = Math.min(ia.hi, ib.hi)
+  if (lo < hi) return true
+  if (lo > hi) return false
+  const loClosed = (ia.lo === lo ? !ia.loOpen : true) && (ib.lo === lo ? !ib.loOpen : true)
+  const hiClosed = (ia.hi === hi ? !ia.hiOpen : true) && (ib.hi === hi ? !ib.hiOpen : true)
+  return loClosed && hiClosed
+}
+
+/** Values named by "is" / "is one of"; null for "is not" (every other value). */
+function named(c: AtomicCondition): Literal[] | null {
+  if (c.operator === 'in' && Array.isArray(c.value)) return c.value
+  if (c.operator === 'eq' && !Array.isArray(c.value) && !isRangeValue(c.value)) return [c.value]
+  return null
 }
 
 function overlaps(a: Condition, b: Condition): boolean {
@@ -56,18 +84,42 @@ function overlaps(a: Condition, b: Condition): boolean {
     return conjunctions(a).some(ca => conjunctions(b).some(cb => !ca.some(x => cb.some(y => x.fieldRef === y.fieldRef && !overlaps(x, y)))))
   }
   if (a.fieldRef !== b.fieldRef) return false
-  const ia = interval(a)
-  const ib = interval(b)
-  if (ia && ib) {
-    const lo = Math.max(ia.lo, ib.lo)
-    const hi = Math.min(ia.hi, ib.hi)
-    if (lo < hi) return true
-    if (lo > hi) return false
-    const loClosed = (ia.lo === lo ? !ia.loOpen : true) && (ib.lo === lo ? !ib.loOpen : true)
-    const hiClosed = (ia.hi === hi ? !ia.hiOpen : true) && (ib.hi === hi ? !ib.hiOpen : true)
-    return loClosed && hiClosed
+  const ia = intervals(a)
+  const ib = intervals(b)
+  if (ia && ib) return ia.some(x => ib.some(y => intersects(x, y)))
+  const na = named(a)
+  const nb = named(b)
+  if (na && nb) return na.some(v => nb.includes(v))
+  if (na) return na.some(v => v !== b.value)
+  if (nb) return nb.some(v => v !== a.value)
+  return true
+}
+
+const sameOutputs = (a: Record<string, Literal>, b: Record<string, Literal>) =>
+  Object.keys(a).length === Object.keys(b).length && Object.entries(a).every(([k, v]) => b[k] === v)
+
+/** Settings of the hit policy (docs/build/S121), the same codes as the compiler. */
+function policyIssues(d: DecisionTable, di: number, nodeId: string | undefined): Issue[] {
+  const out: Issue[] = []
+  const at = `/decisions/${di}`
+  if (d.aggregation && d.hitPolicy !== 'COLLECT') out.push(issue('WF_DECISION_POLICY_OPTION', 'blocker', `Only the hit policy COLLECT combines results, so remove the aggregation of "${d.key}".`, `${at}/aggregation`, nodeId))
+  if (d.priority && d.hitPolicy !== 'PRIORITY') out.push(issue('WF_DECISION_POLICY_OPTION', 'blocker', `Only the hit policy PRIORITY uses a priority order, so remove it from "${d.key}".`, `${at}/priority`, nodeId))
+  if (d.hitPolicy === 'COLLECT') {
+    if (!d.aggregation) out.push(issue('WF_DECISION_POLICY_OPTION', 'blocker', `Choose how "${d.key}" combines the matching rows: sum, smallest, largest or count.`, `${at}/aggregation`, nodeId))
+    const numbers = Object.keys(d.default).length === 1 && [d.default, ...d.rows.map(r => r.then)].every(o => Object.values(o).every(v => typeof v === 'number'))
+    if (!numbers) out.push(issue('WF_DECISION_COLLECT_OUTPUT', 'blocker', `"${d.key}" combines the results of all matching rows, so it must have exactly one result field and every row and the default must set it to a number.`, `${at}/default`, nodeId))
   }
-  return a.operator === 'eq' && b.operator === 'eq' && a.value === b.value
+  if (d.hitPolicy === 'PRIORITY') {
+    const p = d.priority
+    if (!p) out.push(issue('WF_DECISION_POLICY_OPTION', 'blocker', `Choose the result field that decides between matching rows of "${d.key}" and list its values from the most to the least important.`, `${at}/priority`, nodeId))
+    else if (!(p.output in d.default)) out.push(issue('WF_DECISION_PRIORITY_ORDER', 'blocker', `The priority result field "${p.output}" is not a result of "${d.key}".`, `${at}/priority/output`, nodeId))
+    else {
+      const missing = [d.default[p.output], ...d.rows.map(r => r.then[p.output])].find(v => v !== undefined && !p.order.includes(v))
+      if (p.order.length < 2 || p.order.length > 20) out.push(issue('WF_DECISION_PRIORITY_ORDER', 'blocker', 'The priority order must list 2 to 20 values.', `${at}/priority/order`, nodeId))
+      else if (missing !== undefined) out.push(issue('WF_DECISION_PRIORITY_ORDER', 'blocker', `The priority order of "${d.key}" does not list "${String(missing)}", which a row or the default gives as "${p.output}".`, `${at}/priority/order`, nodeId))
+    }
+  }
+  return out
 }
 
 export function validateDefinition(def: Definition, ctx: ValidationContext): Issue[] {
@@ -218,10 +270,17 @@ export function validateDefinition(def: Definition, ctx: ValidationContext): Iss
         break
       }
       case 'startWorkflow': {
-        const each = c.forEach as { itemsRef?: string } | undefined
+        const each = c.forEach as { itemsRef?: string; itemInput?: string; itemMapping?: Record<string, string> } | undefined
         if (each?.itemsRef?.startsWith('/input/')) {
+          // S105: a list of rows needs an item mapping to existing columns; a list of single values needs one item field.
           const collection = def.inputSchema.properties[each.itemsRef.slice('/input/'.length)]
-          if (collection?.items?.type === 'object') issues.push(issue('WF_FOREACH_COLLECTION', 'blocker', 'Repeating workflows currently accept scalar collections only. Repeating object rows are supported as request data.', nodePath(n, '/config/forEach/itemsRef'), n.id))
+          const rows = collection?.items?.type === 'object'
+          const mapping = each.itemMapping ?? {}
+          if (rows && each.itemInput) issues.push(issue('WF_FOREACH_ITEM_TYPE', 'blocker', `"${collection?.title ?? 'The list'}" is a list of rows. Choose which column fills which field instead of one field for the whole item.`, nodePath(n, '/config/forEach/itemInput'), n.id))
+          if (!rows && Object.keys(mapping).length > 0) issues.push(issue('WF_FOREACH_ITEM_TYPE', 'blocker', `"${collection?.title ?? 'The list'}" is a list of single values, so it has no columns.`, nodePath(n, '/config/forEach/itemMapping'), n.id))
+          if (rows) for (const [field, column] of Object.entries(mapping)) {
+            if (!collection?.items?.properties?.[column]) issues.push(issue('WF_FOREACH_COLUMN', 'blocker', `"${collection?.title ?? 'The list'}" has no column "${column}".`, nodePath(n, `/config/forEach/itemMapping/${field}`), n.id))
+          }
         }
         const ref = c.workflowRef as string | undefined
         if (!ref) issues.push(issue('WF_SCHEMA_INVALID', 'blocker', `"${n.label}" needs a workflow to start.`, nodePath(n, '/config/workflowRef'), n.id))
@@ -329,9 +388,15 @@ export function validateDefinition(def: Definition, ctx: ValidationContext): Iss
       const afterOther = !!a.effective.from && !!b.effective.to && a.effective.from > b.effective.to
       return !beforeOther && !afterOther
     }
-    for (let a = 0; a < d.rows.length && d.hitPolicy !== 'FIRST'; a++) {
+    issues.push(...policyIssues(d, di, node?.id))
+    // Only UNIQUE and ANY forbid overlaps; ANY allows them when the rows give the same results (S121).
+    const checked = d.hitPolicy === 'UNIQUE' || d.hitPolicy === 'ANY'
+    for (let a = 0; a < d.rows.length && checked; a++) {
       for (let b = a + 1; b < d.rows.length; b++) {
-        if (windowsOverlap(d.rows[a] as DecisionTable['rows'][number], d.rows[b] as DecisionTable['rows'][number]) && overlaps((d.rows[a] as { when: Condition }).when, (d.rows[b] as { when: Condition }).when)) issues.push(issue('WF_DECISION_OVERLAP', 'blocker', `Rows ${a + 1} and ${b + 1} of "${d.key}" can both match. Make them exclusive.`, `/decisions/${di}/rows/${b}`, node?.id))
+        const x = d.rows[a] as DecisionTable['rows'][number]
+        const y = d.rows[b] as DecisionTable['rows'][number]
+        if (d.hitPolicy === 'ANY' && sameOutputs(x.then, y.then)) continue
+        if (windowsOverlap(x, y) && overlaps(x.when, y.when)) issues.push(issue('WF_DECISION_OVERLAP', 'blocker', d.hitPolicy === 'ANY' ? `Rows ${a + 1} and ${b + 1} of "${d.key}" can both match but give different results.` : `Rows ${a + 1} and ${b + 1} of "${d.key}" can both match. Make them exclusive.`, `/decisions/${di}/rows/${b}`, node?.id))
       }
     }
   })
@@ -445,6 +510,26 @@ function checkCondition(def: Definition, at: WorkflowNode, c: Condition, path: s
     issues.push(issue('WF_OPERATOR_TYPE', 'blocker', `${c.fieldRef} is a date. Dates can be used to wait until a day, but not (yet) to choose a path or in a decision table.`, `${path}/operator`, at.id, transitionId))
     return
   }
+  if (c.operator === 'in' || c.operator === 'between') {
+    // Lists and ranges belong to decision rows only (docs/build/S121).
+    if (!path.startsWith('/decisions/')) {
+      issues.push(issue('WF_SCHEMA_INVALID', 'blocker', 'The comparisons "is one of" and "is between" can be used in decision table rows only.', `${path}/operator`, at.id, transitionId))
+      return
+    }
+    const numeric = known.type === 'number' || known.type === 'integer'
+    if (c.operator === 'between' ? !numeric : !(numeric || known.type === 'string')) {
+      issues.push(issue('WF_OPERATOR_TYPE', 'blocker', c.operator === 'between' ? '"is between" only works on numbers.' : '"is one of" works on text and numbers.', `${path}/operator`, at.id, transitionId))
+      return
+    }
+    const values = c.operator === 'in' ? (Array.isArray(c.value) ? c.value : []) : isRangeValue(c.value) ? [c.value.from, c.value.to] : []
+    if (c.operator === 'in' && (values.length < 1 || values.length > 20)) issues.push(issue('WF_SCHEMA_INVALID', 'blocker', '"is one of" needs 1 to 20 values.', `${path}/value`, at.id, transitionId))
+    if (isRangeValue(c.value) && c.value.from >= c.value.to) issues.push(issue('WF_SCHEMA_INVALID', 'blocker', 'The start of the range must be smaller than its end.', `${path}/value`, at.id, transitionId))
+    values.forEach((v, i) => {
+      if (typeof v !== (numeric ? 'number' : 'string')) issues.push(issue('WF_LITERAL_TYPE', 'blocker', 'The value does not match the type of the field.', `${path}/value/${i}`, at.id, transitionId))
+      else if (known.enumValues && !known.enumValues.includes(String(v))) issues.push(issue('WF_LITERAL_NOT_IN_DOMAIN', 'blocker', `"${String(v)}" is never a possible value of this field.`, `${path}/value/${i}`, at.id, transitionId))
+    })
+    return
+  }
   if (isNumericRange(c.operator) && known.type !== 'number' && known.type !== 'integer') {
     issues.push(issue('WF_OPERATOR_TYPE', 'blocker', '"at least" and "less than" only work on numbers.', `${path}/operator`, at.id, transitionId))
   }
@@ -460,7 +545,7 @@ function checkCondition(def: Definition, at: WorkflowNode, c: Condition, path: s
 
 /** List-driven approval (docs/build/S88), the same rules as the compiler's PerItemRules. */
 function checkPerItem(def: Definition, n: WorkflowNode, issues: Issue[]): void {
-  const perItem = n.config.perItem as { itemsRef?: string; itemLabel?: string; allowSamePerson?: boolean } | undefined
+  const perItem = n.config.perItem as { itemsRef?: string; itemLabel?: string; allowSamePerson?: boolean; quorum?: number; assigneeFrom?: string } | undefined
   if (!perItem) return
   const index = def.nodes.findIndex((x) => x.id === n.id)
   const path = `/nodes/${index}/config/perItem`
@@ -478,6 +563,13 @@ function checkPerItem(def: Definition, n: WorkflowNode, issues: Issue[]): void {
     const column = rows && perItem.itemLabel ? list.items?.properties?.[perItem.itemLabel] : undefined
     if (!rows && perItem.itemLabel) issues.push(issue('WF_PER_ITEM_LABEL', 'blocker', `"${list.title ?? key}" is a list of single values, so each task shows the value itself. Remove the item label.`, `${path}/itemLabel`, n.id))
     if (rows && (!column || column.type === 'boolean' || column.format === 'attachment')) issues.push(issue('WF_PER_ITEM_LABEL', 'blocker', `Choose the column of "${list.title ?? key}" that names each item on its task.`, `${path}/itemLabel`, n.id))
+    // S104: a quorum must be reachable by every request; the proposed person comes from a text column of rows.
+    const min = typeof list.minItems === 'number' ? list.minItems : 1
+    if (typeof perItem.quorum === 'number' && perItem.quorum > min) issues.push(issue('WF_PER_ITEM_QUORUM', 'blocker', `"${n.label}" needs ${perItem.quorum} approved items, but "${list.title ?? key}" may hold only ${min}. Set the list's minimum to ${perItem.quorum} or more, or lower the number of items that must be approved.`, `${path}/quorum`, n.id))
+    if (perItem.assigneeFrom) {
+      const who = rows ? list.items?.properties?.[perItem.assigneeFrom] : undefined
+      if (!who || who.type !== 'string') issues.push(issue('WF_PER_ITEM_ASSIGNEE', 'blocker', rows ? `Choose a text column of "${list.title ?? key}" that holds the email of the person proposed for each item.` : `"${list.title ?? key}" is a list of single values, so it has no column naming a person.`, `${path}/assigneeFrom`, n.id))
+    }
   }
   const c = n.config
   const combined = [c.multiInstance && 'a number of approvers', c.timeoutAfter && 'a time limit', c.escalation && 'reminders or escalation', Array.isArray(c.correctable) && c.correctable.length > 0 && 'correction of request fields'].filter(Boolean)

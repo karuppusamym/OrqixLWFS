@@ -162,11 +162,15 @@ class PromotionApprovalTest extends RuntimeTestBase {
 
         assertThat(audit("release.promotion.requested", SANDBOX)).isGreaterThanOrEqualTo(1);
         assertThat(audit("release.promotion.approval-requested", PURCHASING)).isGreaterThanOrEqualTo(1);
-        assertThat(audit("release.promotion.approved", PURCHASING)).isEqualTo(1);
+        // Scoped to this request: other tests in the class also approve promotions into this workspace.
+        assertThat(jdbc.sql("SELECT count(*) FROM audit_event WHERE action = 'release.promotion.approved' AND resource_id = :id")
+                .param("id", requestId.toString()).query(Integer.class).single()).isEqualTo(1);
         assertThat(audit("release.promoted", SANDBOX)).isGreaterThanOrEqualTo(1);
         UUID pia = UUID.fromString(api("paul.publisher").get("/me").body().path("subject").path("id").asString());
-        assertThat(jdbc.sql("SELECT count(*) FROM audit_event WHERE action = 'release.promotion.received' AND actor_subject_id = :a")
-                .param("a", pia).query(Integer.class).single()).as("the approver is the audited actor").isEqualTo(1);
+        assertThat(jdbc.sql("SELECT count(*) FROM audit_event WHERE action = 'release.promotion.received' AND actor_subject_id = :a"
+                + " AND metadata->>'requestId' = :id")
+                .param("a", pia).param("id", requestId.toString()).query(Integer.class).single())
+                .as("the approver is the audited actor").isEqualTo(1);
     }
 
     @Test
@@ -217,10 +221,15 @@ class PromotionApprovalTest extends RuntimeTestBase {
         assertThat(rejected.status()).as(rejected.toString()).isEqualTo(200);
         assertThat(rejected.body().path("status").asString()).isEqualTo("rejected");
         assertThat(rejected.body().path("decisionNote").asString()).contains("freeze");
-        JsonNode all = api("dana.designer").get("/workspaces/{ws}/promotion-requests?status=all", PURCHASING).body()
-                .path("items");
-        assertThat(all).hasSize(4);
-        assertThat(api("dana.designer").get("/workspaces/{ws}/promotion-requests", PURCHASING).body().path("items")).isEmpty();
+        // Only this workflow's requests: other tests in the class also ask for promotions into this workspace.
+        List<JsonNode> all = new java.util.ArrayList<>();
+        api("dana.designer").get("/workspaces/{ws}/promotion-requests?status=all", PURCHASING).body().path("items")
+                .forEach(r -> { if (key.equals(r.path("workflowKey").asString())) all.add(r); });
+        assertThat(all).extracting(r -> r.path("status").asString()).containsExactly("rejected", "cancelled", "approved");
+        List<JsonNode> pending = new java.util.ArrayList<>();
+        api("dana.designer").get("/workspaces/{ws}/promotion-requests", PURCHASING).body().path("items")
+                .forEach(r -> { if (key.equals(r.path("workflowKey").asString())) pending.add(r); });
+        assertThat(pending).isEmpty();
     }
 
     @Test
@@ -250,6 +259,71 @@ class PromotionApprovalTest extends RuntimeTestBase {
                 releasePath(source, release, "/promotion-check"), SANDBOX).body().path("approvalRequired").asBoolean()).isFalse();
         assertThat(api("dana.designer").post(Map.of("targetWorkspaceId", PURCHASING.toString()),
                 releasePath(source, release, "/promote"), SANDBOX).status()).isEqualTo(201);
+    }
+
+    /** Notifications of one kind the user has in a workspace, newest first. */
+    private List<JsonNode> notificationsOf(String user, UUID ws, String kind) throws Exception {
+        List<JsonNode> out = new java.util.ArrayList<>();
+        for (JsonNode n : api(user).get("/workspaces/{ws}/me/notifications", ws).body().path("items")) {
+            if (kind.equals(n.path("kind").asString())) {
+                out.add(n);
+            }
+        }
+        return out;
+    }
+
+    @Test
+    void approversHearOfARequestAndTheRequesterHearsOfTheDecision() throws Exception {
+        // S106 (PL02a): in-app notices, never to the requester for their own request.
+        setGate(true);
+        grantApproval("paul.publisher");
+        grantApproval("dana.designer");
+        int paulBefore = notificationsOf("paul.publisher", PURCHASING, "promotionRequest").size();
+        int danaBefore = notificationsOf("dana.designer", PURCHASING, "promotionRequest").size();
+        UUID source = publishPurchase(SANDBOX, null);
+        UUID release = activeRelease(SANDBOX, source);
+        String key = api("dana.designer").get("/workspaces/{ws}/workflows/{id}", SANDBOX, source).body().path("key").asString();
+        // An approver through an identity-provider group grant is found from the grant, not from a scan of all users.
+        String group = "promo-approvers-" + UUID.randomUUID().toString().substring(0, 8);
+        UUID olga = UUID.fromString(api("olga.operator").get("/me").body().path("subject").path("id").asString());
+        var groupGrant = api("wade.admin").post(Map.of("permission", "workflow.approve-promotion",
+                "principal", Map.of("type", "idpGroup", "value", group)), "/workspaces/{ws}/access/grants", PURCHASING);
+        assertThat(groupGrant.status()).as(groupGrant.toString()).isEqualTo(201);
+        grants.add(UUID.fromString(groupGrant.body().path("id").asString()));
+        jdbc.sql("UPDATE subject SET idp_groups = idp_groups || to_jsonb(CAST(:g AS text)) WHERE id = :id")
+                .param("g", group).param("id", olga).update();
+        var asked = requestPromotion("dana.designer", source, release, null);
+        assertThat(asked.status()).as(asked.toString()).isEqualTo(201);
+        UUID requestId = UUID.fromString(asked.body().path("id").asString());
+        assertThat(jdbc.sql("SELECT count(*) FROM notification WHERE recipient_subject_id = :s AND dedup_key = :k")
+                .param("s", olga).param("k", "promotion-request:" + requestId + ":" + olga).query(Long.class).single())
+                .as("approver through a group grant").isEqualTo(1);
+
+        List<JsonNode> paul = notificationsOf("paul.publisher", PURCHASING, "promotionRequest");
+        assertThat(paul).hasSize(paulBefore + 1);
+        assertThat(paul.get(0).path("message").asString()).contains(key, "release 1").doesNotContain("quarter close");
+        assertThat(paul.get(0).path("runId").isNull() || paul.get(0).path("runId").isMissingNode()).isTrue();
+        assertThat(notificationsOf("dana.designer", PURCHASING, "promotionRequest")).as("never the requester").hasSize(danaBefore);
+        String meta = jdbc.sql("SELECT metadata::text FROM audit_event WHERE action = 'release.promotion.approval-requested' AND resource_id = :id")
+                .param("id", requestId.toString()).query(String.class).single();
+        assertThat(meta).contains("\"approversNotified\"");
+
+        int decisionsBefore = notificationsOf("dana.designer", SANDBOX, "promotionDecision").size();
+        var rejected = api("paul.publisher").post(Map.of("note", "Wait for the audit"),
+                "/workspaces/{ws}/promotion-requests/" + requestId + "/reject", PURCHASING);
+        assertThat(rejected.status()).as(rejected.toString()).isEqualTo(200);
+        List<JsonNode> decisions = notificationsOf("dana.designer", SANDBOX, "promotionDecision");
+        assertThat(decisions).hasSize(decisionsBefore + 1);
+        assertThat(decisions.get(0).path("message").asString()).contains(key, "was rejected", "Wait for the audit");
+        assertThat(decisions.get(0).path("workflowId").asString()).isEqualTo(source.toString());
+
+        var again = requestPromotion("dana.designer", source, release, null);
+        assertThat(again.status()).as(again.toString()).isEqualTo(201);
+        var approved = api("paul.publisher").post(Map.of(), "/workspaces/{ws}/promotion-requests/" + again.body().path("id").asString()
+                + "/approve", PURCHASING);
+        assertThat(approved.status()).as(approved.toString()).isEqualTo(200);
+        assertThat(notificationsOf("dana.designer", SANDBOX, "promotionDecision").get(0).path("message").asString())
+                .contains("was approved");
     }
 
     private void setGateStage(String stage) throws Exception {

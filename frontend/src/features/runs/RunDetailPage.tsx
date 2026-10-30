@@ -32,6 +32,7 @@ import { StageProgress } from './StageProgress'
 import { SendTestMessage } from './SendTestMessage'
 import { DecisionEvidence } from './DecisionEvidence'
 import { IncidentCorrectionPanel } from './IncidentCorrectionPanel'
+import { SendBackAnswer } from './SendBackAnswer'
 import { IncidentCorrectionEvidence } from './IncidentCorrectionEvidence'
 import { candidateEffects, EFFECT_CLASS_LABEL, EFFECT_STATE_LABEL, isAgentWrite, reasonText } from './operatorText'
 
@@ -203,6 +204,7 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
         </Alert>
       ) : null}
 
+      <SendBackAnswer runId={run.id} />
       <CaseControlsPanel runId={run.id} />
       <SendTestMessage run={run} />
       {releaseDefinition ? <IncidentCorrectionPanel run={run} inputSchema={releaseDefinition.inputSchema} /> : null}

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/CMMN/20151109/MODEL" xmlns:flowable="http://flowable.org/cmmn" targetNamespace="urn:orqix:repetition">
+  <case id="loopCase" name="Repeated rounds">
+    <casePlanModel id="plan" name="Repeated rounds" autoComplete="false">
+      <planItem id="round" name="Review round" definitionRef="roundStage">
+        <itemControl><repetitionRule><condition>${repetitionCounter &lt; 2}</condition></repetitionRule></itemControl>
+      </planItem>
+      <planItem id="check" name="Quality check" definitionRef="checkTask">
+        <itemControl><repetitionRule><condition>${repetitionCounter &lt; 3}</condition></repetitionRule></itemControl>
+        <entryCriterion id="checkEntry" sentryRef="roundDone"/>
+      </planItem>
+      <planItem id="checked" name="Round checked" definitionRef="checkedMilestone">
+        <itemControl><repetitionRule><condition>${repetitionCounter &lt; 3}</condition></repetitionRule></itemControl>
+        <entryCriterion id="checkedEntry" sentryRef="checkDone"/>
+      </planItem>
+      <sentry id="roundDone"><planItemOnPart id="roundDoneOn" sourceRef="round"><standardEvent>complete</standardEvent></planItemOnPart></sentry>
+      <sentry id="checkDone"><planItemOnPart id="checkDoneOn" sourceRef="check"><standardEvent>complete</standardEvent></planItemOnPart></sentry>
+      <stage id="roundStage" name="Review round" autoComplete="true">
+        <planItem id="review" name="Review" definitionRef="reviewTask"/>
+        <humanTask id="reviewTask" name="Review" flowable:candidateGroups="managers"/>
+      </stage>
+      <humanTask id="checkTask" name="Quality check" flowable:candidateGroups="managers"/>
+      <milestone id="checkedMilestone" name="Round checked"/>
+    </casePlanModel>
+  </case>
+</definitions>

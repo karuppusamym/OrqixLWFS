@@ -1,6 +1,6 @@
 import { expect, test } from '../support/fixtures'
 import { MOCK } from '../support/env'
-import { workspaceId } from '../support/app'
+import { ensureTemplatePublished, workspaceId } from '../support/app'
 import { expectNoSeriousViolations } from '../support/axe'
 
 /**
@@ -17,6 +17,8 @@ test('purchase through the Assistant, then a manager decides the task', async ({
   // Requester ------------------------------------------------------------------------------------------------------
   const rhea = await sessions.as('rhea.requester')
   const ws = await workspaceId(rhea)
+  // On a fresh stack the template is published by whichever spec needs it first.
+  if (!MOCK) await ensureTemplatePublished(await sessions.as('paul.publisher'), ws)
   await rhea.goto(`/w/${ws}/assistant`)
   await rhea.getByRole('button', { name: 'New conversation' }).click()
   await expect(rhea.getByRole('heading', { name: 'How can I help?' })).toBeVisible()
@@ -24,7 +26,8 @@ test('purchase through the Assistant, then a manager decides the task', async ({
   await expectNoSeriousViolations(rhea, 'Assistant start')
 
   await rhea.getByRole('button', { name: 'Start a request' }).click()
-  await rhea.getByRole('button', { name: 'Purchase approval', exact: true }).click()
+  // Other specs leave copies named "Purchase approval" in a shared database; any startable one serves here.
+  await rhea.getByRole('button', { name: 'Purchase approval', exact: true }).first().click()
 
   const answer = async (label: string, value: string) => {
     const box = rhea.getByLabel(`Your answer: ${label}`)

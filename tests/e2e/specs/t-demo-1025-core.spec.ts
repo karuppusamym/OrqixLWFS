@@ -6,7 +6,8 @@ import { axe, key, record, shot } from '../support/rehearsal'
 import { MOCK } from '../support/env'
 
 /** S86 demo rehearsal, docs/demo-guide.md demos 5 (Camunda import), the Pega decision DMN path, hidden AI, operator and insights screens. */
-test.skip(MOCK, 'Real stack only.')
+// Demo rehearsals need a seeded demo stack (docs/build/S86); the general suite and CI leave them out.
+test.skip(MOCK || process.env.E2E_REHEARSAL !== 'true', 'Demo rehearsal: real seeded stack and E2E_REHEARSAL=true only.')
 test.describe.configure({ mode: 'serial' })
 test.setTimeout(240_000)
 const ex = path.resolve('../../examples/migration')
@@ -66,7 +67,7 @@ test('Camunda 7 purchase: import, map, convert, publish, run 4,999.99 vs 5,000',
   }
   const mgr = await sessions.as('mani.manager')
   for (const amt of ['4999.99', '5000']) {
-    await mgr.goto(`/w/${ws}/tasks?view=claimable`)
+    await mgr.goto(`/w/${ws}/tasks?view=claimable&sort=newest`)
     await mgr.getByRole('link', { name: `Camunda ${amt} ${tag}`, exact: true }).first().click()
     await expect(mgr.getByTestId('task-actions')).toBeVisible()
     const claim = mgr.getByRole('button', { name: 'Claim task' })
@@ -75,7 +76,7 @@ test('Camunda 7 purchase: import, map, convert, publish, run 4,999.99 vs 5,000',
     await expect(mgr.getByTestId('task-banner')).toContainText('You approved')
   }
   const fin = await sessions.as('fin.finance')
-  await fin.goto(`/w/${ws}/tasks?view=claimable`)
+  await fin.goto(`/w/${ws}/tasks?view=claimable&sort=newest`)
   await fin.getByRole('link', { name: `Camunda 5000 ${tag}`, exact: true }).waitFor({ timeout: 30_000 }).catch(() => undefined)
   const finLinks = await fin.getByRole('link', { name: `Camunda 5000 ${tag}`, exact: true }).count()
   const finLinkSmall = await fin.getByRole('link', { name: `Camunda 4999.99 ${tag}`, exact: true }).count()

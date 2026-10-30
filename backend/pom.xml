@@ -40,6 +40,10 @@
         <uuid-creator.version>6.1.1</uuid-creator.version>
         <archunit.version>1.5.1</archunit.version>
         <wiremock.version>3.13.2</wiremock.version>
+        <!-- Security patch overrides for kafka-clients 4.1.2 (image scan, 28 October 2026): CVE-2026-106451 (lz4-java),
+             CVE-2026-108106 and CVE-2026-93451 (snappy-java). Remove once kafka-clients ships these versions. -->
+        <lz4-java.version>1.11.4</lz4-java.version>
+        <snappy-java.version>1.1.10.9</snappy-java.version>
     </properties>
 
     <build>
@@ -59,19 +63,6 @@
                 <groupId>com.orqix</groupId>
                 <artifactId>orqix-compiler</artifactId>
                 <version>${project.version}</version>
-            </dependency>
-            <!-- Compression libraries of kafka-clients, raised to the versions with fixes for the HIGH findings of the
-                 image scan (lz4-java CVE-2026-106451; snappy-java CVE-2026-108106 and CVE-2026-93451). Remove once the
-                 Spring Boot managed kafka-clients brings these versions itself. -->
-            <dependency>
-                <groupId>at.yawk.lz4</groupId>
-                <artifactId>lz4-java</artifactId>
-                <version>1.11.4</version>
-            </dependency>
-            <dependency>
-                <groupId>org.xerial.snappy</groupId>
-                <artifactId>snappy-java</artifactId>
-                <version>1.1.10.9</version>
             </dependency>
             <dependency>
                 <groupId>org.flowable</groupId>
@@ -122,6 +113,16 @@
                 <groupId>org.wiremock</groupId>
                 <artifactId>wiremock-standalone</artifactId>
                 <version>${wiremock.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>at.yawk.lz4</groupId>
+                <artifactId>lz4-java</artifactId>
+                <version>${lz4-java.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.xerial.snappy</groupId>
+                <artifactId>snappy-java</artifactId>
+                <version>${snappy-java.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

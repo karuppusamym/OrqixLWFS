@@ -1,7 +1,7 @@
 import { api, call, callVoid, callWithResponse, etagOf, revisionEtag } from './client'
 import type { components } from './schema'
 import { uploadFile } from './attachments'
-import type { Lifecycle, OutcomeKind, TaskView } from './types'
+import type { Lifecycle, OutcomeKind, TaskView, WorkspaceFeature } from './types'
 
 type S = components['schemas']
 
@@ -156,6 +156,55 @@ export async function importDecisionCsv(ws: string, workflowId: string, decision
   )
   return { draft: data, etag: etagOf(response) ?? revisionEtag(data.revision) }
 }
+
+// Decision table DMN (docs/build/S121)
+/** Standard DMN 1.3 file of a draft table; workflow.read. */
+export async function exportDecisionDmn(ws: string, workflowId: string, decisionKey: string) {
+  const { data, response } = await callWithResponse(
+    api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/decisions/{decisionKey}/dmn', { params: { path: { workspaceId: ws, workflowId, decisionKey } }, parseAs: 'blob' }),
+  )
+  return { blob: data as unknown as Blob, filename: filenameOf(response, `${decisionKey}.dmn`) }
+}
+
+/** Standard DMN 1.3 file of a published release's table; workflow.export. */
+export async function exportReleaseDecisionDmn(ws: string, workflowId: string, releaseId: string, decisionKey: string) {
+  const { data, response } = await callWithResponse(
+    api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/releases/{releaseId}/decisions/{decisionKey}/dmn', { params: { path: { workspaceId: ws, workflowId, releaseId, decisionKey } }, parseAs: 'blob' }),
+  )
+  return { blob: data as unknown as Blob, filename: filenameOf(response, `${decisionKey}.dmn`) }
+}
+
+/** Standard DMN 1.3 file of a shared decision version. */
+export async function exportSharedDecisionDmn(ws: string, assetKey: string, version: number) {
+  const { data, response } = await callWithResponse(
+    api.GET('/workspaces/{workspaceId}/shared-assets/decision/{assetKey}/versions/{version}/dmn', { params: { path: { workspaceId: ws, assetKey, version } }, parseAs: 'blob' }),
+  )
+  return { blob: data as unknown as Blob, filename: filenameOf(response, `${assetKey}-v${version}.dmn`) }
+}
+
+/** Replaces a draft table with a decision table of a DMN file; never publishes, saves the next draft revision. */
+export async function importDecisionDmn(ws: string, workflowId: string, decisionKey: string, revision: number, xml: string, decisionId?: string) {
+  const { data, response } = await callWithResponse(
+    api.PUT('/workspaces/{workspaceId}/workflows/{workflowId}/decisions/{decisionKey}/dmn', {
+      params: { path: { workspaceId: ws, workflowId, decisionKey }, query: decisionId ? { decisionId } : {}, header: { 'If-Match': revisionEtag(revision) } },
+      body: xml,
+      bodySerializer: (b: unknown) => b as BodyInit,
+      headers: { 'Content-Type': 'application/xml' },
+    }),
+  )
+  return { draft: data, etag: etagOf(response) ?? revisionEtag(data.revision) }
+}
+
+/** Converts a DMN file into shared decision content for review; nothing is stored. */
+export const convertDecisionDmn = (ws: string, xml: string, decisionId?: string) =>
+  call(
+    api.POST('/workspaces/{workspaceId}/shared-assets/decision/dmn', {
+      params: { path: { workspaceId: ws }, query: decisionId ? { decisionId } : {} },
+      body: xml,
+      bodySerializer: (b: unknown) => b as BodyInit,
+      headers: { 'Content-Type': 'application/xml' },
+    }),
+  )
 
 export const validateDraft = (ws: string, workflowId: string, revision: number) =>
   call(
@@ -519,8 +568,8 @@ export const convertMigration = (ws: string, migrationId: string, body: S['Conve
   call(api.POST('/workspaces/{workspaceId}/migrations/{migrationId}/convert', { params: { path: { workspaceId: ws, migrationId } }, body }))
 
 // Pega Blueprint PDF (docs/build/S91): multipart upload, reviewed transcription revisions, optional AI proposal (never applied).
-export const uploadBlueprintMigration = (ws: string, file: File) =>
-  uploadFile<S['MigrationJob']>(`/workspaces/${ws}/migrations/blueprints`, file)
+export const uploadBlueprintMigration = (ws: string, file: File, caseType?: string) =>
+  uploadFile<S['MigrationJob']>(`/workspaces/${ws}/migrations/blueprints`, file, { fields: caseType?.trim() ? { caseType: caseType.trim() } : {} })
 export const getBlueprintTranscription = (ws: string, migrationId: string) =>
   call(api.GET('/workspaces/{workspaceId}/migrations/{migrationId}/blueprint', { params: { path: { workspaceId: ws, migrationId } } }))
 export const saveBlueprintTranscription = (ws: string, migrationId: string, body: { expectedRevision: number; transcription: S['BlueprintTranscription'] }) =>
@@ -572,7 +621,7 @@ export const getStageMail = (ws: string, runId: string) =>
 
 export const exportCaseEvidence = (ws: string, runId: string, format: 'json' | 'csv') =>
   call(api.GET('/workspaces/{workspaceId}/runs/{runId}/evidence', { params: { path: { workspaceId: ws, runId }, query: { format } }, parseAs: 'blob' }))
-// Shared assets (PL01, docs/build/S61): search, detail, where-used, shared decisions, owners and archive
+// Shared assets (PL01, docs/build/S61, S128): search, detail, where-used, shared decisions and forms, owners and archive
 type AssetKind = S['SharedAssetKind']
 export const listSharedAssets = (ws: string, query: { q?: string; kind?: AssetKind; owner?: string; includeArchived?: boolean } = {}) =>
   call(api.GET('/workspaces/{workspaceId}/shared-assets', { params: { path: { workspaceId: ws }, query } }))
@@ -592,8 +641,21 @@ export const createDecisionAsset = (ws: string, body: S['CreateDecisionAsset']) 
 export const addDecisionAssetVersion = (ws: string, assetKey: string, body: S['AddDecisionAssetVersion']) =>
   call(api.POST('/workspaces/{workspaceId}/shared-assets/decision/{assetKey}/versions', { params: { path: { workspaceId: ws, assetKey } }, body }))
 
+export const createFormAsset = (ws: string, body: S['CreateFormAsset']) =>
+  call(api.POST('/workspaces/{workspaceId}/shared-assets/form', { params: { path: { workspaceId: ws } }, body }))
+
+export const addFormAssetVersion = (ws: string, assetKey: string, body: S['AddFormAssetVersion']) =>
+  call(api.POST('/workspaces/{workspaceId}/shared-assets/form/{assetKey}/versions', { params: { path: { workspaceId: ws, assetKey } }, body }))
+
 export const setSharedAssetOwner = (ws: string, assetKind: AssetKind, assetKey: string, ownerSubjectId: string, expectedRevision: number) =>
   call(api.PUT('/workspaces/{workspaceId}/shared-assets/{assetKind}/{assetKey}/owner', { params: { path: { workspaceId: ws, assetKind, assetKey } }, body: { ownerSubjectId, expectedRevision } }))
 
 export const setSharedAssetArchived = (ws: string, assetKind: AssetKind, assetKey: string, archived: boolean, expectedRevision: number) =>
   call(api.PUT('/workspaces/{workspaceId}/shared-assets/{assetKind}/{assetKey}/archived', { params: { path: { workspaceId: ws, assetKind, assetKey } }, body: { archived, expectedRevision } }))
+
+// Workspace feature switches (S127)
+export const getWorkspaceFeatures = (ws: string) =>
+  call(api.GET('/workspaces/{workspaceId}/features', { params: { path: { workspaceId: ws } } }))
+
+export const setWorkspaceFeature = (ws: string, feature: WorkspaceFeature, enabled: boolean) =>
+  call(api.PUT('/workspaces/{workspaceId}/features/{feature}', { params: { path: { workspaceId: ws, feature } }, body: { enabled } }))

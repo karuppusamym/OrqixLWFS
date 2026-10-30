@@ -36,6 +36,7 @@ import com.orqix.shared.problem.ApiException;
 import com.orqix.shared.problem.ProblemCode;
 
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
 /** Workflows, templates, drafts, validation and decision testing (B03.4, S3 sections 6 and 8, S4). */
@@ -286,7 +287,8 @@ public class WorkflowService {
             DecisionEvaluator.Result result = evaluator.evaluate(draft.definitionJson(), decisionKey, values);
             Map<String, Object> output = new LinkedHashMap<>();
             result.output().forEach((k, v) -> output.put(k, v instanceof BigDecimal d ? d : v));
-            return new CatalogDtos.DecisionEvaluateResult(result.matchedRow(), result.usedDefault(), output);
+            return new CatalogDtos.DecisionEvaluateResult(result.matchedRow(), result.usedDefault(), output,
+                    result.matchedRows());
         } catch (IllegalArgumentException e) {
             throw new ApiException(ProblemCode.VALIDATION_FAILED, "The sample values do not fit the decision table.")
                     .withFieldErrors(List.of(new ApiException.FieldError("/values", "type",
@@ -379,8 +381,15 @@ public class WorkflowService {
         output.put("additionalProperties", false);
         output.putObject("properties");
         definition.putArray("triggers").add("manual");
-        definition.putArray("nodes");
-        definition.putArray("transitions");
+        // "Start empty" promises a request form and a finish step (S120): the Studio has no way to add a start step.
+        ArrayNode nodes = definition.putArray("nodes");
+        ObjectNode start = nodes.addObject();
+        start.put("id", "start").put("type", "start").put("label", "Request submitted");
+        start.putObject("config");
+        ObjectNode end = nodes.addObject();
+        end.put("id", "finished").put("type", "end").put("label", "Finished");
+        end.putObject("config").put("businessOutcome", "Completed").put("outcomeKind", "success");
+        definition.putArray("transitions").addObject().put("id", "t1").put("from", "start").put("to", "finished").put("on", "next");
         definition.putArray("decisions");
         ObjectNode execution = definition.putObject("execution");
         execution.put("maxConcurrentRuns", 100);
@@ -389,6 +398,9 @@ public class WorkflowService {
         definition.putObject("security").put("selfApproval", "deny");
         definition.putObject("dependencies").putArray("connections");
         definition.putObject("outputMapping");
+        ObjectNode positions = definition.putObject("uiLayout").putObject("positions");
+        positions.putObject("start").put("x", 80).put("y", 120);
+        positions.putObject("finished").put("x", 380).put("y", 120);
         return definition;
     }
 

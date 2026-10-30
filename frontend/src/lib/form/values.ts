@@ -132,7 +132,8 @@ export function buildPayload(fields: FieldDef[], raw: RawValues): BuildResult {
   return { payload, parseErrors }
 }
 
-function messageFor(f: FieldDef, keyword: IssueKeyword, typedLength: number): string {
+/** The plain message for one failed keyword, as the request form shows it (also used for case data, docs/build/S125). */
+export function messageFor(f: FieldDef, keyword: IssueKeyword, typedLength: number): string {
   const s = f.schema
   switch (keyword) {
     case 'hidden': return 'This question is hidden. Change its controlling answers before providing a value.'

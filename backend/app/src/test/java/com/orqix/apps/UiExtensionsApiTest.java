@@ -157,5 +157,12 @@ class UiExtensionsApiTest extends PageTestBase {
         var repin = api("paul.publisher").put(Map.of("expectedRevision", 0, "viewRef", Map.of("id", page.toString(),
                 "version", version)), null, PAGES + "/{slug}", PURCHASING, unique("again"));
         assertThat(repin.status()).isEqualTo(422);
+        // The page editor still lists where the page is used: the route is reported as blocked, not a server error.
+        var uses = api("dana.designer").get(VIEWS + "/{id}/pins?targetVersion=" + version, PURCHASING, page);
+        assertThat(uses.status()).as(uses.toString()).isEqualTo(200);
+        JsonNode routeUse = null;
+        for (JsonNode item : uses.body().path("items")) if (item.path("key").asString().equals("route:" + slug)) routeUse = item;
+        assertThat(routeUse).as(uses.toString()).isNotNull();
+        assertThat(routeUse.path("status").asString()).isEqualTo("current");
     }
 }

@@ -96,7 +96,7 @@ describe('Test this workflow (panel)', () => {
     renderApp(EDIT)
     await screen.findByText(/Draft revision 1/)
     const tabs = screen.getByRole('tablist', { name: 'Studio views' })
-    expect(within(tabs).getAllByRole('tab').map((t) => t.textContent)).toEqual(['Canvas', 'Steps', 'Lanes', 'Source', 'Test'])
+    expect(within(tabs).getAllByRole('tab').map((t) => t.textContent)).toEqual(['Canvas', 'Steps', 'Form', 'Lanes', 'Source', 'Test'])
     await user.click(screen.getByRole('button', { name: /Test workflow/ }))
     expect(within(tabs).getByRole('tab', { name: 'Test' })).toHaveAttribute('aria-selected', 'true')
     const panel = await screen.findByTestId('test-panel')

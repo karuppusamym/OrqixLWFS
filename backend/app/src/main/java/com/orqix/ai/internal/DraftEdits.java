@@ -48,7 +48,13 @@ public final class DraftEdits {
     /** Step kinds the assistant may add; other kinds need configuration the redacted view does not show. */
     public static final Set<String> ADDABLE_KINDS = Set.of("approval", "branch", "notification", "wait", "end");
     public static final Set<String> OPERATIONS = Set.of("addStep", "updateStep", "renameStep", "removeStep", "connect",
-            "disconnect", "changeFormField");
+            "disconnect", "changeFormField", "setFieldRule", "setStepFieldAccess", "setFormGroups", "addDecision",
+            "addCall");
+    /** Clarifying questions the assistant may ask before it drafts (S124). */
+    public static final int MAX_QUESTIONS = 3;
+    static final int MAX_QUESTION = 200;
+    static final Set<String> FIELD_ACCESS = Set.of("hidden", "readOnly", "editable", "required");
+    static final Pattern TABLE_KEY = Pattern.compile("^[a-z][a-z0-9-]{0,62}[a-z0-9]$");
     static final Set<String> ROUTES = Set.of("next", "approved", "rejected", "timedOut", "failed", "condition",
             "default");
     static final Pattern NODE_ID = Pattern.compile("^(?!.*__)[A-Za-z][A-Za-z0-9_-]{0,63}$");
@@ -84,7 +90,12 @@ public final class DraftEdits {
      * @param definition regenerate only: the complete proposed draft (laid out), else null
      */
     public record Result(String message, List<Change> changes, List<Rejected> rejected, List<String> notes,
-            String notAnEdit, ObjectNode definition) {
+            String notAnEdit, ObjectNode definition, List<String> questions) {
+
+        public Result(String message, List<Change> changes, List<Rejected> rejected, List<String> notes,
+                String notAnEdit, ObjectNode definition) {
+            this(message, changes, rejected, notes, notAnEdit, definition, List.of());
+        }
 
         public int operationCount() {
             return changes.stream().mapToInt(c -> c.operations().size()).sum();
@@ -109,15 +120,24 @@ public final class DraftEdits {
      * result is still over {@value #MAX_SUMMARY_CHARS} characters, step settings are left out.
      */
     public String summary(JsonNode definition, List<DraftRules.GroupFact> groups) {
-        ObjectNode view = summaryNode(definition, groups, true);
+        return summary(definition, groups, List.of());
+    }
+
+    /**
+     * The summary with the form's rules and groups and, for {@code addCall} (S124), the workspace's connections: the
+     * latest registered version of each, with its operations' request fields and response properties (names only).
+     */
+    public String summary(JsonNode definition, List<DraftRules.GroupFact> groups, List<DraftRules.ConnectionFact> connections) {
+        ObjectNode view = summaryNode(definition, groups, connections, true);
         String text = json.write(view);
         if (text.length() > MAX_SUMMARY_CHARS) {
-            text = json.write(summaryNode(definition, groups, false));
+            text = json.write(summaryNode(definition, groups, connections, false));
         }
         return text.length() > MAX_SUMMARY_CHARS ? text.substring(0, MAX_SUMMARY_CHARS) : text;
     }
 
-    private ObjectNode summaryNode(JsonNode definition, List<DraftRules.GroupFact> groups, boolean settings) {
+    private ObjectNode summaryNode(JsonNode definition, List<DraftRules.GroupFact> groups,
+            List<DraftRules.ConnectionFact> connections, boolean settings) {
         ObjectNode view = json.object();
         view.put("name", clipped(definition.path("name").asString("")));
         view.put("description", clipped(definition.path("metadata").path("description").asString("")));
@@ -184,7 +204,51 @@ public final class DraftEdits {
         for (DraftRules.GroupFact group : groups) {
             groupList.addObject().put("key", group.key()).put("name", clipped(group.name()));
         }
+        JsonNode ui = definition.path("inputUi");
+        ObjectNode rules = view.putObject("formRules");
+        for (String name : List.of("visibleWhen", "requiredWhen")) {
+            if (ui.path(name).isObject() && !ui.path(name).isEmpty()) {
+                rules.set(name, redact(ui.path(name), 0));
+            }
+        }
+        if (ui.path("layout").path("sections").isArray()) {
+            ArrayNode formGroups = rules.putArray("groups");
+            for (JsonNode section : ui.path("layout").path("sections")) {
+                ObjectNode out = formGroups.addObject();
+                out.put("id", section.path("id").asString(""));
+                out.put("title", clipped(section.path("title").asString("")));
+                out.set("fields", section.path("fields").deepCopy());
+            }
+        }
+        ArrayNode connectionList = view.putArray("connections");
+        for (DraftRules.ConnectionFact connection : latest(connections)) {
+            ObjectNode out = connectionList.addObject();
+            out.put("key", connection.key()).put("version", connection.version()).put("name", clipped(connection.name()));
+            ArrayNode operations = out.putArray("operations");
+            for (Map.Entry<String, JsonNode> op : connection.document().path("operations").properties()) {
+                ObjectNode operation = operations.addObject();
+                operation.put("name", op.getKey());
+                operation.put("label", clipped(op.getValue().path("label").asString(op.getKey())));
+                ArrayNode request = operation.putArray("request");
+                op.getValue().path("requestSchema").path("properties").propertyNames().forEach(request::add);
+                ArrayNode response = operation.putArray("response");
+                op.getValue().path("responseSchema").path("properties").propertyNames().forEach(response::add);
+                operation.put("maxTimeoutSeconds", op.getValue().path("maxTimeoutSeconds").asInt(30));
+            }
+        }
         return view;
+    }
+
+    /** The latest registered version of each connection, by key. */
+    private static List<DraftRules.ConnectionFact> latest(List<DraftRules.ConnectionFact> connections) {
+        Map<String, DraftRules.ConnectionFact> latest = new java.util.TreeMap<>();
+        for (DraftRules.ConnectionFact connection : connections) {
+            DraftRules.ConnectionFact current = latest.get(connection.key());
+            if (current == null || current.version() < connection.version()) {
+                latest.put(connection.key(), connection);
+            }
+        }
+        return List.copyOf(latest.values());
     }
 
     private JsonNode redact(JsonNode value, int depth) {
@@ -270,7 +334,34 @@ public final class DraftEdits {
      * @param context the workspace compile context (null in pure tests: binding rules are then skipped)
      */
     public Result evaluate(JsonNode reply, JsonNode current, Mode mode, CompileContext context) {
+        return evaluate(reply, current, mode, context, List.of());
+    }
+
+    /** @param connections the workspace's registered connections, for {@code addCall} (S124) */
+    public Result evaluate(JsonNode reply, JsonNode current, Mode mode, CompileContext context,
+            List<DraftRules.ConnectionFact> connections) {
+        this.connectionFacts.set(latest(connections));
+        try {
+            return evaluateWith(reply, current, mode, context);
+        } finally {
+            this.connectionFacts.remove();
+        }
+    }
+
+    private final ThreadLocal<List<DraftRules.ConnectionFact>> connectionFacts = ThreadLocal.withInitial(List::of);
+
+    private Result evaluateWith(JsonNode reply, JsonNode current, Mode mode, CompileContext context) {
         String message = optionalText(reply.path("message"));
+        List<String> questions = new ArrayList<>();
+        for (JsonNode question : reply.path("questions")) {
+            String text = plain(question.asString(""));
+            if (text.length() > MAX_QUESTION) {
+                text = text.substring(0, MAX_QUESTION - 1) + "…";
+            }
+            if (!text.isEmpty() && questions.size() < MAX_QUESTIONS) {
+                questions.add(text);
+            }
+        }
         String notAnEdit = optionalText(reply.path("notAnEdit"));
         List<String> notes = new ArrayList<>();
         for (JsonNode note : reply.path("notes")) {
@@ -379,7 +470,7 @@ public final class DraftEdits {
             DraftAuthoring.ensureLayout(definition);
         }
         return new Result(message, List.copyOf(changes), List.copyOf(rejected), List.copyOf(notes), notAnEdit,
-                definition);
+                definition, List.copyOf(questions));
     }
 
     /**
@@ -417,8 +508,265 @@ public final class DraftEdits {
             case "removeStep" -> removeStep(doc, op);
             case "connect" -> connect(doc, op);
             case "disconnect" -> disconnect(doc, op);
+            case "setFieldRule" -> setFieldRule(doc, op);
+            case "setStepFieldAccess" -> setStepFieldAccess(doc, op);
+            case "setFormGroups" -> setFormGroups(doc, op);
+            case "addDecision" -> addDecision(doc, op);
+            case "addCall" -> addCall(doc, op);
             default -> changeFormField(doc, op);
         };
+    }
+
+    // ---------------------------------------------------------------- S124 operations
+
+    /** Shows a question only when, or makes it required when, a condition holds ({@code inputUi.visibleWhen/requiredWhen}). */
+    private Applied setFieldRule(ObjectNode doc, JsonNode op) {
+        String key = op.path("key").asString("");
+        String rule = op.path("rule").asString("");
+        if (!Set.of("visibleWhen", "requiredWhen").contains(rule)) {
+            return Applied.fail("The rule must be visibleWhen or requiredWhen.");
+        }
+        if (!doc.path("inputSchema").path("properties").has(key)) {
+            return Applied.fail("There is no question with the key \"" + clip(key) + "\".");
+        }
+        JsonNode condition = op.path("condition");
+        if (!condition.isNull() && !condition.isObject()) {
+            return Applied.fail("The condition must be an object, or null to remove the rule.");
+        }
+        ObjectNode ui = doc.path("inputUi").isObject() ? (ObjectNode) doc.get("inputUi") : doc.putObject("inputUi");
+        ObjectNode rules = ui.path(rule).isObject() ? (ObjectNode) ui.get(rule) : ui.putObject(rule);
+        JsonNode before = rules.has(key) ? rules.get(key).deepCopy() : json.object().nullNode();
+        if (condition.isNull() && before.isNull()) {
+            return Applied.fail("The question has no such rule to remove.");
+        }
+        if (condition.equals(before)) {
+            return Applied.fail("The question already has this rule.");
+        }
+        if (condition.isNull()) {
+            rules.remove(key);
+        } else {
+            rules.set(key, condition.deepCopy());
+        }
+        if (rules.isEmpty()) {
+            ui.remove(rule);
+        }
+        ObjectNode normalized = json.object();
+        normalized.put("op", "setFieldRule").put("key", key).put("rule", rule);
+        normalized.set("condition", condition.deepCopy());
+        normalized.set("before", before);
+        String ref = "rule:" + rule + ":" + key;
+        return new Applied(normalized, null, Set.of("field:" + key), Set.of(ref), Set.of(ref), Set.of());
+    }
+
+    /**
+     * Sets a step form (S123): field access per request field (null back to read only) and, when given, the fields the
+     * step captures (null removes them). Normalized as the resulting settings patch, like {@code updateStep}.
+     */
+    private Applied setStepFieldAccess(ObjectNode doc, JsonNode op) {
+        String id = op.path("id").asString("");
+        ObjectNode node = node(doc, id);
+        if (node == null || !"approval".equals(node.path("type").asString())) {
+            return Applied.fail("Step forms are set on approval steps; \"" + clip(id) + "\" is not one.");
+        }
+        JsonNode access = op.path("fieldAccess");
+        boolean hasCapture = op.has("capture");
+        if (!access.isMissingNode() && !access.isObject()) {
+            return Applied.fail("fieldAccess must be an object of question keys to hidden, readOnly, editable or required.");
+        }
+        if (access.isMissingNode() && !hasCapture) {
+            return Applied.fail("Give fieldAccess, capture, or both.");
+        }
+        ObjectNode before = node.deepCopy();
+        ObjectNode config = node.path("config").isObject() ? (ObjectNode) node.get("config") : node.putObject("config");
+        ObjectNode patch = json.object();
+        if (access.isObject()) {
+            ObjectNode merged = config.path("fieldAccess").isObject() ? (ObjectNode) config.get("fieldAccess").deepCopy() : json.object();
+            for (Map.Entry<String, JsonNode> e : access.properties()) {
+                String value = e.getValue().isNull() ? "readOnly" : e.getValue().asString("");
+                if (!FIELD_ACCESS.contains(value)) {
+                    return Applied.fail("Field access is hidden, readOnly, editable or required.");
+                }
+                if (value.equals("readOnly")) {
+                    merged.remove(e.getKey());
+                } else {
+                    merged.put(e.getKey(), value);
+                }
+            }
+            if (merged.isEmpty()) {
+                config.remove("fieldAccess");
+                patch.putNull("fieldAccess");
+            } else {
+                config.set("fieldAccess", merged);
+                patch.set("fieldAccess", merged.deepCopy());
+            }
+        }
+        if (hasCapture) {
+            JsonNode capture = op.get("capture");
+            if (capture.isNull()) {
+                config.remove("capture");
+                patch.putNull("capture");
+            } else if (capture.isObject()) {
+                ObjectNode schema = (ObjectNode) capture.deepCopy();
+                schema.put("type", "object").put("additionalProperties", false);
+                if (!schema.path("properties").isObject()) {
+                    return Applied.fail("capture needs properties: the fields the step fills in.");
+                }
+                config.set("capture", schema);
+                patch.set("capture", schema.deepCopy());
+            } else {
+                return Applied.fail("capture must be a form (an object) or null.");
+            }
+        }
+        if (before.equals(node)) {
+            return Applied.fail("The step already has this step form.");
+        }
+        ObjectNode normalized = json.object();
+        normalized.put("op", "setStepFieldAccess").put("id", id);
+        normalized.set("config", patch);
+        normalized.set("before", before);
+        return new Applied(normalized, null, Set.of(), Set.of("node:" + id), Set.of("node:" + id), Set.of());
+    }
+
+    /** Replaces the form's groups ({@code inputUi.layout.sections}); an empty list removes them. */
+    private Applied setFormGroups(ObjectNode doc, JsonNode op) {
+        JsonNode groups = op.path("groups");
+        if (!groups.isArray()) {
+            return Applied.fail("groups must be a list of {id, title, fields}.");
+        }
+        ObjectNode ui = doc.path("inputUi").isObject() ? (ObjectNode) doc.get("inputUi") : doc.putObject("inputUi");
+        ObjectNode layout = ui.path("layout").isObject() ? (ObjectNode) ui.get("layout") : ui.putObject("layout");
+        JsonNode before = layout.has("sections") ? layout.get("sections").deepCopy() : json.object().nullNode();
+        if (groups.isEmpty()) {
+            if (before.isNull()) {
+                return Applied.fail("The form has no groups to remove.");
+            }
+            layout.remove("sections");
+            if (layout.isEmpty()) {
+                ui.remove("layout");
+            }
+        } else {
+            if (groups.equals(before)) {
+                return Applied.fail("The form already has these groups.");
+            }
+            layout.set("sections", groups.deepCopy());
+        }
+        ObjectNode normalized = json.object();
+        normalized.put("op", "setFormGroups");
+        normalized.set("groups", groups.deepCopy());
+        normalized.set("before", before);
+        return new Applied(normalized, null, Set.of(), Set.of("groups"), Set.of("groups"), Set.of());
+    }
+
+    /** Adds a decision step with its own rule table (route it with {@code connect ... on next}). */
+    private Applied addDecision(ObjectNode doc, JsonNode op) {
+        String id = op.path("id").asString("");
+        String label = plain(op.path("label").asString(""));
+        JsonNode table = op.path("table");
+        if (!NODE_ID.matcher(id).matches()) {
+            return Applied.fail("The step id must start with a letter and use letters, digits, - and _ only.");
+        }
+        if (idInUse(doc, id)) {
+            return Applied.fail("The id \"" + id + "\" is already used by a step or connection.");
+        }
+        if (label.isEmpty() || label.length() > MAX_LABEL) {
+            return Applied.fail("The step needs a label of 1-" + MAX_LABEL + " characters.");
+        }
+        if (!table.isObject()) {
+            return Applied.fail("The decision needs a rule table.");
+        }
+        String key = table.path("key").asString("");
+        if (!TABLE_KEY.matcher(key).matches()) {
+            return Applied.fail("A rule table key uses lowercase letters, digits and -, such as risk-policy.");
+        }
+        for (JsonNode existing : doc.path("decisions")) {
+            if (key.equals(existing.path("key").asString())) {
+                return Applied.fail("A rule table with the key \"" + key + "\" already exists.");
+            }
+        }
+        ObjectNode copy = (ObjectNode) table.deepCopy();
+        if (!copy.has("version")) {
+            copy.put("version", 1);
+        }
+        if (!copy.has("hitPolicy")) {
+            copy.put("hitPolicy", "UNIQUE");
+        }
+        array(doc, "decisions").add(copy);
+        ObjectNode node = array(doc, "nodes").addObject();
+        node.put("id", id).put("type", "decision").put("label", label).putObject("config").put("decisionRef", key);
+        ObjectNode normalized = json.object();
+        normalized.put("op", "addDecision").put("id", id).put("label", label);
+        normalized.set("table", copy.deepCopy());
+        return new Applied(normalized, null, Set.of(), Set.of(), Set.of("node:" + id, "table:" + key),
+                Set.of("node:" + id, "table:" + key));
+    }
+
+    /**
+     * Adds a call to a system: an http step on a registered connection's operation, pinned to the latest registered
+     * version (the dependency is added when the workflow does not list the connection yet). The compiler then checks the
+     * operation, the mappings, the binding and the time limit.
+     */
+    private Applied addCall(ObjectNode doc, JsonNode op) {
+        String id = op.path("id").asString("");
+        String label = plain(op.path("label").asString(""));
+        String connectionRef = op.path("connectionRef").asString("");
+        String operation = op.path("operation").asString("");
+        if (!NODE_ID.matcher(id).matches()) {
+            return Applied.fail("The step id must start with a letter and use letters, digits, - and _ only.");
+        }
+        if (idInUse(doc, id)) {
+            return Applied.fail("The id \"" + id + "\" is already used by a step or connection.");
+        }
+        if (label.isEmpty() || label.length() > MAX_LABEL) {
+            return Applied.fail("The step needs a label of 1-" + MAX_LABEL + " characters.");
+        }
+        DraftRules.ConnectionFact connection = connectionFacts.get().stream()
+                .filter(c -> c.key().equals(connectionRef)).findFirst().orElse(null);
+        if (connection == null) {
+            return Applied.fail("There is no connection \"" + clip(connectionRef) + "\" in this workspace.");
+        }
+        JsonNode definition = connection.document().path("operations").path(operation);
+        if (!definition.isObject()) {
+            return Applied.fail("The connection \"" + connectionRef + "\" has no operation \"" + clip(operation) + "\".");
+        }
+        for (String name : List.of("inputMapping", "resultMapping")) {
+            JsonNode mapping = op.path(name);
+            if (!mapping.isMissingNode() && !mapping.isNull() && !mapping.isObject()) {
+                return Applied.fail(name + " must be an object of names to field references.");
+            }
+            for (JsonNode value : mapping) {
+                if (!value.isString()) {
+                    return Applied.fail(name + " values are field references such as /input/amount.");
+                }
+            }
+        }
+        int max = definition.path("maxTimeoutSeconds").asInt(30);
+        int timeout = op.path("timeoutSeconds").isIntegralNumber() ? op.get("timeoutSeconds").intValue() : Math.min(20, max);
+        ObjectNode config = json.object();
+        config.put("connectionRef", connectionRef).put("operation", operation);
+        config.set("inputMapping", op.path("inputMapping").isObject() ? op.get("inputMapping").deepCopy() : json.object());
+        config.set("resultMapping", op.path("resultMapping").isObject() ? op.get("resultMapping").deepCopy() : json.object());
+        config.put("timeoutSeconds", timeout);
+        ObjectNode node = array(doc, "nodes").addObject();
+        node.put("id", id).put("type", "http").put("label", label).set("config", config);
+        ObjectNode dependencies = doc.path("dependencies").isObject() ? (ObjectNode) doc.get("dependencies")
+                : doc.putObject("dependencies");
+        ArrayNode pinned = array(dependencies, "connections");
+        int version = connection.version();
+        boolean added = true;
+        for (JsonNode dependency : pinned) {
+            if (connectionRef.equals(dependency.path("key").asString())) {
+                version = dependency.path("definitionVersion").asInt(version);
+                added = false;
+            }
+        }
+        if (added) {
+            pinned.addObject().put("key", connectionRef).put("definitionVersion", version);
+        }
+        ObjectNode normalized = json.object();
+        normalized.put("op", "addCall").put("id", id).put("label", label);
+        normalized.set("config", config.deepCopy());
+        normalized.put("definitionVersion", version).put("addsDependency", added);
+        return new Applied(normalized, null, Set.of(), Set.of(), Set.of("node:" + id), Set.of("node:" + id));
     }
 
     private Applied addStep(ObjectNode doc, JsonNode op) {
@@ -807,9 +1155,12 @@ public final class DraftEdits {
         }
         JsonNode assets = doc.path("dependencies").path("assets");
         if (assets.isArray()) {
-            filter((ArrayNode) assets, a -> "decision".equals(a.path("kind").asString())
-                    ? droppedDecisions.contains(a.path("target").asString())
-                    : id.equals(a.path("target").asString()));
+            // A shared form link (S128) targets the request form, never a step, so removing a step keeps it.
+            filter((ArrayNode) assets, a -> switch (a.path("kind").asString("")) {
+                case "decision" -> droppedDecisions.contains(a.path("target").asString());
+                case "form" -> false;
+                default -> id.equals(a.path("target").asString());
+            });
             if (assets.isEmpty()) {
                 ((ObjectNode) doc.get("dependencies")).remove("assets");
             }

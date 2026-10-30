@@ -2,6 +2,7 @@ package com.orqix.compiler.internal.rules;
 
 import static com.orqix.compiler.internal.rules.RuleContext.q;
 
+import java.util.List;
 import java.util.regex.Pattern;
 
 import com.orqix.compiler.internal.model.Enums.FieldKind;
@@ -42,6 +43,9 @@ final class Conditions {
      * @return the typed condition, or null when it cannot take part in disjointness analysis
      */
     static Disjointness.Typed check(RuleContext rc, Condition c, String base, String nodeId, String transitionId) {
+        if (c.operator().set()) {
+            return checkSet(rc, c, base, nodeId, transitionId);
+        }
         literalSafety(rc, c.value(), base + "/value", nodeId, transitionId);
         Resolution resolution = rc.types().resolve(c.fieldRef());
         if (resolution instanceof Unknown u) {
@@ -84,6 +88,53 @@ final class Conditions {
         return new Disjointness.Typed(c, type);
     }
 
+    /**
+     * {@code in} and {@code between} (decision rows only, docs/build/S121): a list fits text and number fields, every
+     * member must fit the field (and its choices); a range fits number fields only.
+     */
+    private static Disjointness.Typed checkSet(RuleContext rc, Condition c, String base, String nodeId,
+            String transitionId) {
+        if (c.operator() == com.orqix.compiler.internal.model.Enums.Operator.IN) {
+            for (int i = 0; i < c.list().size(); i++) {
+                literalSafety(rc, c.list().get(i), base + "/value/" + i, nodeId, transitionId);
+            }
+        }
+        Resolution resolution = rc.types().resolve(c.fieldRef());
+        if (resolution instanceof Unknown u) {
+            rc.issues().blocker("WF_FIELDREF_UNKNOWN", base + "/fieldRef", nodeId, transitionId, u.message());
+            return null;
+        }
+        if (!(resolution instanceof Resolved r)) {
+            return null;
+        }
+        FieldType type = r.type();
+        boolean in = c.operator() == com.orqix.compiler.internal.model.Enums.Operator.IN;
+        boolean fits = in ? type.kind() == FieldKind.STRING || type.kind().numeric() : type.kind().numeric();
+        if (!fits) {
+            rc.issues().blocker("WF_OPERATOR_TYPE", base + "/operator", nodeId, transitionId, "The comparison "
+                    + q(c.operator().phrase()) + " works only on " + (in ? "text and numbers" : "numbers") + ", but "
+                    + c.fieldRef() + " is " + type.kind().description() + ".");
+            return null;
+        }
+        List<Literal> literals = c.literals();
+        for (int i = 0; i < literals.size(); i++) {
+            Literal literal = literals.get(i);
+            String path = base + "/value/" + (in ? String.valueOf(i) : i == 0 ? "from" : "to");
+            if (!literalMatches(literal, type.kind())) {
+                rc.issues().blocker("WF_LITERAL_TYPE", path, nodeId, transitionId, "The value must be "
+                        + type.kind().description() + " to match " + c.fieldRef() + ".");
+                return null;
+            }
+            if (literal instanceof Literal.Str s && type.domain() != null && !type.domain().contains(s.string())) {
+                String shown = safe(s.string()) ? q(s.string()) : "This value";
+                rc.issues().blocker("WF_LITERAL_NOT_IN_DOMAIN", path, nodeId, transitionId, shown
+                        + " is not a value that " + c.fieldRef() + " can have. Possible values: "
+                        + String.join(", ", type.domain()) + ".");
+            }
+        }
+        return new Disjointness.Typed(c, type);
+    }
+
     static boolean literalMatches(Literal literal, FieldKind kind) {
         return switch (kind) {
             case STRING -> literal instanceof Literal.Str;
@@ -120,6 +171,15 @@ final class Conditions {
             rc.issues().blocker("WF_FIELDREF_NOT_GUARANTEED", path, usedAt.id(), transitionId, "The " + r.key()
                     + " of " + q(producer) + " exists only when the message arrives in time, and " + q(usedAt)
                     + " can also be reached when it does not. Use it only on the path after the message.");
+            return;
+        }
+        if (producer instanceof Node.Approval a && a.capture() != null && a.capture().properties().containsKey(r.key())
+                && !FieldTypes.APPROVAL_OUTPUTS.contains(r.key())
+                && FailureRules.reachableWithout(rc, producer, com.orqix.compiler.internal.model.Enums.Route.APPROVED, usedAt)) {
+            // S123: captured fields are filled in when the step is approved; a rejection or a time-out leaves them empty.
+            rc.issues().blocker("WF_FIELDREF_NOT_GUARANTEED", path, usedAt.id(), transitionId, "The " + r.key()
+                    + " captured at " + q(producer) + " is filled in only when the step is approved, and " + q(usedAt)
+                    + " can also be reached when it is not. Use it only on the path after the approval.");
             return;
         }
         if (FailureRules.canFail(producer) && FailureRules.hasFailedRoute(g, producer)) {

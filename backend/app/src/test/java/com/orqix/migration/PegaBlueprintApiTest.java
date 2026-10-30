@@ -64,6 +64,41 @@ class PegaBlueprintApiTest extends RuntimeTestBase {
     }
 
     @Test
+    void pegaExportTranscribesTheChosenCaseTypeAndRefusesAnUnknownOne() throws Exception {
+        byte[] pdf = BlueprintPdfs.pegaExport();
+        String path = "/workspaces/{ws}/migrations/blueprints";
+        int jobs = jdbc.sql("SELECT count(*) FROM migration_job WHERE workspace_id=:ws").param("ws", PURCHASING).query(Integer.class).single();
+        var unknown = api("dana.designer").upload(null, "loans.pdf", PDF, pdf, Map.of("caseType", "Car Insurance Claim"), path, PURCHASING);
+        assertThat(unknown.status()).as(unknown.toString()).isEqualTo(400);
+        assertThat(unknown.body().path("detail").asString()).contains("Car Insurance Claim", "Home Loan Application, Unsecured Retail Loan Application, Secured Retail Loan Application");
+        assertThat(jdbc.sql("SELECT count(*) FROM migration_job WHERE workspace_id=:ws").param("ws", PURCHASING).query(Integer.class).single()).isEqualTo(jobs);
+
+        var created = api("dana.designer").upload(null, "loans.pdf", PDF, pdf, Map.of("caseType", "Secured Retail Loan Application"), path, PURCHASING);
+        assertThat(created.status()).as(created.toString()).isEqualTo(201);
+        JsonNode job = created.body();
+        JsonNode view = blueprint(job);
+        assertThat(view.path("layout").path("id").asString()).isEqualTo("pega-blueprint");
+        assertThat(view.path("pageCount").asInt()).isEqualTo(10);
+        assertThat(view.path("transcription").path("caseType").path("name").asString()).isEqualTo("Secured Retail Loan Application");
+        assertThat(view.path("transcription").path("stages")).hasSize(5);
+        JsonNode page7 = view.path("pages").get(6);
+        assertThat(page7.path("text").asString()).contains("Capture Applicant Information\n  Collect Applicant Information\n  Collect Financial Information\n");
+        assertThat(page7.path("unclassifiedLines").asInt()).isZero();
+        assertThat(page7.path("sha256").asString()).isEqualTo(Json.sha256Hex(page7.path("text").asString()));
+        assertThat(codes(view.path("report"))).contains("BLUEPRINT_CASE_TYPES_NOT_TRANSCRIBED", "BLUEPRINT_OUTCOME_MISSING", "BLUEPRINT_STEP_ROLE_MISSING")
+            .doesNotContain("BLUEPRINT_NO_STRUCTURE");
+        // The not-transcribed case types are kept with the document, so a saved revision still reports them.
+        var saved = save(job, 1, view.path("transcription"));
+        assertThat(saved.status()).as(saved.toString()).isEqualTo(200);
+        assertThat(codes(saved.body().path("report"))).contains("BLUEPRINT_CASE_TYPES_NOT_TRANSCRIBED");
+        assertThat(saved.body().path("report").path("issues").toString()).contains("Home Loan Application, Unsecured Retail Loan Application");
+
+        // Without a case type the first one is transcribed.
+        JsonNode first = blueprint(uploaded(pdf));
+        assertThat(first.path("transcription").path("caseType").path("name").asString()).isEqualTo("Home Loan Application");
+    }
+
+    @Test
     void syntheticBlueprintBecomesAReviewedPublishedExecutableWorkflow() throws Exception {
         byte[] pdf = BlueprintPdfs.sample();
         JsonNode job = uploaded(pdf);
@@ -261,6 +296,39 @@ class PegaBlueprintApiTest extends RuntimeTestBase {
         String audit = jdbc.sql("SELECT string_agg(metadata::text, ' ') FROM audit_event WHERE workspace_id=:ws AND resource_id=:id")
             .param("ws", PURCHASING).param("id", job.path("id").asString()).query(String.class).single();
         assertThat(audit).doesNotContain("Claims", "Adjuster", "owner@example.com");
+    }
+
+    @Test
+    void aiProposalToleratesFormatSlipsAndRepairsOnce() throws Exception {
+        JsonNode job = uploaded(BlueprintPdfs.pages(List.of(List.of("Case type: Claims", "Fields", "- Amount (decimal, required)",
+            "Steps", "- Review claim (approval) - role: Adjuster"))));
+        String roles = "\"roles\":[{\"id\":\"role-adjuster\",\"name\":\"Adjuster\",\"sourcePage\":1,\"disposition\":\"proposed\"}]";
+        String fields = "\"fields\":[{\"id\":\"amount\",\"name\":\"Amount\",\"type\":\"number\",\"sourcePage\":1,\"disposition\":\"proposed\"}]";
+        String outcome = "\"outcomes\":[{\"id\":\"done\",\"name\":\"Done\",\"type\":\"success\",\"sourcePage\":1,\"disposition\":\"proposed\"}]";
+        // Slips seen from real models: a Markdown fence, page metadata on a rule, a numeric rule value.
+        AgentLlmStub.reset();
+        AgentLlmStub.answer("```json\n{" + roles + "," + fields + "," + outcome + ",\"decisions\":[{\"id\":\"big\",\"name\":\"Big\",\"rules\":[{\"field\":\"amount\","
+            + "\"operator\":\">=\",\"value\":5000,\"target\":\"done\",\"sourcePage\":1,\"disposition\":\"proposed\"}],\"otherwise\":\"done\","
+            + "\"sourcePage\":1,\"disposition\":\"proposed\"}]}\n```", 0.0001);
+        var normalized = api("dana.designer").post(Map.of(), "/workspaces/{ws}/migrations/{id}/blueprint/ai-proposal", PURCHASING, job.path("id").asString());
+        assertThat(normalized.status()).as(normalized.toString()).isEqualTo(200);
+        assertThat(normalized.body().path("transcription").path("decisions").get(0).path("rules").get(0).path("value").asString()).isEqualTo("5000");
+        assertThat(AgentLlmStub.requests()).hasSize(1);
+        assertThat(AgentLlmStub.requests().getFirst().path("response_format").path("json_schema").path("schema").path("properties").has("steps")).isTrue();
+
+        // A name used as a reference is refused by the parser; the model gets the error (no page text) and one retry.
+        AgentLlmStub.reset();
+        AgentLlmStub.answer("{" + roles + ",\"steps\":[{\"id\":\"review\",\"name\":\"Review claim\",\"type\":\"approval\",\"role\":\"Line Manager\","
+            + "\"sourcePage\":1,\"disposition\":\"proposed\"}]}", 0.0001);
+        AgentLlmStub.answer("{" + roles + ",\"steps\":[{\"id\":\"review\",\"name\":\"Review claim\",\"type\":\"approval\",\"role\":\"role-adjuster\","
+            + "\"sourcePage\":1,\"disposition\":\"proposed\"}]}", 0.0001);
+        var repaired = api("dana.designer").post(Map.of(), "/workspaces/{ws}/migrations/{id}/blueprint/ai-proposal", PURCHASING, job.path("id").asString());
+        assertThat(repaired.status()).as(repaired.toString()).isEqualTo(200);
+        assertThat(repaired.body().path("transcription").path("steps").get(0).path("role").asString()).isEqualTo("role-adjuster");
+        assertThat(AgentLlmStub.requests()).hasSize(2);
+        String retry = AgentLlmStub.requests().getLast().path("messages").toString();
+        assertThat(retry).contains("Your answer was rejected", "steps/0/role");
+        assertThat(blueprint(job).path("revision").asInt()).isEqualTo(1);
     }
 
     @Test

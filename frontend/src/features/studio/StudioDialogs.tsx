@@ -4,7 +4,6 @@ import { useAnnounce } from '@/components/common/Announcer'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { FormField } from '@/components/common/FormField'
 import { ProblemAlert } from '@/components/common/ProblemAlert'
-import { FormRenderer } from '@/components/form/FormRenderer'
 import { Alert } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -13,8 +12,6 @@ import { Input, Select } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { downloadJson } from '@/lib/download'
-import { buildFields, parseFormSchema, parseFormUi } from '@/lib/form/schema'
-import { emptyValues, validateForm, type FieldErrors, type RawValue, type RawValues } from '@/lib/form/values'
 import { formatDateTime } from '@/lib/dates'
 import { savePayload } from '@/stores/studioStore'
 import { ConditionEditor, defaultLiteral } from './inspector/ConditionEditor'
@@ -344,46 +341,3 @@ export function AddStepDialog({ afterId, onClose }: { afterId: string | null; on
     </Dialog>
   )
 }
-
-// Preview form ---------------------------------------------------------------------------------------------------------------
-
-/** "Preview form": renders the draft request form exactly as a requester would see it. Nothing is submitted. */
-export function PreviewFormDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const def = useStudio((s) => s.definition)
-  const fields = useMemo(() => buildFields(parseFormSchema(def.inputSchema), parseFormUi(def.inputUi)), [def.inputSchema, def.inputUi])
-  const [values, setValues] = useState<RawValues>({})
-  const [errors, setErrors] = useState<FieldErrors>({})
-  const merged = { ...emptyValues(fields), ...values }
-  return (
-    <Dialog
-      open={open}
-      onClose={onClose}
-      title="Preview of the request form"
-      description="This is what requesters will see. Nothing you type here is sent."
-      size="lg"
-      footer={
-        <>
-          <Button
-            variant="secondary"
-            onClick={() => {
-              const result = validateForm(parseFormSchema(def.inputSchema), parseFormUi(def.inputUi), merged)
-              setErrors(result.errors)
-            }}
-          >
-            Check my answers
-          </Button>
-          <Button variant="primary" onClick={onClose}>
-            Close preview
-          </Button>
-        </>
-      }
-    >
-      {fields.length === 0 ? (
-        <p className="text-sm text-muted-foreground">The form has no questions yet. Add some to the request form step.</p>
-      ) : (
-        <FormRenderer fields={fields} values={merged} errors={errors} idPrefix="preview" onChange={(key: string, value: RawValue) => setValues((v) => ({ ...v, [key]: value }))} />
-      )}
-    </Dialog>
-  )
-}
-

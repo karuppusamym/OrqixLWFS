@@ -30,6 +30,7 @@ import com.orqix.identity.Caller;
 import com.orqix.identity.Permission;
 import com.orqix.identity.PolicyService;
 import com.orqix.identity.WorkspaceAccess;
+import com.orqix.identity.WorkspaceFeatures;
 import com.orqix.integration.InboundEvents;
 import com.orqix.integration.internal.SecretStore;
 import com.orqix.shared.Ids;
@@ -118,8 +119,12 @@ public class InboundService implements InboundEvents {
     private final Clock clock;
     private final org.springframework.beans.factory.ObjectProvider<com.orqix.integration.InboundCallbacks> callbacks;
 
+    private final WorkspaceFeatures features;
+
     public InboundService(PolicyService policy, SecretStore secrets, AuditWriter audit, JdbcClient jdbc, Json json,
-            Clock clock, org.springframework.beans.factory.ObjectProvider<com.orqix.integration.InboundCallbacks> callbacks) {
+            Clock clock, org.springframework.beans.factory.ObjectProvider<com.orqix.integration.InboundCallbacks> callbacks,
+            WorkspaceFeatures features) {
+        this.features = features;
         this.callbacks = callbacks;
         this.policy = policy;
         this.secrets = secrets;
@@ -127,6 +132,13 @@ public class InboundService implements InboundEvents {
         this.jdbc = jdbc;
         this.json = json;
         this.clock = clock;
+    }
+
+    /** S127: Kafka-sourced inbound triggers need the kafka module on (x-orqix-feature-when source kafka). */
+    private void requireKafkaWhenKafka(UUID workspaceId, AdapterRules.Kind kind) {
+        if (kind == AdapterRules.Kind.KAFKA) {
+            features.require(workspaceId, WorkspaceFeatures.Feature.KAFKA);
+        }
     }
 
     // ---------------------------------------------------------------- authoring
@@ -138,6 +150,7 @@ public class InboundService implements InboundEvents {
         policy.require(access, Permission.CONNECTION_MANAGE, "createInboundTrigger", true);
         com.orqix.integration.SecretNamespaces.refuseReserved(request.secretRef(), "/secretRef");
         AdapterRules.Kind kind = AdapterRules.Kind.of(request.source());
+        requireKafkaWhenKafka(workspaceId, kind);
         ObjectNode filter;
         ObjectNode mapping;
         try {
@@ -199,6 +212,7 @@ public class InboundService implements InboundEvents {
                     "The trigger changed since you loaded it (now version " + current.version() + ").");
         }
         AdapterRules.Kind kind = AdapterRules.Kind.of(current.source());
+        requireKafkaWhenKafka(workspaceId, kind);
         ObjectNode filter;
         ObjectNode mapping;
         try {
@@ -310,6 +324,8 @@ public class InboundService implements InboundEvents {
             throw new ApiException(ProblemCode.PAYLOAD_TOO_LARGE, "The event is larger than 64 KiB.");
         }
         verifySignature(trigger, timestamp, signature, bytes);
+        // S127: only a signed sender learns that Kafka is switched off; it can retry once it is back on.
+        requireKafkaWhenKafka(workspaceId, trigger.source());
         if (eventId == null || !EVENT_ID.matcher(eventId).matches()) {
             throw ApiException.malformed("X-Orqix-Event-Id must be 1-100 characters of [A-Za-z0-9._:-].");
         }

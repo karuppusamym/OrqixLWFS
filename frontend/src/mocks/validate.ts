@@ -2,8 +2,9 @@ import type { ValidationIssue } from '@/api/types'
 import { isCalendarDate } from '@/lib/dates'
 import { FormPattern } from '@/lib/form/pattern'
 import { allFields, availableFields, parseRef } from '@/features/studio/model/fieldRefs'
+import { RESERVED_CAPTURE_KEYS, captureOf, changeable } from '@/features/studio/model/stepForms'
 import { hasCycle, incoming, nodeById, outgoing, reachableFrom, startNode } from '@/features/studio/model/graph'
-import { conditionTerms, isAtomicCondition, type Condition, type Definition, type DecisionTable, type Literal, type WorkflowNode } from '@/features/studio/model/types'
+import { conditionTerms, isAtomicCondition, isRangeValue, type AtomicCondition, type Condition, type Definition, type DecisionTable, type Literal, type WorkflowNode } from '@/features/studio/model/types'
 
 /**
  * A faithful-enough subset of the compiler rule catalog (docs/build/S4-workflow-compiler.md section 5)
@@ -42,11 +43,39 @@ function isNumericRange(op: string): boolean {
   return op === 'gte' || op === 'lt'
 }
 
-function interval(c: Condition): { lo: number; loOpen: boolean; hi: number; hiOpen: boolean } | null {
-  if (typeof c.value !== 'number') return null
-  if (c.operator === 'eq') return { lo: c.value, loOpen: false, hi: c.value, hiOpen: false }
-  if (c.operator === 'gte') return { lo: c.value, loOpen: false, hi: Infinity, hiOpen: true }
-  return { lo: -Infinity, loOpen: true, hi: c.value, hiOpen: true }
+type Interval = { lo: number; loOpen: boolean; hi: number; hiOpen: boolean }
+
+/** Number set of a comparison as intervals (lists are points, a range one interval); null for text and booleans. */
+function intervals(c: AtomicCondition): Interval[] | null {
+  const v = c.value
+  if (c.operator === 'between') return isRangeValue(v) ? [{ lo: v.from, loOpen: v.includeFrom === false, hi: v.to, hiOpen: v.includeTo === false }] : null
+  if (c.operator === 'in') return Array.isArray(v) && v.every(x => typeof x === 'number') ? (v as number[]).map(x => ({ lo: x, loOpen: false, hi: x, hiOpen: false })) : null
+  if (typeof v !== 'number') return null
+  switch (c.operator) {
+    case 'eq': return [{ lo: v, loOpen: false, hi: v, hiOpen: false }]
+    case 'ne': return [{ lo: -Infinity, loOpen: true, hi: v, hiOpen: true }, { lo: v, loOpen: true, hi: Infinity, hiOpen: true }]
+    case 'gte': return [{ lo: v, loOpen: false, hi: Infinity, hiOpen: true }]
+    case 'gt': return [{ lo: v, loOpen: true, hi: Infinity, hiOpen: true }]
+    case 'lte': return [{ lo: -Infinity, loOpen: true, hi: v, hiOpen: false }]
+    default: return [{ lo: -Infinity, loOpen: true, hi: v, hiOpen: true }]
+  }
+}
+
+function intersects(ia: Interval, ib: Interval): boolean {
+  const lo = Math.max(ia.lo, ib.lo)
+  const hi = Math.min(ia.hi, ib.hi)
+  if (lo < hi) return true
+  if (lo > hi) return false
+  const loClosed = (ia.lo === lo ? !ia.loOpen : true) && (ib.lo === lo ? !ib.loOpen : true)
+  const hiClosed = (ia.hi === hi ? !ia.hiOpen : true) && (ib.hi === hi ? !ib.hiOpen : true)
+  return loClosed && hiClosed
+}
+
+/** Values named by "is" / "is one of"; null for "is not" (every other value). */
+function named(c: AtomicCondition): Literal[] | null {
+  if (c.operator === 'in' && Array.isArray(c.value)) return c.value
+  if (c.operator === 'eq' && !Array.isArray(c.value) && !isRangeValue(c.value)) return [c.value]
+  return null
 }
 
 function overlaps(a: Condition, b: Condition): boolean {
@@ -56,18 +85,42 @@ function overlaps(a: Condition, b: Condition): boolean {
     return conjunctions(a).some(ca => conjunctions(b).some(cb => !ca.some(x => cb.some(y => x.fieldRef === y.fieldRef && !overlaps(x, y)))))
   }
   if (a.fieldRef !== b.fieldRef) return false
-  const ia = interval(a)
-  const ib = interval(b)
-  if (ia && ib) {
-    const lo = Math.max(ia.lo, ib.lo)
-    const hi = Math.min(ia.hi, ib.hi)
-    if (lo < hi) return true
-    if (lo > hi) return false
-    const loClosed = (ia.lo === lo ? !ia.loOpen : true) && (ib.lo === lo ? !ib.loOpen : true)
-    const hiClosed = (ia.hi === hi ? !ia.hiOpen : true) && (ib.hi === hi ? !ib.hiOpen : true)
-    return loClosed && hiClosed
+  const ia = intervals(a)
+  const ib = intervals(b)
+  if (ia && ib) return ia.some(x => ib.some(y => intersects(x, y)))
+  const na = named(a)
+  const nb = named(b)
+  if (na && nb) return na.some(v => nb.includes(v))
+  if (na) return na.some(v => v !== b.value)
+  if (nb) return nb.some(v => v !== a.value)
+  return true
+}
+
+const sameOutputs = (a: Record<string, Literal>, b: Record<string, Literal>) =>
+  Object.keys(a).length === Object.keys(b).length && Object.entries(a).every(([k, v]) => b[k] === v)
+
+/** Settings of the hit policy (docs/build/S121), the same codes as the compiler. */
+function policyIssues(d: DecisionTable, di: number, nodeId: string | undefined): Issue[] {
+  const out: Issue[] = []
+  const at = `/decisions/${di}`
+  if (d.aggregation && d.hitPolicy !== 'COLLECT') out.push(issue('WF_DECISION_POLICY_OPTION', 'blocker', `Only the hit policy COLLECT combines results, so remove the aggregation of "${d.key}".`, `${at}/aggregation`, nodeId))
+  if (d.priority && d.hitPolicy !== 'PRIORITY') out.push(issue('WF_DECISION_POLICY_OPTION', 'blocker', `Only the hit policy PRIORITY uses a priority order, so remove it from "${d.key}".`, `${at}/priority`, nodeId))
+  if (d.hitPolicy === 'COLLECT') {
+    if (!d.aggregation) out.push(issue('WF_DECISION_POLICY_OPTION', 'blocker', `Choose how "${d.key}" combines the matching rows: sum, smallest, largest or count.`, `${at}/aggregation`, nodeId))
+    const numbers = Object.keys(d.default).length === 1 && [d.default, ...d.rows.map(r => r.then)].every(o => Object.values(o).every(v => typeof v === 'number'))
+    if (!numbers) out.push(issue('WF_DECISION_COLLECT_OUTPUT', 'blocker', `"${d.key}" combines the results of all matching rows, so it must have exactly one result field and every row and the default must set it to a number.`, `${at}/default`, nodeId))
   }
-  return a.operator === 'eq' && b.operator === 'eq' && a.value === b.value
+  if (d.hitPolicy === 'PRIORITY') {
+    const p = d.priority
+    if (!p) out.push(issue('WF_DECISION_POLICY_OPTION', 'blocker', `Choose the result field that decides between matching rows of "${d.key}" and list its values from the most to the least important.`, `${at}/priority`, nodeId))
+    else if (!(p.output in d.default)) out.push(issue('WF_DECISION_PRIORITY_ORDER', 'blocker', `The priority result field "${p.output}" is not a result of "${d.key}".`, `${at}/priority/output`, nodeId))
+    else {
+      const missing = [d.default[p.output], ...d.rows.map(r => r.then[p.output])].find(v => v !== undefined && !p.order.includes(v))
+      if (p.order.length < 2 || p.order.length > 20) out.push(issue('WF_DECISION_PRIORITY_ORDER', 'blocker', 'The priority order must list 2 to 20 values.', `${at}/priority/order`, nodeId))
+      else if (missing !== undefined) out.push(issue('WF_DECISION_PRIORITY_ORDER', 'blocker', `The priority order of "${d.key}" does not list "${String(missing)}", which a row or the default gives as "${p.output}".`, `${at}/priority/order`, nodeId))
+    }
+  }
+  return out
 }
 
 export function validateDefinition(def: Definition, ctx: ValidationContext): Issue[] {
@@ -142,6 +195,7 @@ export function validateDefinition(def: Definition, ctx: ValidationContext): Iss
         if (!group) issues.push(issue('WF_SCHEMA_INVALID', 'blocker', `"${n.label}" needs an approver group.`, nodePath(n, '/config/candidateGroupRef'), n.id))
         else if (!ctx.groups.includes(group)) issues.push(issue('WF_GROUP_UNBOUND', 'blocker', `The group "${group}" does not exist in this workspace.`, nodePath(n, '/config/candidateGroupRef'), n.id))
         checkPerItem(def, n, issues)
+        checkStepForm(def, n, issues)
         break
       }
       case 'parallelSplit':
@@ -336,9 +390,15 @@ export function validateDefinition(def: Definition, ctx: ValidationContext): Iss
       const afterOther = !!a.effective.from && !!b.effective.to && a.effective.from > b.effective.to
       return !beforeOther && !afterOther
     }
-    for (let a = 0; a < d.rows.length && d.hitPolicy !== 'FIRST'; a++) {
+    issues.push(...policyIssues(d, di, node?.id))
+    // Only UNIQUE and ANY forbid overlaps; ANY allows them when the rows give the same results (S121).
+    const checked = d.hitPolicy === 'UNIQUE' || d.hitPolicy === 'ANY'
+    for (let a = 0; a < d.rows.length && checked; a++) {
       for (let b = a + 1; b < d.rows.length; b++) {
-        if (windowsOverlap(d.rows[a] as DecisionTable['rows'][number], d.rows[b] as DecisionTable['rows'][number]) && overlaps((d.rows[a] as { when: Condition }).when, (d.rows[b] as { when: Condition }).when)) issues.push(issue('WF_DECISION_OVERLAP', 'blocker', `Rows ${a + 1} and ${b + 1} of "${d.key}" can both match. Make them exclusive.`, `/decisions/${di}/rows/${b}`, node?.id))
+        const x = d.rows[a] as DecisionTable['rows'][number]
+        const y = d.rows[b] as DecisionTable['rows'][number]
+        if (d.hitPolicy === 'ANY' && sameOutputs(x.then, y.then)) continue
+        if (windowsOverlap(x, y) && overlaps(x.when, y.when)) issues.push(issue('WF_DECISION_OVERLAP', 'blocker', d.hitPolicy === 'ANY' ? `Rows ${a + 1} and ${b + 1} of "${d.key}" can both match but give different results.` : `Rows ${a + 1} and ${b + 1} of "${d.key}" can both match. Make them exclusive.`, `/decisions/${di}/rows/${b}`, node?.id))
       }
     }
   })
@@ -452,6 +512,26 @@ function checkCondition(def: Definition, at: WorkflowNode, c: Condition, path: s
     issues.push(issue('WF_OPERATOR_TYPE', 'blocker', `${c.fieldRef} is a date. Dates can be used to wait until a day, but not (yet) to choose a path or in a decision table.`, `${path}/operator`, at.id, transitionId))
     return
   }
+  if (c.operator === 'in' || c.operator === 'between') {
+    // Lists and ranges belong to decision rows only (docs/build/S121).
+    if (!path.startsWith('/decisions/')) {
+      issues.push(issue('WF_SCHEMA_INVALID', 'blocker', 'The comparisons "is one of" and "is between" can be used in decision table rows only.', `${path}/operator`, at.id, transitionId))
+      return
+    }
+    const numeric = known.type === 'number' || known.type === 'integer'
+    if (c.operator === 'between' ? !numeric : !(numeric || known.type === 'string')) {
+      issues.push(issue('WF_OPERATOR_TYPE', 'blocker', c.operator === 'between' ? '"is between" only works on numbers.' : '"is one of" works on text and numbers.', `${path}/operator`, at.id, transitionId))
+      return
+    }
+    const values = c.operator === 'in' ? (Array.isArray(c.value) ? c.value : []) : isRangeValue(c.value) ? [c.value.from, c.value.to] : []
+    if (c.operator === 'in' && (values.length < 1 || values.length > 20)) issues.push(issue('WF_SCHEMA_INVALID', 'blocker', '"is one of" needs 1 to 20 values.', `${path}/value`, at.id, transitionId))
+    if (isRangeValue(c.value) && c.value.from >= c.value.to) issues.push(issue('WF_SCHEMA_INVALID', 'blocker', 'The start of the range must be smaller than its end.', `${path}/value`, at.id, transitionId))
+    values.forEach((v, i) => {
+      if (typeof v !== (numeric ? 'number' : 'string')) issues.push(issue('WF_LITERAL_TYPE', 'blocker', 'The value does not match the type of the field.', `${path}/value/${i}`, at.id, transitionId))
+      else if (known.enumValues && !known.enumValues.includes(String(v))) issues.push(issue('WF_LITERAL_NOT_IN_DOMAIN', 'blocker', `"${String(v)}" is never a possible value of this field.`, `${path}/value/${i}`, at.id, transitionId))
+    })
+    return
+  }
   if (isNumericRange(c.operator) && known.type !== 'number' && known.type !== 'integer') {
     issues.push(issue('WF_OPERATOR_TYPE', 'blocker', '"at least" and "less than" only work on numbers.', `${path}/operator`, at.id, transitionId))
   }
@@ -494,8 +574,35 @@ function checkPerItem(def: Definition, n: WorkflowNode, issues: Issue[]): void {
     }
   }
   const c = n.config
-  const combined = [c.multiInstance && 'a number of approvers', c.timeoutAfter && 'a time limit', c.escalation && 'reminders or escalation', Array.isArray(c.correctable) && c.correctable.length > 0 && 'correction of request fields'].filter(Boolean)
+  const combined = [c.multiInstance && 'a number of approvers', c.timeoutAfter && 'a time limit', c.escalation && 'reminders or escalation', (Array.isArray(c.correctable) && c.correctable.length > 0 || editableAccess(n).length > 0) && 'correction of request fields', captureOf(n) && 'fields filled in at the step'].filter(Boolean)
   for (const setting of combined) issues.push(issue('WF_PER_ITEM_UNSUPPORTED', 'blocker', `"${n.label}" opens one task per list item, so it cannot also have ${setting}.`, path, n.id))
+}
+
+/** Mock of the compiler's step form rules (docs/build/S123, StepForms and the correction rules). */
+function checkStepForm(def: Definition, n: WorkflowNode, issues: Issue[]): void {
+  const base = `/nodes/${def.nodes.findIndex((x) => x.id === n.id)}/config`
+  const access = (n.config.fieldAccess ?? {}) as Record<string, string>
+  for (const [key, value] of Object.entries(access)) {
+    const field = def.inputSchema.properties[key]
+    if (!field) issues.push(issue('WF_STEP_FORM_INVALID', 'blocker', `"${n.label}" sets how "${key}" is shown, but the request form has no such question.`, `${base}/fieldAccess/${key}`, n.id))
+    else if ((value === 'editable' || value === 'required') && !changeable(field)) issues.push(issue('WF_CORRECTION_INVALID', 'blocker', `"${n.label}" cannot let the approver change "${field.title}": only single-value fields (not lists, rows or files) can be changed.`, `${base}/fieldAccess`, n.id))
+  }
+  if (n.config.multiInstance && editableAccess(n).length) issues.push(issue('WF_MULTI_UNSUPPORTED', 'blocker', `"${n.label}" asks several people to approve, so approvers cannot also correct request fields.`, `${base}/multiInstance`, n.id))
+  const capture = captureOf(n)
+  if (!capture) return
+  if (n.config.multiInstance) issues.push(issue('WF_MULTI_UNSUPPORTED', 'blocker', `"${n.label}" asks several people to approve, so it cannot also ask them to fill in fields.`, `${base}/multiInstance`, n.id))
+  for (const key of capture.required ?? []) {
+    if (!capture.properties[key]) issues.push(issue('WF_STEP_FORM_INVALID', 'blocker', `"${n.label}" requires "${key}", which is not one of the fields it asks for.`, `${base}/capture/required`, n.id))
+  }
+  for (const [key, field] of Object.entries(capture.properties)) {
+    if (RESERVED_CAPTURE_KEYS.includes(key)) issues.push(issue('WF_STEP_FORM_INVALID', 'blocker', `"${n.label}" cannot ask for a field named "${key}": the step already records a value with that name.`, `${base}/capture/properties/${key}`, n.id))
+    else if (!changeable(field) && !(field.type === 'string' && field.format === 'date')) issues.push(issue('WF_STEP_FORM_INVALID', 'blocker', `"${n.label}" can ask only for single values (text, numbers, yes or no, dates), not lists, rows or files: "${field.title}".`, `${base}/capture/properties/${key}`, n.id))
+  }
+}
+
+function editableAccess(n: WorkflowNode): string[] {
+  const access = (n.config.fieldAccess ?? {}) as Record<string, string>
+  return Object.keys(access).filter((key) => access[key] === 'editable' || access[key] === 'required')
 }
 
 /** Mock of the compiler rule WF_FORM_PATTERN_INVALID (docs/build/S90), using the same safe engine. */

@@ -304,3 +304,13 @@ Receivers should recompute that value, compare in constant time, reject timestam
 
 **Kafka trigger errors.** The triggers panel and the API show a code after a failure: `secret_unavailable` (the trigger's `secretRef` file is missing or not `{"username": ..., "password": ...}`), `authentication_failed` (the broker refused those credentials) and `consumer_error` (anything else, for example the broker cannot be reached). The consumer keeps retrying, backing off to one minute.
 
+
+## Pega Blueprint export layout - 30 October 2026
+
+[S91](build/S91-pega-blueprint-pdf.md). Apply migration V204 (the names of a blueprint's case types that were not transcribed) before starting this image.
+
+**Pega Blueprint PDFs.** Pega's "Application Overview Document" Blueprint export is now read with its own layout (`pega-blueprint`): stages and steps from the lifecycle columns, step kinds from the step icons, fields from the field tables, personas as roles and Live Data objects as integrations. Other PDFs are still read as a generic outline. An export can define several case types and one import transcribes one: enter its name under **Case type** when uploading (empty: the first); the findings name the others. Page texts are now stored in reading order for this layout. Nothing changes for blueprints imported before.
+
+## Workspace feature switches - 30 October 2026
+
+Workspace administrators (`workspace.manage-access`) turn product modules on or off per workspace in **Settings → Features** ([S127](build/S127-workspace-feature-switches.md)): AI assistance, Cases, Migration and import, Agents and tools, Apps and extensions, Kafka triggers and adapters. Everything is on until switched. A switched-off module leaves the menu, Home and the Workflows page, and the server refuses its authoring and start operations with `409 FEATURE_DISABLED` (`feature` names the module; operations are marked `x-orqix-feature` in the contract), so the switch cannot be bypassed through the API. Nothing is deleted, reads stay available, and work that is already running keeps running. Kafka triggers of the workspace pause within one reconcile (default 10 s): messages wait on the topic and are read from the committed offset when the module is switched on again. Each change is audited (`workspace.feature.updated`, `feature`, `enabled`) and takes effect on all replicas at once. Platform settings (Kafka clusters, ClamAV, the AI key) stay in server configuration.

@@ -21,15 +21,31 @@ public final class DocumentExtraction {
     public static final int BLUEPRINT_MAX_FILE_BYTES = 25 * 1024 * 1024;
     public static final int BLUEPRINT_MAX_PAGES = 60;
     public static final int BLUEPRINT_MAX_TEXT_BYTES = 1024 * 1024;
+    /** Budget for the positioned runs and marks of all pages; a document over it is returned without geometry. */
+    public static final int BLUEPRINT_MAX_GEOMETRY_BYTES = 2 * 1024 * 1024;
     private static final Semaphore SLOTS = new Semaphore(2);
 
     /**
-     * Text of each page of a PDF, in page order. {@code javascript} and {@code embeddedFiles} report document-level
-     * active content that was present and ignored (best-effort detection; nothing is ever executed or extracted from it).
+     * Text of each page of a PDF, in page order, and (when within budget) each page's geometry. {@code javascript} and
+     * {@code embeddedFiles} report document-level active content that was present and ignored (best-effort detection;
+     * nothing is ever executed or extracted from it).
+     *
+     * @param geometry empty when the document's geometry exceeded its budget, otherwise one entry per page
      */
-    public record PdfPages(List<String> pages, boolean javascript, boolean embeddedFiles) {
-        public PdfPages { pages = List.copyOf(pages); }
+    public record PdfPages(List<String> pages, List<PageGeometry> geometry, boolean javascript, boolean embeddedFiles) {
+        public PdfPages { pages = List.copyOf(pages); geometry = List.copyOf(geometry); }
     }
+
+    /** Positioned text runs and small filled shapes of one page, in points from the top left of its crop box. */
+    public record PageGeometry(List<TextRun> runs, List<Mark> marks) {
+        public PageGeometry { runs = List.copyOf(runs); marks = List.copyOf(marks); }
+    }
+
+    /** One run of text as written by the text extractor: start x, baseline y, width, font size, bold or not. */
+    public record TextRun(float x, float y, float width, float size, boolean bold, String text) { }
+
+    /** A small filled shape (for example a step icon): bounding box and fill colour as 0xRRGGBB. */
+    public record Mark(float x, float y, float width, float height, int rgb) { }
 
     public String extract(byte[] bytes, String mime, long deadline) {
         if (bytes == null || bytes.length == 0 || bytes.length > MAX_FILE_BYTES) { throw failure("DOCUMENT_CONTENT_TOO_LARGE"); }
@@ -44,16 +60,53 @@ public final class DocumentExtraction {
     public PdfPages extractPdfPages(byte[] bytes, long deadline) {
         if (bytes == null || bytes.length == 0 || bytes.length > BLUEPRINT_MAX_FILE_BYTES) { throw failure("DOCUMENT_CONTENT_TOO_LARGE"); }
         if (bytes.length < 5 || !new String(bytes, 0, 5, StandardCharsets.US_ASCII).equals("%PDF-")) { throw failure("DOCUMENT_EXTRACTION_INVALID"); }
-        String output = run(DocumentExtractionWorker.PDF_PAGES, bytes, deadline, BLUEPRINT_MAX_TEXT_BYTES + 4096, "-Xmx256m");
+        String output = run(DocumentExtractionWorker.PDF_PAGES, bytes, deadline, BLUEPRINT_MAX_TEXT_BYTES + BLUEPRINT_MAX_GEOMETRY_BYTES + 8192, "-Xmx256m");
         int header = output.indexOf('\n');
         if (header < 0 || !output.startsWith(DocumentExtractionWorker.PAGES_HEADER)) { throw failure("DOCUMENT_EXTRACTION_INVALID"); }
         String[] flags = output.substring(DocumentExtractionWorker.PAGES_HEADER.length(), header).trim().split(" ");
         int count;
         try { count = Integer.parseInt(flags[0]); } catch (RuntimeException e) { throw failure("DOCUMENT_EXTRACTION_INVALID"); }
-        List<String> pages = new ArrayList<>(List.of(output.substring(header + 1).split("\f", -1)));
-        if (!pages.isEmpty() && pages.getLast().isEmpty()) { pages.removeLast(); }
-        if (pages.size() != count || count < 1 || count > BLUEPRINT_MAX_PAGES) { throw failure("DOCUMENT_EXTRACTION_INVALID"); }
-        return new PdfPages(pages, flags.length > 1 && flags[1].equals("javascript=true"), flags.length > 2 && flags[2].equals("embedded=true"));
+        boolean withGeometry = flags.length > 3 && flags[3].equals("geometry=true");
+        List<String> parts = new ArrayList<>(List.of(output.substring(header + 1).split("\f", -1)));
+        if (!parts.isEmpty() && parts.getLast().isEmpty()) { parts.removeLast(); }
+        if (parts.size() != count || count < 1 || count > BLUEPRINT_MAX_PAGES) { throw failure("DOCUMENT_EXTRACTION_INVALID"); }
+        List<String> pages = new ArrayList<>();
+        List<PageGeometry> geometry = new ArrayList<>();
+        for (String part : parts) {
+            int separator = part.indexOf(DocumentExtractionWorker.GEOMETRY_SEPARATOR);
+            if (withGeometry != (separator >= 0)) { throw failure("DOCUMENT_EXTRACTION_INVALID"); }
+            pages.add(separator < 0 ? part : part.substring(0, separator));
+            if (withGeometry) { geometry.add(geometry(part.substring(separator + 1))); }
+        }
+        return new PdfPages(pages, geometry, flags.length > 1 && flags[1].equals("javascript=true"), flags.length > 2 && flags[2].equals("embedded=true"));
+    }
+
+    /** Parses the worker's geometry lines strictly; anything unexpected means the worker output is not trusted. */
+    static PageGeometry geometry(String lines) {
+        List<TextRun> runs = new ArrayList<>();
+        List<Mark> marks = new ArrayList<>();
+        try {
+            for (String line : lines.split("\n")) {
+                if (line.isEmpty()) { continue; }
+                String[] f = line.split(" ", line.startsWith("T ") ? 7 : 6);
+                if (f[0].equals("T") && f.length == 7 && (f[5].equals("b") || f[5].equals("r")) && !f[6].isBlank()) {
+                    runs.add(new TextRun(number(f[1]), number(f[2]), number(f[3]), number(f[4]), f[5].equals("b"), f[6]));
+                } else if (f[0].equals("M") && f.length == 6 && f[5].matches("[0-9a-f]{6}") && marks.size() < DocumentExtractionWorker.MARKS_PER_PAGE) {
+                    marks.add(new Mark(number(f[1]), number(f[2]), number(f[3]), number(f[4]), Integer.parseInt(f[5], 16)));
+                } else {
+                    throw failure("DOCUMENT_EXTRACTION_INVALID");
+                }
+            }
+        } catch (NumberFormatException e) {
+            throw failure("DOCUMENT_EXTRACTION_INVALID");
+        }
+        return new PageGeometry(runs, marks);
+    }
+
+    private static float number(String value) {
+        float n = Float.parseFloat(value);
+        if (!Float.isFinite(n) || Math.abs(n) > 100_000) { throw new NumberFormatException(value); }
+        return n;
     }
 
     private String run(String type, byte[] bytes, long deadline, int maxOutput, String heap) {

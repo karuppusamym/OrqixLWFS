@@ -1,6 +1,6 @@
 import { expect, test } from '../support/fixtures'
 import { MOCK } from '../support/env'
-import { apiGet, createPurchaseWorkflow, workspaceId, selectStep } from '../support/app'
+import { apiGet, createPurchaseWorkflow, openFormTab, workspaceId } from '../support/app'
 
 test.describe('Conditional forms and repeating rows (mock API)', () => {
   test.skip(!MOCK, 'Fresh UI journey against the mock API; backend suites enforce pinned form rules')
@@ -11,8 +11,7 @@ test.describe('Conditional forms and repeating rows (mock API)', () => {
     const ws = await workspaceId(page)
     const wf = await createPurchaseWorkflow(page, ws)
     await page.goto(`/w/${ws}/workflows/${wf}/edit`)
-    await page.getByRole('tab', { name: 'Steps', exact: true }).click()
-    await selectStep(page, 'start')
+    await openFormTab(page)
     await page.getByRole('button', { name: 'Add a question' }).click()
     const notes = page.locator('[data-testid^="field-card-"]').last()
     await notes.getByLabel(/^Label/).fill('Extra notes')
@@ -39,12 +38,18 @@ test.describe('Conditional forms and repeating rows (mock API)', () => {
     await lines.getByLabel('Column label').nth(1).press('Enter')
     await lines.getByLabel('Column type').nth(1).selectOption('integer')
     await lines.getByRole('checkbox', { name: 'Required column Quantity' }).check()
-    await page.getByRole('button', { name: 'Add form section' }).click()
-    await page.getByLabel('Section title').fill('Supporting details')
-    await page.getByLabel('Section title').press('Enter')
+    await page.getByRole('button', { name: 'Add a group' }).click()
+    await page.getByLabel('Group title').fill('Supporting details')
+    await page.getByLabel('Group title').press('Enter')
     await page.getByRole('checkbox', { name: 'Include Extra notes' }).check()
     await page.getByRole('checkbox', { name: 'Include Order lines' }).check()
-    await page.getByLabel('Section columns').selectOption('2')
+    await page.getByLabel('Group columns').selectOption('2')
+    // The live preview applies the new rule: the notes question appears only from 5,000.
+    const preview = page.getByTestId('form-preview')
+    await expect(page.getByTestId('form-preview-status')).toContainText('Hidden by rules with these answers: Extra notes')
+    await preview.getByLabel('Amount (USD)').fill('5000')
+    await expect(page.getByTestId('form-preview-status')).not.toContainText('Extra notes')
+    await expect(page.getByTestId(/^question-/).filter({ hasText: 'Extra notes' })).toContainText('Shown only when Amount (USD) is at least 5000')
     await page.keyboard.press('Control+s')
     await expect(page.getByTestId('save-state')).toHaveText(/Saved/)
     const draft = await apiGet<{ revision: number; definition: { inputSchema: { properties: Record<string, { title: string }> } } }>(page, `/workspaces/${ws}/workflows/${wf}/draft`)

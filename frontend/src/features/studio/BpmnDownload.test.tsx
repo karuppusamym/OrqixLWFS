@@ -27,7 +27,7 @@ describe('BPMN download', () => {
     await renderAppReady(EDIT)
     await screen.findByText(/Draft revision/)
     await user.click(screen.getByRole('button', { name: 'More actions' }))
-    expect(await screen.findByRole('menuitem', { name: /Case models: CMMN XML download/ })).toHaveAttribute('href', `/w/${WS}/cases`)
+    expect(await screen.findByRole('menuitem', { name: /Case types: design and download CMMN/ })).toHaveAttribute('href', `/w/${WS}/case-designs`)
     await user.click(screen.getByRole('menuitem', { name: 'Download BPMN (.bpmn)' }))
     await waitFor(() => expect(downloads).toHaveLength(1))
     expect(downloads[0]!.filename).toBe(`${workflow().key}-draft-${workflow().drafts.at(-1)!.revision}.bpmn`)

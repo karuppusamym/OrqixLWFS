@@ -28,6 +28,7 @@ import com.orqix.identity.Caller;
 import com.orqix.identity.Permission;
 import com.orqix.identity.PolicyService;
 import com.orqix.identity.WorkspaceAccess;
+import com.orqix.identity.WorkspaceFeatures;
 import com.orqix.shared.Ids;
 import com.orqix.shared.idempotency.IdempotencyService;
 import com.orqix.shared.json.Json;
@@ -58,6 +59,8 @@ public class AiService {
     private static final String FORM_OPERATION = "suggestFormChanges";
     private static final String DRAFT_EDIT_OPERATION = "proposeDraftEdits";
     public static final String REASON_BUDGET = "The monthly AI budget is used up.";
+    /** S127: a workspace administrator switched AI assistance off in Settings, Features. */
+    public static final String REASON_SWITCHED_OFF = "AI assistance is switched off in this workspace.";
 
     /** An accepted generation: the job as it is now, and whether this response replays an earlier identical request. */
     public record Accepted(AiDtos.Job job, boolean replayed) {
@@ -90,11 +93,14 @@ public class AiService {
     private final DraftEdits editRules;
     private final java.util.concurrent.ConcurrentHashMap<UUID, Boolean> editsInFlight =
             new java.util.concurrent.ConcurrentHashMap<>();
+    private final WorkspaceFeatures features;
 
     public AiService(AiProperties properties, ModelPolicy models, Generator generator, WorkflowCompiler compiler,
             WorkspaceFacts facts, AiLedger ledger, AiJobStore jobs, AiJobRunner runner, DraftAuthoring drafts,
             PolicyService policy, IdempotencyService idempotency, AuditWriter audit,
-            PlatformTransactionManager transactions, MeterRegistry meters, Json json, Clock clock) {
+            PlatformTransactionManager transactions, MeterRegistry meters, Json json, Clock clock,
+            WorkspaceFeatures features) {
+        this.features = features;
         this.properties = properties;
         this.models = models;
         this.generator = generator;
@@ -127,8 +133,9 @@ public class AiService {
                     false, ApiException.forbidden());
         }
         BigDecimal spent = ledger.monthToDate();
-        String reason = models.disabledReason();
-        List<AiDtos.Profile> profiles = properties.keyConfigured() ? models.enabledProfiles().stream()
+        boolean switchedOff = !features.enabled(workspaceId, WorkspaceFeatures.Feature.AI);
+        String reason = switchedOff ? REASON_SWITCHED_OFF : models.disabledReason();
+        List<AiDtos.Profile> profiles = properties.keyConfigured() && !switchedOff ? models.enabledProfiles().stream()
                 .map(p -> new AiDtos.Profile(p.id(), p.label(), p.model(), p.variablePrice())).toList() : List.of();
         if (reason == null && spent.compareTo(properties.budget().monthlyUsd()) >= 0) {
             reason = REASON_BUDGET;
@@ -531,8 +538,11 @@ public class AiService {
             Generator.Meter meter = generator.meter(profile);
             List<PromptLibrary.Turn> history = request.history().stream()
                     .map(t -> new PromptLibrary.Turn(t.role(), t.text())).toList();
-            String user = PromptLibrary.draftEditUser(editRules.summary(latest.definition(), workspace.groups()),
-                    history, request.instruction(), mode.value());
+            // S124: questions are allowed only when the author has not asked for a draft now and nothing was asked yet.
+            boolean askedBefore = history.stream().anyMatch(t -> "assistant".equals(t.role()) && t.text().contains("Questions:"));
+            String user = PromptLibrary.draftEditUser(editRules.summary(latest.definition(), workspace.groups(),
+                    workspace.connections()), history, request.instruction(), mode.value(),
+                    !request.noQuestions() && !askedBefore);
             JsonNode reply;
             try {
                 reply = generator.editDraft(profile, user, meter);
@@ -549,7 +559,11 @@ public class AiService {
                         "The AI could not propose changes. Nothing was changed; try again or rephrase.");
             }
             DraftEdits.Result result = editRules.evaluate(reply, latest.definition(), mode,
-                    workspace.compileContext());
+                    workspace.compileContext(), workspace.connections());
+            if (request.noQuestions() || askedBefore) {
+                result = new DraftEdits.Result(result.message(), result.changes(), result.rejected(), result.notes(),
+                        result.notAnEdit(), result.definition(), List.of());
+            }
             recordEdits(caller, workspaceId, workflowId, meter, AiLedger.Outcome.SUCCESS, latest.revision(), mode,
                     history.size(), result);
             return new AiDtos.DraftEditProposal(latest.revision(), mode.value(), result.message(),
@@ -558,7 +572,7 @@ public class AiService {
                     result.rejected().stream().map(r -> new AiDtos.DraftEditRejected(r.summary(), r.reasons()))
                             .toList(),
                     result.notes(), result.notAnEdit(), result.definition(),
-                    generation(meter, PromptLibrary.DRAFT_EDIT_VERSION));
+                    generation(meter, PromptLibrary.DRAFT_EDIT_VERSION), result.questions());
         } finally {
             editsInFlight.remove(caller.subjectId());
         }
@@ -578,6 +592,7 @@ public class AiService {
                 metadata.put("changesSuggested", result == null ? 0 : result.changes().size());
                 metadata.put("changesRejected", result == null ? 0 : result.rejected().size());
                 metadata.put("operationsSuggested", result == null ? 0 : result.operationCount());
+                metadata.put("questionsAsked", result == null ? 0 : result.questions().size());
                 audit.write(new AuditWriter.Entry(base.workspaceId(), base.actorType(), base.actorSubject(),
                         base.action(), base.resourceType(), base.resourceId(), base.outcome(), metadata));
             });

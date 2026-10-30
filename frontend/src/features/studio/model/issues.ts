@@ -2,6 +2,16 @@ import type { ValidationIssue } from '@/api/types'
 import { startNode } from './graph'
 import type { Definition } from './types'
 
+/** Focus key for a request-form problem that is not about one question: opens the Form tab. */
+export const FORM_FIELD_KEY = 'form'
+
+/** The question a focus request names on the Form tab: its key, '' for the tab itself, undefined when it is not a form focus. */
+export function formFocusKey(def: Definition, nodeId: string, fieldKey: string | null): string | undefined {
+  if (nodeId !== startNode(def)?.id || !fieldKey) return undefined
+  if (fieldKey === FORM_FIELD_KEY) return ''
+  return fieldKey.startsWith('field.') ? fieldKey.slice('field.'.length).split('.')[0] : undefined
+}
+
 export interface IssueLocation {
   /** The step the issue belongs to, or null for whole-workflow issues. */
   nodeId: string | null
@@ -49,7 +59,9 @@ export function locateIssue(def: Definition, issue: Pick<ValidationIssue, 'path'
     case 'inputSchema':
     case 'inputUi': {
       nodeId ??= startNode(def)?.id ?? null
-      fieldKey = a === 'properties' && rest[0] ? `field.${rest[0]}` : null
+      // The request form is edited on the Form tab (S120): a question's own problem opens that question, the rest the tab.
+      const questionKey = root === 'inputSchema' ? (a === 'properties' ? rest[0] : undefined) : a === 'visibleWhen' || a === 'requiredWhen' ? rest[0] : undefined
+      fieldKey = questionKey && questionKey in def.inputSchema.properties ? `field.${questionKey}` : FORM_FIELD_KEY
       break
     }
     default:

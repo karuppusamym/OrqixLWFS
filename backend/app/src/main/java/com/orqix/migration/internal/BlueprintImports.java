@@ -39,13 +39,12 @@ public class BlueprintImports {
     public record AiProposal(JsonNode transcription, Report.CompatibilityReport report, String profile, String model, int basedOnRevision) { }
     record Conversion(ObjectNode definition, Report.CompatibilityReport report, Map<String, String> sourceMap) { }
 
-    private record Doc(int pageCount, boolean javascript, boolean embedded, String layoutId, String layoutRevision) { }
+    private record Doc(int pageCount, boolean javascript, boolean embedded, String layoutId, String layoutRevision, List<String> otherCaseTypes) { }
     private record Revision(int revision, JsonNode transcription, String sha256, String origin, UUID savedBy, Instant savedAt) { }
     private record Job(String status, String format, String sourceHash) { }
 
     private final JdbcClient jdbc; private final Json json; private final PolicyService policy; private final AuditWriter audit;
     private final DocumentExtraction extraction; private final SubjectService subjects; private final BlueprintAi ai;
-    private final BlueprintLayout layout = new GenericOutlineLayout();
     private final org.springframework.transaction.support.TransactionTemplate transactions;
 
     public BlueprintImports(JdbcClient jdbc, Json json, PolicyService policy, AuditWriter audit, DocumentExtraction extraction,
@@ -63,10 +62,12 @@ public class BlueprintImports {
      * Upload: validates and extracts before anything is stored; a refused PDF leaves no job. Extraction runs outside any
      * database transaction (it may take up to the worker deadline); storage is one short transaction.
      */
-    public UUID upload(Caller caller, UUID ws, String fileName, byte[] bytes) {
+    public UUID upload(Caller caller, UUID ws, String fileName, byte[] bytes, String caseType) {
         authorize(caller, ws, true, "uploadBlueprintMigration");
         String name = fileName == null ? "" : fileName.replaceAll("[\\p{Cc}/\\\\]", "").strip();
         if (name.isEmpty() || name.length() > 200) throw ApiException.malformed("file must have a name of 1 to 200 characters.");
+        String requested = caseType == null || caseType.replaceAll("\\p{Cc}", "").isBlank() ? null : caseType.replaceAll("\\p{Cc}", "").strip();
+        if (requested != null && requested.length() > 200) throw ApiException.malformed("caseType must have at most 200 characters.");
         if (bytes == null || bytes.length == 0) throw ApiException.malformed("file is required.");
         if (bytes.length > DocumentExtraction.BLUEPRINT_MAX_FILE_BYTES)
             throw new ApiException(ProblemCode.PAYLOAD_TOO_LARGE, "The PDF is larger than 25 MiB.");
@@ -85,37 +86,47 @@ public class BlueprintImports {
                 default -> new ApiException(ProblemCode.SOURCE_INVALID, "The PDF is damaged or not a readable PDF document.");
             };
         }
-        List<BlueprintLayout.Page> pages = new ArrayList<>();
+        List<BlueprintLayout.Page> extractedPages = new ArrayList<>();
         for (int i = 0; i < extracted.pages().size(); i++) {
             String text = extracted.pages().get(i);
-            pages.add(new BlueprintLayout.Page(i + 1, text, Json.sha256Hex(text)));
+            extractedPages.add(new BlueprintLayout.Page(i + 1, text, Json.sha256Hex(text), extracted.geometry().isEmpty() ? null : extracted.geometry().get(i)));
         }
-        BlueprintLayout.Result result = layout.transcribe(pages);
-        return transactions.execute(status -> store(caller, ws, name, bytes, extracted, pages, result));
+        BlueprintLayout layout = BlueprintLayout.forPages(extractedPages);
+        BlueprintLayout.Result result = layout.transcribe(extractedPages, requested);
+        if (requested != null && (result.caseType() == null || !caseTypeKey(result.caseType()).equals(caseTypeKey(requested))))
+            throw ApiException.malformed("The blueprint has no case type named '" + requested + "'." + (result.caseTypes().isEmpty() ? " It names no case type."
+                    : " It names: " + String.join(", ", result.caseTypes()) + "."));
+        // A layout that renders pages in reading order stores that rendering, so every element excerpt is found in its page.
+        List<BlueprintLayout.Page> pages = result.pageTexts() == null ? extractedPages : extractedPages.stream()
+                .map(p -> { String text = result.pageTexts().get(p.number() - 1); return new BlueprintLayout.Page(p.number(), text, Json.sha256Hex(text)); }).toList();
+        Doc doc = new Doc(pages.size(), extracted.javascript(), extracted.embeddedFiles(), layout.id(), layout.revision(), result.otherCaseTypes());
+        return transactions.execute(status -> store(caller, ws, name, bytes, doc, pages, result));
     }
 
-    private UUID store(Caller caller, UUID ws, String name, byte[] bytes, DocumentExtraction.PdfPages extracted, List<BlueprintLayout.Page> pages, BlueprintLayout.Result result) {
+    private static String caseTypeKey(String name) { return name.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", " ").strip(); }
+
+    private UUID store(Caller caller, UUID ws, String name, byte[] bytes, Doc doc, List<BlueprintLayout.Page> pages, BlueprintLayout.Result result) {
         authorize(caller, ws, true, "uploadBlueprintMigration");
         Transcription transcription = result.transcription();
         UUID id = Ids.newId();
         String hash = Json.sha256Hex(bytes);
-        Doc doc = new Doc(pages.size(), extracted.javascript(), extracted.embeddedFiles(), layout.id(), layout.revision());
         Report.CompatibilityReport report = BlueprintFindings.report(transcription, facts(doc, pages.stream().map(p -> p.text()).toList(), result.unclassified()), hash, false, false, Map.of());
         jdbc.sql("""
             INSERT INTO migration_job(id,workspace_id,created_by,file_name,source_format,source_sha256,source,adapter_version,report,status)
             VALUES(:id,:ws,:actor,:file,'pegaBlueprint',:hash,:source,:adapter,CAST(:report AS jsonb),'analyzed')
             """).param("id", id).param("ws", ws).param("actor", caller.subjectId()).param("file", name).param("hash", hash).param("source", bytes)
             .param("adapter", report.adapterVersion()).param("report", json.write(report)).update();
-        jdbc.sql("INSERT INTO migration_blueprint_document(workspace_id,migration_id,page_count,javascript,embedded_files,layout_id,layout_revision) VALUES(:ws,:id,:n,:js,:emb,:layout,:rev)")
+        jdbc.sql("INSERT INTO migration_blueprint_document(workspace_id,migration_id,page_count,javascript,embedded_files,layout_id,layout_revision,other_case_types) VALUES(:ws,:id,:n,:js,:emb,:layout,:rev,CAST(:others AS jsonb))")
             .param("ws", ws).param("id", id).param("n", doc.pageCount()).param("js", doc.javascript()).param("emb", doc.embedded())
-            .param("layout", doc.layoutId()).param("rev", doc.layoutRevision()).update();
+            .param("layout", doc.layoutId()).param("rev", doc.layoutRevision()).param("others", json.write(doc.otherCaseTypes())).update();
         for (var page : pages)
             jdbc.sql("INSERT INTO migration_blueprint_page(workspace_id,migration_id,page_number,text,text_sha256,unclassified_lines) VALUES(:ws,:id,:n,:text,:sha,:u)")
                 .param("ws", ws).param("id", id).param("n", page.number()).param("text", page.text()).param("sha", page.sha256())
                 .param("u", result.unclassified().get(page.number() - 1)).update();
         String sha = insertRevision(caller, ws, id, 1, transcription, "extracted");
         audit(caller, ws, id, "migration.uploaded", Map.of("migrationId", id.toString(), "sourceSystem", FORMAT, "sourceSha256", hash,
-                "adapterVersion", report.adapterVersion(), "pageCount", pages.size(), "elementCount", transcription.elements().size(), "transcriptionSha256", sha));
+                "adapterVersion", report.adapterVersion(), "layout", doc.layoutId() + " " + doc.layoutRevision(), "pageCount", pages.size(),
+                "caseTypeCount", result.caseTypes().size(), "elementCount", transcription.elements().size(), "transcriptionSha256", sha));
         return id;
     }
 
@@ -212,8 +223,14 @@ public class BlueprintImports {
         return job;
     }
     private Doc doc(UUID ws, UUID id) {
-        return jdbc.sql("SELECT page_count,javascript,embedded_files,layout_id,layout_revision FROM migration_blueprint_document WHERE workspace_id=:ws AND migration_id=:id")
-            .param("ws", ws).param("id", id).query((rs, n) -> new Doc(rs.getInt(1), rs.getBoolean(2), rs.getBoolean(3), rs.getString(4), rs.getString(5))).optional().orElseThrow(ApiException::notFound);
+        return jdbc.sql("SELECT page_count,javascript,embedded_files,layout_id,layout_revision,other_case_types::text FROM migration_blueprint_document WHERE workspace_id=:ws AND migration_id=:id")
+            .param("ws", ws).param("id", id).query((rs, n) -> new Doc(rs.getInt(1), rs.getBoolean(2), rs.getBoolean(3), rs.getString(4), rs.getString(5), strings(json.parse(rs.getString(6)))))
+            .optional().orElseThrow(ApiException::notFound);
+    }
+    private static List<String> strings(JsonNode array) {
+        List<String> values = new ArrayList<>();
+        for (JsonNode v : array) values.add(v.asString());
+        return values;
     }
     private Revision latest(UUID id) { return revision(id, null); }
     private Revision revision(UUID id, Integer number) {
@@ -228,10 +245,10 @@ public class BlueprintImports {
         List<Integer> unclassified = new ArrayList<>(); List<Boolean> empty = new ArrayList<>();
         jdbc.sql("SELECT unclassified_lines,text FROM migration_blueprint_page WHERE workspace_id=:ws AND migration_id=:id ORDER BY page_number").param("ws", ws).param("id", id)
             .query((rs, n) -> { unclassified.add(rs.getInt(1)); empty.add(rs.getString(2).isBlank()); return n; }).list();
-        return new BlueprintFindings.DocumentFacts(doc.pageCount(), unclassified, empty, doc.javascript(), doc.embedded(), doc.layoutId(), doc.layoutRevision());
+        return new BlueprintFindings.DocumentFacts(doc.pageCount(), unclassified, empty, doc.javascript(), doc.embedded(), doc.layoutId(), doc.layoutRevision(), doc.otherCaseTypes());
     }
     private static BlueprintFindings.DocumentFacts facts(Doc doc, List<String> texts, List<Integer> unclassified) {
-        return new BlueprintFindings.DocumentFacts(doc.pageCount(), unclassified, texts.stream().map(String::isBlank).toList(), doc.javascript(), doc.embedded(), doc.layoutId(), doc.layoutRevision());
+        return new BlueprintFindings.DocumentFacts(doc.pageCount(), unclassified, texts.stream().map(String::isBlank).toList(), doc.javascript(), doc.embedded(), doc.layoutId(), doc.layoutRevision(), doc.otherCaseTypes());
     }
     /** Element id to its JSON, from a stored or serialized transcription. */
     private static Map<String, JsonNode> elementNodes(JsonNode root) {

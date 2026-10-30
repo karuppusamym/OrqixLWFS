@@ -26,6 +26,7 @@ import com.orqix.identity.Permission;
 import com.orqix.identity.PolicyService;
 import com.orqix.identity.SubjectService;
 import com.orqix.identity.WorkspaceAccess;
+import com.orqix.identity.WorkspaceFeatures;
 import com.orqix.integration.AgentExecutor;
 import com.orqix.integration.ConnectionDefinition;
 import com.orqix.integration.ConnectionService;
@@ -63,10 +64,12 @@ public class ConnectionAdminService {
     private final Json json;
     private final Clock clock;
     private final Schema definitionSchema;
+    private final WorkspaceFeatures features;
 
     public ConnectionAdminService(ConnectionService connections, PolicyService policy, SubjectService subjects,
             EgressPolicy egress, SecretStore secrets, HttpExecutor executor, AgentExecutor agents, AuditWriter audit,
-            JdbcClient jdbc, Json json, Clock clock) {
+            JdbcClient jdbc, Json json, Clock clock, WorkspaceFeatures features) {
+        this.features = features;
         this.connections = connections;
         this.policy = policy;
         this.subjects = subjects;
@@ -80,6 +83,13 @@ public class ConnectionAdminService {
         this.clock = clock;
         this.definitionSchema = SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12)
                 .getSchema(SchemaLocation.of("classpath:orqix/schemas/connection-definition-v0.schema.json"));
+    }
+
+    /** S127: binding or testing an agent connection needs the agents module on (x-orqix-feature-when kind agent). */
+    private void requireAgentsWhenAgent(UUID workspaceId, String key) {
+        if (connections.definitions(workspaceId, key).stream().anyMatch(d -> d.definition().isAgent())) {
+            features.require(workspaceId, WorkspaceFeatures.Feature.AGENTS);
+        }
     }
 
     // ---------------------------------------------------------------- reads
@@ -130,6 +140,9 @@ public class ConnectionAdminService {
         policy.require(access, Permission.CONNECTION_MANAGE, "registerConnectionVersion", true);
         if (definition == null || !definition.isObject()) {
             throw ApiException.malformed("definition must be a JSON object.");
+        }
+        if ("agent".equals(definition.path("kind").asString("http"))) {
+            features.require(workspaceId, WorkspaceFeatures.Feature.AGENTS);
         }
         List<Error> errors = definitionSchema.validate(definition);
         if (!errors.isEmpty()) {
@@ -188,6 +201,7 @@ public class ConnectionAdminService {
         if (connections.definitions(workspaceId, key).isEmpty()) {
             throw ApiException.notFound();
         }
+        requireAgentsWhenAgent(workspaceId, key);
         policy.require(access, Permission.CONNECTION_MANAGE, "putConnectionBinding", true);
         ConnectionDtos.Auth auth = request.auth();
         List<ApiException.FieldError> errors = new ArrayList<>();
@@ -299,6 +313,7 @@ public class ConnectionAdminService {
         if (connections.definitions(workspaceId, key).isEmpty()) {
             throw ApiException.notFound();
         }
+        requireAgentsWhenAgent(workspaceId, key);
         policy.require(access, Permission.CONNECTION_MANAGE, "testConnection", true);
         ConnectionService.DefinitionRecord record = connections.definition(workspaceId, key, request.version())
                 .orElseThrow(() -> new ApiException(ProblemCode.VALIDATION_FAILED, "Unknown definition version.")

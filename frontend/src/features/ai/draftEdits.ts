@@ -1,7 +1,7 @@
 import { nodeById } from '@/features/studio/model/graph'
 import { collides, findFreePosition, GAP_X, nodeSize, placementFor } from '@/features/studio/model/layout'
 import { idInUse, removeNode, removeTransition, sameJson } from '@/features/studio/model/ops'
-import { normalizeDefinition, type Condition, type Definition, type NodeKind, type RouteKind, type Transition, type WorkflowNode } from '@/features/studio/model/types'
+import { normalizeDefinition, type Condition, type DecisionTable, type Definition, type NodeKind, type RouteKind, type Transition, type WorkflowNode } from '@/features/studio/model/types'
 import { applyFormChanges } from './FormAssistant'
 import type { AiDraftEditChange, AiDraftEditOperation, AiFormChange } from './api'
 
@@ -67,6 +67,62 @@ function applyOperation(def: Definition, op: Op): Definition | string {
       const outcome = applyFormChanges(def, [change])
       return outcome.applied.length === 1 ? outcome.def : `the question "${op.key ?? ''}" changed since the proposal`
     }
+    // S124 operations. Each applies only when what it changes is still as it was when the server checked it.
+    case 'setFieldRule': {
+      const rule = op.rule as 'visibleWhen' | 'requiredWhen' | undefined
+      if (!op.key || !rule || !def.inputSchema.properties[op.key]) return `the question "${op.key ?? ''}" no longer exists`
+      if (!sameJson(def.inputUi?.[rule]?.[op.key] ?? null, op.before ?? null)) return `the rule of "${op.key}" changed since the proposal`
+      const next = structuredClone(def)
+      next.inputUi ??= {}
+      const rules = { ...(next.inputUi[rule] ?? {}) }
+      if (op.condition) rules[op.key] = structuredClone(op.condition) as unknown as Condition
+      else delete rules[op.key]
+      if (Object.keys(rules).length) next.inputUi[rule] = rules
+      else delete next.inputUi[rule]
+      return next
+    }
+    case 'setStepFieldAccess': {
+      const node = op.id ? nodeById(def, op.id) : undefined
+      if (!node || !sameJson(node, op.before)) return `the step "${op.id ?? ''}" changed since the proposal`
+      const next = structuredClone(def)
+      const target = nodeById(next, node.id) as WorkflowNode
+      for (const [key, value] of Object.entries(op.config ?? {})) {
+        if (value === null) delete target.config[key]
+        else target.config[key] = structuredClone(value)
+      }
+      return next
+    }
+    case 'setFormGroups': {
+      if (!sameJson(def.inputUi?.layout?.sections ?? null, op.before ?? null)) return 'the form groups changed since the proposal'
+      const next = structuredClone(def)
+      next.inputUi ??= {}
+      const groups = (op.groups ?? []) as NonNullable<NonNullable<Definition['inputUi']>['layout']>['sections']
+      if (groups && groups.length) next.inputUi.layout = { ...next.inputUi.layout, sections: structuredClone(groups) }
+      else if (next.inputUi.layout) {
+        delete next.inputUi.layout.sections
+        if (Object.keys(next.inputUi.layout).length === 0) delete next.inputUi.layout
+      }
+      return next
+    }
+    case 'addDecision': {
+      const table = op.table as unknown as DecisionTable | undefined
+      if (!op.id || idInUse(def, op.id)) return `the id "${op.id ?? ''}" is already used`
+      if (!table || def.decisions.some((d) => d.key === table.key)) return `a rule table "${table?.key ?? ''}" already exists`
+      const next = structuredClone(def)
+      next.decisions.push(structuredClone(table))
+      next.nodes.push({ id: op.id, type: 'decision', label: op.label ?? op.id, config: { decisionRef: table.key } })
+      return next
+    }
+    case 'addCall': {
+      if (!op.id || idInUse(def, op.id)) return `the id "${op.id ?? ''}" is already used`
+      const config = structuredClone((op.config ?? {}) as Record<string, unknown>)
+      const key = config.connectionRef as string | undefined
+      if (!key) return 'the call names no connection'
+      const next = structuredClone(def)
+      next.nodes.push({ id: op.id, type: 'http', label: op.label ?? op.id, config })
+      if (!next.dependencies.connections.some((c) => c.key === key)) next.dependencies.connections.push({ key, definitionVersion: op.definitionVersion ?? 1 })
+      return next
+    }
   }
 }
 
@@ -110,7 +166,7 @@ export function applyDraftChanges(def: Definition, changes: AiDraftEditChange[],
       const result = applyOperation(working, op)
       if (typeof result === 'string') { problem = result; break }
       working = result
-      if (op.op === 'addStep' && op.id) added.push(op.id)
+      if ((op.op === 'addStep' || op.op === 'addDecision' || op.op === 'addCall') && op.id) added.push(op.id)
     }
     if (problem) {
       skipped.push({ id: change.id, reason: problem })

@@ -421,6 +421,16 @@ export interface MockDb {
   latencyMs: number
   /** Messages received before a wait started (S16); persisted across reloads. */
   messageBuffer?: MockMessage[]
+  /** S127: workspace feature switches that were changed at least once; absent means on. */
+  featureSwitches?: MockFeatureSwitch[]
+}
+
+export interface MockFeatureSwitch {
+  wsId: string
+  feature: 'ai' | 'cases' | 'migration' | 'agents' | 'apps' | 'kafka'
+  enabled: boolean
+  updatedAt: string
+  updatedById: string
 }
 
 export const PURCHASE_WORKFLOW_ID = 'bbbbbbbb-0000-4000-8000-000000000001'
@@ -549,6 +559,7 @@ export function blankDefinition(workflowKey: string, name: string): Definition {
 
 interface DbSnapshot {
   messageBuffer?: MockMessage[]
+  featureSwitches?: MockFeatureSwitch[]
   /** Absent in snapshots written before migrations were mocked. */
   migrations?: Array<[string, MockMigration]>
   migrationProjects?: Array<[string, MockMigrationProject]>
@@ -570,6 +581,7 @@ interface DbSnapshot {
 export function snapshotDb(): string {
   const snap: DbSnapshot = {
     messageBuffer: db.messageBuffer ?? [],
+    featureSwitches: db.featureSwitches ?? [],
     migrations: [...db.migrations],
     migrationProjects: [...db.migrationProjects],
     migrationPolicies: [...db.migrationPolicies],
@@ -594,6 +606,7 @@ export function restoreDb(json: string): boolean {
     const snap = JSON.parse(json) as DbSnapshot
     const next = emptyDb()
     next.messageBuffer = snap.messageBuffer ?? []
+    next.featureSwitches = snap.featureSwitches ?? []
     next.migrations = new Map(snap.migrations ?? [])
     next.migrationProjects = new Map(snap.migrationProjects ?? [])
     next.canaries = new Map(snap.canaries ?? [])

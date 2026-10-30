@@ -10,9 +10,10 @@ import { createPromotionHandlers } from '@/mocks/promotion'
 import { createInsightsHandlers } from '@/mocks/insights'
 import { createAdapterHandlers } from '@/mocks/adapters'
 import { createCallbackHandlers } from '@/mocks/callbacks'
+import { createFeatureHandlers } from '@/mocks/features'
 import { createAgentWriteHandlers } from '@/mocks/agentWrites'
 import { createDocumentLibraryHandlers } from '@/mocks/documentLibrary'
 import { createSharedAssetHandlers } from '@/mocks/sharedAssets'
 
 /** The same handlers as browser mock mode, served to Vitest. Tests reseed with seedDb() and pick a persona. */
-export const server = setupServer(...createAiHandlers(), ...createMigrationHandlers(), ...createConversationHandlers(), ...createInsightsHandlers(), ...createAdapterHandlers(), ...createCallbackHandlers(), ...createAgentWriteHandlers(), ...createCaseFileHandlers(), ...createDocumentLibraryHandlers(), ...createSharedAssetHandlers(), ...createViewHandlers(getCurrentUser), ...createCaseHandlers(getCurrentUser), ...createPromotionHandlers(getCurrentUser), ...createHandlers())
+export const server = setupServer(...createFeatureHandlers(getCurrentUser), ...createAiHandlers(), ...createMigrationHandlers(), ...createConversationHandlers(), ...createInsightsHandlers(), ...createAdapterHandlers(), ...createCallbackHandlers(), ...createAgentWriteHandlers(), ...createCaseFileHandlers(), ...createDocumentLibraryHandlers(), ...createSharedAssetHandlers(), ...createViewHandlers(getCurrentUser), ...createCaseHandlers(getCurrentUser), ...createPromotionHandlers(getCurrentUser), ...createHandlers())

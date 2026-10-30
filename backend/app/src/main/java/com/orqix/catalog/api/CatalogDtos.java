@@ -103,7 +103,9 @@ public final class CatalogDtos {
     public record DecisionEvaluateRequest(@NotNull @Min(1) Integer revision, @NotNull Map<String, JsonNode> values) {
     }
 
-    public record DecisionEvaluateResult(Integer matchedRow, boolean usedDefault, Map<String, Object> output) {
+    /** {@code matchedRows}: every row that applies (several only under COLLECT, docs/build/S121). */
+    public record DecisionEvaluateResult(Integer matchedRow, boolean usedDefault, Map<String, Object> output,
+            java.util.List<Integer> matchedRows) {
     }
 
     /** Dry run of a draft revision (default: the current draft) or of the active release. */

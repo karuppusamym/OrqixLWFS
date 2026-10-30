@@ -1,5 +1,6 @@
 import type { Effect, Run, RunDetail, TaskDecision, TaskSummary } from '@/api/types'
-import { conditionTerms, isAtomicCondition, type Condition, type Definition, type Literal, type WorkflowNode } from '@/features/studio/model/types'
+import { evaluateTable, inWindow, matchValue, rowMatches } from '@/features/studio/model/decisionLogic'
+import { conditionTerms, isAtomicCondition, type Condition, type Literal, type WorkflowNode } from '@/features/studio/model/types'
 import { nodeById, outgoing } from '@/features/studio/model/graph'
 import { dateWaitDue } from './dateWait'
 import { resolveInputAggregate } from '@/lib/form/aggregates'
@@ -63,19 +64,10 @@ function resolveRef(run: MockRun, ref: string): Literal | undefined {
 
 export function evaluateCondition(c: Condition, value: Literal | undefined): boolean {
   if (value === undefined || !isAtomicCondition(c)) return false
-  switch (c.operator) {
-    case 'eq':
-      return typeof c.value === 'number' && typeof value === 'number' ? c.value === value : value === c.value
-    case 'ne':
-      return !(typeof c.value === 'number' && typeof value === 'number' ? c.value === value : value === c.value)
-    case 'gte':
-      return typeof value === 'number' && typeof c.value === 'number' && value >= c.value
-    case 'gt':
-      return typeof value === 'number' && typeof c.value === 'number' && value > c.value
-    case 'lt':
-      return typeof value === 'number' && typeof c.value === 'number' && value < c.value
-    case 'lte':
-      return typeof value === 'number' && typeof c.value === 'number' && value <= c.value
+  try {
+    return matchValue(c.operator, value, c.value)
+  } catch {
+    return false
   }
 }
 
@@ -86,29 +78,8 @@ function evaluateRunCondition(run: MockRun, c: Condition): boolean {
   return false
 }
 
-/** True when the row applies on {@code asOf} (YYYY-MM-DD); a row without a window always applies. */
-export function inWindow(row: Definition['decisions'][number]['rows'][number], asOf: string | undefined): boolean {
-  const w = row.effective
-  if (!w || !asOf) return true
-  return (!w.from || asOf >= w.from) && (!w.to || asOf <= w.to)
-}
-
-export function rowMatches(row: Definition['decisions'][number]['rows'][number], values: Record<string, Literal | undefined>, asOf?: string): boolean {
-  const terms = conditionTerms(row.when)
-  const hit = 'any' in row.when ? terms.some(term => evaluateCondition(term, values[term.fieldRef])) : terms.every(term => evaluateCondition(term, values[term.fieldRef]))
-  return hit && inWindow(row, asOf)
-}
-
-export function evaluateTable(
-  table: Definition['decisions'][number],
-  values: Record<string, Literal | undefined>,
-  asOf?: string,
-): { matchedRow: number | null; usedDefault: boolean; output: Record<string, Literal> } {
-  for (const [i, row] of table.rows.entries()) {
-    if (rowMatches(row, values, asOf)) return { matchedRow: i, usedDefault: false, output: row.then }
-  }
-  return { matchedRow: null, usedDefault: true, output: table.default }
-}
+// Decision tables use the shared client copy of the server semantics (all hit policies, lists and ranges; docs/build/S121).
+export { evaluateTable, inWindow, rowMatches }
 
 export function currentRelease(run: MockRun): MockRelease {
   // Requests of an archived workflow stay readable, as on the server (S103/S104).
@@ -317,10 +288,12 @@ function advanceFrom(run: MockRun, nodeId: string): void {
         run.steps[node.id] = result.output
         addEvent(run, 'DECISION_EVALUATED', {
           nodeId: node.id,
-          data: { label: node.label, decisionKey: table.key, version: table.version, matched: result.usedDefault ? 'default' : `r${(result.matchedRow ?? 0) + 1}`, outputs: result.output, evidence: {
+          data: { label: node.label, decisionKey: table.key, version: table.version, matched: result.usedDefault ? 'default' : result.matchedRows.map(i => `r${i + 1}`).join(','), outputs: result.output, evidence: {
             ...(asOf ? { asOf } : {}),
             inputs: Object.entries(values).map(([fieldRef,value]) => ({fieldRef,value})),
-            rows: table.rows.map((row,index) => ({rowId:`r${index+1}`,condition:row.when,matched:rowMatches(row,values,asOf),selected:index===result.matchedRow,...(row.effective ? { inWindow: inWindow(row,asOf), effective: row.effective } : {})})),
+            rows: table.rows.map((row,index) => ({rowId:`r${index+1}`,condition:row.when,matched:rowMatches(row,values,asOf),selected:result.matchedRows.includes(index),...(row.effective ? { inWindow: inWindow(row,asOf), effective: row.effective } : {})})),
+            hitPolicy: table.hitPolicy,
+            ...(table.aggregation ? { aggregation: table.aggregation } : {}),
             defaultSelected:result.usedDefault,
           } },
         })
@@ -600,7 +573,7 @@ export function release(run: MockRun, task: MockTask, user: MockUser): void {
   addEvent(run, 'TASK_RELEASED', { nodeId: task.nodeId, actorId: user.id, data: { label: task.label, candidateGroup: task.candidateGroup, assignee: user.displayName } })
 }
 
-export function decide(run: MockRun, task: MockTask, user: MockUser, action: 'approve' | 'reject', reason: string | null, comment: string | null): TaskDecision {
+export function decide(run: MockRun, task: MockTask, user: MockUser, action: 'approve' | 'reject', reason: string | null, comment: string | null, fields: Record<string, unknown> = {}): TaskDecision {
   const rel = currentRelease(run)
   const decision: TaskDecision = {
     id: newId(),
@@ -626,11 +599,14 @@ export function decide(run: MockRun, task: MockTask, user: MockUser, action: 'ap
     ...(comment ? { comment } : {}),
     decidedBy: user.displayName,
     decidedAt: decision.decidedAt,
+    // Fields the step fills in (S123), only when approving.
+    ...(action === 'approve' ? fields : {}),
   }
+  const captured = action === 'approve' ? Object.keys(fields).length : 0
   addEvent(run, 'TASK_DECIDED', {
     nodeId: task.nodeId,
     actorId: user.id,
-    data: { label: task.label, action, hasReason: !!reason, hasComment: !!comment, policyFlags: decision.policyFlags },
+    data: { label: task.label, action, hasReason: !!reason, hasComment: !!comment, policyFlags: decision.policyFlags, ...(captured ? { fieldsCaptured: captured } : {}) },
   })
   const route = outgoing(rel.definition, task.nodeId).find((t) => t.on === (action === 'approve' ? 'approved' : 'rejected'))
   if (route) advance(run, route.to)

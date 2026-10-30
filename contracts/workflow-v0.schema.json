@@ -304,7 +304,7 @@
           }
         },
         "assets": {
-          "description": "Versioned references to shared workspace assets (docs/build/S57). Each names the element of this workflow that holds a pinned copy of the asset version: target is the key of a table in decisions (kind decision) or the id of a generateDocument step (kind documentTemplate). The server checks every reference at validation and publish: a missing, archived or differing asset blocks, a newer version is a warning. A reference grants no access to the asset.",
+          "description": "Versioned references to shared workspace assets (docs/build/S57). Each names the element of this workflow that holds a pinned copy of the asset version: target is the key of a table in decisions (kind decision), the id of a generateDocument step (kind documentTemplate) or request, the request form (kind form, docs/build/S128). A form reference also lists the questions it copied in fields (shared question key to this workflow's question key, which differs when a clashing key was renamed on insert). The server checks every reference at validation and publish: a missing, archived or differing asset blocks, a newer version is a warning. A reference grants no access to the asset.",
           "type": "array",
           "maxItems": 40,
           "items": {
@@ -313,7 +313,8 @@
               "kind": {
                 "enum": [
                   "decision",
-                  "documentTemplate"
+                  "documentTemplate",
+                  "form"
                 ]
               },
               "key": {
@@ -325,6 +326,18 @@
               },
               "target": {
                 "$ref": "#/$defs/id"
+              },
+              "fields": {
+                "description": "Kind form only: each copied question, from its key in the shared form to its key in this workflow. Questions skipped on insert (this workflow kept its own question with that key) are not listed.",
+                "type": "object",
+                "minProperties": 1,
+                "maxProperties": 30,
+                "propertyNames": {
+                  "$ref": "#/$defs/fieldKey"
+                },
+                "additionalProperties": {
+                  "$ref": "#/$defs/fieldKey"
+                }
               }
             },
             "required": [
@@ -1049,6 +1062,38 @@
                 "$ref": "#/$defs/fieldKey"
               }
             },
+            "fieldAccess": {
+              "description": "Step form (docs/build/S123): how the person deciding this step sees each request field. Unlisted fields are readOnly. hidden: not shown on the task. editable: correctable, with the same publish checks as correctable. required: editable and must have a value before approving.",
+              "type": "object",
+              "maxProperties": 30,
+              "propertyNames": {
+                "$ref": "#/$defs/fieldKey"
+              },
+              "additionalProperties": {
+                "enum": [
+                  "hidden",
+                  "readOnly",
+                  "editable",
+                  "required"
+                ]
+              }
+            },
+            "capture": {
+              "description": "Step form (docs/build/S123): new single-value fields the person fills in when deciding, such as a PO number or an approved amount. Required fields are needed to approve and are optional when rejecting. Outputs at /steps/<id>/<fieldKey>; a required field is available only after the approved route, an optional one may be missing.",
+              "allOf": [
+                {
+                  "$ref": "#/$defs/formSchema"
+                }
+              ],
+              "properties": {
+                "type": true,
+                "additionalProperties": true,
+                "required": true,
+                "properties": {
+                  "maxProperties": 10
+                }
+              }
+            },
             "separateFrom": {
               "description": "Separation of duties (docs/build/S41): ids of earlier approval steps that every path to this step passes through. Whoever decided one of them in the same request cannot claim, decide or be assigned this step.",
               "type": "array",
@@ -1749,7 +1794,7 @@
     "decisionCondition": {
       "oneOf": [
         {
-          "$ref": "#/$defs/atomicCondition"
+          "$ref": "#/$defs/decisionTerm"
         },
         {
           "type": "object",
@@ -1759,7 +1804,7 @@
               "minItems": 2,
               "maxItems": 8,
               "items": {
-                "$ref": "#/$defs/atomicCondition"
+                "$ref": "#/$defs/decisionTerm"
               }
             }
           },
@@ -1777,7 +1822,7 @@
               "minItems": 2,
               "maxItems": 8,
               "items": {
-                "$ref": "#/$defs/atomicCondition"
+                "$ref": "#/$defs/decisionTerm"
               }
             }
           },
@@ -1788,9 +1833,93 @@
         }
       ]
     },
+    "decisionTerm": {
+      "description": "One comparison of a decision row: a plain comparison, a list (in) or a number range (between). Lists and ranges are accepted in decision rows only (docs/build/S121).",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/atomicCondition"
+        },
+        {
+          "$ref": "#/$defs/inCondition"
+        },
+        {
+          "$ref": "#/$defs/betweenCondition"
+        }
+      ]
+    },
+    "inCondition": {
+      "type": "object",
+      "description": "True when the field equals one of 1 to 20 distinct texts or numbers, all of one type (FEEL \"EU\",\"UK\").",
+      "properties": {
+        "fieldRef": {
+          "$ref": "#/$defs/fieldRef"
+        },
+        "operator": {
+          "const": "in"
+        },
+        "value": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "uniqueItems": true,
+          "items": {
+            "type": [
+              "string",
+              "number"
+            ]
+          }
+        }
+      },
+      "required": [
+        "fieldRef",
+        "operator",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "betweenCondition": {
+      "type": "object",
+      "description": "True when a number field lies in the range; each bound is included unless includeFrom or includeTo is false (FEEL [1000..5000)). from must be smaller than to.",
+      "properties": {
+        "fieldRef": {
+          "$ref": "#/$defs/fieldRef"
+        },
+        "operator": {
+          "const": "between"
+        },
+        "value": {
+          "type": "object",
+          "properties": {
+            "from": {
+              "type": "number"
+            },
+            "to": {
+              "type": "number"
+            },
+            "includeFrom": {
+              "type": "boolean"
+            },
+            "includeTo": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "from",
+            "to"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "fieldRef",
+        "operator",
+        "value"
+      ],
+      "additionalProperties": false
+    },
     "decisionTable": {
       "type": "object",
-      "description": "Authoring semantics: at most one row matches (UNIQUE); the default applies only when no row matches. Scalar rows test the same field; conjunctive All rows support 2 to 8 distinct fields. Rows must be pairwise disjoint (WF_DECISION_OVERLAP). Compiled to DMN as FIRST with a trailing catch-all row.",
+      "description": "Authoring semantics depend on hitPolicy (docs/build/S40, S121); the default applies when no row matches. Scalar rows test the same field; conjunctive All rows support 2 to 8 distinct fields. UNIQUE rows must be pairwise disjoint (WF_DECISION_OVERLAP); ANY rows may overlap only when they give the same results. Compiled to DMN as FIRST with a trailing catch-all row (PRIORITY rows sorted by priority), or as COLLECT with its aggregation.",
       "properties": {
         "key": {
           "$ref": "#/$defs/key"
@@ -1800,11 +1929,45 @@
           "minimum": 1
         },
         "hitPolicy": {
-          "description": "UNIQUE: at most one row can match, proven at publish time. FIRST: rows are tried in order and the first match wins, so rows may overlap (docs/build/S40).",
+          "description": "UNIQUE: at most one row can match, proven at publish time. FIRST: rows are tried in order and the first match wins, so rows may overlap (docs/build/S40). ANY: rows may overlap when they give the same results. PRIORITY: of the matching rows, the one whose priority output ranks highest in priority.order wins; equal ranks keep table order. COLLECT: every matching row counts; its single number result is combined by aggregation (docs/build/S121).",
           "enum": [
             "UNIQUE",
-            "FIRST"
+            "FIRST",
+            "ANY",
+            "PRIORITY",
+            "COLLECT"
           ]
+        },
+        "aggregation": {
+          "description": "COLLECT only, required there: how the number results of the matching rows combine. COUNT is the number of matching rows.",
+          "enum": [
+            "SUM",
+            "MIN",
+            "MAX",
+            "COUNT"
+          ]
+        },
+        "priority": {
+          "description": "PRIORITY only, required there: the output that decides between matching rows and its values from the highest to the lowest priority. Every value a row or the default gives must be listed.",
+          "type": "object",
+          "properties": {
+            "output": {
+              "$ref": "#/$defs/fieldKey"
+            },
+            "order": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 20,
+              "items": {
+                "$ref": "#/$defs/literal"
+              }
+            }
+          },
+          "required": [
+            "output",
+            "order"
+          ],
+          "additionalProperties": false
         },
         "rows": {
           "type": "array",

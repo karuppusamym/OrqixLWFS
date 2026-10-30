@@ -1,4 +1,5 @@
 import { type Page } from '@playwright/test'
+import { apiGet } from './app'
 
 /** Same-origin API call from inside the page (session cookie + XSRF header on the real stack, in-page mock otherwise). */
 export async function apiSend<T = unknown>(page: Page, method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown, headers: Record<string, string> = {}): Promise<{ status: number; body: T }> {
@@ -95,4 +96,17 @@ export async function openTaskOfRun(approver: Page, ws: string, runId: string): 
   if (!taskId) throw new Error(`No claimable task for run ${runId}`)
   await approver.goto(`/w/${ws}/tasks/${taskId}`)
   await approver.getByTestId('task-actions').waitFor()
+}
+
+/**
+ * Removes the workspace-wide grants of `permission` held directly by `subjectId`. Specs that grant a grant-only
+ * permission call this when they finish, so later specs and the API scripts see the seeded access again.
+ */
+export async function revokeGrant(admin: Page, ws: string, permission: string, subjectId: string): Promise<void> {
+  const access = await apiGet<{ grants: Array<{ id: string; permission: string; workflowId?: string | null; principal: { type: string; value: string } }> }>(admin, `/workspaces/${ws}/access`)
+  const held = access.grants.filter((g) => g.permission === permission && !g.workflowId && g.principal.type === 'subject' && g.principal.value === subjectId)
+  for (const grant of held) {
+    const removed = await apiSend(admin, 'DELETE', `/workspaces/${ws}/access/grants/${grant.id}`)
+    if (removed.status !== 204) throw new Error(`revoke ${permission}: ${removed.status} ${JSON.stringify(removed.body)}`)
+  }
 }

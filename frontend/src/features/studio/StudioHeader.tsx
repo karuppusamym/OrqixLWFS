@@ -143,7 +143,7 @@ export function StudioHeader({
               <Download className="size-4" aria-hidden="true" /> Download BPMN (.bpmn)
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
-              <Link to={`/w/${wsId}/cases`}>Case models: CMMN XML download</Link>
+              <Link to={`/w/${wsId}/case-designs`}>Case types: design and download CMMN</Link>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

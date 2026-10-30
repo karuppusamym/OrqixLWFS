@@ -3,6 +3,7 @@ import { rewriteRefs } from './fieldRefs'
 import { nodeById, outgoing, wouldCreateCycle } from './graph'
 import { defaultConfig, KINDS } from './kinds'
 import { collides, findFreePosition, GAP_X, GAP_Y, nodeSize, placementFor } from './layout'
+import { renameCopiedQuestion } from './sharedForms'
 import type { AssetRef, Condition, Definition, DecisionTable, Literal, NodeKind, Position, RouteKind, Transition, WorkflowNode } from './types'
 
 /**
@@ -217,7 +218,7 @@ export function removeNode(def: Definition, id: string): Definition {
   }
   next.decisions = next.decisions.filter((d) => !plan.decisions.includes(d.key))
   if (next.dependencies.assets) {
-    next.dependencies.assets = next.dependencies.assets.filter((a) => (a.kind === 'decision' ? !plan.decisions.includes(a.target) : a.target !== id))
+    next.dependencies.assets = next.dependencies.assets.filter((a) => (a.kind === 'decision' ? !plan.decisions.includes(a.target) : a.kind === 'form' || a.target !== id))
     if (next.dependencies.assets.length === 0) delete next.dependencies.assets
   }
   const prefix = `/steps/${id}/`
@@ -460,10 +461,19 @@ export function unlinkAsset(def: Definition, kind: AssetRef['kind'], target: str
 }
 
 /** Copies one version of a shared decision into the table and pins it; the table keeps its key and version. */
-export function applySharedDecision(def: Definition, tableKey: string, content: Pick<DecisionTable, 'hitPolicy' | 'rows' | 'default'>, assetKey: string, version: number): Definition {
+export function applySharedDecision(def: Definition, tableKey: string, content: Pick<DecisionTable, 'hitPolicy' | 'rows' | 'default' | 'aggregation' | 'priority'>, assetKey: string, version: number): Definition {
   const table = def.decisions.find((d) => d.key === tableKey)
   if (!table) return def
-  const copied = upsertDecision(def, { ...table, hitPolicy: content.hitPolicy, rows: structuredClone(content.rows), default: structuredClone(content.default) })
+  // The hit policy settings travel with the copy (docs/build/S121).
+  const { aggregation: _a, priority: _p, ...rest } = table
+  const copied = upsertDecision(def, {
+    ...rest,
+    hitPolicy: content.hitPolicy,
+    ...(content.aggregation ? { aggregation: content.aggregation } : {}),
+    ...(content.priority ? { priority: structuredClone(content.priority) } : {}),
+    rows: structuredClone(content.rows),
+    default: structuredClone(content.default),
+  })
   return linkAsset(copied, { kind: 'decision', key: assetKey, version, target: tableKey })
 }
 
@@ -663,6 +673,7 @@ export function renameFieldKey(def: Definition, oldKey: string, newKey: string):
   for (const section of prepared.inputUi?.layout?.sections ?? []) section.fields = section.fields.map(key => key === oldKey ? newKey : key)
   const next = clone(applyFields(prepared, fields))
   rewriteRefs(next, (ref) => (ref === `/input/${oldKey}` || ref.startsWith(`/input/${oldKey}/`) ? `/input/${newKey}${ref.slice(`/input/${oldKey}`.length)}` : ref))
+  renameCopiedQuestion(next, oldKey, newKey)
   return { ok: true, def: next }
 }
 

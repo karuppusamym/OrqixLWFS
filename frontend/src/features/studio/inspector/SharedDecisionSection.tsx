@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link2, Link2Off } from 'lucide-react'
 import { useState } from 'react'
 import * as endpoints from '@/api/endpoints'
-import type { DecisionAssetContent } from '@/api/types'
+import { decisionContentOf, type DecisionAssetContent } from '@/api/types'
 import { FormField } from '@/components/common/FormField'
 import { toProblem } from '@/components/common/ProblemAlert'
 import { Button } from '@/components/ui/button'
@@ -14,14 +14,27 @@ import type { DecisionTable } from '../model/types'
 import { InspectorSection } from './controls'
 
 export function decisionContent(table: DecisionTable): DecisionAssetContent {
-  return { hitPolicy: table.hitPolicy, rows: structuredClone(table.rows) as unknown as DecisionAssetContent['rows'], default: structuredClone(table.default) }
+  return {
+    hitPolicy: table.hitPolicy,
+    // Only the settings of the table's own hit policy are shared (docs/build/S121).
+    ...(table.hitPolicy === 'COLLECT' && table.aggregation ? { aggregation: table.aggregation } : {}),
+    ...(table.hitPolicy === 'PRIORITY' && table.priority ? { priority: structuredClone(table.priority) } : {}),
+    rows: structuredClone(table.rows) as unknown as DecisionAssetContent['rows'],
+    default: structuredClone(table.default),
+  }
 }
 
 /** A shared version's content as the table fields the Studio edits (the server checks the copy in full). */
-export const asTable = (content: DecisionAssetContent) => content as unknown as Pick<DecisionTable, 'hitPolicy' | 'rows' | 'default'>
+export const asTable = (content: DecisionAssetContent) => content as unknown as Pick<DecisionTable, 'hitPolicy' | 'rows' | 'default' | 'aggregation' | 'priority'>
 
 export const sameDecision = (table: DecisionTable, content: DecisionAssetContent | null | undefined) =>
-  !!content && canonical(decisionContent(table)) === canonical({ hitPolicy: content.hitPolicy, rows: content.rows, default: content.default })
+  !!content && canonical(decisionContent(table)) === canonical({
+    hitPolicy: content.hitPolicy,
+    ...(content.aggregation ? { aggregation: content.aggregation } : {}),
+    ...(content.priority ? { priority: content.priority } : {}),
+    rows: content.rows,
+    default: content.default,
+  })
 
 function messageOf(error: unknown): string {
   const problem = toProblem(error)
@@ -76,7 +89,7 @@ export function SharedDecisionSection({ table }: { table: DecisionTable }) {
     if (!assetKey) return
     const detail = await endpoints.getSharedAsset(wsId, 'decision', assetKey)
     const latest = detail.versions[0]
-    const content = latest?.content
+    const content = decisionContentOf(latest?.content)
     if (!latest || !content) throw new Error('The shared decision has no content.')
     store.getState().apply((d) => applySharedDecision(d, table.key, asTable(content), assetKey, latest.version))
     setStatus(`Copied version ${latest.version} of ${detail.asset.name} into this table and linked it.`)
@@ -133,7 +146,7 @@ export function SharedDecisionSection({ table }: { table: DecisionTable }) {
   const detail = asset.data
   const pinned = detail?.versions.find((v) => v.version === linked.version)
   const latest = detail?.versions[0]
-  const differs = !!pinned && !sameDecision(table, pinned.content)
+  const differs = !!pinned && !sameDecision(table, decisionContentOf(pinned.content))
   const newer = !!latest && latest.version > linked.version
   return (
     <InspectorSection title="Shared decision">
@@ -148,7 +161,7 @@ export function SharedDecisionSection({ table }: { table: DecisionTable }) {
         <div className="flex flex-wrap gap-2">
           {newer || differs ? (
             <Button type="button" variant="secondary" disabled={busy || !latest?.content} onClick={() => run(async () => {
-              store.getState().apply((d) => applySharedDecision(d, table.key, asTable(latest!.content!), linked.key, latest!.version))
+              store.getState().apply((d) => applySharedDecision(d, table.key, asTable(decisionContentOf(latest!.content)!), linked.key, latest!.version))
               setStatus(`Copied version ${latest!.version} into this table.`)
             })}>
               Use version {latest?.version}

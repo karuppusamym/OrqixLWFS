@@ -3,7 +3,7 @@ import path from 'node:path'
 import type { Page } from '@playwright/test'
 import { expect, test } from '../support/fixtures'
 import { MOCK } from '../support/env'
-import { apiGet, selectStep, workspaceId } from '../support/app'
+import { apiGet, openFormTab, openQuestion, selectStep, workspaceId } from '../support/app'
 
 /**
  * Wait until a date (S12 section 10): a Date question on the request form, a wait step that ends on that date at a
@@ -50,9 +50,12 @@ test.describe('wait until a date (mock API)', () => {
     await designer.goto(`/w/${ws}/workflows/${id}/edit`)
     await expect(designer.getByTestId('studio')).toBeVisible()
 
-    // The canvas card reads in plain language.
+    // The step reads in plain language. BPMN shapes (the default since STU01) print only the name and kind, with the
+    // detail in the tooltip; the Cards notation prints it on the card.
     const card = designer.locator('.react-flow__node[data-id="untilStart"]')
     await expect(card).toBeVisible()
+    await expect(card.locator('[data-notation="bpmn"]')).toHaveAttribute('title', /Until Start date, 09:00 UTC/)
+    await designer.getByTestId('notation-toggle').getByRole('button', { name: 'Cards' }).click()
     await expect(card).toContainText('Until Start date, 09:00 UTC')
 
     // The wait inspector: until a date, the date question, a UTC time and the preview.
@@ -77,8 +80,8 @@ test.describe('wait until a date (mock API)', () => {
     await expect(designer.getByLabel(/^Date to wait until/)).toHaveValue('/input/startDate')
 
     // The request form editor offers the Date type; making the date optional is explained in business language.
-    await selectStep(designer, 'start')
-    const card2 = designer.getByTestId('field-card-startDate')
+    await openFormTab(designer)
+    const card2 = await openQuestion(designer, 'startDate')
     await expect(card2.getByLabel('Type')).toHaveValue('date')
     await card2.getByRole('checkbox', { name: 'Required' }).uncheck()
     await designer.getByRole('button', { name: 'Check workflow' }).click()

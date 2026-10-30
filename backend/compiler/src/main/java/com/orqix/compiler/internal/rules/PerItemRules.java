@@ -51,8 +51,11 @@ final class PerItemRules {
             if (a.escalation() != null) {
                 unsupported(rc, a, path, "reminders or escalation");
             }
-            if (!a.correctable().isEmpty()) {
+            if (!a.editableFields().isEmpty()) {
                 unsupported(rc, a, path, "correction of request fields");
+            }
+            if (a.capture() != null && !a.capture().properties().isEmpty()) {
+                unsupported(rc, a, path, "fields filled in at the step");
             }
         }
     }

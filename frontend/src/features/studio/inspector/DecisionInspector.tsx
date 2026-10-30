@@ -13,11 +13,76 @@ import { useStudio, useStudioContext } from '../StudioContext'
 import { availableFields, chipLabel, type FieldInfo } from '../model/fieldRefs'
 import { renameDecisionKey, upsertDecision } from '../model/ops'
 import { outputsInWords } from '@/lib/events'
-import { conditionTerms, isAtomicCondition, type Condition, type DecisionTable, type Literal, type WorkflowNode } from '../model/types'
+import { conditionTerms, isAtomicCondition, type Aggregation, type Condition, type DecisionTable, type HitPolicy, type Literal, type WorkflowNode } from '../model/types'
 import { Advanced, CommitInput, CommitNumber, InspectorSection } from './controls'
 import { DecisionCsvSection } from './DecisionCsvSection'
 import { SharedDecisionSection } from './SharedDecisionSection'
-import { ConditionEditor, defaultLiteral, LiteralInput } from './ConditionEditor'
+import { ConditionEditor, convertValue, defaultLiteral, LiteralInput } from './ConditionEditor'
+import { DecisionDmnSection } from './DecisionDmnSection'
+import { outputValues } from '../model/decisionLogic'
+
+const POLICY_HELP: Record<HitPolicy, string> = {
+  UNIQUE: 'Each case must match at most one row, otherwise publishing is blocked.',
+  FIRST: 'Rows may overlap. Put the most specific rows first; use the arrows to reorder.',
+  ANY: 'Rows may overlap only when they give exactly the same results; otherwise publishing is blocked.',
+  PRIORITY: 'Rows may overlap. Of the matching rows, the one whose result comes first in the priority order applies; equal ranks keep the row order.',
+  COLLECT: 'Every matching row counts, and their numbers are combined into one result.',
+}
+
+/** Changes the hit policy and keeps only the settings that belong to it (docs/build/S121). */
+function withPolicy(table: DecisionTable, hitPolicy: HitPolicy): DecisionTable {
+  const { aggregation: _a, priority: _p, ...rest } = table
+  if (hitPolicy === 'COLLECT') return { ...rest, hitPolicy, aggregation: table.aggregation ?? 'SUM' }
+  if (hitPolicy === 'PRIORITY') {
+    const output = table.priority?.output ?? Object.keys(table.default)[0] ?? 'result'
+    return { ...rest, hitPolicy, priority: table.priority ?? { output, order: outputValues(table, output) } }
+  }
+  return { ...rest, hitPolicy }
+}
+
+/** PRIORITY: the result field that decides and its values from the most to the least important. */
+function PrioritySettings({ table, onChange, disabled, idBase }: { table: DecisionTable; onChange: (next: DecisionTable) => void; disabled?: boolean; idBase: string }) {
+  const keys = Object.keys(table.default)
+  const output = table.priority?.output ?? keys[0] ?? ''
+  const used = outputValues(table, output)
+  const order = [...(table.priority?.order ?? []).filter((v) => used.includes(v)), ...used.filter((v) => !(table.priority?.order ?? []).includes(v))]
+  const set = (next: { output: string; order: Literal[] }) => onChange({ ...table, priority: next })
+  const move = (i: number, by: -1 | 1) => {
+    const j = i + by
+    if (j < 0 || j >= order.length) return
+    const next = [...order]
+    ;[next[i], next[j]] = [next[j] as Literal, next[i] as Literal]
+    set({ output, order: next })
+  }
+  return (
+    <div className="space-y-2 rounded-card border border-border p-3" data-testid="rule-priority">
+      <div className="space-y-1.5">
+        <Label htmlFor={`${idBase}-prio-output`}>Result that decides</Label>
+        <Select id={`${idBase}-prio-output`} data-field="priority.output" value={output} disabled={disabled} onChange={(e) => set({ output: e.target.value, order: outputValues(table, e.target.value) })}>
+          {keys.map((k) => <option key={k} value={k}>{humanize(k)}</option>)}
+        </Select>
+      </div>
+      <p className="text-xs font-semibold text-muted-foreground uppercase">Priority order, most important first</p>
+      {order.length < 2 ? <p className="text-xs text-muted-foreground">Give the rows at least two different values for this result.</p> : null}
+      <ol className="space-y-1" aria-label="Priority order">
+        {order.map((v, i) => (
+          <li key={String(v)} className="flex items-center justify-between text-sm">
+            <span>{i + 1}. {String(v)}</span>
+            {!disabled ? (
+              <span>
+                <Button size="icon" variant="ghost" className="size-8" onClick={() => move(i, -1)} disabled={i === 0} aria-label={`Move ${String(v)} up`}><ArrowUp aria-hidden="true" /></Button>
+                <Button size="icon" variant="ghost" className="size-8" onClick={() => move(i, 1)} disabled={i === order.length - 1} aria-label={`Move ${String(v)} down`}><ArrowDown aria-hidden="true" /></Button>
+              </span>
+            ) : null}
+          </li>
+        ))}
+      </ol>
+      {!disabled && JSON.stringify(order) !== JSON.stringify(table.priority?.order ?? []) ? (
+        <Button variant="secondary" size="sm" onClick={() => set({ output, order })}>Use this order</Button>
+      ) : null}
+    </div>
+  )
+}
 
 /** Decision step: rule table editor and "Test this rule" (docs/build/S7-frontend.md section 5). */
 export function DecisionInspector({ node }: { node: WorkflowNode }) {
@@ -64,7 +129,13 @@ export function DecisionInspector({ node }: { node: WorkflowNode }) {
     const numeric = next?.type === 'number' || next?.type === 'integer'
     save({
       ...table,
-      rows: table.rows.map((r) => ({ ...r, when: { fieldRef: ref2, operator: numeric ? (conditionTerms(r.when)[0]?.operator ?? 'eq') : 'eq', value: (typeof conditionTerms(r.when)[0]?.value === (numeric ? 'number' : next?.type === 'boolean' ? 'boolean' : 'string') ? conditionTerms(r.when)[0]?.value : defaultLiteral(next?.type, next?.enumValues)) ?? '' } })),
+      rows: table.rows.map((r) => {
+        const old = conditionTerms(r.when)[0]
+        const operator = numeric ? (old?.operator ?? 'eq') : old?.operator === 'in' && next?.type === 'string' ? 'in' : 'eq'
+        const sample = defaultLiteral(next?.type, next?.enumValues)
+        const scalarValue = old && typeof old.value === typeof sample ? old.value : sample
+        return { ...r, when: { fieldRef: ref2, operator, value: convertValue(operator === 'in' || operator === 'between' ? sample : scalarValue, operator, next) } }
+      }),
     })
   }
 
@@ -130,12 +201,28 @@ export function DecisionInspector({ node }: { node: WorkflowNode }) {
 
         <div className="space-y-1.5">
           <Label htmlFor={`dec-policy-${node.id}`}>Which row applies</Label>
-          <Select id={`dec-policy-${node.id}`} data-field="hitPolicy" value={table.hitPolicy} disabled={readOnly} onChange={(e) => save({ ...table, hitPolicy: e.target.value as DecisionTable['hitPolicy'] })}>
+          <Select id={`dec-policy-${node.id}`} data-field="hitPolicy" value={table.hitPolicy} disabled={readOnly} onChange={(e) => save(withPolicy(table, e.target.value as HitPolicy))}>
             <option value="UNIQUE">Exactly one: rows must not overlap (checked when you publish)</option>
             <option value="FIRST">The first matching row, top to bottom</option>
+            <option value="ANY">Any matching row (overlaps must give the same results)</option>
+            <option value="PRIORITY">Highest priority: the matching row whose result ranks highest</option>
+            <option value="COLLECT">Combine all matching rows</option>
           </Select>
-          <p className="text-xs text-muted-foreground">{table.hitPolicy === 'FIRST' ? 'Rows may overlap. Put the most specific rows first; use the arrows to reorder.' : 'Each case must match at most one row, otherwise publishing is blocked.'}</p>
+          <p className="text-xs text-muted-foreground">{POLICY_HELP[table.hitPolicy]}</p>
         </div>
+        {table.hitPolicy === 'PRIORITY' ? <PrioritySettings table={table} disabled={readOnly} onChange={save} idBase={`dec-${node.id}`} /> : null}
+        {table.hitPolicy === 'COLLECT' ? (
+          <div className="space-y-1.5">
+            <Label htmlFor={`dec-agg-${node.id}`}>Combine the results as</Label>
+            <Select id={`dec-agg-${node.id}`} data-field="aggregation" value={table.aggregation ?? 'SUM'} disabled={readOnly} onChange={(e) => save({ ...table, aggregation: e.target.value as Aggregation })}>
+              <option value="SUM">Sum</option>
+              <option value="MIN">Smallest value</option>
+              <option value="MAX">Largest value</option>
+              <option value="COUNT">Number of matching rows</option>
+            </Select>
+            <p className="text-xs text-muted-foreground">The table must have exactly one result field, and every row and the Otherwise result must set it to a number.</p>
+          </div>
+        ) : null}
 
         <ol className="space-y-3" aria-label="Rule rows">
           {table.rows.map((row, i) => (
@@ -144,7 +231,7 @@ export function DecisionInspector({ node }: { node: WorkflowNode }) {
                 <h4 className="text-sm font-semibold">Row {i + 1}: when</h4>
                 {!readOnly ? (
                   <div className="flex items-center">
-                    {table.hitPolicy === 'FIRST' ? (
+                    {table.hitPolicy === 'FIRST' || table.hitPolicy === 'PRIORITY' ? (
                       <>
                         <Button size="icon" variant="ghost" className="size-8" onClick={() => moveRow(i, -1)} disabled={i === 0} aria-label={`Move row ${i + 1} up`}>
                           <ArrowUp aria-hidden="true" />
@@ -160,7 +247,7 @@ export function DecisionInspector({ node }: { node: WorkflowNode }) {
                   </div>
                 ) : null}
               </div>
-              <ConditionEditor idBase={`dec-${node.id}-r${i}`} dataFieldBase={`rows.${i}.when`} condition={row.when} fields={fields} disabled={readOnly} onChange={(c) => setRowWhen(i, c)} />
+              <ConditionEditor idBase={`dec-${node.id}-r${i}`} dataFieldBase={`rows.${i}.when`} condition={row.when} fields={fields} disabled={readOnly} allowSets onChange={(c) => setRowWhen(i, c)} />
               <fieldset disabled={readOnly} className="grid grid-cols-2 gap-3 border-t border-border pt-3">
                 <legend className="mb-1 text-xs font-semibold text-muted-foreground uppercase">Applies to requests submitted</legend>
                 <div className="space-y-1.5">
@@ -206,6 +293,8 @@ export function DecisionInspector({ node }: { node: WorkflowNode }) {
       <SharedDecisionSection table={table} />
 
       <DecisionCsvSection tableKey={table.key} />
+
+      <DecisionDmnSection tableKey={table.key} />
 
       <Advanced>
         <FormField label="Table key" id={`dec-key-${node.id}`} error={keyError} description="Used in exports and in the compiled rule.">
@@ -317,7 +406,7 @@ function TestRule({
       <div role="status" aria-live="polite" data-testid="rule-test-result">
         {result ? (
           <p className="rounded-control bg-surface-muted px-3 py-2 text-sm">
-            {result.usedDefault ? 'No row matched, so the Otherwise result applies: ' : `Row ${(result.matchedRow ?? 0) + 1} matched: `}
+            {result.usedDefault ? 'No row matched, so the Otherwise result applies: ' : (result.matchedRows?.length ?? 0) > 1 ? `Rows ${(result.matchedRows ?? []).map((r) => r + 1).join(', ')} matched; combined: ` : `Row ${(result.matchedRow ?? 0) + 1} matched: `}
             <strong>{outputsInWords(result.output)}</strong>
           </p>
         ) : null}

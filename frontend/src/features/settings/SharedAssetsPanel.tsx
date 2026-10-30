@@ -1,10 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Archive, ArchiveRestore, Search } from 'lucide-react'
+import { Archive, ArchiveRestore, FileDown, Search } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router'
 import * as endpoints from '@/api/endpoints'
 import { isProblemError } from '@/api/problem'
-import type { SharedAsset, SharedAssetKind } from '@/api/types'
+import { decisionContentOf, formContentOfVersion, type SharedAsset, type SharedAssetKind } from '@/api/types'
 import { useWorkspace } from '@/app/workspace'
 import { EmptyState } from '@/components/common/EmptyState'
 import { FormField } from '@/components/common/FormField'
@@ -16,11 +16,14 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input, Select } from '@/components/ui/input'
 import { formatDateTime } from '@/lib/dates'
+import { downloadBlob } from '@/lib/download'
+import { DecisionDmnImport } from './DecisionDmnImport'
 
 export const KIND_LABELS: Record<SharedAssetKind, string> = {
   decision: 'Decision table',
   documentTemplate: 'Document template',
   connection: 'Connection',
+  form: 'Form',
 }
 
 function messageOf(error: unknown): string {
@@ -30,14 +33,23 @@ function messageOf(error: unknown): string {
 
 const assetsKey = (ws: string) => ['ws', ws, 'shared-assets'] as const
 
+const POLICY_WORDS: Record<string, string> = {
+  UNIQUE: 'exactly one row applies',
+  FIRST: 'first matching row applies',
+  ANY: 'any matching row applies (overlapping rows agree)',
+  PRIORITY: 'the highest priority row applies',
+  COLLECT: 'all matching rows are combined',
+}
+
 /**
- * Shared assets (PL01, docs/build/S61): one place to find the decision tables, document templates and connections that
- * workflows reuse, by name, key or owner, and to see where each is used. Only the kinds you may read are searched.
+ * Shared assets (PL01, docs/build/S61, S128): one place to find the decision tables, document templates, connections
+ * and forms that workflows reuse, by name, key or owner, and to see where each is used. Only the kinds you may read are searched.
  * Owners are labels: changing one, or a workflow referencing an asset, never gives anyone access.
  */
 export function SharedAssetsPanel() {
   const { workspace, can } = useWorkspace()
   const ws = workspace.id
+  const client = useQueryClient()
   const [q, setQ] = useState('')
   const [applied, setApplied] = useState('')
   const [kind, setKind] = useState<SharedAssetKind | ''>('')
@@ -49,14 +61,14 @@ export function SharedAssetsPanel() {
   // Owner choices come from every asset the caller may read, so the filter does not shrink with the results.
   const everything = useQuery({ queryKey: [...assetsKey(ws), 'owners'], queryFn: () => endpoints.listSharedAssets(ws, { includeArchived: true }) })
   const owners = [...new Map((everything.data?.items ?? []).map((a) => [a.owner.id, a.owner.displayName])).entries()].sort((a, b) => a[1].localeCompare(b[1]))
-  const readableKinds = everything.data?.searchedKinds ?? (['decision', 'documentTemplate', 'connection'] as SharedAssetKind[]).filter((k) => can(k === 'connection' ? 'connection.read' : 'workflow.read'))
+  const readableKinds = everything.data?.searchedKinds ?? (['decision', 'documentTemplate', 'connection', 'form'] as SharedAssetKind[]).filter((k) => can(k === 'connection' ? 'connection.read' : 'workflow.read'))
 
   return (
     <section aria-labelledby="shared-assets-title" className="max-w-5xl space-y-4">
       <div>
         <h2 id="shared-assets-title">Shared assets</h2>
         <p className="text-sm text-muted-foreground">
-          Decision tables, document templates and connections that workflows reuse. A workflow keeps a copy of the version it uses; validation tells its designers when a newer version exists, and blocks publishing when the asset is archived or no longer matches.
+          Decision tables, document templates, connections and forms that workflows reuse. A workflow keeps a copy of the version it uses; validation tells its designers when a newer version exists, and blocks publishing when the asset is archived or no longer matches.
         </p>
       </div>
       <form role="search" aria-label="Search shared assets" className="flex flex-wrap items-end gap-3" onSubmit={(e) => { e.preventDefault(); setApplied(q.trim()); setSelected(null) }}>
@@ -84,10 +96,11 @@ export function SharedAssetsPanel() {
           <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> Show archived
         </label>
       </form>
+      {can('workflow.edit') ? <DecisionDmnImport ws={ws} onSaved={() => void client.invalidateQueries({ queryKey: assetsKey(ws) })} /> : null}
       {list.isPending ? <LoadingBlock rows={3} label="Loading shared assets" /> : list.isError ? (
         <QueryError error={list.error} onRetry={() => void list.refetch()} what="the shared assets" />
       ) : list.data.items.length === 0 ? (
-        <EmptyState title="No shared assets found">{applied || kind || owner ? 'Try another name, key, kind or owner.' : 'Share a decision table from the Studio, save a document template, or register a connection.'}</EmptyState>
+        <EmptyState title="No shared assets found">{applied || kind || owner ? 'Try another name, key, kind or owner.' : 'Share a decision table or a form from the Studio, save a document template, or register a connection.'}</EmptyState>
       ) : (
         <>
           <p className="text-sm text-muted-foreground" role="status" data-testid="asset-count">
@@ -194,6 +207,9 @@ function AssetDetail({ ws, kind, assetKey }: { ws: string; kind: SharedAssetKind
           {archive.isError && !stale ? <Alert tone="danger">{messageOf(archive.error)}</Alert> : null}
         </section>
       ) : null}
+      {kind === 'decision' && canManage && !a.asset.archived ? (
+        <DecisionDmnImport ws={ws} asset={a} onSaved={done} />
+      ) : null}
       <section aria-label="Versions" className="space-y-2">
         <h3 className="text-sm font-semibold">Versions</h3>
         <ol className="space-y-2">
@@ -201,11 +217,31 @@ function AssetDetail({ ws, kind, assetKey }: { ws: string; kind: SharedAssetKind
             <li key={v.version} className="rounded-control border border-border p-3" data-testid="asset-version">
               <p className="text-sm font-semibold">Version {v.version} <span className="font-normal text-muted-foreground">by {v.createdBy.displayName} on {formatDateTime(v.createdAt)}</span></p>
               {v.changeNote ? <p className="text-xs text-muted-foreground">{v.changeNote}</p> : null}
-              {v.content ? <p className="text-xs text-muted-foreground">{v.content.rows.length} {v.content.rows.length === 1 ? 'row' : 'rows'}; {v.content.hitPolicy === 'FIRST' ? 'first matching row applies' : 'exactly one row applies'}</p> : null}
+              <VersionContent content={v.content} />
+              {kind === 'decision' && v.content ? (
+                <Button type="button" variant="ghost" size="sm" onClick={() => void endpoints.exportSharedDecisionDmn(ws, assetKey, v.version).then(({ blob, filename }) => downloadBlob(blob, filename))}>
+                  <FileDown className="size-4" aria-hidden="true" /> Download DMN
+                </Button>
+              ) : null}
             </li>
           ))}
         </ol>
       </section>
     </div>
+  )
+}
+
+/** One line about a version's content: rows of a decision table, questions of a form. */
+function VersionContent({ content }: { content: SharedAsset['versions'][number]['content'] | undefined }) {
+  const table = decisionContentOf(content)
+  if (table) return <p className="text-xs text-muted-foreground">{table.rows.length} {table.rows.length === 1 ? 'row' : 'rows'}; {POLICY_WORDS[table.hitPolicy]}</p>
+  const form = formContentOfVersion(content)
+  if (!form) return null
+  const titles = Object.entries(form.inputSchema.properties).map(([key, q]) => (q as { title?: string }).title ?? key)
+  const rules = Object.keys(form.inputUi?.visibleWhen ?? {}).length + Object.keys(form.inputUi?.requiredWhen ?? {}).length
+  return (
+    <p className="text-xs text-muted-foreground" data-testid="form-version-summary">
+      {titles.length} {titles.length === 1 ? 'question' : 'questions'}{rules ? `, ${rules} ${rules === 1 ? 'rule' : 'rules'}` : ''}: {titles.join(', ')}
+    </p>
   )
 }

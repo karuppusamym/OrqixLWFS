@@ -83,6 +83,10 @@ function stepOutputs(def: Definition, node: WorkflowNode, lookup?: ConnectionLoo
           base('approvedCount', 'integer', 'Approved items'),
           base('itemDecisions', 'array', 'Decision per item'),
         ] : []),
+        // Fields the approver fills in (S123); usable after the approved route.
+        ...Object.entries((node.config.capture as { properties?: Record<string, { type: FieldType | 'object'; format?: string; title?: string; enum?: string[] }> } | undefined)?.properties ?? {})
+          .filter(([, field]) => field.type !== 'array' && field.type !== 'object')
+          .map(([key, field]) => base(key, field.type === 'string' && field.format === 'date' ? 'date' : field.type as FieldType, field.title || humanize(key), field.enum)),
       ]
     case 'decision': {
       const table = def.decisions.find((d) => d.key === (node.config.decisionRef as string | undefined))
@@ -142,8 +146,32 @@ export function allFields(def: Definition, lookup?: ConnectionLookup): FieldInfo
  */
 export function availableFields(def: Definition, nodeId: string, lookup?: ConnectionLookup): FieldInfo[] {
   const before = guaranteedBefore(def, nodeId)
-  const steps = def.nodes.filter((n) => before.has(n.id)).flatMap((n) => stepOutputs(def, n, lookup))
+  const steps = def.nodes.filter((n) => before.has(n.id)).flatMap((n) => {
+    const outputs = stepOutputs(def, n, lookup)
+    // Fields an approver fills in (S123) exist only after the approved route; the compiler checks the same rule.
+    const captured = Object.keys((n.config.capture as { properties?: Record<string, unknown> } | undefined)?.properties ?? {})
+    if (n.type !== 'approval' || captured.length === 0 || !reachableWithoutRoute(def, n.id, 'approved', nodeId)) return outputs
+    return outputs.filter((f) => !captured.some((key) => f.ref === `/steps/${n.id}/${key}`))
+  })
   return [...inputFields(def), ...steps]
+}
+
+/** True when `target` can be reached from the start without taking the `route` leaving `producer`. */
+function reachableWithoutRoute(def: Definition, producer: string, route: string, target: string): boolean {
+  const start = def.nodes.find((n) => n.type === 'start')
+  if (!start) return false
+  const seen = new Set([start.id])
+  const work = [start.id]
+  while (work.length) {
+    const id = work.pop()!
+    if (id === target) return true
+    for (const t of def.transitions) {
+      if (t.from !== id || (id === producer && t.on === route) || seen.has(t.to)) continue
+      seen.add(t.to)
+      work.push(t.to)
+    }
+  }
+  return false
 }
 
 export function fieldInfo(def: Definition, ref: string, lookup?: ConnectionLookup): FieldInfo | undefined {

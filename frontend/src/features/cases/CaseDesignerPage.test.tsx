@@ -1,0 +1,117 @@
+import { screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { HttpResponse, http } from 'msw'
+import { describe, expect, it } from 'vitest'
+import { server } from '@/test/server'
+import { renderAppReady, signInAs } from '@/test/utils'
+import { WS_SANDBOX } from '@/mocks/state'
+import { listCaseDefinitions } from './api'
+
+const ws = WS_SANDBOX
+const cmmn = (key: string, group = 'managers') => `<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/CMMN/20151109/MODEL" xmlns:flowable="http://flowable.org/cmmn" targetNamespace="urn:orqix:test">
+  <case id="${key}" name="Uploaded review"><casePlanModel id="plan" name="Uploaded review">
+    <planItem id="reviewItem" definitionRef="review"/>
+    <humanTask id="review" name="Review the claim" flowable:candidateGroups="${group}"/>
+  </casePlanModel></case>
+</definitions>`
+const file = (text: string) => { const value = new File([text], 'case.cmmn', { type: 'application/xml' }); Object.defineProperty(value, 'text', { value: async () => text }); return value }
+const results = () => screen.getByRole('region', { name: 'Check results' })
+
+describe('case designer page (S126)', () => {
+  it('creates a case type, shows every problem the check finds and publishes once they are fixed', async () => {
+    signInAs('dana.designer')
+    const user = userEvent.setup()
+    const { router } = await renderAppReady(`/w/${ws}/case-designs`)
+    expect(await screen.findByRole('heading', { level: 1, name: 'Case types' })).toBeInTheDocument()
+    await user.type(screen.getByLabelText('Key'), 'claim-review')
+    await user.type(screen.getByLabelText('Name'), 'Claim review')
+    await user.click(screen.getByRole('button', { name: 'Create draft' }))
+    expect(await screen.findByRole('heading', { level: 1, name: 'Claim review' })).toBeInTheDocument()
+    expect(router.state.location.pathname).toMatch(new RegExp(`^/w/${ws}/case-designs/[^/]+$`))
+    expect(screen.getByText(/Case type claim-review · draft version 1 · Not published yet\./)).toBeInTheDocument()
+    expect(await screen.findByTestId('case-canvas')).toBeInTheDocument()
+
+    // The starter task has no eligible group and the new data field has no label: both are reported.
+    await user.click(screen.getByRole('button', { name: 'Add case data field' }))
+    await user.clear(screen.getByLabelText('Field 1 label'))
+    await user.click(screen.getByRole('button', { name: 'Check' }))
+    await waitFor(() => expect(within(results()).getByText('2 problems block publishing draft version 2')).toBeInTheDocument())
+    expect(within(results()).getByText('Choose an eligible workspace group for every human task.')).toBeInTheDocument()
+    expect(within(results()).getByText('Case data fields need unique keys, labels and supported types.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Publish version 1' })).toBeDisabled()
+
+    await user.click(screen.getByRole('button', { name: 'Form view' }))
+    const group = screen.getByLabelText('Eligible group for task1')
+    await waitFor(() => expect(group.querySelectorAll('option').length).toBeGreaterThan(1))
+    await user.selectOptions(group, 'managers')
+    await user.type(screen.getByLabelText('Field 1 label'), 'Claim amount')
+    expect(screen.getByRole('button', { name: 'Publish version 1' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Check' }))
+    await waitFor(() => expect(within(results()).getByText('No problems found in draft version 3. It can be published as version 1.')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: 'Publish version 1' }))
+    expect(await screen.findByText('Published version 1 of Claim review. People can start it from Cases.')).toBeInTheDocument()
+    expect(screen.getByText(/Version 1 is published and matches this draft\./)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Publish version 2' })).toBeDisabled()
+    const published = (await listCaseDefinitions(ws)).find(definition => definition.key === 'claim-review')
+    expect(published).toMatchObject({ name: 'Claim review', version: 1, dataFields: [{ key: 'field1', label: 'Claim amount', type: 'text' }] })
+
+    await user.click(screen.getByRole('link', { name: 'All case types' }))
+    const row = (await screen.findByRole('cell', { name: 'claim-review' })).closest('tr')!
+    expect(within(row).getByText('Version 1')).toBeInTheDocument()
+    expect(within(row).getByText('No changes since version 1')).toBeInTheDocument()
+  })
+
+  it('uses an uploaded CMMN file as it is, reports a wrong case ID and publishes the corrected file', async () => {
+    signInAs('dana.designer')
+    const user = userEvent.setup()
+    await renderAppReady(`/w/${ws}/case-designs`)
+    await user.type(await screen.findByLabelText('Key'), 'uploaded-review')
+    await user.type(screen.getByLabelText('Name'), 'Uploaded review')
+    await user.click(screen.getByRole('button', { name: 'Create draft' }))
+    await screen.findByRole('heading', { level: 1, name: 'Uploaded review' })
+    await user.upload(screen.getByLabelText('CMMN file (maximum 64 KiB)'), file(cmmn('another-key')))
+    expect(await screen.findByRole('region', { name: 'Uploaded CMMN file' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Check' }))
+    await waitFor(() => expect(within(results()).getByText('Exactly one case with an ID matching the catalog key is required.')).toBeInTheDocument())
+    await user.upload(screen.getByLabelText('CMMN file (maximum 64 KiB)'), file(cmmn('uploaded-review')))
+    await user.click(screen.getByRole('button', { name: 'Check' }))
+    await waitFor(() => expect(within(results()).getByText(/No problems found/)).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: 'Publish version 1' }))
+    expect(await screen.findByText('Published version 1 of Uploaded review. People can start it from Cases.')).toBeInTheDocument()
+  })
+
+  it('opens a published case type in the designer through a new draft with its source and data', async () => {
+    signInAs('dana.designer')
+    const definition = { id: '00000000-0000-7000-8000-000000000c01', key: 'claim-intake', name: 'Claim intake', version: 2, createdAt: '2026-10-17T12:00:00Z', dataFields: [{ key: 'amount', label: 'Amount', type: 'number' as const, required: true }] }
+    let created: unknown
+    server.use(
+      http.get('*/api/v1/workspaces/:ws/cases/definitions', () => HttpResponse.json([definition])),
+      http.get('*/api/v1/workspaces/:ws/cases/definitions/:id', () => HttpResponse.json({ ...definition, sourceXml: cmmn('claim-intake'), workflowTasks: [] })),
+      http.post('*/api/v1/workspaces/:ws/cases/drafts', async ({ request }) => {
+        created = await request.json()
+        return HttpResponse.json({ id: '00000000-0000-7000-8000-000000000c02', version: 1, designerModel: null, viewRef: null, workflowTasks: [], caseTasks: [], decisionTasks: [], updatedAt: '2026-10-30T12:00:00Z', publishedVersion: 2, publishedDraftVersion: null, ...(created as object) }, { status: 201 })
+      }),
+      http.get('*/api/v1/workspaces/:ws/cases/drafts/:id', () => HttpResponse.json({ id: '00000000-0000-7000-8000-000000000c02', version: 1, viewRef: null, workflowTasks: [], caseTasks: [], decisionTasks: [], updatedAt: '2026-10-30T12:00:00Z', publishedVersion: 2, publishedDraftVersion: null, ...(created as object) })),
+    )
+    const user = userEvent.setup()
+    await renderAppReady(`/w/${ws}/case-designs`)
+    const row = (await screen.findByRole('cell', { name: 'claim-intake' })).closest('tr')!
+    expect(within(row).getByText('No draft')).toBeInTheDocument()
+    await user.click(within(row).getByRole('button', { name: 'Open designer' }))
+    expect(await screen.findByRole('heading', { level: 1, name: 'Claim intake' })).toBeInTheDocument()
+    expect(created).toMatchObject({ key: 'claim-intake', name: 'Claim intake', sourceXml: cmmn('claim-intake'), dataFields: definition.dataFields, viewRef: null })
+    expect(screen.getByText(/Version 2 is published; this draft has changes\./)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Publish version 3' })).toBeDisabled()
+    // The published source opens in the designer, with its plan item and data fields.
+    expect(await screen.findByTestId('case-canvas')).toBeInTheDocument()
+    expect(screen.getByLabelText('Field 1 key')).toHaveValue('amount')
+  })
+
+  it('is offered only to people who may author case types', async () => {
+    signInAs('rhea.requester')
+    await renderAppReady(`/w/${ws}/case-designs`)
+    expect(await screen.findByText('You need permission to edit workflows to design case types.')).toBeInTheDocument()
+    expect(within(screen.getByRole('navigation', { name: 'Main' })).queryByRole('link', { name: 'Case types' })).not.toBeInTheDocument()
+  })
+})

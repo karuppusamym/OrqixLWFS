@@ -1,4 +1,4 @@
-import { api, call } from '@/api/client'
+import { api, call, callVoid } from '@/api/client'
 import type { components } from '@/api/schema'
 import { uuid } from '@/lib/text'
 
@@ -77,4 +77,33 @@ export const getCaseData = (ws: string, instanceId: string) => call(api.GET('/wo
 
 export const updateCaseData = (ws: string, instanceId: string, expectedVersion: number, reason: string, values: S['CaseDataValues']) => call(api.POST('/workspaces/{workspaceId}/cases/instances/{instanceId}/data', {
   params: { path: { workspaceId: ws, instanceId }, header: { 'Idempotency-Key': uuid() } }, body: { expectedVersion, reason, values },
+}))
+
+// S126: case type drafts (draft, check, publish).
+export const listCaseDefinitionDrafts = (ws: string) => call(api.GET('/workspaces/{workspaceId}/cases/drafts', {
+  params: { path: { workspaceId: ws } },
+}))
+
+export const createCaseDefinitionDraft = (ws: string, body: S['CreateCaseDefinitionDraft']) => call(api.POST('/workspaces/{workspaceId}/cases/drafts', {
+  params: { path: { workspaceId: ws } }, body,
+}))
+
+export const getCaseDefinitionDraft = (ws: string, draftId: string) => call(api.GET('/workspaces/{workspaceId}/cases/drafts/{draftId}', {
+  params: { path: { workspaceId: ws, draftId } },
+}))
+
+export const saveCaseDefinitionDraft = (ws: string, draftId: string, body: S['SaveCaseDefinitionDraft']) => call(api.PUT('/workspaces/{workspaceId}/cases/drafts/{draftId}', {
+  params: { path: { workspaceId: ws, draftId } }, body,
+}))
+
+export const deleteCaseDefinitionDraft = (ws: string, draftId: string) => callVoid(api.DELETE('/workspaces/{workspaceId}/cases/drafts/{draftId}', {
+  params: { path: { workspaceId: ws, draftId } },
+}))
+
+export const checkCaseDefinitionDraft = (ws: string, draftId: string) => call(api.POST('/workspaces/{workspaceId}/cases/drafts/{draftId}/check', {
+  params: { path: { workspaceId: ws, draftId } },
+}))
+
+export const publishCaseDefinitionDraft = (ws: string, draftId: string, expectedVersion: number) => call(api.POST('/workspaces/{workspaceId}/cases/drafts/{draftId}/publish', {
+  params: { path: { workspaceId: ws, draftId } }, body: { expectedVersion },
 }))

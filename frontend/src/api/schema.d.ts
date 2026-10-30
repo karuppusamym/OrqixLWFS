@@ -5322,14 +5322,18 @@ export interface components {
             decisionTasks?: components["schemas"]["CaseWorkflowTaskMapping"][];
         };
         /** @description A case data field as it is being edited. The check and publishing validate it as a CaseDataField. */
-        CaseDraftDataField: Record<string, never>;
+        CaseDraftDataField: {
+            [key: string]: unknown;
+        };
         CreateCaseDefinitionDraft: {
             key: string;
             name: string;
             /** @description CMMN 1.1 source as far as it exists (64 KiB UTF-8) */
             sourceXml?: string | null;
             /** @description Opaque state of the case designer (plan items and options), so the designer reopens the draft as it was. The server stores it and never reads it; the CMMN source is what is checked and published. */
-            designerModel?: Record<string, never> | null;
+            designerModel?: {
+                [key: string]: unknown;
+            } | null;
             dataFields?: components["schemas"]["CaseDraftDataField"][];
             viewRef?: components["schemas"]["CaseViewRef"] | null;
             workflowTasks?: components["schemas"]["CaseWorkflowTaskMapping"][];
@@ -5341,7 +5345,9 @@ export interface components {
             expectedVersion: number;
             name: string;
             sourceXml?: string | null;
-            designerModel?: Record<string, never> | null;
+            designerModel?: {
+                [key: string]: unknown;
+            } | null;
             dataFields?: components["schemas"]["CaseDraftDataField"][];
             viewRef?: components["schemas"]["CaseViewRef"] | null;
             workflowTasks?: components["schemas"]["CaseWorkflowTaskMapping"][];
@@ -5366,7 +5372,9 @@ export interface components {
             name: string;
             version: number;
             sourceXml: string | null;
-            designerModel: Record<string, never> | null;
+            designerModel: {
+                [key: string]: unknown;
+            } | null;
             dataFields: components["schemas"]["CaseDraftDataField"][];
             viewRef: components["schemas"]["CaseViewRef"] | null;
             workflowTasks: components["schemas"]["CaseWorkflowTaskMapping"][];

@@ -47,6 +47,6 @@ export function Tier1Settings() {
       <FormField label="Stored cases" id="tier1-volume">{ids => <CommitNumber id={ids.input} integer value={assessment.storedCases} disabled={readOnly} onCommit={v => assess({ storedCases: v ?? 10000 })} />}</FormField>
       <label className="flex gap-2 text-sm"><input type="checkbox" disabled={readOnly} checked={assessment.requirementsReviewed} onChange={e => assess({ requirementsReviewed: e.target.checked })} />Requirements and eligibility reviewed with the business owner</label>
     </details> : null}
-    <details><summary className="cursor-pointer">Case terminal email</summary>{def.terminalNotification ? <EmailTemplateFields prefix="terminal-mail" value={def.terminalNotification} terminal readOnly={readOnly} onChange={value => store.getState().apply(d => ({ ...d, terminalNotification: value }))} /> : <Button disabled={readOnly} onClick={() => store.getState().apply(d => ({ ...d, terminalNotification: sample(['requester']) }))}>Configure terminal email</Button>}</details>
+    <details><summary className="cursor-pointer">Request terminal email</summary>{def.terminalNotification ? <EmailTemplateFields prefix="terminal-mail" value={def.terminalNotification} terminal readOnly={readOnly} onChange={value => store.getState().apply(d => ({ ...d, terminalNotification: value }))} /> : <Button disabled={readOnly} onClick={() => store.getState().apply(d => ({ ...d, terminalNotification: sample(['requester']) }))}>Configure terminal email</Button>}</details>
   </Advanced>
 }

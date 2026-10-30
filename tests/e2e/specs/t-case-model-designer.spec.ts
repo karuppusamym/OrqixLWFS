@@ -4,16 +4,14 @@ import { MOCK } from '../support/env'
 import { workspaceId } from '../support/app'
 import { uniq } from '../support/api'
 import { expectNoSeriousViolations } from '../support/axe'
+import { checkAndPublish,newCaseType } from '../support/caseDesigner'
 
 test('a visually authored model executes required manual work and achieves its milestone',async({sessions})=>{
   test.skip(MOCK,'Verifies generated CMMN against the real case engine.')
   test.setTimeout(180_000)
   let page=await sessions.as('dana.designer')
   const ws=await workspaceId(page),key=uniq('visual-case')
-  await page.goto(`/w/${ws}/cases`)
-  await page.getByLabel('Key',{exact:true}).fill(key)
-  await page.getByLabel('Name',{exact:true}).fill(key)
-  await page.getByRole('button',{name:'Build a case model',exact:true}).click()
+  await newCaseType(page,ws,key)
   await page.getByRole('button',{name:'Form view',exact:true}).click()
   await page.getByLabel('Eligible group for task1').selectOption('managers')
   await page.getByRole('button',{name:'Add milestone',exact:true}).click()
@@ -23,7 +21,9 @@ test('a visually authored model executes required manual work and achieves its m
   await page.getByRole('button',{name:'Use generated CMMN',exact:true}).click()
   await expect(page.getByLabel('Generated CMMN preview')).toHaveValue(/node_task1_item/)
   const generated=await page.getByLabel('Generated CMMN preview').inputValue()
-  await page.getByRole('button',{name:'Create definition',exact:true}).click()
+  await checkAndPublish(page)
+  // Exporting a published version is on the case types list of the designer (S126).
+  await page.goto(`/w/${ws}/case-designs`)
   await expect(page.getByRole('cell',{name:key,exact:true}).first()).toBeVisible()
   const downloading=page.waitForEvent('download')
   await page.getByRole('row').filter({has:page.getByRole('cell',{name:key,exact:true})}).getByRole('button',{name:'Export CMMN',exact:true}).click()

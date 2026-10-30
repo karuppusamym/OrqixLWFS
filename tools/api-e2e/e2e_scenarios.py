@@ -52,7 +52,8 @@ def claim_and_decide(client, ws, run_id, action, reason=None):
 
 
 def find_workflow(client, ws, key):
-    """Follows the list's cursor: after the browser suite the workspace has more workflows than one page holds."""
+    """The workflow with `key`, or None. Follows the list's cursor: after the browser suite the workspace has more
+    workflows than one page holds."""
     cursor = None
     while True:
         params = {"cursor": cursor} if cursor else {}
@@ -62,7 +63,7 @@ def find_workflow(client, ws, key):
                 return item
         cursor = page.get("nextCursor")
         if not cursor:
-            raise SystemExit(f"Workflow {key!r} not found in the purchasing workspace")
+            return None
 
 
 def start(client, ws, wf_id, amount, title):
@@ -75,6 +76,8 @@ def main():
         "rhea.requester", "mani.manager", "fin.finance", "paul.publisher", "olga.operator", "fred.facilities"))
     ws = next(w["id"] for w in rhea.get("/me").json()["workspaces"] if w["key"] == "purchasing")
     wf = find_workflow(paul, ws, "purchase-approval")
+    if wf is None:
+        raise SystemExit("Workflow 'purchase-approval' not found in the purchasing workspace")
     if not wf.get("activeRelease"):
         rev = paul.get(f"/workspaces/{ws}/workflows/{wf['id']}/draft").json()["revision"]
         paul.post(f"/workspaces/{ws}/workflows/{wf['id']}/publish", {"draftRevision": rev}, idem=True)

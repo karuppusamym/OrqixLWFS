@@ -12,6 +12,7 @@ import { useStudio } from './StudioContext'
 import { FormLayoutEditor } from './inspector/FormBehaviorEditor'
 import { QuestionList } from './inspector/QuestionEditor'
 import { RequestViewPicker } from './inspector/RequestViewPicker'
+import { SharedFormsSection } from './inspector/SharedFormsSection'
 import { StepFormsEditor } from './inspector/StepFormsEditor'
 import { ACCESS_LABELS, accessOf, captureOf, stepFormSteps } from './model/stepForms'
 import { InspectorSection } from './inspector/controls'
@@ -33,6 +34,7 @@ export function FormView({ open }: { open?: { key: string; n: number } | null })
           <QuestionList open={open} />
           <FormAssistant />
         </InspectorSection>
+        <SharedFormsSection />
         <FormLayoutEditor />
         <StepFormsEditor />
         <RequestViewPicker />

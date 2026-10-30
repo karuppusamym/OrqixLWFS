@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.orqix.audit.AuditWriter;
 import com.orqix.compiler.CanonicalJson;
+import com.orqix.compiler.WorkflowCompiler;
 import com.orqix.identity.Caller;
 import com.orqix.identity.Permission;
 import com.orqix.identity.PolicyService;
@@ -39,11 +40,12 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.ObjectNode;
 
 /**
- * PL01 shared reusable assets (docs/build/S61). Three kinds share one index, owner and archive model: shared decision
- * tables (new, {@code decision_asset}), document templates (DOC08 registry) and connection definitions (V1). Each is
- * identified by kind and key inside one workspace, has immutable numbered versions, an owner and an archive flag.
+ * PL01 shared reusable assets (docs/build/S61). Four kinds share one index, owner and archive model: shared decision
+ * tables ({@code decision_asset}), document templates (DOC08 registry), connection definitions (V1) and shared forms
+ * ({@code form_asset}, docs/build/S127). Each is identified by kind and key inside one workspace, has immutable numbered
+ * versions, an owner and an archive flag.
  * <p>
- * Authorization is per kind and never derived from a reference or an owner: decisions and templates are read with
+ * Authorization is per kind and never derived from a reference or an owner: decisions, templates and forms are read with
  * {@code workflow.read} and managed with {@code workflow.edit}; connections are read with {@code connection.read} and
  * managed with {@code connection.manage}. Search only covers the kinds the caller may read. Where-used also needs
  * {@code workflow.read}. Owners are labels: an owner must currently hold the manage permission, and gains nothing.
@@ -52,6 +54,7 @@ import tools.jackson.databind.node.ObjectNode;
 public class SharedAssets {
 
     public static final int MAX_DECISIONS = 200;
+    public static final int MAX_FORMS = 200;
     public static final int MAX_VERSIONS = 100;
     public static final int SEARCH_LIMIT = 300;
     static final int MAX_CONTENT_BYTES = 64 * 1024;
@@ -60,7 +63,8 @@ public class SharedAssets {
     public static final String DECISION = "decision";
     public static final String TEMPLATE = "documentTemplate";
     public static final String CONNECTION = "connection";
-    static final List<String> KINDS = List.of(DECISION, TEMPLATE, CONNECTION);
+    public static final String FORM = "form";
+    static final List<String> KINDS = List.of(DECISION, TEMPLATE, CONNECTION, FORM);
 
     public record Summary(String kind, String key, String name, String description, SubjectRef owner,
             int latestVersion, boolean archived, int revision, Instant updatedAt, UUID id) {
@@ -93,6 +97,16 @@ public class SharedAssets {
             @Size(max = 300) String changeNote) {
     }
 
+    public record CreateFormRequest(
+            @NotBlank @Pattern(regexp = "^[a-z][a-z0-9-]{0,62}[a-z0-9]$") String key,
+            @NotBlank @Size(max = 80) String name, @Size(max = 300) String description, @NotNull JsonNode content,
+            @Size(max = 300) String changeNote) {
+    }
+
+    public record FormVersionRequest(@Min(1) int expectedVersion, @NotNull JsonNode content,
+            @Size(max = 300) String changeNote) {
+    }
+
     public record OwnerRequest(@NotNull UUID ownerSubjectId, @Min(0) int expectedRevision) {
     }
 
@@ -104,13 +118,16 @@ public class SharedAssets {
     private final SubjectService subjects;
     private final AuditWriter audit;
     private final Json json;
+    private final WorkflowCompiler compiler;
 
-    public SharedAssets(JdbcClient jdbc, PolicyService policy, SubjectService subjects, AuditWriter audit, Json json) {
+    public SharedAssets(JdbcClient jdbc, PolicyService policy, SubjectService subjects, AuditWriter audit, Json json,
+            WorkflowCompiler compiler) {
         this.jdbc = jdbc;
         this.policy = policy;
         this.subjects = subjects;
         this.audit = audit;
         this.json = json;
+        this.compiler = compiler;
     }
 
     // ---------------------------------------------------------------- permissions
@@ -153,6 +170,10 @@ public class SharedAssets {
             JOIN connection_definition latest ON latest.workspace_id = :ws AND latest.key = c.key AND latest.version = c.latest
             JOIN connection_definition first ON first.workspace_id = :ws AND first.key = c.key AND first.version = c.first
             LEFT JOIN connection_asset h ON h.workspace_id = :ws AND h.connection_key = c.key
+            UNION ALL
+            SELECT 'form', f.key, f.name, f.description, f.owner_subject_id, f.latest_version,
+                   f.archived_at IS NOT NULL, f.revision, f.updated_at, f.id
+            FROM form_asset f WHERE f.workspace_id = :ws
             """;
 
     private record Row(String kind, String key, String name, String description, UUID owner, int latestVersion,
@@ -259,6 +280,9 @@ public class SharedAssets {
             case TEMPLATE -> """
                     SELECT version, sha256 AS sha, change_note AS note, created_by, created_at, NULL AS content
                     FROM document_template_version WHERE template_id = :id ORDER BY version DESC""";
+            case FORM -> """
+                    SELECT version, sha256 AS sha, change_note AS note, created_by, created_at, content::text AS content
+                    FROM form_asset_version WHERE asset_id = :id ORDER BY version DESC""";
             default -> """
                     SELECT version, trim(definition_hash) AS sha, NULL AS note, created_by, created_at, NULL AS content
                     FROM connection_definition WHERE workspace_id = :ws AND key = :key ORDER BY version DESC""";
@@ -448,6 +472,83 @@ public class SharedAssets {
         return CanonicalJson.sha256Hex(json.write(shareable));
     }
 
+    // ---------------------------------------------------------------- shared forms
+
+    @Transactional
+    public Detail createForm(Caller caller, UUID ws, CreateFormRequest request) {
+        manager(caller, ws, FORM, "createFormAsset");
+        String name = request.name().trim();
+        if (name.isEmpty()) {
+            throw new ApiException(ProblemCode.VALIDATION_FAILED, "Give the shared form a name.");
+        }
+        ObjectNode content = FormAssets.content(request.content(), json, compiler);
+        jdbc.sql("SELECT id FROM workspace WHERE id = :ws FOR UPDATE").param("ws", ws).query(UUID.class).optional();
+        int count = jdbc.sql("SELECT count(*) FROM form_asset WHERE workspace_id = :ws").param("ws", ws)
+                .query(Integer.class).single();
+        if (count >= MAX_FORMS) {
+            throw new ApiException(ProblemCode.VALIDATION_FAILED,
+                    "A workspace can have at most " + MAX_FORMS + " shared forms.");
+        }
+        UUID id = Ids.newId();
+        int inserted = jdbc.sql("""
+                INSERT INTO form_asset (id, workspace_id, key, name, description, owner_subject_id, created_by)
+                VALUES (:id, :ws, :key, :name, :description, :by, :by) ON CONFLICT DO NOTHING
+                """).param("id", id).param("ws", ws).param("key", request.key()).param("name", name)
+                .param("description", blankToNull(request.description())).param("by", caller.subjectId()).update();
+        if (inserted != 1) {
+            throw new ApiException(ProblemCode.DUPLICATE_KEY, "A shared form with this key or name already exists.");
+        }
+        insertFormVersion(ws, id, 1, content, request.changeNote(), caller.subjectId());
+        audit(caller, ws, "shared.form.created", FORM, request.key(), Map.of("version", 1,
+                "questions", FormAssets.questions(content)));
+        return detail(ws, FORM, request.key());
+    }
+
+    @Transactional
+    public Detail addFormVersion(Caller caller, UUID ws, String key, FormVersionRequest request) {
+        manager(caller, ws, FORM, "addFormAssetVersion");
+        ObjectNode content = FormAssets.content(request.content(), json, compiler);
+        record Locked(UUID id, int latest, boolean archived) {
+        }
+        Locked row = jdbc.sql("""
+                SELECT id, latest_version, archived_at IS NOT NULL AS archived FROM form_asset
+                WHERE workspace_id = :ws AND key = :key FOR UPDATE
+                """).param("ws", ws).param("key", key)
+                .query((rs, n) -> new Locked(Sql.uuid(rs, "id"), rs.getInt("latest_version"), rs.getBoolean("archived")))
+                .optional().orElseThrow(ApiException::notFound);
+        if (row.latest() != request.expectedVersion()) {
+            throw new ApiException(ProblemCode.WORKFLOW_VERSION_CONFLICT,
+                    "The shared form changed. Reload before saving.").with("currentVersion", row.latest());
+        }
+        if (row.archived()) {
+            throw new ApiException(ProblemCode.VALIDATION_FAILED, "Restore the shared form before adding a version.");
+        }
+        if (row.latest() >= MAX_VERSIONS) {
+            throw new ApiException(ProblemCode.VALIDATION_FAILED,
+                    "A shared form can have at most " + MAX_VERSIONS + " versions.");
+        }
+        String latestHash = jdbc.sql("SELECT sha256 FROM form_asset_version WHERE asset_id = :id AND version = :v")
+                .param("id", row.id()).param("v", row.latest()).query(String.class).single();
+        if (FormAssets.hash(content, json).equals(latestHash)) {
+            throw new ApiException(ProblemCode.VALIDATION_FAILED, "The new version is identical to the latest version.");
+        }
+        int next = row.latest() + 1;
+        insertFormVersion(ws, row.id(), next, content, request.changeNote(), caller.subjectId());
+        jdbc.sql("UPDATE form_asset SET latest_version = :v, updated_at = now() WHERE id = :id")
+                .param("v", next).param("id", row.id()).update();
+        audit(caller, ws, "shared.form.versioned", FORM, key, Map.of("version", next,
+                "questions", FormAssets.questions(content)));
+        return detail(ws, FORM, key);
+    }
+
+    private void insertFormVersion(UUID ws, UUID id, int version, ObjectNode content, String note, UUID by) {
+        jdbc.sql("""
+                INSERT INTO form_asset_version (workspace_id, asset_id, version, content, sha256, change_note, created_by)
+                VALUES (:ws, :id, :v, CAST(:content AS jsonb), :sha, :note, :by)
+                """).param("ws", ws).param("id", id).param("v", version).param("content", json.write(content))
+                .param("sha", FormAssets.hash(content, json)).param("note", blankToNull(note)).param("by", by).update();
+    }
+
     // ---------------------------------------------------------------- owner and archive
 
     private boolean canManage(SubjectService.Subject subject, UUID ws, String kind) {
@@ -521,6 +622,7 @@ public class SharedAssets {
             String table = switch (kind) {
                 case DECISION -> "decision_asset SET ";
                 case TEMPLATE -> "document_template SET ";
+                case FORM -> "form_asset SET ";
                 default -> "connection_asset SET updated_by = :by, ";
             };
             String where = CONNECTION.equals(kind) ? " WHERE workspace_id = :ws AND connection_key = :key"

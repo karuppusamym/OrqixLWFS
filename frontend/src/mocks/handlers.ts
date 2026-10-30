@@ -802,7 +802,7 @@ export function createHandlers(): HttpHandler[] {
         if (denial) return problem(denial.status, denial.code, denial.title, { detail: denial.detail })
         const suite = wf.testSuite, tested = wf.testPass
         if (suite?.cases.length && (!tested?.passed || tested.version !== suite.version || tested.revision !== draft.revision || tested.dependencies !== childPins(wf.wsId, wf.id))) return problem(422, 'WORKFLOW_INVALID', 'Shared tests must pass', { detail: 'Run and pass the current shared tests against this exact draft before publishing.' })
-        const issues = validateDefinition(draft.definition, validationContext(wf.wsId))
+        const issues = [...validateDefinition(draft.definition, validationContext(wf.wsId)), ...assetIssues(wf.wsId, draft.definition)]
         if (issues.some((i) => i.severity === 'blocker')) return problem(422, 'WORKFLOW_INVALID', 'The workflow has blocking problems', problemFromValidation(issues))
         const warnings = issues.filter((i) => i.severity === 'warning')
         if (warnings.length > 0 && !input.acknowledgeWarnings) return problem(422, 'WARNINGS_NOT_ACKNOWLEDGED', 'Warnings must be acknowledged', problemFromValidation(issues))

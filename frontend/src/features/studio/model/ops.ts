@@ -3,6 +3,7 @@ import { rewriteRefs } from './fieldRefs'
 import { nodeById, outgoing, wouldCreateCycle } from './graph'
 import { defaultConfig, KINDS } from './kinds'
 import { collides, findFreePosition, GAP_X, GAP_Y, nodeSize, placementFor } from './layout'
+import { renameCopiedQuestion } from './sharedForms'
 import type { AssetRef, Condition, Definition, DecisionTable, Literal, NodeKind, Position, RouteKind, Transition, WorkflowNode } from './types'
 
 /**
@@ -663,6 +664,7 @@ export function renameFieldKey(def: Definition, oldKey: string, newKey: string):
   for (const section of prepared.inputUi?.layout?.sections ?? []) section.fields = section.fields.map(key => key === oldKey ? newKey : key)
   const next = clone(applyFields(prepared, fields))
   rewriteRefs(next, (ref) => (ref === `/input/${oldKey}` || ref.startsWith(`/input/${oldKey}/`) ? `/input/${newKey}${ref.slice(`/input/${oldKey}`.length)}` : ref))
+  renameCopiedQuestion(next, oldKey, newKey)
   return { ok: true, def: next }
 }
 

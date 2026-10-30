@@ -1726,9 +1726,9 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Search shared assets (decisions, document templates, connections) by name, key or owner
-         * @description Only the kinds the caller may read are searched (decisions and document templates need workflow.read, connections
-         *     need connection.read); searchedKinds lists them, and a caller who may read none gets 403. q matches the name, the
+         * Search shared assets (decisions, document templates, connections, forms) by name, key or owner
+         * @description Only the kinds the caller may read are searched (decisions, document templates and forms need workflow.read,
+         *     connections need connection.read); searchedKinds lists them, and a caller who may read none gets 403. q matches the name, the
          *     key or the owner's display name (case-insensitive substring). At most 300 results, ordered by name; truncated
          *     tells when there were more. Archived assets are hidden unless includeArchived is true (docs/build/S61).
          */
@@ -1752,7 +1752,7 @@ export interface paths {
         };
         /**
          * People who may own an asset of this kind (they hold its manage permission today)
-         * @description workflow.edit for decisions and document templates, connection.manage for connections. Up to 50 people.
+         * @description workflow.edit for decisions, document templates and forms, connection.manage for connections. Up to 50 people.
          */
         get: operations["listSharedAssetOwnerCandidates"];
         put?: never;
@@ -1810,6 +1810,55 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/shared-assets/form": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a shared form (a set of request questions with rules and groups) with its first version (at most 200 per workspace)
+         * @description content holds request questions in the workflow inputSchema shape and their rules and groups in the inputUi shape
+         *     (docs/build/S127). The content is checked with the publishing compiler on a minimal workflow that holds only this
+         *     form, so a shared form never holds a question or rule a workflow could not publish. Workflows copy a version into
+         *     their own request form and pin it; the compiler checks every copy again when that workflow is validated or
+         *     published. Keys and names are unique in the workspace. The caller becomes the owner.
+         */
+        post: operations["createFormAsset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/shared-assets/form/{assetKey}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                assetKey: components["schemas"]["Key"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add an immutable version of a shared form (409 WORKFLOW_VERSION_CONFLICT when the latest version is not the one the caller saw)
+         * @description A version identical to the latest and a version of an archived form are refused (422), as is content the publishing compiler refuses. Workflows keep the version they pinned until a designer updates them.
+         */
+        post: operations["addFormAssetVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/shared-assets/{assetKind}/{assetKey}": {
         parameters: {
             query?: never;
@@ -1822,8 +1871,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * One shared asset with every version, newest first (decision versions include their content)
-         * @description workflow.read for decisions and document templates, connection.read for connections.
+         * One shared asset with every version, newest first (decision and form versions include their content)
+         * @description workflow.read for decisions, document templates and forms, connection.read for connections.
          */
         get: operations["getSharedAsset"];
         put?: never;
@@ -7984,7 +8033,7 @@ export interface components {
             changeNote?: string | null;
         };
         /** @enum {string} */
-        SharedAssetKind: "decision" | "documentTemplate" | "connection";
+        SharedAssetKind: "decision" | "documentTemplate" | "connection" | "form";
         SharedAssetSummary: {
             kind: components["schemas"]["SharedAssetKind"];
             key: components["schemas"]["Key"];
@@ -7998,7 +8047,7 @@ export interface components {
             updatedAt: components["schemas"]["Timestamp"];
             /**
              * Format: uuid
-             * @description Decision or template id; null for connections (identified by key)
+             * @description Decision, template or form id; null for connections (identified by key)
              */
             id?: string | null;
         };
@@ -8013,8 +8062,8 @@ export interface components {
             changeNote?: string | null;
             createdBy: components["schemas"]["SubjectRef"];
             createdAt: components["schemas"]["Timestamp"];
-            /** @description The decision table content of this version (decisions only) */
-            content?: components["schemas"]["DecisionAssetContent"] | null;
+            /** @description The content of this version (decisions and forms only; null for templates and connections) */
+            content?: components["schemas"]["DecisionAssetContent"] | components["schemas"]["FormAssetContent"] | null;
         };
         SharedAsset: {
             asset: components["schemas"]["SharedAssetSummary"];
@@ -8058,6 +8107,43 @@ export interface components {
         AddDecisionAssetVersion: {
             expectedVersion: number;
             content: components["schemas"]["DecisionAssetContent"];
+            changeNote?: string | null;
+        };
+        /**
+         * @description A reusable set of request questions (docs/build/S127): the questions in the workflow inputSchema shape and their
+         *     presentation and rules in a subset of the workflow inputUi shape (order, widgets, visibleWhen, requiredWhen and
+         *     layout.sections, the form groups). Rule conditions refer to the form's own questions (/input/<key>). A workflow
+         *     copies these into its request form; the submit label, help text position and pinned request view stay the
+         *     workflow's own.
+         */
+        FormAssetContent: {
+            inputSchema: components["schemas"]["formSchema"];
+            inputUi?: {
+                order?: components["schemas"]["fieldKey"][];
+                widgets?: {
+                    [key: string]: "text" | "textarea" | "number" | "money" | "select" | "radio" | "checkbox";
+                };
+                visibleWhen?: {
+                    [key: string]: components["schemas"]["condition"];
+                };
+                requiredWhen?: {
+                    [key: string]: components["schemas"]["condition"];
+                };
+                layout?: {
+                    sections?: components["schemas"]["formSection"][];
+                };
+            };
+        };
+        CreateFormAsset: {
+            key: components["schemas"]["Key"];
+            name: string;
+            description?: string | null;
+            content: components["schemas"]["FormAssetContent"];
+            changeNote?: string | null;
+        };
+        AddFormAssetVersion: {
+            expectedVersion: number;
+            content: components["schemas"]["FormAssetContent"];
             changeNote?: string | null;
         };
         RunComment: {
@@ -9639,23 +9725,8 @@ export interface components {
              */
             acknowledgeReview: boolean;
         };
-        key: string;
-        label: string;
-        /** @description Node/transition identifier. Stable through compilation; becomes the BPMN element ID. Double underscore is reserved for compiler-generated elements. */
-        id: string;
-        /** @description ISO-8601 duration in days, hours and minutes only (for example PT1M, PT48H, P2D, P1DT12H). The compiler enforces PT1M to P90D (WF_DURATION_TOO_SHORT, WF_DURATION_TOO_LONG). */
-        duration: string;
-        /** @description /input/<fieldKey> or /steps/<nodeId>/<outputKey>. Exactly one level below input or a step in v0. A list of rows on the request form also offers two derived values (S35): /input/<fieldKey>/count (number of rows) and /input/<fieldKey>/sum/<columnKey> (exact total of a numeric column); both are 0 when the list is absent. */
-        fieldRef: string;
-        /** @description Comparison/output literal. String literals are additionally restricted by compiler rule WF_LITERAL_UNSAFE. */
-        literal: string | number | boolean;
-        atomicCondition: {
-            fieldRef: components["schemas"]["fieldRef"];
-            /** @enum {unknown} */
-            operator: "eq" | "ne" | "gte" | "gt" | "lt" | "lte";
-            value: components["schemas"]["literal"];
-        };
         fieldKey: string;
+        label: string;
         /** @description A calendar date YYYY-MM-DD. The compiler also rejects dates that do not exist (WF_FORM_INVALID). */
         calendarDate: string;
         scalarFormField: {
@@ -9734,13 +9805,6 @@ export interface components {
             maxItems: number;
         };
         formField: unknown;
-        condition: unknown;
-        nodeBase: {
-            id: components["schemas"]["id"];
-            type: string;
-            label: components["schemas"]["label"];
-            config: Record<string, never>;
-        };
         /** @description Approved JSON Schema keyword subset for request/output forms. No pattern, $ref, format other than date, nested objects, arrays or remote schemas in v0. */
         formSchema: {
             /** @constant */
@@ -9751,6 +9815,40 @@ export interface components {
             properties: {
                 [key: string]: components["schemas"]["formField"];
             };
+        };
+        /** @description /input/<fieldKey> or /steps/<nodeId>/<outputKey>. Exactly one level below input or a step in v0. A list of rows on the request form also offers two derived values (S35): /input/<fieldKey>/count (number of rows) and /input/<fieldKey>/sum/<columnKey> (exact total of a numeric column); both are 0 when the list is absent. */
+        fieldRef: string;
+        /** @description Comparison/output literal. String literals are additionally restricted by compiler rule WF_LITERAL_UNSAFE. */
+        literal: string | number | boolean;
+        atomicCondition: {
+            fieldRef: components["schemas"]["fieldRef"];
+            /** @enum {unknown} */
+            operator: "eq" | "ne" | "gte" | "gt" | "lt" | "lte";
+            value: components["schemas"]["literal"];
+        };
+        condition: unknown;
+        key: string;
+        formSection: {
+            id: components["schemas"]["key"];
+            title: components["schemas"]["label"];
+            description?: string;
+            /**
+             * @description Fields per row on a wide screen; one column below 640 px.
+             * @enum {unknown}
+             */
+            columns?: 1 | 2;
+            fields: components["schemas"]["fieldKey"][];
+            visibleWhen?: components["schemas"]["condition"];
+        };
+        /** @description Node/transition identifier. Stable through compilation; becomes the BPMN element ID. Double underscore is reserved for compiler-generated elements. */
+        id: string;
+        /** @description ISO-8601 duration in days, hours and minutes only (for example PT1M, PT48H, P2D, P1DT12H). The compiler enforces PT1M to P90D (WF_DURATION_TOO_SHORT, WF_DURATION_TOO_LONG). */
+        duration: string;
+        nodeBase: {
+            id: components["schemas"]["id"];
+            type: string;
+            label: components["schemas"]["label"];
+            config: Record<string, never>;
         };
         stageEmail: {
             subject: string;
@@ -9777,18 +9875,6 @@ export interface components {
         };
         /** @description Signal name (docs/build/S55): lowercase letters and digits in kebab-case or camelCase. A signal never leaves the request it is sent in. */
         signalName: string;
-        formSection: {
-            id: components["schemas"]["key"];
-            title: components["schemas"]["label"];
-            description?: string;
-            /**
-             * @description Fields per row on a wide screen; one column below 640 px.
-             * @enum {unknown}
-             */
-            columns?: 1 | 2;
-            fields: components["schemas"]["fieldKey"][];
-            visibleWhen?: components["schemas"]["condition"];
-        };
         startNode: {
             id?: unknown;
             label?: unknown;
@@ -10311,13 +10397,17 @@ export interface components {
                     key: components["schemas"]["key"];
                     definitionVersion: number;
                 }[];
-                /** @description Versioned references to shared workspace assets (docs/build/S57). Each names the element of this workflow that holds a pinned copy of the asset version: target is the key of a table in decisions (kind decision) or the id of a generateDocument step (kind documentTemplate). The server checks every reference at validation and publish: a missing, archived or differing asset blocks, a newer version is a warning. A reference grants no access to the asset. */
+                /** @description Versioned references to shared workspace assets (docs/build/S57). Each names the element of this workflow that holds a pinned copy of the asset version: target is the key of a table in decisions (kind decision), the id of a generateDocument step (kind documentTemplate) or request, the request form (kind form, docs/build/S127). A form reference also lists the questions it copied in fields (shared question key to this workflow's question key, which differs when a clashing key was renamed on insert). The server checks every reference at validation and publish: a missing, archived or differing asset blocks, a newer version is a warning. A reference grants no access to the asset. */
                 assets?: {
                     /** @enum {unknown} */
-                    kind: "decision" | "documentTemplate";
+                    kind: "decision" | "documentTemplate" | "form";
                     key: components["schemas"]["key"];
                     version: number;
                     target: components["schemas"]["id"];
+                    /** @description Kind form only: each copied question, from its key in the shared form to its key in this workflow. Questions skipped on insert (this workflow kept its own question with that key) are not listed. */
+                    fields?: {
+                        [key: string]: components["schemas"]["fieldKey"];
+                    };
                 }[];
             };
             /** @description Optional scopes (docs/build/S55): an embedded subprocess (a section of steps entered through one step and left by its ordinary paths, with an optional time limit and error route) or an event subprocess (a handler started by an error, a signal or a timer). Member steps stay in nodes/transitions; a step belongs to at most one subprocess. The compiler enforces the structure (WF_SUBPROCESS_*). */
@@ -14480,6 +14570,71 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["AddDecisionAssetVersion"];
+            };
+        };
+        responses: {
+            /** @description Version added */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SharedAsset"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    createFormAsset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateFormAsset"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SharedAsset"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    addFormAssetVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                assetKey: components["schemas"]["Key"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddFormAssetVersion"];
             };
         };
         responses: {

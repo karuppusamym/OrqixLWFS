@@ -6,6 +6,8 @@ import { resetDocumentLibrary } from '@/mocks/documentLibrary'
 import { resetSharedAssets } from '@/mocks/sharedAssets'
 import { db, PURCHASE_WORKFLOW_ID } from '@/mocks/state'
 import { server } from '@/test/server'
+import { createFormAsset } from '@/api/endpoints'
+import { formContentOf } from '@/features/studio/model/sharedForms'
 import { renderApp, signInAs, WS } from '@/test/utils'
 
 beforeEach(() => {
@@ -21,6 +23,23 @@ async function openAssets(user: ReturnType<typeof userEvent.setup>) {
 const names = () => screen.getAllByTestId('asset-row').map((row) => row.querySelector('span')?.textContent)
 
 describe('shared assets (PL01)', () => {
+  it('lists shared forms with their questions and where they are used (S127)', async () => {
+    signInAs('dana.designer')
+    const purchase = db.workflows.get(PURCHASE_WORKFLOW_ID)!.drafts.at(-1)!.definition
+    const content = formContentOf(purchase)
+    await createFormAsset(WS, { key: 'purchase-request', name: 'Purchase request', content })
+    purchase.dependencies.assets = [{ kind: 'form', key: 'purchase-request', version: 1, target: 'request', fields: Object.fromEntries(Object.keys(purchase.inputSchema.properties).map((k) => [k, k])) }]
+    const user = userEvent.setup()
+    await openAssets(user)
+    await user.selectOptions(await screen.findByLabelText('Kind'), 'form')
+    await waitFor(() => expect(names()).toEqual(['Purchase request']))
+    expect(screen.getAllByTestId('asset-row')[0]).toHaveTextContent('Form')
+    await user.click(screen.getAllByTestId('asset-row')[0]!.querySelector('button')!)
+    const detail = await screen.findByTestId('asset-detail')
+    expect(await within(detail).findByTestId('asset-usage')).toHaveTextContent('Version 1')
+    expect(within(detail).getByTestId('form-version-summary')).toHaveTextContent('4 questions: What are you buying?, Business purpose, Cost center, Amount (USD)')
+  })
+
   it('searches only the kinds a viewer may read and shows where an asset is used', async () => {
     signInAs('vic.viewer')
     // The purchase draft uses version 1 of a decision that has a newer version.
@@ -29,7 +48,7 @@ describe('shared assets (PL01)', () => {
     const user = userEvent.setup()
     await openAssets(user)
     await waitFor(() => expect(names()).toEqual(['Order confirmation letter', 'Spend limit']))
-    expect(screen.getByTestId('asset-count')).toHaveTextContent('Searched: Decision table, Document template.')
+    expect(screen.getByTestId('asset-count')).toHaveTextContent('Searched: Decision table, Document template, Form.')
     expect(within(screen.getByLabelText('Kind')).queryByRole('option', { name: 'Connection' })).not.toBeInTheDocument()
 
     await user.type(screen.getByLabelText('Name, key or owner'), 'spend-')

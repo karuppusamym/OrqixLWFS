@@ -479,6 +479,8 @@ class SecurityMatrixTest extends RuntimeTestBase {
             case "setDocumentTemplateArchived" -> Map.of("archived", true);
             case "createDecisionAsset" -> Map.of("key", "foreign-decision", "name", "Foreign", "content", decisionContent());
             case "addDecisionAssetVersion" -> Map.of("expectedVersion", 1, "content", decisionContent());
+            case "createFormAsset" -> Map.of("key", "foreign-form", "name", "Foreign", "content", formContent());
+            case "addFormAssetVersion" -> Map.of("expectedVersion", 1, "content", formContent());
             case "setSharedAssetOwner" -> Map.of("ownerSubjectId", UUID.randomUUID().toString(), "expectedRevision", 1);
             case "setSharedAssetArchived" -> Map.of("archived", true, "expectedRevision", 1);
             case "quarantineAttachment" -> Map.of("reason", "Foreign attempt");
@@ -570,11 +572,16 @@ class SecurityMatrixTest extends RuntimeTestBase {
                 "value", 5000), "then", Map.of("route", "financeReview"))), "default", Map.of("route", "standard"));
     }
 
+    private static Map<String, Object> formContent() {
+        return Map.of("inputSchema", Map.of("type", "object", "additionalProperties", false, "properties",
+                Map.of("note", Map.of("type", "string", "title", "Note", "maxLength", 200))));
+    }
+
     /** Row counts of every application table that a command could change, plus engine runtime/deployment tables. */
     private Map<String, Long> snapshot() {
         Map<String, Long> counts = new LinkedHashMap<>();
         for (String table : List.of("organization", "workspace", "subject", "role_binding", "permission_grant",
-                "workspace_group", "workspace_group_member", "migration_job", "migration_blueprint_document", "migration_blueprint_page", "migration_blueprint_transcription", "migration_project", "migration_policy", "migration_review", "workflow", "workflow_folder", "workflow_folder_item", "document_template", "document_template_version", "decision_asset", "decision_asset_version", "connection_asset", "workspace_attachment_policy", "workspace_agent_write_policy", "agent_write_tool_approval", "agent_write_call", "attachment_ocr_result", "workflow_element_comment", "workflow_comment_mention", "workflow_draft_revision", "workflow_release",
+                "workspace_group", "workspace_group_member", "migration_job", "migration_blueprint_document", "migration_blueprint_page", "migration_blueprint_transcription", "migration_project", "migration_policy", "migration_review", "workflow", "workflow_folder", "workflow_folder_item", "document_template", "document_template_version", "decision_asset", "decision_asset_version", "form_asset", "form_asset_version", "connection_asset", "workspace_attachment_policy", "workspace_agent_write_policy", "agent_write_tool_approval", "agent_write_call", "attachment_ocr_result", "workflow_element_comment", "workflow_comment_mention", "workflow_draft_revision", "workflow_release",
                 "release_artifact", "case_catalog", "case_definition", "case_instance", "case_command_response", "case_termination", "case_event", "case_data_event", "connection_definition", "connection_binding", "oauth_grant", "oauth_consent", "external_job", "external_job_callback", "workflow_run", "task_context",
                 "run_attachment", "run_attachment_content", "run_stage", "workflow_test_suite", "workflow_test_result", "document_source",
                 "task_decision", "task_reminder", "inbound_message", "message_subscription", "document_snapshot", "adapter_config", "inbound_trigger", "inbound_event", "effect_journal", "run_event", "notification", "idempotency_record",
@@ -584,6 +591,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
         counts.put("notification_read", jdbc.sql("SELECT count(*) FROM notification WHERE read_at IS NOT NULL")
                 .query(Long.class).single());
         counts.put("asset_revisions", jdbc.sql("SELECT (SELECT coalesce(sum(revision), 0) FROM decision_asset)"
+                + " + (SELECT coalesce(sum(revision), 0) FROM form_asset)"
                 + " + (SELECT coalesce(sum(revision), 0) FROM document_template)"
                 + " + (SELECT coalesce(sum(revision), 0) FROM connection_asset)").query(Long.class).single());
         counts.put("binding_revisions", jdbc.sql("SELECT coalesce(sum(revision), 0) FROM connection_binding")

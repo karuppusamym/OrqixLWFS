@@ -30,6 +30,11 @@ import tools.jackson.databind.JsonNode;
  * acknowledge. Connection pins ({@code dependencies.connections}) get the archive and newer-version checks; their
  * existence is the compiler's rule. The check reads only the workflow's own workspace and returns findings about keys
  * and versions, never asset content, so it discloses nothing beyond what a workflow reader may already list.
+ * <p>
+ * Shared forms (docs/build/S127) are copied into the request form ({@code target} {@code request}); the reference lists
+ * the copied questions ({@code fields}, shared key to workflow key). The copy is compared question by question with the
+ * pinned version (definition, required, widget and rules; order and groups are presentation and not compared). The
+ * compiler checks the copied questions like any other request question, so reuse cannot bypass a publishing rule.
  */
 @Component
 public class AssetReferenceCheck {
@@ -39,6 +44,8 @@ public class AssetReferenceCheck {
     public static final String DIVERGED = "WF_ASSET_DIVERGED";
     public static final String STALE = "WF_ASSET_STALE";
     public static final String INVALID = "WF_ASSET_REFERENCE_INVALID";
+    /** The only target of a shared form link: the request form. */
+    public static final String FORM_TARGET = "request";
 
     private final JdbcClient jdbc;
     private final SharedAssets assets;
@@ -76,6 +83,10 @@ public class AssetReferenceCheck {
             String target = ref.path("target").asString("");
             int version = ref.path("version").asInt(0);
             String path = "/dependencies/assets/" + i;
+            if (SharedAssets.FORM.equals(kind) && !key.isEmpty() && version >= 1) {
+                formIssues(ws, root, ref, key, version, target, path, targets, issues);
+                continue;
+            }
             if (!List.of(SharedAssets.DECISION, SharedAssets.TEMPLATE).contains(kind) || key.isEmpty() || version < 1) {
                 continue; // the schema reports the shape
             }
@@ -118,6 +129,74 @@ public class AssetReferenceCheck {
         issues.addAll(requestViews.issues(ws, root));
         issues.addAll(approvalViews.issues(ws, root));
         return issues;
+    }
+
+    /** One shared form link: target, copied questions, existence, archive, equality with the pinned version, newer version. */
+    private void formIssues(UUID ws, JsonNode root, JsonNode ref, String key, int version, String target, String path,
+            Set<String> claimed, List<ValidationIssue> issues) {
+        if (!claimed.add("form|" + key)) {
+            issues.add(blocker(INVALID, "The shared form \"" + key + "\" is linked more than once. Keep one link.", path, null));
+            return;
+        }
+        if (!FORM_TARGET.equals(target)) {
+            issues.add(blocker(INVALID, "The link to the shared form \"" + key + "\" names \"" + target
+                    + "\"; a shared form is copied into the request form (target request).", path, null));
+            return;
+        }
+        Map<String, String> fields = FormAssets.fields(ref);
+        if (fields == null) {
+            issues.add(blocker(INVALID, "The link to the shared form \"" + key + "\" lists no copied questions. Insert the"
+                    + " form again or remove the link.", path, null));
+            return;
+        }
+        for (String local : fields.values()) {
+            if (!claimed.add("form-question|" + local)) {
+                issues.add(blocker(INVALID, "The request question \"" + local + "\" is claimed by more than one shared"
+                        + " form link or twice by one link.", path, null));
+                return;
+            }
+        }
+        Map<Integer, JsonNode> versions = new HashMap<>();
+        int[] latest = {0};
+        boolean[] archived = {false};
+        jdbc.sql("""
+                SELECT a.latest_version, a.archived_at IS NOT NULL AS archived, v.version, v.content::text AS content
+                FROM form_asset a JOIN form_asset_version v ON v.asset_id = a.id
+                WHERE a.workspace_id = :ws AND a.key = :key""").param("ws", ws).param("key", key).query((rs, n) -> {
+                    latest[0] = rs.getInt("latest_version");
+                    archived[0] = rs.getBoolean("archived");
+                    return versions.put(rs.getInt("version"), json.parse(rs.getString("content")));
+                }).list();
+        JsonNode content = versions.get(version);
+        if (content == null) {
+            issues.add(blocker(MISSING, "The shared form \"" + key + "\" version " + version + " does not exist in this"
+                    + " workspace. It may have been removed, or the workflow came from another workspace. Link an"
+                    + " existing form or remove the link.", path, null));
+            return;
+        }
+        if (archived[0]) {
+            issues.add(blocker(ARCHIVED, "The shared form \"" + key + "\" is archived. Restore it, or remove the link"
+                    + " and keep this workflow's own questions.", path, null));
+        }
+        List<String> unknown = fields.keySet().stream()
+                .filter(k -> !content.path("inputSchema").path("properties").has(k)).sorted().toList();
+        if (!unknown.isEmpty()) {
+            issues.add(blocker(INVALID, "The link to the shared form \"" + key + "\" names questions that are not in version "
+                    + version + ": " + String.join(", ", unknown) + ".", path, null));
+            return;
+        }
+        String copy = FormAssets.projectionHash(FormAssets.projection(root.path("inputSchema"), root.path("inputUi"),
+                fields, json), json);
+        String pinned = FormAssets.projectionHash(FormAssets.assetProjection(content, fields, json), json);
+        if (!copy.equals(pinned)) {
+            issues.add(blocker(DIVERGED, "The request questions copied from the shared form \"" + key + "\" no longer match"
+                    + " version " + version + ". Update them from the shared version, save them as a new shared version,"
+                    + " or remove the link to keep the edited questions.", path, null));
+        }
+        if (version < latest[0]) {
+            issues.add(warning("The request form uses version " + version + " of the shared form \"" + key + "\"; version "
+                    + latest[0] + " is available. Publishing keeps version " + version + ".", path, null));
+        }
     }
 
     private void connectionIssues(UUID ws, JsonNode root, List<ValidationIssue> issues) {

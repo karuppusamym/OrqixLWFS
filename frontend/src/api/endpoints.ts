@@ -572,7 +572,7 @@ export const getStageMail = (ws: string, runId: string) =>
 
 export const exportCaseEvidence = (ws: string, runId: string, format: 'json' | 'csv') =>
   call(api.GET('/workspaces/{workspaceId}/runs/{runId}/evidence', { params: { path: { workspaceId: ws, runId }, query: { format } }, parseAs: 'blob' }))
-// Shared assets (PL01, docs/build/S61): search, detail, where-used, shared decisions, owners and archive
+// Shared assets (PL01, docs/build/S61, S127): search, detail, where-used, shared decisions and forms, owners and archive
 type AssetKind = S['SharedAssetKind']
 export const listSharedAssets = (ws: string, query: { q?: string; kind?: AssetKind; owner?: string; includeArchived?: boolean } = {}) =>
   call(api.GET('/workspaces/{workspaceId}/shared-assets', { params: { path: { workspaceId: ws }, query } }))
@@ -591,6 +591,12 @@ export const createDecisionAsset = (ws: string, body: S['CreateDecisionAsset']) 
 
 export const addDecisionAssetVersion = (ws: string, assetKey: string, body: S['AddDecisionAssetVersion']) =>
   call(api.POST('/workspaces/{workspaceId}/shared-assets/decision/{assetKey}/versions', { params: { path: { workspaceId: ws, assetKey } }, body }))
+
+export const createFormAsset = (ws: string, body: S['CreateFormAsset']) =>
+  call(api.POST('/workspaces/{workspaceId}/shared-assets/form', { params: { path: { workspaceId: ws } }, body }))
+
+export const addFormAssetVersion = (ws: string, assetKey: string, body: S['AddFormAssetVersion']) =>
+  call(api.POST('/workspaces/{workspaceId}/shared-assets/form/{assetKey}/versions', { params: { path: { workspaceId: ws, assetKey } }, body }))
 
 export const setSharedAssetOwner = (ws: string, assetKind: AssetKind, assetKey: string, ownerSubjectId: string, expectedRevision: number) =>
   call(api.PUT('/workspaces/{workspaceId}/shared-assets/{assetKind}/{assetKey}/owner', { params: { path: { workspaceId: ws, assetKind, assetKey } }, body: { ownerSubjectId, expectedRevision } }))

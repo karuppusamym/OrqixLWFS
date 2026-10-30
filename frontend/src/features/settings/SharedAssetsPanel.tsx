@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Link } from 'react-router'
 import * as endpoints from '@/api/endpoints'
 import { isProblemError } from '@/api/problem'
-import type { SharedAsset, SharedAssetKind } from '@/api/types'
+import { decisionContentOf, formContentOfVersion, type SharedAsset, type SharedAssetKind } from '@/api/types'
 import { useWorkspace } from '@/app/workspace'
 import { EmptyState } from '@/components/common/EmptyState'
 import { FormField } from '@/components/common/FormField'
@@ -21,6 +21,7 @@ export const KIND_LABELS: Record<SharedAssetKind, string> = {
   decision: 'Decision table',
   documentTemplate: 'Document template',
   connection: 'Connection',
+  form: 'Form',
 }
 
 function messageOf(error: unknown): string {
@@ -31,8 +32,8 @@ function messageOf(error: unknown): string {
 const assetsKey = (ws: string) => ['ws', ws, 'shared-assets'] as const
 
 /**
- * Shared assets (PL01, docs/build/S61): one place to find the decision tables, document templates and connections that
- * workflows reuse, by name, key or owner, and to see where each is used. Only the kinds you may read are searched.
+ * Shared assets (PL01, docs/build/S61, S127): one place to find the decision tables, document templates, connections
+ * and forms that workflows reuse, by name, key or owner, and to see where each is used. Only the kinds you may read are searched.
  * Owners are labels: changing one, or a workflow referencing an asset, never gives anyone access.
  */
 export function SharedAssetsPanel() {
@@ -49,14 +50,14 @@ export function SharedAssetsPanel() {
   // Owner choices come from every asset the caller may read, so the filter does not shrink with the results.
   const everything = useQuery({ queryKey: [...assetsKey(ws), 'owners'], queryFn: () => endpoints.listSharedAssets(ws, { includeArchived: true }) })
   const owners = [...new Map((everything.data?.items ?? []).map((a) => [a.owner.id, a.owner.displayName])).entries()].sort((a, b) => a[1].localeCompare(b[1]))
-  const readableKinds = everything.data?.searchedKinds ?? (['decision', 'documentTemplate', 'connection'] as SharedAssetKind[]).filter((k) => can(k === 'connection' ? 'connection.read' : 'workflow.read'))
+  const readableKinds = everything.data?.searchedKinds ?? (['decision', 'documentTemplate', 'connection', 'form'] as SharedAssetKind[]).filter((k) => can(k === 'connection' ? 'connection.read' : 'workflow.read'))
 
   return (
     <section aria-labelledby="shared-assets-title" className="max-w-5xl space-y-4">
       <div>
         <h2 id="shared-assets-title">Shared assets</h2>
         <p className="text-sm text-muted-foreground">
-          Decision tables, document templates and connections that workflows reuse. A workflow keeps a copy of the version it uses; validation tells its designers when a newer version exists, and blocks publishing when the asset is archived or no longer matches.
+          Decision tables, document templates, connections and forms that workflows reuse. A workflow keeps a copy of the version it uses; validation tells its designers when a newer version exists, and blocks publishing when the asset is archived or no longer matches.
         </p>
       </div>
       <form role="search" aria-label="Search shared assets" className="flex flex-wrap items-end gap-3" onSubmit={(e) => { e.preventDefault(); setApplied(q.trim()); setSelected(null) }}>
@@ -87,7 +88,7 @@ export function SharedAssetsPanel() {
       {list.isPending ? <LoadingBlock rows={3} label="Loading shared assets" /> : list.isError ? (
         <QueryError error={list.error} onRetry={() => void list.refetch()} what="the shared assets" />
       ) : list.data.items.length === 0 ? (
-        <EmptyState title="No shared assets found">{applied || kind || owner ? 'Try another name, key, kind or owner.' : 'Share a decision table from the Studio, save a document template, or register a connection.'}</EmptyState>
+        <EmptyState title="No shared assets found">{applied || kind || owner ? 'Try another name, key, kind or owner.' : 'Share a decision table or a form from the Studio, save a document template, or register a connection.'}</EmptyState>
       ) : (
         <>
           <p className="text-sm text-muted-foreground" role="status" data-testid="asset-count">
@@ -201,11 +202,26 @@ function AssetDetail({ ws, kind, assetKey }: { ws: string; kind: SharedAssetKind
             <li key={v.version} className="rounded-control border border-border p-3" data-testid="asset-version">
               <p className="text-sm font-semibold">Version {v.version} <span className="font-normal text-muted-foreground">by {v.createdBy.displayName} on {formatDateTime(v.createdAt)}</span></p>
               {v.changeNote ? <p className="text-xs text-muted-foreground">{v.changeNote}</p> : null}
-              {v.content ? <p className="text-xs text-muted-foreground">{v.content.rows.length} {v.content.rows.length === 1 ? 'row' : 'rows'}; {v.content.hitPolicy === 'FIRST' ? 'first matching row applies' : 'exactly one row applies'}</p> : null}
+              <VersionContent content={v.content} />
             </li>
           ))}
         </ol>
       </section>
     </div>
+  )
+}
+
+/** One line about a version's content: rows of a decision table, questions of a form. */
+function VersionContent({ content }: { content: SharedAsset['versions'][number]['content'] | undefined }) {
+  const table = decisionContentOf(content)
+  if (table) return <p className="text-xs text-muted-foreground">{table.rows.length} {table.rows.length === 1 ? 'row' : 'rows'}; {table.hitPolicy === 'FIRST' ? 'first matching row applies' : 'exactly one row applies'}</p>
+  const form = formContentOfVersion(content)
+  if (!form) return null
+  const titles = Object.entries(form.inputSchema.properties).map(([key, q]) => (q as { title?: string }).title ?? key)
+  const rules = Object.keys(form.inputUi?.visibleWhen ?? {}).length + Object.keys(form.inputUi?.requiredWhen ?? {}).length
+  return (
+    <p className="text-xs text-muted-foreground" data-testid="form-version-summary">
+      {titles.length} {titles.length === 1 ? 'question' : 'questions'}{rules ? `, ${rules} ${rules === 1 ? 'rule' : 'rules'}` : ''}: {titles.join(', ')}
+    </p>
   )
 }

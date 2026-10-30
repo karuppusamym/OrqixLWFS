@@ -60,6 +60,14 @@ export type SharedAssetSummary = S['SharedAssetSummary']
 export type SharedAsset = S['SharedAsset']
 export type SharedAssetUsage = S['SharedAssetUsage']
 export type DecisionAssetContent = S['DecisionAssetContent']
+export type FormAssetContent = S['FormAssetContent']
+/** A shared asset version's content: a decision table or a form (docs/build/S127); null for other kinds. */
+export function decisionContentOf(content: SharedAsset['versions'][number]['content'] | undefined): DecisionAssetContent | undefined {
+  return content && 'rows' in content ? content : undefined
+}
+export function formContentOfVersion(content: SharedAsset['versions'][number]['content'] | undefined): FormAssetContent | undefined {
+  return content && 'inputSchema' in content ? content : undefined
+}
 
 export type TaskSummary = S['TaskSummary']
 export type TaskDetail = S['TaskDetail']

@@ -2206,10 +2206,10 @@ paths:
     get:
       tags: [Workflows]
       operationId: listSharedAssets
-      summary: Search shared assets (decisions, document templates, connections) by name, key or owner
+      summary: Search shared assets (decisions, document templates, connections, forms) by name, key or owner
       description: |
-        Only the kinds the caller may read are searched (decisions and document templates need workflow.read, connections
-        need connection.read); searchedKinds lists them, and a caller who may read none gets 403. q matches the name, the
+        Only the kinds the caller may read are searched (decisions, document templates and forms need workflow.read,
+        connections need connection.read); searchedKinds lists them, and a caller who may read none gets 403. q matches the name, the
         key or the owner's display name (case-insensitive substring). At most 300 results, ordered by name; truncated
         tells when there were more. Archived assets are hidden unless includeArchived is true (docs/build/S61).
       x-orqix-permission: workflow.read
@@ -2235,7 +2235,7 @@ paths:
       tags: [Workflows]
       operationId: listSharedAssetOwnerCandidates
       summary: People who may own an asset of this kind (they hold its manage permission today)
-      description: workflow.edit for decisions and document templates, connection.manage for connections. Up to 50 people.
+      description: workflow.edit for decisions, document templates and forms, connection.manage for connections. Up to 50 people.
       x-orqix-permission: workflow.edit
       parameters:
         - { name: kind, in: query, required: true, schema: { $ref: '#/components/schemas/SharedAssetKind' } }
@@ -2313,6 +2313,67 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
 
+  /workspaces/{workspaceId}/shared-assets/form:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    post:
+      tags: [Workflows]
+      operationId: createFormAsset
+      summary: Create a shared form (a set of request questions with rules and groups) with its first version (at most 200 per workspace)
+      description: |
+        content holds request questions in the workflow inputSchema shape and their rules and groups in the inputUi shape
+        (docs/build/S127). The content is checked with the publishing compiler on a minimal workflow that holds only this
+        form, so a shared form never holds a question or rule a workflow could not publish. Workflows copy a version into
+        their own request form and pin it; the compiler checks every copy again when that workflow is validated or
+        published. Keys and names are unique in the workspace. The caller becomes the owner.
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: shared.form.created
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateFormAsset' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SharedAsset' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/shared-assets/form/{assetKey}/versions:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - { name: assetKey, in: path, required: true, schema: { $ref: '#/components/schemas/Key' } }
+    post:
+      tags: [Workflows]
+      operationId: addFormAssetVersion
+      summary: Add an immutable version of a shared form (409 WORKFLOW_VERSION_CONFLICT when the latest version is not the one the caller saw)
+      description: A version identical to the latest and a version of an archived form are refused (422), as is content the publishing compiler refuses. Workflows keep the version they pinned until a designer updates them.
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: shared.form.versioned
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddFormAssetVersion' }
+      responses:
+        '201':
+          description: Version added
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SharedAsset' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
   /workspaces/{workspaceId}/shared-assets/{assetKind}/{assetKey}:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -2321,8 +2382,8 @@ paths:
     get:
       tags: [Workflows]
       operationId: getSharedAsset
-      summary: One shared asset with every version, newest first (decision versions include their content)
-      description: workflow.read for decisions and document templates, connection.read for connections.
+      summary: One shared asset with every version, newest first (decision and form versions include their content)
+      description: workflow.read for decisions, document templates and forms, connection.read for connections.
       x-orqix-permission: workflow.read
       responses:
         '200':
@@ -10912,7 +10973,7 @@ components:
         changeNote: { type: [string, 'null'], maxLength: 300 }
     SharedAssetKind:
       type: string
-      enum: [decision, documentTemplate, connection]
+      enum: [decision, documentTemplate, connection, form]
     SharedAssetSummary:
       type: object
       additionalProperties: false
@@ -10927,7 +10988,7 @@ components:
         archived: { type: boolean }
         revision: { type: integer, minimum: 0, description: 'Compare-and-set counter for owner and archive changes (0 for a connection never changed)' }
         updatedAt: { $ref: '#/components/schemas/Timestamp' }
-        id: { type: [string, 'null'], format: uuid, description: 'Decision or template id; null for connections (identified by key)' }
+        id: { type: [string, 'null'], format: uuid, description: 'Decision, template or form id; null for connections (identified by key)' }
     SharedAssetPage:
       type: object
       additionalProperties: false
@@ -10947,9 +11008,10 @@ components:
         createdBy: { $ref: '#/components/schemas/SubjectRef' }
         createdAt: { $ref: '#/components/schemas/Timestamp' }
         content:
-          description: The decision table content of this version (decisions only)
+          description: The content of this version (decisions and forms only; null for templates and connections)
           oneOf:
             - { $ref: '#/components/schemas/DecisionAssetContent' }
+            - { $ref: '#/components/schemas/FormAssetContent' }
             - { type: 'null' }
     SharedAsset:
       type: object
@@ -11006,6 +11068,60 @@ components:
       properties:
         expectedVersion: { type: integer, minimum: 1 }
         content: { $ref: '#/components/schemas/DecisionAssetContent' }
+        changeNote: { type: [string, 'null'], maxLength: 300 }
+    FormAssetContent:
+      type: object
+      additionalProperties: false
+      required: [inputSchema]
+      description: |
+        A reusable set of request questions (docs/build/S127): the questions in the workflow inputSchema shape and their
+        presentation and rules in a subset of the workflow inputUi shape (order, widgets, visibleWhen, requiredWhen and
+        layout.sections, the form groups). Rule conditions refer to the form's own questions (/input/<key>). A workflow
+        copies these into its request form; the submit label, help text position and pinned request view stay the
+        workflow's own.
+      properties:
+        inputSchema: { $ref: './workflow-v0.schema.json#/$defs/formSchema' }
+        inputUi:
+          type: object
+          additionalProperties: false
+          properties:
+            order: { type: array, items: { $ref: './workflow-v0.schema.json#/$defs/fieldKey' }, uniqueItems: true }
+            widgets:
+              type: object
+              propertyNames: { $ref: './workflow-v0.schema.json#/$defs/fieldKey' }
+              additionalProperties: { type: string, enum: [text, textarea, number, money, select, radio, checkbox] }
+            visibleWhen:
+              type: object
+              maxProperties: 30
+              propertyNames: { $ref: './workflow-v0.schema.json#/$defs/fieldKey' }
+              additionalProperties: { $ref: './workflow-v0.schema.json#/$defs/condition' }
+            requiredWhen:
+              type: object
+              maxProperties: 30
+              propertyNames: { $ref: './workflow-v0.schema.json#/$defs/fieldKey' }
+              additionalProperties: { $ref: './workflow-v0.schema.json#/$defs/condition' }
+            layout:
+              type: object
+              additionalProperties: false
+              properties:
+                sections: { type: array, maxItems: 10, items: { $ref: './workflow-v0.schema.json#/$defs/formSection' } }
+    CreateFormAsset:
+      type: object
+      additionalProperties: false
+      required: [key, name, content]
+      properties:
+        key: { $ref: '#/components/schemas/Key' }
+        name: { type: string, minLength: 1, maxLength: 80 }
+        description: { type: [string, 'null'], maxLength: 300 }
+        content: { $ref: '#/components/schemas/FormAssetContent' }
+        changeNote: { type: [string, 'null'], maxLength: 300 }
+    AddFormAssetVersion:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, content]
+      properties:
+        expectedVersion: { type: integer, minimum: 1 }
+        content: { $ref: '#/components/schemas/FormAssetContent' }
         changeNote: { type: [string, 'null'], maxLength: 300 }
     RunComment:
       type: object

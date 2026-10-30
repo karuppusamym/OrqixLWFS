@@ -20,7 +20,7 @@ import com.orqix.identity.SubjectService.SubjectRef;
 
 import jakarta.validation.Valid;
 
-/** Shared reusable assets: search, detail, where-used, shared decisions, owners and archive (docs/build/S61). */
+/** Shared reusable assets: search, detail, where-used, shared decisions and forms, owners and archive (docs/build/S61, S127). */
 @RestController
 @RequestMapping("/api/v1/workspaces/{workspaceId}")
 public class SharedAssetsController {
@@ -56,6 +56,18 @@ public class SharedAssetsController {
     public ResponseEntity<SharedAssets.Detail> addDecisionVersion(@PathVariable UUID workspaceId,
             @PathVariable String assetKey, @Valid @RequestBody SharedAssets.DecisionVersionRequest request) {
         return ResponseEntity.status(201).body(assets.addDecisionVersion(callers.current(), workspaceId, assetKey, request));
+    }
+
+    @PostMapping("/shared-assets/form")
+    public ResponseEntity<SharedAssets.Detail> createForm(@PathVariable UUID workspaceId,
+            @Valid @RequestBody SharedAssets.CreateFormRequest request) {
+        return ResponseEntity.status(201).body(assets.createForm(callers.current(), workspaceId, request));
+    }
+
+    @PostMapping("/shared-assets/form/{assetKey}/versions")
+    public ResponseEntity<SharedAssets.Detail> addFormVersion(@PathVariable UUID workspaceId,
+            @PathVariable String assetKey, @Valid @RequestBody SharedAssets.FormVersionRequest request) {
+        return ResponseEntity.status(201).body(assets.addFormVersion(callers.current(), workspaceId, assetKey, request));
     }
 
     @GetMapping("/shared-assets/{assetKind}/{assetKey}")

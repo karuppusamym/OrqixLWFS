@@ -21,14 +21,21 @@ const FILTERS: Array<Lifecycle | ''> = ['', 'waiting', 'running', 'completed', '
 export function RunsPage() {
   const { workspace, can } = useWorkspace()
   const ws = workspace.id
-  const { params, update, lifecycle: selectedLifecycle } = useListFilters()
+  const { params, update: setParams, lifecycle: selectedLifecycle } = useListFilters()
   const lifecycle = selectedLifecycle || (can('run.operate') && params.size === 0 ? 'needsAttention' : '')
+  // Operators open on the exception view only while no filter and no explicit opt-out (scope=all) is in the URL.
+  // Any change that would leave the URL without filters records the opt-out, so removing a filter never snaps back.
+  const update = (values: Record<string, string>) => {
+    const next = (key: string) => (key in values ? values[key] : params.get(key) ?? '')
+    const none = ['lifecycle', 'workflowId', 'businessKey', 'overdue', 'outcomeKind'].every((key) => !next(key))
+    setParams({ ...values, scope: none ? 'all' : '' })
+  }
   const workflowId = params.get('workflowId') ?? ''
   const appliedKey = params.get('businessKey') ?? ''
   const rawOutcome = params.get('outcomeKind') ?? ''
   const outcomeKind: OutcomeKind | '' = rawOutcome === 'success' || rawOutcome === 'rejected' || rawOutcome === 'failed' ? rawOutcome : ''
   const clearFilters = () => {
-    update({ scope: 'all', lifecycle: '', workflowId: '', businessKey: '', overdue: '', outcomeKind: '' })
+    update({ lifecycle: '', workflowId: '', businessKey: '', overdue: '', outcomeKind: '' })
   }
   const overdueOnly = params.get('overdue') === 'true'
   const attentionOnly = lifecycle === 'needsAttention'
@@ -48,7 +55,7 @@ export function RunsPage() {
     <>
       <PageHeader title="Runs" description="All requests in this workspace. Technical details are available on each run." />
       <SavedWorkViews kind="runs" effectiveFilters={{lifecycle,workflowId,businessKey:appliedKey,outcomeKind,overdue:overdueOnly ? 'true' : ''}} />
-      <div className="mb-3 flex gap-2"><Button variant={attentionOnly ? 'primary' : 'secondary'} onClick={() => update({ scope:'attention', lifecycle:'needsAttention', overdue:'' })}>Exception workbench</Button><Button variant={!lifecycle && !overdueOnly ? 'primary' : 'secondary'} onClick={clearFilters}>All runs</Button></div>
+      <div className="mb-3 flex gap-2"><Button variant={attentionOnly ? 'primary' : 'secondary'} onClick={() => update({ lifecycle: 'needsAttention', overdue: '' })}>Exception workbench</Button><Button variant={!lifecycle && !overdueOnly ? 'primary' : 'secondary'} onClick={clearFilters}>All runs</Button></div>
       <ConsistencyScanPanel />
       <div className="mb-4 flex flex-wrap items-end gap-4 rounded-card border border-border bg-surface p-4">
         <Button

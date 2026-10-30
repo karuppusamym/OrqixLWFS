@@ -27,7 +27,7 @@ describe('request titles tell requests apart', () => {
 
   it('the run list of an operator shows titles', async () => {
     signInAs('olga.operator')
-    renderApp(`/w/${WS}/runs`)
+    renderApp(`/w/${WS}/runs?scope=all`)
     expect(await screen.findAllByText('Replacement laptop')).not.toHaveLength(0)
   })
 

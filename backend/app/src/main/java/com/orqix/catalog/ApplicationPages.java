@@ -40,8 +40,12 @@ public class ApplicationPages {
         this.references = references;
     }
 
-    /** For route assignment: the full publication checks run again, so a revoked extension blocks a new route pin. */
-    @Transactional(readOnly = true)
+    /**
+     * For route assignment: the full publication checks run again, so a revoked extension blocks a new route pin.
+     * The pin inventory calls this to report a page as blocked and catches the refusal, so a refusal must not mark the
+     * caller's transaction rollback-only (it would turn that report into a server error).
+     */
+    @Transactional(readOnly = true, noRollbackFor = ApiException.class)
     public Page requireRoutable(UUID ws, UUID id, int version) {
         JsonNode definition = definition(ws, id, version);
         PageReferences.Checked checked = references.check(ws, definition, true);

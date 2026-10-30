@@ -7170,8 +7170,9 @@ components:
       type: object
       additionalProperties: false
       required: [key, label, type]
+      description: 'One case data field. Since docs/build/S125 it carries the same optional checks as a single-value request question (workflow-v0 formField) and is edited and rendered with the same field editor and form renderer. Every S125 property is optional, so earlier definitions read and validate as before.'
       properties:
-        key: { type: string, pattern: '^[A-Za-z][A-Za-z0-9_]{0,63}$' }
+        key: { type: string, pattern: '^[A-Za-z][A-Za-z0-9_]{0,63}$', description: 'New keys follow the request-question pattern ^[a-z][A-Za-z0-9]{0,63}$. Keys in the older pattern (capitals first or underscores) keep working and are reported in the definition''s warnings as CASE_DATA_KEY_LEGACY.' }
         label: { type: string, minLength: 1, maxLength: 120 }
         type: { type: string, enum: [text, number, integer, boolean, date, choice] }
         required: { type: boolean, default: false }
@@ -7179,6 +7180,23 @@ components:
         minimum: { type: [number, 'null'], minimum: -1000000000000000, maximum: 1000000000000000 }
         maximum: { type: [number, 'null'], minimum: -1000000000000000, maximum: 1000000000000000 }
         options: { type: [array, 'null'], maxItems: 30, uniqueItems: true, items: { type: string, minLength: 1, maxLength: 120 } }
+        description: { type: string, maxLength: 500, description: 'Help text shown with the field (S125, formField description).' }
+        minLength: { type: integer, minimum: 0, maximum: 4000, description: 'Text only: the shortest answer, at most maxLength (default 2000) (S125).' }
+        pattern: { type: string, minLength: 2, maxLength: 200, description: 'Text only: the whole value must match this safe pattern, the same subset as formField pattern (docs/build/S90) (S125).' }
+        patternMessage: { type: string, minLength: 1, maxLength: 200, description: 'Plain text shown when a value does not match pattern; only with pattern (S125).' }
+        formatMinimum: { type: string, format: date, description: 'Date only: earliest allowed date, YYYY-MM-DD inclusive (S125).' }
+        formatMaximum: { type: string, format: date, description: 'Date only: latest allowed date, YYYY-MM-DD inclusive (S125).' }
+        multipleOf: { type: number, enum: [0.01, 1], description: 'Number or integer only: 0.01 for amounts in cents, 1 for whole numbers (S125).' }
+        widget: { type: string, enum: [textarea, money], description: 'Presentation: textarea (long text) on text fields, money (USD) on number fields (S125, formField widget hint).' }
+    CaseDefinitionWarning:
+      type: object
+      additionalProperties: false
+      required: [code, field, message]
+      description: 'A problem with a case definition that does not stop it from being created or used (S125).'
+      properties:
+        code: { type: string, enum: [CASE_DATA_KEY_LEGACY] }
+        field: { type: string, description: The case data field key }
+        message: { type: string }
     CaseDataValues:
       type: object
       maxProperties: 30
@@ -7320,6 +7338,7 @@ components:
         version: { type: integer, minimum: 1 }
         createdAt: { $ref: '#/components/schemas/Timestamp' }
         dataFields: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseDataField' } }
+        warnings: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseDefinitionWarning' }, description: 'Included only when not empty: data field keys outside the request-question pattern (S125).' }
     CaseDefinitionDetail:
       type: object
       additionalProperties: false
@@ -7336,6 +7355,7 @@ components:
         workflowTasks: { type: array, items: { $ref: '#/components/schemas/CaseWorkflowPin' } }
         caseTasks: { type: array, items: { $ref: '#/components/schemas/CaseChildPin' } }
         decisionTasks: { type: array, items: { $ref: '#/components/schemas/CaseDecisionPin' } }
+        warnings: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseDefinitionWarning' }, description: 'Included only when not empty: data field keys outside the request-question pattern (S125).' }
     CasePlanItem:
       type: object
       additionalProperties: false

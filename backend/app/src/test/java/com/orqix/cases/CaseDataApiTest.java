@@ -120,6 +120,59 @@ class CaseDataApiTest extends IntegrationTestBase {
         }
     }
 
+    /** S125: the request-question checks on case fields, enforced on start and edit; legacy keys are warnings only. */
+    @Test void sharedFieldChecksAreEnforcedAndLegacyKeysOnlyWarn() throws Exception {
+        String key="shared"+UUID.randomUUID().toString().replace("-","").substring(0,12);
+        String xml;
+        try(var input=getClass().getResourceAsStream("/cases/manual-required.cmmn")) {
+            xml=new String(input.readAllBytes(),StandardCharsets.UTF_8).replace("lifecycleCase",key);
+        }
+        var shared=List.of(
+                Map.of("key","reference","label","Reference","type","text","required",true,"maxLength",12,"minLength",9,
+                        "pattern","^CASE-\\d{4}$","patternMessage","Enter a reference like CASE-1234.","description","From the claim letter."),
+                Map.of("key","amount","label","Amount","type","number","multipleOf",0.01,"widget","money"),
+                Map.of("key","due","label","Due","type","date","formatMinimum","2026-01-01","formatMaximum","2026-12-31"),
+                Map.of("key","notes","label","Notes","type","text","widget","textarea"),
+                Map.of("key","Old_Key","label","Older key","type","boolean"));
+        var created=api("dana.designer").post(Map.of("key",key,"name","Shared fields","sourceXml",xml,"dataFields",shared),"/workspaces/{ws}/cases/definitions",SANDBOX);
+        assertThat(created.status()).as(created.toString()).isEqualTo(201);
+        assertThat(created.body().path("warnings")).hasSize(1);
+        assertThat(created.body().path("warnings").get(0).path("code").asString()).isEqualTo("CASE_DATA_KEY_LEGACY");
+        assertThat(created.body().path("warnings").get(0).path("field").asString()).isEqualTo("Old_Key");
+        assertThat(created.body().path("warnings").get(0).path("message").asString()).contains("oldKey");
+        var field=created.body().path("dataFields").get(0);
+        assertThat(field.path("pattern").asString()).isEqualTo("^CASE-\\d{4}$");
+        assertThat(field.path("description").asString()).isEqualTo("From the claim letter.");
+        assertThat(created.body().path("dataFields").get(3).has("pattern")).isFalse();
+        String id=created.body().path("id").asString();
+        var detail=api("dana.designer").get("/workspaces/{ws}/cases/definitions/{id}",SANDBOX,id);
+        assertThat(detail.body().path("warnings")).hasSize(1);
+        assertThat(detail.body().path("dataFields").get(1).path("widget").asString()).isEqualTo("money");
+        for(var invalid:List.<Map<String,Object>>of(Map.of("reference","CASE-12"),Map.of("reference","CASE-0042","amount",10.005),
+                Map.of("reference","CASE-0042","due","2027-01-01"))) {
+            var refused=api("rhea.requester").post(Map.of("data",invalid),UUID.randomUUID().toString(),"/workspaces/{ws}/cases/definitions/{id}/instances",SANDBOX,id);
+            assertThat(refused.status()).as(refused.toString()).isEqualTo(422);
+        }
+        var started=api("rhea.requester").post(Map.of("data",Map.of("reference","CASE-0042","amount",1800.07,"due","2026-06-30","Old_Key",true)),"shared-"+id,
+                "/workspaces/{ws}/cases/definitions/{id}/instances",SANDBOX,id);
+        assertThat(started.status()).as(started.toString()).isEqualTo(201);
+        var bad=update(started.body(),"mani.manager",1,UUID.randomUUID().toString(),Map.of("reference","case-0042"));
+        assertThat(bad.status()).isEqualTo(422);
+        var data=api("mani.manager").get(path(started.body())+"/data").body();
+        assertThat(data.path("fields").get(0).path("patternMessage").asString()).isEqualTo("Enter a reference like CASE-1234.");
+        assertThat(data.path("values").path("Old_Key").asBoolean()).isTrue();
+        var noWarnings=api("dana.designer").post(Map.of("key",key,"name","Renamed","sourceXml",xml,"dataFields",List.of(Map.of("key","oldKey","label","Renamed key","type","boolean"))),"/workspaces/{ws}/cases/definitions",SANDBOX);
+        assertThat(noWarnings.status()).as(noWarnings.toString()).isEqualTo(201);
+        assertThat(noWarnings.body().has("warnings")).isFalse();
+        for(var invalid:List.<Map<String,Object>>of(Map.of("key","field","label","Pattern on number","type","number","pattern","^\\d+$"),
+                Map.of("key","field","label","Unsafe pattern","type","text","pattern","^(a"),
+                Map.of("key","field","label","Money on text","type","text","widget","money"),
+                Map.of("key","field","label","Step","type","number","multipleOf",0.5))) {
+            var response=api("dana.designer").post(Map.of("key",key,"name","Invalid","sourceXml",xml,"dataFields",List.of(invalid)),"/workspaces/{ws}/cases/definitions",SANDBOX);
+            assertThat(response.status()).as(response.toString()).isEqualTo(422);
+        }
+    }
+
     private int competing(JsonNode instance,String summary) {
         try { return update(instance,"mani.manager",1,UUID.randomUUID().toString(),Map.of("summary",summary)).status(); }
         catch(Exception ex) { throw new java.util.concurrent.CompletionException(ex); }

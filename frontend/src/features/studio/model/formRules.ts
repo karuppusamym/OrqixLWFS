@@ -1,4 +1,4 @@
-import { conditionTerms, isAtomicCondition, type AtomicCondition, type Condition, type Definition, type Literal, type Operator } from './types'
+import { conditionTerms, isAtomicCondition, type AtomicCondition, type Condition, type ConditionValue, type Definition, type Literal, type Operator } from './types'
 
 /** Plain-language rules of one request question (docs/build/S120): what the Form tab shows without opening an editor. */
 export interface QuestionRules {
@@ -11,17 +11,30 @@ export interface QuestionRules {
 }
 
 /** Reads as a sentence after the question's label: "Amount (USD) is at least 5000". */
-const OPERATOR_PHRASE: Record<Operator, string> = { eq: 'is', ne: 'is not', gte: 'is at least', gt: 'is more than', lt: 'is less than', lte: 'is at most' }
+const OPERATOR_PHRASE: Record<Operator, string> = { eq: 'is', ne: 'is not', gte: 'is at least', gt: 'is more than', lt: 'is less than', lte: 'is at most', in: 'is one of', between: 'is between' }
 
 function literalText(value: Literal): string {
   if (typeof value === 'boolean') return value ? 'Yes' : 'No'
   return typeof value === 'string' ? `"${value}"` : String(value)
 }
 
+/** A list (`in`) reads "A, B or C"; a range (`between`, docs/build/S121) reads "1000 and 5000", saying when an end is left out. */
+function valueText(value: ConditionValue): string {
+  if (Array.isArray(value)) {
+    const items = value.map(literalText)
+    return items.length > 1 ? `${items.slice(0, -1).join(', ')} or ${items.at(-1)}` : items.join('')
+  }
+  if (typeof value === 'object' && value !== null) {
+    const ends = [value.includeFrom === false ? `not ${value.from} itself` : '', value.includeTo === false ? `not ${value.to} itself` : ''].filter(Boolean)
+    return `${value.from} and ${value.to}${ends.length ? ` (${ends.join(', ')})` : ''}`
+  }
+  return literalText(value)
+}
+
 function termText(def: Definition, term: AtomicCondition): string {
   const key = term.fieldRef.startsWith('/input/') ? term.fieldRef.slice('/input/'.length) : ''
   const label = (key && def.inputSchema.properties[key]?.title) || key || 'a removed question'
-  return `${label} ${OPERATOR_PHRASE[term.operator]} ${literalText(term.value)}`
+  return `${label} ${OPERATOR_PHRASE[term.operator]} ${valueText(term.value)}`
 }
 
 /** "Amount (USD) is at least 5000", "Type is "Laptop" and Urgent is Yes". */

@@ -56,6 +56,23 @@ export async function openQuestion(page: Page, key: string): Promise<Locator> {
   return card
 }
 
+/**
+ * Adds a case data field in the shared field editor (docs/build/S125): the new field opens with its label focused; the
+ * key is under Advanced.
+ */
+export async function addCaseField(page: Page, key: string, label: string, kind: string, required: boolean): Promise<void> {
+  await page.getByRole('button', { name: 'Add case data field' }).click()
+  const added = page.locator('[data-testid^="case-field-card-"]').last()
+  await added.getByLabel(/^Label/).fill(label)
+  await added.getByLabel(/^Label/).press('Enter')
+  await added.getByLabel('Type', { exact: true }).selectOption(kind)
+  if (required) await added.getByRole('checkbox', { name: 'Required' }).check()
+  await added.getByText('Advanced', { exact: true }).click()
+  await added.getByLabel('Field key', { exact: true }).fill(key)
+  await added.getByLabel('Field key', { exact: true }).press('Enter')
+  await expect(page.getByTestId(`case-field-card-${key}`)).toBeVisible()
+}
+
 export interface PurchaseInput {
   title: string
   purpose: string

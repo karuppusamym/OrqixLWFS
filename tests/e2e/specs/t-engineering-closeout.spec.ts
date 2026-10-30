@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { expect, test } from '../support/fixtures'
 import { MOCK } from '../support/env'
-import { apiGet, openFormTab, workspaceId } from '../support/app'
+import { addCaseField, apiGet, openFormTab, workspaceId } from '../support/app'
 import { apiSend, createWorkflow, publish, uniq } from '../support/api'
 import { expectNoSeriousViolations } from '../support/axe'
 
@@ -164,32 +164,26 @@ test('real typed case data is authored, validated, corrected and retained after 
   await page.getByLabel('Key', { exact: true }).fill(key)
   await page.getByLabel('Name', { exact: true }).fill(key)
   await page.getByLabel('CMMN file (maximum 64 KiB)').setInputFiles({ name: `${key}.cmmn`, mimeType: 'application/xml', buffer: Buffer.from(sourceXml) })
-  await page.getByRole('button', { name: 'Add case data field' }).click()
-  await page.getByLabel('Field 1 key', { exact: true }).fill('summary')
-  await page.getByLabel('Field 1 label', { exact: true }).fill('Summary')
-  await page.getByLabel('Required field 1', { exact: true }).check()
-  await page.getByRole('button', { name: 'Add case data field' }).click()
-  await page.getByLabel('Field 2 key', { exact: true }).fill('amount')
-  await page.getByLabel('Field 2 label', { exact: true }).fill('Amount')
-  await page.getByLabel('Field 2 type', { exact: true }).selectOption('number')
+  await addCaseField(page, 'summary', 'Summary', 'text', true)
+  await addCaseField(page, 'amount', 'Amount', 'number', false)
   await page.getByRole('button', { name: 'Create definition', exact: true }).click()
   await expect(page.getByRole('cell', { name: key, exact: true }).first()).toBeVisible()
   page = await sessions.as('rhea.requester')
   await page.goto(`/w/${ws}/cases`)
   await page.getByRole('row').filter({ has: page.getByRole('cell', { name: key, exact: true }) }).getByRole('button', { name: 'Start case', exact: true }).click()
   const start = page.getByRole('dialog', { name: 'Start case', exact: true })
-  await start.getByLabel('Summary (required)').fill('Original case evidence')
+  await start.getByLabel(/^Summary/).fill('Original case evidence')
   await start.getByLabel('Amount', { exact: true }).fill('12.25')
   await start.getByRole('button', { name: 'Start case with data' }).click()
   await expect(page).toHaveURL(new RegExp(`/w/${ws}/cases/[^/]+$`))
   const url = page.url()
   await page.getByRole('button', { name: 'Show case data' }).click()
-  await expect(page.getByLabel('Summary (required)')).toHaveValue('Original case evidence')
+  await expect(page.getByLabel(/^Summary/)).toHaveValue('Original case evidence')
   await expect(page.getByRole('button', { name: 'Save case data' })).toHaveCount(0)
   page = await sessions.as('mani.manager')
   await page.goto(url)
   await page.getByRole('button', { name: 'Show case data' }).click()
-  await page.getByLabel('Summary (required)').fill('Corrected case evidence')
+  await page.getByLabel(/^Summary/).fill('Corrected case evidence')
   await page.getByLabel('Amount', { exact: true }).fill('20.5')
   await page.getByLabel('Reason for data change').fill('Reconciled the supporting evidence')
   await page.getByRole('button', { name: 'Save case data' }).click()
@@ -209,7 +203,7 @@ test('real typed case data is authored, validated, corrected and retained after 
   await expect(page.getByText('completed', { exact: true })).toBeVisible()
   await page.reload()
   await page.getByRole('button', { name: 'Show case data' }).click()
-  await expect(page.getByLabel('Summary (required)')).toHaveValue('Corrected case evidence')
+  await expect(page.getByLabel(/^Summary/)).toHaveValue('Corrected case evidence')
   await expect(page.getByRole('heading', { name: 'Data changes' })).toBeVisible()
   await expect(page.getByText('Original case evidence \u2192 Corrected case evidence', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Save case data' })).toHaveCount(0)

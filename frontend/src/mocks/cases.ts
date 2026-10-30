@@ -1,10 +1,13 @@
 import { http, HttpResponse, type HttpHandler } from 'msw'
 import type { components } from '@/api/schema'
 import { clock, inGroup, isMember, newId, permissionsOf, WS_PURCHASING, type MockUser } from './state'
+import { caseDefinitionWarnings, caseFieldProblem, caseFormSchema } from '@/features/cases/caseFields'
+import { validateJsonInput } from '@/lib/form/validate'
 
 type Definition = components['schemas']['CaseDefinition']
 type Instance = components['schemas']['CaseInstance']
-type Row = { value: Instance; startedBy: string; step: number; events?: components['schemas']['CaseEvent'][]; planned?: boolean }
+type Values = components['schemas']['CaseDataValues']
+type Row = { value: Instance; startedBy: string; step: number; events?: components['schemas']['CaseEvent'][]; planned?: boolean; data?: Values; changes?: components['schemas']['CaseDataChange'][] }
 type Stored = Definition & { ws: string; sourceXml?: string; workflowTasks?: components['schemas']['CaseWorkflowPin'][] }
 
 const B = '/api/v1'
@@ -40,12 +43,34 @@ export function restoreMockCases(raw: string | null): boolean {
   } catch { return false }
 }
 
+/** Definition as the API returns it: warnings (S125) only when there are some. */
+function withWarnings<T extends { dataFields?: Definition['dataFields'] }>(value: T): T & { warnings?: Definition['warnings'] } {
+  const warnings = caseDefinitionWarnings(value.dataFields ?? [])
+  return warnings.length ? { ...value, warnings } : value
+}
+
+/** The server's case data check (CaseDataModel.values): the same keywords as the pinned fields. */
+function dataProblem(def: Stored, proposed: unknown): string | undefined {
+  if (typeof proposed !== 'object' || proposed === null || Array.isArray(proposed) || JSON.stringify(proposed).length > 32768) return 'Case data must be an object of at most 32 KiB.'
+  const { schema } = caseFormSchema(def.dataFields ?? [])
+  const issues = validateJsonInput(schema, proposed)
+  return issues.length ? `Case data does not match the pinned fields: ${issues.slice(0, 10).map(issue => `${issue.pointer} (${issue.keyword})`).join(', ')}` : undefined
+}
+
 const failure = (status: number, code: string, detail: string) => HttpResponse.json({ type: `https://orqix.example/problems/${code.toLowerCase()}`, title: detail,
   status, code, correlationId: newId(), detail }, { status, headers: { 'Content-Type': 'application/problem+json' } })
 
 function visible(row: Row, user: MockUser, ws: string): boolean {
   const perms = permissionsOf(user, ws)
   return perms.includes('run.read') || row.startedBy === user.id || row.value.tasks.some(item => item.candidateGroups.some(group => inGroup(user, group)))
+}
+
+/** As CaseService.canEditData: an eligible worker on an open task of an active case, or an operator who can read data. */
+function canEditData(row: Row, user: MockUser, ws: string): boolean {
+  const perms = permissionsOf(user, ws)
+  if (row.value.status !== 'active') return false
+  if (perms.includes('run.operate') && perms.includes('run.read-data')) return true
+  return perms.includes('task.act') && row.value.tasks.some(item => item.candidateGroups.some(group => inGroup(user, group)))
 }
 
 function project(row: Row, user: MockUser): Instance {
@@ -103,7 +128,7 @@ export function createCaseHandlers(getUser: () => MockUser): HttpHandler[] {
       const ws = String(params.ws), user = getUser(), perms = permissionsOf(user, ws)
       if (!member(ws, user)) return failure(404, 'NOT_FOUND', 'Workspace not found.')
       if (!perms.includes('workflow.read') && !perms.includes('workflow.start')) return failure(403, 'FORBIDDEN', 'Case definitions are not visible.')
-      return HttpResponse.json(definitions.filter(value => value.ws === ws).map(({ ws: _ws, ...value }) => value))
+      return HttpResponse.json(definitions.filter(value => value.ws === ws).map(({ ws: _ws, sourceXml: _source, workflowTasks: _tasks, ...value }) => withWarnings(value)))
     }),
     http.post(`${B}/workspaces/:ws/cases/definitions`, async ({ params, request }) => {
       const ws = String(params.ws), user = getUser()
@@ -113,6 +138,8 @@ export function createCaseHandlers(getUser: () => MockUser): HttpHandler[] {
       const body = await request.json() as components['schemas']['CreateCaseDefinition']
       if (!/^[a-z][a-z0-9-]{1,62}$/.test(body.key ?? '') || !body.name?.trim()) return failure(422, 'VALIDATION_FAILED', 'Case key or name is invalid.')
       if (!body.sourceXml?.includes('http://www.omg.org/spec/CMMN/20151109/MODEL') || !body.sourceXml.includes(`<case id="${body.key}"`)) return failure(422, 'WORKFLOW_INVALID', 'Exactly one case with an ID matching the catalog key is required.')
+      const fieldProblem = caseFieldProblem(body.dataFields)
+      if (fieldProblem) return failure(422, 'VALIDATION_FAILED', fieldProblem)
       const processTasks = [...body.sourceXml.matchAll(/<processTask id="([^"]+)"/g)].map(match => match[1]!)
       const mapped = new Set((body.workflowTasks ?? []).map(task => task.taskId))
       if (processTasks.length !== mapped.size || processTasks.some(id => !mapped.has(id))) return failure(422, 'VALIDATION_FAILED', `Workflow task mappings must match the workflow tasks of the model exactly: [${processTasks.join(', ')}].`)
@@ -121,7 +148,7 @@ export function createCaseHandlers(getUser: () => MockUser): HttpHandler[] {
         workflowTasks: (body.workflowTasks ?? []).map(task => ({ taskId: task.taskId, workflowId: newId(), workflowKey: /externalRef="orqixwf:([^"]+)"/.exec(body.sourceXml)?.[1] ?? 'workflow', workflowName: 'Pinned workflow', releaseId: newId(), releaseNumber: 1, inputMapping: task.inputMapping ?? {}, resultMapping: task.resultMapping ?? {} })) }
       definitions = [stored, ...definitions]
       const { ws: _ws, sourceXml: _source, workflowTasks: _tasks, ...summary } = stored
-      return HttpResponse.json(summary, { status: 201 })
+      return HttpResponse.json(withWarnings(summary), { status: 201 })
     }),
     http.get(`${B}/workspaces/:ws/cases/definitions/:definitionId`, ({ params }) => {
       const ws = String(params.ws), user = getUser()
@@ -129,7 +156,7 @@ export function createCaseHandlers(getUser: () => MockUser): HttpHandler[] {
       if (!member(ws, user) || !stored) return failure(404, 'NOT_FOUND', 'Case definition not found.')
       if (!permissionsOf(user, ws).includes('workflow.edit')) return failure(403, 'FORBIDDEN', 'Case definition source is not visible.')
       const { ws: _ws, ...detail } = stored
-      return HttpResponse.json({ ...detail, sourceXml: stored.sourceXml ?? `<?xml version="1.0" encoding="UTF-8"?>\n<definitions xmlns="http://www.omg.org/spec/CMMN/20151109/MODEL" targetNamespace="urn:orqix:mock"><case id="${stored.key}" name="${stored.name}"/></definitions>`, workflowTasks: stored.workflowTasks ?? [] })
+      return HttpResponse.json({ ...withWarnings(detail), sourceXml: stored.sourceXml ?? `<?xml version="1.0" encoding="UTF-8"?>\n<definitions xmlns="http://www.omg.org/spec/CMMN/20151109/MODEL" targetNamespace="urn:orqix:mock"><case id="${stored.key}" name="${stored.name}"/></definitions>`, workflowTasks: stored.workflowTasks ?? [] })
     }),
     http.post(`${B}/workspaces/:ws/cases/instances/:id/plan-items/:itemId/plan`, async ({ params, request }) => {
       const ws = String(params.ws), user = getUser()
@@ -157,9 +184,34 @@ export function createCaseHandlers(getUser: () => MockUser): HttpHandler[] {
       const ws = String(params.ws), user = getUser(), perms = permissionsOf(user, ws)
       const row = instances.find(value => value.value.id === String(params.id) && definitions.some(def => def.ws === ws && def.id === value.value.definitionId))
       if (!member(ws, user) || !row || !(perms.includes('run.read-data') || row.startedBy === user.id || row.value.tasks.some(item => item.candidateGroups.some(group => inGroup(user, group))))) return failure(404, 'NOT_FOUND', 'Case data not found.')
-      return HttpResponse.json({ fields: [], values: {}, version: row.value.version, canEdit: false, changes: [] })
+      const def = definitions.find(value => value.id === row.value.definitionId)!
+      return HttpResponse.json({ fields: def.dataFields ?? [], values: row.data ?? {}, version: row.value.version, canEdit: canEditData(row, user, ws), changes: perms.includes('run.read-data') ? row.changes ?? [] : [] })
     }),
-    http.post(`${B}/workspaces/:ws/cases/instances/:id/data`, () => failure(503, 'DEPENDENCY_UNAVAILABLE', 'Typed case data editing requires the real backend.')),
+    http.post(`${B}/workspaces/:ws/cases/instances/:id/data`, async ({ params, request }) => {
+      const ws = String(params.ws), user = getUser(), perms = permissionsOf(user, ws)
+      if (!member(ws, user)) return failure(404, 'NOT_FOUND', 'Workspace not found.')
+      if (!perms.includes('task.act') && !(perms.includes('run.operate') && perms.includes('run.read-data'))) return failure(403, 'FORBIDDEN', 'Case data editing is not allowed.')
+      const row = instances.find(value => value.value.id === String(params.id) && definitions.some(def => def.ws === ws && def.id === value.value.definitionId))
+      if (!row) return failure(404, 'NOT_FOUND', 'Case not found.')
+      const key = request.headers.get('Idempotency-Key')
+      if (!key) return failure(400, 'MALFORMED_REQUEST', 'Idempotency-Key is required.')
+      const body = await request.json() as { expectedVersion: number; reason: string; values: Values }
+      if (!Number.isInteger(body.expectedVersion) || body.expectedVersion < 1 || typeof body.reason !== 'string' || !body.reason.trim() || body.reason.length > 1000) return failure(422, 'VALIDATION_FAILED', 'Supply a current version and reason.')
+      const replayKey = `data:${ws}:${user.id}:${key}`, fingerprint = JSON.stringify({ id: row.value.id, ...body })
+      const replay = lifecycleCommands.get(replayKey)
+      if (replay) return replay.request === fingerprint ? HttpResponse.json(replay.value, { headers: { 'Idempotent-Replayed': 'true' } }) : failure(409, 'IDEMPOTENCY_KEY_REUSED', 'The command changed.')
+      const problem = dataProblem(definitions.find(value => value.id === row.value.definitionId)!, body.values)
+      if (problem) return failure(422, 'VALIDATION_FAILED', problem)
+      if (row.value.version !== body.expectedVersion) return failure(409, 'TASK_VERSION_CONFLICT', 'Refresh the case.')
+      if (row.value.status === 'suspended') return failure(409, 'RUN_SUSPENDED', 'The case is on hold.')
+      if (!canEditData(row, user, ws)) return failure(403, 'NOT_ELIGIBLE', 'You cannot change this case data now.')
+      row.value = { ...row.value, version: row.value.version + 1 }
+      row.changes = [{ version: row.value.version, before: row.data ?? {}, after: body.values }, ...(row.changes ?? [])]
+      row.data = body.values
+      const result = project(row, user)
+      lifecycleCommands.set(replayKey, { request: fingerprint, value: result })
+      return HttpResponse.json(result)
+    }),
     http.get(`${B}/workspaces/:ws/cases/instances/:id/plan`, ({ params }) => {
       const ws = String(params.ws), user = getUser(), row = instances.find(value => value.value.id === String(params.id))
       if (!member(ws, user) || !row || !definitions.some(def => def.ws === ws && def.id === row.value.definitionId) || !visible(row, user, ws)) return failure(404, 'NOT_FOUND', 'Case not found.')
@@ -185,7 +237,7 @@ export function createCaseHandlers(getUser: () => MockUser): HttpHandler[] {
       if (!member(ws, user) || !row || !definitions.some(def => def.ws === ws && def.id === row.value.definitionId) || !visible(row, user, ws)) return failure(404, 'NOT_FOUND', 'Case not found.')
       return HttpResponse.json(project(row, user))
     }),
-    http.post(`${B}/workspaces/:ws/cases/definitions/:definitionId/instances`, ({ params, request }) => {
+    http.post(`${B}/workspaces/:ws/cases/definitions/:definitionId/instances`, async ({ params, request }) => {
       const ws = String(params.ws), user = getUser(), perms = permissionsOf(user, ws)
       if (!member(ws, user)) return failure(404, 'NOT_FOUND', 'Workspace not found.')
       if (!perms.includes('workflow.start')) return failure(403, 'FORBIDDEN', 'Case start is not allowed.')
@@ -195,9 +247,12 @@ export function createCaseHandlers(getUser: () => MockUser): HttpHandler[] {
       if (!key) return failure(400, 'MALFORMED_REQUEST', 'Idempotency-Key is required.')
       const replay = replays.get(`start:${ws}:${user.id}:${key}`)
       if (replay) return HttpResponse.json(replay, { status: 200, headers: { 'Idempotent-Replayed': 'true' } })
+      const start = await request.json().catch(() => null) as { data?: Values } | null
+      const problem = dataProblem(def, start?.data ?? {})
+      if (problem) return failure(422, 'VALIDATION_FAILED', problem)
       const value: Instance = { id: newId(), definitionId: def.id, definitionVersion: def.version, status: 'active', version: 1,
         tasks: [task(0)], createdAt: clock.iso() }
-      instances.unshift({ value, startedBy: user.id, step: 0 })
+      instances.unshift({ value, startedBy: user.id, step: 0, data: start?.data ?? {} })
       replays.set(`start:${ws}:${user.id}:${key}`, project(instances[0]!, user))
       return HttpResponse.json(project(instances[0]!, user), { status: 201 })
     }),

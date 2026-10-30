@@ -32,20 +32,20 @@ describe('case designer page (S126)', () => {
     expect(screen.getByText(/Case type claim-review · draft version 1 · Not published yet\./)).toBeInTheDocument()
     expect(await screen.findByTestId('case-canvas')).toBeInTheDocument()
 
-    // The starter task has no eligible group and the new data field has no label: both are reported.
+    // A data field, edited with the shared field editor (S125). The starter task has no eligible group: the check says so.
     await user.click(screen.getByRole('button', { name: 'Add case data field' }))
-    await user.clear(screen.getByLabelText('Field 1 label'))
+    const card = within(screen.getByTestId('case-field-card-field1'))
+    await user.clear(card.getByLabelText(/^Label/))
+    await user.type(card.getByLabelText(/^Label/), 'Claim amount{Enter}')
     await user.click(screen.getByRole('button', { name: 'Check' }))
-    await waitFor(() => expect(within(results()).getByText('2 problems block publishing draft version 2')).toBeInTheDocument())
+    await waitFor(() => expect(within(results()).getByText('1 problem blocks publishing draft version 2')).toBeInTheDocument())
     expect(within(results()).getByText('Choose an eligible workspace group for every human task.')).toBeInTheDocument()
-    expect(within(results()).getByText('Case data fields need unique keys, labels and supported types.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Publish version 1' })).toBeDisabled()
 
     await user.click(screen.getByRole('button', { name: 'Form view' }))
     const group = screen.getByLabelText('Eligible group for task1')
     await waitFor(() => expect(group.querySelectorAll('option').length).toBeGreaterThan(1))
     await user.selectOptions(group, 'managers')
-    await user.type(screen.getByLabelText('Field 1 label'), 'Claim amount')
     expect(screen.getByRole('button', { name: 'Publish version 1' })).toBeDisabled()
     await user.click(screen.getByRole('button', { name: 'Check' }))
     await waitFor(() => expect(within(results()).getByText('No problems found in draft version 3. It can be published as version 1.')).toBeInTheDocument())
@@ -105,7 +105,7 @@ describe('case designer page (S126)', () => {
     expect(screen.getByRole('button', { name: 'Publish version 3' })).toBeDisabled()
     // The published source opens in the designer, with its plan item and data fields.
     expect(await screen.findByTestId('case-canvas')).toBeInTheDocument()
-    expect(screen.getByLabelText('Field 1 key')).toHaveValue('amount')
+    expect(await screen.findByRole('button', { name: /^Field 1: Amount/ })).toBeInTheDocument()
   })
 
   it('is offered only to people who may author case types', async () => {

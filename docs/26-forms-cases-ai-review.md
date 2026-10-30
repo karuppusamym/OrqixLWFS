@@ -1,6 +1,13 @@
 # 26: Forms, cases and AI authoring: design review and redesign plan
 
-29 October 2026. Review of how forms, case data and AI-assisted authoring are designed today, written after reading the code and contracts and walking the Studio, Cases, Views and Assistant screens in mock mode (1440×900, Dana Designer). It ends with a plan in slices. **Status:** S120 (the Form tab) is built, see [S120](build/S120-studio-form-tab.md). Step forms are built as [S123](build/S123-step-forms.md) and one AI conversation as [S124](build/S124-one-ai-conversation.md) (S121 and S122 were already taken by DMN parity and generated test cases, so the slices below are renumbered: step forms S123, one AI conversation S124, shared case field editor S125, case designer page S126).
+29 October 2026. Review of how forms, case data and AI-assisted authoring are designed today, written after reading the code and contracts and walking the Studio, Cases, Views and Assistant screens in mock mode (1440×900, Dana Designer). It ends with a plan in slices. **Status (30 October 2026):** every slice in section 5 is built. S121 and S122 were already taken by DMN parity and generated test cases, so the later slices are renumbered:
+- the Form tab: [S120](build/S120-studio-form-tab.md);
+- step forms: [S123](build/S123-step-forms.md) (F7);
+- one AI conversation: [S124](build/S124-one-ai-conversation.md) (A2, A3, A6 and part of A4);
+- shared case field editor: [S125](build/S125-shared-case-field-editor.md) (C2);
+- case designer page: [S126](build/S126-case-designer-page.md) (C3 and C1).
+
+Still open: A1 (the AI entry points are not merged), A5 (no AI for cases, views or pages), parallel sections and child workflows by conversation (rest of A4), and the S120 note on grouped-question order. Each build record lists its own limits.
 
 ## 1. Verdict
 

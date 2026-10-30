@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { purchaseTemplate } from '@/mocks/state'
-import { renameFieldKey } from './ops'
+import { removeNode, renameFieldKey } from './ops'
 import {
   choiceProblems, clashingKeys, copyAsContent, copyMatches, defaultChoices, formContentOf, formDiff, formLink, insertSharedForm, mappingFor, unlinkSharedForm,
   updateClashes, updateSharedForm, type FormContent,
@@ -159,6 +159,22 @@ describe('shared forms (docs/build/S127)', () => {
     const unlinked = unlinkSharedForm(renamed.def, 'delivery')
     expect(unlinked.dependencies.assets).toBeUndefined()
     expect(unlinked.inputSchema.properties.rush).toBeDefined()
+  })
+
+  it("an update keeps a question the designer moved into one of this form's groups, and removing a step keeps the link", () => {
+    const def = insertSharedForm(purchaseTemplate(), 'delivery', 1, delivery(), {})
+    def.inputUi!.layout!.sections = [{ id: 'mine', title: 'When', fields: ['deliveryDate'] }, ...def.inputUi!.layout!.sections!.map((s) => ({ ...s, fields: s.fields.filter((k) => k !== 'deliveryDate') }))]
+    const link = formLink(def, 'delivery')!
+    const v2 = delivery()
+    ;(v2.inputSchema.properties as Record<string, { title: string }>).urgent!.title = 'Rush delivery'
+    const updated = updateSharedForm(def, link, delivery(), v2, 2, {})
+    expect(updated.inputUi?.layout?.sections).toEqual([
+      { id: 'mine', title: 'When', fields: ['deliveryDate'] },
+      { id: 'delivery-delivery', title: 'Delivery', fields: ['urgent', 'urgentReason'] },
+    ])
+    const step = updated.nodes.find((n) => n.type === 'approval')!
+    const removed = removeNode(updated, step.id)
+    expect(formLink(removed, 'delivery')).toBeDefined()
   })
 
   it('maps chosen keys; skipped questions are left out', () => {

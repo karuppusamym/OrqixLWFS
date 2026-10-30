@@ -218,7 +218,7 @@ export function removeNode(def: Definition, id: string): Definition {
   }
   next.decisions = next.decisions.filter((d) => !plan.decisions.includes(d.key))
   if (next.dependencies.assets) {
-    next.dependencies.assets = next.dependencies.assets.filter((a) => (a.kind === 'decision' ? !plan.decisions.includes(a.target) : a.target !== id))
+    next.dependencies.assets = next.dependencies.assets.filter((a) => (a.kind === 'decision' ? !plan.decisions.includes(a.target) : a.kind === 'form' || a.target !== id))
     if (next.dependencies.assets.length === 0) delete next.dependencies.assets
   }
   const prefix = `/steps/${id}/`

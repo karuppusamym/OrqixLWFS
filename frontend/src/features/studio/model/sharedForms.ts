@@ -173,13 +173,11 @@ function copyQuestions(def: Definition, assetKey: string, content: FormContent, 
   const rename = (k: string) => mapping[k] ?? k
   const ui = ensureUi(def)
   const required = new Set(def.inputSchema.required ?? [])
-  const order = [...(ui.order ?? Object.keys(props(def)))]
+  const order = (ui.order ?? Object.keys(props(def))).filter((k) => k in props(def))
   for (const [k, local] of Object.entries(mapping)) {
-    const isNew = !(local in props(def))
     def.inputSchema.properties[local] = structuredClone((shared.properties as Record<string, never>)[k]!)
     if ((shared.required ?? []).includes(k)) required.add(local)
     else required.delete(local)
-    if (isNew && !order.includes(local)) order.push(local)
     const widget = sharedUi.widgets?.[k]
     if (widget) (ui.widgets ??= {})[local] = widget
     else if (ui.widgets) delete ui.widgets[local]
@@ -190,20 +188,17 @@ function copyQuestions(def: Definition, assetKey: string, content: FormContent, 
     }
   }
   def.inputSchema.required = [...required]
-  // Keep the shared order for the copied questions where they are new.
-  const sharedOrder = (sharedUi.order ?? Object.keys(shared.properties)).map(rename).filter((k) => Object.values(mapping).includes(k))
-  const fresh = order.filter((k) => sharedOrder.includes(k))
-  if (fresh.length === sharedOrder.length && fresh.some((k, i) => k !== sharedOrder[i]) && fresh.every((k) => order.indexOf(k) >= order.length - sharedOrder.length)) {
-    ui.order = [...order.filter((k) => !sharedOrder.includes(k)), ...sharedOrder]
-  } else ui.order = order
+  // Questions already on the form keep their place; new ones follow, in the shared form's order.
+  const sharedOrder = [...(sharedUi.order ?? []), ...Object.keys(shared.properties)].filter((k, i, all) => k in mapping && all.indexOf(k) === i).map(rename)
+  ui.order = [...order, ...sharedOrder.filter((k) => !order.includes(k))]
   if (Object.values(ui.widgets ?? {}).includes('money')) ui.currency = 'USD'
-  // Groups come with the form: ids prefixed with the form key; a group keeps only the questions copied here.
+  // Groups come with the form: ids prefixed with the form key; a group keeps only the questions copied here, and a
+  // question the designer has moved into one of this form's own groups stays there.
   const prefix = `${assetKey}-`
   const others = (ui.layout?.sections ?? []).filter((s) => !s.id.startsWith(prefix))
-  const taken = new Set(Object.values(mapping))
-  for (const s of others) s.fields = s.fields.filter((k) => !taken.has(k))
-  const copied = (sharedUi.layout?.sections ?? []).map((s) => ({ ...structuredClone(s), id: sectionId(prefix, s.id), fields: s.fields.filter((k) => k in mapping).map(rename) })).filter((s) => s.fields.length > 0)
-  const sections = [...others.filter((s) => s.fields.length > 0), ...copied] as NonNullable<InputUiDoc['layout']>['sections']
+  const placed = new Set(others.flatMap((s) => s.fields))
+  const copied = (sharedUi.layout?.sections ?? []).map((s) => ({ ...structuredClone(s), id: sectionId(prefix, s.id), fields: s.fields.filter((k) => k in mapping).map(rename).filter((k) => !placed.has(k)) })).filter((s) => s.fields.length > 0)
+  const sections = [...others, ...copied] as NonNullable<InputUiDoc['layout']>['sections']
   if (sections && sections.length > 0) ui.layout = { ...ui.layout, sections }
   else if (ui.layout) delete ui.layout.sections
 }

@@ -103,7 +103,7 @@ test.describe('test this workflow (mock API)', () => {
     await expect(panel.getByTestId('saved-cases')).toContainText('Small purchase')
     await panel.getByRole('button', { name: 'Run all saved cases' }).click()
     await expect(panel.getByTestId('case-summary')).toContainText('1 of 1 passed')
-    await panel.getByLabel('Expect').selectOption('Rejected')
+    await panel.getByLabel('Expect', { exact: true }).selectOption('Rejected')
     await panel.getByRole('button', { name: 'Run all saved cases' }).click()
     await expect(panel.getByTestId('case-summary')).toContainText('0 of 1 passed')
     await expect(panel.getByTestId('case-result-Small purchase')).toContainText('Expected Rejected but it ended with Fulfilled')

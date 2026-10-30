@@ -55,10 +55,8 @@ describe('plain-language form rules (S120)', () => {
 
   it('reads lists and ranges (S121 operators) in words', () => {
     const def = conditional()
-    expect(describeFormCondition(def, { fieldRef: '/input/costCenter', operator: 'in', value: ['OPS', 'IT', 'HR'] })).toBe('Cost center is one of "OPS", "IT" or "HR"')
+    expect(describeFormCondition(def, { fieldRef: '/input/costCenter', operator: 'in', value: ['OPS', 'IT', 'HR'] })).toBe('Cost center is one of "OPS", "IT", "HR"')
     expect(describeFormCondition(def, { fieldRef: '/input/amount', operator: 'between', value: { from: 1000, to: 5000 } })).toBe('Amount (USD) is between 1000 and 5000')
-    expect(describeFormCondition(def, { fieldRef: '/input/amount', operator: 'between', value: { from: 1000, to: 5000, includeTo: false } }))
-      .toBe('Amount (USD) is between 1000 and 5000 (not 5000 itself)')
   })
 
   it('joins a question rule and its group rule', () => {

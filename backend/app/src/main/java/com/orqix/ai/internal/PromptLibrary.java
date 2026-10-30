@@ -24,7 +24,7 @@ public class PromptLibrary {
     public static final String DRAFT_VERSION = "draft-v1";
     public static final String EXPLAIN_VERSION = "explain-v2";
     public static final String FORM_VERSION = "form-v1";
-    public static final String DRAFT_EDIT_VERSION = "draft-edit-v1";
+    public static final String DRAFT_EDIT_VERSION = "draft-edit-v2";
 
     private final Json json;
     private final String draftSystem;
@@ -71,6 +71,12 @@ public class PromptLibrary {
      * each in its own fenced block (all of it is untrusted text written by people), then the mode.
      */
     public static String draftEditUser(String draftSummary, List<Turn> history, String instruction, String mode) {
+        return draftEditUser(draftSummary, history, instruction, mode, true);
+    }
+
+    /** {@code questions}: whether the assistant may ask clarifying questions instead of proposing changes (S124). */
+    public static String draftEditUser(String draftSummary, List<Turn> history, String instruction, String mode,
+            boolean questions) {
         StringBuilder conversation = new StringBuilder();
         for (Turn turn : history) {
             conversation.append(turn.role()).append(": ").append(fence(turn.text(), "conversation")).append('\n');
@@ -78,7 +84,8 @@ public class PromptLibrary {
         return "<draft>\n" + fence(draftSummary, "draft") + "\n</draft>\n\n<conversation>\n"
                 + conversation.toString().strip() + "\n</conversation>\n\n<instruction>\n"
                 + fence(instruction, "instruction") + "\n</instruction>\n\n<mode>" + mode
-                + "</mode>\n\nReply with the JSON object only.";
+                + "</mode>\n\n<questions>" + (questions ? "allowed" : "off")
+                + "</questions>\n\nReply with the JSON object only.";
     }
 
     public String draftSystem() {
@@ -208,6 +215,8 @@ public class PromptLibrary {
         change.putArray("required").add("summary").add("operations");
         properties.putObject("notes").put("type", "array").putObject("items").put("type", "string");
         properties.putObject("notAnEdit").putArray("type").add("string").add("null");
+        properties.putObject("questions").put("type", "array").put("maxItems", DraftEdits.MAX_QUESTIONS)
+                .putObject("items").put("type", "string");
         schema.putArray("required").add("changes").add("notes");
         return schema;
     }

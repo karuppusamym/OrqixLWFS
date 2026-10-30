@@ -146,7 +146,9 @@ public class AuditWriter {
             // Conversational authoring (STU02, docs/build/S95): counts only, never the instruction, turns or draft.
             Map.entry("ai.draft.edits.proposed", Set.of("profile", "model", "promptVersion", "attempts", "inputTokens",
                     "outputTokens", "costUsd", "durationMs", "outcome", "revision", "mode", "turns",
-                    "changesSuggested", "changesRejected", "operationsSuggested")),
+                    "changesSuggested", "changesRejected", "operationsSuggested", "questionsAsked")),
+            // S124: clearing the saved Ask AI conversation; the text is never audited.
+            Map.entry("ai.conversation.cleared", Set.of("workflowId")),
             Map.entry("migration.uploaded", Set.of("migrationId", "sourceSystem", "sourceSha256", "adapterVersion",
                     "elementCount", "blockerCount", "actionCount", "pageCount", "transcriptionSha256")),
             // Pega Blueprint PDF (docs/build/S91): ids, counts and hashes only; never page text, prompts or answers.

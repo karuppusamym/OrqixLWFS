@@ -6413,6 +6413,68 @@ paths:
         '429': { $ref: '#/components/responses/TooManyRequests' }
         '503': { $ref: '#/components/responses/Unavailable' }
 
+  /workspaces/{workspaceId}/workflows/{workflowId}/ai/conversation:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+    get:
+      tags: [AI]
+      operationId: getAiConversation
+      summary: The Ask AI conversation saved with this draft (S124)
+      description: Shared by the people who can edit the draft. Readable whether or not AI is switched on. version 0 and no turns when nothing is saved.
+      x-orqix-permission: workflow.edit
+      responses:
+        '200':
+          description: The saved conversation
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiConversation' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [AI]
+      operationId: saveAiConversation
+      summary: Save the Ask AI conversation with this draft (S124)
+      description: >-
+        Replaces the saved conversation (last write wins). At most 40 turns and 200 kB. The text is never sent to
+        audit; an empty list clears it. It is sent to the AI only as the last turns of a later proposeDraftEdits
+        request.
+      x-orqix-permission: workflow.edit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [turns]
+              properties:
+                turns: { type: array, maxItems: 40, items: { $ref: '#/components/schemas/AiConversationTurn' } }
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiConversation' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    delete:
+      tags: [AI]
+      operationId: deleteAiConversation
+      summary: Clear the Ask AI conversation of this draft (S124)
+      description: The act is audited without the text.
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: ai.conversation.cleared
+      responses:
+        '204': { description: Cleared }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /workspaces/{workspaceId}/migrations:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
     post:
@@ -11786,6 +11848,24 @@ components:
               role: { type: string, enum: [author, assistant] }
               text: { type: string, minLength: 1, maxLength: 2000 }
         profile: { type: string, pattern: '^[a-z][a-z0-9-]{0,31}$' }
+        noQuestions: { type: boolean, default: false, description: 'S124: the author asked for a draft now, so the assistant asks no clarifying questions' }
+    AiConversation:
+      type: object
+      required: [turns, updatedAt, version]
+      properties:
+        turns: { type: array, items: { $ref: '#/components/schemas/AiConversationTurn' } }
+        updatedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+        version: { type: integer, minimum: 0, description: 0 when nothing is saved }
+    AiConversationTurn:
+      type: object
+      additionalProperties: false
+      required: [role, text]
+      properties:
+        role: { type: string, enum: [author, assistant] }
+        text: { type: string, minLength: 1, maxLength: 2000 }
+        mode: { type: string, enum: [edit, regenerate] }
+        questions: { type: array, maxItems: 3, items: { type: string } }
+        proposal: { type: object, additionalProperties: true, description: The assistant's proposal as it was shown }
     AiDraftEditProposal:
       type: object
       description: STU02 proposal. Every change already passed the compiler against the draft revision; apply only on an explicit user action.
@@ -11810,6 +11890,7 @@ components:
         notAnEdit: { type: string, description: 'Why the instruction is not about this workflow, when it is not' }
         definition: { type: object, additionalProperties: true, description: 'regenerate only: the complete proposed draft (workflow-v0 document with layout)' }
         generation: { $ref: '#/components/schemas/AiGeneration' }
+        questions: { type: array, maxItems: 3, items: { type: string, maxLength: 200 }, description: 'S124: clarifying questions asked instead of changes; answer them in the next turn or ask for a draft with noQuestions' }
     AiDraftEditChange:
       type: object
       required: [id, summary, operations, dependsOn]
@@ -11828,11 +11909,19 @@ components:
         One normalized edit operation. addStep {id, kind, label, config (complete)}; updateStep {id, config (patch; null
         removes a setting), before}; renameStep {id, label, before}; removeStep {id, before}; connect {transitionId
         (chosen by the server), from, to, on, label?, condition?}; disconnect {transitionId, before};
-        changeFormField {action, key, field?, required, before?, wasRequired?}. before is the element as it was when
-        the operation was validated; the studio skips a change whose targets differ from it.
+        changeFormField {action, key, field?, required, before?, wasRequired?}. S124: setFieldRule {key, rule
+        (visibleWhen|requiredWhen), condition (null removes), before}; setStepFieldAccess {id, config (patch of
+        fieldAccess and capture), before}; setFormGroups {groups, before}; addDecision {id, label, table}; addCall {id,
+        label, config (complete), definitionVersion, addsDependency}. before is the element as it was when the
+        operation was validated; the studio skips a change whose targets differ from it.
       required: [op]
       properties:
-        op: { type: string, enum: [addStep, updateStep, renameStep, removeStep, connect, disconnect, changeFormField] }
+        op: { type: string, enum: [addStep, updateStep, renameStep, removeStep, connect, disconnect, changeFormField, setFieldRule, setStepFieldAccess, setFormGroups, addDecision, addCall] }
+        rule: { type: string, enum: [visibleWhen, requiredWhen] }
+        groups: { type: array, items: { type: object, additionalProperties: true } }
+        table: { type: object, additionalProperties: true }
+        definitionVersion: { type: integer, minimum: 1 }
+        addsDependency: { type: boolean }
         id: { type: string }
         kind: { type: string, enum: [approval, branch, notification, wait, end] }
         label: { type: string }
@@ -11841,12 +11930,12 @@ components:
         from: { type: string }
         to: { type: string }
         'on': { type: string, enum: [next, approved, rejected, timedOut, failed, condition, default] }
-        condition: { type: object, additionalProperties: true }
+        condition: { type: [object, 'null'], additionalProperties: true }
         action: { type: string, enum: [add, update, remove] }
         key: { type: string, pattern: '^[a-z][A-Za-z0-9]{0,63}$' }
         field: { type: object, additionalProperties: true }
         required: { type: boolean }
-        before: { type: object, additionalProperties: true }
+        before: { type: [object, array, 'null'], additionalProperties: true }
         wasRequired: { type: boolean }
     CompatibilityIssue:
       type: object

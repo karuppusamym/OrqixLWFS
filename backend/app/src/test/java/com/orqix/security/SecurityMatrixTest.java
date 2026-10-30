@@ -63,7 +63,9 @@ class SecurityMatrixTest extends RuntimeTestBase {
                             || "validateDraft".equals(operationId) || "evaluateDecision".equals(operationId)
                             || "checkReleasePromotion".equals(operationId)
                             || "checkDraftBpmn".equals(operationId)
-                            || "fetchExternalJobs".equals(operationId) || "extendExternalJobLock".equals(operationId))
+                            || "fetchExternalJobs".equals(operationId) || "extendExternalJobLock".equals(operationId)
+                            // S124: the saved Ask AI conversation is text the editors wrote; it is never audited.
+                            || "saveAiConversation".equals(operationId))
                             .as(operationId + " declares x-orqix-audit").isTrue();
                 }
                 String template = path.getKey();

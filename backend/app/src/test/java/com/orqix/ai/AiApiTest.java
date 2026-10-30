@@ -532,7 +532,7 @@ class AiApiTest extends IntegrationTestBase {
         assertThat(body.path("rejected").get(0).path("summary").asString()).isEqualTo("A dangling step");
         assertThat(body.path("notes").get(0).asString()).contains("managers");
         assertThat(body.has("definition")).isFalse();
-        assertThat(body.path("generation").path("promptVersion").asString()).isEqualTo("draft-edit-v1");
+        assertThat(body.path("generation").path("promptVersion").asString()).isEqualTo("draft-edit-v2");
         // The prompt holds the fenced draft summary, the turns and the instruction, in that order.
         String user = OpenRouterStub.requests().get(0).path("messages").get(1).path("content").asString();
         assertThat(user).contains("<draft>", "\"finance-approvers\"", "<conversation>", "author: Earlier Heron",
@@ -612,6 +612,82 @@ class AiApiTest extends IntegrationTestBase {
         OpenRouterStub.fail(500, Map.of());
         Response outage = api("dana.designer").post(body, EDITS, PURCHASING, workflowId);
         assertThat(outage.status()).as(outage.toString()).isEqualTo(503);
+    }
+
+    // ---------------------------------------------------------------- one AI conversation (S124)
+
+    @Test
+    @Order(24)
+    void theAssistantMayAskBeforeItDraftsUnlessTheAuthorAsksForADraftNow() throws Exception {
+        String workflowId = formWorkflow();
+        OpenRouterStub.reply("""
+                {"message": "Two things decide the design.", "changes": [], "notes": [],
+                 "questions": ["Who approves above USD 10,000?", "Does finance need a PO number?", "Q3?", "Q4 dropped"]}""",
+                ECONOMY_MODEL, 0.0003);
+        Response asked = api("dana.designer").post(Map.of("instruction", "Add a director approval.", "revision", 1),
+                EDITS, PURCHASING, workflowId);
+        assertThat(asked.status()).as(asked.toString()).isEqualTo(200);
+        assertThat(asked.body().path("questions")).hasSize(3);
+        assertThat(asked.body().path("changes")).isEmpty();
+        assertThat(OpenRouterStub.requests().get(0).path("messages").get(1).path("content").asString())
+                .contains("<questions>allowed</questions>");
+        assertThat(OpenRouterStub.requests().get(0).path("messages").get(0).path("content").asString())
+                .contains("setStepFieldAccess", "addCall", "setFieldRule");
+
+        // "Just draft it": the prompt turns questions off and any question in the reply is dropped.
+        OpenRouterStub.reply("""
+                {"message": "Drafted with assumptions.", "changes": [{"summary": "PO number at finance",
+                  "operations": [{"op": "setStepFieldAccess", "id": "finance", "fieldAccess": {"purpose": "hidden"},
+                    "capture": {"required": ["poNumber"], "properties": {"poNumber": {"type": "string", "title": "PO number", "maxLength": 20}}}}]}],
+                 "notes": ["Assumed finance enters the PO number."], "questions": ["Still asking?"]}""", ECONOMY_MODEL, 0.0004);
+        Response drafted = api("dana.designer").post(Map.of("instruction", "Add a director approval.", "revision", 1,
+                "noQuestions", true), EDITS, PURCHASING, workflowId);
+        assertThat(drafted.status()).as(drafted.toString()).isEqualTo(200);
+        assertThat(drafted.body().has("questions")).isFalse();
+        assertThat(drafted.body().path("changes")).hasSize(1);
+        JsonNode op = drafted.body().path("changes").get(0).path("operations").get(0);
+        assertThat(op.path("op").asString()).isEqualTo("setStepFieldAccess");
+        assertThat(op.path("config").path("capture").path("additionalProperties").asBoolean(true)).isFalse();
+        assertThat(OpenRouterStub.requests().get(1).path("messages").get(1).path("content").asString())
+                .contains("<questions>off</questions>");
+        String audit = jdbc.sql("SELECT metadata::text FROM audit_event WHERE action = 'ai.draft.edits.proposed' "
+                + "AND resource_id = :wf ORDER BY occurred_at LIMIT 1").param("wf", workflowId).query(String.class).single();
+        assertThat(audit).contains("\"questionsAsked\": 3").doesNotContain("USD 10,000");
+    }
+
+    @Test
+    @Order(25)
+    void theConversationIsSavedWithTheDraftClearedAndNeverAudited() throws Exception {
+        String workflowId = formWorkflow();
+        String path = "/workspaces/{ws}/workflows/{id}/ai/conversation";
+        JsonNode empty = api("dana.designer").get(path, PURCHASING, workflowId).body();
+        assertThat(empty.path("version").asInt()).isZero();
+        assertThat(empty.path("turns")).isEmpty();
+
+        Map<String, Object> turns = Map.of("turns", List.of(
+                Map.of("role", "author", "text", "Plover: add a director approval"),
+                Map.of("role", "assistant", "text", "Questions: who approves?", "questions", List.of("Who approves?"),
+                        "proposal", Map.of("changes", List.of()))));
+        Response saved = api("dana.designer").put(turns, null, path, PURCHASING, workflowId);
+        assertThat(saved.status()).as(saved.toString()).isEqualTo(200);
+        assertThat(saved.body().path("version").asInt()).isEqualTo(1);
+        assertThat(api("dana.designer").put(turns, null, path, PURCHASING, workflowId).body().path("version").asInt()).isEqualTo(2);
+        JsonNode loaded = api("dana.designer").get(path, PURCHASING, workflowId).body();
+        assertThat(loaded.path("turns")).hasSize(2);
+        assertThat(loaded.path("turns").get(1).path("questions").get(0).asString()).isEqualTo("Who approves?");
+
+        // Only people who can edit the draft; a malformed turn is refused.
+        assertThat(api("vic.viewer").get(path, PURCHASING, workflowId).status()).isEqualTo(403);
+        Response bad = api("dana.designer").put(Map.of("turns", List.of(Map.of("role", "system", "text", "x"))), null, path,
+                PURCHASING, workflowId);
+        assertThat(bad.status()).isEqualTo(422);
+
+        assertThat(jdbc.sql("SELECT count(*) FROM audit_event WHERE metadata::text LIKE '%Plover%'")
+                .query(Long.class).single()).isZero();
+        assertThat(api("dana.designer").delete(path, PURCHASING, workflowId).status()).isEqualTo(204);
+        assertThat(api("dana.designer").get(path, PURCHASING, workflowId).body().path("version").asInt()).isZero();
+        assertThat(jdbc.sql("SELECT count(*) FROM audit_event WHERE action = 'ai.conversation.cleared' AND resource_id = :wf")
+                .param("wf", workflowId).query(Long.class).single()).isEqualTo(1);
     }
 
     @Test

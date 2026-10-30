@@ -4819,6 +4819,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/ai/conversation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * The Ask AI conversation saved with this draft (S124)
+         * @description Shared by the people who can edit the draft. Readable whether or not AI is switched on. version 0 and no turns when nothing is saved.
+         */
+        get: operations["getAiConversation"];
+        /**
+         * Save the Ask AI conversation with this draft (S124)
+         * @description Replaces the saved conversation (last write wins). At most 40 turns and 200 kB. The text is never sent to audit; an empty list clears it. It is sent to the AI only as the last turns of a later proposeDraftEdits request.
+         */
+        put: operations["saveAiConversation"];
+        post?: never;
+        /**
+         * Clear the Ask AI conversation of this draft (S124)
+         * @description The act is audited without the text.
+         */
+        delete: operations["deleteAiConversation"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/migrations": {
         parameters: {
             query?: never;
@@ -8669,6 +8700,29 @@ export interface components {
                 text: string;
             }[];
             profile?: string;
+            /**
+             * @description S124: the author asked for a draft now, so the assistant asks no clarifying questions
+             * @default false
+             */
+            noQuestions: boolean;
+        };
+        AiConversation: {
+            turns: components["schemas"]["AiConversationTurn"][];
+            updatedAt: components["schemas"]["Timestamp"] | null;
+            /** @description 0 when nothing is saved */
+            version: number;
+        };
+        AiConversationTurn: {
+            /** @enum {string} */
+            role: "author" | "assistant";
+            text: string;
+            /** @enum {string} */
+            mode?: "edit" | "regenerate";
+            questions?: string[];
+            /** @description The assistant's proposal as it was shown */
+            proposal?: {
+                [key: string]: unknown;
+            };
         };
         /** @description STU02 proposal. Every change already passed the compiler against the draft revision; apply only on an explicit user action. */
         AiDraftEditProposal: {
@@ -8691,6 +8745,8 @@ export interface components {
                 [key: string]: unknown;
             };
             generation: components["schemas"]["AiGeneration"];
+            /** @description S124: clarifying questions asked instead of changes; answer them in the next turn or ask for a draft with noQuestions */
+            questions?: string[];
         };
         AiDraftEditChange: {
             /** @description c1, c2, ... in proposal order */
@@ -8700,10 +8756,20 @@ export interface components {
             /** @description Earlier changes that create or modify something this change relies on */
             dependsOn: string[];
         };
-        /** @description One normalized edit operation. addStep {id, kind, label, config (complete)}; updateStep {id, config (patch; null removes a setting), before}; renameStep {id, label, before}; removeStep {id, before}; connect {transitionId (chosen by the server), from, to, on, label?, condition?}; disconnect {transitionId, before}; changeFormField {action, key, field?, required, before?, wasRequired?}. before is the element as it was when the operation was validated; the studio skips a change whose targets differ from it. */
+        /** @description One normalized edit operation. addStep {id, kind, label, config (complete)}; updateStep {id, config (patch; null removes a setting), before}; renameStep {id, label, before}; removeStep {id, before}; connect {transitionId (chosen by the server), from, to, on, label?, condition?}; disconnect {transitionId, before}; changeFormField {action, key, field?, required, before?, wasRequired?}. S124: setFieldRule {key, rule (visibleWhen|requiredWhen), condition (null removes), before}; setStepFieldAccess {id, config (patch of fieldAccess and capture), before}; setFormGroups {groups, before}; addDecision {id, label, table}; addCall {id, label, config (complete), definitionVersion, addsDependency}. before is the element as it was when the operation was validated; the studio skips a change whose targets differ from it. */
         AiDraftEditOperation: {
             /** @enum {string} */
-            op: "addStep" | "updateStep" | "renameStep" | "removeStep" | "connect" | "disconnect" | "changeFormField";
+            op: "addStep" | "updateStep" | "renameStep" | "removeStep" | "connect" | "disconnect" | "changeFormField" | "setFieldRule" | "setStepFieldAccess" | "setFormGroups" | "addDecision" | "addCall";
+            /** @enum {string} */
+            rule?: "visibleWhen" | "requiredWhen";
+            groups?: {
+                [key: string]: unknown;
+            }[];
+            table?: {
+                [key: string]: unknown;
+            };
+            definitionVersion?: number;
+            addsDependency?: boolean;
             id?: string;
             /** @enum {string} */
             kind?: "approval" | "branch" | "notification" | "wait" | "end";
@@ -8718,7 +8784,7 @@ export interface components {
             on?: "next" | "approved" | "rejected" | "timedOut" | "failed" | "condition" | "default";
             condition?: {
                 [key: string]: unknown;
-            };
+            } | null;
             /** @enum {string} */
             action?: "add" | "update" | "remove";
             key?: string;
@@ -8728,7 +8794,7 @@ export interface components {
             required?: boolean;
             before?: {
                 [key: string]: unknown;
-            };
+            } | unknown[] | null;
             wasRequired?: boolean;
         };
         CompatibilityIssue: {
@@ -18944,6 +19010,90 @@ export interface operations {
             422: components["responses"]["Unprocessable"];
             429: components["responses"]["TooManyRequests"];
             503: components["responses"]["Unavailable"];
+        };
+    };
+    getAiConversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The saved conversation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiConversation"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    saveAiConversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    turns: components["schemas"]["AiConversationTurn"][];
+                };
+            };
+        };
+        responses: {
+            /** @description Saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiConversation"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    deleteAiConversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cleared */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     uploadMigration: {

@@ -14,7 +14,7 @@ import { createFeatureHandlers } from './features'
 import { createAgentWriteHandlers } from './agentWrites'
 import { createCaseFileHandlers } from './caseFiles'
 import { createDocumentLibraryHandlers } from './documentLibrary'
-import { createSharedAssetHandlers } from './sharedAssets'
+import { createSharedAssetHandlers, resetSharedAssets, restoreSharedAssets, snapshotSharedAssets } from './sharedAssets'
 import { detectOverdueStages, expireStage } from './stages'
 import { createConversationHandlers, resetConversations } from './conversation'
 import { seedDb } from './seed'
@@ -26,6 +26,7 @@ export const PERSONA_KEY = 'orqix.mock.user'
 const DB_KEY = 'orqix.mock.db.v1'
 const VIEW_DB_KEY = 'orqix.mock.views.v1'
 const CASE_DB_KEY = 'orqix.mock.cases.v1'
+const ASSET_DB_KEY = 'orqix.mock.assets.v1'
 
 /** Hooks for demos and Playwright (mock mode only): simulate "another person did something" and flip faults. */
 export interface MockControl {
@@ -52,6 +53,7 @@ function persist() {
   writeStorage(DB_KEY, snapshotDb())
   writeStorage(VIEW_DB_KEY, snapshotMockViews())
   writeStorage(CASE_DB_KEY, snapshotMockCases())
+  writeStorage(ASSET_DB_KEY, snapshotSharedAssets())
 }
 
 /** Start the in-browser API. Called once before the app renders when mock mode is on. */
@@ -60,6 +62,7 @@ export async function startMock(): Promise<void> {
   if (!saved || !restoreDb(saved)) seedDb({ demo: true })
   if (!restoreMockViews(readStorage(VIEW_DB_KEY))) resetMockViews()
   if (!restoreMockCases(readStorage(CASE_DB_KEY))) resetMockCases()
+  if (!restoreSharedAssets(readStorage(ASSET_DB_KEY))) resetSharedAssets()
   db.latencyMs = 150
   setCurrentUser(readStorage(PERSONA_KEY) ?? 'rhea.requester')
   engineConfig.retryDelayMs = 4000
@@ -102,6 +105,7 @@ export async function startMock(): Promise<void> {
     reset(options) {
       seedDb(options ?? { demo: true })
       resetConversations()
+      resetSharedAssets()
       db.latencyMs = 150
       persist()
     },

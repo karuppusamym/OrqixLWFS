@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Alert } from '@/components/ui/alert'
 import { CONDITION_OPERATORS, KIND_LABEL, WORKFLOW_RESULT_SOURCES, caseItems, caseModelCaseTasks, caseModelDecisionTasks, caseModelWorkflowTasks, caseModelXml, durationMinutes, entrySources, isListener, occurs, type CaseConditionClause, type CaseFileEvent, type CaseItemKind, type CaseModelItem, type CaseModelOptions, type ConditionOperator } from './caseModel'
 import { getSharedAsset, listSharedAssets } from '@/api/endpoints'
+import { decisionContentOf } from '@/api/types'
 import { listCaseDefinitions } from './api'
 import { findItem, fitStages, parentOf, placement } from './caseCanvasOps'
 import { importCaseModel, type ImportDiagnostic } from './cmmnImport'
@@ -38,7 +39,7 @@ function DecisionMapping({ ws, item, dataFields, onPatch }: { ws: string; item: 
   const assets = useQuery({ queryKey: ['ws', ws, 'shared-decisions'], queryFn: () => listSharedAssets(ws, { kind: 'decision' }) })
   const ref = item.decision ?? { key: '', input: {}, result: {} }
   const detail = useQuery({ queryKey: ['ws', ws, 'shared-decision', ref.key], queryFn: () => getSharedAsset(ws, 'decision', ref.key), enabled: !!ref.key })
-  const latest = detail.data?.versions.find(version => version.version === detail.data?.asset.latestVersion)?.content
+  const latest = decisionContentOf(detail.data?.versions.find(version => version.version === detail.data?.asset.latestVersion)?.content)
   const fieldRefs = new Set<string>(); collectFieldRefs(latest?.rows ?? [], fieldRefs)
   const outputs = new Set<string>([...(latest?.rows ?? []).flatMap(row => Object.keys((row as { then?: Record<string, unknown> }).then ?? {})), ...Object.keys(latest?.default ?? {})])
   const set = (part: 'input' | 'result', key: string, value: string) => {

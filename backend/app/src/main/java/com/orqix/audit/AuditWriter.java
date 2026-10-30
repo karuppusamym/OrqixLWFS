@@ -173,6 +173,8 @@ public class AuditWriter {
             Map.entry("document.template.restored", Set.of()),
             Map.entry("shared.decision.created", Set.of("kind", "version", "rows")),
             Map.entry("shared.decision.versioned", Set.of("kind", "version", "rows")),
+            Map.entry("shared.form.created", Set.of("kind", "version", "questions")),
+            Map.entry("shared.form.versioned", Set.of("kind", "version", "questions")),
             Map.entry("shared.asset.owner.changed", Set.of("kind", "from", "to")),
             Map.entry("shared.asset.archived", Set.of("kind")),
             Map.entry("shared.asset.restored", Set.of("kind")),

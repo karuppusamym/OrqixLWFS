@@ -71,10 +71,12 @@ export interface DecisionRow {
  * against the pinned version at validation and publish; a newer version is never used silently.
  */
 export interface AssetRef {
-  kind: 'decision' | 'documentTemplate'
+  kind: 'decision' | 'documentTemplate' | 'form'
   key: string
   version: number
   target: string
+  /** Kind form only (docs/build/S128): each copied question, from its shared key to its key in this workflow. */
+  fields?: Record<string, string>
 }
 
 export type HitPolicy = 'UNIQUE' | 'FIRST' | 'ANY' | 'PRIORITY' | 'COLLECT'

@@ -150,6 +150,7 @@ describe('migration workbench', () => {
     server.use(http.get('*/api/v1/workspaces/:ws/migrations/:id', () => HttpResponse.json(source)))
     renderApp(`/w/${WS}/migrations/${id}`)
     expect(await screen.findByRole('region', { name: 'Generated decision checks' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Table of decision check results' })).toHaveAttribute('tabindex', '0')
     expect(screen.getByText('at 5000')).toBeInTheDocument()
     expect(screen.getByText('passed')).toBeInTheDocument()
     expect(screen.queryByLabelText('Request schema (optional JSON)')).not.toBeInTheDocument()

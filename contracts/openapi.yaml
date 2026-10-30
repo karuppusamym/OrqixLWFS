@@ -10888,7 +10888,7 @@ components:
       description: The shareable part of a workflow decision table (contracts/workflow-v0.schema.json decisionTable without key and version)
       properties:
         hitPolicy: { type: string, enum: [UNIQUE, FIRST, ANY, PRIORITY, COLLECT] }
-        aggregation: { type: string, enum: [SUM, MIN, MAX, COUNT], description: COLLECT only, required there }
+        aggregation: { type: string, enum: [SUM, MIN, MAX, COUNT], description: 'COLLECT only, required there' }
         priority:
           type: object
           description: PRIORITY only, required there - the output that decides and its values from the highest to the lowest priority

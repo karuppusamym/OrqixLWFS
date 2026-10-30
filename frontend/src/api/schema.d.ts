@@ -7915,7 +7915,7 @@ export interface components {
             /** @enum {string} */
             hitPolicy: "UNIQUE" | "FIRST" | "ANY" | "PRIORITY" | "COLLECT";
             /**
-             * @description COLLECT only
+             * @description COLLECT only, required there
              * @enum {string}
              */
             aggregation?: "SUM" | "MIN" | "MAX" | "COUNT";

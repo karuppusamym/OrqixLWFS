@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test'
+import { expect, type Locator, type Page } from '@playwright/test'
 
 /** Same-origin API read from inside the page (works with the session cookie, and with the in-page mock API). */
 export async function apiGet<T>(page: Page, path: string): Promise<T> {
@@ -39,6 +39,21 @@ export async function workflowIdByKey(page: Page, ws: string, key = 'purchase-ap
 export async function selectStep(page: Page, stepId: string): Promise<void> {
   await page.getByTestId(`step-row-${stepId}`).locator('button[aria-pressed]').first().click()
   await expect(page.getByTestId('inspector')).toBeVisible()
+}
+
+/** The request form is edited on the Studio's Form tab (docs/build/S120). */
+export async function openFormTab(page: Page): Promise<void> {
+  await page.getByRole('tab', { name: 'Form', exact: true }).click()
+  await expect(page.getByTestId('form-view')).toBeVisible()
+}
+
+/** Opens one question's details on the Form tab and returns them. */
+export async function openQuestion(page: Page, key: string): Promise<Locator> {
+  const toggle = page.getByTestId(`question-${key}`).getByRole('button', { expanded: false })
+  if (await toggle.count()) await toggle.click()
+  const card = page.getByTestId(`field-card-${key}`)
+  await expect(card).toBeVisible()
+  return card
 }
 
 export interface PurchaseInput {

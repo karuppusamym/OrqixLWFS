@@ -3,7 +3,7 @@ import path from 'node:path'
 import type { Page } from '@playwright/test'
 import { expect, test } from '../support/fixtures'
 import { MOCK } from '../support/env'
-import { apiGet, selectStep, workspaceId } from '../support/app'
+import { apiGet, openFormTab, openQuestion, selectStep, workspaceId } from '../support/app'
 
 /**
  * Wait until a date (S12 section 10): a Date question on the request form, a wait step that ends on that date at a
@@ -77,8 +77,8 @@ test.describe('wait until a date (mock API)', () => {
     await expect(designer.getByLabel(/^Date to wait until/)).toHaveValue('/input/startDate')
 
     // The request form editor offers the Date type; making the date optional is explained in business language.
-    await selectStep(designer, 'start')
-    const card2 = designer.getByTestId('field-card-startDate')
+    await openFormTab(designer)
+    const card2 = await openQuestion(designer, 'startDate')
     await expect(card2.getByLabel('Type')).toHaveValue('date')
     await card2.getByRole('checkbox', { name: 'Required' }).uncheck()
     await designer.getByRole('button', { name: 'Check workflow' }).click()

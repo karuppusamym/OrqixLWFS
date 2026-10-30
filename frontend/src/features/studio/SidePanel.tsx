@@ -1,10 +1,10 @@
-import { ChevronDown, ChevronRight, Sparkles } from 'lucide-react'
+import { ChevronDown, ChevronRight, Settings2, Sparkles } from 'lucide-react'
 import { useId, type ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import { type FocusStep } from '@/features/ai/AuthoringPanel'
 import { DiscussionPanel } from './DiscussionPanel'
 import { Inspector } from './inspector/Inspector'
-import { useStudio } from './StudioContext'
+import { useStudio, useStudioContext } from './StudioContext'
 
 export type SideCard = 'details' | 'discussion'
 
@@ -37,13 +37,21 @@ export function SidePanel({ open, onOpenChange, showAi, onAskAbout, onDeleteNode
 }) {
   const selectedId = useStudio((s) => (s.selection?.type === 'node' ? s.selection.id : null))
   const selectedLabel = useStudio((s) => s.definition.nodes.find((n) => n.id === selectedId)?.label ?? null)
+  const hasSelection = useStudio((s) => !!s.selection)
+  const { store } = useStudioContext()
   return (
     <aside className="w-80 shrink-0 space-y-3 overflow-y-auto border-l border-border bg-canvas p-3" aria-label="Details and discussion">
       <Card title="Details" open={open.details} onToggle={() => onOpenChange('details', !open.details)}>
-        {showAi && selectedId && selectedLabel ? (
-          <div className="border-b border-border px-4 pt-3 pb-3">
-            <Button variant="secondary" size="sm" onClick={() => onAskAbout({ id: selectedId, label: selectedLabel })}>
-              <Sparkles aria-hidden="true" /> Ask AI about this step
+        {hasSelection ? (
+          <div className="flex flex-wrap gap-2 border-b border-border px-4 pt-3 pb-3">
+            {showAi && selectedId && selectedLabel ? (
+              <Button variant="secondary" size="sm" onClick={() => onAskAbout({ id: selectedId, label: selectedLabel })}>
+                <Sparkles aria-hidden="true" /> Ask AI about this step
+              </Button>
+            ) : null}
+            {/* Workflow settings (name, progress stages, sections) show when nothing is selected; this is the way back from any tab. */}
+            <Button variant="ghost" size="sm" onClick={() => store.getState().select(null)}>
+              <Settings2 aria-hidden="true" /> Workflow settings
             </Button>
           </div>
         ) : null}

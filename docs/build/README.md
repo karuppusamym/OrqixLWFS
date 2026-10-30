@@ -110,3 +110,5 @@ Scalability: [S92 scalability qualification](S92-scalability-qualification.md) (
 Application pages, composed actions and sandboxed extensions (UI02g): [S111](S111-application-designer.md) (V190-V192).
 Application designer completion (UI02h): [S114](S114-application-designer-completion.md) (V193).
 Application designer round 3 (UI02i): [S116](S116-application-designer-round-3.md) (V194-V195).
+
+Studio Form tab with live preview (forms review slice 1, docs/26): [S120](S120-studio-form-tab.md) (frontend only).

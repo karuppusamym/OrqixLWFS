@@ -5,30 +5,31 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { DraftSaver } from '@/stores/draftSaver'
 import { createStudioStore } from '@/stores/studioStore'
 import purchase from '../../../../../examples/purchase-approval.json'
-import { StudioProvider, useStudio } from '../StudioContext'
+import { StudioProvider } from '../StudioContext'
 import { normalizeDefinition } from '../model/types'
 import { applyFields, fieldsFromDefinition } from '../model/ops'
 import { roundTrip } from '../model/source'
 import { validateDefinition } from '@/mocks/validate'
 import { sampleValues } from '../test/sampleValues'
 import { buildFields, parseFormSchema, parseFormUi } from '@/lib/form/schema'
-import { StartInspector } from './StartInspector'
+import { FormView } from '../FormView'
 
 function setup(readOnly = false) {
   const store = createStudioStore()
   store.getState().load({ workflowId: 'workflow', revision: 1, definition: normalizeDefinition(purchase) })
-  function Inspector() {
-    const node = useStudio(s => s.definition.nodes.find(n => n.type === 'start')!)
-    return <StartInspector node={node} />
-  }
-  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><StudioProvider value={{ store, saver: {} as DraftSaver, wsId: 'workspace', workflowId: 'workflow', readOnly, connections: { responseType: () => undefined } }}><Inspector /></StudioProvider></QueryClientProvider>)
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><StudioProvider value={{ store, saver: {} as DraftSaver, wsId: 'workspace', workflowId: 'workflow', readOnly, connections: { responseType: () => undefined } }}><FormView /></StudioProvider></QueryClientProvider>)
   return store
+}
+
+async function openQuestion(user: ReturnType<typeof userEvent.setup>, key: string) {
+  await user.click(within(screen.getByTestId(`question-${key}`)).getByRole('button', { expanded: false }))
+  return screen.getByTestId(`field-card-${key}`)
 }
 
 describe('answer patterns in the request form editor (docs/build/S90)', () => {
   it('authors a pattern with a message, shows a matching example and keeps it in the definition', async () => {
     const store = setup(), user = userEvent.setup()
-    const card = screen.getByTestId('field-card-title')
+    const card = await openQuestion(user, 'title')
     const pattern = within(card).getByLabelText(/Answer pattern/)
     await user.type(pattern, '^[[A-Z]{{2}-\\d{{4}$')
     await user.keyboard('{Enter}')
@@ -46,7 +47,7 @@ describe('answer patterns in the request form editor (docs/build/S90)', () => {
   it('explains an unsafe pattern next to the field and announces it', async () => {
     setup()
     const user = userEvent.setup()
-    const card = screen.getByTestId('field-card-title')
+    const card = await openQuestion(user, 'title')
     const pattern = within(card).getByLabelText(/Answer pattern/)
     await user.type(pattern, '^(a)\\1$')
     await user.keyboard('{Enter}')
@@ -54,8 +55,10 @@ describe('answer patterns in the request form editor (docs/build/S90)', () => {
     expect(within(card).getByRole('alert')).toHaveTextContent('Backreferences are not supported')
   })
 
-  it('only offers patterns for text questions', () => {
+  it('only offers patterns for text questions', async () => {
     setup()
+    const user = userEvent.setup()
+    for (const key of ['amount', 'costCenter', 'purpose']) await openQuestion(user, key)
     expect(screen.queryByTestId('pattern-options-amount')).not.toBeInTheDocument()
     expect(screen.queryByTestId('pattern-options-costCenter')).not.toBeInTheDocument()
     expect(screen.getByTestId('pattern-options-purpose')).toBeInTheDocument()

@@ -51,7 +51,7 @@ public final class GenericOutlineLayout implements BlueprintLayout {
     private record Raw(String name, Map<String, String> attributes, String parenthetical, Line line) { }
 
     @Override
-    public Result transcribe(List<Page> pages) {
+    public Result transcribe(List<Page> pages, String requestedCaseType) {
         Map<Section, List<Raw>> items = new EnumMap<>(Section.class);
         String caseTypeName = null; Line caseTypeLine = null;
         Integer[] unclassified = new Integer[pages.size()];
@@ -187,11 +187,11 @@ public final class GenericOutlineLayout implements BlueprintLayout {
     private static Transcription.Meta meta(Line line) {
         return new Transcription.Meta(line == null ? null : line.page(), line == null ? null : trim(line.text(), 500), Transcription.PROPOSED, null);
     }
-    private static String id(String prefix, String name, Set<String> used) {
+    static String id(String prefix, String name, Set<String> used) {
         String base = Identifiers.sanitize(prefix + name.toLowerCase(Locale.ROOT), false);
         return Identifiers.unique(base, used);
     }
-    private static String fieldKey(String name, Set<String> used) {
+    static String fieldKey(String name, Set<String> used) {
         StringBuilder key = new StringBuilder();
         for (String word : name.replaceAll("[^A-Za-z0-9 ]", " ").strip().split("\\s+")) {
             if (word.isEmpty()) continue;
@@ -239,7 +239,7 @@ public final class GenericOutlineLayout implements BlueprintLayout {
         for (String key : keys) if (attributes.get(key) != null && !attributes.get(key).isBlank()) return attributes.get(key);
         return null;
     }
-    private static String norm(String text) { return text == null ? "" : text.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", " ").strip(); }
+    static String norm(String text) { return text == null ? "" : text.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", " ").strip(); }
     private static String clean(String text) { return text == null ? "" : text.strip().replaceAll("^[\\s:\u2013\u2014-]+|[\\s.;:,\u2013\u2014-]+$", ""); }
-    private static String trim(String text, int max) { return text.length() > max ? text.substring(0, max) : text; }
+    static String trim(String text, int max) { return text.length() > max ? text.substring(0, max) : text; }
 }

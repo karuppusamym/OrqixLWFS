@@ -66,12 +66,11 @@ final class LogicalConditions {
         }
         Set<?> domain = type.kind() == FieldKind.BOOLEAN ? Set.of(true, false) : type.domain();
         if (domain != null) return domain.stream().anyMatch(value -> acceptsAll(terms, value));
-        var equal = terms.stream().filter(t -> t.condition().operator() == Operator.EQ).findFirst();
-        return equal.isEmpty() || acceptsAll(terms, equal.get().condition().value().value());
+        return Disjointness.openSatisfiable(terms.stream().map(Typed::condition).toList());
     }
 
     private static boolean acceptsAll(List<Typed> terms, Object actual) {
-        return terms.stream().allMatch(t -> ConditionMatcher.matches(t.condition().operator().json(), actual, t.condition().value().value()));
+        return terms.stream().allMatch(t -> ConditionMatcher.matches(t.condition().operator().json(), actual, t.condition().operand()));
     }
 
     private static boolean integerExists(Disjointness.Interval iv) {

@@ -1781,7 +1781,7 @@
     "decisionCondition": {
       "oneOf": [
         {
-          "$ref": "#/$defs/atomicCondition"
+          "$ref": "#/$defs/decisionTerm"
         },
         {
           "type": "object",
@@ -1791,7 +1791,7 @@
               "minItems": 2,
               "maxItems": 8,
               "items": {
-                "$ref": "#/$defs/atomicCondition"
+                "$ref": "#/$defs/decisionTerm"
               }
             }
           },
@@ -1809,7 +1809,7 @@
               "minItems": 2,
               "maxItems": 8,
               "items": {
-                "$ref": "#/$defs/atomicCondition"
+                "$ref": "#/$defs/decisionTerm"
               }
             }
           },
@@ -1820,9 +1820,93 @@
         }
       ]
     },
+    "decisionTerm": {
+      "description": "One comparison of a decision row: a plain comparison, a list (in) or a number range (between). Lists and ranges are accepted in decision rows only (docs/build/S121).",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/atomicCondition"
+        },
+        {
+          "$ref": "#/$defs/inCondition"
+        },
+        {
+          "$ref": "#/$defs/betweenCondition"
+        }
+      ]
+    },
+    "inCondition": {
+      "type": "object",
+      "description": "True when the field equals one of 1 to 20 distinct texts or numbers, all of one type (FEEL \"EU\",\"UK\").",
+      "properties": {
+        "fieldRef": {
+          "$ref": "#/$defs/fieldRef"
+        },
+        "operator": {
+          "const": "in"
+        },
+        "value": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "uniqueItems": true,
+          "items": {
+            "type": [
+              "string",
+              "number"
+            ]
+          }
+        }
+      },
+      "required": [
+        "fieldRef",
+        "operator",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "betweenCondition": {
+      "type": "object",
+      "description": "True when a number field lies in the range; each bound is included unless includeFrom or includeTo is false (FEEL [1000..5000)). from must be smaller than to.",
+      "properties": {
+        "fieldRef": {
+          "$ref": "#/$defs/fieldRef"
+        },
+        "operator": {
+          "const": "between"
+        },
+        "value": {
+          "type": "object",
+          "properties": {
+            "from": {
+              "type": "number"
+            },
+            "to": {
+              "type": "number"
+            },
+            "includeFrom": {
+              "type": "boolean"
+            },
+            "includeTo": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "from",
+            "to"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "fieldRef",
+        "operator",
+        "value"
+      ],
+      "additionalProperties": false
+    },
     "decisionTable": {
       "type": "object",
-      "description": "Authoring semantics: at most one row matches (UNIQUE); the default applies only when no row matches. Scalar rows test the same field; conjunctive All rows support 2 to 8 distinct fields. Rows must be pairwise disjoint (WF_DECISION_OVERLAP). Compiled to DMN as FIRST with a trailing catch-all row.",
+      "description": "Authoring semantics depend on hitPolicy (docs/build/S40, S121); the default applies when no row matches. Scalar rows test the same field; conjunctive All rows support 2 to 8 distinct fields. UNIQUE rows must be pairwise disjoint (WF_DECISION_OVERLAP); ANY rows may overlap only when they give the same results. Compiled to DMN as FIRST with a trailing catch-all row (PRIORITY rows sorted by priority), or as COLLECT with its aggregation.",
       "properties": {
         "key": {
           "$ref": "#/$defs/key"
@@ -1832,11 +1916,45 @@
           "minimum": 1
         },
         "hitPolicy": {
-          "description": "UNIQUE: at most one row can match, proven at publish time. FIRST: rows are tried in order and the first match wins, so rows may overlap (docs/build/S40).",
+          "description": "UNIQUE: at most one row can match, proven at publish time. FIRST: rows are tried in order and the first match wins, so rows may overlap (docs/build/S40). ANY: rows may overlap when they give the same results. PRIORITY: of the matching rows, the one whose priority output ranks highest in priority.order wins; equal ranks keep table order. COLLECT: every matching row counts; its single number result is combined by aggregation (docs/build/S121).",
           "enum": [
             "UNIQUE",
-            "FIRST"
+            "FIRST",
+            "ANY",
+            "PRIORITY",
+            "COLLECT"
           ]
+        },
+        "aggregation": {
+          "description": "COLLECT only, required there: how the number results of the matching rows combine. COUNT is the number of matching rows.",
+          "enum": [
+            "SUM",
+            "MIN",
+            "MAX",
+            "COUNT"
+          ]
+        },
+        "priority": {
+          "description": "PRIORITY only, required there: the output that decides between matching rows and its values from the highest to the lowest priority. Every value a row or the default gives must be listed.",
+          "type": "object",
+          "properties": {
+            "output": {
+              "$ref": "#/$defs/fieldKey"
+            },
+            "order": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 20,
+              "items": {
+                "$ref": "#/$defs/literal"
+              }
+            }
+          },
+          "required": [
+            "output",
+            "order"
+          ],
+          "additionalProperties": false
         },
         "rows": {
           "type": "array",

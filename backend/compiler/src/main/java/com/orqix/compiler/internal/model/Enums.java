@@ -87,9 +87,18 @@ public final class Enums {
         }
     }
 
-    /** Comparison operators. */
+    /**
+     * Comparison operators. {@code IN} (a list of values) and {@code BETWEEN} (a number range) are set operators and
+     * are accepted in decision table rows only (docs/build/S121).
+     */
     public enum Operator {
-        EQ("is"), NE("is not"), GTE("is at least"), GT("is greater than"), LT("is less than"), LTE("is at most");
+        EQ("is"), NE("is not"), GTE("is at least"), GT("is greater than"), LT("is less than"), LTE("is at most"),
+        IN("is one of"), BETWEEN("is between");
+
+        /** @return true for the decision-only operators whose value is a list or a range */
+        public boolean set() {
+            return this == IN || this == BETWEEN;
+        }
 
         private final String phrase;
 

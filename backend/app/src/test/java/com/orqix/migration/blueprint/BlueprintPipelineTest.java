@@ -27,7 +27,9 @@ class BlueprintPipelineTest {
     private List<BlueprintLayout.Page> pages(byte[] pdf) {
         var extracted = extraction.extractPdfPages(pdf, System.nanoTime() + TimeUnit.SECONDS.toNanos(60));
         List<BlueprintLayout.Page> pages = new ArrayList<>();
-        for (int i = 0; i < extracted.pages().size(); i++) pages.add(new BlueprintLayout.Page(i + 1, extracted.pages().get(i), Json.sha256Hex(extracted.pages().get(i))));
+        assertThat(extracted.geometry()).hasSize(extracted.pages().size());
+        for (int i = 0; i < extracted.pages().size(); i++)
+            pages.add(new BlueprintLayout.Page(i + 1, extracted.pages().get(i), Json.sha256Hex(extracted.pages().get(i)), extracted.geometry().get(i)));
         return pages;
     }
     private static BlueprintFindings.DocumentFacts facts(List<BlueprintLayout.Page> pages, BlueprintLayout.Result result) {
@@ -40,6 +42,8 @@ class BlueprintPipelineTest {
         var pages = pages(BlueprintPdfs.sample());
         assertThat(pages).hasSize(3);
         assertThat(pages.getFirst().text()).contains("SYNTHETIC SAMPLE - NOT A PEGA EXPORT");
+        assertThat(pages.getFirst().geometry().runs()).anySatisfy(r -> assertThat(r.text()).contains("SYNTHETIC SAMPLE"));
+        assertThat(BlueprintLayout.forPages(pages)).isInstanceOf(GenericOutlineLayout.class);
         var result = new GenericOutlineLayout().transcribe(pages);
         ObjectNode actual = result.transcription().toJson(json);
         if (Boolean.getBoolean("blueprint.regenerate")) Files.writeString(BlueprintPdfs.EXPECTED, json.mapper().writerWithDefaultPrettyPrinter().writeValueAsString(actual) + "\n");

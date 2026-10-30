@@ -304,3 +304,9 @@ Receivers should recompute that value, compare in constant time, reject timestam
 
 **Kafka trigger errors.** The triggers panel and the API show a code after a failure: `secret_unavailable` (the trigger's `secretRef` file is missing or not `{"username": ..., "password": ...}`), `authentication_failed` (the broker refused those credentials) and `consumer_error` (anything else, for example the broker cannot be reached). The consumer keeps retrying, backing off to one minute.
 
+
+## Pega Blueprint export layout - 30 October 2026
+
+[S91](build/S91-pega-blueprint-pdf.md). Apply migration V204 (the names of a blueprint's case types that were not transcribed) before starting this image.
+
+**Pega Blueprint PDFs.** Pega's "Application Overview Document" Blueprint export is now read with its own layout (`pega-blueprint`): stages and steps from the lifecycle columns, step kinds from the step icons, fields from the field tables, personas as roles and Live Data objects as integrations. Other PDFs are still read as a generic outline. An export can define several case types and one import transcribes one: enter its name under **Case type** when uploading (empty: the first); the findings name the others. Page texts are now stored in reading order for this layout. Nothing changes for blueprints imported before.

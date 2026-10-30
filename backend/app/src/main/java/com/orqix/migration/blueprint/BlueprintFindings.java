@@ -14,8 +14,15 @@ public final class BlueprintFindings {
 
     /** Facts about the uploaded document itself, kept with the job. */
     public record DocumentFacts(int pageCount, List<Integer> unclassifiedLines, List<Boolean> emptyPages, boolean javascript,
-            boolean embeddedFiles, String layoutId, String layoutRevision) {
-        public DocumentFacts { unclassifiedLines = List.copyOf(unclassifiedLines); emptyPages = List.copyOf(emptyPages); }
+            boolean embeddedFiles, String layoutId, String layoutRevision, List<String> otherCaseTypes) {
+        public DocumentFacts {
+            unclassifiedLines = List.copyOf(unclassifiedLines); emptyPages = List.copyOf(emptyPages);
+            otherCaseTypes = otherCaseTypes == null ? List.of() : List.copyOf(otherCaseTypes);
+        }
+        public DocumentFacts(int pageCount, List<Integer> unclassifiedLines, List<Boolean> emptyPages, boolean javascript,
+                boolean embeddedFiles, String layoutId, String layoutRevision) {
+            this(pageCount, unclassifiedLines, emptyPages, javascript, embeddedFiles, layoutId, layoutRevision, List.of());
+        }
     }
 
     private BlueprintFindings() { }
@@ -36,6 +43,10 @@ public final class BlueprintFindings {
             f.document("BLUEPRINT_ACTIVE_CONTENT_IGNORED", Report.INFO, "The PDF contains " + (facts.javascript() ? "JavaScript or automatic actions" : "")
                     + (facts.javascript() && facts.embeddedFiles() ? " and " : "") + (facts.embeddedFiles() ? "embedded files" : "")
                     + ". They were not executed, opened or imported; only page text was read.", "Acknowledge.");
+        if (!facts.otherCaseTypes().isEmpty())
+            f.document("BLUEPRINT_CASE_TYPES_NOT_TRANSCRIBED", Report.INFO, "The blueprint defines " + (facts.otherCaseTypes().size() + 1) + " case types; only "
+                    + (t.caseType() == null ? "one" : "'" + t.caseType().name() + "'") + " was transcribed. Not transcribed: " + String.join(", ", facts.otherCaseTypes())
+                    + ". Their pages count as unclassified text here.", "Acknowledge, and upload the PDF again choosing another case type to migrate it as its own workflow.");
         for (int i = 0; i < facts.pageCount(); i++) {
             if (i < facts.emptyPages().size() && facts.emptyPages().get(i))
                 f.page(i + 1, "BLUEPRINT_PAGE_WITHOUT_TEXT", "Page " + (i + 1) + " has no extractable text (for example a scanned image or diagram). No OCR or image interpretation was attempted, so anything shown only there is not in the transcription.",
@@ -139,8 +150,12 @@ public final class BlueprintFindings {
         return new Report.CompatibilityReport("pega", "Blueprint PDF (" + facts.layoutId() + " " + facts.layoutRevision() + ", " + facts.pageCount() + " pages)", ADAPTER, sourceHash,
                 t.caseType() == null ? null : com.orqix.migration.camunda.Identifiers.sanitize(t.caseType().name(), true), t.caseType() == null ? null : t.caseType().name(),
                 Report.ElementCounts.of(withTargets), withTargets,
-                List.of("SYNTHETIC-LAYOUT NOTICE: the transcription was read with the generic outline layout, not a parser of Pega's own Blueprint export; no compatibility with that export is claimed.",
-                        "Only page text was read. JavaScript, attachments, images and diagrams were not executed, opened or interpreted.",
+                List.of(PegaBlueprintLayout.ID.equals(facts.layoutId())
+                        ? "LAYOUT NOTICE: the transcription was read with the Pega Blueprint export layout, written against one genuine 'Application Overview Document' export (2024). Other export versions may differ; review every element against its page."
+                        : "SYNTHETIC-LAYOUT NOTICE: the transcription was read with the generic outline layout, not a parser of Pega's own Blueprint export; no compatibility with that export is claimed.",
+                        PegaBlueprintLayout.ID.equals(facts.layoutId())
+                        ? "Only page text, its position and font, and the colour of step icons were read. JavaScript, attachments, images and other drawings were not executed, opened or interpreted."
+                        : "Only page text was read. JavaScript, attachments, images and diagrams were not executed, opened or interpreted.",
                         "The reviewed transcription, not the PDF, is converted. Only human approval steps, typed request fields, exclusive routes on field comparisons, outcomes and elapsed-time SLAs are admitted.",
                         "Roles map to workspace groups explicitly; no source users, permissions or running cases are migrated."),
                 new Report.RequiredMappings(groups, List.of(), List.of()), publishable);

@@ -215,5 +215,12 @@ if __name__ == '__main__':
     except Exception as failure:
         import traceback
         frame = traceback.extract_tb(failure.__traceback__)[-1]
-        print('Native acceptance failed: ' + (str(failure) if isinstance(failure, AcceptanceFailure) else type(failure).__name__) + ' at ' + Path(frame.filename).name + ':' + str(frame.lineno))
+        if isinstance(failure, AcceptanceFailure):
+            reason = str(failure)
+        elif isinstance(failure, ApiError):
+            # Status and problem code say what the server refused; the detail text is left out like other responses.
+            reason = f'ApiError {failure.status} {failure.code}'
+        else:
+            reason = type(failure).__name__
+        print('Native acceptance failed: ' + reason + ' at ' + Path(frame.filename).name + ':' + str(frame.lineno))
         raise SystemExit(1) from None

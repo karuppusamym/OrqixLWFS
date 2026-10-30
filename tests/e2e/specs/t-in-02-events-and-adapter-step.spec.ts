@@ -7,7 +7,7 @@ import { expect, test } from '../support/fixtures'
 import { BASE_URL, MOCK } from '../support/env'
 import { decideOpenTask, ensureTemplatePublished, selectStep, submitPurchase, workspaceId } from '../support/app'
 import { apiGet } from '../support/app'
-import { apiSend, apiRead, createWorkflow, editDraft, openTaskOfRun, publish, uniq } from '../support/api'
+import { apiSend, apiRead, createWorkflow, editDraft, openTaskOfRun, publish, revokeGrant, uniq } from '../support/api'
 import { expectNoSeriousViolations } from '../support/axe'
 
 /**
@@ -21,6 +21,18 @@ import { expectNoSeriousViolations } from '../support/axe'
  * Real stack only; the signing secret is a test file in the private stack's own secrets directory (E2E_INBOUND_SECRETS_DIR).
  */
 test.skip(MOCK || !process.env.E2E_INBOUND_SECRETS_DIR || !process.env.E2E_DB_CONTAINER, 'Needs the real stack, its signing secret file and its database.')
+
+/**
+ * The designer's connection.manage grant is taken back afterwards, even when the test fails: later specs and
+ * tools/api-e2e/e2e_authoring.py check that design permission alone cannot manage connections.
+ */
+test.afterEach(async ({ sessions }) => {
+  if (MOCK) return
+  const designer = await sessions.as('dana.designer')
+  const ws = await workspaceId(designer)
+  const subject = (await apiGet<{ subject: { id: string } }>(designer, '/me')).subject.id
+  await revokeGrant(await sessions.as('wade.admin'), ws, 'connection.manage', subject)
+})
 
 const SECRETS = process.env.E2E_INBOUND_SECRETS_DIR as string
 const DB = process.env.E2E_DB_CONTAINER as string

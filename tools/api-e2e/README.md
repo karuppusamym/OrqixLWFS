@@ -29,7 +29,15 @@ each scenario group. Exit code 0 means every check passed.
 
 For a separate verification stack, set `ORQIX_BASE_URL` (for example `http://localhost:18080`) and
 `ORQIX_STUB_URL` (for example `http://localhost:18095`). Run scenario scripts sequentially because they share
-the stub's fault settings and order journal. Existing stack volumes do not need to be reset.
+the stub's fault settings and order journal. Existing stack volumes do not need to be reset; the scripts also pass
+after the browser suite has run on the same stack.
+
+| Variable | Default | Used by |
+|---|---|---|
+| `ORQIX_BASE_URL` | `http://localhost:8080` | Every script: the application |
+| `ORQIX_STUB_URL` | `http://localhost:8095` | Scripts that check the procurement stub |
+| `ORQIX_KEYCLOAK_URL` | `http://localhost:8180` | `e2e_native_agents.py`: Keycloak, for the machine client's token |
+| `ORQIX_TEST_POSTGRES_CONTAINER` | `orqix-postgres-1` | `e2e_native_agents.py`: the PostgreSQL container it reads the machine subject from (for a compose project named `orqix-s120`, `orqix-s120-postgres-1`) |
 
 ## Reviewed imports and conditional row forms (`e2e_authoring.py`)
 

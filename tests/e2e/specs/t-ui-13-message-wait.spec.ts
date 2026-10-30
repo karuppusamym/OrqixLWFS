@@ -65,11 +65,13 @@ test.describe('wait for a message (mock API)', () => {
     const id = await createWorkflow(designer, ws, 'order-payment-studio', true)
     await designer.goto(`/w/${ws}/workflows/${id}/edit`)
     await expect(designer.getByTestId('studio')).toBeVisible()
-    await expect(designer.getByRole('button', { name: /^Wait for a message/ }).first()).toBeVisible()
+    // The step list starts collapsed to icons named "Add: <label>".
+    await expect(designer.getByRole('button', { name: /^(Add: )?Wait for a message/ }).first()).toBeVisible()
 
     const card = designer.locator('.react-flow__node[data-id="waitPayment"]')
     await expect(card).toBeVisible()
-    await expect(card).toContainText('payment-received · Order number')
+    // The canvas opens in BPMN notation, where the step summary is the shape's title.
+    await expect(card.locator('[data-notation="bpmn"]')).toHaveAttribute('title', /payment-received · Order number/)
 
     await designer.getByRole('tab', { name: 'Steps' }).click()
     await selectStep(designer, 'waitPayment')

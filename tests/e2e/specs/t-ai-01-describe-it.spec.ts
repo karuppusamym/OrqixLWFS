@@ -47,8 +47,9 @@ test('describe it, review the AI draft, fix the missing group, publish', async (
   await designer.getByRole('button', { name: 'Check workflow' }).click()
   await expect(designer.getByTestId('check-summary')).toContainText(/No problems found/)
 
-  // 5. Explain, in plain language ---------------------------------------------------------------------------------------
-  await designer.getByRole('button', { name: /^Explain$/ }).click()
+  // 5. Explain, in plain language (in the Studio's More menu) ----------------------------------------------------------
+  await designer.getByRole('button', { name: 'More actions' }).click()
+  await designer.getByRole('menuitem', { name: 'Explain this workflow' }).click()
   await expect(designer.getByTestId('explain-summary')).toContainText(/reviewed by/)
   await designer.getByRole('button', { name: 'Close the explanation' }).click()
 

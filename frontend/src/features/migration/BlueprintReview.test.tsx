@@ -49,6 +49,7 @@ describe('Pega Blueprint (PDF) import', () => {
         const body = await request.text()
         const part = /Content-Disposition: form-data; name="file"(?:; filename="([^"]*)")?/i.exec(body)
         uploadedName = part ? (part[1] ?? '') : null
+        if (body.includes('name="caseType"')) throw new Error('An empty case type must not be sent.')
         return HttpResponse.json(job(), { status: 201 })
       }),
       http.get('*/api/v1/workspaces/:ws/migrations/:id', () => HttpResponse.json(job())),
@@ -101,6 +102,29 @@ describe('Pega Blueprint (PDF) import', () => {
     expect(converted).toMatchObject({ transcriptionSha256: sha('2'), groupMappings: { 'role-line-manager': 'managers' }, acknowledgeInfo: true })
     expect(converted).not.toHaveProperty('approvalRoutes')
     expect(converted).not.toHaveProperty('inputSchema')
+  })
+
+  it('sends the chosen case type and explains what the Pega export layout reads', async () => {
+    signInAs('dana.designer')
+    let uploaded = ''
+    const pega: View = { ...view(1), layout: { id: 'pega-blueprint', revision: '0.1' } }
+    server.use(
+      http.post('*/api/v1/workspaces/:ws/migrations/blueprints', async ({ request }) => {
+        uploaded = await request.text()
+        return HttpResponse.json(job(), { status: 201 })
+      }),
+      http.get('*/api/v1/workspaces/:ws/migrations/:id', () => HttpResponse.json(job())),
+      http.get('*/api/v1/workspaces/:ws/migrations/:id/blueprint', () => HttpResponse.json(pega)),
+    )
+    const user = userEvent.setup(); await renderAppReady(`/w/${WS}/migrations`)
+    await user.selectOptions(await screen.findByLabelText('Source format'), 'pegaBlueprint')
+    await user.upload(screen.getByLabelText(/Source file \(PDF/), new File(['%PDF-1.4'], 'loans.pdf', { type: 'application/pdf' }))
+    await user.type(screen.getByLabelText('Case type (optional)'), '  Secured Retail Loan Application ')
+    await user.click(screen.getByRole('button', { name: 'Analyze source' }))
+    const review = await screen.findByRole('region', { name: 'Blueprint transcription review' })
+    expect(uploaded).toMatch(/name="caseType"\r?\n\r?\nSecured Retail Loan Application\r?\n/)
+    expect(within(review).getByText(/read with the Pega Blueprint export layout/)).toBeInTheDocument()
+    expect(within(review).queryByText(/generic outline layout/)).not.toBeInTheDocument()
   })
 
   it('mock mode refuses a PDF clearly', async () => {

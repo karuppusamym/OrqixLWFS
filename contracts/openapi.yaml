@@ -6737,11 +6737,15 @@ paths:
       operationId: uploadBlueprintMigration
       summary: Upload a Pega Blueprint PDF and transcribe it for review (docs/build/S91)
       description: >-
-        The PDF (at most 25 MiB and 60 pages, starting with %PDF-) is read page by page in the isolated extraction worker;
-        no JavaScript, form action or embedded file is executed or opened, and encrypted or damaged PDFs are refused.
-        A generic outline layout proposes a structured transcription with source page references; every element starts
-        as proposed and must be reviewed. Nothing is converted or published by this call. The layout is generic and does
-        not claim compatibility with Pega's own Blueprint export layout.
+        The PDF (at most 25 MiB and 60 pages, starting with %PDF-) is read page by page in the isolated extraction worker:
+        page text, the position and font of each text run, and the colour of small shapes such as step icons. No
+        JavaScript, form action or embedded file is executed or opened, images are not decoded, and encrypted or damaged
+        PDFs are refused. A layout proposes a structured transcription with source page references; every element starts
+        as proposed and must be reviewed. Pega's "Application Overview Document" Blueprint export is read with the
+        pega-blueprint layout (written against one genuine export), which also stores each page in reading order (stage by
+        stage); other documents are read with the generic outline layout. An export can define several case types and
+        one upload transcribes one: caseType names it (default the first); an unknown name is refused with the names the
+        document has (400). Nothing is converted or published by this call.
       x-orqix-permission: workflow.edit
       x-orqix-audit: migration.uploaded
       requestBody:
@@ -6753,6 +6757,10 @@ paths:
               required: [file]
               properties:
                 file: { type: string, contentEncoding: base64, contentMediaType: application/pdf }
+                caseType:
+                  type: string
+                  maxLength: 200
+                  description: Name of the case type to transcribe when the blueprint defines several (case and punctuation are ignored); the first when omitted or blank
       responses:
         '201':
           description: Job created with the findings of the proposed transcription
@@ -12344,7 +12352,7 @@ components:
           type: object
           required: [id, revision]
           properties:
-            id: { type: string }
+            id: { type: string, description: 'pega-blueprint (Pega Blueprint export) or generic-outline' }
             revision: { type: string }
         pageCount: { type: integer, minimum: 1, maximum: 60 }
         javascript: { type: boolean, description: 'The PDF contained JavaScript or automatic actions; they were ignored' }
@@ -12356,7 +12364,7 @@ components:
             required: [number, text, sha256, unclassifiedLines]
             properties:
               number: { type: integer, minimum: 1 }
-              text: { type: string }
+              text: { type: string, description: 'Extracted page text; with the pega-blueprint layout, the page in reading order (lifecycle stage by stage, steps indented under their stage, table cells separated by tabs)' }
               sha256: { type: string }
               unclassifiedLines: { type: integer, minimum: 0 }
         transcription: { $ref: '#/components/schemas/BlueprintTranscription' }

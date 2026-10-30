@@ -568,8 +568,8 @@ export const convertMigration = (ws: string, migrationId: string, body: S['Conve
   call(api.POST('/workspaces/{workspaceId}/migrations/{migrationId}/convert', { params: { path: { workspaceId: ws, migrationId } }, body }))
 
 // Pega Blueprint PDF (docs/build/S91): multipart upload, reviewed transcription revisions, optional AI proposal (never applied).
-export const uploadBlueprintMigration = (ws: string, file: File) =>
-  uploadFile<S['MigrationJob']>(`/workspaces/${ws}/migrations/blueprints`, file)
+export const uploadBlueprintMigration = (ws: string, file: File, caseType?: string) =>
+  uploadFile<S['MigrationJob']>(`/workspaces/${ws}/migrations/blueprints`, file, { fields: caseType?.trim() ? { caseType: caseType.trim() } : {} })
 export const getBlueprintTranscription = (ws: string, migrationId: string) =>
   call(api.GET('/workspaces/{workspaceId}/migrations/{migrationId}/blueprint', { params: { path: { workspaceId: ws, migrationId } } }))
 export const saveBlueprintTranscription = (ws: string, migrationId: string, body: { expectedRevision: number; transcription: S['BlueprintTranscription'] }) =>

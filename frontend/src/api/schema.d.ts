@@ -4937,7 +4937,7 @@ export interface paths {
         put?: never;
         /**
          * Upload a Pega Blueprint PDF and transcribe it for review (docs/build/S91)
-         * @description The PDF (at most 25 MiB and 60 pages, starting with %PDF-) is read page by page in the isolated extraction worker; no JavaScript, form action or embedded file is executed or opened, and encrypted or damaged PDFs are refused. A generic outline layout proposes a structured transcription with source page references; every element starts as proposed and must be reviewed. Nothing is converted or published by this call. The layout is generic and does not claim compatibility with Pega's own Blueprint export layout.
+         * @description The PDF (at most 25 MiB and 60 pages, starting with %PDF-) is read page by page in the isolated extraction worker: page text, the position and font of each text run, and the colour of small shapes such as step icons. No JavaScript, form action or embedded file is executed or opened, images are not decoded, and encrypted or damaged PDFs are refused. A layout proposes a structured transcription with source page references; every element starts as proposed and must be reviewed. Pega's "Application Overview Document" Blueprint export is read with the pega-blueprint layout (written against one genuine export), which also stores each page in reading order (stage by stage); other documents are read with the generic outline layout. An export can define several case types and one upload transcribes one: caseType names it (default the first); an unknown name is refused with the names the document has (400). Nothing is converted or published by this call.
          */
         post: operations["uploadBlueprintMigration"];
         delete?: never;
@@ -8997,6 +8997,7 @@ export interface components {
             /** Format: date-time */
             savedAt: string;
             layout: {
+                /** @description pega-blueprint (Pega Blueprint export) or generic-outline */
                 id: string;
                 revision: string;
             };
@@ -9007,6 +9008,7 @@ export interface components {
             embeddedFiles: boolean;
             pages: {
                 number: number;
+                /** @description Extracted page text; with the pega-blueprint layout, the page in reading order (lifecycle stage by stage, steps indented under their stage, table cells separated by tabs) */
                 text: string;
                 sha256: string;
                 unclassifiedLines: number;
@@ -19097,6 +19099,8 @@ export interface operations {
             content: {
                 "multipart/form-data": {
                     file: string;
+                    /** @description Name of the case type to transcribe when the blueprint defines several (case and punctuation are ignored); the first when omitted or blank */
+                    caseType?: string;
                 };
             };
         };

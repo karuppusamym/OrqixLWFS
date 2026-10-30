@@ -5,12 +5,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mockKafkaTriggers, resetCallbackMocks, seedKafkaMocks } from '@/mocks/callbacks'
 import { KafkaTriggersPanel } from './KafkaTriggersPanel'
 
-const permission = vi.hoisted(() => ({ manage: true, read: true, operate: true }))
+const permission = vi.hoisted(() => ({ manage: true, read: true, operate: true, kafkaOn: true }))
 vi.mock('@/app/workspace', () => ({
   useWorkspace: () => ({
     workspace: { id: 'workspace' },
     can: (p: string) => (p === 'connection.manage' ? permission.manage : p === 'connection.read' ? permission.read
       : p === 'run.operate' ? permission.operate : p === 'workflow.read'),
+    isOn: (f: string) => f !== 'kafka' || permission.kafkaOn,
   }),
 }))
 vi.mock('@/api/queries', () => ({
@@ -22,7 +23,7 @@ function mount() {
 }
 
 describe('Kafka triggers panel', () => {
-  beforeEach(() => { permission.manage = true; permission.read = true; permission.operate = true; resetCallbackMocks() })
+  beforeEach(() => { permission.manage = true; permission.read = true; permission.operate = true; permission.kafkaOn = true; resetCallbackMocks() })
 
   it('creates a start trigger from a named cluster and an allow-listed topic, then sends a stub test message', async () => {
     const user = userEvent.setup()
@@ -87,5 +88,13 @@ describe('Kafka triggers panel', () => {
     await user.click(screen.getByRole('button', { name: 'Confirm: delete orders-in' }))
     expect(await screen.findByText(/Trigger orders-in deleted/)).toBeVisible()
     await waitFor(() => expect(screen.queryByTestId('kafka-trigger-orders-in')).toBeNull())
+  })
+
+  it('says when Kafka is switched off in the workspace and that messages wait on the topic (S127)', async () => {
+    permission.kafkaOn = false
+    mount()
+    const notice = await screen.findByTestId('feature-off-notice')
+    expect(notice).toHaveTextContent('Kafka triggers and adapters is switched off in this workspace')
+    expect(notice).toHaveTextContent(/messages wait on the topic/)
   })
 })

@@ -304,7 +304,7 @@
           }
         },
         "assets": {
-          "description": "Versioned references to shared workspace assets (docs/build/S57). Each names the element of this workflow that holds a pinned copy of the asset version: target is the key of a table in decisions (kind decision) or the id of a generateDocument step (kind documentTemplate). The server checks every reference at validation and publish: a missing, archived or differing asset blocks, a newer version is a warning. A reference grants no access to the asset.",
+          "description": "Versioned references to shared workspace assets (docs/build/S57). Each names the element of this workflow that holds a pinned copy of the asset version: target is the key of a table in decisions (kind decision), the id of a generateDocument step (kind documentTemplate) or request, the request form (kind form, docs/build/S128). A form reference also lists the questions it copied in fields (shared question key to this workflow's question key, which differs when a clashing key was renamed on insert). The server checks every reference at validation and publish: a missing, archived or differing asset blocks, a newer version is a warning. A reference grants no access to the asset.",
           "type": "array",
           "maxItems": 40,
           "items": {
@@ -313,7 +313,8 @@
               "kind": {
                 "enum": [
                   "decision",
-                  "documentTemplate"
+                  "documentTemplate",
+                  "form"
                 ]
               },
               "key": {
@@ -325,6 +326,18 @@
               },
               "target": {
                 "$ref": "#/$defs/id"
+              },
+              "fields": {
+                "description": "Kind form only: each copied question, from its key in the shared form to its key in this workflow. Questions skipped on insert (this workflow kept its own question with that key) are not listed.",
+                "type": "object",
+                "minProperties": 1,
+                "maxProperties": 30,
+                "propertyNames": {
+                  "$ref": "#/$defs/fieldKey"
+                },
+                "additionalProperties": {
+                  "$ref": "#/$defs/fieldKey"
+                }
               }
             },
             "required": [
@@ -1047,6 +1060,38 @@
               "uniqueItems": true,
               "items": {
                 "$ref": "#/$defs/fieldKey"
+              }
+            },
+            "fieldAccess": {
+              "description": "Step form (docs/build/S123): how the person deciding this step sees each request field. Unlisted fields are readOnly. hidden: not shown on the task. editable: correctable, with the same publish checks as correctable. required: editable and must have a value before approving.",
+              "type": "object",
+              "maxProperties": 30,
+              "propertyNames": {
+                "$ref": "#/$defs/fieldKey"
+              },
+              "additionalProperties": {
+                "enum": [
+                  "hidden",
+                  "readOnly",
+                  "editable",
+                  "required"
+                ]
+              }
+            },
+            "capture": {
+              "description": "Step form (docs/build/S123): new single-value fields the person fills in when deciding, such as a PO number or an approved amount. Required fields are needed to approve and are optional when rejecting. Outputs at /steps/<id>/<fieldKey>; a required field is available only after the approved route, an optional one may be missing.",
+              "allOf": [
+                {
+                  "$ref": "#/$defs/formSchema"
+                }
+              ],
+              "properties": {
+                "type": true,
+                "additionalProperties": true,
+                "required": true,
+                "properties": {
+                  "maxProperties": 10
+                }
               }
             },
             "separateFrom": {

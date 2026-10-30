@@ -1,10 +1,12 @@
-import { viewGrid } from '@/features/views/presentation'
 import type { ViewDefinition } from '@/features/views/model'
-import { useId } from 'react'
+import { useMemo } from 'react'
 import type { components } from '@/api/schema'
-import { Input, Textarea } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Button } from '@/components/ui/button'
+import { FormRenderer } from '@/components/form/FormRenderer'
+import { FieldListEditor } from '@/features/studio/inspector/FieldListEditor'
+import type { FormFieldModel } from '@/features/studio/model/ops'
+import { validateJsonInput } from '@/lib/form/validate'
+import { messageFor, type RawValues } from '@/lib/form/values'
+import { CASE_FIELD_KINDS, CASE_KEY_PATTERN, MAX_CASE_FIELDS, caseField, caseFieldDefs, caseFormSchema, fieldModel, legacyKeyWarning } from './caseFields'
 
 export type DataField = components['schemas']['CaseDataField']
 export type DataValues = components['schemas']['CaseDataValues']
@@ -12,6 +14,12 @@ export type DataInputs = Record<string, string>
 
 export function inputValues(values: DataValues): DataInputs {
   return Object.fromEntries(Object.entries(values).map(([key, value]) => [key, String(value)]))
+}
+
+/** Case data that does not pass the field checks; `fieldErrors` holds one plain message per field key. */
+export class CaseDataError extends Error {
+  readonly fieldErrors: Record<string, string>
+  constructor(message: string, fieldErrors: Record<string, string>) { super(message); this.fieldErrors = fieldErrors }
 }
 
 // Compare the decimal the person typed with the number that JSON would actually send.
@@ -27,63 +35,107 @@ function decimalIdentity(value: string): string | null {
   return `${match[1] === '-' ? '-' : ''}${digits}e${exponent}`
 }
 
+/**
+ * Typed case data from what was typed. Numbers keep their exact decimal through JSON; the values are then checked with
+ * the request form's validator and messages (docs/build/S125), so a pattern, length, date or step problem is reported
+ * before anything is sent. A required yes-or-no field is a checkbox, so an untouched one means No.
+ */
 export function typedValues(fields: DataField[], inputs: DataInputs): DataValues {
   const result: DataValues = {}
   for (const field of fields) {
     const value = inputs[field.key] ?? ''
-    if (value === '') continue
+    if (value === '') {
+      if (field.type === 'boolean' && field.required) result[field.key] = false
+      continue
+    }
     if (field.type === 'number' || field.type === 'integer') {
       const number = Number(value)
-      if (!Number.isFinite(number) || (field.type === 'integer' && !Number.isInteger(number))) throw new Error(`${field.label} needs a valid ${field.type === 'integer' ? 'whole ' : ''}number.`)
-      if (decimalIdentity(value) !== decimalIdentity(String(number))) throw new Error(`${field.label} has more precision than can be saved. Use fewer digits.`)
+      if (!Number.isFinite(number) || (field.type === 'integer' && !Number.isInteger(number))) throw new CaseDataError(`${field.label} needs a valid ${field.type === 'integer' ? 'whole ' : ''}number.`, { [field.key]: `Enter a valid ${field.type === 'integer' ? 'whole ' : ''}number.` })
+      if (decimalIdentity(value) !== decimalIdentity(String(number))) throw new CaseDataError(`${field.label} has more precision than can be saved. Use fewer digits.`, { [field.key]: 'This has more precision than can be saved. Use fewer digits.' })
       result[field.key] = number
     } else if (field.type === 'boolean') result[field.key] = value === 'true'
     else result[field.key] = value
   }
+  const { schema } = caseFormSchema(fields)
+  const defs = caseFieldDefs(fields)
+  const errors: Record<string, string> = {}
+  for (const issue of validateJsonInput(schema, result)) {
+    const key = issue.pointer.split('/').filter(Boolean)[0]
+    const def = defs.find(item => item.key === key)
+    if (!key || !def || key in errors) continue
+    errors[key] = messageFor(def, issue.keyword, [...(inputs[key] ?? '')].length)
+  }
+  const first = Object.keys(errors)[0]
+  if (first) throw new CaseDataError(`${defs.find(def => def.key === first)?.label ?? first}: ${errors[first]}`, errors)
   return result
 }
 
-export function CaseDataFields({ fields, values, onChange, disabled = false, readOnly = false, view }: { view?: ViewDefinition; fields: DataField[]; values: DataInputs; onChange: (values: DataInputs) => void; disabled?: boolean; readOnly?: boolean }) {
-  const prefix = useId()
-  const groups = view ? view.sections.map(section => ({ id: section.id, label: section.label, columns: section.columns, fields: section.fields.flatMap(control => {
-    const field = fields.find(item => `case.${item.key}` === control.binding)
-    return field ? [{ ...field, label: control.label,optionLabels:control.options?Object.fromEntries(control.options.map(option=>[option.value,option.label])):undefined }] : []
-  }) })) : [{ id: 'default', label: '', columns: 2, fields:fields.map(field=>({...field,optionLabels:undefined as Record<string,string>|undefined})) }]
-  return <div className="space-y-5">{groups.map(group => <section key={group.id} aria-label={group.label || undefined} className="space-y-3">
-    {group.label ? <h3 className="font-semibold">{group.label}</h3> : null}
-    <div className={viewGrid(view,group.columns)}>{group.fields.map(field => {
-    const id = `${prefix}-${field.key}`
-    const set = (value: string) => onChange({ ...values, [field.key]: value })
-    return <div key={field.key} className="space-y-1">
-      <Label htmlFor={id}>{field.label}{field.required ? ' (required)' : ''}</Label>
-      {readOnly ? <Input id={id} readOnly value={field.optionLabels?.[values[field.key]??'']??values[field.key] ?? 'No value'} />
-        : field.type === 'choice' || field.type === 'boolean' ? <select id={id} className="h-10 w-full rounded border bg-surface px-3" value={values[field.key] ?? ''} disabled={disabled} required={field.required} onChange={event => set(event.target.value)}>
-          <option value="">Choose a value</option>{field.type === 'boolean' ? <><option value="true">Yes</option><option value="false">No</option></> : field.options?.map(option => <option key={option} value={option}>{field.optionLabels?.[option]??option}</option>)}
-        </select> : <Input id={id} value={values[field.key] ?? ''} onChange={event => set(event.target.value)} disabled={disabled} required={field.required}
-          type={field.type === 'date' ? 'date' : field.type === 'number' || field.type === 'integer' ? 'number' : 'text'}
-          step={field.type === 'integer' ? 1 : 'any'} min={field.minimum ?? undefined} max={field.maximum ?? undefined} maxLength={field.type === 'text' ? field.maxLength ?? 2000 : undefined} />}
-    </div>
-  })}</div></section>)}</div>
+/** Typed text to the renderer's values: yes-or-no as a checkbox; an unset one stays unset, so read-only shows "No value". */
+function rawValues(fields: DataField[], inputs: DataInputs): RawValues {
+  const raw: RawValues = {}
+  for (const field of fields) {
+    const value = inputs[field.key]
+    if (value === undefined) continue
+    raw[field.key] = field.type === 'boolean' ? (value === '' ? '' : value === 'true') : value
+  }
+  return raw
 }
 
+/** Case data in the request form renderer (docs/build/S125); a pinned case view supplies labels and sections. */
+export function CaseDataFields({ fields, values, onChange, disabled = false, readOnly = false, view, errors }: { view?: ViewDefinition; fields: DataField[]; values: DataInputs; onChange: (values: DataInputs) => void; disabled?: boolean; readOnly?: boolean; errors?: Record<string, string> }) {
+  const defs = useMemo(() => caseFieldDefs(fields, view), [fields, view])
+  return <FormRenderer view={view} fields={defs} values={rawValues(fields, values)} errors={errors ?? {}} idPrefix="case-data" disabled={disabled} readOnly={readOnly}
+    onChange={(key, value) => onChange({ ...values, [key]: typeof value === 'boolean' ? String(value) : typeof value === 'string' ? value : '' })} />
+}
+
+const KEY_RULE = 'Start with a lowercase letter; use letters and digits only.'
+
+/** Case data fields in the shared field editor (docs/build/S125): the same rows, types and checks as request questions. */
 export function CaseDataFieldsEditor({ fields, onChange, disabled }: { fields: DataField[]; onChange: (fields: DataField[]) => void; disabled: boolean }) {
-  const prefix = useId()
-  const update = (index: number, patch: Partial<DataField>) => onChange(fields.map((field, current) => current === index ? { ...field, ...patch } : field))
+  const models = useMemo(() => fields.map(fieldModel), [fields])
+  const update = (key: string, patch: Partial<FormFieldModel>) => onChange(fields.map(field => field.key === key ? caseField({ ...fieldModel(field), ...patch }) : field))
+  const move = (key: string, delta: -1 | 1) => {
+    const index = fields.findIndex(field => field.key === key), target = index + delta
+    if (index < 0 || target < 0 || target >= fields.length) return
+    const next = [...fields]
+    const [item] = next.splice(index, 1)
+    next.splice(target, 0, item!)
+    onChange(next)
+  }
+  const add = () => {
+    if (fields.length >= MAX_CASE_FIELDS) return undefined
+    let index = 1
+    while (fields.some(field => field.key === `field${index}`)) index++
+    const key = `field${index}`
+    onChange([...fields, { key, label: 'New field', type: 'text', required: false }])
+    return key
+  }
+  const rename = (key: string, next: string) => {
+    if (!CASE_KEY_PATTERN.test(next)) return KEY_RULE
+    if (fields.some(field => field.key === next)) return `A field with the key "${next}" already exists.`
+    onChange(fields.map(field => field.key === key ? { ...field, key: next } : field))
+    return undefined
+  }
   return <fieldset disabled={disabled} className="space-y-3">
     <legend className="font-medium">Case data fields</legend>
-    <p className="text-sm text-muted-foreground">Define the information collected when a case starts. These fields are pinned to this definition version.</p>
-    {fields.map((field, index) => <div key={index} className="space-y-2 rounded border p-3">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div><Label htmlFor={`${prefix}-key-${index}`}>Field {index + 1} key</Label><Input id={`${prefix}-key-${index}`} required pattern="[A-Za-z][A-Za-z0-9_]{0,63}" value={field.key} onChange={event => update(index, { key: event.target.value })} /></div>
-        <div><Label htmlFor={`${prefix}-label-${index}`}>Field {index + 1} label</Label><Input id={`${prefix}-label-${index}`} required maxLength={120} value={field.label} onChange={event => update(index, { label: event.target.value })} /></div>
-        <div><Label htmlFor={`${prefix}-type-${index}`}>Field {index + 1} type</Label><select id={`${prefix}-type-${index}`} className="h-10 w-full rounded border bg-surface px-3" value={field.type} onChange={event => update(index, { type: event.target.value as DataField['type'], options: undefined, minimum: undefined, maximum: undefined, maxLength: undefined })}>
-          <option value="text">Text</option><option value="number">Number</option><option value="integer">Whole number</option><option value="boolean">Yes or no</option><option value="date">Date</option><option value="choice">Choice</option>
-        </select></div>
-        <label className="flex items-center gap-2"><input type="checkbox" checked={field.required ?? false} onChange={event => update(index, { required: event.target.checked })} />Required field {index + 1}</label>
-      </div>
-      {field.type === 'choice' ? <div><Label htmlFor={`${prefix}-options-${index}`}>Choices, one per line</Label><Textarea id={`${prefix}-options-${index}`} required value={field.options?.join('\n') ?? ''} onChange={event => update(index, { options: event.target.value.split('\n') })} /></div> : null}
-      <Button type="button" variant="secondary" onClick={() => onChange(fields.filter((_, current) => current !== index))}>Remove field {index + 1}</Button>
-    </div>)}
-    <Button type="button" variant="secondary" disabled={fields.length >= 30} onClick={() => { let index = 1; while (fields.some(field => field.key === `field${index}`)) index++; onChange([...fields, { key: `field${index}`, label: 'New field', type: 'text', required: false }]) }}>Add case data field</Button>
+    <p className="text-sm text-muted-foreground">Define the information collected when a case starts. These fields are pinned to this definition version. They are defined like request questions: the same types, help text, lengths, answer patterns and date limits.</p>
+    <FieldListEditor
+      fields={models}
+      readOnly={false}
+      kinds={CASE_FIELD_KINDS}
+      idPrefix="case-"
+      noun={{ one: 'field', title: 'Field' }}
+      listLabel="Case data fields"
+      emptyText="No case data fields yet."
+      addLabel="Add case data field"
+      max={MAX_CASE_FIELDS}
+      keyDescription={`Used by case views, task mappings and entry rules. ${KEY_RULE}`}
+      keyWarning={legacyKeyWarning}
+      onUpdate={update}
+      onMove={move}
+      onDelete={key => onChange(fields.filter(field => field.key !== key))}
+      onAdd={add}
+      onRename={rename}
+    />
   </fieldset>
 }

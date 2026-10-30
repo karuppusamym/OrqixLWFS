@@ -4,6 +4,7 @@ import { MOCK } from '../support/env'
 import { apiGet, ensureTemplatePublished, workspaceId } from '../support/app'
 import { apiSend, uniq } from '../support/api'
 import { expectNoSeriousViolations } from '../support/axe'
+import { checkAndPublish, newCaseType } from '../support/caseDesigner'
 
 const fixture = (name: string) => readFile(new URL(`../../../backend/app/src/test/resources/cases/${name}.cmmn`, import.meta.url), 'utf8')
 const key = (prefix: string) => uniq(prefix).toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 40)
@@ -13,10 +14,7 @@ test('canvas authoring with a discretionary item that a manager plans into a run
   test.setTimeout(240_000)
   let page = await sessions.as('dana.designer')
   const ws = await workspaceId(page), caseKey = key('planned')
-  await page.goto(`/w/${ws}/cases`)
-  await page.getByLabel('Key', { exact: true }).fill(caseKey)
-  await page.getByLabel('Name', { exact: true }).fill(caseKey)
-  await page.getByRole('button', { name: 'Build a case model', exact: true }).click()
+  await newCaseType(page, ws, caseKey)
   await expect(page.getByTestId('case-canvas')).toBeVisible()
   await expect(page.getByTestId('canvas-task1')).toBeVisible()
   await page.getByRole('button', { name: 'Add human task', exact: true }).click()
@@ -31,8 +29,7 @@ test('canvas authoring with a discretionary item that a manager plans into a run
   await page.getByRole('group', { name: /Who may plan/ }).getByLabel('Managers').check()
   await page.getByRole('button', { name: 'Use generated CMMN', exact: true }).click()
   await expect(page.getByLabel('Generated CMMN preview')).toHaveValue(/<planningTable/)
-  await page.getByRole('button', { name: 'Create definition', exact: true }).click()
-  await expect(page.getByRole('cell', { name: caseKey, exact: true }).first()).toBeVisible()
+  await checkAndPublish(page)
 
   page = await sessions.as('rhea.requester')
   await page.goto(`/w/${ws}/cases`)

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { downloadBlob } from '@/lib/download'
 import { useGroups, useStartForm, useWorkflows } from '@/api/queries'
 import { Button } from '@/components/ui/button'
@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Alert } from '@/components/ui/alert'
 import { CONDITION_OPERATORS, KIND_LABEL, WORKFLOW_RESULT_SOURCES, caseItems, caseModelCaseTasks, caseModelDecisionTasks, caseModelWorkflowTasks, caseModelXml, durationMinutes, entrySources, isListener, occurs, type CaseConditionClause, type CaseFileEvent, type CaseItemKind, type CaseModelItem, type CaseModelOptions, type ConditionOperator } from './caseModel'
 import { getSharedAsset, listSharedAssets } from '@/api/endpoints'
+import { decisionContentOf } from '@/api/types'
 import { listCaseDefinitions } from './api'
 import { findItem, fitStages, parentOf, placement } from './caseCanvasOps'
 import { importCaseModel, type ImportDiagnostic } from './cmmnImport'
@@ -38,7 +39,7 @@ function DecisionMapping({ ws, item, dataFields, onPatch }: { ws: string; item: 
   const assets = useQuery({ queryKey: ['ws', ws, 'shared-decisions'], queryFn: () => listSharedAssets(ws, { kind: 'decision' }) })
   const ref = item.decision ?? { key: '', input: {}, result: {} }
   const detail = useQuery({ queryKey: ['ws', ws, 'shared-decision', ref.key], queryFn: () => getSharedAsset(ws, 'decision', ref.key), enabled: !!ref.key })
-  const latest = detail.data?.versions.find(version => version.version === detail.data?.asset.latestVersion)?.content
+  const latest = decisionContentOf(detail.data?.versions.find(version => version.version === detail.data?.asset.latestVersion)?.content)
   const fieldRefs = new Set<string>(); collectFieldRefs(latest?.rows ?? [], fieldRefs)
   const outputs = new Set<string>([...(latest?.rows ?? []).flatMap(row => Object.keys((row as { then?: Record<string, unknown> }).then ?? {})), ...Object.keys(latest?.default ?? {})])
   const set = (part: 'input' | 'result', key: string, value: string) => {
@@ -256,18 +257,32 @@ export interface CaseModelDesignerProps {
   onApply: (xml: string | null, workflowTasks?: WorkflowTaskMapping[], caseTasks?: CaseTaskMapping[], decisionTasks?: DecisionTaskMapping[]) => void
   /** Called after a file import with the case key and name it contained. */
   onImported?: (key: string, name: string) => void
+  /** S126: the model to open with (a saved draft), instead of the single starter task. Read once, on mount. */
+  initialModel?: { items: CaseModelItem[]; options?: CaseModelOptions }
+  /** S126: the current model after every change (and once on mount), so a page can save it as a draft. */
+  onModelChange?: (model: CaseDesignerModel) => void
 }
 
-export function CaseModelDesigner({ ws, caseKey, name, onApply, disabled, dataFields = [], onImported }: CaseModelDesignerProps) {
+/** The designer's state as a draft keeps it; `diagram` is whether generated CMMN carries diagram interchange. */
+export interface CaseDesignerModel { items: CaseModelItem[]; options: CaseModelOptions; diagram: boolean }
+
+const STARTER_ITEMS: CaseModelItem[] = [{ id: 'task1', kind: 'humanTask', label: 'Review evidence', required: true, manual: true, group: '' }]
+
+export function CaseModelDesigner({ ws, caseKey, name, onApply, disabled, dataFields = [], onImported, initialModel, onModelChange }: CaseModelDesignerProps) {
   const groups = useGroups(ws)
   const groupList: Group[] = groups.data?.items ?? []
-  const [items, setItems] = useState<CaseModelItem[]>([{ id: 'task1', kind: 'humanTask', label: 'Review evidence', required: true, manual: true, group: '' }])
+  const [items, setItems] = useState<CaseModelItem[]>(() => structuredClone(initialModel?.items.length ? initialModel.items : STARTER_ITEMS))
   const [history, setHistory] = useState<CaseModelItem[][]>([]), [error, setError] = useState<string>(), [xml, setXml] = useState('')
   const [view, setView] = useState<'canvas' | 'form'>('canvas')
   const [selected, setSelected] = useState<string | null>(null)
-  const [options, setOptions] = useState<CaseModelOptions>({})
+  const [options, setOptions] = useState<CaseModelOptions>(() => structuredClone(initialModel?.options ?? {}))
   const [diagnostics, setDiagnostics] = useState<ImportDiagnostic[] | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
+  const reportModel = useRef(onModelChange)
+  useEffect(() => { reportModel.current = onModelChange })
+  useEffect(() => {
+    reportModel.current?.({ items, options, diagram: view === 'canvas' || !!options.diagram || caseItems(items).some(item => item.layout) })
+  }, [items, options, view])
   const edit = (change: Change) => { setHistory(previous => [...previous.slice(-49), items]); setItems(change(structuredClone(items))); setXml(''); setError(undefined); onApply(null) }
   const nextId = () => { let index = 1; const used = new Set(caseItems(items).map(item => item.id)); while (used.has(`item${index}`)) index++; return `item${index}` }
   const replace = (id: string, patch: Partial<CaseModelItem>) => edit(nodes => patchItem(nodes, id, patch))

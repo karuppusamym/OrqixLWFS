@@ -27,9 +27,10 @@ import { usePersistedFlag } from '@/lib/usePersistedFlag'
 import { StudioHint } from './StudioHint'
 import { StepsView } from './StepsView'
 import { StudioHeader } from './StudioHeader'
-import { AddStepDialog, BranchRouteDialog, ConflictDialog, DeleteNodeDialog, PreviewFormDialog } from './StudioDialogs'
+import { AddStepDialog, BranchRouteDialog, ConflictDialog, DeleteNodeDialog } from './StudioDialogs'
+import { FormView } from './FormView'
 import { StudioProvider, useStudio, useStudioContext } from './StudioContext'
-import { locateIssue } from './model/issues'
+import { formFocusKey, locateIssue } from './model/issues'
 import { planNodeDeletion } from './model/ops'
 import { normalizeDefinition } from './model/types'
 import { useConnectionLookup } from './useConnectionLookup'
@@ -40,7 +41,7 @@ import { TestPanel } from './test/TestPanel'
 import { AiReviewPanel } from '@/features/ai/AiReviewPanel'
 import type { FocusStep } from '@/features/ai/AuthoringPanel'
 
-type StudioTab = 'canvas' | 'steps' | 'lanes' | 'source' | 'test'
+type StudioTab = 'canvas' | 'steps' | 'form' | 'lanes' | 'source' | 'test'
 
 /** Studio route: loads the draft once, then hands it to the editor (docs/build/S7-frontend.md section 5). */
 export function StudioPage() {
@@ -130,8 +131,12 @@ function Studio({ workflowId, initial }: { workflowId: string; initial: DraftDat
 function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { groupNames: Record<string, string>; canEdit: boolean; desktop: boolean; onNavigate: (to: string) => void; announce: (m: string) => void }) {
   const { workspace, can } = useWorkspace()
   const ws = workspace.id
-  const { store, saver, wsId, workflowId, readOnly } = useStudioContext()
+  const studio = useStudioContext()
+  const { store, saver, wsId, workflowId, readOnly } = studio
   const [tab, setTab] = useState<StudioTab>('canvas')
+  // The question the Form tab should open, from a check issue or a focus request (S120).
+  const [formOpen, setFormOpen] = useState<{ key: string; n: number } | null>(null)
+  const shellContext = useMemo(() => ({ ...studio, openForm: () => setTab('form') }), [studio])
   const [cards, setCards] = useState<Record<SideCard, boolean>>({ details: true, discussion: false })
   const openCard = useCallback((card: SideCard, next = true) => setCards((c) => ({ ...c, [card]: next })), [])
   const [aiOpen, setAiOpen] = usePersistedFlag(AI_DOCK_KEY, true)
@@ -143,7 +148,6 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
   const [checkOpen, setCheckOpen] = useState(false)
   const [checking, setChecking] = useState(false)
   const [checkError, setCheckError] = useState<unknown>(null)
-  const [previewOpen, setPreviewOpen] = useState(false)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [addAfter, setAddAfter] = useState<string | null>(null)
   const [branchRequest, setBranchRequest] = useState<{ from: string; to: string | null } | null>(null)
@@ -154,6 +158,27 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
   // Focus the inspector field named by an issue path (Go to step) or a freshly added step.
   useEffect(() => {
     if (!focusRequest) return
+    // Request-form problems open the Form tab and the question concerned instead of the start step's inspector.
+    const questionKey = formFocusKey(store.getState().definition, focusRequest.nodeId, focusRequest.fieldKey)
+    if (questionKey !== undefined) {
+      let focusTimer = 0
+      const formTimer = window.setTimeout(() => {
+        setTab('form')
+        if (questionKey) setFormOpen({ key: questionKey, n: focusRequest.n })
+        focusTimer = window.setTimeout(() => {
+          const root = document.querySelector<HTMLElement>('[data-testid="form-view"]')
+          const target = root?.querySelector<HTMLElement>(questionKey ? `[data-field="field.${questionKey}"]` : 'h2')
+          if (!target) return
+          if (!questionKey) target.setAttribute('tabindex', '-1')
+          target.focus()
+          target.scrollIntoView({ block: 'center' })
+        }, 120)
+      }, 0)
+      return () => {
+        window.clearTimeout(formTimer)
+        window.clearTimeout(focusTimer)
+      }
+    }
     const timer = window.setTimeout(() => {
       setSideOpen(true)
       openCard('details')
@@ -171,7 +196,7 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
       target.scrollIntoView({ block: 'center' })
     }, 60)
     return () => window.clearTimeout(timer)
-  }, [focusRequest, openCard, setSideOpen])
+  }, [focusRequest, openCard, setSideOpen, store])
 
   const requestDelete = useCallback(() => {
     const state = store.getState()
@@ -249,12 +274,13 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
   const testPanel = testMounted ? <TestPanel groupNames={groupNames} active={onTestTab} onCheck={() => void runCheck()} onGoToStep={goToStep} /> : null
 
   return (
+    <StudioProvider value={shellContext}>
     <div className="flex h-full min-h-0 flex-col" data-testid="studio">
       <StudioHeader
         workspaceName={workspace.name}
         workflowsHref={`/w/${ws}/workflows`}
         overviewHref={`/w/${ws}/workflows/${workflowId}`}
-        onPreview={() => setPreviewOpen(true)}
+        onPreview={() => setTab('form')}
         onCheck={() => void runCheck()}
         checking={checking}
         canPublish={can('workflow.publish')}
@@ -284,6 +310,7 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
           <TabsList aria-label="Studio views">
             {showCanvas ? <TabsTrigger value="canvas">Canvas</TabsTrigger> : null}
             <TabsTrigger value="steps">Steps</TabsTrigger>
+            <TabsTrigger value="form" data-testid="form-tab">Form</TabsTrigger>
             {showCanvas ? <TabsTrigger value="lanes">Lanes</TabsTrigger> : null}
             {showCanvas ? <TabsTrigger value="source">Source</TabsTrigger> : null}
             <TabsTrigger value="test" data-testid="test-tab">
@@ -313,6 +340,9 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
                 requestDelete()
               }} onAddPath={(from) => setBranchRequest({ from, to: null })} />
             </TabsContent>
+            <TabsContent value="form" className="m-0 h-full bg-surface">
+              <FormView open={formOpen} />
+            </TabsContent>
             <TabsContent value="lanes" className="m-0 h-full overflow-y-auto">
               <LanesView groupNames={groupNames} />
             </TabsContent>
@@ -333,7 +363,7 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
           </div>
           {!readOnly && aiOpen ? <AskDock focus={aiFocus} onFocusChange={setAiFocus} onHide={() => setAiOpen(false)} /> : null}
           </div>
-          {desktop && !onTestTab && sideOpen ? (
+          {desktop && !onTestTab && currentTab !== 'form' && sideOpen ? (
             <SidePanel
               open={cards}
               onOpenChange={openCard}
@@ -353,9 +383,9 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
       <DeleteNodeDialog nodeId={deleteId} onClose={() => setDeleteId(null)} />
       <AddStepDialog key={`add-${addAfter ?? 'none'}`} afterId={addAfter} onClose={() => setAddAfter(null)} />
       <BranchRouteDialog key={branchRequest ? `route-${branchRequest.from}-${branchRequest.to}` : 'route-none'} request={branchRequest} onClose={() => setBranchRequest(null)} />
-      <PreviewFormDialog open={previewOpen} onClose={() => setPreviewOpen(false)} />
       <ConflictDialog />
     </div>
+    </StudioProvider>
   )
 }
 

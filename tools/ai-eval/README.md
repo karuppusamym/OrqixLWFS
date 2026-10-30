@@ -7,6 +7,8 @@ and are never part of CI. Results go to `evidence/ai-eval/<timestamp>/`.
 |---|---|
 | `draft_eval.py` | Draft-quality eval: runs every case in `cases.json` through the product's own conversation and grades it |
 | `cases.json` | Eight descriptions with deterministic expectations |
+| `edit_eval.py` | Conversational edit eval (S124): one turn per case in `edit-cases.json` through the product's draft-edit-v2 prompt and `DraftEdits` rules (bridge ops `editMessages`, `editEvaluate`) |
+| `edit-cases.json` | Eight edit instructions on the purchase example: clarifying questions, "just draft it", step form, field rule, form groups, decision, call to a system, not an edit |
 | `workspace.json` | The workspace the drafts are generated for (groups, the procurement connection) |
 | `capture.mjs` | Screenshots of key screens from the frontend in **mock mode** (Playwright from `tests/e2e`) |
 | `design_judge.py` | Scores the screenshots with a low-cost vision model against a rubric from docs/02-ux-design.md and docs/build/S7-frontend.md |

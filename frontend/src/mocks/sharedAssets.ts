@@ -1,6 +1,7 @@
 import { delay, http, HttpResponse, type HttpHandler } from 'msw'
-import type { DecisionAssetContent, Permission, SharedAsset, SharedAssetKind, SharedAssetSummary } from '@/api/types'
+import type { DecisionAssetContent, FormAssetContent, Permission, SharedAsset, SharedAssetKind, SharedAssetSummary } from '@/api/types'
 import { canonical } from '@/lib/canonicalJson'
+import { copyMatches, type FormLink } from '@/features/studio/model/sharedForms'
 import type { Definition } from '@/features/studio/model/types'
 import { exportDmn, readDmn } from './decisionDmn'
 import { documentTemplatesOf } from './documentLibrary'
@@ -9,7 +10,8 @@ import { USERS, WORKSPACES, agentConnectionDefinition, clock, connectionDefiniti
 
 /**
  * Shared assets in mock mode (PL01, docs/build/S61): a simplified double of the server. Decisions live here, document
- * templates come from the document library mock, connections are the two seeded definitions (version 1). Rules kept:
+ * templates come from the document library mock, connections are the two seeded definitions (version 1), shared forms
+ * (docs/build/S128) live here too and start empty. Rules kept:
  * per-kind read/manage permissions, revision compare-and-set, owner eligibility, archive, where-used and the reference
  * findings added to validation. Hashes are compared as key-sorted JSON, not SHA-256.
  */
@@ -17,10 +19,32 @@ import { USERS, WORKSPACES, agentConnectionDefinition, clock, connectionDefiniti
 const B = '/api/v1'
 type Decision = { wsId: string; id: string; key: string; name: string; description: string | null; ownerId: string; revision: number; archived: boolean; updatedAt: string; versions: Array<{ version: number; content: DecisionAssetContent; changeNote: string | null; createdById: string; createdAt: string }> }
 const decisions = new Map<string, Decision>()
+type SharedForm = Omit<Decision, 'versions'> & { versions: Array<{ version: number; content: FormAssetContent; changeNote: string | null; createdById: string; createdAt: string }> }
+const forms = new Map<string, SharedForm>()
 const connectionHeaders = new Map<string, { ownerId: string; revision: number; archived: boolean; updatedAt: string }>()
+
+/** Mock persistence across page loads (mock mode keeps its state in browser storage between navigations). */
+export function snapshotSharedAssets(): string {
+  return JSON.stringify({ decisions: [...decisions.entries()], forms: [...forms.entries()], connectionHeaders: [...connectionHeaders.entries()] })
+}
+
+export function restoreSharedAssets(raw: string | null): boolean {
+  if (!raw) return false
+  try {
+    const saved = JSON.parse(raw) as { decisions?: Array<[string, Decision]>; forms?: Array<[string, SharedForm]>; connectionHeaders?: Array<[string, { ownerId: string; revision: number; archived: boolean; updatedAt: string }]> }
+    resetSharedAssets()
+    for (const [k, v] of saved.decisions ?? []) decisions.set(k, v)
+    for (const [k, v] of saved.forms ?? []) forms.set(k, v)
+    for (const [k, v] of saved.connectionHeaders ?? []) connectionHeaders.set(k, v)
+    return true
+  } catch {
+    return false
+  }
+}
 
 export function resetSharedAssets(): void {
   decisions.clear()
+  forms.clear()
   connectionHeaders.clear()
 }
 
@@ -38,6 +62,29 @@ function seed(): void {
 
 const CONNECTION_DOCS = [connectionDefinition, agentConnectionDefinition] as unknown as Array<{ key: string; name: string; description?: string }>
 
+/**
+ * The server checks a shared form with the publishing compiler; the mock checks the shape and that every rule and group
+ * names a question of the form, which covers the cases the Studio can produce.
+ */
+function formProblem(content: FormAssetContent | undefined): string | null {
+  const questions = Object.keys(content?.inputSchema?.properties ?? {})
+  if (questions.length === 0 || questions.length > 30) return 'inputSchema.properties must hold 1 to 30 questions.'
+  const ui = content?.inputUi ?? {}
+  const extra = Object.keys(ui).filter((k) => !['order', 'widgets', 'visibleWhen', 'requiredWhen', 'layout'].includes(k))
+  if (extra.length > 0) return `inputUi.${extra[0]} belongs to the workflow, not to a shared form.`
+  for (const rule of ['visibleWhen', 'requiredWhen'] as const) {
+    for (const [key, condition] of Object.entries(ui[rule] ?? {})) {
+      if (!questions.includes(key)) return 'Conditional question does not exist in the request form.'
+      const refs = JSON.stringify(condition).match(/"\/input\/([A-Za-z0-9]+)"/g) ?? []
+      if (refs.some((r) => !questions.includes(r.slice(8, -1)))) return 'A rule names a question that is not in this form.'
+    }
+  }
+  for (const section of ui.layout?.sections ?? []) if (section.fields.some((k) => !questions.includes(k))) return 'Section question does not exist in the request form.'
+  return null
+}
+
+const problemResponse = (status: number, code: string, title: string, extra: Record<string, unknown> = {}) => problem(status, code, title, extra)
+
 function problem(status: number, code: string, title: string, extra: Record<string, unknown> = {}): Response {
   return HttpResponse.json({ type: `https://orqix.example/problems/${code.toLowerCase().replace(/_/g, '-')}`, title, status, code, correlationId: newId(), ...extra }, { status, headers: { 'Content-Type': 'application/problem+json' } })
 }
@@ -49,7 +96,7 @@ const invalid = (detail: string) => problem(422, 'VALIDATION_FAILED', 'Some valu
 const readPermission = (kind: SharedAssetKind): Permission => (kind === 'connection' ? 'connection.read' : 'workflow.read')
 const managePermission = (kind: SharedAssetKind): Permission => (kind === 'connection' ? 'connection.manage' : 'workflow.edit')
 const ref = (id: string) => ({ id, displayName: userById(id)?.displayName ?? 'Unknown person' })
-const KINDS: SharedAssetKind[] = ['decision', 'documentTemplate', 'connection']
+const KINDS: SharedAssetKind[] = ['decision', 'documentTemplate', 'connection', 'form']
 
 interface Row { summary: SharedAssetSummary; versions: SharedAsset['versions'] }
 
@@ -61,6 +108,13 @@ function rows(wsId: string): Row[] {
     out.push({
       summary: { kind: 'decision', key: d.key, name: d.name, description: d.description, owner: ref(d.ownerId), latestVersion: d.versions.length, archived: d.archived, revision: d.revision, updatedAt: d.updatedAt, id: d.id },
       versions: [...d.versions].reverse().map((v) => ({ version: v.version, sha256: 'd'.repeat(64), changeNote: v.changeNote, createdBy: ref(v.createdById), createdAt: v.createdAt, content: v.content })),
+    })
+  }
+  for (const f of forms.values()) {
+    if (f.wsId !== wsId) continue
+    out.push({
+      summary: { kind: 'form', key: f.key, name: f.name, description: f.description, owner: ref(f.ownerId), latestVersion: f.versions.length, archived: f.archived, revision: f.revision, updatedAt: f.updatedAt, id: f.id },
+      versions: [...f.versions].reverse().map((v) => ({ version: v.version, sha256: 'f'.repeat(64), changeNote: v.changeNote, createdBy: ref(v.createdById), createdAt: v.createdAt, content: v.content })),
     })
   }
   for (const t of documentTemplatesOf(wsId)) {
@@ -85,9 +139,27 @@ function rows(wsId: string): Row[] {
 export function assetIssues(wsId: string, def: Definition): Array<{ code: string; severity: 'blocker' | 'warning'; message: string; path: string; nodeId: string | null; transitionId: null }> {
   const issues: ReturnType<typeof assetIssues> = []
   const all = rows(wsId)
+  const claimed = new Set<string>()
   ;(def.dependencies.assets ?? []).forEach((a, i) => {
     const path = `/dependencies/assets/${i}`
     const issue = (code: string, severity: 'blocker' | 'warning', message: string, nodeId: string | null = null) => issues.push({ code, severity, message, path, nodeId, transitionId: null })
+    if (a.kind === 'form') {
+      if (claimed.has(`form|${a.key}`)) return issue('WF_ASSET_REFERENCE_INVALID', 'blocker', `The shared form "${a.key}" is linked more than once. Keep one link.`)
+      claimed.add(`form|${a.key}`)
+      if (a.target !== 'request') return issue('WF_ASSET_REFERENCE_INVALID', 'blocker', `The link to the shared form "${a.key}" names "${a.target}"; a shared form is copied into the request form (target request).`)
+      if (!a.fields || Object.keys(a.fields).length === 0) return issue('WF_ASSET_REFERENCE_INVALID', 'blocker', `The link to the shared form "${a.key}" lists no copied questions.`)
+      for (const local of Object.values(a.fields)) {
+        if (claimed.has(`q|${local}`)) return issue('WF_ASSET_REFERENCE_INVALID', 'blocker', `The request question "${local}" is claimed by more than one shared form link or twice by one link.`)
+        claimed.add(`q|${local}`)
+      }
+      const form = forms.get(`${wsId}:${a.key}`)
+      const version = form?.versions.find((v) => v.version === a.version)
+      if (!form || !version) return issue('WF_ASSET_MISSING', 'blocker', `The shared form "${a.key}" version ${a.version} does not exist in this workspace.`)
+      if (form.archived) issue('WF_ASSET_ARCHIVED', 'blocker', `The shared form "${a.key}" is archived.`)
+      if (!copyMatches(def, a as FormLink, version.content)) issue('WF_ASSET_DIVERGED', 'blocker', `The request questions copied from the shared form "${a.key}" no longer match version ${a.version}.`)
+      if (a.version < form.versions.length) issue('WF_ASSET_STALE', 'warning', `The request form uses version ${a.version} of the shared form "${a.key}"; version ${form.versions.length} is available. Publishing keeps version ${a.version}.`)
+      return
+    }
     const row = all.find((r) => r.summary.kind === a.kind && r.summary.key === a.key)
     const table = a.kind === 'decision' ? def.decisions.find((d) => d.key === a.target) : undefined
     const node = a.kind === 'documentTemplate' ? def.nodes.find((n) => n.id === a.target && n.type === 'generateDocument') : undefined
@@ -215,6 +287,43 @@ export function createSharedAssetHandlers(): HttpHandler[] {
       const row = find(wsId, 'decision', d.key)!
       return HttpResponse.json({ asset: row.summary, versions: row.versions }, { status: 201 })
     }),
+    http.post(`${B}/workspaces/:ws/shared-assets/form`, async ({ params, request }) => {
+      await slow()
+      const wsId = String(params.ws)
+      const user = member(wsId)
+      if (!user) return notFound()
+      if (!permissionsOf(user, wsId).includes('workflow.edit')) return forbidden()
+      const body = (await request.json()) as { key: string; name: string; description?: string | null; content: FormAssetContent; changeNote?: string | null }
+      if (!/^[a-z][a-z0-9-]{0,62}[a-z0-9]$/.test(body.key)) return invalid('Use lowercase letters, digits and dashes for the key.')
+      const problem = formProblem(body.content)
+      if (problem) return invalid(problem)
+      if ([...forms.values()].some((f) => f.wsId === wsId && (f.key === body.key || f.name.toLowerCase() === body.name.trim().toLowerCase()))) {
+        return problemResponse(409, 'DUPLICATE_KEY', 'The key is already in use', { detail: 'A shared form with this key or name already exists.' })
+      }
+      const now = clock.iso()
+      forms.set(`${wsId}:${body.key}`, { wsId, id: newId(), key: body.key, name: body.name.trim(), description: body.description ?? null, ownerId: user.id, revision: 1, archived: false, updatedAt: now, versions: [{ version: 1, content: structuredClone(body.content), changeNote: body.changeNote ?? null, createdById: user.id, createdAt: now }] })
+      const row = find(wsId, 'form', body.key)!
+      return HttpResponse.json({ asset: row.summary, versions: row.versions }, { status: 201 })
+    }),
+    http.post(`${B}/workspaces/:ws/shared-assets/form/:key/versions`, async ({ params, request }) => {
+      await slow()
+      const wsId = String(params.ws)
+      const user = member(wsId)
+      if (!user) return notFound()
+      if (!permissionsOf(user, wsId).includes('workflow.edit')) return forbidden()
+      const f = forms.get(`${wsId}:${String(params.key)}`)
+      if (!f) return notFound()
+      const body = (await request.json()) as { expectedVersion: number; content: FormAssetContent; changeNote?: string | null }
+      if (body.expectedVersion !== f.versions.length) return problemResponse(409, 'WORKFLOW_VERSION_CONFLICT', 'The workflow changed since you loaded it', { detail: 'The shared form changed. Reload before saving.', currentVersion: f.versions.length })
+      if (f.archived) return invalid('Restore the shared form before adding a version.')
+      const problem = formProblem(body.content)
+      if (problem) return invalid(problem)
+      if (canonical(f.versions.at(-1)!.content) === canonical(body.content)) return invalid('The new version is identical to the latest version.')
+      f.updatedAt = clock.iso()
+      f.versions.push({ version: f.versions.length + 1, content: structuredClone(body.content), changeNote: body.changeNote ?? null, createdById: user.id, createdAt: f.updatedAt })
+      const row = find(wsId, 'form', f.key)!
+      return HttpResponse.json({ asset: row.summary, versions: row.versions }, { status: 201 })
+    }),
     http.get(`${B}/workspaces/:ws/shared-assets/:kind/:key`, async ({ params }) => {
       await slow()
       const wsId = String(params.ws)
@@ -274,8 +383,8 @@ export function createSharedAssetHandlers(): HttpHandler[] {
         if (!next || !permissionsOf(next, wsId).includes(managePermission(kind))) return invalid('The new owner must be a person who can manage this kind of asset in this workspace.')
       }
       const now = clock.iso()
-      if (kind === 'decision') {
-        const d = decisions.get(`${wsId}:${key}`)!
+      if (kind === 'decision' || kind === 'form') {
+        const d = (kind === 'decision' ? decisions.get(`${wsId}:${key}`) : forms.get(`${wsId}:${key}`))!
         if (field === 'owner') d.ownerId = body.ownerSubjectId!
         else d.archived = !!body.archived
         d.revision += 1

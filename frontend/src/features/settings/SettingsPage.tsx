@@ -1,4 +1,4 @@
-import { ClipboardCheck, Plug, ShieldCheck, Sparkles, Users } from 'lucide-react'
+import { ClipboardCheck, Plug, ShieldCheck, Sparkles, ToggleRight, Users } from 'lucide-react'
 import { useWorkspace } from '@/app/workspace'
 import { PageHeader } from '@/components/common/PageHeader'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -12,6 +12,7 @@ import { ConnectionsPanel } from './ConnectionsPanel'
 import { MigrationPolicyPanel } from './MigrationPolicyPanel'
 import { WebhooksPanel } from './WebhooksPanel'
 import { KafkaTriggersPanel } from './KafkaTriggersPanel'
+import { FeaturesPanel } from './FeaturesPanel'
 import { EmptyState } from '@/components/common/EmptyState'
 import { AiSettingsPanel, useShowAiSettings } from '@/features/ai/AiSettingsPanel'
 
@@ -51,6 +52,11 @@ export function SettingsPage() {
             </TabsTrigger>
           ) : null}
           {showAccess ? (
+            <TabsTrigger value="features">
+              <ToggleRight className="size-4" aria-hidden="true" /> Features
+            </TabsTrigger>
+          ) : null}
+          {showAccess ? (
             <TabsTrigger value="migration">
               <ClipboardCheck className="size-4" aria-hidden="true" /> Migration review
             </TabsTrigger>
@@ -81,6 +87,11 @@ export function SettingsPage() {
         {showAccess ? (
           <TabsContent value="access">
             <AccessPanel />
+          </TabsContent>
+        ) : null}
+        {showAccess ? (
+          <TabsContent value="features">
+            <FeaturesPanel />
           </TabsContent>
         ) : null}
         {showAccess ? (

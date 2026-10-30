@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import com.orqix.ai.internal.DraftEdits;
 import com.orqix.ai.internal.DraftRules;
 import com.orqix.ai.internal.PromptLibrary;
 import com.orqix.compiler.CompileContext;
@@ -65,6 +66,7 @@ public final class AiEvalCli {
         Json json = new Json(mapper);
         PromptLibrary prompts = new PromptLibrary(json);
         DraftRules rules = new DraftRules(json, Compilers.workflowCompiler());
+        DraftEdits edits = new DraftEdits(json, Compilers.workflowCompiler());
         Map<String, DraftRules.Workspace> workspaces = new LinkedHashMap<>();
         PrintStream out = new PrintStream(System.out, true, StandardCharsets.UTF_8);
         BufferedReader in = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
@@ -108,6 +110,40 @@ public final class AiEvalCli {
                         response.put("user", prompts.explainUser(request.path("definition"), request.path("validation")));
                         response.set("responseSchema", prompts.explanationSchema());
                         response.put("promptVersion", PromptLibrary.EXPLAIN_VERSION);
+                    }
+                    case "editMessages" -> {
+                        // S124: the conversational edit prompt exactly as the product builds it.
+                        DraftRules.Workspace workspace = workspaces.computeIfAbsent(request.path("workspace").asString(),
+                                path -> load(json, Path.of(path)));
+                        List<PromptLibrary.Turn> history = new ArrayList<>();
+                        request.path("history").forEach(t -> history.add(new PromptLibrary.Turn(t.path("role").asString(),
+                                t.path("text").asString())));
+                        response.put("system", prompts.draftEditSystem());
+                        response.put("user", PromptLibrary.draftEditUser(edits.summary(request.path("definition"),
+                                workspace.groups(), workspace.connections()), history, request.path("instruction").asString(),
+                                request.path("mode").asString("edit"), request.path("questions").asBoolean(true)));
+                        response.set("responseSchema", prompts.draftEditSchema());
+                        response.put("promptVersion", PromptLibrary.DRAFT_EDIT_VERSION);
+                    }
+                    case "editEvaluate" -> {
+                        DraftRules.Workspace workspace = workspaces.computeIfAbsent(request.path("workspace").asString(),
+                                path -> load(json, Path.of(path)));
+                        JsonNode reply = json.parse(request.path("content").asString("{}"));
+                        DraftEdits.Result result = edits.evaluate(reply, request.path("definition"),
+                                "regenerate".equals(request.path("mode").asString()) ? DraftEdits.Mode.REGENERATE : DraftEdits.Mode.EDIT,
+                                workspace.compileContext(), workspace.connections());
+                        ArrayNode changes = response.putArray("changes");
+                        for (DraftEdits.Change change : result.changes()) {
+                            ObjectNode c = changes.addObject();
+                            c.put("summary", change.summary());
+                            ArrayNode ops = c.putArray("ops");
+                            change.operations().forEach(o -> ops.add(o.path("op").asString()));
+                        }
+                        ArrayNode rejected = response.putArray("rejected");
+                        result.rejected().forEach(r -> rejected.addObject().put("summary", r.summary())
+                                .put("reasons", String.join(" ", r.reasons())));
+                        response.set("questions", json.toTree(result.questions()));
+                        response.put("notAnEdit", result.notAnEdit());
                     }
                     default -> response.put("error", "unknown op " + op);
                 }

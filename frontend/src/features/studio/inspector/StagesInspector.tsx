@@ -23,9 +23,9 @@ export function StagesInspector() {
     ;[ordered[index], ordered[other]] = [ordered[other]!, ordered[index]!]
     return { ...current, stages: ordered }
   })
-  return <InspectorSection title="Case stages">
+  return <InspectorSection title="Progress stages">
     <p className="text-xs">Group steps to show request progress. An optional time limit marks a stage overdue and sends notices; it does not stop or reroute the workflow.</p>
-    {!stages.length ? <p className="text-sm">No case stages configured.</p> : null}
+    {!stages.length ? <p className="text-sm">No progress stages yet.</p> : null}
     {stages.map((stage, index) => {
       const minutes = stage.sla ? durationMinutes(stage.sla) : null
       const invalidSla = stage.sla && (minutes === null || minutes < 1 || minutes > 90 * 24 * 60)
@@ -55,6 +55,6 @@ export function StagesInspector() {
       let suffix = 1
       while (present.some((stage) => stage.id === `stage${suffix}`)) suffix++
       return { ...current, stages: [...present, { id: `stage${suffix}`, label: `Stage ${present.length + 1}`, nodes: [] }] }
-    })}><Plus /> Add a case stage</Button>
+    })}><Plus /> Add a progress stage</Button>
   </InspectorSection>
 }

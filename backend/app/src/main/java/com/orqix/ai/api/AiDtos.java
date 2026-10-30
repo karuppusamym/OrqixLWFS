@@ -177,7 +177,16 @@ public final class AiDtos {
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record DraftEditProposal(int revision, String mode, String message, List<DraftEditChange> changes,
             List<DraftEditRejected> rejected, List<String> notes, String notAnEdit, JsonNode definition,
-            Generation generation) {
+            Generation generation, @JsonInclude(JsonInclude.Include.NON_EMPTY) List<String> questions) {
+        public DraftEditProposal(int revision, String mode, String message, List<DraftEditChange> changes,
+                List<DraftEditRejected> rejected, List<String> notes, String notAnEdit, JsonNode definition,
+                Generation generation) {
+            this(revision, mode, message, changes, rejected, notes, notAnEdit, definition, generation, List.of());
+        }
+    }
+
+    /** The Ask AI conversation saved with a draft (S124); {@code version} 0 when nothing is saved. */
+    public record Conversation(JsonNode turns, @JsonInclude(JsonInclude.Include.ALWAYS) Instant updatedAt, int version) {
     }
 
     /** One earlier conversation turn sent with a draft-edit request. */
@@ -185,14 +194,24 @@ public final class AiDtos {
     }
 
     /** {@code proposeDraftEdits} request body (STU02). */
-    public record DraftEditRequest(String instruction, int revision, String mode, List<Turn> history, String profile) {
+    /** {@code noQuestions}: the author asked for a draft now, so the assistant must not ask clarifying questions (S124). */
+    public record DraftEditRequest(String instruction, int revision, String mode, List<Turn> history, String profile,
+            boolean noQuestions) {
 
         public static final int MAX_TURNS = 8;
         public static final int MAX_TEXT = 2000;
 
         public static DraftEditRequest parse(JsonNode body) {
             List<ApiException.FieldError> errors = new ArrayList<>();
-            JsonNode node = object(body, Set.of("instruction", "revision", "mode", "history", "profile"));
+            JsonNode node = object(body, Set.of("instruction", "revision", "mode", "history", "profile", "noQuestions"));
+            boolean noQuestions = false;
+            if (node.has("noQuestions")) {
+                if (!node.get("noQuestions").isBoolean()) {
+                    errors.add(new ApiException.FieldError("/noQuestions", "type", "Invalid value"));
+                } else {
+                    noQuestions = node.get("noQuestions").booleanValue();
+                }
+            }
             String instruction = string(node, "instruction", true, 2, MAX_TEXT, null, errors);
             if (instruction != null && instruction.isBlank()) {
                 errors.add(new ApiException.FieldError("/instruction", "minLength", "Invalid value"));
@@ -252,7 +271,7 @@ public final class AiDtos {
             }
             fail(errors);
             return new DraftEditRequest(instruction, revision, mode == null ? "edit" : mode, List.copyOf(history),
-                    profile);
+                    profile, noQuestions);
         }
     }
 

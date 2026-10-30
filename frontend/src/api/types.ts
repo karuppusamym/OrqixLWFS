@@ -5,6 +5,9 @@ type S = components['schemas']
 export type Me = S['Me']
 export type WorkspaceMembership = S['WorkspaceMembership']
 export type Permission = S['Permission']
+export type WorkspaceFeature = S['WorkspaceFeature']
+export type WorkspaceFeatureState = S['WorkspaceFeatureState']
+export type WorkspaceFeatures = S['WorkspaceFeatures']
 export type SubjectRef = S['SubjectRef']
 export type Principal = S['Principal']
 
@@ -60,6 +63,14 @@ export type SharedAssetSummary = S['SharedAssetSummary']
 export type SharedAsset = S['SharedAsset']
 export type SharedAssetUsage = S['SharedAssetUsage']
 export type DecisionAssetContent = S['DecisionAssetContent']
+export type FormAssetContent = S['FormAssetContent']
+/** A shared asset version's content: a decision table or a form (docs/build/S128); null for other kinds. */
+export function decisionContentOf(content: SharedAsset['versions'][number]['content'] | undefined): DecisionAssetContent | undefined {
+  return content && 'rows' in content ? content : undefined
+}
+export function formContentOfVersion(content: SharedAsset['versions'][number]['content'] | undefined): FormAssetContent | undefined {
+  return content && 'inputSchema' in content ? content : undefined
+}
 
 export type TaskSummary = S['TaskSummary']
 export type TaskDetail = S['TaskDetail']

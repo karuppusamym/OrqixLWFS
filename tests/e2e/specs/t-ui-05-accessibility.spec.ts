@@ -3,7 +3,7 @@ import { expect, test } from '../support/fixtures'
 import { expectNoSeriousViolations } from '../support/axe'
 import { MOCK } from '../support/env'
 import { apiRead } from '../support/api'
-import { apiGet, ensureTemplatePublished, selectStep, submitPurchase, workflowIdByKey, workspaceId } from '../support/app'
+import { apiGet, ensureTemplatePublished, openQuestion, selectStep, submitPurchase, workflowIdByKey, workspaceId } from '../support/app'
 
 /**
  * T-UI-05: axe (WCAG 2.2 A and AA rules) on every route and on the main dialogs and inspector variants.
@@ -179,12 +179,13 @@ test('designer and publisher screens', async ({ sessions }) => {
   await expect(page.getByTestId('check-panel')).toBeVisible()
   await expect(page.getByTestId('check-summary')).not.toContainText('Checking')
   await scan(page, 'studio: check panel')
-  // The preview moved into the Studio's More menu.
+  // The More menu's preview opens the Form tab, where the live preview sits beside the questions (S120).
   await page.getByRole('button', { name: 'More actions' }).click()
   await page.getByRole('menuitem', { name: 'Preview the request form' }).click()
-  await expect(page.getByRole('dialog', { name: 'Preview of the request form' })).toBeVisible()
-  await scan(page, 'studio: preview form dialog')
-  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('form-preview')).toBeVisible()
+  await openQuestion(page, 'amount')
+  await scan(page, 'studio: form tab')
+  await page.getByRole('tab', { name: 'Steps' }).click()
   await page.getByRole('button', { name: /Add step after Review request/ }).click()
   await expect(page.getByRole('dialog')).toBeVisible()
   await scan(page, 'studio: add step dialog')

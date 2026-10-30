@@ -4,10 +4,10 @@ import { describe, expect, it } from 'vitest'
 import type { DraftSaver } from '@/stores/draftSaver'
 import { createStudioStore } from '@/stores/studioStore'
 import purchase from '../../../../../examples/purchase-approval.json'
-import { StudioProvider, useStudio } from '../StudioContext'
+import { StudioProvider } from '../StudioContext'
 import { normalizeDefinition } from '../model/types'
 import { buildFields, parseFormSchema, parseFormUi } from '@/lib/form/schema'
-import { StartInspector } from './StartInspector'
+import { FormView } from '../FormView'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 function setup() {
@@ -15,12 +15,14 @@ function setup() {
   const definition = normalizeDefinition(purchase)
   definition.inputSchema.properties.amount!.incidentEditable = true
   store.getState().load({ workflowId: 'workflow', revision: 1, definition })
-  function Inspector() {
-    const node = useStudio(s => s.definition.nodes.find(n => n.type === 'start')!)
-    return <StartInspector node={node} />
-  }
-  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><StudioProvider value={{ store, saver: {} as DraftSaver, wsId: 'workspace', workflowId: 'workflow', readOnly: false, connections: { responseType: () => undefined } }}><Inspector /></StudioProvider></QueryClientProvider>)
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><StudioProvider value={{ store, saver: {} as DraftSaver, wsId: 'workspace', workflowId: 'workflow', readOnly: false, connections: { responseType: () => undefined } }}><FormView /></StudioProvider></QueryClientProvider>)
   return store
+}
+
+/** Questions are compact rows on the Form tab (S120); open one to edit it. */
+async function openQuestion(user: ReturnType<typeof userEvent.setup>, key: string) {
+  await user.click(within(screen.getByTestId(`question-${key}`)).getByRole('button', { expanded: false }))
+  return within(screen.getByTestId(`field-card-${key}`))
 }
 
 describe('conditional form and row authoring', () => {
@@ -34,7 +36,7 @@ describe('conditional form and row authoring', () => {
     expect(sections).toHaveLength(2)
     await user.click(screen.getByRole('button', { name: 'Move amount up in Review' }))
     expect(store.getState().definition.inputUi?.layout?.sections?.[0]?.fields).toEqual(['amount', 'purpose'])
-    await user.click(screen.getByRole('button', { name: 'Move section Review down' }))
+    await user.click(screen.getByRole('button', { name: 'Move group Review down' }))
     expect(store.getState().definition.inputUi?.layout?.sections?.map(s => s.id)).toEqual(['identity', 'review'])
     const current = store.getState().definition
     expect(buildFields(parseFormSchema(current.inputSchema), parseFormUi(current.inputUi)).slice(0, 3).map(f => f.key)).toEqual(['title', 'amount', 'purpose'])
@@ -45,13 +47,13 @@ describe('conditional form and row authoring', () => {
   })
   it('authors a conditional field and section and preserves them across question edits', async () => {
     const store = setup(), user = userEvent.setup()
-    const purpose = within(screen.getByTestId('field-card-purpose'))
+    const purpose = await openQuestion(user, 'purpose')
     await user.click(purpose.getByRole('checkbox', { name: 'Show only when a condition matches' }))
     await user.selectOptions(purpose.getByLabelText('Value to look at'), '/input/amount')
     await user.click(purpose.getByRole('checkbox', { name: 'Require an answer when a condition matches' }))
-    await user.click(screen.getByRole('button', { name: 'Add form section' }))
+    await user.click(screen.getByRole('button', { name: 'Add a group' }))
     await user.click(screen.getByRole('checkbox', { name: 'Include Business purpose' }))
-    await user.selectOptions(screen.getByLabelText('Section columns'), '2')
+    await user.selectOptions(screen.getByLabelText('Group columns'), '2')
     const title = purpose.getByLabelText(/^Label/)
     await user.clear(title); await user.type(title, 'Reason for purchase'); await user.tab()
     const def = store.getState().definition
@@ -62,7 +64,7 @@ describe('conditional form and row authoring', () => {
   })
   it('authors bounded row columns with names, types and required flags', async () => {
     const store = setup(), user = userEvent.setup()
-    const purpose = within(screen.getByTestId('field-card-purpose'))
+    const purpose = await openQuestion(user, 'purpose')
     await user.selectOptions(purpose.getByLabelText('Type'), 'collection')
     await user.selectOptions(purpose.getByLabelText('Item type'), 'object')
     await user.click(purpose.getByRole('button', { name: 'Add row column' }))

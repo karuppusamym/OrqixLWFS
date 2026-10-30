@@ -24,6 +24,7 @@ A plain-language map of the tool, by what you want to get done. Each line says w
 
 - **Decision tables** inside a workflow, or **shared** across workflows (Settings > Shared assets; samples "Purchase routing" and "Expense limit"); import and export them as **CSV**; a test grid checks rows.
 - **Forms** are generated from the workflow's questions: types, required, patterns, conditional fields, file upload, document links.
+- **Shared forms**: save a request form (questions, rules and groups) as a shared form and insert it into other workflows from the Form tab. Each workflow keeps a copy of the version it chose; clashing question keys are renamed or skipped, never overwritten; **Update to vN** shows what changed. Shared forms are listed with their workflows under Settings > Shared assets.
 - **Views** (request, approval, case and worklist layouts) are reusable and pinned by version.
 - **Documents**: generate PDF or Word from request fields; read SharePoint/OneDrive files; templates and retention are in Settings.
 

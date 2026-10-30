@@ -13,6 +13,8 @@ export interface StudioContextValue {
   readOnly: boolean
   /** Response types of connection operations, for result field chips. */
   connections: ConnectionLookup
+  /** Opens the Form tab (docs/build/S120); absent where the studio has no tabs (tests, embedded authoring). */
+  openForm?: () => void
 }
 
 const StudioContext = createContext<StudioContextValue | null>(null)

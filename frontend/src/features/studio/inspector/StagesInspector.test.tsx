@@ -16,12 +16,12 @@ function renderStages(readOnly = false) {
   return store
 }
 
-describe('case stage authoring', () => {
+describe('progress stage authoring', () => {
   it('edits names, SLA and exclusive memberships, reorders and removes stages without changing process routes', async () => {
     const store = renderStages()
     const originalRoutes = structuredClone(store.getState().definition.transitions)
     const user = userEvent.setup()
-    await user.click(screen.getByRole('button', { name: 'Add a case stage' }))
+    await user.click(screen.getByRole('button', { name: 'Add a progress stage' }))
     const first = screen.getByRole('group', { name: 'Stage 1: Stage 1' })
     await user.clear(within(first).getByLabelText(/^Stage name/))
     await user.type(within(first).getByLabelText(/^Stage name/), 'Review')
@@ -30,7 +30,7 @@ describe('case stage authoring', () => {
     await user.tab()
     const manager = store.getState().definition.nodes.find((node) => node.id === 'manager')!
     await user.click(within(first).getByRole('checkbox', { name: manager.label }))
-    await user.click(screen.getByRole('button', { name: 'Add a case stage' }))
+    await user.click(screen.getByRole('button', { name: 'Add a progress stage' }))
     const second = screen.getByRole('group', { name: 'Stage 2: Stage 2' })
     expect(within(second).getByRole('checkbox', { name: `${manager.label} (in Review)` })).toBeDisabled()
     expect(store.getState().definition.stages?.[0]).toEqual({ id: 'stage1', label: 'Review', nodes: ['manager'], sla: 'PT8H' })
@@ -44,7 +44,7 @@ describe('case stage authoring', () => {
   it('shows invalid time limits and preserves stage references when a step is renamed or deleted', async () => {
     const store = renderStages()
     const user = userEvent.setup()
-    await user.click(screen.getByRole('button', { name: 'Add a case stage' }))
+    await user.click(screen.getByRole('button', { name: 'Add a progress stage' }))
     await user.type(screen.getByLabelText(/^Stage time limit/), 'P100D')
     await user.tab()
     expect(screen.getByText('Use a duration from PT1M to P90D.')).toBeInTheDocument()
@@ -60,6 +60,6 @@ describe('case stage authoring', () => {
 
   it('disables authoring for read-only workflows', () => {
     renderStages(true)
-    expect(screen.getByRole('button', { name: 'Add a case stage' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Add a progress stage' })).toBeDisabled()
   })
 })

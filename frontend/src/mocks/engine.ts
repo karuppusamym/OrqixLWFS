@@ -573,7 +573,7 @@ export function release(run: MockRun, task: MockTask, user: MockUser): void {
   addEvent(run, 'TASK_RELEASED', { nodeId: task.nodeId, actorId: user.id, data: { label: task.label, candidateGroup: task.candidateGroup, assignee: user.displayName } })
 }
 
-export function decide(run: MockRun, task: MockTask, user: MockUser, action: 'approve' | 'reject', reason: string | null, comment: string | null): TaskDecision {
+export function decide(run: MockRun, task: MockTask, user: MockUser, action: 'approve' | 'reject', reason: string | null, comment: string | null, fields: Record<string, unknown> = {}): TaskDecision {
   const rel = currentRelease(run)
   const decision: TaskDecision = {
     id: newId(),
@@ -599,11 +599,14 @@ export function decide(run: MockRun, task: MockTask, user: MockUser, action: 'ap
     ...(comment ? { comment } : {}),
     decidedBy: user.displayName,
     decidedAt: decision.decidedAt,
+    // Fields the step fills in (S123), only when approving.
+    ...(action === 'approve' ? fields : {}),
   }
+  const captured = action === 'approve' ? Object.keys(fields).length : 0
   addEvent(run, 'TASK_DECIDED', {
     nodeId: task.nodeId,
     actorId: user.id,
-    data: { label: task.label, action, hasReason: !!reason, hasComment: !!comment, policyFlags: decision.policyFlags },
+    data: { label: task.label, action, hasReason: !!reason, hasComment: !!comment, policyFlags: decision.policyFlags, ...(captured ? { fieldsCaptured: captured } : {}) },
   })
   const route = outgoing(rel.definition, task.nodeId).find((t) => t.on === (action === 'approve' ? 'approved' : 'rejected'))
   if (route) advance(run, route.to)

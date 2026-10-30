@@ -1,3 +1,4 @@
+import { FeatureOffNotice } from '@/components/common/FeatureOffNotice'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api, call } from '@/api/client'
@@ -118,6 +119,7 @@ export function KafkaTriggersPanel() {
 
   return (
     <section aria-labelledby="kafka-heading" className="space-y-4">
+      <FeatureOffNotice feature="kafka" />
       <div>
         <h2 id="kafka-heading" className="text-base font-semibold">Kafka triggers</h2>
         {data ? <p className="text-sm text-muted-foreground" data-testid="kafka-mode">{MODE_TEXT[data.mode]}</p> : null}

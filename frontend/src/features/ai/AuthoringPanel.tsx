@@ -1,5 +1,5 @@
 import { Mic, MicOff, RefreshCcw, Send, X } from 'lucide-react'
-import { useId, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { ProblemAlert } from '@/components/common/ProblemAlert'
 import { Alert } from '@/components/ui/alert'
@@ -12,16 +12,18 @@ import { useStore } from 'zustand'
 import { useStudioContext } from '@/features/studio/StudioContext'
 import { KINDS, ROUTE_LABEL } from '@/features/studio/model/kinds'
 import type { Definition, NodeKind, RouteKind } from '@/features/studio/model/types'
-import { proposeDraftEdits, useAiStatus, type AiDraftEditOperation, type AiDraftEditProposal } from './api'
+import { deleteAiConversation, getAiConversation, proposeDraftEdits, saveAiConversation, useAiStatus, type AiConversationTurn, type AiDraftEditOperation, type AiDraftEditProposal } from './api'
 import { applyDraftChanges, applyRegeneration } from './draftEdits'
 
 const MIN = 2
 const MAX = 2000
 /** Turns sent with each request (the server accepts at most 8). */
 const HISTORY = 8
+/** Turns saved with the draft (the server keeps at most 40). */
+const SAVED = 40
 
 type Turn =
-  | { id: number; role: 'author'; text: string; mode: 'edit' | 'regenerate' }
+  | { id: number; role: 'author'; text: string; mode: 'edit' | 'regenerate'; instruction?: string }
   | { id: number; role: 'assistant'; proposal: AiDraftEditProposal; baseline: Definition; chosen: string[]; result: string | null }
 
 /** One line of plain language per operation, with step labels instead of ids. */
@@ -46,13 +48,59 @@ export function describeOperation(op: AiDraftEditOperation, labels: Record<strin
       const verb = op.action === 'add' ? 'Add' : op.action === 'remove' ? 'Remove' : 'Change'
       return `${verb} the question “${title}”${op.action === 'remove' ? '' : op.required ? ' (required)' : ' (optional)'}`
     }
+    case 'setFieldRule':
+      return op.condition
+        ? `${op.rule === 'requiredWhen' ? 'Make' : 'Show'} the question “${op.key}” ${op.rule === 'requiredWhen' ? 'required' : 'only'} when a condition holds`
+        : `Remove the ${op.rule === 'requiredWhen' ? '“required when”' : '“shown when”'} rule of “${op.key}”`
+    case 'setStepFieldAccess': {
+      const config = (op.config ?? {}) as { fieldAccess?: Record<string, string> | null; capture?: { properties?: Record<string, { title?: string }> } | null }
+      const parts: string[] = []
+      if (config.fieldAccess !== undefined) parts.push(config.fieldAccess ? Object.entries(config.fieldAccess).map(([k, v]) => `${k} ${v === 'readOnly' ? 'read only' : v}`).join(', ') : 'every question read only')
+      if (config.capture !== undefined) parts.push(config.capture ? `asks for ${Object.values(config.capture.properties ?? {}).map((f) => f.title).join(', ')}` : 'asks for no fields')
+      return `Step form of ${label(op.id)}: ${parts.join('; ')}`
+    }
+    case 'setFormGroups': {
+      const groups = (op.groups ?? []) as Array<{ title?: string }>
+      return groups.length ? `Group the form: ${groups.map((g) => `“${g.title ?? ''}”`).join(', ')}` : 'Remove the form groups'
+    }
+    case 'addDecision':
+      return `Add a decision step “${op.label ?? op.id}” with the rule table “${(op.table as { key?: string } | undefined)?.key ?? ''}”`
+    case 'addCall': {
+      const config = (op.config ?? {}) as { connectionRef?: string; operation?: string }
+      return `Add a call “${op.label ?? op.id}” to ${config.connectionRef ?? 'a system'} (${config.operation ?? ''})`
+    }
   }
 }
 
 /** What an assistant turn contributes to the history sent with the next request. */
 function assistantText(proposal: AiDraftEditProposal): string {
-  const parts = [proposal.message ?? '', ...proposal.changes.map((c) => `${c.id}: ${c.summary}`)]
+  // "Questions:" tells the server it already asked, so the next turn drafts (S124).
+  const questions = proposal.questions?.length ? `Questions: ${proposal.questions.join(' | ')}` : ''
+  const parts = [proposal.message ?? '', questions, ...proposal.changes.map((c) => `${c.id}: ${c.summary}`)]
   return (parts.filter(Boolean).join('\n') || 'No changes proposed.').slice(0, MAX)
+}
+
+/** Turns as they are saved with the draft (S124). */
+function toSaved(turns: Turn[]): AiConversationTurn[] {
+  return turns.slice(-SAVED).map((t) => t.role === 'author'
+    ? { role: 'author', text: t.text.slice(0, MAX), mode: t.mode }
+    : { role: 'assistant', text: assistantText(t.proposal), ...(t.proposal.questions?.length ? { questions: t.proposal.questions.slice(0, 3) } : {}), proposal: t.proposal as unknown as Record<string, unknown> })
+}
+
+/**
+ * Saved turns back into the panel. A saved proposal was checked against an older draft, so it is shown for reading
+ * only: ask again to get changes for the draft as it is now.
+ */
+function fromSaved(saved: AiConversationTurn[], baseline: Definition, nextId: () => number): Turn[] {
+  return saved.map((t) => {
+    if (t.role === 'author') return { id: nextId(), role: 'author', text: t.text, mode: t.mode ?? 'edit' }
+    const stored = (t.proposal ?? {}) as Partial<AiDraftEditProposal>
+    const proposal = {
+      revision: stored.revision ?? 0, mode: stored.mode ?? 'edit', message: stored.message ?? t.text, changes: stored.changes ?? [],
+      rejected: stored.rejected ?? [], notes: stored.notes ?? [], generation: stored.generation, questions: t.questions ?? stored.questions,
+    } as AiDraftEditProposal
+    return { id: nextId(), role: 'assistant', proposal, baseline, chosen: [], result: proposal.changes.length ? 'From an earlier session. Ask again to get changes for the draft as it is now.' : null }
+  })
 }
 
 /**
@@ -105,15 +153,31 @@ function Conversation({ focus: focusStep, onFocusChange: setFocusStep }: { focus
   const [confirmRegenerate, setConfirmRegenerate] = useState(false)
   const [confirmReplace, setConfirmReplace] = useState<number | null>(null)
   const nextId = useRef(1)
+  const loaded = useRef(false)
   const inputId = useId()
+
+  // S124: the conversation is saved with the draft, so it survives a reload and continues "Describe it".
+  useEffect(() => {
+    let cancelled = false
+    getAiConversation(wsId, workflowId).then((saved) => {
+      if (cancelled || loaded.current) return
+      loaded.current = true
+      if (saved.turns.length) setTurns(fromSaved(saved.turns, store.getState().definition, () => nextId.current++))
+    }).catch(() => { loaded.current = true })
+    return () => { cancelled = true }
+  }, [wsId, workflowId, store])
+
+  const persist = (next: Turn[]) => {
+    void saveAiConversation(wsId, workflowId, toSaved(next)).catch(() => setStatus('The conversation could not be saved with the draft. It stays here until you reload.'))
+  }
   const length = text.trim().length
   // "Ask about this step": the selected step can be pinned as the subject of the next instruction.
   const selectedId = useStore(store, (st) => (st.selection?.type === 'node' ? st.selection.id : null))
   const selectedLabel = useStore(store, (st) => st.definition.nodes.find((n) => n.id === selectedId)?.label ?? null)
   const dictation = useDictation((spoken) => setText((t) => `${t}${t && !t.endsWith(' ') ? ' ' : ''}${spoken}`.slice(0, MAX)))
 
-  const ask = async (mode: 'edit' | 'regenerate') => {
-    const typed = text.trim()
+  const ask = async (mode: 'edit' | 'regenerate', options: { noQuestions?: boolean; again?: string } = {}) => {
+    const typed = (options.again ?? text).trim()
     if (typed.length < MIN || typed.length > MAX || busy) return
     dictation.stop()
     const focus = mode === 'edit' && focusStep && store.getState().definition.nodes.some((n) => n.id === focusStep.id) ? focusStep : null
@@ -127,14 +191,20 @@ function Conversation({ focus: focusStep, onFocusChange: setFocusStep }: { focus
       }
       const history = turns.slice(-HISTORY).map((t) => (t.role === 'author' ? { role: 'author' as const, text: t.text } : { role: 'assistant' as const, text: assistantText(t.proposal) }))
       const baseline = store.getState().definition
-      const proposal = await proposeDraftEdits(wsId, workflowId, { instruction, revision: store.getState().revision, mode, history })
-      setTurns((all) => [...all, { id: nextId.current++, role: 'author', text: focus ? `${focus.label}: ${typed}` : typed, mode }, { id: nextId.current++, role: 'assistant', proposal, baseline, chosen: [], result: null }])
-      setText('')
+      const proposal = await proposeDraftEdits(wsId, workflowId, { instruction, revision: store.getState().revision, mode, history, noQuestions: options.noQuestions ?? false })
+      const shown = options.noQuestions ? `Just draft it: ${typed}` : focus ? `${focus.label}: ${typed}` : typed
+      const next: Turn[] = [...turns, { id: nextId.current++, role: 'author', text: shown.slice(0, MAX), mode, instruction: typed }, { id: nextId.current++, role: 'assistant', proposal, baseline, chosen: [], result: null }]
+      setTurns(next)
+      persist(next)
+      if (!options.again) setText('')
       setFocusStep(null)
       const n = proposal.changes.length
-      setStatus(mode === 'regenerate'
-        ? (n > 0 ? 'A new draft is proposed. Nothing has been changed yet.' : 'No new draft could be proposed.')
-        : n === 0 ? 'No changes to review.' : `${n} proposed change${n === 1 ? '' : 's'} to review. Nothing has been applied.`)
+      const q = proposal.questions?.length ?? 0
+      setStatus(q > 0 && n === 0
+        ? `The AI asks ${q} question${q === 1 ? '' : 's'} first. Answer below, or choose Just draft it.`
+        : mode === 'regenerate'
+          ? (n > 0 ? 'A new draft is proposed. Nothing has been changed yet.' : 'No new draft could be proposed.')
+          : n === 0 ? 'No changes to review.' : `${n} proposed change${n === 1 ? '' : 's'} to review. Nothing has been applied.`)
     } catch (cause) {
       setError(cause)
     } finally {
@@ -144,6 +214,16 @@ function Conversation({ focus: focusStep, onFocusChange: setFocusStep }: { focus
 
   const updateTurn = (id: number, patch: Partial<Extract<Turn, { role: 'assistant' }>>) =>
     setTurns((all) => all.map((t) => (t.id === id && t.role === 'assistant' ? { ...t, ...patch } : t)))
+
+  /** The author's instruction before an assistant turn, to send again without questions. */
+  const instructionBefore = (id: number): string | undefined => {
+    const index = turns.findIndex((t) => t.id === id)
+    for (let i = index - 1; i >= 0; i--) {
+      const t = turns[i]!
+      if (t.role === 'author') return t.instruction ?? t.text.replace(/^Just draft it: /, '')
+    }
+    return undefined
+  }
 
   const applyChosen = (turn: Extract<Turn, { role: 'assistant' }>) => {
     let message = ''
@@ -190,7 +270,8 @@ function Conversation({ focus: focusStep, onFocusChange: setFocusStep }: { focus
                     <span className="sr-only">You: </span>{turn.mode === 'regenerate' ? <span className="font-medium">Regenerate: </span> : null}{turn.text}
                   </li>
                 )
-              : <AssistantTurn key={turn.id} turn={turn} onChoose={(chosen) => updateTurn(turn.id, { chosen })} onApply={() => applyChosen(turn)} onReplace={() => setConfirmReplace(turn.id)} />)}
+              : <AssistantTurn key={turn.id} turn={turn} busy={busy} onChoose={(chosen) => updateTurn(turn.id, { chosen })} onApply={() => applyChosen(turn)} onReplace={() => setConfirmReplace(turn.id)}
+                  onJustDraft={turn.id === turns[turns.length - 1]?.id ? () => { const again = instructionBefore(turn.id); if (again) void ask('edit', { noQuestions: true, again }) } : undefined} />)}
           </ol>
         )}
       </div>
@@ -227,10 +308,13 @@ function Conversation({ focus: focusStep, onFocusChange: setFocusStep }: { focus
               </Button>
             </div>
           </div>
-          <p id={`${inputId}-help`} className="text-xs text-muted-foreground">Ctrl+Enter sends. The AI sees the saved draft without secrets. You review every change before it is applied.</p>
+          <p id={`${inputId}-help`} className="text-xs text-muted-foreground">Ctrl+Enter sends. The AI sees the saved draft without secrets. You review every change before it is applied. The conversation is saved with the draft for the people who edit it.</p>
           {dictation.listening ? <p role="status" className="text-xs font-semibold text-danger">Listening… speak now. Press Stop talking when you are done.</p> : null}
           {dictation.problem ? <p role="status" className="text-xs text-danger" data-testid="authoring-mic-problem">{dictation.problem}</p> : null}
-          {turns.length > 0 ? <Button variant="ghost" size="sm" onClick={() => { setTurns([]); setStatus('Conversation cleared.'); setError(null) }} disabled={busy}>Clear conversation</Button> : null}
+          {turns.length > 0 ? <Button variant="ghost" size="sm" onClick={() => {
+            setTurns([]); setError(null)
+            deleteAiConversation(wsId, workflowId).then(() => setStatus('Conversation cleared, also for the other people who edit this draft.'), () => setStatus('Cleared here, but the saved conversation could not be deleted. Try again.'))
+          }} disabled={busy}>Clear conversation</Button> : null}
         </div>
       </div>
       <ConfirmDialog
@@ -256,11 +340,14 @@ function Conversation({ focus: focusStep, onFocusChange: setFocusStep }: { focus
   )
 }
 
-function AssistantTurn({ turn, onChoose, onApply, onReplace }: {
+function AssistantTurn({ turn, busy, onChoose, onApply, onReplace, onJustDraft }: {
   turn: Extract<Turn, { role: 'assistant' }>
+  busy: boolean
   onChoose: (chosen: string[]) => void
   onApply: () => void
   onReplace: () => void
+  /** Only on the latest turn: ask again without questions. */
+  onJustDraft?: () => void
 }) {
   const { proposal } = turn
   const baseId = useId()
@@ -276,6 +363,15 @@ function AssistantTurn({ turn, onChoose, onApply, onReplace }: {
       <span className="sr-only">Assistant: </span>
       {proposal.message ? <p>{proposal.message}</p> : null}
       {proposal.notAnEdit ? <Alert tone="warning" live="off"><p>{proposal.notAnEdit}</p></Alert> : null}
+      {proposal.questions?.length ? (
+        <div className="space-y-1.5" data-testid="assistant-questions">
+          <ol className="list-decimal space-y-0.5 pl-5" aria-label="Questions from the AI">
+            {proposal.questions.map((q, i) => <li key={i}>{q}</li>)}
+          </ol>
+          <p className="text-xs text-muted-foreground">Type your answers below and send them, or let the AI draft with its own assumptions.</p>
+          {onJustDraft ? <Button size="sm" variant="secondary" onClick={onJustDraft} disabled={busy}>Just draft it</Button> : null}
+        </div>
+      ) : null}
       {proposal.changes.length > 0 ? (
         <ul className="space-y-2" aria-label={regenerate ? 'Proposed new draft' : 'Proposed changes'}>
           {proposal.changes.map((change) => {
@@ -296,7 +392,7 @@ function AssistantTurn({ turn, onChoose, onApply, onReplace }: {
             )
           })}
         </ul>
-      ) : !proposal.notAnEdit ? <p className="text-muted-foreground">No change passed the checks.</p> : null}
+      ) : !proposal.notAnEdit && !proposal.questions?.length ? <p className="text-muted-foreground">No change passed the checks.</p> : null}
       {proposal.rejected.length > 0 ? (
         <div>
           <p className="font-medium">Not offered: they failed the workflow checks</p>

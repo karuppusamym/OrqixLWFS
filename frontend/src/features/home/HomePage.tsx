@@ -27,12 +27,13 @@ function ShortcutIcon({ icon: Icon }: { icon: typeof Inbox }) {
 
 /** Plain-language first steps for people who build workflows or set the workspace up; each card shows only if they may use it. */
 function GetStarted({ ws }: { ws: string }) {
-  const { can } = useWorkspace()
+  const { can, isOn } = useWorkspace()
+  // Switched-off modules (S127) are not offered here.
   const cards = [
-    { show: can('workflow.edit'), to: `/w/${ws}/workflows`, icon: Workflow, title: 'Build a workflow', text: 'Start from a template, answer a few questions, or start empty. AI help is there when you want it.' },
-    { show: can('workflow.edit'), to: `/w/${ws}/workflows?q=Sample`, icon: LibraryBig, title: 'Look at an example', text: 'Open a ready-made sample (approvals, waits, cases, rules) and change it.' },
-    { show: can('workflow.edit'), to: `/w/${ws}/migrations`, icon: FileInput, title: 'Bring in a Camunda or Pega file', text: 'Import it, review what was understood, and fix what needs a decision.' },
-    { show: can('connection.read'), to: `/w/${ws}/settings`, icon: Cable, title: 'Connect other systems', text: 'Connections, webhooks, Kafka, shared rules and documents.' },
+    { show: can('workflow.edit'), to: `/w/${ws}/workflows`, icon: Workflow, title: 'Build a workflow', text: `Start from a template, answer a few questions, or start empty.${isOn('ai') ? ' AI help is there when you want it.' : ''}` },
+    { show: can('workflow.edit'), to: `/w/${ws}/workflows?q=Sample`, icon: LibraryBig, title: 'Look at an example', text: `Open a ready-made sample (approvals, waits, ${isOn('cases') ? 'cases, ' : ''}rules) and change it.` },
+    { show: can('workflow.edit') && isOn('migration'), to: `/w/${ws}/migrations`, icon: FileInput, title: 'Bring in a Camunda or Pega file', text: 'Import it, review what was understood, and fix what needs a decision.' },
+    { show: can('connection.read'), to: `/w/${ws}/settings`, icon: Cable, title: 'Connect other systems', text: `Connections, webhooks, ${isOn('kafka') ? 'Kafka, ' : ''}shared rules and documents.` },
   ].filter((c) => c.show)
   if (cards.length === 0) return null
   return (

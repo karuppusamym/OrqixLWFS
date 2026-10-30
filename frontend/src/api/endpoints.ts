@@ -1,7 +1,7 @@
 import { api, call, callVoid, callWithResponse, etagOf, revisionEtag } from './client'
 import type { components } from './schema'
 import { uploadFile } from './attachments'
-import type { Lifecycle, OutcomeKind, TaskView } from './types'
+import type { Lifecycle, OutcomeKind, TaskView, WorkspaceFeature } from './types'
 
 type S = components['schemas']
 
@@ -597,3 +597,10 @@ export const setSharedAssetOwner = (ws: string, assetKind: AssetKind, assetKey: 
 
 export const setSharedAssetArchived = (ws: string, assetKind: AssetKind, assetKey: string, archived: boolean, expectedRevision: number) =>
   call(api.PUT('/workspaces/{workspaceId}/shared-assets/{assetKind}/{assetKey}/archived', { params: { path: { workspaceId: ws, assetKind, assetKey } }, body: { archived, expectedRevision } }))
+
+// Workspace feature switches (S127)
+export const getWorkspaceFeatures = (ws: string) =>
+  call(api.GET('/workspaces/{workspaceId}/features', { params: { path: { workspaceId: ws } } }))
+
+export const setWorkspaceFeature = (ws: string, feature: WorkspaceFeature, enabled: boolean) =>
+  call(api.PUT('/workspaces/{workspaceId}/features/{feature}', { params: { path: { workspaceId: ws, feature } }, body: { enabled } }))

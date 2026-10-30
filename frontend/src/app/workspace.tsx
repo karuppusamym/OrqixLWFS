@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react'
 import { Navigate, Outlet, useParams } from 'react-router'
-import type { Me, Permission, WorkspaceMembership } from '@/api/types'
+import type { Me, Permission, WorkspaceFeature, WorkspaceMembership } from '@/api/types'
 import { useMe } from '@/api/queries'
 import { LoadingBlock } from '@/components/common/LoadingBlock'
 import { ProblemAlert } from '@/components/common/ProblemAlert'
@@ -12,17 +12,22 @@ export interface WorkspaceContextValue {
   permissions: ReadonlySet<Permission>
   /** True when the caller holds at least one of the permissions. Hiding UI is convenience; the server enforces. */
   can: (...permissions: Permission[]) => boolean
+  /** False when a workspace administrator switched the module off (S127). Hiding is convenience; the server enforces. */
+  isOn: (feature: WorkspaceFeature) => boolean
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null)
 
 export function createWorkspaceValue(me: Me, workspace: WorkspaceMembership): WorkspaceContextValue {
   const permissions = new Set<Permission>(workspace.permissions)
+  // Older servers and fixtures without the field: everything is on.
+  const off = new Set<WorkspaceFeature>(workspace.disabledFeatures ?? [])
   return {
     me,
     workspace,
     permissions,
     can: (...wanted) => wanted.some((p) => permissions.has(p)),
+    isOn: (feature) => !off.has(feature),
   }
 }
 

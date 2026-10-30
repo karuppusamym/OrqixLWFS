@@ -65,6 +65,8 @@ public enum ProblemCode {
     MIGRATION_BLOCKED(422, "Imported elements still need a decision"),
     ATTACHMENT_BLOCKED(409, "The file is blocked and cannot be downloaded"),
     ATTACHMENT_LIMIT_REACHED(409, "The request has reached its file limit"),
+    /** S127: the module named in {@code feature} is switched off in this workspace by an administrator. */
+    FEATURE_DISABLED(409, "This part of Orqix is switched off in this workspace"),
     /**
      * Unexpected defect. Not in the contract enum (openapi.yaml has no code for 500); reported as a contract gap.
      * The transaction was rolled back, so nothing was committed.

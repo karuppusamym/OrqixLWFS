@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Archive, ArchiveRestore, Search } from 'lucide-react'
+import { Archive, ArchiveRestore, FileDown, Search } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router'
 import * as endpoints from '@/api/endpoints'
@@ -16,6 +16,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input, Select } from '@/components/ui/input'
 import { formatDateTime } from '@/lib/dates'
+import { downloadBlob } from '@/lib/download'
+import { DecisionDmnImport } from './DecisionDmnImport'
 
 export const KIND_LABELS: Record<SharedAssetKind, string> = {
   decision: 'Decision table',
@@ -30,6 +32,14 @@ function messageOf(error: unknown): string {
 
 const assetsKey = (ws: string) => ['ws', ws, 'shared-assets'] as const
 
+const POLICY_WORDS: Record<string, string> = {
+  UNIQUE: 'exactly one row applies',
+  FIRST: 'first matching row applies',
+  ANY: 'any matching row applies (overlapping rows agree)',
+  PRIORITY: 'the highest priority row applies',
+  COLLECT: 'all matching rows are combined',
+}
+
 /**
  * Shared assets (PL01, docs/build/S61): one place to find the decision tables, document templates and connections that
  * workflows reuse, by name, key or owner, and to see where each is used. Only the kinds you may read are searched.
@@ -38,6 +48,7 @@ const assetsKey = (ws: string) => ['ws', ws, 'shared-assets'] as const
 export function SharedAssetsPanel() {
   const { workspace, can } = useWorkspace()
   const ws = workspace.id
+  const client = useQueryClient()
   const [q, setQ] = useState('')
   const [applied, setApplied] = useState('')
   const [kind, setKind] = useState<SharedAssetKind | ''>('')
@@ -84,6 +95,7 @@ export function SharedAssetsPanel() {
           <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> Show archived
         </label>
       </form>
+      {can('workflow.edit') ? <DecisionDmnImport ws={ws} onSaved={() => void client.invalidateQueries({ queryKey: assetsKey(ws) })} /> : null}
       {list.isPending ? <LoadingBlock rows={3} label="Loading shared assets" /> : list.isError ? (
         <QueryError error={list.error} onRetry={() => void list.refetch()} what="the shared assets" />
       ) : list.data.items.length === 0 ? (
@@ -194,6 +206,9 @@ function AssetDetail({ ws, kind, assetKey }: { ws: string; kind: SharedAssetKind
           {archive.isError && !stale ? <Alert tone="danger">{messageOf(archive.error)}</Alert> : null}
         </section>
       ) : null}
+      {kind === 'decision' && canManage && !a.asset.archived ? (
+        <DecisionDmnImport ws={ws} asset={a} onSaved={done} />
+      ) : null}
       <section aria-label="Versions" className="space-y-2">
         <h3 className="text-sm font-semibold">Versions</h3>
         <ol className="space-y-2">
@@ -201,7 +216,12 @@ function AssetDetail({ ws, kind, assetKey }: { ws: string; kind: SharedAssetKind
             <li key={v.version} className="rounded-control border border-border p-3" data-testid="asset-version">
               <p className="text-sm font-semibold">Version {v.version} <span className="font-normal text-muted-foreground">by {v.createdBy.displayName} on {formatDateTime(v.createdAt)}</span></p>
               {v.changeNote ? <p className="text-xs text-muted-foreground">{v.changeNote}</p> : null}
-              {v.content ? <p className="text-xs text-muted-foreground">{v.content.rows.length} {v.content.rows.length === 1 ? 'row' : 'rows'}; {v.content.hitPolicy === 'FIRST' ? 'first matching row applies' : 'exactly one row applies'}</p> : null}
+              {v.content ? <p className="text-xs text-muted-foreground">{v.content.rows.length} {v.content.rows.length === 1 ? 'row' : 'rows'}; {POLICY_WORDS[v.content.hitPolicy]}</p> : null}
+              {kind === 'decision' && v.content ? (
+                <Button type="button" variant="ghost" size="sm" onClick={() => void endpoints.exportSharedDecisionDmn(ws, assetKey, v.version).then(({ blob, filename }) => downloadBlob(blob, filename))}>
+                  <FileDown className="size-4" aria-hidden="true" /> Download DMN
+                </Button>
+              ) : null}
             </li>
           ))}
         </ol>

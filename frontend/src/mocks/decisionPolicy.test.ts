@@ -61,3 +61,69 @@ describe('effective-dated rows (RL03)', () => {
     expect(evaluateTable(bounded, values, '2025-12-31').usedDefault).toBe(true)
   })
 })
+
+describe('lists, ranges and the new hit policies (docs/build/S121)', () => {
+  const inList: Condition = { fieldRef: '/input/costCenter', operator: 'in', value: ['IT', 'HR'] }
+  const middle: Condition = { fieldRef: '/input/amount', operator: 'between', value: { from: 1000, to: 5000, includeTo: false } }
+
+  it('checks lists and ranges and proves their overlaps', () => {
+    expect(codes(withRows('UNIQUE', middle, amount('gte', 5000)))).not.toContain('WF_DECISION_OVERLAP')
+    expect(codes(withRows('UNIQUE', { ...middle, value: { from: 1000, to: 5000 } } as Condition, amount('gte', 5000)))).toContain('WF_DECISION_OVERLAP')
+    expect(codes(withRows('UNIQUE', { fieldRef: '/input/costCenter', operator: 'in', value: ['IT', 'SALES'] }))).toContain('WF_LITERAL_NOT_IN_DOMAIN')
+    expect(codes(withRows('UNIQUE', { fieldRef: '/input/costCenter', operator: 'between', value: { from: 1, to: 2 } }))).toContain('WF_OPERATOR_TYPE')
+    const table = withRows('UNIQUE', { all: [inList, middle] }).decisions[0]!
+    expect(evaluateTable(table, { '/input/amount': 4999, '/input/costCenter': 'HR' }).matchedRow).toBe(0)
+    expect(evaluateTable(table, { '/input/amount': 5000, '/input/costCenter': 'HR' }).usedDefault).toBe(true)
+    expect(evaluateTable(table, { '/input/amount': 2000, '/input/costCenter': 'OPS' }).usedDefault).toBe(true)
+  })
+
+  it('refuses lists and ranges in route conditions', () => {
+    const def = normalizeDefinition(structuredClone(purchase))
+    const route = def.transitions.find(t => t.condition)!
+    route.condition = { fieldRef: '/steps/amountPolicy/route', operator: 'in', value: ['financeReview'] }
+    expect(codes(def)).toContain('WF_SCHEMA_INVALID')
+  })
+
+  it('ANY allows overlaps that give the same results', () => {
+    const def = withRows('FIRST', amount('lt', 500), amount('lt', 100))
+    def.decisions[0]!.hitPolicy = 'ANY'
+    expect(codes(def)).not.toContain('WF_DECISION_OVERLAP')
+    def.decisions[0]!.rows[1]!.then = { route: 'financeReview' }
+    expect(codes(def)).toContain('WF_DECISION_OVERLAP')
+  })
+
+  it('PRIORITY picks the highest ranked match and needs a complete order', () => {
+    const def = withRows('FIRST', amount('gte', 1000), amount('gte', 5000))
+    const table = def.decisions[0]!
+    table.hitPolicy = 'PRIORITY'
+    table.rows[0]!.then = { route: 'managerReview' }
+    table.rows[1]!.then = { route: 'financeReview' }
+    expect(codes(def)).toContain('WF_DECISION_POLICY_OPTION')
+    table.priority = { output: 'route', order: ['financeReview', 'managerReview'] }
+    expect(codes(def)).toContain('WF_DECISION_PRIORITY_ORDER')
+    table.priority.order.push('standard')
+    expect(codes(def)).not.toContain('WF_DECISION_PRIORITY_ORDER')
+    expect(evaluateTable(table, { '/input/amount': 6000 }).matchedRow).toBe(1)
+    expect(evaluateTable(table, { '/input/amount': 2000 }).matchedRow).toBe(0)
+  })
+
+  it('COLLECT combines every matching row into one number', () => {
+    const def = withRows('FIRST', amount('gte', 1000), amount('gte', 5000))
+    const table = def.decisions[0]!
+    table.hitPolicy = 'COLLECT'
+    table.default = { fee: 0 }
+    table.rows[0]!.then = { fee: 0.1 }
+    table.rows[1]!.then = { fee: 0.2 }
+    expect(codes(def)).toContain('WF_DECISION_POLICY_OPTION')
+    table.aggregation = 'SUM'
+    expect(codes(def)).not.toContain('WF_DECISION_COLLECT_OUTPUT')
+    const sum = evaluateTable(table, { '/input/amount': 6000 })
+    expect(sum.matchedRows).toEqual([0, 1])
+    expect(sum.output).toEqual({ fee: 0.3 })
+    expect(evaluateTable({ ...table, aggregation: 'COUNT' }, { '/input/amount': 6000 }).output).toEqual({ fee: 2 })
+    expect(evaluateTable({ ...table, aggregation: 'MAX' }, { '/input/amount': 6000 }).output).toEqual({ fee: 0.2 })
+    expect(evaluateTable(table, { '/input/amount': 10 }).usedDefault).toBe(true)
+    table.default = { fee: 'none' }
+    expect(codes(def)).toContain('WF_DECISION_COLLECT_OUTPUT')
+  })
+})

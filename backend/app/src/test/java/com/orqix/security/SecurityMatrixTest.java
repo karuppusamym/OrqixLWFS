@@ -62,7 +62,7 @@ class SecurityMatrixTest extends RuntimeTestBase {
                             || "markAllNotificationsRead".equals(operationId)
                             || "validateDraft".equals(operationId) || "evaluateDecision".equals(operationId)
                             || "checkReleasePromotion".equals(operationId)
-                            || "checkDraftBpmn".equals(operationId)
+                            || "checkDraftBpmn".equals(operationId) || "convertDecisionDmn".equals(operationId)
                             || "fetchExternalJobs".equals(operationId) || "extendExternalJobLock".equals(operationId))
                             .as(operationId + " declares x-orqix-audit").isTrue();
                 }

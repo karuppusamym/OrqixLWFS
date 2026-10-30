@@ -1,4 +1,4 @@
-import { conditionTerms, isAtomicCondition, type AtomicCondition, type Condition, type Definition, type Literal, type Operator } from './types'
+import { conditionTerms, isAtomicCondition, type AtomicCondition, type Condition, type Definition, type Literal } from './types'
 
 /** Plain-language rules of one request question (docs/build/S120): what the Form tab shows without opening an editor. */
 export interface QuestionRules {
@@ -10,18 +10,31 @@ export interface QuestionRules {
   group?: string
 }
 
-/** Reads as a sentence after the question's label: "Amount (USD) is at least 5000". */
-const OPERATOR_PHRASE: Record<Operator, string> = { eq: 'is', ne: 'is not', gte: 'is at least', gt: 'is more than', lt: 'is less than', lte: 'is at most' }
+/**
+ * Reads as a sentence after the question's label: "Amount (USD) is at least 5000". Form rules use the first six;
+ * "in" and "between" belong to decision rows (DMN parity, S121) and are listed so a shared operator type always reads.
+ */
+const OPERATOR_PHRASE: Record<string, string> = { eq: 'is', ne: 'is not', gte: 'is at least', gt: 'is more than', lt: 'is less than', lte: 'is at most', in: 'is one of', between: 'is between' }
 
 function literalText(value: Literal): string {
   if (typeof value === 'boolean') return value ? 'Yes' : 'No'
   return typeof value === 'string' ? `"${value}"` : String(value)
 }
 
+/** A single value, a list ("EU", "UK") or a range ("1000 and 5000"). */
+function valueText(value: unknown): string {
+  if (Array.isArray(value)) return value.map((v) => literalText(v as Literal)).join(', ')
+  if (value !== null && typeof value === 'object' && 'from' in value && 'to' in value) {
+    const range = value as { from: Literal; to: Literal }
+    return `${literalText(range.from)} and ${literalText(range.to)}`
+  }
+  return literalText(value as Literal)
+}
+
 function termText(def: Definition, term: AtomicCondition): string {
   const key = term.fieldRef.startsWith('/input/') ? term.fieldRef.slice('/input/'.length) : ''
   const label = (key && def.inputSchema.properties[key]?.title) || key || 'a removed question'
-  return `${label} ${OPERATOR_PHRASE[term.operator]} ${literalText(term.value)}`
+  return `${label} ${OPERATOR_PHRASE[term.operator] ?? term.operator} ${valueText(term.value)}`
 }
 
 /** "Amount (USD) is at least 5000", "Type is "Laptop" and Urgent is Yes". */

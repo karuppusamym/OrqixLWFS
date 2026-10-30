@@ -14,14 +14,27 @@ import type { DecisionTable } from '../model/types'
 import { InspectorSection } from './controls'
 
 export function decisionContent(table: DecisionTable): DecisionAssetContent {
-  return { hitPolicy: table.hitPolicy, rows: structuredClone(table.rows) as unknown as DecisionAssetContent['rows'], default: structuredClone(table.default) }
+  return {
+    hitPolicy: table.hitPolicy,
+    // Only the settings of the table's own hit policy are shared (docs/build/S121).
+    ...(table.hitPolicy === 'COLLECT' && table.aggregation ? { aggregation: table.aggregation } : {}),
+    ...(table.hitPolicy === 'PRIORITY' && table.priority ? { priority: structuredClone(table.priority) } : {}),
+    rows: structuredClone(table.rows) as unknown as DecisionAssetContent['rows'],
+    default: structuredClone(table.default),
+  }
 }
 
 /** A shared version's content as the table fields the Studio edits (the server checks the copy in full). */
-export const asTable = (content: DecisionAssetContent) => content as unknown as Pick<DecisionTable, 'hitPolicy' | 'rows' | 'default'>
+export const asTable = (content: DecisionAssetContent) => content as unknown as Pick<DecisionTable, 'hitPolicy' | 'rows' | 'default' | 'aggregation' | 'priority'>
 
 export const sameDecision = (table: DecisionTable, content: DecisionAssetContent | null | undefined) =>
-  !!content && canonical(decisionContent(table)) === canonical({ hitPolicy: content.hitPolicy, rows: content.rows, default: content.default })
+  !!content && canonical(decisionContent(table)) === canonical({
+    hitPolicy: content.hitPolicy,
+    ...(content.aggregation ? { aggregation: content.aggregation } : {}),
+    ...(content.priority ? { priority: content.priority } : {}),
+    rows: content.rows,
+    default: content.default,
+  })
 
 function messageOf(error: unknown): string {
   const problem = toProblem(error)

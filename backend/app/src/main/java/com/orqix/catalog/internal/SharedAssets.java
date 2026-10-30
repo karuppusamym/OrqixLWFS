@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.orqix.audit.AuditWriter;
 import com.orqix.compiler.CanonicalJson;
+import com.orqix.compiler.DecisionTables;
 import com.orqix.compiler.WorkflowCompiler;
 import com.orqix.identity.Caller;
 import com.orqix.identity.Permission;
@@ -58,6 +59,8 @@ public class SharedAssets {
     public static final int MAX_VERSIONS = 100;
     public static final int SEARCH_LIMIT = 300;
     static final int MAX_CONTENT_BYTES = 64 * 1024;
+    /** Members of shared decision content. */
+    static final Set<String> SHAREABLE = Set.of("hitPolicy", "aggregation", "priority", "rows", "default");
 
     /** API kind values. */
     public static final String DECISION = "decision";
@@ -410,9 +413,10 @@ public class SharedAssets {
     }
 
     /**
-     * The shareable part of a decision table: hit policy, rows and default, without the workflow-local key and
-     * version. Only the structure is checked here; conditions name fields of the workflow that uses the table, so the
-     * compiler checks each copy in full when that workflow is validated or published.
+     * The shareable part of a decision table: hit policy (with its aggregation or priority order, docs/build/S121),
+     * rows and default, without the workflow-local key and version. Only the structure is checked here; conditions
+     * name fields of the workflow that uses the table, so the compiler checks each copy in full when that workflow is
+     * validated or published.
      */
     ObjectNode decisionContent(JsonNode content) {
         List<String> problems = new ArrayList<>();
@@ -424,13 +428,20 @@ public class SharedAssets {
             throw invalidContent("The decision table is too large.");
         }
         for (String name : content.propertyNames()) {
-            if (!Set.of("hitPolicy", "rows", "default").contains(name)) {
+            if (!SHAREABLE.contains(name)) {
                 problems.add("Unknown property " + name + ".");
             }
         }
         String hitPolicy = content.path("hitPolicy").asString("");
-        if (!Set.of("UNIQUE", "FIRST").contains(hitPolicy)) {
-            problems.add("hitPolicy must be UNIQUE or FIRST.");
+        if (!Set.of("UNIQUE", "FIRST", "ANY", "PRIORITY", "COLLECT").contains(hitPolicy)) {
+            problems.add("hitPolicy must be UNIQUE, FIRST, ANY, PRIORITY or COLLECT.");
+        }
+        // The options belong to exactly one policy each, and that policy needs them.
+        if ("COLLECT".equals(hitPolicy) != content.has("aggregation")) {
+            problems.add("COLLECT needs an aggregation (SUM, MIN, MAX or COUNT), and only COLLECT has one.");
+        }
+        if ("PRIORITY".equals(hitPolicy) != content.has("priority")) {
+            problems.add("PRIORITY needs a priority order, and only PRIORITY has one.");
         }
         JsonNode rows = content.path("rows");
         if (!rows.isArray() || rows.isEmpty() || rows.size() > 50) {
@@ -453,8 +464,20 @@ public class SharedAssets {
         }
         ObjectNode normalized = json.object();
         normalized.put("hitPolicy", hitPolicy);
+        if (content.has("aggregation")) {
+            normalized.set("aggregation", content.get("aggregation").deepCopy());
+        }
+        if (content.has("priority")) {
+            normalized.set("priority", content.get("priority").deepCopy());
+        }
         normalized.set("rows", rows.deepCopy());
         normalized.set("default", fallback.deepCopy());
+        try {
+            // Operators, lists, ranges and hit policy options as the compiler reads them.
+            DecisionTables.check(json.write(normalized));
+        } catch (IllegalArgumentException e) {
+            throw invalidContent("The decision table is not valid: " + e.getMessage() + ".");
+        }
         return normalized;
     }
 
@@ -463,10 +486,19 @@ public class SharedAssets {
                 .withFieldErrors(List.of(new ApiException.FieldError("/content", "decisionTable", message)));
     }
 
-    /** SHA-256 of the RFC 8785 form of hit policy, rows and default (shared with {@link AssetReferenceCheck}). */
+    /**
+     * SHA-256 of the RFC 8785 form of hit policy, rows and default (shared with {@link AssetReferenceCheck}). The
+     * aggregation and priority order take part only when present, so tables without them keep their hash.
+     */
     String decisionHash(JsonNode table) {
         ObjectNode shareable = json.object();
         shareable.set("hitPolicy", table.path("hitPolicy").deepCopy());
+        if (table.has("aggregation")) {
+            shareable.set("aggregation", table.get("aggregation").deepCopy());
+        }
+        if (table.has("priority")) {
+            shareable.set("priority", table.get("priority").deepCopy());
+        }
         shareable.set("rows", table.path("rows").deepCopy());
         shareable.set("default", table.path("default").deepCopy());
         return CanonicalJson.sha256Hex(json.write(shareable));

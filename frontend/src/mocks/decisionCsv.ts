@@ -1,4 +1,4 @@
-import type { AtomicCondition, DecisionTable, Literal } from '@/features/studio/model/types'
+import type { AtomicCondition, ConditionValue, DecisionTable, Literal } from '@/features/studio/model/types'
 import { conditionTerms } from '@/features/studio/model/types'
 
 /**
@@ -19,12 +19,15 @@ const RISKY = "=+-@\t\r'"
 const NUMBER = /^-?(0|[1-9][0-9]{0,17})(\.[0-9]{1,17})?$/
 const DATE = /^\d{4}-\d{2}-\d{2}$/
 
-const kind = (v: Literal) => (typeof v === 'number' ? 'number' : typeof v === 'boolean' ? 'boolean' : 'text')
+const kind = (v: ConditionValue): string => (Array.isArray(v) ? kind(v[0] ?? '') : typeof v === 'object' ? 'number' : typeof v === 'number' ? 'number' : typeof v === 'boolean' ? 'boolean' : 'text')
 
 export function exportCsv(table: DecisionTable): string | { reasons: string[] } {
   const reasons: string[] = []
   const types = new Map<string, string>()
+  // As on the server: a priority order or an aggregation, lists and ranges have no place in CSV (docs/build/S121).
+  if (table.hitPolicy === 'PRIORITY' || table.hitPolicy === 'COLLECT') reasons.push(`The hit policy ${table.hitPolicy} has settings CSV cannot hold. Download the table as DMN instead.`)
   table.rows.forEach((row, i) => {
+    if (conditionTerms(row.when).some(t => t.operator === 'in' || t.operator === 'between')) reasons.push(`Row ${i + 1} uses a list or a range (is one of, is between), which CSV cannot hold. Download the table as DMN instead.`)
     if ('any' in row.when) reasons.push(`Row ${i + 1} is an OR row (Any comparison). CSV holds one condition per field; split it into one row per alternative under the first-match policy.`)
     for (const t of conditionTerms(row.when)) types.set(t.fieldRef, types.get(t.fieldRef) ?? kind(t.value))
   })
@@ -142,7 +145,7 @@ export function parseCsv(text: string): ParsedCsv {
   const recs = records(body, problems)
   if (problems.length) return { problems, ruleLines }
   const head = recs[0]!.cells.map((c, i) => unescape(c, 1, i + 1, problems))
-  if (head[0] !== 'hitPolicy:UNIQUE' && head[0] !== 'hitPolicy:FIRST') problems.push({ line: 1, column: 1, code: 'header', message: 'The first header cell must be hitPolicy:UNIQUE or hitPolicy:FIRST.' })
+  if (head[0] !== 'hitPolicy:UNIQUE' && head[0] !== 'hitPolicy:FIRST' && head[0] !== 'hitPolicy:ANY') problems.push({ line: 1, column: 1, code: 'header', message: 'The first header cell must be hitPolicy:UNIQUE, hitPolicy:FIRST or hitPolicy:ANY.' })
   else if (head[1] !== 'effectiveFrom') problems.push({ line: 1, column: 2, code: 'header', message: 'The second header cell must be effectiveFrom.' })
   else if (head[2] !== 'effectiveTo') problems.push({ line: 1, column: 3, code: 'header', message: 'The third header cell must be effectiveTo.' })
   const inputs: Array<{ type: string; name: string }> = []
@@ -207,5 +210,5 @@ export function parseCsv(text: string): ParsedCsv {
   if (!problems.length && !rows.length) problems.push({ line: recs.at(-1)!.line, column: 1, code: 'noRules', message: 'There must be at least one rule line before the default line.' })
   if (!problems.length && !def) problems.push({ line: recs.at(-1)!.line + 1, column: 1, code: 'noDefault', message: 'The last line must be the default line (default in the first cell).' })
   if (problems.length) return { problems, ruleLines }
-  return { table: { hitPolicy: head[0] === 'hitPolicy:FIRST' ? 'FIRST' : 'UNIQUE', rows, default: def! }, problems, ruleLines }
+  return { table: { hitPolicy: head[0] === 'hitPolicy:FIRST' ? 'FIRST' : head[0] === 'hitPolicy:ANY' ? 'ANY' : 'UNIQUE', rows, default: def! }, problems, ruleLines }
 }

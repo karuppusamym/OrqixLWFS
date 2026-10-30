@@ -50,7 +50,7 @@ export function FormField({
     <div className={cn('space-y-1.5', className)}>
       <Label htmlFor={ids.input} className={cn(hideLabel && 'sr-only')}>
         {label}
-        {required ? <span className="ml-1.5 text-xs font-normal text-muted-foreground">(required)</span> : null}
+        {required ? <>{' '}<span className="ml-0.5 text-xs font-normal text-muted-foreground">(required)</span></> : null}
         {optionalText ? <span className="ml-1.5 text-xs font-normal text-muted-foreground">(optional)</span> : null}
       </Label>
       {description && descriptionPlacement === 'above' ? (

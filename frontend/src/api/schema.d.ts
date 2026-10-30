@@ -1512,6 +1512,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/decisions/{decisionKey}/dmn": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+                decisionKey: components["parameters"]["DecisionKey"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Download a decision table of a draft as a standard DMN 1.3 file (docs/build/S121)
+         * @description The portable form of the table: the authored hit policy (with aggregation for COLLECT and outputValues for
+         *     PRIORITY), FEEL unary tests (>= 5000, "EU","UK", [1000..5000), not("x")), each output's defaultOutputEntry and
+         *     effective dates as a submissionDate column. The engine DMN that publishing deploys is a separate artifact. A
+         *     malformed table is refused with 422. Latest revision unless `revision` is given. Audited as workflow.exported
+         *     with format dmn and the revision.
+         */
+        get: operations["exportDecisionDmn"];
+        /**
+         * Replace a decision table of the latest draft with a decision table of a DMN file (a draft change only)
+         * @description The body is the DMN 1.1 to 1.5 file, `Content-Type: application/xml`, at most 512 KiB, read safely (no DTDs or
+         *     entities). `decisionId` chooses the decision when the file has several; without it such a file is refused with
+         *     422 and the problem lists `decisions`. The reader is strict: hit policies UNIQUE, FIRST, ANY, PRIORITY (one
+         *     output's outputValues) and COLLECT with SUM, MIN, MAX or COUNT; literal, comparison, range, list and not(...)
+         *     unary tests; literal outputs; input expressions that name a field. Anything else is a fieldError with its place
+         *     in the file, never approximated. The table key and version stay. The compiler then validates the draft with the
+         *     new table and a blocker inside it refuses the import (fieldError pointer /dmn/rows/...). On success a normal draft
+         *     revision is saved like saveDraft (If-Match, 412 on a stale revision, audit workflow.draft.saved with source
+         *     decisionDmn). Nothing is published.
+         */
+        put: operations["importDecisionDmn"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/workflows/{workflowId}/decisions/{decisionKey}/csv-template": {
         parameters: {
             query?: never;
@@ -1776,7 +1816,7 @@ export interface paths {
         put?: never;
         /**
          * Create a shared decision table with its first version (at most 200 per workspace)
-         * @description content holds hitPolicy, rows and default exactly as in a workflow decision table, without its key and version.
+         * @description content holds hitPolicy (with aggregation or priority), rows and default exactly as in a workflow decision table, without its key and version.
          *     Only the structure is checked here; the compiler checks each copy in full in the workflow that uses it, because
          *     conditions name that workflow's fields. Keys and names are unique in the workspace. The caller becomes the owner.
          */
@@ -1804,6 +1844,56 @@ export interface paths {
          * @description A version identical to the latest and a version of an archived asset are refused (422). Workflows keep the version they pinned until a designer updates them.
          */
         post: operations["addDecisionAssetVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/shared-assets/decision/dmn": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Convert a decision table of a DMN file into shared decision content for review (nothing is stored)
+         * @description The body is the DMN file, `Content-Type: application/xml`, read like importDecisionDmn. When the file has
+         *     several decisions and `decisionId` is absent, the result lists `decisions` with `decisionId` and `content` null so
+         *     the caller can choose. Otherwise `content` is the converted table (structure checked like createDecisionAsset);
+         *     create the shared decision or its next version with createDecisionAsset or addDecisionAssetVersion. `notes`
+         *     name the parts of the file that carry no meaning for Orqix and were left out (annotations, descriptions).
+         */
+        post: operations["convertDecisionDmn"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/shared-assets/decision/{assetKey}/versions/{version}/dmn": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                assetKey: components["schemas"]["Key"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        /**
+         * Download a version of a shared decision as a standard DMN 1.3 file (docs/build/S121)
+         * @description The same portable form as exportDecisionDmn, named after the shared decision.
+         */
+        get: operations["exportSharedDecisionDmn"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2592,6 +2682,33 @@ export interface paths {
          *     number only); outsiders get 404.
          */
         get: operations["exportReleaseBpmn"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/releases/{releaseId}/decisions/{decisionKey}/dmn": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+                releaseId: components["parameters"]["ReleaseId"];
+                decisionKey: components["parameters"]["DecisionKey"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Download a decision table of a published release as a standard DMN 1.3 file (docs/build/S121)
+         * @description The same portable form as exportDecisionDmn, written from the table the release was published with. Same
+         *     permission and audit as the release BPMN (`workflow.export`, audit workflow.exported with format dmn and the
+         *     release number); outsiders get 404.
+         */
+        get: operations["exportReleaseDecisionDmn"];
         put?: never;
         post?: never;
         delete?: never;
@@ -5114,7 +5231,7 @@ export interface paths {
         put?: never;
         /**
          * Upload a Pega Blueprint PDF and transcribe it for review (docs/build/S91)
-         * @description The PDF (at most 25 MiB and 60 pages, starting with %PDF-) is read page by page in the isolated extraction worker; no JavaScript, form action or embedded file is executed or opened, and encrypted or damaged PDFs are refused. A generic outline layout proposes a structured transcription with source page references; every element starts as proposed and must be reviewed. Nothing is converted or published by this call. The layout is generic and does not claim compatibility with Pega's own Blueprint export layout.
+         * @description The PDF (at most 25 MiB and 60 pages, starting with %PDF-) is read page by page in the isolated extraction worker: page text, the position and font of each text run, and the colour of small shapes such as step icons. No JavaScript, form action or embedded file is executed or opened, images are not decoded, and encrypted or damaged PDFs are refused. A layout proposes a structured transcription with source page references; every element starts as proposed and must be reviewed. Pega's "Application Overview Document" Blueprint export is read with the pega-blueprint layout (written against one genuine export), which also stores each page in reading order (stage by stage); other documents are read with the generic outline layout. An export can define several case types and one upload transcribes one: caseType names it (default the first); an unknown name is refused with the names the document has (400). Nothing is converted or published by this call.
          */
         post: operations["uploadBlueprintMigration"];
         delete?: never;
@@ -6912,6 +7029,8 @@ export interface components {
             openItems?: components["schemas"]["CompatibilityIssue"][];
             currentRevision?: number;
             currentVersion?: number;
+            /** @description importDecisionDmn and convertDecisionDmn only - the decisions of the file, to choose one with decisionId */
+            decisions?: components["schemas"]["DecisionDmnChoice"][];
         };
         FieldError: {
             /** @description JSON Pointer into the request body, e.g. /input/amount */
@@ -7345,12 +7464,14 @@ export interface components {
             };
         };
         DecisionEvaluateResult: {
-            /** @description Zero-based row index, null when the default applied */
+            /** @description Zero-based row index, null when the default applied; under COLLECT the first matching row */
             matchedRow: number | null;
             usedDefault: boolean;
             output: {
                 [key: string]: string | number | boolean;
             };
+            /** @description Zero-based indexes of every row that applies, in table order (several only under COLLECT, whose results are combined; empty when the default applied) */
+            matchedRows?: number[];
         };
         WorkflowTestCase: {
             id: string;
@@ -8089,13 +8210,37 @@ export interface components {
         /** @description The shareable part of a workflow decision table (contracts/workflow-v0.schema.json decisionTable without key and version) */
         DecisionAssetContent: {
             /** @enum {string} */
-            hitPolicy: "UNIQUE" | "FIRST";
+            hitPolicy: "UNIQUE" | "FIRST" | "ANY" | "PRIORITY" | "COLLECT";
+            /**
+             * @description COLLECT only, required there
+             * @enum {string}
+             */
+            aggregation?: "SUM" | "MIN" | "MAX" | "COUNT";
+            /** @description PRIORITY only, required there - the output that decides and its values from the highest to the lowest priority */
+            priority?: {
+                output: string;
+                order: (string | number | boolean)[];
+            };
             rows: {
                 [key: string]: unknown;
             }[];
             default: {
                 [key: string]: unknown;
             };
+        };
+        DecisionDmnChoice: {
+            id: string;
+            name: string;
+            /** @description false when the decision is not a decision table */
+            table: boolean;
+        };
+        DecisionDmnConversion: {
+            decisions: components["schemas"]["DecisionDmnChoice"][];
+            /** @description The decision read; null when the file has several and none was chosen */
+            decisionId: string | null;
+            name: string | null;
+            content: components["schemas"]["DecisionAssetContent"] | null;
+            notes: string[];
         };
         CreateDecisionAsset: {
             key: components["schemas"]["Key"];
@@ -9378,6 +9523,7 @@ export interface components {
             /** Format: date-time */
             savedAt: string;
             layout: {
+                /** @description pega-blueprint (Pega Blueprint export) or generic-outline */
                 id: string;
                 revision: string;
             };
@@ -9388,6 +9534,7 @@ export interface components {
             embeddedFiles: boolean;
             pages: {
                 number: number;
+                /** @description Extracted page text; with the pega-blueprint layout, the page in reading order (lifecycle stage by stage, steps indented under their stage, table cells separated by tabs) */
                 text: string;
                 sha256: string;
                 unclassifiedLines: number;
@@ -9865,10 +10012,31 @@ export interface components {
             title?: string;
             required?: boolean;
         };
-        decisionCondition: components["schemas"]["atomicCondition"] | {
-            all: components["schemas"]["atomicCondition"][];
+        /** @description True when the field equals one of 1 to 20 distinct texts or numbers, all of one type (FEEL "EU","UK"). */
+        inCondition: {
+            fieldRef: components["schemas"]["fieldRef"];
+            /** @constant */
+            operator: "in";
+            value: (string | number)[];
+        };
+        /** @description True when a number field lies in the range; each bound is included unless includeFrom or includeTo is false (FEEL [1000..5000)). from must be smaller than to. */
+        betweenCondition: {
+            fieldRef: components["schemas"]["fieldRef"];
+            /** @constant */
+            operator: "between";
+            value: {
+                from: number;
+                to: number;
+                includeFrom?: boolean;
+                includeTo?: boolean;
+            };
+        };
+        /** @description One comparison of a decision row: a plain comparison, a list (in) or a number range (between). Lists and ranges are accepted in decision rows only (docs/build/S121). */
+        decisionTerm: components["schemas"]["atomicCondition"] | components["schemas"]["inCondition"] | components["schemas"]["betweenCondition"];
+        decisionCondition: components["schemas"]["decisionTerm"] | {
+            all: components["schemas"]["decisionTerm"][];
         } | {
-            any: components["schemas"]["atomicCondition"][];
+            any: components["schemas"]["decisionTerm"][];
         };
         decisionOutput: {
             [key: string]: components["schemas"]["literal"];
@@ -10263,15 +10431,25 @@ export interface components {
             label?: string;
             condition?: components["schemas"]["condition"];
         };
-        /** @description Authoring semantics: at most one row matches (UNIQUE); the default applies only when no row matches. Scalar rows test the same field; conjunctive All rows support 2 to 8 distinct fields. Rows must be pairwise disjoint (WF_DECISION_OVERLAP). Compiled to DMN as FIRST with a trailing catch-all row. */
+        /** @description Authoring semantics depend on hitPolicy (docs/build/S40, S121); the default applies when no row matches. Scalar rows test the same field; conjunctive All rows support 2 to 8 distinct fields. UNIQUE rows must be pairwise disjoint (WF_DECISION_OVERLAP); ANY rows may overlap only when they give the same results. Compiled to DMN as FIRST with a trailing catch-all row (PRIORITY rows sorted by priority), or as COLLECT with its aggregation. */
         decisionTable: {
             key: components["schemas"]["key"];
             version: number;
             /**
-             * @description UNIQUE: at most one row can match, proven at publish time. FIRST: rows are tried in order and the first match wins, so rows may overlap (docs/build/S40).
+             * @description UNIQUE: at most one row can match, proven at publish time. FIRST: rows are tried in order and the first match wins, so rows may overlap (docs/build/S40). ANY: rows may overlap when they give the same results. PRIORITY: of the matching rows, the one whose priority output ranks highest in priority.order wins; equal ranks keep table order. COLLECT: every matching row counts; its single number result is combined by aggregation (docs/build/S121).
              * @enum {unknown}
              */
-            hitPolicy: "UNIQUE" | "FIRST";
+            hitPolicy: "UNIQUE" | "FIRST" | "ANY" | "PRIORITY" | "COLLECT";
+            /**
+             * @description COLLECT only, required there: how the number results of the matching rows combine. COUNT is the number of matching rows.
+             * @enum {unknown}
+             */
+            aggregation?: "SUM" | "MIN" | "MAX" | "COUNT";
+            /** @description PRIORITY only, required there: the output that decides between matching rows and its values from the highest to the lowest priority. Every value a row or the default gives must be listed. */
+            priority?: {
+                output: components["schemas"]["fieldKey"];
+                order: components["schemas"]["literal"][];
+            };
             rows: {
                 when: components["schemas"]["decisionCondition"];
                 then: components["schemas"]["decisionOutput"];
@@ -10820,20 +10998,51 @@ export interface components {
                     label?: string;
                     condition?: components["schemas"]["condition"];
                 };
-                decisionCondition: components["schemas"]["atomicCondition"] | {
-                    all: components["schemas"]["atomicCondition"][];
+                decisionCondition: components["schemas"]["decisionTerm"] | {
+                    all: components["schemas"]["decisionTerm"][];
                 } | {
-                    any: components["schemas"]["atomicCondition"][];
+                    any: components["schemas"]["decisionTerm"][];
                 };
-                /** @description Authoring semantics: at most one row matches (UNIQUE); the default applies only when no row matches. Scalar rows test the same field; conjunctive All rows support 2 to 8 distinct fields. Rows must be pairwise disjoint (WF_DECISION_OVERLAP). Compiled to DMN as FIRST with a trailing catch-all row. */
+                /** @description One comparison of a decision row: a plain comparison, a list (in) or a number range (between). Lists and ranges are accepted in decision rows only (docs/build/S121). */
+                decisionTerm: components["schemas"]["atomicCondition"] | components["schemas"]["inCondition"] | components["schemas"]["betweenCondition"];
+                /** @description True when the field equals one of 1 to 20 distinct texts or numbers, all of one type (FEEL "EU","UK"). */
+                inCondition: {
+                    fieldRef: components["schemas"]["fieldRef"];
+                    /** @constant */
+                    operator: "in";
+                    value: (string | number)[];
+                };
+                /** @description True when a number field lies in the range; each bound is included unless includeFrom or includeTo is false (FEEL [1000..5000)). from must be smaller than to. */
+                betweenCondition: {
+                    fieldRef: components["schemas"]["fieldRef"];
+                    /** @constant */
+                    operator: "between";
+                    value: {
+                        from: number;
+                        to: number;
+                        includeFrom?: boolean;
+                        includeTo?: boolean;
+                    };
+                };
+                /** @description Authoring semantics depend on hitPolicy (docs/build/S40, S121); the default applies when no row matches. Scalar rows test the same field; conjunctive All rows support 2 to 8 distinct fields. UNIQUE rows must be pairwise disjoint (WF_DECISION_OVERLAP); ANY rows may overlap only when they give the same results. Compiled to DMN as FIRST with a trailing catch-all row (PRIORITY rows sorted by priority), or as COLLECT with its aggregation. */
                 decisionTable: {
                     key: components["schemas"]["key"];
                     version: number;
                     /**
-                     * @description UNIQUE: at most one row can match, proven at publish time. FIRST: rows are tried in order and the first match wins, so rows may overlap (docs/build/S40).
+                     * @description UNIQUE: at most one row can match, proven at publish time. FIRST: rows are tried in order and the first match wins, so rows may overlap (docs/build/S40). ANY: rows may overlap when they give the same results. PRIORITY: of the matching rows, the one whose priority output ranks highest in priority.order wins; equal ranks keep table order. COLLECT: every matching row counts; its single number result is combined by aggregation (docs/build/S121).
                      * @enum {unknown}
                      */
-                    hitPolicy: "UNIQUE" | "FIRST";
+                    hitPolicy: "UNIQUE" | "FIRST" | "ANY" | "PRIORITY" | "COLLECT";
+                    /**
+                     * @description COLLECT only, required there: how the number results of the matching rows combine. COUNT is the number of matching rows.
+                     * @enum {unknown}
+                     */
+                    aggregation?: "SUM" | "MIN" | "MAX" | "COUNT";
+                    /** @description PRIORITY only, required there: the output that decides between matching rows and its values from the highest to the lowest priority. Every value a row or the default gives must be listed. */
+                    priority?: {
+                        output: components["schemas"]["fieldKey"];
+                        order: components["schemas"]["literal"][];
+                    };
                     rows: {
                         when: components["schemas"]["decisionCondition"];
                         then: components["schemas"]["decisionOutput"];
@@ -14119,6 +14328,79 @@ export interface operations {
             428: components["responses"]["PreconditionRequired"];
         };
     };
+    exportDecisionDmn: {
+        parameters: {
+            query?: {
+                revision?: number;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+                decisionKey: components["parameters"]["DecisionKey"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The DMN file */
+            200: {
+                headers: {
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/xml": string;
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    importDecisionDmn: {
+        parameters: {
+            query?: {
+                decisionId?: string;
+            };
+            header: {
+                /** @description ETag of the revision being replaced. */
+                "If-Match": components["parameters"]["IfMatch"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+                decisionKey: components["parameters"]["DecisionKey"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/xml": string;
+            };
+        };
+        responses: {
+            /** @description Saved; body is the new revision */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowDraft"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
+            428: components["responses"]["PreconditionRequired"];
+        };
+    };
     getDecisionCsvTemplate: {
         parameters: {
             query?: never;
@@ -14587,6 +14869,69 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    convertDecisionDmn: {
+        parameters: {
+            query?: {
+                decisionId?: string;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/xml": string;
+            };
+        };
+        responses: {
+            /** @description The converted table, or the decisions to choose from */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DecisionDmnConversion"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    exportSharedDecisionDmn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                assetKey: components["schemas"]["Key"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The DMN file */
+            200: {
+                headers: {
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/xml": string;
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             422: components["responses"]["Unprocessable"];
         };
     };
@@ -15820,6 +16165,36 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    exportReleaseDecisionDmn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+                releaseId: components["parameters"]["ReleaseId"];
+                decisionKey: components["parameters"]["DecisionKey"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The DMN file */
+            200: {
+                headers: {
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/xml": string;
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     setActiveRelease: {
@@ -19852,6 +20227,8 @@ export interface operations {
             content: {
                 "multipart/form-data": {
                     file: string;
+                    /** @description Name of the case type to transcribe when the blueprint defines several (case and punctuation are ignored); the first when omitted or blank */
+                    caseType?: string;
                 };
             };
         };

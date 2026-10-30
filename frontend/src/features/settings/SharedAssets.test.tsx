@@ -106,3 +106,31 @@ describe('shared assets (PL01)', () => {
     expect(await within(screen.getByTestId('asset-detail')).findByRole('button', { name: 'Restore' })).toBeInTheDocument()
   })
 })
+
+describe('shared decisions from DMN (docs/build/S121)', () => {
+  it('creates a shared decision from a DMN file and adds a version from another', async () => {
+    signInAs('dana.designer')
+    const { exportDmn } = await import('@/mocks/decisionDmn')
+    const content = { hitPolicy: 'COLLECT' as const, aggregation: 'SUM' as const, rows: [{ when: { fieldRef: '/input/amount', operator: 'gte' as const, value: 5000 }, then: { fee: 10 } }], default: { fee: 0 } }
+    const user = userEvent.setup()
+    await openAssets(user)
+    await waitFor(() => expect(names().length).toBeGreaterThan(0))
+    const create = screen.getAllByTestId('decision-dmn-import')[0]!
+    await user.upload(within(create).getByLabelText('DMN file: Create from DMN'), new File([exportDmn(content, 'fees', 'Fees')], 'fees.dmn', { type: 'application/xml' }))
+    expect(await within(create).findByText(/decision Fees, 1 row, hit policy COLLECT/)).toBeInTheDocument()
+    expect(within(create).getByLabelText(/Shared name/)).toHaveValue('Fees')
+    await user.click(within(create).getByRole('button', { name: 'Create shared decision' }))
+    expect(await within(create).findByText('Created Fees from fees.dmn.')).toBeInTheDocument()
+    await waitFor(() => expect(names()).toContain('Fees'))
+
+    const row = screen.getAllByTestId('asset-row').find((r) => r.textContent?.includes('Fees'))!
+    await user.click(row.querySelector('button')!)
+    const detail = await screen.findByTestId('asset-detail')
+    expect(within(detail).getByTestId('asset-version')).toHaveTextContent('all matching rows are combined')
+    expect(within(detail).getByRole('button', { name: /Download DMN/ })).toBeInTheDocument()
+    const next = within(detail).getByTestId('decision-dmn-import')
+    await user.upload(within(next).getByLabelText('DMN file: New version from DMN'), new File([exportDmn({ ...content, aggregation: 'MAX' }, 'fees')], 'fees-2.dmn', { type: 'application/xml' }))
+    await user.click(await within(next).findByRole('button', { name: 'Save as version 2' }))
+    await waitFor(() => expect(within(detail).getAllByTestId('asset-version')).toHaveLength(2))
+  })
+})

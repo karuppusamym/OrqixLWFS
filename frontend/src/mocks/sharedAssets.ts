@@ -3,6 +3,7 @@ import type { DecisionAssetContent, FormAssetContent, Permission, SharedAsset, S
 import { canonical } from '@/lib/canonicalJson'
 import { copyMatches, type FormLink } from '@/features/studio/model/sharedForms'
 import type { Definition } from '@/features/studio/model/types'
+import { exportDmn, readDmn } from './decisionDmn'
 import { documentTemplatesOf } from './documentLibrary'
 import { getCurrentUser } from './handlers'
 import { USERS, WORKSPACES, agentConnectionDefinition, clock, connectionDefinition, db, isMember, newId, permissionsOf, purchaseTemplate, userById, userByName, type MockUser } from './state'
@@ -169,7 +170,8 @@ export function assetIssues(wsId: string, def: Definition): Array<{ code: string
     let same = true
     if (table) {
       const content = decisions.get(`${wsId}:${a.key}`)?.versions.find((v) => v.version === a.version)?.content
-      same = !!content && canonical({ hitPolicy: table.hitPolicy, rows: table.rows, default: table.default }) === canonical(content)
+      // The hit policy settings belong to the shared content (docs/build/S121).
+      same = !!content && canonical({ hitPolicy: table.hitPolicy, ...(table.aggregation ? { aggregation: table.aggregation } : {}), ...(table.priority ? { priority: table.priority } : {}), rows: table.rows, default: table.default }) === canonical(content)
     } else if (node) {
       const version = documentTemplatesOf(wsId).find((t) => t.key === a.key)?.versions.find((v) => v.version === a.version)
       same = !!version && version.body === node.config.template && version.format === (node.config.format ?? 'pdf')
@@ -235,6 +237,37 @@ export function createSharedAssetHandlers(): HttpHandler[] {
       decisions.set(`${wsId}:${body.key}`, { wsId, id: newId(), key: body.key, name: body.name.trim(), description: body.description ?? null, ownerId: user.id, revision: 1, archived: false, updatedAt: now, versions: [{ version: 1, content: body.content, changeNote: body.changeNote ?? null, createdById: user.id, createdAt: now }] })
       const row = find(wsId, 'decision', body.key)!
       return HttpResponse.json({ asset: row.summary, versions: row.versions }, { status: 201 })
+    }),
+    http.post(`${B}/workspaces/:ws/shared-assets/decision/dmn`, async ({ params, request }) => {
+      await slow()
+      seed()
+      const wsId = String(params.ws)
+      const user = member(wsId)
+      if (!user) return notFound()
+      if (!permissionsOf(user, wsId).includes('workflow.edit')) return forbidden()
+      const type = (request.headers.get('Content-Type') ?? '').toLowerCase()
+      if (!type.startsWith('application/xml') && !type.startsWith('text/xml')) return problem(400, 'MALFORMED_REQUEST', 'Send the file as Content-Type: application/xml.')
+      const read = readDmn(await request.text(), new URL(request.url).searchParams.get('decisionId'))
+      if (read.problems.length) {
+        return problem(422, 'VALIDATION_FAILED', 'Some values are not valid', {
+          detail: `The DMN file cannot be imported: ${read.problems[0]}`,
+          fieldErrors: read.problems.map((message) => ({ pointer: '/dmn', code: 'DMN_NOT_IMPORTED', message })),
+          ...(read.decisions.length ? { decisions: read.decisions } : {}),
+        })
+      }
+      return HttpResponse.json({ decisions: read.decisions, decisionId: read.decisionId, name: read.name, content: read.content, notes: [] })
+    }),
+    http.get(`${B}/workspaces/:ws/shared-assets/decision/:key/versions/:version/dmn`, async ({ params }) => {
+      await slow()
+      seed()
+      const wsId = String(params.ws)
+      const user = member(wsId)
+      if (!user) return notFound()
+      if (!permissionsOf(user, wsId).includes('workflow.read')) return forbidden()
+      const d = decisions.get(`${wsId}:${String(params.key)}`)
+      const v = d?.versions.find((x) => x.version === Number(params.version))
+      if (!d || !v) return notFound()
+      return new HttpResponse(exportDmn(v.content as never, d.key, d.name), { headers: { 'Content-Type': 'application/xml', 'Content-Disposition': `attachment; filename="${d.key}-v${v.version}.dmn"` } })
     }),
     http.post(`${B}/workspaces/:ws/shared-assets/decision/:key/versions`, async ({ params, request }) => {
       await slow()

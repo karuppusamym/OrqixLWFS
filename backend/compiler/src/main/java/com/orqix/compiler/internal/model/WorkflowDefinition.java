@@ -71,19 +71,66 @@ public record WorkflowDefinition(
         }
     }
 
-    /** A structured comparison; {@code operator} is never null after schema validation. */
-    public record Condition(String fieldRef, Operator operator, Literal value, String group, List<Condition> terms) {
-        public Condition(String fieldRef, Operator operator, Literal value) { this(fieldRef, operator, value, null, List.of()); }
+    /**
+     * A structured comparison; {@code operator} is never null after schema validation. {@code value} is the literal of
+     * a scalar comparison and null for the decision-only set operators: {@code list} holds the values of {@code in}
+     * and {@code range} the bounds of {@code between} (docs/build/S121).
+     */
+    public record Condition(String fieldRef, Operator operator, Literal value, String group, List<Condition> terms,
+                            List<Literal> list, Range range) {
+        public Condition(String fieldRef, Operator operator, Literal value) { this(fieldRef, operator, value, null, List.of(), List.of(), null); }
+        public Condition(String fieldRef, Operator operator, Literal value, String group, List<Condition> terms) { this(fieldRef, operator, value, group, terms, List.of(), null); }
         public boolean compound() { return group != null; }
         /** A group whose terms are alternatives (OR). Conjunctions are {@code group == "all"}. */
         public boolean isAny() { return "any".equals(group); }
+
+        /** @return true when the condition, or one of its terms, uses {@code in} or {@code between} */
+        public boolean usesSet() {
+            return compound() ? terms.stream().anyMatch(Condition::usesSet) : operator != null && operator.set();
+        }
+
+        /** @return every literal the comparison holds: the value, the list members or the two range bounds */
+        public List<Literal> literals() {
+            if (operator == Operator.IN) return list;
+            if (operator == Operator.BETWEEN) return List.of(range.from(), range.to());
+            return value == null ? List.of() : List.of(value);
+        }
+
+        /**
+         * @return the right-hand side as {@link com.orqix.compiler.ConditionMatcher} takes it: a BigDecimal, String or
+         *         Boolean, a list of them for {@code in}, or a {@link com.orqix.compiler.ConditionMatcher.Range}
+         */
+        public Object operand() {
+            if (operator == Operator.IN) return list.stream().map(Literal::value).toList();
+            if (operator == Operator.BETWEEN) return new com.orqix.compiler.ConditionMatcher.Range(range.from().number(),
+                    range.includeFrom(), range.to().number(), range.includeTo());
+            return value.value();
+        }
     }
 
-    /** @param defaultOutput sorted by key */
+    /** Number range of {@code between}; both bounds are present and {@code from < to}. */
+    public record Range(Literal.Num from, boolean includeFrom, Literal.Num to, boolean includeTo) {
+    }
+
+    /**
+     * @param defaultOutput sorted by key
+     * @param aggregation   SUM, MIN, MAX or COUNT for COLLECT, otherwise null
+     * @param priority      the output and its value order for PRIORITY, otherwise null
+     */
     public record DecisionTable(int index, String key, int version, String hitPolicy, List<Row> rows,
-                                Map<String, Literal> defaultOutput) {
+                                Map<String, Literal> defaultOutput, String aggregation, Priority priority) {
         public static final String UNIQUE = "UNIQUE";
         public static final String FIRST = "FIRST";
+        public static final String ANY = "ANY";
+        public static final String PRIORITY = "PRIORITY";
+        public static final String COLLECT = "COLLECT";
+        public static final List<String> HIT_POLICIES = List.of(UNIQUE, FIRST, ANY, PRIORITY, COLLECT);
+        public static final List<String> AGGREGATIONS = List.of("SUM", "MIN", "MAX", "COUNT");
+
+        public DecisionTable(int index, String key, int version, String hitPolicy, List<Row> rows,
+                             Map<String, Literal> defaultOutput) {
+            this(index, key, version, hitPolicy, rows, defaultOutput, null, null);
+        }
 
         public String path() {
             return "/decisions/" + index;
@@ -91,6 +138,39 @@ public record WorkflowDefinition(
 
         public boolean first() {
             return FIRST.equals(hitPolicy);
+        }
+
+        /** @return true for COLLECT: every matching row counts and the outputs are aggregated */
+        public boolean collect() {
+            return COLLECT.equals(hitPolicy);
+        }
+
+        /**
+         * Rows in the order the deployed DMN tries them: the table order, except under PRIORITY, where rows are sorted
+         * by the rank of their priority output (stable, so equal ranks keep the table order).
+         */
+        public List<Row> evaluationOrder() {
+            if (!PRIORITY.equals(hitPolicy) || priority == null) return rows;
+            List<Row> sorted = new java.util.ArrayList<>(rows);
+            sorted.sort(java.util.Comparator.comparingInt(r -> priority.rank(r.then().get(priority.output()))));
+            return List.copyOf(sorted);
+        }
+
+        /**
+         * PRIORITY: the output whose value decides between matching rows, and its values from the highest priority
+         * to the lowest.
+         */
+        public record Priority(String output, List<Literal> order) {
+            /** @return the position of the value in the order (lower wins), or the order size when absent */
+            public int rank(Literal value) {
+                for (int i = 0; i < order.size(); i++) {
+                    if (value != null && order.get(i).typeName().equals(value.typeName())
+                            && com.orqix.compiler.ConditionMatcher.matches("eq", value.value(), order.get(i).value())) {
+                        return i;
+                    }
+                }
+                return order.size();
+            }
         }
 
         /**

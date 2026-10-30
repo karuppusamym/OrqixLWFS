@@ -31,8 +31,13 @@ cd tests/e2e && npm run test:mock     # builds the frontend with --mode mock and
 | `E2E_PASSWORD` | — | One password for every user |
 | `E2E_REALM_FILE` | — | Read the dev-only passwords from the Keycloak realm export instead |
 | `E2E_AI_LIVE` | — | `true` lets `t-ai-02` call the configured AI provider on the real stack; otherwise it checks the agent connection without testing it |
+| `E2E_STUB_URL` | unset | Procurement stub admin URL for fault injection, e.g. `http://localhost:8095` on the compose stack; `t-ex-06-scope-frames` needs it on the real stack |
+| `E2E_DB_CONTAINER` | unset | PostgreSQL container of the stack under test, e.g. `orqix-postgres-1`; specs that read or age rows directly (`t-ex-09-*`, `t-in-02-events-and-adapter-step`, `t-in-04-agent-writes`) skip or leave out those steps without it (`t-demo-1026-blueprint` defaults to `orqix-demo-1026-postgres-1`) |
+| `E2E_INBOUND_SECRETS_DIR` | unset | The stack's secrets folder (mounted as `orqix.secrets.dir`) holding the `orders-signing` test secret; `t-in-02-events-and-adapter-step` signs inbound events with it and skips without it |
 | `E2E_REHEARSAL` | — | `true` runs the `t-demo-*` presenter rehearsals, which need a seeded demo stack ([S86](../../docs/build/S86-demo-rehearsal-1025.md)); the general suite and CI skip them |
 
 Console-error policy: a 401 logged while a page is still signing in is the SPA's designed unauthenticated probe and is
 ignored; specs that deliberately provoke an error response (for example a stale claim answered with 409) call
-`sessions.allowHttpErrors()` for that step. CSP violations and uncaught exceptions always fail.
+`sessions.allowHttpErrors()` for that step. A spec that expects one specific browser message names it exactly with
+`sessions.allowConsoleError(text, url?)` (`t-ui-02g-extensions` does this for the blocked reload of an extension that
+leaves its document). CSP violations recorded on the page and uncaught exceptions always fail.

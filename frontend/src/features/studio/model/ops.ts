@@ -461,10 +461,19 @@ export function unlinkAsset(def: Definition, kind: AssetRef['kind'], target: str
 }
 
 /** Copies one version of a shared decision into the table and pins it; the table keeps its key and version. */
-export function applySharedDecision(def: Definition, tableKey: string, content: Pick<DecisionTable, 'hitPolicy' | 'rows' | 'default'>, assetKey: string, version: number): Definition {
+export function applySharedDecision(def: Definition, tableKey: string, content: Pick<DecisionTable, 'hitPolicy' | 'rows' | 'default' | 'aggregation' | 'priority'>, assetKey: string, version: number): Definition {
   const table = def.decisions.find((d) => d.key === tableKey)
   if (!table) return def
-  const copied = upsertDecision(def, { ...table, hitPolicy: content.hitPolicy, rows: structuredClone(content.rows), default: structuredClone(content.default) })
+  // The hit policy settings travel with the copy (docs/build/S121).
+  const { aggregation: _a, priority: _p, ...rest } = table
+  const copied = upsertDecision(def, {
+    ...rest,
+    hitPolicy: content.hitPolicy,
+    ...(content.aggregation ? { aggregation: content.aggregation } : {}),
+    ...(content.priority ? { priority: structuredClone(content.priority) } : {}),
+    rows: structuredClone(content.rows),
+    default: structuredClone(content.default),
+  })
   return linkAsset(copied, { kind: 'decision', key: assetKey, version, target: tableKey })
 }
 

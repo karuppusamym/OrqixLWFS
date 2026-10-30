@@ -244,20 +244,50 @@ public final class ModelReader {
         for (int r = 0; r < rows.size(); r++) {
             JsonNode row = rows.get(r);
             require(row.isObject(), "decision row must be an object");
-            rowList.add(new DecisionTable.Row(r, readCondition(row.get("when")), outputMap(row.get("then")),
+            rowList.add(new DecisionTable.Row(r, readCondition(row.get("when"), true), outputMap(row.get("then")),
                     readWindow(row.get("effective"))));
         }
         JsonNode policy = t.get("hitPolicy");
-        require(policy == null || (policy.isString() && (DecisionTable.UNIQUE.equals(policy.stringValue())
-                || DecisionTable.FIRST.equals(policy.stringValue()))), "decision table hitPolicy must be UNIQUE or FIRST");
+        require(policy == null || (policy.isString() && DecisionTable.HIT_POLICIES.contains(policy.stringValue())),
+                "decision table hitPolicy must be UNIQUE, FIRST, ANY, PRIORITY or COLLECT");
+        JsonNode aggregation = t.get("aggregation");
+        require(aggregation == null || (aggregation.isString()
+                && DecisionTable.AGGREGATIONS.contains(aggregation.stringValue())),
+                "decision table aggregation must be SUM, MIN, MAX or COUNT");
         return new DecisionTable(index, key.stringValue(), version.intValue(),
-                policy == null ? DecisionTable.UNIQUE : policy.stringValue(), List.copyOf(rowList), outputMap(def));
+                policy == null ? DecisionTable.UNIQUE : policy.stringValue(), List.copyOf(rowList), outputMap(def),
+                aggregation == null ? null : aggregation.stringValue(), readPriority(t.get("priority")));
+    }
+
+    private static DecisionTable.Priority readPriority(JsonNode p) {
+        if (p == null || p.isNull()) {
+            return null;
+        }
+        require(p.isObject() && p.path("output").isString() && p.path("order").isArray(),
+                "decision table priority needs an output and an order");
+        List<Literal> order = new ArrayList<>();
+        for (JsonNode v : p.path("order")) {
+            require(v.isString() || v.isNumber() || v.isBoolean(), "priority order values must be scalars");
+            order.add(Literal.of(v));
+        }
+        return new DecisionTable.Priority(p.path("output").stringValue(), List.copyOf(order));
     }
 
     /**
+     * Reads a route, form or section condition. The set operators {@code in} and {@code between} are refused: they
+     * belong to decision rows only.
+     *
      * @throws IllegalArgumentException when the condition is malformed
      */
     public static Condition readCondition(JsonNode c) {
+        return readCondition(c, false);
+    }
+
+    /**
+     * @param decisionRow true for a decision row condition, which may use {@code in} and {@code between}
+     * @throws IllegalArgumentException when the condition is malformed
+     */
+    public static Condition readCondition(JsonNode c, boolean decisionRow) {
         require(c != null && c.isObject(), "condition must be an object");
         if (c.has("all") || c.has("any")) {
             String group = c.has("all") ? "all" : "any";
@@ -266,7 +296,7 @@ public final class ModelReader {
             List<Condition> terms = new ArrayList<>();
             for (JsonNode term : c.path(group)) {
                 require(!term.has("all") && !term.has("any"), "nested logical conditions are not supported");
-                terms.add(readCondition(term));
+                terms.add(readCondition(term, decisionRow));
             }
             return new Condition(null, null, null, group, List.copyOf(terms));
         }
@@ -274,11 +304,50 @@ public final class ModelReader {
         JsonNode operator = c.get("operator");
         JsonNode value = c.get("value");
         require(fieldRef != null && fieldRef.isString(), "condition fieldRef must be a string");
-        require(operator != null && operator.isString() && Operator.fromJson(operator.stringValue()) != null,
-                "condition operator must be eq, gte or lt");
+        Operator op = operator != null && operator.isString() ? Operator.fromJson(operator.stringValue()) : null;
+        require(op != null, "condition operator must be eq, ne, gte, gt, lt or lte");
+        if (op.set()) {
+            require(decisionRow, "the comparisons in and between can be used in decision table rows only");
+            return op == Operator.IN ? readIn(fieldRef.stringValue(), value) : readBetween(fieldRef.stringValue(), value);
+        }
         require(value != null && (value.isString() || value.isNumber() || value.isBoolean()),
                 "condition value must be a string, number or boolean");
-        return new Condition(fieldRef.stringValue(), Operator.fromJson(operator.stringValue()), Literal.of(value));
+        return new Condition(fieldRef.stringValue(), op, Literal.of(value));
+    }
+
+    /** {@code in}: 1 to 20 distinct strings or numbers, all of one type. */
+    private static Condition readIn(String fieldRef, JsonNode value) {
+        require(value != null && value.isArray() && value.size() >= 1 && value.size() <= 20,
+                "the value of in must list 1 to 20 values");
+        List<Literal> list = new ArrayList<>();
+        for (JsonNode v : value) {
+            require(v.isString() || v.isNumber(), "the values of in must be texts or numbers");
+            Literal literal = Literal.of(v);
+            require(list.isEmpty() || list.get(0).typeName().equals(literal.typeName()),
+                    "the values of in must all be texts or all be numbers");
+            require(list.stream().noneMatch(old -> com.orqix.compiler.ConditionMatcher.matches("eq", old.value(),
+                    literal.value())), "the values of in must be different from each other");
+            list.add(literal);
+        }
+        return new Condition(fieldRef, Operator.IN, null, null, List.of(), List.copyOf(list), null);
+    }
+
+    /** {@code between}: {@code from < to}, both numbers; each bound is included unless it says otherwise. */
+    private static Condition readBetween(String fieldRef, JsonNode value) {
+        require(value != null && value.isObject(), "the value of between must be an object with from and to");
+        for (String name : value.propertyNames()) {
+            require(java.util.Set.of("from", "to", "includeFrom", "includeTo").contains(name),
+                    "the value of between allows from, to, includeFrom and includeTo only");
+        }
+        require(value.path("from").isNumber() && value.path("to").isNumber(), "between needs from and to numbers");
+        require(!value.has("includeFrom") || value.get("includeFrom").isBoolean(), "includeFrom must be true or false");
+        require(!value.has("includeTo") || value.get("includeTo").isBoolean(), "includeTo must be true or false");
+        Literal.Num from = new Literal.Num(value.path("from").decimalValue());
+        Literal.Num to = new Literal.Num(value.path("to").decimalValue());
+        require(from.number().compareTo(to.number()) < 0, "the from of between must be smaller than its to");
+        return new Condition(fieldRef, Operator.BETWEEN, null, null, List.of(), List.of(),
+                new WorkflowDefinition.Range(from, value.path("includeFrom").asBoolean(true), to,
+                        value.path("includeTo").asBoolean(true)));
     }
 
     private static DecisionTable.Window readWindow(JsonNode w) {

@@ -129,7 +129,7 @@ function FieldControl({
           />
           <Label htmlFor={id} className="pt-0.5 font-medium">
             {f.label}
-            {f.required ? <span className="ml-1.5 text-xs font-normal text-muted-foreground">(required)</span> : null}
+            {f.required ? <>{' '}<span className="ml-0.5 text-xs font-normal text-muted-foreground">(required)</span></> : null}
           </Label>
         </div>
         {f.description && f.helpAbove !== true ? (
@@ -150,7 +150,7 @@ function FieldControl({
       <fieldset className="space-y-2" aria-describedby={describedBy}>
         <legend className="text-sm font-semibold">
           {f.label}
-          {f.required ? <span className="ml-1.5 text-xs font-normal text-muted-foreground">(required)</span> : null}
+          {f.required ? <>{' '}<span className="ml-0.5 text-xs font-normal text-muted-foreground">(required)</span></> : null}
         </legend>
         {f.description && f.helpAbove !== false ? (
           <p id={descId} className="text-sm text-muted-foreground">

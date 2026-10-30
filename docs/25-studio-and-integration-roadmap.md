@@ -153,7 +153,7 @@ Suggested order: STD01 (this document), then STU01, STU03 and STU04 in parallel 
 | BPMN 2.0 execution | generated BPMN is valid and runs on Flowable; round trip checked (S60, S77); Camunda 7 and 8 files import | not all BPMN elements are admitted (unsupported ones are reported on import); Orqix settings use extension attributes |
 | BPMN 2.0 notation | not on the canvas today; the BPMN source view is standard | STU01 delivers the notation; STU04 delivers diagram interchange |
 | CMMN 1.1 | a validated subset runs on Flowable's CMMN engine; exact XML export (S81) | full import, discretionary planning and conformance (WM04) |
-| DMN | decision tables with hit policies; DMN import; CSV (S89) | not full DMN decision services or boxed expressions |
+| DMN | decision tables with UNIQUE, FIRST, ANY, PRIORITY and COLLECT (SUM/MIN/MAX/COUNT); lists and ranges; standard DMN 1.3 download and strict DMN upload for drafts and shared decisions (S121); migration import; CSV (S89) | decision requirements graphs, decision services, boxed expressions, FEEL beyond literals, comparisons, ranges and lists |
 | UML | not followed | an activity-diagram view could be generated from a workflow if wanted; it would be a separate, optional export |
 
 Conformance is claimed per row, for the admitted subset only, and never as certification.

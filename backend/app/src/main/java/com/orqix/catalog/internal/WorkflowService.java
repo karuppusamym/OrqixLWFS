@@ -287,7 +287,8 @@ public class WorkflowService {
             DecisionEvaluator.Result result = evaluator.evaluate(draft.definitionJson(), decisionKey, values);
             Map<String, Object> output = new LinkedHashMap<>();
             result.output().forEach((k, v) -> output.put(k, v instanceof BigDecimal d ? d : v));
-            return new CatalogDtos.DecisionEvaluateResult(result.matchedRow(), result.usedDefault(), output);
+            return new CatalogDtos.DecisionEvaluateResult(result.matchedRow(), result.usedDefault(), output,
+                    result.matchedRows());
         } catch (IllegalArgumentException e) {
             throw new ApiException(ProblemCode.VALIDATION_FAILED, "The sample values do not fit the decision table.")
                     .withFieldErrors(List.of(new ApiException.FieldError("/values", "type",

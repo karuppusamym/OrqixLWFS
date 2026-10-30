@@ -509,6 +509,7 @@ final class SimulationRun {
         }
         ArrayNode rows = d.putArray("rows");
         Integer firstMatch = null;
+        List<Integer> allMatches = new ArrayList<>();
         for (DecisionTable.Row row : table.rows()) {
             Boolean matched = row.when().compound()?evaluate(row.when(),F.arrayNode()):matches(row.when(), values.get(row.when().fieldRef()));
             if (asOf != null && !row.appliesOn(asOf)) {
@@ -516,6 +517,9 @@ final class SimulationRun {
             }
             if (Boolean.TRUE.equals(matched) && firstMatch == null) {
                 firstMatch = row.index();
+            }
+            if (Boolean.TRUE.equals(matched)) {
+                allMatches.add(row.index());
             }
             ObjectNode r = rows.addObject();
             r.put("row", row.index() + 1);
@@ -530,11 +534,22 @@ final class SimulationRun {
             } else {
                 r.put("matched", matched);
             }
-            r.put("selected", result.matchedRow() != null && result.matchedRow() == row.index());
+            r.put("selected", result.matchedRows().contains(row.index()));
             r.set("outputs", literalMap(row.then()));
         }
-        if (!Objects.equals(firstMatch, result.matchedRow())) {
+        // The row check must agree with the evaluator: every match under COLLECT, a matching row under PRIORITY, and
+        // the first match otherwise (docs/build/S121).
+        boolean agrees = table.collect() ? allMatches.equals(result.matchedRows())
+                : DecisionTable.PRIORITY.equals(table.hitPolicy())
+                        ? (result.matchedRow() == null ? allMatches.isEmpty() : allMatches.contains(result.matchedRow()))
+                        : Objects.equals(firstMatch, result.matchedRow());
+        if (!agrees) {
             throw new IllegalStateException("The decision evaluator and the row check disagree for " + table.key());
+        }
+        if (table.collect()) {
+            ArrayNode matchedRows = d.putArray("matchedRows");
+            result.matchedRows().forEach(i -> matchedRows.add(i + 1));
+            d.put("aggregation", table.aggregation());
         }
         d.put("usedDefault", result.usedDefault());
         if (result.matchedRow() == null) {
@@ -543,7 +558,11 @@ final class SimulationRun {
             d.put("matchedRow", result.matchedRow() + 1);
         }
         d.set("outputs", DefaultWorkflowSimulator.json(result.output()));
-        matchedRules.add(table.key() + "#" + (result.matchedRow() == null ? "default" : result.matchedRow()));
+        if (result.matchedRows().isEmpty()) {
+            matchedRules.add(table.key() + "#default");
+        } else {
+            for (Integer i : result.matchedRows()) matchedRules.add(table.key() + "#" + i);
+        }
         Map<String, Object> out = new LinkedHashMap<>(result.output());
         steps.put(n.id(), out);
         String outputsText = outputsText(out);
@@ -551,6 +570,11 @@ final class SimulationRun {
         if (result.matchedRow() == null) {
             sentence = Text.quote(n.label()) + ": no rule applies, so the \"otherwise\" result is used: " + outputsText
                     + ".";
+        } else if (table.collect()) {
+            List<String> numbers = new ArrayList<>();
+            result.matchedRows().forEach(i -> numbers.add(String.valueOf(i + 1)));
+            sentence = Text.quote(n.label()) + ": " + (numbers.size() == 1 ? "rule " : "rules ") + String.join(", ", numbers)
+                    + " apply, combined as " + aggregationWords(table.aggregation()) + ", so " + outputsText + ".";
         } else {
             DecisionTable.Row row = table.rows().get(result.matchedRow());
             sentence = Text.quote(n.label()) + ": rule " + (row.index() + 1) + " applies because "
@@ -559,6 +583,15 @@ final class SimulationRun {
         Transition t = next(n, Route.NEXT);
         add(n, sentence, d, out, t);
         return t;
+    }
+
+    private static String aggregationWords(String aggregation) {
+        return switch (aggregation) {
+            case "SUM" -> "the sum";
+            case "MIN" -> "the smallest value";
+            case "MAX" -> "the largest value";
+            default -> "the number of matching rules";
+        };
     }
 
     private String firstMissing(Map<String, Object> values) {
@@ -681,7 +714,7 @@ final class SimulationRun {
             record.set("value", DefaultWorkflowSimulator.json(actual));
         }
         try {
-            return ConditionMatcher.matches(c.operator().json(), actual, c.value().value());
+            return ConditionMatcher.matches(c.operator().json(), actual, c.operand());
         } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException(info(c.fieldRef()).label() + " cannot be compared like that.");
         }
@@ -692,7 +725,7 @@ final class SimulationRun {
             return null;
         }
         try {
-            return ConditionMatcher.matches(c.operator().json(), actual, c.value().value());
+            return ConditionMatcher.matches(c.operator().json(), actual, c.operand());
         } catch (IllegalArgumentException e) {
             return null;
         }
@@ -1828,7 +1861,24 @@ final class SimulationRun {
         FieldInfo f = info(c.fieldRef());
         Object actual = known != null ? known : withValue ? resolve(c.fieldRef()) : null;
         String left = withValue && actual != null ? f.label() + " (" + Text.value(actual, f.money()) + ")" : f.label();
-        return left + " " + c.operator().phrase() + " " + Text.value(c.value().value(), f.money());
+        return left + " " + c.operator().phrase() + " " + operandText(c, f.money());
+    }
+
+    /** The right-hand side in words: a value, "EU, UK" for a list, "USD 1,000 and USD 5,000" for a range. */
+    private static String operandText(Condition c, boolean money) {
+        if (c.operator() == Operator.IN) {
+            List<String> values = new ArrayList<>();
+            c.list().forEach(l -> values.add(Text.value(l.value(), money)));
+            return String.join(", ", values);
+        }
+        if (c.operator() == Operator.BETWEEN) {
+            var r = c.range();
+            String excluded = !r.includeFrom() && !r.includeTo() ? " (both excluded)"
+                    : !r.includeFrom() ? " (excluding " + Text.value(r.from().number(), money) + ")"
+                    : !r.includeTo() ? " (excluding " + Text.value(r.to().number(), money) + ")" : "";
+            return Text.value(r.from().number(), money) + " and " + Text.value(r.to().number(), money) + excluded;
+        }
+        return Text.value(c.value().value(), money);
     }
 
     // ------------------------------------------------------------------ warnings and coverage

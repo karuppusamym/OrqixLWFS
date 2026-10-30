@@ -110,6 +110,7 @@ Scalability: [S92 scalability qualification](S92-scalability-qualification.md) (
 Application pages, composed actions and sandboxed extensions (UI02g): [S111](S111-application-designer.md) (V190-V192).
 Application designer completion (UI02h): [S114](S114-application-designer-completion.md) (V193).
 Application designer round 3 (UI02i): [S116](S116-application-designer-round-3.md) (V194-V195).
+DMN parity (DMN01): [S121](S121-dmn-parity.md) (lists and ranges, ANY/PRIORITY/COLLECT, standard DMN download and upload; no migration).
 
 Studio Form tab with live preview (forms review slice 1, docs/26): [S120](S120-studio-form-tab.md) (frontend only).
 Step forms: field access and captured fields on human steps (forms review slice 2): [S123](S123-step-forms.md) (additive contract change).

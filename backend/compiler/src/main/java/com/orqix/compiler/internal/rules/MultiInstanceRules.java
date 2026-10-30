@@ -30,9 +30,13 @@ final class MultiInstanceRules {
                 rc.issues().blocker("WF_MULTI_UNSUPPORTED", path, a.id(), null, a.label()
                         + " asks several people to approve, so it cannot also have reminders or escalation.");
             }
-            if (!a.correctable().isEmpty()) {
+            if (!a.editableFields().isEmpty()) {
                 rc.issues().blocker("WF_MULTI_UNSUPPORTED", path, a.id(), null, a.label()
                         + " asks several people to approve, so approvers cannot also correct request fields.");
+            }
+            if (a.capture() != null && !a.capture().properties().isEmpty()) {
+                rc.issues().blocker("WF_MULTI_UNSUPPORTED", path, a.id(), null, a.label()
+                        + " asks several people to approve, so it cannot also ask them to fill in fields.");
             }
         }
     }

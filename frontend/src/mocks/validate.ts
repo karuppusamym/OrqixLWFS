@@ -2,6 +2,7 @@ import type { ValidationIssue } from '@/api/types'
 import { isCalendarDate } from '@/lib/dates'
 import { FormPattern } from '@/lib/form/pattern'
 import { allFields, availableFields, parseRef } from '@/features/studio/model/fieldRefs'
+import { RESERVED_CAPTURE_KEYS, captureOf, changeable } from '@/features/studio/model/stepForms'
 import { hasCycle, incoming, nodeById, outgoing, reachableFrom, startNode } from '@/features/studio/model/graph'
 import { conditionTerms, isAtomicCondition, type Condition, type Definition, type DecisionTable, type Literal, type WorkflowNode } from '@/features/studio/model/types'
 
@@ -142,6 +143,7 @@ export function validateDefinition(def: Definition, ctx: ValidationContext): Iss
         if (!group) issues.push(issue('WF_SCHEMA_INVALID', 'blocker', `"${n.label}" needs an approver group.`, nodePath(n, '/config/candidateGroupRef'), n.id))
         else if (!ctx.groups.includes(group)) issues.push(issue('WF_GROUP_UNBOUND', 'blocker', `The group "${group}" does not exist in this workspace.`, nodePath(n, '/config/candidateGroupRef'), n.id))
         checkPerItem(def, n, issues)
+        checkStepForm(def, n, issues)
         break
       }
       case 'parallelSplit':
@@ -494,8 +496,35 @@ function checkPerItem(def: Definition, n: WorkflowNode, issues: Issue[]): void {
     }
   }
   const c = n.config
-  const combined = [c.multiInstance && 'a number of approvers', c.timeoutAfter && 'a time limit', c.escalation && 'reminders or escalation', Array.isArray(c.correctable) && c.correctable.length > 0 && 'correction of request fields'].filter(Boolean)
+  const combined = [c.multiInstance && 'a number of approvers', c.timeoutAfter && 'a time limit', c.escalation && 'reminders or escalation', (Array.isArray(c.correctable) && c.correctable.length > 0 || editableAccess(n).length > 0) && 'correction of request fields', captureOf(n) && 'fields filled in at the step'].filter(Boolean)
   for (const setting of combined) issues.push(issue('WF_PER_ITEM_UNSUPPORTED', 'blocker', `"${n.label}" opens one task per list item, so it cannot also have ${setting}.`, path, n.id))
+}
+
+/** Mock of the compiler's step form rules (docs/build/S123, StepForms and the correction rules). */
+function checkStepForm(def: Definition, n: WorkflowNode, issues: Issue[]): void {
+  const base = `/nodes/${def.nodes.findIndex((x) => x.id === n.id)}/config`
+  const access = (n.config.fieldAccess ?? {}) as Record<string, string>
+  for (const [key, value] of Object.entries(access)) {
+    const field = def.inputSchema.properties[key]
+    if (!field) issues.push(issue('WF_STEP_FORM_INVALID', 'blocker', `"${n.label}" sets how "${key}" is shown, but the request form has no such question.`, `${base}/fieldAccess/${key}`, n.id))
+    else if ((value === 'editable' || value === 'required') && !changeable(field)) issues.push(issue('WF_CORRECTION_INVALID', 'blocker', `"${n.label}" cannot let the approver change "${field.title}": only single-value fields (not lists, rows or files) can be changed.`, `${base}/fieldAccess`, n.id))
+  }
+  if (n.config.multiInstance && editableAccess(n).length) issues.push(issue('WF_MULTI_UNSUPPORTED', 'blocker', `"${n.label}" asks several people to approve, so approvers cannot also correct request fields.`, `${base}/multiInstance`, n.id))
+  const capture = captureOf(n)
+  if (!capture) return
+  if (n.config.multiInstance) issues.push(issue('WF_MULTI_UNSUPPORTED', 'blocker', `"${n.label}" asks several people to approve, so it cannot also ask them to fill in fields.`, `${base}/multiInstance`, n.id))
+  for (const key of capture.required ?? []) {
+    if (!capture.properties[key]) issues.push(issue('WF_STEP_FORM_INVALID', 'blocker', `"${n.label}" requires "${key}", which is not one of the fields it asks for.`, `${base}/capture/required`, n.id))
+  }
+  for (const [key, field] of Object.entries(capture.properties)) {
+    if (RESERVED_CAPTURE_KEYS.includes(key)) issues.push(issue('WF_STEP_FORM_INVALID', 'blocker', `"${n.label}" cannot ask for a field named "${key}": the step already records a value with that name.`, `${base}/capture/properties/${key}`, n.id))
+    else if (!changeable(field) && !(field.type === 'string' && field.format === 'date')) issues.push(issue('WF_STEP_FORM_INVALID', 'blocker', `"${n.label}" can ask only for single values (text, numbers, yes or no, dates), not lists, rows or files: "${field.title}".`, `${base}/capture/properties/${key}`, n.id))
+  }
+}
+
+function editableAccess(n: WorkflowNode): string[] {
+  const access = (n.config.fieldAccess ?? {}) as Record<string, string>
+  return Object.keys(access).filter((key) => access[key] === 'editable' || access[key] === 'required')
 }
 
 /** Mock of the compiler rule WF_FORM_PATTERN_INVALID (docs/build/S90), using the same safe engine. */

@@ -11386,6 +11386,14 @@ components:
                 sendBack:
                   description: The open send-back of this task (S116); while it is open the task is neither decided nor corrected by the holder
                   oneOf: [{ $ref: '#/components/schemas/SendBackOpen' }, { type: 'null' }]
+                fieldAccess:
+                  description: Step form (S123). How each request field is shown on this task; unlisted fields are readOnly. Hidden fields are left out of request.input.
+                  type: object
+                  additionalProperties: { type: string, enum: [hidden, readOnly, editable, required] }
+                capture:
+                  description: Step form (S123). Form schema of the fields the decider fills in when approving (send them as fields on the decision).
+                  type: object
+                  additionalProperties: true
             allowedActions:
               type: object
               required: [claim, release, decide, reassign, priority]
@@ -11419,6 +11427,11 @@ components:
         action: { type: string, enum: [approve, reject] }
         reason: { type: string, maxLength: 1000, description: 'Required (non-blank) when action = reject' }
         comment: { type: string, maxLength: 2000 }
+        fields:
+          description: 'Values for the fields the step captures (task form.capture, S123). Approve only: a rejection with fields is refused with 422.'
+          type: object
+          maxProperties: 10
+          additionalProperties: true
     TaskDecision:
       type: object
       required: [id, taskId, runId, nodeId, actor, action, decidedAt, policyFlags]

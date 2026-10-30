@@ -409,6 +409,22 @@ final class SimulationRun {
                     sentence += n.multiInstance() ? " In this test all " + n.approvers() + " approve."
                             : " In this test they approve.";
                 }
+                if (n.capture() != null && !n.capture().properties().isEmpty()) {
+                    // S123: the fields the step asks for, from the scenario or a sample value per field.
+                    List<String> filled = new ArrayList<>();
+                    for (var field : n.capture().properties().values()) {
+                        JsonNode given = s.path("fields").get(field.key());
+                        Object value = given != null && !given.isNull() ? DefaultWorkflowSimulator.plain(given)
+                                : n.capture().required().contains(field.key()) ? capturedSample(field) : null;
+                        if (value != null) {
+                            out.put(field.key(), value);
+                            filled.add(field.title() + " " + Text.quote(String.valueOf(value)));
+                        }
+                    }
+                    if (!filled.isEmpty()) {
+                        sentence += " They fill in " + String.join(", ", filled) + ".";
+                    }
+                }
             }
         }
         if (!"timedOut".equals(out.get("decision"))) {
@@ -425,6 +441,18 @@ final class SimulationRun {
         steps.put(n.id(), out);
         add(n, sentence, d, out, t);
         return t;
+    }
+
+    /** A valid sample for a field captured at an approval step (S123), when the test does not give one. */
+    private static Object capturedSample(com.orqix.compiler.internal.model.WorkflowDefinition.FormSchema.Field f) {
+        return switch (f.type()) {
+            case BOOLEAN -> Boolean.TRUE;
+            case INTEGER -> f.minimum() != null ? f.minimum().setScale(0, java.math.RoundingMode.CEILING).longValueExact() : 1L;
+            case NUMBER -> f.minimum() != null ? f.minimum() : java.math.BigDecimal.ONE;
+            case DATE -> f.formatMinimum() != null && f.formatMinimum().matches("[0-9]{4}-[0-9]{2}-[0-9]{2}") ? f.formatMinimum() : "2026-01-01";
+            default -> f.enumValues() != null && !f.enumValues().isEmpty() ? f.enumValues().get(0)
+                    : "Sample " + f.title().toLowerCase(java.util.Locale.ROOT);
+        };
     }
 
     // ------------------------------------------------------------------ decision

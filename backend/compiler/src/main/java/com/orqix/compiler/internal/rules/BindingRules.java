@@ -90,6 +90,7 @@ final class BindingRules {
                         n.label() + " separates duties from " + q(ref) + ", which " + why + ".");
             }
             correctable(rc, n, a);
+            StepForms.check(rc, a);
             if (a.escalation() != null && a.dueAfterHours() == null && a.dueAfterMinutes() == null) rc.issues().blocker("WF_ESCALATION_DUE_REQUIRED",
                     n.configPath("escalation"), n.id(), null, "Recurring overdue notices require a due date.");
         }
@@ -100,10 +101,10 @@ final class BindingRules {
      * used, and the approval must not sit inside an open parallel section where another branch could be using it.
      */
     private static void correctable(RuleContext rc, Node n, Node.Approval a) {
-        if (a.correctable().isEmpty()) {
+        if (a.editableFields().isEmpty()) {
             return;
         }
-        String path = n.configPath("correctable");
+        String path = n.configPath(a.correctable().isEmpty() ? "fieldAccess" : "correctable");
         var form = rc.definition().inputSchema();
         java.util.Set<String> before = new java.util.LinkedHashSet<>();
         java.util.ArrayDeque<Node> queue = new java.util.ArrayDeque<>();
@@ -124,7 +125,7 @@ final class BindingRules {
                 return;
             }
         }
-        for (String key : a.correctable()) {
+        for (String key : a.editableFields()) {
             var field = form.properties().get(key);
             if (field == null) {
                 rc.issues().blocker("WF_CORRECTION_INVALID", path, n.id(), null, n.label() + " lets the approver correct "

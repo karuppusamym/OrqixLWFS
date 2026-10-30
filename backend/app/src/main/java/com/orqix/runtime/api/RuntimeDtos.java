@@ -33,9 +33,13 @@ public final class RuntimeDtos {
     public record VersionedCommand(@NotNull @Min(1) Integer expectedVersion) {
     }
 
+    /** {@code fields}: values for the fields the step captures (S123), only when approving. */
     public record DecisionRequest(@NotNull @Min(1) Integer expectedVersion,
             @NotNull @Pattern(regexp = "approve|reject") String action, @Size(max = 1000) String reason,
-            @Size(max = 2000) String comment) {
+            @Size(max = 2000) String comment, @Size(max = 10) java.util.Map<String, JsonNode> fields) {
+        public DecisionRequest(Integer expectedVersion, String action, String reason, String comment) {
+            this(expectedVersion, action, reason, comment, null);
+        }
     }
 
     public record PriorityRequest(@NotNull @Min(1) Integer expectedVersion,
@@ -222,14 +226,24 @@ public final class RuntimeDtos {
             @JsonInclude(JsonInclude.Include.NON_NULL) JsonNode inputUi) {
     }
 
-    /** {@code correctableFields} lists the request fields this caller may correct on this task now (S42); empty otherwise. */
-    public record TaskForm(boolean rejectReasonRequired, java.util.List<String> correctableFields, SendBackOpen sendBack) {
+    /**
+     * {@code correctableFields} lists the request fields this caller may correct on this task now (S42); empty otherwise.
+     * {@code fieldAccess} and {@code capture} are the step form (S123): how each request field is shown (unlisted fields
+     * are read-only) and the fields the decider fills in when approving.
+     */
+    public record TaskForm(boolean rejectReasonRequired, java.util.List<String> correctableFields, SendBackOpen sendBack,
+            @JsonInclude(JsonInclude.Include.NON_EMPTY) java.util.Map<String, String> fieldAccess,
+            @JsonInclude(JsonInclude.Include.NON_NULL) JsonNode capture) {
         public TaskForm(boolean rejectReasonRequired) {
             this(rejectReasonRequired, java.util.List.of(), null);
         }
 
         public TaskForm(boolean rejectReasonRequired, java.util.List<String> correctableFields) {
             this(rejectReasonRequired, correctableFields, null);
+        }
+
+        public TaskForm(boolean rejectReasonRequired, java.util.List<String> correctableFields, SendBackOpen sendBack) {
+            this(rejectReasonRequired, correctableFields, sendBack, java.util.Map.of(), null);
         }
     }
 

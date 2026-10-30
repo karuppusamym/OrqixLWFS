@@ -8340,6 +8340,14 @@ export interface components {
                 correctableFields?: string[];
                 /** @description The open send-back of this task (S116); while it is open the task is neither decided nor corrected by the holder */
                 sendBack?: components["schemas"]["SendBackOpen"] | null;
+                /** @description Step form (S123). How each request field is shown on this task; unlisted fields are readOnly. Hidden fields are left out of request.input. */
+                fieldAccess?: {
+                    [key: string]: "hidden" | "readOnly" | "editable" | "required";
+                };
+                /** @description Step form (S123). Form schema of the fields the decider fills in when approving (send them as fields on the decision). */
+                capture?: {
+                    [key: string]: unknown;
+                };
             };
             allowedActions: {
                 claim: components["schemas"]["ActionAvailability"];
@@ -8365,6 +8373,10 @@ export interface components {
             /** @description Required (non-blank) when action = reject */
             reason?: string;
             comment?: string;
+            /** @description Values for the fields the step captures (task form.capture, S123). Approve only: a rejection with fields is refused with 422. */
+            fields?: {
+                [key: string]: unknown;
+            };
         };
         TaskDecision: {
             id: components["schemas"]["Uuid"];
@@ -9446,6 +9458,17 @@ export interface components {
             label: components["schemas"]["label"];
             config: Record<string, never>;
         };
+        /** @description Approved JSON Schema keyword subset for request/output forms. No pattern, $ref, format other than date, nested objects, arrays or remote schemas in v0. */
+        formSchema: {
+            /** @constant */
+            type: "object";
+            /** @constant */
+            additionalProperties: false;
+            required?: components["schemas"]["fieldKey"][];
+            properties: {
+                [key: string]: components["schemas"]["formField"];
+            };
+        };
         stageEmail: {
             subject: string;
             body: string;
@@ -9471,17 +9494,6 @@ export interface components {
         };
         /** @description Signal name (docs/build/S55): lowercase letters and digits in kebab-case or camelCase. A signal never leaves the request it is sent in. */
         signalName: string;
-        /** @description Approved JSON Schema keyword subset for request/output forms. No pattern, $ref, format other than date, nested objects, arrays or remote schemas in v0. */
-        formSchema: {
-            /** @constant */
-            type: "object";
-            /** @constant */
-            additionalProperties: false;
-            required?: components["schemas"]["fieldKey"][];
-            properties: {
-                [key: string]: components["schemas"]["formField"];
-            };
-        };
         formSection: {
             id: components["schemas"]["key"];
             title: components["schemas"]["label"];
@@ -9554,6 +9566,17 @@ export interface components {
                 };
                 /** @description Request fields the person holding this task may correct before deciding (docs/build/S42). Scalar request fields only. Publishing proves that no earlier step has used them, so a correction can never contradict work that already happened. */
                 correctable?: components["schemas"]["fieldKey"][];
+                /** @description Step form (docs/build/S123): how the person deciding this step sees each request field. Unlisted fields are readOnly. hidden: not shown on the task. editable: correctable, with the same publish checks as correctable. required: editable and must have a value before approving. */
+                fieldAccess?: {
+                    [key: string]: "hidden" | "readOnly" | "editable" | "required";
+                };
+                /** @description Step form (docs/build/S123): new single-value fields the person fills in when deciding, such as a PO number or an approved amount. Required fields are needed to approve and are optional when rejecting. Outputs at /steps/<id>/<fieldKey>; a required field is available only after the approved route, an optional one may be missing. */
+                capture?: {
+                    type?: unknown;
+                    additionalProperties?: unknown;
+                    required?: unknown;
+                    properties?: unknown;
+                } & components["schemas"]["formSchema"];
                 /** @description Separation of duties (docs/build/S41): ids of earlier approval steps that every path to this step passes through. Whoever decided one of them in the same request cannot claim, decide or be assigned this step. */
                 separateFrom?: components["schemas"]["id"][];
                 /** @description Optional routing of each new task to one eligible person instead of leaving it in the group queue (docs/build/S39). leastLoaded: fewest open assigned tasks; roundRobin: the person assigned longest ago. The person can still return the task to the group. Nobody eligible: the task stays in the queue. */
@@ -10193,6 +10216,17 @@ export interface components {
                         };
                         /** @description Request fields the person holding this task may correct before deciding (docs/build/S42). Scalar request fields only. Publishing proves that no earlier step has used them, so a correction can never contradict work that already happened. */
                         correctable?: components["schemas"]["fieldKey"][];
+                        /** @description Step form (docs/build/S123): how the person deciding this step sees each request field. Unlisted fields are readOnly. hidden: not shown on the task. editable: correctable, with the same publish checks as correctable. required: editable and must have a value before approving. */
+                        fieldAccess?: {
+                            [key: string]: "hidden" | "readOnly" | "editable" | "required";
+                        };
+                        /** @description Step form (docs/build/S123): new single-value fields the person fills in when deciding, such as a PO number or an approved amount. Required fields are needed to approve and are optional when rejecting. Outputs at /steps/<id>/<fieldKey>; a required field is available only after the approved route, an optional one may be missing. */
+                        capture?: {
+                            type?: unknown;
+                            additionalProperties?: unknown;
+                            required?: unknown;
+                            properties?: unknown;
+                        } & components["schemas"]["formSchema"];
                         /** @description Separation of duties (docs/build/S41): ids of earlier approval steps that every path to this step passes through. Whoever decided one of them in the same request cannot claim, decide or be assigned this step. */
                         separateFrom?: components["schemas"]["id"][];
                         /** @description Optional routing of each new task to one eligible person instead of leaving it in the group queue (docs/build/S39). leastLoaded: fewest open assigned tasks; roundRobin: the person assigned longest ago. The person can still return the task to the group. Nobody eligible: the task stays in the queue. */

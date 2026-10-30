@@ -38,10 +38,29 @@ public sealed interface Node {
                     Integer dueAfterHours, String timeoutAfter, java.util.List<String> requiredSkills,
                     tools.jackson.databind.JsonNode calendar, tools.jackson.databind.JsonNode escalation,
                     java.util.List<String> separateFrom, java.util.List<String> correctable,
-                    Integer approvers, Integer dueAfterMinutes, PerItem perItem) implements Node {
+                    Integer approvers, Integer dueAfterMinutes, PerItem perItem,
+                    java.util.Map<String, String> fieldAccess,
+                    com.orqix.compiler.internal.model.WorkflowDefinition.FormSchema capture) implements Node {
         public Approval(int index, String id, String label, String candidateGroupRef, boolean rejectReasonRequired,
                 Integer dueAfterHours, String timeoutAfter) {
-            this(index,id,label,candidateGroupRef,rejectReasonRequired,dueAfterHours,timeoutAfter,java.util.List.of(),null,null,java.util.List.of(),java.util.List.of(),null,null,null);
+            this(index,id,label,candidateGroupRef,rejectReasonRequired,dueAfterHours,timeoutAfter,java.util.List.of(),null,null,java.util.List.of(),java.util.List.of(),null,null,null,java.util.Map.of(),null);
+        }
+
+        /**
+         * Request fields the person holding the task may change (S42, S123): {@code correctable} plus fields whose
+         * step-form access is {@code editable} or {@code required}, in a stable order without repeats.
+         */
+        public java.util.List<String> editableFields() {
+            java.util.LinkedHashSet<String> keys = new java.util.LinkedHashSet<>(correctable);
+            fieldAccess.forEach((key, access) -> {
+                if (access.equals("editable") || access.equals("required")) keys.add(key);
+            });
+            return java.util.List.copyOf(keys);
+        }
+
+        /** @return true when the step has a step form: field access settings or captured fields (S123) */
+        public boolean hasStepForm() {
+            return !fieldAccess.isEmpty() || capture != null && !capture.properties().isEmpty();
         }
 
         /** @return true when several different people must each approve (S51); null {@code approvers} means one */

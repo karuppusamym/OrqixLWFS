@@ -264,10 +264,22 @@ function isOpenTaskVisible(user: MockUser, task: MockTask, run: MockRun): boolea
   return task.assigneeId === user.id || task.completedById === user.id || inGroup(user, task.candidateGroup) && hasTaskSkills(run,task,user) || run.initiatorId === user.id
 }
 
-/** Request fields the step declares correctable by whoever holds its task (docs/build/S42). */
+/** Request fields the step declares correctable (docs/build/S42) or editable in its step form (S123). */
 function correctableOf(run: MockRun, task: MockTask): string[] {
-  const declared = nodeById(currentRelease(run).definition, task.nodeId)?.config.correctable
-  return Array.isArray(declared) ? declared.filter((f): f is string => typeof f === 'string') : []
+  const config = nodeById(currentRelease(run).definition, task.nodeId)?.config
+  const declared = Array.isArray(config?.correctable) ? config.correctable.filter((f): f is string => typeof f === 'string') : []
+  const access = stepAccessOf(run, task)
+  return [...new Set([...declared, ...Object.keys(access).filter((key) => access[key] === 'editable' || access[key] === 'required')])]
+}
+
+/** The step form of a task's step (docs/build/S123): field access and the capture schema. */
+function stepAccessOf(run: MockRun, task: MockTask): Record<string, string> {
+  const access = nodeById(currentRelease(run).definition, task.nodeId)?.config.fieldAccess
+  return access && typeof access === 'object' ? access as Record<string, string> : {}
+}
+function stepCaptureOf(run: MockRun, task: MockTask): { properties: Record<string, unknown>; required?: string[] } | undefined {
+  const capture = nodeById(currentRelease(run).definition, task.nodeId)?.config.capture as { properties?: Record<string, unknown>; required?: string[] } | undefined
+  return capture?.properties && Object.keys(capture.properties).length ? capture as { properties: Record<string, unknown> } : undefined
 }
 
 function taskDetail(user: MockUser, perms: Permission[], run: MockRun, task: MockTask): TaskDetail {
@@ -281,10 +293,11 @@ function taskDetail(user: MockUser, perms: Permission[], run: MockRun, task: Moc
   const claimAllowed = open && !task.assigneeId && eligibleGroup && !own && !separated
   return {
     ...summaryValue,
-    request: { input: run.input, inputSchema: rel.definition.inputSchema as never, inputUi: (rel.definition.inputUi ?? {}) as never },
+    request: { input: Object.fromEntries(Object.entries(run.input).filter(([key]) => stepAccessOf(run, task)[key] !== 'hidden')), inputSchema: rel.definition.inputSchema as never, inputUi: (rel.definition.inputUi ?? {}) as never },
     history: run.tasks.filter((t) => t.decision).map((t) => t.decision!).sort((a, b) => a.decidedAt.localeCompare(b.decidedAt)),
     approvalView: rel.definition.nodes.find(node => node.id === task.nodeId)?.config.viewBinding ? (rel.definition.nodes.find(node => node.id === task.nodeId)!.config.viewBinding as { definition: unknown }).definition : undefined,
-    form: { sendBack: (() => { const open = run.sendBacks?.find((item) => item.taskId === task.id && item.status === 'open'); return open ? { id: open.id, reason: open.reason, fields: open.fields, sentAt: open.sentAt } : null })(), rejectReasonRequired: true, correctableFields: open && !run.suspension && (isAssignee && eligibleGroup || perms.includes('run.operate') && perms.includes('run.read-data')) ? correctableOf(run, task) : [] },
+    form: { sendBack: (() => { const open = run.sendBacks?.find((item) => item.taskId === task.id && item.status === 'open'); return open ? { id: open.id, reason: open.reason, fields: open.fields, sentAt: open.sentAt } : null })(), rejectReasonRequired: true, correctableFields: open && !run.suspension && (isAssignee && eligibleGroup || perms.includes('run.operate') && perms.includes('run.read-data')) ? correctableOf(run, task) : [],
+      ...(Object.keys(stepAccessOf(run, task)).length ? { fieldAccess: stepAccessOf(run, task) } : {}), ...(stepCaptureOf(run, task) ? { capture: stepCaptureOf(run, task) } : {}) },
     completedBy: task.completedById ? subjectRef(userById(task.completedById)) : null,
     allowedActions: {
       claim: claimAllowed ? { allowed: true } : { allowed: false, reasonCode: !open ? 'TASK_NOT_OPEN' : task.assigneeId ? 'TASK_ALREADY_CLAIMED' : own ? 'SELF_APPROVAL_DENIED' : separated ? 'SEPARATION_OF_DUTIES' : 'NOT_ELIGIBLE' },
@@ -1559,7 +1572,7 @@ export function createHandlers(): HttpHandler[] {
       const found = findTask(str(params.ws), str(params.id))
       if (!found) return notFound()
       const { run, task } = found
-      const input = await body<{ expectedVersion: number; action: 'approve' | 'reject'; reason?: string; comment?: string }>(request)
+      const input = await body<{ expectedVersion: number; action: 'approve' | 'reject'; reason?: string; comment?: string; fields?: Record<string, unknown> }>(request)
       return idempotent(request, g.user, 'decideTask', input, () => {
         if (run.initiatorId === g.user.id && !selfApprovalAllowed(run, currentRelease(run))) return problem(403, 'SELF_APPROVAL_DENIED', 'You cannot act on your own request')
         if (isSeparatedFrom(run, task, g.user)) return problem(403, 'SEPARATION_OF_DUTIES', 'You decided an earlier step of this request')
@@ -1570,7 +1583,20 @@ export function createHandlers(): HttpHandler[] {
         if (run.sendBacks?.some((item) => item.taskId === task.id && item.status === 'open')) return problem(409, 'TASK_NOT_OPEN', 'The request is with its requester for corrections. Wait for the answer or withdraw the send-back.')
         if (!inGroup(g.user,task.candidateGroup) || !hasTaskSkills(run,task,g.user)) return problem(403,'NOT_ELIGIBLE','This task requires every skill group')
         if (input.action === 'reject' && !input.reason?.trim()) return problem(422, 'REASON_REQUIRED', 'A reason is required to reject', { fieldErrors: [{ pointer: '/reason', code: 'required', message: 'Add a reason so the requester knows what to change.' }] })
-        const decision = decide(run, task, g.user, input.action, input.action === 'reject' ? (input.reason?.trim() ?? null) : null, input.comment?.trim() || null)
+        // Step form (S123): required fields need a value, captured fields match the step's schema, rejection takes none.
+        const given = input.fields ?? {}
+        if (input.action === 'reject' && Object.keys(given).length) return problem(422, 'VALIDATION_FAILED', 'Fields are filled in only when approving.', { fieldErrors: [{ pointer: '/fields', code: 'enum', message: 'Leave the fields empty to reject' }] })
+        if (input.action === 'approve') {
+          const access = stepAccessOf(run, task)
+          const missing = Object.keys(access).filter((key) => access[key] === 'required' && (run.input[key] === undefined || run.input[key] === null || run.input[key] === ''))
+          const capture = stepCaptureOf(run, task)
+          const captureIssues = capture ? validateJsonForm(parseFormSchema(capture), parseFormUi(undefined), given) : Object.keys(given).length ? [{ pointer: '', keyword: 'additionalProperties' }] : []
+          if (missing.length || captureIssues.length) return problem(422, 'VALIDATION_FAILED', "Complete the step's form before approving.", {
+            fieldErrors: [...missing.map((key) => ({ pointer: `/input/${key}`, code: 'required', message: 'Fill this in before approving' })),
+              ...captureIssues.map((i) => ({ pointer: `/fields${i.pointer}`, code: i.keyword, message: 'Not valid' }))],
+          })
+        }
+        const decision = decide(run, task, g.user, input.action, input.action === 'reject' ? (input.reason?.trim() ?? null) : null, input.comment?.trim() || null, input.action === 'approve' ? given : {})
         return { status: 201, body: decision }
       })
     }),

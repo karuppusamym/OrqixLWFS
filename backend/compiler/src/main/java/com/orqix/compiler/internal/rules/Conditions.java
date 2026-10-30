@@ -122,6 +122,15 @@ final class Conditions {
                     + " can also be reached when it does not. Use it only on the path after the message.");
             return;
         }
+        if (producer instanceof Node.Approval a && a.capture() != null && a.capture().properties().containsKey(r.key())
+                && !FieldTypes.APPROVAL_OUTPUTS.contains(r.key())
+                && FailureRules.reachableWithout(rc, producer, com.orqix.compiler.internal.model.Enums.Route.APPROVED, usedAt)) {
+            // S123: captured fields are filled in when the step is approved; a rejection or a time-out leaves them empty.
+            rc.issues().blocker("WF_FIELDREF_NOT_GUARANTEED", path, usedAt.id(), transitionId, "The " + r.key()
+                    + " captured at " + q(producer) + " is filled in only when the step is approved, and " + q(usedAt)
+                    + " can also be reached when it is not. Use it only on the path after the approval.");
+            return;
+        }
         if (FailureRules.canFail(producer) && FailureRules.hasFailedRoute(g, producer)) {
             boolean failureFact = FailureRules.isFailureOutput(r.key());
             if (failureFact && FailureRules.reachableWithout(rc, producer, com.orqix.compiler.internal.model.Enums.Route.FAILED,

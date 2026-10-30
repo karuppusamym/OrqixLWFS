@@ -113,3 +113,4 @@ Application designer round 3 (UI02i): [S116](S116-application-designer-round-3.m
 
 Studio Form tab with live preview (forms review slice 1, docs/26): [S120](S120-studio-form-tab.md) (frontend only).
 Step forms: field access and captured fields on human steps (forms review slice 2): [S123](S123-step-forms.md) (additive contract change).
+Case designer page: case type drafts with a check before publishing, Cases page for working cases only (forms review, C3 and C1): [S126](S126-case-designer-page.md) (V206, additive contract change).

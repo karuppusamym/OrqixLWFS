@@ -104,9 +104,9 @@ function RuleResults({ start, recorded }: { start: Start; recorded: Archive['con
       </Select></div>
       {recorded.length ? <p className="text-sm text-muted-foreground">Recorded at conversion: {recorded.length} rules.</p> : null}
     </div>
-    {/* Scrollable, so it is focusable for keyboard scrolling (axe scrollable-region-focusable, WCAG 2.1.1). */}
-    {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a focusable scroll region is required for keyboard users */}
-    <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Per-rule results table"><table className="w-full text-left text-sm">
+    {/* A scrollable table must be focusable so keyboard users can scroll it (axe scrollable-region-focusable, WCAG 2.1.1), as with ScrollTable. */}
+    {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex */}
+    <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Table of per-rule results"><table className="w-full text-left text-sm">
       <thead><tr><th scope="col" className="p-2">Rule</th><th scope="col" className="p-2">Version</th><th scope="col" className="p-2">Resolution</th><th scope="col" className="p-2">Result</th><th scope="col" className="p-2">Target</th><th scope="col" className="p-2">Source SHA-256</th><th scope="col" className="p-2">Target SHA-256</th></tr></thead>
       <tbody>{rows.map(r => <RuleRow key={r.rule} r={r} recorded={recordedHash.get(r.rule)} />)}</tbody>
     </table></div>
@@ -132,8 +132,9 @@ function EffectiveRules({ archive }: { archive: Archive }) {
   return <div className="space-y-5">{archive.contexts.map(c => <section key={c.className} className="space-y-2" aria-label={`Rules resolved for ${c.className}`}>
     <h3>{c.className}</h3>
     <p className="text-sm text-muted-foreground">Classes searched, closest first: {c.chain.join(' → ')}</p>
-    {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a focusable scroll region is required for keyboard users */}
-    <div className="overflow-x-auto" tabIndex={0} role="region" aria-label={`Rules resolved for ${c.className} table`}><table className="w-full text-left text-sm">
+    {/* A scrollable table must be focusable so keyboard users can scroll it (axe scrollable-region-focusable, WCAG 2.1.1), as with ScrollTable. */}
+    {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex */}
+    <div className="overflow-x-auto" tabIndex={0} role="region" aria-label={`Table of candidates for ${c.className}`}><table className="w-full text-left text-sm">
       <thead><tr><th scope="col" className="p-2">Rule</th><th scope="col" className="p-2">Status</th><th scope="col" className="p-2">Candidates</th></tr></thead>
       <tbody>{c.keys.map(k => <tr key={`${k.ruleType} ${k.ruleName}`} className="border-t border-border align-top">
         <td className="p-2">{k.ruleType} {k.ruleName}</td>
@@ -146,8 +147,9 @@ function EffectiveRules({ archive }: { archive: Archive }) {
 }
 
 function Inventory({ archive }: { archive: Archive }) {
-  // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a focusable scroll region is required for keyboard users
-  return <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Archive entries table"><table className="w-full text-left text-sm">
+  // A scrollable table must be focusable so keyboard users can scroll it (axe scrollable-region-focusable, WCAG 2.1.1).
+  // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
+  return <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Table of archive entries"><table className="w-full text-left text-sm">
     <thead><tr><th scope="col" className="p-2">Entry</th><th scope="col" className="p-2">Kind</th><th scope="col" className="p-2">Identity or reason</th><th scope="col" className="p-2">SHA-256</th></tr></thead>
     <tbody>{archive.entries.map(e => <tr key={e.path} className="border-t border-border align-top">
       <td className="p-2 break-all font-mono text-xs">{e.path}</td>
@@ -240,7 +242,10 @@ function CaseDefinitionPanel({ job, start, archive, editable }: { job: Job; star
   const [openItems, setOpenItems] = useState<string[]>([])
   const [pending, setPending] = useState(false)
   const done = archive.caseConversion
-  if (done) return <Alert tone="success" title="Converted to a case definition">Case definition {done.caseKey} version {done.caseVersion} was created from {done.startRule} (CMMN SHA-256 {short(done.sourceSha256)}).</Alert>
+  const created = result?.definition
+  // Creating the definition refetches the archive, which then records the conversion. Keep the result of the creation
+  // on screen rather than swapping the whole panel for the recorded summary as soon as that refetch lands.
+  if (done && !created) return <Alert tone="success" title="Converted to a case definition">Case definition {done.caseKey} version {done.caseVersion} was created from {done.startRule} (CMMN SHA-256 {short(done.sourceSha256)}).</Alert>
   const send = async (dryRun: boolean) => {
     setPending(true); setError(null); setOpenItems([])
     try {
@@ -256,7 +261,7 @@ function CaseDefinitionPanel({ job, start, archive, editable }: { job: Job; star
     <h3>Convert to a case definition</h3>
     <p className="text-sm text-muted-foreground">Stages become CMMN stages, each process a workflow task that runs the published workflow converted from that flow, optional processes discretionary items and alternate stages stages entered by a user event. Deadlines become timers that reach a milestone. Convert and publish each process flow first (they are starting points of this archive).</p>
     <ul className="list-disc pl-5 text-sm">{target.processes.map(p => <li key={p.taskId}>{p.stageLabel}: {p.flow}{p.optional ? ' (optional)' : ''}{p.alternate ? ' (alternate stage)' : ''}</li>)}</ul>
-    {editable ? <>
+    {editable && !created ? <>
       <div className="grid gap-3 sm:grid-cols-2">
         <div><Label htmlFor="case-key">Case key</Label><Input id="case-key" value={key} onChange={e => setKey(e.target.value)} /></div>
         <div><Label htmlFor="case-name">Case name</Label><Input id="case-name" value={name} onChange={e => setName(e.target.value)} /></div>

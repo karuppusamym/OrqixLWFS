@@ -82,13 +82,17 @@ describe('Native Pega rule archive import', () => {
     expect(within(review).getByText('Delegated to Purchasing:Managers (provenance only)')).toBeInTheDocument()
     expect(within(review).getByRole('region', { name: 'Child workflows to map' })).toHaveTextContent('Record: subflow RecordOrder in Fulfil')
     expect(within(review).getAllByText(sha('2').slice(0, 12))).toHaveLength(1)
+    // Each table scrolls sideways on a narrow screen, so its wrapper is a named, keyboard-focusable region (axe scrollable-region-focusable).
+    expect(within(review).getByRole('region', { name: 'Table of per-rule results' })).toHaveAttribute('tabindex', '0')
     await user.selectOptions(within(review).getByLabelText('Show'), 'shadowed')
     expect(within(review).queryByText('Converted')).not.toBeInTheDocument()
     await user.click(within(review).getByRole('tab', { name: 'Effective rules' }))
     expect(await within(review).findByText(/Classes searched, closest first: ACME-Purchasing-Work-Request → ACME-Purchasing-Work → @baseclass/)).toBeInTheDocument()
     expect(within(review).getByText(/Variants: .Category = Services \(decisions\/ApprovalLevel-Services.xml\)/)).toBeInTheDocument()
+    expect(within(review).getByRole('region', { name: 'Table of candidates for ACME-Purchasing-Work-Request' })).toHaveAttribute('tabindex', '0')
     await user.click(within(review).getByRole('tab', { name: 'Archive inventory' }))
     expect(await within(review).findByText(/Rule-Obj-Flow ACME-Purchasing-Work.ApproveRequest Purchasing:01-01-05 \(Yes\)/)).toBeInTheDocument()
+    expect(within(review).getByRole('region', { name: 'Table of archive entries' })).toHaveAttribute('tabindex', '0')
     // The route JSON field is replaced by an explicit choice; nothing is inferred from the action names.
     expect(screen.queryByLabelText(/Approval routes \(JSON/)).not.toBeInTheDocument()
     await user.selectOptions(screen.getByLabelText('Manager review (ApproveRequest, work queue Managers)'), 'managerApprove')
@@ -185,6 +189,45 @@ describe('Native Pega rule archive import', () => {
     await renderAppReady(`/w/${WS}/migrations/${id}`)
     expect(await screen.findByText(/Case definition purchase-case version 1 was created from casetypes\/PurchaseRequest.xml/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Preview case definition' })).not.toBeInTheDocument()
+  })
+
+  it('keeps the created case definition on screen after the archive refetch records the conversion', async () => {
+    signInAs('dana.designer')
+    const base = archive()
+    const start = base.startingPoints[0]!
+    const caseType: Archive = { ...base, startingPoints: [{ ...start, caseTarget: { processes: [{ taskId: 't_a_Approve', stageId: 'a', stageLabel: 'A', flow: 'ApproveRequest', rule: null, optional: false, alternate: false }], alternates: [] } }] }
+    let created = false
+    let archiveReads = 0
+    server.use(
+      http.get('*/api/v1/workspaces/:ws/migrations/:id', () => HttpResponse.json(job())),
+      http.get('*/api/v1/workspaces/:ws/migrations/:id/pega-rules', () => {
+        archiveReads++
+        return HttpResponse.json(created ? { ...caseType, caseConversion: { startRule: start.rule, caseDefinitionId: id, caseKey: 'purchase-case', caseVersion: 1, sourceSha256: sha('d') } } : caseType)
+      }),
+      http.post('*/api/v1/workspaces/:ws/migrations/:id/case-definition', async ({ request }) => {
+        const body = await request.json() as Record<string, unknown>
+        if (!body.dryRun) created = true
+        return HttpResponse.json({ dryRun: body.dryRun, key: body.key, name: body.name, sourceXml: '<definitions><case id="purchase-case"/></definitions>', sourceSha256: sha('d'),
+          dataFields: [], workflowTasks: [{ taskId: 't_a_Approve', inputMapping: {}, resultMapping: {} }], report: job().report,
+          definition: body.dryRun ? null : { id, key: 'purchase-case', version: 1 } }, { status: 200 })
+      }),
+    )
+    const user = userEvent.setup(); await renderAppReady(`/w/${WS}/migrations/${id}`)
+    const panel = await screen.findByRole('region', { name: 'Convert to a case definition' })
+    await user.clear(within(panel).getByLabelText('Case key'))
+    await user.type(within(panel).getByLabelText('Case key'), 'purchase-case')
+    await user.type(within(panel).getByLabelText('Published workflow for ApproveRequest'), 'pega-approve')
+    await user.click(within(panel).getByRole('checkbox', { name: /I reviewed the case definition findings/ }))
+    await user.click(within(panel).getByRole('button', { name: 'Preview case definition' }))
+    expect(await within(panel).findByText(/passed the case designer's checks/)).toBeInTheDocument()
+    const readsBeforeCreate = archiveReads
+    await user.click(within(panel).getByRole('button', { name: 'Create case definition' }))
+    expect(await within(panel).findByText('Case definition created')).toBeInTheDocument()
+    // The refetch now returns the recorded conversion; the panel and its creation result stay put.
+    await waitFor(() => expect(archiveReads).toBeGreaterThan(readsBeforeCreate))
+    const after = screen.getByRole('region', { name: 'Convert to a case definition' })
+    expect(within(after).getByText('Case definition created')).toBeInTheDocument()
+    expect(within(after).queryByRole('button', { name: 'Create case definition' })).not.toBeInTheDocument()
   })
 
   it('shows blockers and refused entries for an archive that cannot be converted', async () => {

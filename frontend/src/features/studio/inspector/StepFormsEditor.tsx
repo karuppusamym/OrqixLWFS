@@ -2,6 +2,7 @@ import { Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Select } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { useStudio, useStudioContext } from '../StudioContext'
 import type { FieldSchemaDoc, WorkflowNode } from '../model/types'
 import {
@@ -123,11 +124,11 @@ function CapturedFields({ step, readOnly, onChange }: { step: WorkflowNode; read
                   }}>
                   {CAPTURE_TYPES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
                 </Select>
-                <label className="flex items-center gap-2 text-sm">
-                  <Checkbox checked={required.includes(key)} disabled={readOnly}
+                <div className="flex items-center gap-2 text-sm">
+                  <Checkbox id={`capture-${step.id}-${key}-required`} checked={required.includes(key)} disabled={readOnly}
                     onCheckedChange={(checked) => update(properties, checked ? [...required, key] : required.filter((k) => k !== key))} />
-                  Required to approve
-                </label>
+                  <Label htmlFor={`capture-${step.id}-${key}-required`}>Required to approve</Label>
+                </div>
                 <Button variant="ghost" size="sm" disabled={readOnly} aria-label={`Remove ${label}`}
                   onClick={() => {
                     const next = { ...properties }

@@ -387,7 +387,7 @@ export function createAiHandlers(): HttpHandler[] {
       if (!g.ok) return g.res
       const wf = db.workflows.get(String(params.id))
       if (!wf || wf.wsId !== params.ws) return problem(404, 'NOT_FOUND', 'Not found')
-      const input = (await request.json().catch(() => ({}))) as { instruction?: string; revision?: number; mode?: string; history?: unknown[] }
+      const input = (await request.json().catch(() => ({}))) as { instruction?: string; revision?: number; mode?: string; history?: Array<{ role?: string; text?: string }>; noQuestions?: boolean }
       const instruction = (input.instruction ?? '').trim()
       if (instruction.length < 2 || instruction.length > 2000 || !Number.isInteger(input.revision) || (input.history?.length ?? 0) > 8 || (input.mode !== undefined && input.mode !== 'edit' && input.mode !== 'regenerate')) {
         return problem(400, 'MALFORMED_REQUEST', 'The request is malformed', { fieldErrors: [{ pointer: '/instruction', code: 'minLength', message: 'Invalid value' }] })
@@ -398,9 +398,51 @@ export function createAiHandlers(): HttpHandler[] {
         return problem(409, 'WORKFLOW_VERSION_CONFLICT', 'The workflow changed since you loaded it', { detail: `The draft was saved again (revision ${latest.revision}). Reload the studio, then ask again.`, currentRevision: latest.revision })
       }
       if (db.latencyMs > 0) await delay(Math.max(db.latencyMs, 800))
-      return HttpResponse.json(draftEditProposal(instruction, latest.definition, latest.revision, input.mode === 'regenerate' ? 'regenerate' : 'edit', String(params.ws)) as JsonBodyType)
+      const asked = (input.history ?? []).some((t) => t.role === 'assistant' && (t.text ?? '').includes('Questions:'))
+      return HttpResponse.json(draftEditProposal(instruction, latest.definition, latest.revision, input.mode === 'regenerate' ? 'regenerate' : 'edit', String(params.ws), !input.noQuestions && !asked) as JsonBodyType)
+    }),
+    // S124: the conversation saved with a draft (kept in memory, like the rest of the mock).
+    http.get(`${B}/workspaces/:ws/workflows/:id/ai/conversation`, async ({ params }) => {
+      const g = guard(params.ws, 'workflow.edit')
+      if (!g.ok) return g.res
+      const wf = db.workflows.get(String(params.id))
+      if (!wf || wf.wsId !== params.ws) return problem(404, 'NOT_FOUND', 'Not found')
+      const saved = conversations.get(wf.id)
+      return HttpResponse.json((saved ?? { turns: [], updatedAt: null, version: 0 }) as JsonBodyType)
+    }),
+    http.put(`${B}/workspaces/:ws/workflows/:id/ai/conversation`, async ({ params, request }) => {
+      const g = guard(params.ws, 'workflow.edit')
+      if (!g.ok) return g.res
+      const wf = db.workflows.get(String(params.id))
+      if (!wf || wf.wsId !== params.ws) return problem(404, 'NOT_FOUND', 'Not found')
+      const input = (await request.json().catch(() => ({}))) as { turns?: Array<{ role?: string; text?: string }> }
+      const turns = input.turns
+      if (!Array.isArray(turns) || turns.length > 40 || turns.some((t) => (t.role !== 'author' && t.role !== 'assistant') || typeof t.text !== 'string' || t.text.length < 1 || t.text.length > 2000)) {
+        return problem(422, 'VALIDATION_FAILED', 'The conversation cannot be saved.', { fieldErrors: [{ pointer: '/turns', code: 'type', message: 'Invalid value' }] })
+      }
+      if (turns.length === 0) {
+        conversations.delete(wf.id)
+        return HttpResponse.json({ turns: [], updatedAt: null, version: 0 } as JsonBodyType)
+      }
+      const saved = { turns: structuredClone(turns), updatedAt: new Date().toISOString(), version: (conversations.get(wf.id)?.version ?? 0) + 1 }
+      conversations.set(wf.id, saved)
+      return HttpResponse.json(saved as JsonBodyType)
+    }),
+    http.delete(`${B}/workspaces/:ws/workflows/:id/ai/conversation`, async ({ params }) => {
+      const g = guard(params.ws, 'workflow.edit')
+      if (!g.ok) return g.res
+      const wf = db.workflows.get(String(params.id))
+      if (!wf || wf.wsId !== params.ws) return problem(404, 'NOT_FOUND', 'Not found')
+      conversations.delete(wf.id)
+      return new HttpResponse(null, { status: 204 })
     }),
   ]
+}
+
+/** Saved Ask AI conversations of the mock, by workflow id (S124). */
+const conversations = new Map<string, { turns: unknown[]; updatedAt: string; version: number }>()
+export function clearMockConversations(): void {
+  conversations.clear()
 }
 
 function freeTransitionId(def: Definition): string {
@@ -412,9 +454,14 @@ function freeTransitionId(def: Definition): string {
  * Deterministic mock of proposeDraftEdits (STU02, docs/build/S95): keyword-driven, applied to a candidate copy with the
  * same operation shapes the server returns; changes the mock compiler would refuse are listed as rejected.
  */
-function draftEditProposal(instruction: string, current: Definition, revision: number, mode: 'edit' | 'regenerate', wsId: string) {
+function draftEditProposal(instruction: string, current: Definition, revision: number, mode: 'edit' | 'regenerate', wsId: string, questionsAllowed = false) {
   const text = instruction.toLowerCase()
-  const generation = { profile: 'economy', model: 'deepseek/deepseek-v3.2', promptVersion: 'draft-edit-v1', attempts: 1, escalated: false, inputTokens: 3200, outputTokens: 520, costUsd: 0.0009, durationMs: 1500 }
+  const generation = { profile: 'economy', model: 'deepseek/deepseek-v3.2', promptVersion: 'draft-edit-v2', attempts: 1, escalated: false, inputTokens: 3200, outputTokens: 520, costUsd: 0.0009, durationMs: 1500 }
+  // S124: a vague request gets clarifying questions first, unless the author asked for a draft now.
+  if (questionsAllowed && mode === 'edit' && /\b(help me|not sure|design it|director)\b/.test(text)) {
+    return { revision, mode, message: 'Two answers decide how this works.', changes: [], rejected: [], notes: [], generation,
+      questions: ['Who approves, and from which amount?', 'Does a later step need data the approver enters, such as a PO number?'] }
+  }
   const group = context(wsId).groups[0] ?? 'managers'
   if (/\b(poem|joke|recipe|song|weather)\b/.test(text)) {
     return { revision, mode, changes: [], rejected: [], notes: [], notAnEdit: 'This is not about the workflow, so nothing is proposed.', generation }
@@ -462,6 +509,19 @@ function draftEditProposal(instruction: string, current: Definition, revision: n
   if (/\brename\b/.test(text) && approval) {
     const before = structuredClone(candidate.nodes.find((n) => n.id === approval.id))
     changes.push({ id: `c${changes.length + 1}`, summary: 'Clearer name for the first review', operations: [{ op: 'renameStep', id: approval.id, label: 'Manager review', before }], dependsOn: [] })
+  }
+  if (/\bpo number\b/.test(text) && approval) {
+    const before = structuredClone(candidate.nodes.find((n) => n.id === approval.id))
+    const config = { capture: { type: 'object', additionalProperties: false, required: ['poNumber'], properties: { poNumber: { type: 'string', title: 'PO number', maxLength: 20 } } } }
+    changes.push({ id: `c${changes.length + 1}`, summary: `“${approval.label}” enters a PO number`, operations: [{ op: 'setStepFieldAccess', id: approval.id, config, before }], dependsOn: [] })
+  }
+  if (/\b(only when|shown when)\b/.test(text)) {
+    const keys = Object.keys(candidate.inputSchema.properties)
+    const amount = keys.find((k) => ['number', 'integer'].includes(candidate.inputSchema.properties[k]!.type) && !(candidate.inputUi?.visibleWhen ?? {})[k])
+    const target = keys.find((k) => k !== amount && candidate.inputSchema.properties[k]!.type === 'string' && !(candidate.inputSchema.required ?? []).includes(k))
+    if (amount && target) {
+      changes.push({ id: `c${changes.length + 1}`, summary: `Ask “${candidate.inputSchema.properties[target]!.title}” only for 5,000 or more`, operations: [{ op: 'setFieldRule', key: target, rule: 'visibleWhen', condition: { fieldRef: `/input/${amount}`, operator: 'gte', value: 5000 }, before: candidate.inputUi?.visibleWhen?.[target] ?? null }], dependsOn: [] })
+    }
   }
   if (/\b(question|cost code|form)\b/.test(text)) {
     if ('costCode' in candidate.inputSchema.properties) rejected.push({ summary: 'Ask for a cost code', reasons: ['A question with the key "costCode" already exists.'] })

@@ -7,7 +7,7 @@ import { useWorkspace } from '@/app/workspace'
 import { useAnnounce } from '@/components/common/Announcer'
 import { describeProblem } from '@/lib/problemMessages'
 import { Button } from '@/components/ui/button'
-import { aiKeys, aiPolling, getAiGeneration, isFinished, jobProblem } from './api'
+import { aiKeys, aiPolling, getAiGeneration, isFinished, jobProblem, seedConversation } from './api'
 import { untrackJob, useTrackedJobs, type TrackedJob } from './jobs'
 import { saveReviewNotes } from './reviewNotes'
 
@@ -51,10 +51,12 @@ function JobToast({ job }: { job: TrackedJob }) {
     announce(data.status === 'succeeded' ? `Your draft ${job.label} is ready.` : `The draft ${job.label} could not be created.`)
   }, [data, announce, job.label])
 
-  const open = () => {
+  const open = async () => {
     if (!data?.result) return
     saveReviewNotes(job.ws, data.result)
     untrackJob(job.id)
+    // The description is not kept in the browser, so the conversation starts with the assistant's assumptions (S124).
+    await seedConversation(job.ws, data.result.workflow.id, undefined, data.result)
     navigate(`/w/${job.ws}/workflows/${data.result.workflow.id}/edit`)
   }
 
@@ -72,7 +74,7 @@ function JobToast({ job }: { job: TrackedJob }) {
               <p className="font-semibold">Your draft is ready</p>
               <p className="truncate text-muted-foreground">{data?.result?.workflow.name ?? job.label}</p>
               <div className="mt-2 flex gap-2">
-                <Button size="sm" variant="primary" onClick={open}>
+                <Button size="sm" variant="primary" onClick={() => void open()}>
                   Open draft
                 </Button>
               </div>

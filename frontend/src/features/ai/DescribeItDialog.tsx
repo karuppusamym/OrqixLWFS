@@ -13,7 +13,7 @@ import { Input, Textarea } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { fieldErrorMap } from '@/lib/problemMessages'
-import { DESCRIPTION_MAX, DESCRIPTION_MIN, generateAiDraft, jobProblem, useAiStatus, waitForGeneration, type AiProfile } from './api'
+import { DESCRIPTION_MAX, DESCRIPTION_MIN, generateAiDraft, jobProblem, seedConversation, useAiStatus, waitForGeneration, type AiProfile } from './api'
 import { labelOf, trackJob } from './jobs'
 import { saveReviewNotes } from './reviewNotes'
 
@@ -93,6 +93,7 @@ export function DescribeItDialog({ onClose, onBack }: { onClose: () => void; onB
         return
       }
       saveReviewNotes(ws, job.result)
+      await seedConversation(ws, job.result.workflow.id, body.description, job.result)
       await client.invalidateQueries({ queryKey: ['ws', ws, 'workflows'] })
       navigate(`/w/${ws}/workflows/${job.result.workflow.id}/edit`)
     } catch (cause) {

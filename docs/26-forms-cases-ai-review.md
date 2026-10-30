@@ -1,6 +1,6 @@
 # 26: Forms, cases and AI authoring: design review and redesign plan
 
-29 October 2026. Review of how forms, case data and AI-assisted authoring are designed today, written after reading the code and contracts and walking the Studio, Cases, Views and Assistant screens in mock mode (1440×900, Dana Designer). It ends with a plan in slices. **Status:** S120 (the Form tab) is built, see [S120](build/S120-studio-form-tab.md). Step forms are built as [S123](build/S123-step-forms.md) (S121 and S122 were already taken by DMN parity and generated test cases, so the slices below are renumbered: step forms S123, one AI conversation S124, shared case field editor S125, case designer page S126).
+29 October 2026. Review of how forms, case data and AI-assisted authoring are designed today, written after reading the code and contracts and walking the Studio, Cases, Views and Assistant screens in mock mode (1440×900, Dana Designer). It ends with a plan in slices. **Status:** S120 (the Form tab) is built, see [S120](build/S120-studio-form-tab.md). Step forms are built as [S123](build/S123-step-forms.md) and one AI conversation as [S124](build/S124-one-ai-conversation.md) (S121 and S122 were already taken by DMN parity and generated test cases, so the slices below are renumbered: step forms S123, one AI conversation S124, shared case field editor S125, case designer page S126).
 
 ## 1. Verdict
 

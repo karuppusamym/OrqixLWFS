@@ -109,6 +109,8 @@ function FormPreviewPanel() {
   )
 }
 
+const EMPTY_FORM = { type: 'object', additionalProperties: false, properties: {} } as const
+
 /** One approval step's view: the answers as the step shows them, and the fields it fills in, to try (S123). */
 function StepPreview({ stepId, answers }: { stepId: string; answers: Record<string, unknown> }) {
   const def = useStudio((s) => s.definition)
@@ -116,8 +118,8 @@ function StepPreview({ stepId, answers }: { stepId: string; answers: Record<stri
   const schema = useMemo(() => parseFormSchema(def.inputSchema), [def.inputSchema])
   const fields = useMemo(() => buildFields(schema, parseFormUi(def.inputUi)), [schema, def.inputUi])
   const capture = captureOf(step)
-  const captureSchema = useMemo(() => parseFormSchema(capture ?? { type: 'object', additionalProperties: false, properties: {} }), [capture])
-  const captureFields = useMemo(() => buildFields(captureSchema, parseFormUi(undefined)), [captureSchema])
+  const captureSchema = parseFormSchema(capture ?? EMPTY_FORM)
+  const captureFields = buildFields(captureSchema, parseFormUi(undefined))
   const [values, setValues] = useState<RawValues>({})
   const [errors, setErrors] = useState<FieldErrors>({})
   const merged = { ...emptyValues(captureFields), ...values }

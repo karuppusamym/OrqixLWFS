@@ -105,7 +105,8 @@ export function TaskPanel({ taskId, onClaimed }: { taskId: string; onClaimed?: (
     const all = req ? buildFields(parseFormSchema(req.inputSchema), parseFormUi(req.inputUi)) : []
     return all.filter((f) => fieldAccess?.[f.key] !== 'hidden')
   }, [task?.request, fieldAccess])
-  const captureSchema = useMemo(() => task?.form.capture ? parseFormSchema(task.form.capture) : null, [task?.form.capture])
+  const capture = task?.form.capture
+  const captureSchema = useMemo(() => capture ? parseFormSchema(capture) : null, [capture])
   const captureFields = useMemo(() => captureSchema ? buildFields(captureSchema, parseFormUi(undefined)) : [], [captureSchema])
   const [captureValues, setCaptureValues] = useState<RawValues>({})
   const [captureErrors, setCaptureErrors] = useState<FieldErrors>({})

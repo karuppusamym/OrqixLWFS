@@ -77,6 +77,9 @@ public class AuditWriter {
             Map.entry("workspace.feature.updated", Set.of("feature", "enabled")),
             Map.entry("workflow.created", Set.of("key", "templateId", "source")),
             Map.entry("case.definition.created", Set.of("version")),
+            // S126: case type drafts; the key and draft version only, never the model or its fields.
+            Map.entry("case.draft.saved", Set.of("key", "version")),
+            Map.entry("case.draft.deleted", Set.of("key")),
             Map.entry("case.instance.started", Set.of("definitionId", "version")),
             Map.entry("case.data.updated", Set.of("version", "fields")),
             Map.entry("case.lifecycle.changed", Set.of("action", "version")),
@@ -148,7 +151,9 @@ public class AuditWriter {
             // Conversational authoring (STU02, docs/build/S95): counts only, never the instruction, turns or draft.
             Map.entry("ai.draft.edits.proposed", Set.of("profile", "model", "promptVersion", "attempts", "inputTokens",
                     "outputTokens", "costUsd", "durationMs", "outcome", "revision", "mode", "turns",
-                    "changesSuggested", "changesRejected", "operationsSuggested")),
+                    "changesSuggested", "changesRejected", "operationsSuggested", "questionsAsked")),
+            // S124: clearing the saved Ask AI conversation; the text is never audited.
+            Map.entry("ai.conversation.cleared", Set.of("workflowId")),
             Map.entry("migration.uploaded", Set.of("migrationId", "sourceSystem", "sourceSha256", "adapterVersion",
                     "elementCount", "blockerCount", "actionCount", "pageCount", "transcriptionSha256")),
             // Pega Blueprint PDF (docs/build/S91): ids, counts and hashes only; never page text, prompts or answers.

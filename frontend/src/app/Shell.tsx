@@ -1,4 +1,4 @@
-import { Activity, AppWindow, BarChart3, Check, ClipboardList, ChevronsUpDown, FlaskConical, House, Inbox, Layers3, LogOut, Menu, MessageSquare, PanelsTopLeft, Rocket, Send, Settings, Workflow, X } from 'lucide-react'
+import { Activity, AppWindow, BarChart3, Check, ClipboardList, ChevronsUpDown, FlaskConical, House, Inbox, Layers3, LogOut, Menu, MessageSquare, PanelsTopLeft, Rocket, Send, Settings, Shapes, Workflow, X } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, NavLink, Outlet, useLocation, useMatches, useNavigate } from 'react-router'
 import { signOut } from '@/api/auth'
@@ -79,6 +79,8 @@ export function Shell() {
     { to: `${base}/assistant`, label: 'Assistant', icon: MessageSquare, visible: true },
     { to: `${base}/tasks`, label: 'My tasks', icon: Inbox, visible: can('task.act'), badge: assigned },
     { to: `${base}/workflows`, label: 'Workflows', icon: Workflow, visible: can('workflow.read', 'workflow.start') },
+    // S126: case type authoring sits next to workflow authoring, for the people who may author (workflow.edit).
+    { to: `${base}/case-designs`, label: 'Case types', icon: Shapes, visible: can('workflow.edit') },
     { to: `${base}/runs`, label: 'Runs', icon: Activity, visible: can('run.read') },
     { to: `${base}/cases`, label: 'Cases', icon: Layers3, visible: isOn('cases') && can('workflow.read', 'workflow.start', 'run.read', 'task.act') },
     { to: `${base}/apps`, label: 'Apps', icon: AppWindow, visible: isOn('apps') },

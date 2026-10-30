@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { api, call, callWithResponse } from '@/api/client'
+import { api, call, callVoid, callWithResponse } from '@/api/client'
 import { ProblemError } from '@/api/problem'
 import type { components } from '@/api/schema'
 import { useWorkspace } from '@/app/workspace'
@@ -69,6 +69,35 @@ export const proposeDraftEdits = (ws: string, workflowId: string, body: AiDraftE
       body,
     }),
   )
+
+export type AiConversation = components['schemas']['AiConversation']
+export type AiConversationTurn = components['schemas']['AiConversationTurn']
+
+/** The Ask AI conversation saved with a draft (S124): shared by the people who edit it, never audited. */
+export const getAiConversation = (ws: string, workflowId: string) =>
+  call(api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/ai/conversation', { params: { path: { workspaceId: ws, workflowId } } }))
+export const saveAiConversation = (ws: string, workflowId: string, turns: AiConversationTurn[]) =>
+  call(api.PUT('/workspaces/{workspaceId}/workflows/{workflowId}/ai/conversation', { params: { path: { workspaceId: ws, workflowId } }, body: { turns } }))
+export const deleteAiConversation = (ws: string, workflowId: string) =>
+  callVoid(api.DELETE('/workspaces/{workspaceId}/workflows/{workflowId}/ai/conversation', { params: { path: { workspaceId: ws, workflowId } } }))
+
+/**
+ * "Describe it" hands over to Ask AI (S124): the new draft's conversation starts with the description and the
+ * assistant's assumptions, so the next request in the Studio continues it. Best effort: a failure leaves no conversation.
+ */
+export async function seedConversation(ws: string, workflowId: string, description: string | undefined, result: { assumptions: string[]; missingConfiguration: Array<{ message: string }> }): Promise<void> {
+  const notes = [...result.assumptions, ...result.missingConfiguration.map((m) => m.message)]
+  const reply = `I drafted this workflow from your description.${notes.length ? ` Assumptions and open points: ${notes.join(' ')}` : ''}`.slice(0, 2000)
+  const turns: AiConversationTurn[] = [
+    ...(description?.trim() ? [{ role: 'author' as const, text: description.trim().slice(0, 2000), mode: 'regenerate' as const }] : []),
+    { role: 'assistant', text: reply },
+  ]
+  try {
+    await saveAiConversation(ws, workflowId, turns)
+  } catch {
+    // The draft is there either way; the conversation simply starts empty.
+  }
+}
 
 /** Whether the signed-in person may read the AI status here (designers, readers, workspace administrators). */
 export function useCanSeeAi(): boolean {

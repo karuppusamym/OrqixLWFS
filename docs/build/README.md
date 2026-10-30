@@ -112,4 +112,9 @@ Application designer completion (UI02h): [S114](S114-application-designer-comple
 Application designer round 3 (UI02i): [S116](S116-application-designer-round-3.md) (V194-V195).
 DMN parity (DMN01): [S121](S121-dmn-parity.md) (lists and ranges, ANY/PRIORITY/COLLECT, standard DMN download and upload; no migration).
 
+Studio Form tab with live preview (forms review slice 1, docs/26): [S120](S120-studio-form-tab.md) (frontend only).
+Step forms: field access and captured fields on human steps (forms review slice 2): [S123](S123-step-forms.md) (additive contract change).
+One AI conversation: clarifying questions, new edit operations, conversation saved with the draft (forms review slice 3): [S124](S124-one-ai-conversation.md) (V205).
+Shared field editor for case data: case fields edited, rendered and checked like request questions (forms review slice 3): [S125](S125-shared-case-field-editor.md) (additive contract change, no migration).
+Case designer page: case type drafts with a check before publishing, Cases page for working cases only (forms review, C3 and C1): [S126](S126-case-designer-page.md) (V206, additive contract change).
 Workspace feature switches (administrators turn AI, cases, import, agents, apps and Kafka on or off per workspace; `409 FEATURE_DISABLED`): [S127](S127-workspace-feature-switches.md) (V208).

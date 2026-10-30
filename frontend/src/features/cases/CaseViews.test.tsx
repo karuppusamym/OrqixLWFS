@@ -24,15 +24,16 @@ describe('reusable case presentation', () => {
     )
     const user = userEvent.setup(); await renderAppReady(`/w/${ws}/cases/${id}`)
     await user.click(await screen.findByRole('button', { name: 'Show case data' }))
-    const region = await screen.findByRole('region', { name: 'Shared case details' })
-    const input = within(region).getByLabelText('Review summary (required)')
-    expect(input).toHaveAttribute('maxLength', '80')
+    // The view's section is a group of the request form renderer (docs/build/S125).
+    const region = await screen.findByRole('group', { name: 'Shared case details' })
+    const input = within(region).getByLabelText(/^Review summary/)
+    expect(input).toHaveAttribute('aria-required', 'true')
     await user.clear(input); await user.type(input, 'Reviewed')
     expect(screen.getByRole('button', { name: 'Save reviewed details' })).toBeDisabled()
     await user.type(screen.getByLabelText('Reason for data change'), 'Reviewed evidence')
     await user.click(screen.getByRole('button', { name: 'Save reviewed details' }))
     await waitFor(() => expect(body).toEqual({ expectedVersion: 1, reason: 'Reviewed evidence', values: { summary: 'Reviewed' } }))
-    expect(await screen.findByLabelText('Review summary (required)')).toHaveValue('Reviewed')
+    expect(await screen.findByLabelText(/^Review summary/)).toHaveValue('Reviewed')
   })
   it('does not expose the custom Save action when current case data access is read-only', async () => {
     signInAs('rhea.requester')
@@ -42,31 +43,28 @@ describe('reusable case presentation', () => {
     )
     const user = userEvent.setup(); await renderAppReady(`/w/${ws}/cases/${id}`)
     await user.click(await screen.findByRole('button', { name: 'Show case data' }))
-    expect(await screen.findByLabelText('Review summary (required)')).toHaveAttribute('readonly')
+    expect(await screen.findByLabelText(/^Review summary/)).toHaveAttribute('readonly')
     expect(screen.queryByRole('button', { name: 'Save reviewed details' })).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Reason for data change')).not.toBeInTheDocument()
   })
-  it('chooses an exact case view version when creating a definition', async () => {
+  it('chooses an exact case view version on the case designer page and saves it with the draft', async () => {
     signInAs('dana.designer')
     let body: unknown
     const candidate = structuredClone(view); candidate.sections[0]!.fields = [{ id: 'field1', binding: 'case.field1', type: 'text', label: 'Shared field' }]
+    const draft = { id, key: 'review', name: 'Review', version: 1, sourceXml: null, designerModel: null, dataFields: [], viewRef: null, workflowTasks: [], caseTasks: [], decisionTasks: [], updatedAt: '2026-10-21T12:00:00Z', publishedVersion: null, publishedDraftVersion: null }
     server.use(
-      http.get('*/api/v1/workspaces/:ws/cases/definitions', () => HttpResponse.json([])),
-      http.get('*/api/v1/workspaces/:ws/cases/instances', () => HttpResponse.json([])),
+      http.get('*/api/v1/workspaces/:ws/cases/drafts/:id', () => HttpResponse.json(draft)),
       http.get('*/api/v1/workspaces/:ws/views', () => HttpResponse.json({ items: [{ id: viewId, kind: 'case', name: 'Shared case view', publishedVersion: 2 }] })),
       http.get('*/api/v1/workspaces/:ws/views/:id/versions/:version', () => HttpResponse.json({ viewId, version: 2, definition: candidate })),
-      http.post('*/api/v1/workspaces/:ws/cases/definitions', async ({ request }) => { body = await request.json(); return HttpResponse.json({ ...instance, key: 'review', name: 'Review', version: 1 }, { status: 201 }) }),
+      http.put('*/api/v1/workspaces/:ws/cases/drafts/:id', async ({ request }) => { body = await request.json(); return HttpResponse.json({ ...draft, ...(body as object), version: 2 }) }),
     )
-    const user = userEvent.setup(); await renderAppReady(`/w/${ws}/cases`)
-    await user.type(await screen.findByLabelText('Key'), 'review'); await user.type(screen.getByLabelText('Name'), 'Review')
-    const file = new File(['<definitions/>'], 'review.cmmn', { type: 'application/xml' }); Object.defineProperty(file, 'text', { value: async () => '<definitions/>' })
-    await user.upload(screen.getByLabelText(/CMMN file/), file)
-    await user.click(screen.getByRole('button', { name: 'Add case data field' }))
+    const user = userEvent.setup(); await renderAppReady(`/w/${ws}/case-designs/${id}`)
+    await user.click(await screen.findByRole('button', { name: 'Add case data field' }))
     await user.click(screen.getByRole('button', { name: 'Choose case view' }))
     await screen.findByRole('option', { name: /Shared case view/ })
     await user.selectOptions(screen.getByLabelText('Published case view'), viewId)
     await user.clear(screen.getByLabelText('Case view version')); await user.type(screen.getByLabelText('Case view version'), '2')
-    await user.click(screen.getByRole('button', { name: 'Create definition' }))
-    await waitFor(() => expect(body).toMatchObject({ viewRef: { id: viewId, version: 2 }, dataFields: [{ key: 'field1', type: 'text' }] }))
+    await user.click(screen.getByRole('button', { name: 'Save draft' }))
+    await waitFor(() => expect(body).toMatchObject({ expectedVersion: 1, viewRef: { id: viewId, version: 2 }, dataFields: [{ key: 'field1', type: 'text' }] }))
   })
 })

@@ -141,6 +141,111 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/cases/drafts:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [Cases]
+      operationId: listCaseDefinitionDrafts
+      summary: List the case type drafts of this workspace (S126)
+      x-orqix-permission: workflow.edit
+      responses:
+        '200': { description: 'Drafts, most recently saved first', content: { application/json: { schema: { type: array, maxItems: 200, items: { $ref: '#/components/schemas/CaseDefinitionDraftSummary' } } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Cases]
+      operationId: createCaseDefinitionDraft
+      summary: Start the draft of a case type
+      description: 'One draft per case key. The draft may be incomplete; checkCaseDefinitionDraft reports what still blocks publishing. A key that already has published versions starts the draft of its next version.'
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: case.draft.saved
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateCaseDefinitionDraft' } } } }
+      responses:
+        '201': { description: Created draft, content: { application/json: { schema: { $ref: '#/components/schemas/CaseDefinitionDraft' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/cases/drafts/{draftId}:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: draftId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    get:
+      tags: [Cases]
+      operationId: getCaseDefinitionDraft
+      summary: Get a case type draft
+      x-orqix-permission: workflow.edit
+      responses:
+        '200': { description: Draft, content: { application/json: { schema: { $ref: '#/components/schemas/CaseDefinitionDraft' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Cases]
+      operationId: saveCaseDefinitionDraft
+      summary: Save the whole content of a case type draft
+      description: 'Replaces the draft content; omitted parts are cleared. The key never changes.'
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: case.draft.saved
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/SaveCaseDefinitionDraft' } } } }
+      responses:
+        '200': { description: Saved draft, content: { application/json: { schema: { $ref: '#/components/schemas/CaseDefinitionDraft' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    delete:
+      tags: [Cases]
+      operationId: deleteCaseDefinitionDraft
+      summary: Discard a case type draft
+      description: Published versions of the case type are not affected.
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: case.draft.deleted
+      responses:
+        '204': { description: Discarded }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workspaces/{workspaceId}/cases/drafts/{draftId}/check:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: draftId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [Cases]
+      operationId: checkCaseDefinitionDraft
+      summary: 'Run every admission rule of createCaseDefinition against the saved draft, without deploying'
+      description: 'Nothing is written. Independent rules all run, so every problem is reported at once. Engine deployment is not tried; a model the engine still rejects is reported when publishing.'
+      x-orqix-permission: workflow.edit
+      responses:
+        '200': { description: Check result for the saved draft version, content: { application/json: { schema: { $ref: '#/components/schemas/CaseDefinitionCheck' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workspaces/{workspaceId}/cases/drafts/{draftId}/publish:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: draftId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [Cases]
+      operationId: publishCaseDefinitionDraft
+      summary: Check the draft again and deploy it as the next immutable version of the case type
+      description: 'Refused with 422 while the check reports problems and with 409 when the draft changed since expectedVersion. The draft stays as the working copy of the following version.'
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: case.definition.created
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PublishCaseDefinitionDraft' } } } }
+      responses:
+        '201': { description: Deployed version, content: { application/json: { schema: { $ref: '#/components/schemas/CaseDefinition' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
   /workspaces/{workspaceId}/cases/instances:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
     get:
@@ -6681,6 +6786,68 @@ paths:
         '429': { $ref: '#/components/responses/TooManyRequests' }
         '503': { $ref: '#/components/responses/Unavailable' }
 
+  /workspaces/{workspaceId}/workflows/{workflowId}/ai/conversation:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+    get:
+      tags: [AI]
+      operationId: getAiConversation
+      summary: The Ask AI conversation saved with this draft (S124)
+      description: Shared by the people who can edit the draft. Readable whether or not AI is switched on. version 0 and no turns when nothing is saved.
+      x-orqix-permission: workflow.edit
+      responses:
+        '200':
+          description: The saved conversation
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiConversation' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [AI]
+      operationId: saveAiConversation
+      summary: Save the Ask AI conversation with this draft (S124)
+      description: >-
+        Replaces the saved conversation (last write wins). At most 40 turns and 200 kB. The text is never sent to
+        audit; an empty list clears it. It is sent to the AI only as the last turns of a later proposeDraftEdits
+        request.
+      x-orqix-permission: workflow.edit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [turns]
+              properties:
+                turns: { type: array, maxItems: 40, items: { $ref: '#/components/schemas/AiConversationTurn' } }
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiConversation' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    delete:
+      tags: [AI]
+      operationId: deleteAiConversation
+      summary: Clear the Ask AI conversation of this draft (S124)
+      description: The act is audited without the text.
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: ai.conversation.cleared
+      responses:
+        '204': { description: Cleared }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /workspaces/{workspaceId}/migrations:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
     post:
@@ -7396,8 +7563,9 @@ components:
       type: object
       additionalProperties: false
       required: [key, label, type]
+      description: 'One case data field. Since docs/build/S125 it carries the same optional checks as a single-value request question (workflow-v0 formField) and is edited and rendered with the same field editor and form renderer. Every S125 property is optional, so earlier definitions read and validate as before.'
       properties:
-        key: { type: string, pattern: '^[A-Za-z][A-Za-z0-9_]{0,63}$' }
+        key: { type: string, pattern: '^[A-Za-z][A-Za-z0-9_]{0,63}$', description: 'New keys follow the request-question pattern ^[a-z][A-Za-z0-9]{0,63}$. Keys in the older pattern (capitals first or underscores) keep working and are reported in the definition''s warnings as CASE_DATA_KEY_LEGACY.' }
         label: { type: string, minLength: 1, maxLength: 120 }
         type: { type: string, enum: [text, number, integer, boolean, date, choice] }
         required: { type: boolean, default: false }
@@ -7405,6 +7573,23 @@ components:
         minimum: { type: [number, 'null'], minimum: -1000000000000000, maximum: 1000000000000000 }
         maximum: { type: [number, 'null'], minimum: -1000000000000000, maximum: 1000000000000000 }
         options: { type: [array, 'null'], maxItems: 30, uniqueItems: true, items: { type: string, minLength: 1, maxLength: 120 } }
+        description: { type: string, maxLength: 500, description: 'Help text shown with the field (S125, formField description).' }
+        minLength: { type: integer, minimum: 0, maximum: 4000, description: 'Text only: the shortest answer, at most maxLength (default 2000) (S125).' }
+        pattern: { type: string, minLength: 2, maxLength: 200, description: 'Text only: the whole value must match this safe pattern, the same subset as formField pattern (docs/build/S90) (S125).' }
+        patternMessage: { type: string, minLength: 1, maxLength: 200, description: 'Plain text shown when a value does not match pattern; only with pattern (S125).' }
+        formatMinimum: { type: string, format: date, description: 'Date only: earliest allowed date, YYYY-MM-DD inclusive (S125).' }
+        formatMaximum: { type: string, format: date, description: 'Date only: latest allowed date, YYYY-MM-DD inclusive (S125).' }
+        multipleOf: { type: number, enum: [0.01, 1], description: 'Number or integer only: 0.01 for amounts in cents, 1 for whole numbers (S125).' }
+        widget: { type: string, enum: [textarea, money], description: 'Presentation: textarea (long text) on text fields, money (USD) on number fields (S125, formField widget hint).' }
+    CaseDefinitionWarning:
+      type: object
+      additionalProperties: false
+      required: [code, field, message]
+      description: 'A problem with a case definition that does not stop it from being created or used (S125).'
+      properties:
+        code: { type: string, enum: [CASE_DATA_KEY_LEGACY] }
+        field: { type: string, description: The case data field key }
+        message: { type: string }
     CaseDataValues:
       type: object
       maxProperties: 30
@@ -7476,6 +7661,93 @@ components:
         workflowTasks: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseWorkflowTaskMapping' } }
         caseTasks: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseWorkflowTaskMapping' }, description: 'One mapping per CMMN caseTask (caseRef prefix:key bound to urn:orqix:case); inputMapping is child field to parent field, resultMapping is parent field to child field or outcome' }
         decisionTasks: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseWorkflowTaskMapping' }, description: 'One mapping per CMMN decisionTask (decision externalRef prefix:key bound to urn:orqix:decision); inputMapping is table fieldRef to case field, resultMapping is case field to table output' }
+    CaseDraftDataField:
+      type: object
+      description: A case data field as it is being edited. The check and publishing validate it as a CaseDataField.
+      maxProperties: 20
+      additionalProperties: true
+    CreateCaseDefinitionDraft:
+      type: object
+      additionalProperties: false
+      required: [key, name]
+      properties:
+        key: { type: string, pattern: '^[a-z][a-z0-9-]{1,62}$' }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        sourceXml: { type: [string, 'null'], maxLength: 65536, description: CMMN 1.1 source as far as it exists (64 KiB UTF-8) }
+        designerModel: { type: [object, 'null'], additionalProperties: true, description: 'Opaque state of the case designer (plan items and options), so the designer reopens the draft as it was. The server stores it and never reads it; the CMMN source is what is checked and published.' }
+        dataFields: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseDraftDataField' } }
+        viewRef: { oneOf: [{ $ref: '#/components/schemas/CaseViewRef' }, { type: 'null' }] }
+        workflowTasks: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseWorkflowTaskMapping' } }
+        caseTasks: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseWorkflowTaskMapping' } }
+        decisionTasks: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseWorkflowTaskMapping' } }
+    SaveCaseDefinitionDraft:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, name]
+      properties:
+        expectedVersion: { type: integer, minimum: 1, description: The draft version this content was edited from }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        sourceXml: { type: [string, 'null'], maxLength: 65536 }
+        designerModel: { type: [object, 'null'], additionalProperties: true }
+        dataFields: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseDraftDataField' } }
+        viewRef: { oneOf: [{ $ref: '#/components/schemas/CaseViewRef' }, { type: 'null' }] }
+        workflowTasks: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseWorkflowTaskMapping' } }
+        caseTasks: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseWorkflowTaskMapping' } }
+        decisionTasks: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseWorkflowTaskMapping' } }
+    CaseDefinitionDraftSummary:
+      type: object
+      additionalProperties: false
+      required: [id, key, name, version, updatedAt, publishedVersion, publishedDraftVersion]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        key: { type: string }
+        name: { type: string }
+        version: { type: integer, minimum: 1, description: Draft version; every save adds one }
+        updatedAt: { $ref: '#/components/schemas/Timestamp' }
+        publishedVersion: { type: [integer, 'null'], minimum: 1, description: 'Current published version of this case type, if any' }
+        publishedDraftVersion: { type: [integer, 'null'], minimum: 1, description: The draft version that was last published from this draft }
+    CaseDefinitionDraft:
+      type: object
+      additionalProperties: false
+      required: [id, key, name, version, sourceXml, designerModel, dataFields, viewRef, workflowTasks, caseTasks, decisionTasks, updatedAt, publishedVersion, publishedDraftVersion]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        key: { type: string }
+        name: { type: string }
+        version: { type: integer, minimum: 1 }
+        sourceXml: { type: [string, 'null'] }
+        designerModel: { type: [object, 'null'], additionalProperties: true }
+        dataFields: { type: array, items: { $ref: '#/components/schemas/CaseDraftDataField' } }
+        viewRef: { oneOf: [{ $ref: '#/components/schemas/CaseViewRef' }, { type: 'null' }] }
+        workflowTasks: { type: array, items: { $ref: '#/components/schemas/CaseWorkflowTaskMapping' } }
+        caseTasks: { type: array, items: { $ref: '#/components/schemas/CaseWorkflowTaskMapping' } }
+        decisionTasks: { type: array, items: { $ref: '#/components/schemas/CaseWorkflowTaskMapping' } }
+        updatedAt: { $ref: '#/components/schemas/Timestamp' }
+        publishedVersion: { type: [integer, 'null'], minimum: 1 }
+        publishedDraftVersion: { type: [integer, 'null'], minimum: 1 }
+    CaseDefinitionCheck:
+      type: object
+      additionalProperties: false
+      required: [draftVersion, valid, issues]
+      properties:
+        draftVersion: { type: integer, minimum: 1, description: The saved draft version that was checked }
+        valid: { type: boolean, description: True when nothing blocks publishing this draft version }
+        issues:
+          type: array
+          maxItems: 50
+          items:
+            type: object
+            additionalProperties: false
+            required: [code, message]
+            properties:
+              code: { type: string, description: 'The problem code publishing would answer with, for example WORKFLOW_INVALID or VALIDATION_FAILED' }
+              message: { type: string }
+    PublishCaseDefinitionDraft:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: { type: integer, minimum: 1, description: The draft version that was checked }
     CaseDecisionPin:
       type: object
       additionalProperties: false
@@ -7546,6 +7818,7 @@ components:
         version: { type: integer, minimum: 1 }
         createdAt: { $ref: '#/components/schemas/Timestamp' }
         dataFields: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseDataField' } }
+        warnings: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseDefinitionWarning' }, description: 'Included only when not empty: data field keys outside the request-question pattern (S125).' }
     CaseDefinitionDetail:
       type: object
       additionalProperties: false
@@ -7562,6 +7835,7 @@ components:
         workflowTasks: { type: array, items: { $ref: '#/components/schemas/CaseWorkflowPin' } }
         caseTasks: { type: array, items: { $ref: '#/components/schemas/CaseChildPin' } }
         decisionTasks: { type: array, items: { $ref: '#/components/schemas/CaseDecisionPin' } }
+        warnings: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseDefinitionWarning' }, description: 'Included only when not empty: data field keys outside the request-question pattern (S125).' }
     CasePlanItem:
       type: object
       additionalProperties: false
@@ -11751,6 +12025,14 @@ components:
                 sendBack:
                   description: The open send-back of this task (S116); while it is open the task is neither decided nor corrected by the holder
                   oneOf: [{ $ref: '#/components/schemas/SendBackOpen' }, { type: 'null' }]
+                fieldAccess:
+                  description: Step form (S123). How each request field is shown on this task; unlisted fields are readOnly. Hidden fields are left out of request.input.
+                  type: object
+                  additionalProperties: { type: string, enum: [hidden, readOnly, editable, required] }
+                capture:
+                  description: Step form (S123). Form schema of the fields the decider fills in when approving (send them as fields on the decision).
+                  type: object
+                  additionalProperties: true
             allowedActions:
               type: object
               required: [claim, release, decide, reassign, priority]
@@ -11784,6 +12066,11 @@ components:
         action: { type: string, enum: [approve, reject] }
         reason: { type: string, maxLength: 1000, description: 'Required (non-blank) when action = reject' }
         comment: { type: string, maxLength: 2000 }
+        fields:
+          description: 'Values for the fields the step captures (task form.capture, S123). Approve only: a rejection with fields is refused with 422.'
+          type: object
+          maxProperties: 10
+          additionalProperties: true
     TaskDecision:
       type: object
       required: [id, taskId, runId, nodeId, actor, action, decidedAt, policyFlags]
@@ -12138,6 +12425,24 @@ components:
               role: { type: string, enum: [author, assistant] }
               text: { type: string, minLength: 1, maxLength: 2000 }
         profile: { type: string, pattern: '^[a-z][a-z0-9-]{0,31}$' }
+        noQuestions: { type: boolean, default: false, description: 'S124: the author asked for a draft now, so the assistant asks no clarifying questions' }
+    AiConversation:
+      type: object
+      required: [turns, updatedAt, version]
+      properties:
+        turns: { type: array, items: { $ref: '#/components/schemas/AiConversationTurn' } }
+        updatedAt: { oneOf: [{ $ref: '#/components/schemas/Timestamp' }, { type: 'null' }] }
+        version: { type: integer, minimum: 0, description: 0 when nothing is saved }
+    AiConversationTurn:
+      type: object
+      additionalProperties: false
+      required: [role, text]
+      properties:
+        role: { type: string, enum: [author, assistant] }
+        text: { type: string, minLength: 1, maxLength: 2000 }
+        mode: { type: string, enum: [edit, regenerate] }
+        questions: { type: array, maxItems: 3, items: { type: string } }
+        proposal: { type: object, additionalProperties: true, description: The assistant's proposal as it was shown }
     AiDraftEditProposal:
       type: object
       description: STU02 proposal. Every change already passed the compiler against the draft revision; apply only on an explicit user action.
@@ -12162,6 +12467,7 @@ components:
         notAnEdit: { type: string, description: 'Why the instruction is not about this workflow, when it is not' }
         definition: { type: object, additionalProperties: true, description: 'regenerate only: the complete proposed draft (workflow-v0 document with layout)' }
         generation: { $ref: '#/components/schemas/AiGeneration' }
+        questions: { type: array, maxItems: 3, items: { type: string, maxLength: 200 }, description: 'S124: clarifying questions asked instead of changes; answer them in the next turn or ask for a draft with noQuestions' }
     AiDraftEditChange:
       type: object
       required: [id, summary, operations, dependsOn]
@@ -12180,11 +12486,19 @@ components:
         One normalized edit operation. addStep {id, kind, label, config (complete)}; updateStep {id, config (patch; null
         removes a setting), before}; renameStep {id, label, before}; removeStep {id, before}; connect {transitionId
         (chosen by the server), from, to, on, label?, condition?}; disconnect {transitionId, before};
-        changeFormField {action, key, field?, required, before?, wasRequired?}. before is the element as it was when
-        the operation was validated; the studio skips a change whose targets differ from it.
+        changeFormField {action, key, field?, required, before?, wasRequired?}. S124: setFieldRule {key, rule
+        (visibleWhen|requiredWhen), condition (null removes), before}; setStepFieldAccess {id, config (patch of
+        fieldAccess and capture), before}; setFormGroups {groups, before}; addDecision {id, label, table}; addCall {id,
+        label, config (complete), definitionVersion, addsDependency}. before is the element as it was when the
+        operation was validated; the studio skips a change whose targets differ from it.
       required: [op]
       properties:
-        op: { type: string, enum: [addStep, updateStep, renameStep, removeStep, connect, disconnect, changeFormField] }
+        op: { type: string, enum: [addStep, updateStep, renameStep, removeStep, connect, disconnect, changeFormField, setFieldRule, setStepFieldAccess, setFormGroups, addDecision, addCall] }
+        rule: { type: string, enum: [visibleWhen, requiredWhen] }
+        groups: { type: array, items: { type: object, additionalProperties: true } }
+        table: { type: object, additionalProperties: true }
+        definitionVersion: { type: integer, minimum: 1 }
+        addsDependency: { type: boolean }
         id: { type: string }
         kind: { type: string, enum: [approval, branch, notification, wait, end] }
         label: { type: string }
@@ -12193,12 +12507,12 @@ components:
         from: { type: string }
         to: { type: string }
         'on': { type: string, enum: [next, approved, rejected, timedOut, failed, condition, default] }
-        condition: { type: object, additionalProperties: true }
+        condition: { type: [object, 'null'], additionalProperties: true }
         action: { type: string, enum: [add, update, remove] }
         key: { type: string, pattern: '^[a-z][A-Za-z0-9]{0,63}$' }
         field: { type: object, additionalProperties: true }
         required: { type: boolean }
-        before: { type: object, additionalProperties: true }
+        before: { type: [object, array, 'null'], additionalProperties: true }
         wasRequired: { type: boolean }
     CompatibilityIssue:
       type: object

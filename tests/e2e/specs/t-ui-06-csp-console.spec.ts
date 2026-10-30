@@ -50,14 +50,13 @@ test('a tour of menus, dialogs, the canvas and forms raises no CSP violation or 
   await expect(designer.getByTestId('save-state')).toHaveText(/Saved/)
 
   // Native dialogs and the form validator ---------------------------------------------------------------------------------
-  // The preview moved into the Studio's More menu.
+  // The More menu's preview opens the Form tab's live preview (S120).
   await designer.getByRole('button', { name: 'More actions' }).click()
   await designer.getByRole('menuitem', { name: 'Preview the request form' }).click()
-  const preview = designer.getByRole('dialog', { name: 'Preview of the request form' })
+  const preview = designer.getByTestId('form-preview')
   await preview.getByLabel('Amount (USD)').fill('12.345')
   await preview.getByRole('button', { name: 'Check my answers' }).click()
   await expect(preview.locator('[data-field-error]').filter({ hasText: /two decimal places/ })).toBeVisible()
-  await designer.keyboard.press('Escape')
   await designer.getByRole('button', { name: 'Check workflow' }).click()
   await expect(designer.getByTestId('check-summary')).not.toContainText('Checking')
 

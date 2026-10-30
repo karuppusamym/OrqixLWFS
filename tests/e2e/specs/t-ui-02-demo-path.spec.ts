@@ -1,6 +1,6 @@
 import { expect, test } from '../support/fixtures'
 import { MOCK } from '../support/env'
-import { decideOpenTask, openTask, selectStep, submitPurchase, timelineText, createPurchaseWorkflow, workflowIdByKey, workspaceId } from '../support/app'
+import { decideOpenTask, openFormTab, openQuestion, openTask, selectStep, submitPurchase, timelineText, createPurchaseWorkflow, workflowIdByKey, workspaceId } from '../support/app'
 
 /**
  * T-UI-02: the demo script of docs/06-delivery-plan.md, every step that does not need OpenShift, through the browser.
@@ -34,7 +34,10 @@ test('demo path: publish, submit, approve, finance, version pinning, denial', as
   await expect(designer.getByTestId('studio')).toBeVisible()
   await designer.getByRole('tab', { name: 'Steps' }).click()
   await selectStep(designer, 'start')
-  await expect(designer.getByTestId('field-card-amount')).toBeVisible()
+  await expect(designer.getByTestId('request-form-summary')).toContainText('Amount (USD)')
+  await openFormTab(designer)
+  await openQuestion(designer, 'amount')
+  await designer.getByRole('tab', { name: 'Steps' }).click()
   await selectStep(designer, 'amountPolicy')
   await expect(designer.locator('[data-field="rows.0.when.value"]')).toHaveValue('5000')
 

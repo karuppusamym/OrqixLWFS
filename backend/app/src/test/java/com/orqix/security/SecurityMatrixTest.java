@@ -63,7 +63,11 @@ class SecurityMatrixTest extends RuntimeTestBase {
                             || "validateDraft".equals(operationId) || "evaluateDecision".equals(operationId)
                             || "checkReleasePromotion".equals(operationId)
                             || "checkDraftBpmn".equals(operationId) || "convertDecisionDmn".equals(operationId)
-                            || "fetchExternalJobs".equals(operationId) || "extendExternalJobLock".equals(operationId))
+                            // S126: the case type check reads the draft and writes nothing, like validateDraft.
+                            || "checkCaseDefinitionDraft".equals(operationId)
+                            || "fetchExternalJobs".equals(operationId) || "extendExternalJobLock".equals(operationId)
+                            // S124: the saved Ask AI conversation is text the editors wrote; it is never audited.
+                            || "saveAiConversation".equals(operationId))
                             .as(operationId + " declares x-orqix-audit").isTrue();
                 }
                 String template = path.getKey();
@@ -437,7 +441,10 @@ class SecurityMatrixTest extends RuntimeTestBase {
                             new String(source.readAllBytes(), StandardCharsets.UTF_8));
                 }
             }
-            case "createView" -> Map.of("name", "Foreign view", "definition",
+            case "createCaseDefinitionDraft" -> Map.of("key", "foreign-case", "name", "Foreign case");
+            case "saveCaseDefinitionDraft" -> Map.of("expectedVersion", 1, "name", "Foreign case");
+            case "publishCaseDefinitionDraft" -> Map.of("expectedVersion", 1);
+            case "createView" ->Map.of("name", "Foreign view", "definition",
                     Map.of("schemaVersion", 1, "kind", "request", "sections",
                             List.of(Map.of("id", "details", "label", "Details", "columns", 1, "fields",
                                     List.of(Map.of("id", "title", "label", "Title", "type", "text",

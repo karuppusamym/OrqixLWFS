@@ -538,8 +538,11 @@ public class AiService {
             Generator.Meter meter = generator.meter(profile);
             List<PromptLibrary.Turn> history = request.history().stream()
                     .map(t -> new PromptLibrary.Turn(t.role(), t.text())).toList();
-            String user = PromptLibrary.draftEditUser(editRules.summary(latest.definition(), workspace.groups()),
-                    history, request.instruction(), mode.value());
+            // S124: questions are allowed only when the author has not asked for a draft now and nothing was asked yet.
+            boolean askedBefore = history.stream().anyMatch(t -> "assistant".equals(t.role()) && t.text().contains("Questions:"));
+            String user = PromptLibrary.draftEditUser(editRules.summary(latest.definition(), workspace.groups(),
+                    workspace.connections()), history, request.instruction(), mode.value(),
+                    !request.noQuestions() && !askedBefore);
             JsonNode reply;
             try {
                 reply = generator.editDraft(profile, user, meter);
@@ -556,7 +559,11 @@ public class AiService {
                         "The AI could not propose changes. Nothing was changed; try again or rephrase.");
             }
             DraftEdits.Result result = editRules.evaluate(reply, latest.definition(), mode,
-                    workspace.compileContext());
+                    workspace.compileContext(), workspace.connections());
+            if (request.noQuestions() || askedBefore) {
+                result = new DraftEdits.Result(result.message(), result.changes(), result.rejected(), result.notes(),
+                        result.notAnEdit(), result.definition(), List.of());
+            }
             recordEdits(caller, workspaceId, workflowId, meter, AiLedger.Outcome.SUCCESS, latest.revision(), mode,
                     history.size(), result);
             return new AiDtos.DraftEditProposal(latest.revision(), mode.value(), result.message(),
@@ -565,7 +572,7 @@ public class AiService {
                     result.rejected().stream().map(r -> new AiDtos.DraftEditRejected(r.summary(), r.reasons()))
                             .toList(),
                     result.notes(), result.notAnEdit(), result.definition(),
-                    generation(meter, PromptLibrary.DRAFT_EDIT_VERSION));
+                    generation(meter, PromptLibrary.DRAFT_EDIT_VERSION), result.questions());
         } finally {
             editsInFlight.remove(caller.subjectId());
         }
@@ -585,6 +592,7 @@ public class AiService {
                 metadata.put("changesSuggested", result == null ? 0 : result.changes().size());
                 metadata.put("changesRejected", result == null ? 0 : result.rejected().size());
                 metadata.put("operationsSuggested", result == null ? 0 : result.operationCount());
+                metadata.put("questionsAsked", result == null ? 0 : result.questions().size());
                 audit.write(new AuditWriter.Entry(base.workspaceId(), base.actorType(), base.actorSubject(),
                         base.action(), base.resourceType(), base.resourceId(), base.outcome(), metadata));
             });

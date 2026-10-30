@@ -87,6 +87,103 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/cases/drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** List the case type drafts of this workspace (S126) */
+        get: operations["listCaseDefinitionDrafts"];
+        put?: never;
+        /**
+         * Start the draft of a case type
+         * @description One draft per case key. The draft may be incomplete; checkCaseDefinitionDraft reports what still blocks publishing. A key that already has published versions starts the draft of its next version.
+         */
+        post: operations["createCaseDefinitionDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/cases/drafts/{draftId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                draftId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        /** Get a case type draft */
+        get: operations["getCaseDefinitionDraft"];
+        /**
+         * Save the whole content of a case type draft
+         * @description Replaces the draft content; omitted parts are cleared. The key never changes.
+         */
+        put: operations["saveCaseDefinitionDraft"];
+        post?: never;
+        /**
+         * Discard a case type draft
+         * @description Published versions of the case type are not affected.
+         */
+        delete: operations["deleteCaseDefinitionDraft"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/cases/drafts/{draftId}/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                draftId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run every admission rule of createCaseDefinition against the saved draft, without deploying
+         * @description Nothing is written. Independent rules all run, so every problem is reported at once. Engine deployment is not tried; a model the engine still rejects is reported when publishing.
+         */
+        post: operations["checkCaseDefinitionDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/cases/drafts/{draftId}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                draftId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check the draft again and deploy it as the next immutable version of the case type
+         * @description Refused with 422 while the check reports problems and with 409 when the draft changed since expectedVersion. The draft stays as the working copy of the following version.
+         */
+        post: operations["publishCaseDefinitionDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/cases/instances": {
         parameters: {
             query?: never;
@@ -4986,6 +5083,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/ai/conversation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * The Ask AI conversation saved with this draft (S124)
+         * @description Shared by the people who can edit the draft. Readable whether or not AI is switched on. version 0 and no turns when nothing is saved.
+         */
+        get: operations["getAiConversation"];
+        /**
+         * Save the Ask AI conversation with this draft (S124)
+         * @description Replaces the saved conversation (last write wins). At most 40 turns and 200 kB. The text is never sent to audit; an empty list clears it. It is sent to the AI only as the last turns of a later proposeDraftEdits request.
+         */
+        put: operations["saveAiConversation"];
+        post?: never;
+        /**
+         * Clear the Ask AI conversation of this draft (S124)
+         * @description The act is audited without the text.
+         */
+        delete: operations["deleteAiConversation"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/migrations": {
         parameters: {
             query?: never;
@@ -5298,7 +5426,9 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description One case data field. Since docs/build/S125 it carries the same optional checks as a single-value request question (workflow-v0 formField) and is edited and rendered with the same field editor and form renderer. Every S125 property is optional, so earlier definitions read and validate as before. */
         CaseDataField: {
+            /** @description New keys follow the request-question pattern ^[a-z][A-Za-z0-9]{0,63}$. Keys in the older pattern (capitals first or underscores) keep working and are reported in the definition's warnings as CASE_DATA_KEY_LEGACY. */
             key: string;
             label: string;
             /** @enum {string} */
@@ -5309,6 +5439,42 @@ export interface components {
             minimum?: number | null;
             maximum?: number | null;
             options?: string[] | null;
+            /** @description Help text shown with the field (S125, formField description). */
+            description?: string;
+            /** @description Text only: the shortest answer, at most maxLength (default 2000) (S125). */
+            minLength?: number;
+            /** @description Text only: the whole value must match this safe pattern, the same subset as formField pattern (docs/build/S90) (S125). */
+            pattern?: string;
+            /** @description Plain text shown when a value does not match pattern; only with pattern (S125). */
+            patternMessage?: string;
+            /**
+             * Format: date
+             * @description Date only: earliest allowed date, YYYY-MM-DD inclusive (S125).
+             */
+            formatMinimum?: string;
+            /**
+             * Format: date
+             * @description Date only: latest allowed date, YYYY-MM-DD inclusive (S125).
+             */
+            formatMaximum?: string;
+            /**
+             * @description Number or integer only: 0.01 for amounts in cents, 1 for whole numbers (S125).
+             * @enum {number}
+             */
+            multipleOf?: 0.01 | 1;
+            /**
+             * @description Presentation: textarea (long text) on text fields, money (USD) on number fields (S125, formField widget hint).
+             * @enum {string}
+             */
+            widget?: "textarea" | "money";
+        };
+        /** @description A problem with a case definition that does not stop it from being created or used (S125). */
+        CaseDefinitionWarning: {
+            /** @enum {string} */
+            code: "CASE_DATA_KEY_LEGACY";
+            /** @description The case data field key */
+            field: string;
+            message: string;
         };
         CaseDataValues: {
             [key: string]: string | number | boolean;
@@ -5359,6 +5525,84 @@ export interface components {
             caseTasks?: components["schemas"]["CaseWorkflowTaskMapping"][];
             /** @description One mapping per CMMN decisionTask (decision externalRef prefix:key bound to urn:orqix:decision); inputMapping is table fieldRef to case field, resultMapping is case field to table output */
             decisionTasks?: components["schemas"]["CaseWorkflowTaskMapping"][];
+        };
+        /** @description A case data field as it is being edited. The check and publishing validate it as a CaseDataField. */
+        CaseDraftDataField: {
+            [key: string]: unknown;
+        };
+        CreateCaseDefinitionDraft: {
+            key: string;
+            name: string;
+            /** @description CMMN 1.1 source as far as it exists (64 KiB UTF-8) */
+            sourceXml?: string | null;
+            /** @description Opaque state of the case designer (plan items and options), so the designer reopens the draft as it was. The server stores it and never reads it; the CMMN source is what is checked and published. */
+            designerModel?: {
+                [key: string]: unknown;
+            } | null;
+            dataFields?: components["schemas"]["CaseDraftDataField"][];
+            viewRef?: components["schemas"]["CaseViewRef"] | null;
+            workflowTasks?: components["schemas"]["CaseWorkflowTaskMapping"][];
+            caseTasks?: components["schemas"]["CaseWorkflowTaskMapping"][];
+            decisionTasks?: components["schemas"]["CaseWorkflowTaskMapping"][];
+        };
+        SaveCaseDefinitionDraft: {
+            /** @description The draft version this content was edited from */
+            expectedVersion: number;
+            name: string;
+            sourceXml?: string | null;
+            designerModel?: {
+                [key: string]: unknown;
+            } | null;
+            dataFields?: components["schemas"]["CaseDraftDataField"][];
+            viewRef?: components["schemas"]["CaseViewRef"] | null;
+            workflowTasks?: components["schemas"]["CaseWorkflowTaskMapping"][];
+            caseTasks?: components["schemas"]["CaseWorkflowTaskMapping"][];
+            decisionTasks?: components["schemas"]["CaseWorkflowTaskMapping"][];
+        };
+        CaseDefinitionDraftSummary: {
+            id: components["schemas"]["Uuid"];
+            key: string;
+            name: string;
+            /** @description Draft version; every save adds one */
+            version: number;
+            updatedAt: components["schemas"]["Timestamp"];
+            /** @description Current published version of this case type, if any */
+            publishedVersion: number | null;
+            /** @description The draft version that was last published from this draft */
+            publishedDraftVersion: number | null;
+        };
+        CaseDefinitionDraft: {
+            id: components["schemas"]["Uuid"];
+            key: string;
+            name: string;
+            version: number;
+            sourceXml: string | null;
+            designerModel: {
+                [key: string]: unknown;
+            } | null;
+            dataFields: components["schemas"]["CaseDraftDataField"][];
+            viewRef: components["schemas"]["CaseViewRef"] | null;
+            workflowTasks: components["schemas"]["CaseWorkflowTaskMapping"][];
+            caseTasks: components["schemas"]["CaseWorkflowTaskMapping"][];
+            decisionTasks: components["schemas"]["CaseWorkflowTaskMapping"][];
+            updatedAt: components["schemas"]["Timestamp"];
+            publishedVersion: number | null;
+            publishedDraftVersion: number | null;
+        };
+        CaseDefinitionCheck: {
+            /** @description The saved draft version that was checked */
+            draftVersion: number;
+            /** @description True when nothing blocks publishing this draft version */
+            valid: boolean;
+            issues: {
+                /** @description The problem code publishing would answer with, for example WORKFLOW_INVALID or VALIDATION_FAILED */
+                code: string;
+                message: string;
+            }[];
+        };
+        PublishCaseDefinitionDraft: {
+            /** @description The draft version that was checked */
+            expectedVersion: number;
         };
         CaseDecisionPin: {
             taskId: string;
@@ -5431,6 +5675,8 @@ export interface components {
             version: number;
             createdAt: components["schemas"]["Timestamp"];
             dataFields?: components["schemas"]["CaseDataField"][];
+            /** @description Included only when not empty: data field keys outside the request-question pattern (S125). */
+            warnings?: components["schemas"]["CaseDefinitionWarning"][];
         };
         CaseDefinitionDetail: {
             viewBinding?: components["schemas"]["PinnedCaseView"] | null;
@@ -5444,6 +5690,8 @@ export interface components {
             workflowTasks?: components["schemas"]["CaseWorkflowPin"][];
             caseTasks?: components["schemas"]["CaseChildPin"][];
             decisionTasks?: components["schemas"]["CaseDecisionPin"][];
+            /** @description Included only when not empty: data field keys outside the request-question pattern (S125). */
+            warnings?: components["schemas"]["CaseDefinitionWarning"][];
         };
         CasePlanItem: {
             id: string;
@@ -8560,6 +8808,14 @@ export interface components {
                 correctableFields?: string[];
                 /** @description The open send-back of this task (S116); while it is open the task is neither decided nor corrected by the holder */
                 sendBack?: components["schemas"]["SendBackOpen"] | null;
+                /** @description Step form (S123). How each request field is shown on this task; unlisted fields are readOnly. Hidden fields are left out of request.input. */
+                fieldAccess?: {
+                    [key: string]: "hidden" | "readOnly" | "editable" | "required";
+                };
+                /** @description Step form (S123). Form schema of the fields the decider fills in when approving (send them as fields on the decision). */
+                capture?: {
+                    [key: string]: unknown;
+                };
             };
             allowedActions: {
                 claim: components["schemas"]["ActionAvailability"];
@@ -8585,6 +8841,10 @@ export interface components {
             /** @description Required (non-blank) when action = reject */
             reason?: string;
             comment?: string;
+            /** @description Values for the fields the step captures (task form.capture, S123). Approve only: a rejection with fields is refused with 422. */
+            fields?: {
+                [key: string]: unknown;
+            };
         };
         TaskDecision: {
             id: components["schemas"]["Uuid"];
@@ -8877,6 +9137,29 @@ export interface components {
                 text: string;
             }[];
             profile?: string;
+            /**
+             * @description S124: the author asked for a draft now, so the assistant asks no clarifying questions
+             * @default false
+             */
+            noQuestions: boolean;
+        };
+        AiConversation: {
+            turns: components["schemas"]["AiConversationTurn"][];
+            updatedAt: components["schemas"]["Timestamp"] | null;
+            /** @description 0 when nothing is saved */
+            version: number;
+        };
+        AiConversationTurn: {
+            /** @enum {string} */
+            role: "author" | "assistant";
+            text: string;
+            /** @enum {string} */
+            mode?: "edit" | "regenerate";
+            questions?: string[];
+            /** @description The assistant's proposal as it was shown */
+            proposal?: {
+                [key: string]: unknown;
+            };
         };
         /** @description STU02 proposal. Every change already passed the compiler against the draft revision; apply only on an explicit user action. */
         AiDraftEditProposal: {
@@ -8899,6 +9182,8 @@ export interface components {
                 [key: string]: unknown;
             };
             generation: components["schemas"]["AiGeneration"];
+            /** @description S124: clarifying questions asked instead of changes; answer them in the next turn or ask for a draft with noQuestions */
+            questions?: string[];
         };
         AiDraftEditChange: {
             /** @description c1, c2, ... in proposal order */
@@ -8908,10 +9193,20 @@ export interface components {
             /** @description Earlier changes that create or modify something this change relies on */
             dependsOn: string[];
         };
-        /** @description One normalized edit operation. addStep {id, kind, label, config (complete)}; updateStep {id, config (patch; null removes a setting), before}; renameStep {id, label, before}; removeStep {id, before}; connect {transitionId (chosen by the server), from, to, on, label?, condition?}; disconnect {transitionId, before}; changeFormField {action, key, field?, required, before?, wasRequired?}. before is the element as it was when the operation was validated; the studio skips a change whose targets differ from it. */
+        /** @description One normalized edit operation. addStep {id, kind, label, config (complete)}; updateStep {id, config (patch; null removes a setting), before}; renameStep {id, label, before}; removeStep {id, before}; connect {transitionId (chosen by the server), from, to, on, label?, condition?}; disconnect {transitionId, before}; changeFormField {action, key, field?, required, before?, wasRequired?}. S124: setFieldRule {key, rule (visibleWhen|requiredWhen), condition (null removes), before}; setStepFieldAccess {id, config (patch of fieldAccess and capture), before}; setFormGroups {groups, before}; addDecision {id, label, table}; addCall {id, label, config (complete), definitionVersion, addsDependency}. before is the element as it was when the operation was validated; the studio skips a change whose targets differ from it. */
         AiDraftEditOperation: {
             /** @enum {string} */
-            op: "addStep" | "updateStep" | "renameStep" | "removeStep" | "connect" | "disconnect" | "changeFormField";
+            op: "addStep" | "updateStep" | "renameStep" | "removeStep" | "connect" | "disconnect" | "changeFormField" | "setFieldRule" | "setStepFieldAccess" | "setFormGroups" | "addDecision" | "addCall";
+            /** @enum {string} */
+            rule?: "visibleWhen" | "requiredWhen";
+            groups?: {
+                [key: string]: unknown;
+            }[];
+            table?: {
+                [key: string]: unknown;
+            };
+            definitionVersion?: number;
+            addsDependency?: boolean;
             id?: string;
             /** @enum {string} */
             kind?: "approval" | "branch" | "notification" | "wait" | "end";
@@ -8926,7 +9221,7 @@ export interface components {
             on?: "next" | "approved" | "rejected" | "timedOut" | "failed" | "condition" | "default";
             condition?: {
                 [key: string]: unknown;
-            };
+            } | null;
             /** @enum {string} */
             action?: "add" | "update" | "remove";
             key?: string;
@@ -8936,7 +9231,7 @@ export interface components {
             required?: boolean;
             before?: {
                 [key: string]: unknown;
-            };
+            } | unknown[] | null;
             wasRequired?: boolean;
         };
         CompatibilityIssue: {
@@ -9668,6 +9963,17 @@ export interface components {
             label: components["schemas"]["label"];
             config: Record<string, never>;
         };
+        /** @description Approved JSON Schema keyword subset for request/output forms. No pattern, $ref, format other than date, nested objects, arrays or remote schemas in v0. */
+        formSchema: {
+            /** @constant */
+            type: "object";
+            /** @constant */
+            additionalProperties: false;
+            required?: components["schemas"]["fieldKey"][];
+            properties: {
+                [key: string]: components["schemas"]["formField"];
+            };
+        };
         stageEmail: {
             subject: string;
             body: string;
@@ -9714,17 +10020,6 @@ export interface components {
         };
         /** @description Signal name (docs/build/S55): lowercase letters and digits in kebab-case or camelCase. A signal never leaves the request it is sent in. */
         signalName: string;
-        /** @description Approved JSON Schema keyword subset for request/output forms. No pattern, $ref, format other than date, nested objects, arrays or remote schemas in v0. */
-        formSchema: {
-            /** @constant */
-            type: "object";
-            /** @constant */
-            additionalProperties: false;
-            required?: components["schemas"]["fieldKey"][];
-            properties: {
-                [key: string]: components["schemas"]["formField"];
-            };
-        };
         formSection: {
             id: components["schemas"]["key"];
             title: components["schemas"]["label"];
@@ -9797,6 +10092,17 @@ export interface components {
                 };
                 /** @description Request fields the person holding this task may correct before deciding (docs/build/S42). Scalar request fields only. Publishing proves that no earlier step has used them, so a correction can never contradict work that already happened. */
                 correctable?: components["schemas"]["fieldKey"][];
+                /** @description Step form (docs/build/S123): how the person deciding this step sees each request field. Unlisted fields are readOnly. hidden: not shown on the task. editable: correctable, with the same publish checks as correctable. required: editable and must have a value before approving. */
+                fieldAccess?: {
+                    [key: string]: "hidden" | "readOnly" | "editable" | "required";
+                };
+                /** @description Step form (docs/build/S123): new single-value fields the person fills in when deciding, such as a PO number or an approved amount. Required fields are needed to approve and are optional when rejecting. Outputs at /steps/<id>/<fieldKey>; a required field is available only after the approved route, an optional one may be missing. */
+                capture?: {
+                    type?: unknown;
+                    additionalProperties?: unknown;
+                    required?: unknown;
+                    properties?: unknown;
+                } & components["schemas"]["formSchema"];
                 /** @description Separation of duties (docs/build/S41): ids of earlier approval steps that every path to this step passes through. Whoever decided one of them in the same request cannot claim, decide or be assigned this step. */
                 separateFrom?: components["schemas"]["id"][];
                 /** @description Optional routing of each new task to one eligible person instead of leaving it in the group queue (docs/build/S39). leastLoaded: fewest open assigned tasks; roundRobin: the person assigned longest ago. The person can still return the task to the group. Nobody eligible: the task stays in the queue. */
@@ -10446,6 +10752,17 @@ export interface components {
                         };
                         /** @description Request fields the person holding this task may correct before deciding (docs/build/S42). Scalar request fields only. Publishing proves that no earlier step has used them, so a correction can never contradict work that already happened. */
                         correctable?: components["schemas"]["fieldKey"][];
+                        /** @description Step form (docs/build/S123): how the person deciding this step sees each request field. Unlisted fields are readOnly. hidden: not shown on the task. editable: correctable, with the same publish checks as correctable. required: editable and must have a value before approving. */
+                        fieldAccess?: {
+                            [key: string]: "hidden" | "readOnly" | "editable" | "required";
+                        };
+                        /** @description Step form (docs/build/S123): new single-value fields the person fills in when deciding, such as a PO number or an approved amount. Required fields are needed to approve and are optional when rejecting. Outputs at /steps/<id>/<fieldKey>; a required field is available only after the approved route, an optional one may be missing. */
+                        capture?: {
+                            type?: unknown;
+                            additionalProperties?: unknown;
+                            required?: unknown;
+                            properties?: unknown;
+                        } & components["schemas"]["formSchema"];
                         /** @description Separation of duties (docs/build/S41): ids of earlier approval steps that every path to this step passes through. Whoever decided one of them in the same request cannot claim, decide or be assigned this step. */
                         separateFrom?: components["schemas"]["id"][];
                         /** @description Optional routing of each new task to one eligible person instead of leaving it in the group queue (docs/build/S39). leastLoaded: fewest open assigned tasks; roundRobin: the person assigned longest ago. The person can still return the task to the group. Nobody eligible: the task stays in the queue. */
@@ -11509,6 +11826,205 @@ export interface operations {
                     "application/json": components["schemas"]["CaseInstance"];
                 };
             };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listCaseDefinitionDrafts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Drafts, most recently saved first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseDefinitionDraftSummary"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createCaseDefinitionDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCaseDefinitionDraft"];
+            };
+        };
+        responses: {
+            /** @description Created draft */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseDefinitionDraft"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    getCaseDefinitionDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                draftId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Draft */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseDefinitionDraft"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    saveCaseDefinitionDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                draftId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveCaseDefinitionDraft"];
+            };
+        };
+        responses: {
+            /** @description Saved draft */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseDefinitionDraft"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    deleteCaseDefinitionDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                draftId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Discarded */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    checkCaseDefinitionDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                draftId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Check result for the saved draft version */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseDefinitionCheck"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    publishCaseDefinitionDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                draftId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublishCaseDefinitionDraft"];
+            };
+        };
+        responses: {
+            /** @description Deployed version */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseDefinition"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
@@ -19432,6 +19948,90 @@ export interface operations {
             422: components["responses"]["Unprocessable"];
             429: components["responses"]["TooManyRequests"];
             503: components["responses"]["Unavailable"];
+        };
+    };
+    getAiConversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The saved conversation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiConversation"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    saveAiConversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    turns: components["schemas"]["AiConversationTurn"][];
+                };
+            };
+        };
+        responses: {
+            /** @description Saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiConversation"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    deleteAiConversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cleared */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     uploadMigration: {

@@ -22,6 +22,8 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/input'
 import { displayJsonValue } from '@/lib/form/display'
 import { buildFields, parseFormSchema, parseFormUi } from '@/lib/form/schema'
+import { FormRenderer, fieldDomId } from '@/components/form/FormRenderer'
+import { buildPayload, emptyValues, validateForm, type FieldErrors, type RawValue, type RawValues } from '@/lib/form/values'
 import { formatDateTime } from '@/lib/dates'
 import { describeProblem } from '@/lib/problemMessages'
 import { dueInfo } from '@/lib/dates'
@@ -96,10 +98,18 @@ export function TaskPanel({ taskId, onClaimed }: { taskId: string; onClaimed?: (
     }
   })
 
+  // Step form (S123): fields hidden at this step are left out; the step may also ask for fields of its own.
+  const fieldAccess = task?.form.fieldAccess
   const fields = useMemo(() => {
     const req = task?.request
-    return req ? buildFields(parseFormSchema(req.inputSchema), parseFormUi(req.inputUi)) : []
-  }, [task?.request])
+    const all = req ? buildFields(parseFormSchema(req.inputSchema), parseFormUi(req.inputUi)) : []
+    return all.filter((f) => fieldAccess?.[f.key] !== 'hidden')
+  }, [task?.request, fieldAccess])
+  const capture = task?.form.capture
+  const captureSchema = useMemo(() => capture ? parseFormSchema(capture) : null, [capture])
+  const captureFields = useMemo(() => captureSchema ? buildFields(captureSchema, parseFormUi(undefined)) : [], [captureSchema])
+  const [captureValues, setCaptureValues] = useState<RawValues>({})
+  const [captureErrors, setCaptureErrors] = useState<FieldErrors>({})
 
   if (query.isPending) return <LoadingBlock rows={4} label="Loading the task" />
   // A failed refresh keeps the last known task on screen (after a conflict the winner's banner explains what happened).
@@ -186,14 +196,39 @@ export function TaskPanel({ taskId, onClaimed }: { taskId: string; onClaimed?: (
       return
     }
     setCommentError(undefined)
+    let captured: Record<string, unknown> | undefined
+    if (action === 'approve') {
+      const missing = fields.filter((f) => fieldAccess?.[f.key] === 'required' && isEmptyValue(asRecord(task.request.input)[f.key]))
+      if (missing.length) {
+        const message = `Fill in ${missing.map((f) => f.label).join(', ')} before approving. Use "Correct the request" to add ${missing.length === 1 ? 'it' : 'them'}.`
+        setBanner({ tone: 'warning', text: message })
+        announce(message)
+        return
+      }
+      if (captureSchema) {
+        const merged = { ...emptyValues(captureFields), ...captureValues }
+        const checked = validateForm(captureSchema, parseFormUi(undefined), merged)
+        if (Object.keys(checked.errors).length) {
+          setCaptureErrors(checked.errors)
+          const first = captureFields.find((f) => checked.errors[f.key])
+          if (first) document.getElementById(fieldDomId('step-form', first.key))?.focus()
+          return
+        }
+        setCaptureErrors({})
+        captured = buildPayload(captureFields, merged).payload
+      }
+    }
     setPending(action)
     setError(null)
     try {
-      const key = idempotency.keyFor(fingerprintOf(taskId, task.version, action, text))
+      const key = idempotency.keyFor(fingerprintOf(taskId, task.version, action, text, captured ?? null))
       await endpoints.decideTask(
         ws,
         taskId,
-        { expectedVersion: task.version, action, ...(action === 'reject' ? { reason: text } : text ? { comment: text } : {}) },
+        {
+          expectedVersion: task.version, action, ...(action === 'reject' ? { reason: text } : text ? { comment: text } : {}),
+          ...(captured && Object.keys(captured).length ? { fields: captured } : {}),
+        },
         key,
       )
       await refreshAll()
@@ -201,6 +236,7 @@ export function TaskPanel({ taskId, onClaimed }: { taskId: string; onClaimed?: (
       setBanner({ tone: 'success', text: message })
       announce(message)
       setComment('')
+      setCaptureValues({})
       idempotency.reset()
     } catch (cause) {
       await handleFailure(cause)
@@ -262,7 +298,11 @@ export function TaskPanel({ taskId, onClaimed }: { taskId: string; onClaimed?: (
             {fields.map((f) => (
               <div key={f.key} className="grid gap-1 px-4 py-2.5 sm:grid-cols-[10rem_1fr]">
                 <dt className="text-sm font-semibold text-muted-foreground">{f.label}</dt>
-                <dd className="wrap-anywhere whitespace-pre-wrap">{displayJsonValue(f, asRecord(task.request.input)[f.key])}</dd>
+                <dd className="wrap-anywhere whitespace-pre-wrap">
+                  {displayJsonValue(f, asRecord(task.request.input)[f.key])}
+                  {fieldAccess?.[f.key] === 'required' && isEmptyValue(asRecord(task.request.input)[f.key])
+                    ? <span className="ml-2 text-sm font-medium text-danger">Fill this in before approving</span> : null}
+                </dd>
               </div>
             ))}
           </dl>}</>
@@ -271,6 +311,19 @@ export function TaskPanel({ taskId, onClaimed }: { taskId: string; onClaimed?: (
         {navigation?.target ? <Link to={navigation.target}>{navigation.label}</Link> : null}
 
         {task.form.sendBack ? null : <TaskCorrection ws={ws} task={task} fields={fields} onDone={refreshAll} />}
+        {captureFields.length > 0 && canDecide ? (
+          <section aria-labelledby="task-step-form-heading" className="space-y-3 rounded-card border border-border p-4" data-testid="task-step-form">
+            <div>
+              <h3 id="task-step-form-heading" className="font-semibold">Fill in to approve</h3>
+              <p className="text-sm text-muted-foreground">These are saved with your approval. Rejecting does not need them.</p>
+            </div>
+            <FormRenderer fields={captureFields} values={{ ...emptyValues(captureFields), ...captureValues }} errors={captureErrors} idPrefix="step-form"
+              disabled={busy} onChange={(key: string, value: RawValue) => {
+                setCaptureValues((v) => ({ ...v, [key]: value }))
+                if (captureErrors[key]) setCaptureErrors((e) => { const next = { ...e }; delete next[key]; return next })
+              }} />
+          </section>
+        ) : null}
         <SendBackPanel ws={ws} task={task} fields={fields} onDone={refreshAll} />
 
         <RunFiles ws={ws} runId={task.runId} readOnly />
@@ -373,4 +426,8 @@ export function TaskPanel({ taskId, onClaimed }: { taskId: string; onClaimed?: (
       </div>
     </div>
   )
+}
+
+function isEmptyValue(value: unknown): boolean {
+  return value === undefined || value === null || typeof value === 'string' && value.trim() === ''
 }

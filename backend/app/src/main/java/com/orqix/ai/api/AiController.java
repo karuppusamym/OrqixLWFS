@@ -26,10 +26,12 @@ public class AiController {
 
     private final CallerResolver callers;
     private final AiService ai;
+    private final com.orqix.ai.internal.DraftConversationService conversations;
 
-    public AiController(CallerResolver callers, AiService ai) {
+    public AiController(CallerResolver callers, AiService ai, com.orqix.ai.internal.DraftConversationService conversations) {
         this.callers = callers;
         this.ai = ai;
+        this.conversations = conversations;
     }
 
     @GetMapping("/ai/status")
@@ -65,6 +67,23 @@ public class AiController {
     public AiDtos.DraftEditProposal proposeDraftEdits(@PathVariable UUID workspaceId, @PathVariable UUID workflowId,
             @RequestBody(required = false) JsonNode body) {
         return ai.proposeDraftEdits(callers.current(), workspaceId, workflowId, body);
+    }
+
+    @GetMapping("/workflows/{workflowId}/ai/conversation")
+    public AiDtos.Conversation getAiConversation(@PathVariable UUID workspaceId, @PathVariable UUID workflowId) {
+        return conversations.get(callers.current(), workspaceId, workflowId);
+    }
+
+    @org.springframework.web.bind.annotation.PutMapping("/workflows/{workflowId}/ai/conversation")
+    public AiDtos.Conversation saveAiConversation(@PathVariable UUID workspaceId, @PathVariable UUID workflowId,
+            @RequestBody(required = false) JsonNode body) {
+        return conversations.save(callers.current(), workspaceId, workflowId, body);
+    }
+
+    @org.springframework.web.bind.annotation.DeleteMapping("/workflows/{workflowId}/ai/conversation")
+    public ResponseEntity<Void> deleteAiConversation(@PathVariable UUID workspaceId, @PathVariable UUID workflowId) {
+        conversations.delete(callers.current(), workspaceId, workflowId);
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/workflows/{workflowId}/explain")

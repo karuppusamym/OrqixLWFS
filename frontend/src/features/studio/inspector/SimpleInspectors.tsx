@@ -12,6 +12,8 @@ import { StageEmailFields, Tier1Settings } from './StageEmailFields'
 import { WorkManagementFields } from './WorkManagementFields'
 import { ApprovalViewPicker } from './ApprovalViewPicker'
 import { ListApprovalFields } from './ListApprovalFields'
+import { StagesInspector } from './StagesInspector'
+import { SubprocessesInspector } from './ScopeInspectors'
 
 /** Rename a step ID in Advanced: IDs are stable references, so the change is validated and applied everywhere. */
 export function StepIdField({ node }: { node: WorkflowNode }) {
@@ -250,6 +252,8 @@ export function WorkflowInspector() {
           )}
         </FormField>
       </InspectorSection>
+      <StagesInspector />
+      <SubprocessesInspector />
       <Advanced label="Limits and retries">
         <FormField label="Open requests at once" id="wf-settings-max" description="More requests than this are refused until some finish.">
           {(ids) => (

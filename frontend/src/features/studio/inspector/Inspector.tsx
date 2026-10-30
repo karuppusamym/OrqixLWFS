@@ -103,7 +103,7 @@ function NodeInspector({ nodeId, onDeleteNode }: { nodeId: string; onDeleteNode:
         ) : null}
       </header>
 
-      {node.type === 'start' ? <StartInspector node={node} /> : null}
+      {node.type === 'start' ? <StartInspector /> : null}
       {node.type === 'approval' ? <ApprovalInspector node={node} /> : null}
       {node.type === 'decision' ? <DecisionInspector node={node} /> : null}
       {node.type === 'branch' || (node.type === 'parallelSplit' && node.config.mode === 'inclusive') ? <BranchInspector node={node} /> : null}

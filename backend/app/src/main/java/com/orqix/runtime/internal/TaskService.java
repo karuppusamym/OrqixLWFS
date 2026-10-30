@@ -233,6 +233,8 @@ public class TaskService {
             throw new ApiException(ProblemCode.REASON_REQUIRED, "Give a reason for the rejection.")
                     .withFieldErrors(List.of(new ApiException.FieldError("/reason", "required", "A reason is required")));
         }
+        StepForm stepForm = StepForm.of(releases.require(workspaceId, visible.run().releaseId()).node(task.nodeId()));
+        ObjectNode captured = captured(stepForm, request, visible.run(), reject);
         if (!tasks.bumpVersion(workspaceId, taskId, request.expectedVersion())) {
             throw new ApiException(ProblemCode.TASK_VERSION_CONFLICT, "The task changed since you loaded it.")
                     .with("currentVersion", task.version());
@@ -264,6 +266,7 @@ public class TaskService {
         }
         output.put("decidedBy", caller.subjectId().toString());
         output.put("decidedAt", now.toString());
+        captured.properties().forEach(e -> output.set(e.getKey(), e.getValue()));
 
         tasks.end(workspaceId, taskId, "completed", now);
         TaskStore.Item item = tasks.item(workspaceId, taskId).orElse(null);
@@ -297,6 +300,9 @@ public class TaskService {
         if (cancelledSiblings > 0) {
             decided.put("otherApproversCancelled", cancelledSiblings);
         }
+        if (!captured.isEmpty()) {
+            decided.put("fieldsCaptured", captured.size());
+        }
         if (item != null) {
             decided.put("itemIndex", item.index());
             decided.put("itemLabel", item.label());
@@ -319,6 +325,46 @@ public class TaskService {
         metrics.taskDecided(request.action());
         TaskQueries.DecisionRow decision = taskQueries.decision(workspaceId, decisionId).orElseThrow();
         return new Decided(views.decision(decision, task.label(), names(decision)), false);
+    }
+
+    /**
+     * The step form's checks on a decision (S123). Approving: every field with {@code required} access has a value in the
+     * request, and the captured values match the step's capture schema. Rejecting: no values are taken, because a
+     * rejection never fills in the step's fields (publishing relies on that). Returns the values to store.
+     */
+    private ObjectNode captured(StepForm form, RuntimeDtos.DecisionRequest request, RunStore.RunRow run, boolean reject) {
+        Map<String, JsonNode> given = request.fields() == null ? Map.of() : request.fields();
+        ObjectNode values = json.object();
+        if (reject) {
+            if (!given.isEmpty()) {
+                throw new ApiException(ProblemCode.VALIDATION_FAILED, "Fields are filled in only when approving.")
+                        .withFieldErrors(List.of(new ApiException.FieldError("/fields", "enum", "Leave the fields empty to reject")));
+            }
+            return values;
+        }
+        List<ApiException.FieldError> errors = new ArrayList<>();
+        for (String key : form.required()) {
+            JsonNode value = run.input().get(key);
+            if (value == null || value.isNull() || value.isString() && value.asString().isBlank()) {
+                errors.add(new ApiException.FieldError("/input/" + key, "required", "Fill this in before approving"));
+            }
+        }
+        if (!form.captures()) {
+            if (!given.isEmpty()) {
+                errors.add(new ApiException.FieldError("/fields", "additionalProperties", "This step asks for no fields"));
+            }
+        } else {
+            given.forEach((key, value) -> {
+                if (value != null && !value.isNull()) values.set(key, value);
+            });
+            formValidator.validate(json.write(form.capture()), json.write(values)).forEach(e ->
+                    errors.add(new ApiException.FieldError("/fields" + e.pointer(), e.code(), e.message())));
+        }
+        if (!errors.isEmpty()) {
+            throw new ApiException(ProblemCode.VALIDATION_FAILED, "Complete the step's form before approving.")
+                    .withFieldErrors(errors);
+        }
+        return values;
     }
 
     /**
@@ -544,8 +590,17 @@ public class TaskService {
                 || access.subjectId().equals(task.assignee()) || access.groupKeys().contains(task.candidateGroupKey()) && hasSkills(access,task)
                 || run.initiator().equals(access.subjectId());
         RuntimeDtos.TaskSummary summary = views.task(task, run, names, own, participant);
-        JsonNode input = participant ? run.input() : json.object();
         JsonNode node = release.node(task.nodeId());
+        StepForm stepForm = StepForm.of(node);
+        JsonNode input = participant ? run.input() : json.object();
+        if (participant && stepForm.access().containsValue("hidden") && input instanceof ObjectNode full) {
+            // S123: a field hidden on this step is left out of the task view.
+            ObjectNode shown = full.deepCopy();
+            stepForm.access().forEach((key, how) -> {
+                if (how.equals("hidden")) shown.remove(key);
+            });
+            input = shown;
+        }
         boolean reasonRequired = node == null || node.path("config").path("rejectReasonRequired").asBoolean(true);
         List<RuntimeDtos.TaskDecision> historyViews = new ArrayList<>();
         for (TaskQueries.DecisionRow d : history) {
@@ -559,7 +614,8 @@ public class TaskService {
                 summary.decision(),
                 new RuntimeDtos.TaskRequest(input, release.inputSchema(),
                         release.inputUi().isMissingNode() ? null : release.inputUi()),
-                historyViews, new RuntimeDtos.TaskForm(reasonRequired, correctableFor(access, task, node, run), taskQueries.openSendBack(task.workspaceId(), task.taskId()).orElse(null)),
+                historyViews, new RuntimeDtos.TaskForm(reasonRequired, correctableFor(access, task, node, run), taskQueries.openSendBack(task.workspaceId(), task.taskId()).orElse(null),
+                        stepForm.access(), stepForm.capture()),
                 allowed(access, task, suspensions.isSuspended(task.workspaceId(), task.runId())),
                 own == null ? null : views.ref(own.actor(), names),
                 node == null || !node.path("config").has("viewBinding") ? null : node.path("config").path("viewBinding").path("definition"));
@@ -575,9 +631,7 @@ public class TaskService {
         if (!holder && !operator) {
             return List.of();
         }
-        List<String> fields = new ArrayList<>();
-        node.path("config").path("correctable").forEach(f -> fields.add(f.asString()));
-        return fields;
+        return StepForm.of(node).editable();
     }
 
     // ---------------------------------------------------------------- correction by the task holder (S42)
@@ -626,15 +680,10 @@ public class TaskService {
         return detail(visible(caller, workspaceId, taskId));
     }
 
-    /** The fields the task's step declares correctable in its pinned release (S42). */
+    /** The fields the task's step declares correctable, or editable in its step form, in its pinned release (S42, S123). */
     List<String> declaredCorrectable(UUID workspaceId, TaskStore.TaskRow task) {
         RunStore.RunRow run = runs.find(workspaceId, task.runId()).orElseThrow(ApiException::notFound);
-        JsonNode node = releases.require(workspaceId, run.releaseId()).node(task.nodeId());
-        List<String> allowed = new ArrayList<>();
-        if (node != null) {
-            node.path("config").path("correctable").forEach(f -> allowed.add(f.asString()));
-        }
-        return allowed;
+        return StepForm.of(releases.require(workspaceId, run.releaseId()).node(task.nodeId())).editable();
     }
 
     /** While the request is with its requester (S116), the task holder neither decides nor corrects it. */

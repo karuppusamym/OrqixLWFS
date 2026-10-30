@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, expect, vi } from 'vitest'
 import { resetLoginRedirectGuard } from '@/api/auth'
 import { draftSaverTestTuning } from '@/stores/draftSaver'
 import { db } from '@/mocks/state'
+import { clearMockConversations } from '@/features/ai/mocks'
 import { server } from './server'
 
 // Lazy routes (studio, React Flow) are slow to load the first time in a cold test worker.
@@ -69,6 +70,7 @@ afterEach(async () => {
   server.resetHandlers()
   resetLoginRedirectGuard()
   db.latencyMs = 0
+  clearMockConversations()
   window.localStorage.clear()
 })
 

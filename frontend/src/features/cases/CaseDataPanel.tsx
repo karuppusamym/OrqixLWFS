@@ -11,25 +11,27 @@ import { Alert } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/input'
-import { CaseDataFields, inputValues, typedValues, type DataInputs } from './CaseDataFields'
+import { CaseDataError, CaseDataFields, inputValues, typedValues, type DataInputs } from './CaseDataFields'
 import { getCaseData, updateCaseData } from './api'
 
 function DataEditor({ data, ws, instanceId, busy, onPending }: { data: components['schemas']['CaseData']; ws: string; instanceId: string; busy: boolean; onPending: (value: boolean) => void }) {
   const [values, setValues] = useState<DataInputs>(() => inputValues(data.values))
   const [reason, setReason] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const id = useId(), client = useQueryClient()
   const appearance=usePresentedView(data.viewBinding?.definition as ViewDefinition | undefined)
   const view=appearance.view
   const navigation = view?.actions.find(action => action.type === 'navigate')
   const save = async () => {
     if (!data || !reason.trim()) return
-    onPending(true); setError(null)
+    onPending(true); setError(null); setFieldErrors({})
     try {
       const updated = await updateCaseData(ws, instanceId, data.version, reason.trim(), typedValues(data.fields, values))
       client.setQueryData(['ws', ws, 'case', instanceId], updated)
       void client.invalidateQueries({ queryKey: ['ws', ws, 'cases'] })
     } catch (cause) {
+      if (cause instanceof CaseDataError) { setFieldErrors(cause.fieldErrors); setError(cause.message); return }
       setError(cause instanceof Error ? cause.message : 'The case data changed. Refresh and try again.')
       void client.invalidateQueries({ queryKey: ['ws', ws, 'case', instanceId], exact: true })
     } finally { onPending(false) }
@@ -37,7 +39,7 @@ function DataEditor({ data, ws, instanceId, busy, onPending }: { data: component
   return <form lang={appearance.locale} className={`space-y-4 ${viewSurface(view)}`} onSubmit={event => { event.preventDefault(); void save() }}>
     {error ? <Alert tone="danger">{error}</Alert> : null}
     <ViewLanguage definition={data.viewBinding?.definition as ViewDefinition|undefined} locale={appearance.locale} onChange={appearance.setLocale}/>
-    <CaseDataFields view={view} fields={data.fields} values={values} onChange={setValues} disabled={busy} readOnly={!data.canEdit} />
+    <CaseDataFields view={view} fields={data.fields} values={values} onChange={setValues} disabled={busy} readOnly={!data.canEdit} errors={fieldErrors} />
     {data.canEdit ? <><Label htmlFor={`${id}-reason`}>Reason for data change</Label><Textarea id={`${id}-reason`} required maxLength={1000} value={reason} disabled={busy} onChange={event => setReason(event.target.value)} /><Button type="submit" disabled={busy || !reason.trim()} loading={busy}>{view?.actions.find(action => action.type === 'saveData')?.label ?? 'Save case data'}</Button></> : null}
     {navigation?.target ? <Link to={navigation.target}>{navigation.label}</Link> : null}
   </form>

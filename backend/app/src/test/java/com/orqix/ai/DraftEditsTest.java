@@ -302,4 +302,119 @@ class DraftEditsTest {
         assertThat(summary).doesNotContain("9f8e7d6c5b4a39281716151413121110abcdef", "XXXXXXXXXXXXXXXXXXXXXXXX1a", "hunter2")
                 .contains("page=2", "example.com", "[redacted]");
     }
+
+    // ---------------------------------------------------------------- S124 operations and questions
+
+    private List<DraftRules.ConnectionFact> procurement() throws Exception {
+        JsonNode document = json.parse(Files.readString(Path.of(System.getProperty("orqix.repoRoot", "../.."),
+                "examples", "connections", "procurement.connection.json")));
+        return List.of(new DraftRules.ConnectionFact("procurement", 1, "Procurement", document));
+    }
+
+    private DraftEdits.Result editWith(String reply) throws Exception {
+        return rules.evaluate(json.parse(reply), purchase(), DraftEdits.Mode.EDIT, CONTEXT, procurement());
+    }
+
+    @Test
+    void formRulesAndGroupsAreSetWithTheirEarlierState() throws Exception {
+        DraftEdits.Result result = editWith("""
+                {"message": "Rules", "changes": [
+                  {"summary": "Purpose only for large amounts", "operations": [
+                    {"op": "setFieldRule", "key": "purpose", "rule": "visibleWhen",
+                     "condition": {"fieldRef": "/input/amount", "operator": "gte", "value": 5000}}]},
+                  {"summary": "Group the questions", "operations": [
+                    {"op": "setFormGroups", "groups": [{"id": "why", "title": "Why", "fields": ["purpose", "costCenter"], "columns": 1}]}]},
+                  {"summary": "Unknown question", "operations": [
+                    {"op": "setFieldRule", "key": "nothing", "rule": "requiredWhen", "condition": null}]}],
+                 "notes": []}""");
+        assertThat(result.changes()).hasSize(2);
+        JsonNode rule = result.changes().get(0).operations().get(0);
+        assertThat(rule.path("before").isNull()).isTrue();
+        assertThat(rule.path("condition").path("value").asInt()).isEqualTo(5000);
+        assertThat(result.changes().get(1).operations().get(0).path("before").isNull()).isTrue();
+        assertThat(result.rejected()).singleElement().satisfies(r -> assertThat(r.reasons().get(0)).contains("no question"));
+    }
+
+    @Test
+    void aStepFormIsSetAndItsCapturedFieldIsGuardedByTheCompiler() throws Exception {
+        DraftEdits.Result result = editWith("""
+                {"message": "Step form", "changes": [
+                  {"summary": "Manager enters a PO number", "operations": [
+                    {"op": "setStepFieldAccess", "id": "manager", "fieldAccess": {"costCenter": "hidden", "title": "readOnly"},
+                     "capture": {"required": ["poNumber"], "properties": {"poNumber": {"type": "string", "title": "PO number", "maxLength": 20}}}}]},
+                  {"summary": "Use it on the rejected path", "operations": [
+                    {"op": "disconnect", "transitionId": "t3"},
+                    {"op": "addStep", "id": "checkPo", "kind": "branch", "label": "Check the PO"},
+                    {"op": "connect", "from": "manager", "to": "checkPo", "on": "rejected"},
+                    {"op": "connect", "from": "checkPo", "to": "notifyRejected", "on": "condition",
+                     "condition": {"fieldRef": "/steps/manager/poNumber", "operator": "eq", "value": "PO-1"}},
+                    {"op": "connect", "from": "checkPo", "to": "notifyRejected", "on": "default"}]},
+                  {"summary": "Not an approval", "operations": [{"op": "setStepFieldAccess", "id": "procure", "fieldAccess": {}}]}],
+                 "notes": []}""");
+        assertThat(result.changes()).hasSize(1);
+        JsonNode op = result.changes().get(0).operations().get(0);
+        assertThat(op.path("config").path("fieldAccess").toString()).isEqualTo("{\"costCenter\":\"hidden\"}");
+        assertThat(op.path("config").path("capture").path("type").asString()).isEqualTo("object");
+        assertThat(op.path("before").path("id").asString()).isEqualTo("manager");
+        assertThat(result.rejected()).hasSize(2);
+        assertThat(result.rejected().get(0).reasons().get(0)).contains("filled in only when the step is approved");
+        assertThat(result.rejected().get(1).reasons().get(0)).contains("approval steps");
+    }
+
+    @Test
+    void aDecisionAndACallToASystemAreAdded() throws Exception {
+        DraftEdits.Result result = editWith("""
+                {"message": "Risk and confirmation", "changes": [
+                  {"summary": "Rate the risk after the order", "operations": [
+                    {"op": "disconnect", "transitionId": "t9"},
+                    {"op": "addDecision", "id": "riskPolicy", "label": "Rate the risk", "table": {"key": "risk-policy",
+                      "rows": [{"when": {"fieldRef": "/input/amount", "operator": "gte", "value": 10000}, "then": {"risk": "high"}}],
+                      "default": {"risk": "low"}}},
+                    {"op": "connect", "from": "procure", "to": "riskPolicy", "on": "next"},
+                    {"op": "connect", "from": "riskPolicy", "to": "notify", "on": "next"}]},
+                  {"summary": "Call an unknown system", "operations": [
+                    {"op": "addCall", "id": "callIt", "label": "Call it", "connectionRef": "nowhere", "operation": "x"}]},
+                  {"summary": "Same table key", "operations": [
+                    {"op": "addDecision", "id": "again", "label": "Again", "table": {"key": "amount-policy", "rows": [], "default": {"route": "x"}}}]}],
+                 "notes": []}""");
+        assertThat(result.rejected()).hasSize(2);
+        assertThat(result.rejected().get(0).reasons().get(0)).contains("no connection");
+        assertThat(result.rejected().get(1).reasons().get(0)).contains("already exists");
+        assertThat(result.changes()).singleElement().satisfies(c -> {
+            JsonNode decision = c.operations().get(1);
+            assertThat(decision.path("table").path("version").asInt()).isEqualTo(1);
+            assertThat(decision.path("table").path("hitPolicy").asString()).isEqualTo("UNIQUE");
+        });
+
+        DraftEdits.Result call = editWith("""
+                {"changes": [{"summary": "Second order", "operations": [
+                    {"op": "disconnect", "transitionId": "t9"},
+                    {"op": "addCall", "id": "confirmOrder", "label": "Confirm the order", "connectionRef": "procurement",
+                     "operation": "createOrder", "inputMapping": {"title": "/input/title", "amount": "/input/amount", "costCenter": "/input/costCenter"}},
+                    {"op": "connect", "from": "procure", "to": "confirmOrder", "on": "next"},
+                    {"op": "connect", "from": "confirmOrder", "to": "notify", "on": "next"}]}], "notes": []}""");
+        assertThat(call.rejected()).isEmpty();
+        JsonNode added = call.changes().get(0).operations().get(1);
+        assertThat(added.path("definitionVersion").asInt()).isEqualTo(1);
+        assertThat(added.path("addsDependency").asBoolean()).isFalse();
+        assertThat(added.path("config").path("timeoutSeconds").asInt()).isPositive();
+    }
+
+    @Test
+    void questionsAreBoundedPlainText() throws Exception {
+        DraftEdits.Result result = editWith("""
+                {"message": "I need to know", "changes": [], "notes": [],
+                 "questions": ["One?", "Two ${x}?", "Three?", "Four?", "%s"]}""".formatted("x".repeat(400)));
+        assertThat(result.questions()).hasSize(3);
+        assertThat(result.questions().get(1)).doesNotContain("${");
+    }
+
+    @Test
+    void theSummaryShowsFormRulesAndConnections() throws Exception {
+        ObjectNode draft = purchase();
+        draft.putObject("inputUi").putObject("visibleWhen").set("purpose",
+                json.parse("{\"fieldRef\":\"/input/amount\",\"operator\":\"gte\",\"value\":5000}"));
+        String summary = rules.summary(draft, List.of(), procurement());
+        assertThat(summary).contains("formRules", "visibleWhen", "\"connections\"", "createOrder", "costCenter");
+    }
 }

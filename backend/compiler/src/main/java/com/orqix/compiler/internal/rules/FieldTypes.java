@@ -230,10 +230,22 @@ public final class FieldTypes {
                     false, null, null);
             return new Resolved(new FieldType(FieldKind.ARRAY, null, false, null, null, item), a, key);
         }
+        if (a.capture() != null && a.capture().properties().containsKey(key) && !APPROVAL_OUTPUTS.contains(key)) {
+            // S123: a captured field. A required one exists after the approved route (Conditions.availability checks
+            // the route); an optional one may be missing.
+            FormSchema.Field field = a.capture().properties().get(key);
+            Set<String> domain = field.type() == FieldKind.STRING && field.enumValues() != null
+                    ? Collections.unmodifiableSet(new TreeSet<>(field.enumValues())) : null;
+            return new Resolved(new FieldType(field.type(), domain, !a.capture().required().contains(key),
+                    field.minimum(), field.maximum()), a, key);
+        }
         if (!APPROVAL_OUTPUTS.contains(key)) {
             List<String> produced = new ArrayList<>(APPROVAL_OUTPUTS);
             if (a.listDriven()) {
                 produced.addAll(PER_ITEM_OUTPUTS);
+            }
+            if (a.capture() != null) {
+                produced.addAll(a.capture().properties().keySet());
             }
             return new Unknown("\"" + a.label() + "\" does not produce \"" + key + "\". It produces: "
                     + String.join(", ", produced) + ".");

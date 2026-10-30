@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { expect,test } from '../support/fixtures'
 import { MOCK } from '../support/env'
-import { apiGet,workspaceId,selectStep } from '../support/app'
+import { apiGet,workspaceId,selectStep,openFormTab } from '../support/app'
 import { apiSend,createWorkflow,publish,uniq } from '../support/api'
 import { expectNoSeriousViolations } from '../support/axe'
 
@@ -29,10 +29,11 @@ test('authored languages and responsive tokens reach pinned request and approval
   expect((await apiSend(page,'POST',`/workspaces/${ws}/views/${created.body.id}/publish`,{expectedRevision:2})).status).toBe(200)
   expect((await apiSend(page,'POST',`/workspaces/${ws}/views/${review.body.id}/publish`,{expectedRevision:1})).status).toBe(200)
   page=await sessions.as('dana.designer');await page.goto(`/w/${ws}/workflows/${workflow.id}/edit`)
-  await page.getByRole('tab',{name:'Steps',exact:true}).click();await selectStep(page,'start')
+  // The reusable request view is on the Form tab (S120); the approval view stays on the approval step.
+  await openFormTab(page)
   await page.getByRole('button',{name:'Choose reusable view'}).click();await page.getByLabel('Published request view').selectOption(created.body.id)
   await page.getByRole('button',{name:'Apply selected version'}).click();await expect(page.getByTestId('save-state')).toContainText('Saved')
-  await selectStep(page,'manager');await page.getByRole('button',{name:'Choose approval view'}).click();await page.getByLabel('Published approval view').selectOption(review.body.id)
+  await page.getByRole('tab',{name:'Steps',exact:true}).click();await selectStep(page,'manager');await page.getByRole('button',{name:'Choose approval view'}).click();await page.getByLabel('Published approval view').selectOption(review.body.id)
   await page.getByRole('button',{name:'Apply approval view',exact:true}).click();await expect(page.getByTestId('save-state')).toContainText('Saved')
   // "Saved" may still be the previous save's text: wait until the server draft holds both pinned views before publishing.
   await expect.poll(async()=>{const d=await apiGet<{definition:{inputUi?:{viewRef?:{id:string}};nodes:Array<{id:string;config:{viewBinding?:{id:string}}}>}}>(page,`/workspaces/${ws}/workflows/${workflow.id}/draft`)
@@ -79,12 +80,12 @@ test('localized case choices preserve stored values and current correction permi
   page=await sessions.as('rhea.requester');await page.goto(`/w/${ws}/cases`)
   await page.getByRole('row').filter({has:page.getByRole('cell',{name:key,exact:true})}).getByRole('button',{name:'Start case',exact:true}).click()
   const dialog=page.getByRole('dialog',{name:'Start case',exact:true});await dialog.getByLabel('View language').selectOption('fr')
-  await dialog.getByLabel('Priorité (required)').selectOption('urgent');await dialog.getByRole('button',{name:'Start case with data'}).click()
+  await dialog.getByLabel(/^Priorité/).selectOption('urgent');await dialog.getByRole('button',{name:'Start case with data'}).click()
   await expect(page).toHaveURL(new RegExp(`/w/${ws}/cases/[^/]+$`));const url=page.url(),id=url.split('/').at(-1)!
   await page.getByRole('button',{name:'Show case data'}).click();await page.getByLabel('View language').selectOption('fr')
-  await expect(page.getByLabel('Priorité (required)')).toHaveValue('Urgente');await expect(page.getByRole('button',{name:'Enregistrer',exact:true})).toHaveCount(0)
+  await expect(page.getByLabel(/^Priorité/)).toHaveValue('Urgente');await expect(page.getByRole('button',{name:'Enregistrer',exact:true})).toHaveCount(0)
   page=await sessions.as('mani.manager');await page.goto(url);await page.getByRole('button',{name:'Show case data'}).click();await page.getByLabel('View language').selectOption('fr')
-  await page.getByLabel('Priorité (required)').selectOption('normal');await page.getByLabel('Reason for data change').fill('Synthetic localized correction')
+  await page.getByLabel(/^Priorité/).selectOption('normal');await page.getByLabel('Reason for data change').fill('Synthetic localized correction')
   await page.getByRole('button',{name:'Enregistrer',exact:true}).click();await expect(page.getByText(/Case version 2/).first()).toBeVisible()
   const data=await apiGet<{values:{priority:string}}>(page,`/workspaces/${ws}/cases/instances/${id}/data`);expect(data.values.priority).toBe('normal')
   await page.setViewportSize({width:390,height:844});await expectNoSeriousViolations(page,'Localized case data mobile')

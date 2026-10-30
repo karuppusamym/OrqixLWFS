@@ -1049,6 +1049,38 @@
                 "$ref": "#/$defs/fieldKey"
               }
             },
+            "fieldAccess": {
+              "description": "Step form (docs/build/S123): how the person deciding this step sees each request field. Unlisted fields are readOnly. hidden: not shown on the task. editable: correctable, with the same publish checks as correctable. required: editable and must have a value before approving.",
+              "type": "object",
+              "maxProperties": 30,
+              "propertyNames": {
+                "$ref": "#/$defs/fieldKey"
+              },
+              "additionalProperties": {
+                "enum": [
+                  "hidden",
+                  "readOnly",
+                  "editable",
+                  "required"
+                ]
+              }
+            },
+            "capture": {
+              "description": "Step form (docs/build/S123): new single-value fields the person fills in when deciding, such as a PO number or an approved amount. Required fields are needed to approve and are optional when rejecting. Outputs at /steps/<id>/<fieldKey>; a required field is available only after the approved route, an optional one may be missing.",
+              "allOf": [
+                {
+                  "$ref": "#/$defs/formSchema"
+                }
+              ],
+              "properties": {
+                "type": true,
+                "additionalProperties": true,
+                "required": true,
+                "properties": {
+                  "maxProperties": 10
+                }
+              }
+            },
             "separateFrom": {
               "description": "Separation of duties (docs/build/S41): ids of earlier approval steps that every path to this step passes through. Whoever decided one of them in the same request cannot claim, decide or be assigned this step.",
               "type": "array",

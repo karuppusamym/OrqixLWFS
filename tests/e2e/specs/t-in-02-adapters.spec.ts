@@ -1,8 +1,20 @@
 import { expect, test } from '../support/fixtures'
 import { MOCK } from '../support/env'
 import { apiGet, workspaceId } from '../support/app'
-import { apiSend, createWorkflow, uniq } from '../support/api'
+import { apiSend, createWorkflow, revokeGrant, uniq } from '../support/api'
 import { expectNoSeriousViolations } from '../support/axe'
+
+/**
+ * The designer's connection.manage grant is taken back afterwards, even when the test fails: later specs and
+ * tools/api-e2e/e2e_authoring.py check that design permission alone cannot manage connections.
+ */
+test.afterEach(async ({ sessions }) => {
+  if (MOCK) return
+  const designer = await sessions.as('dana.designer')
+  const ws = await workspaceId(designer)
+  const subject = (await apiGet<{ subject: { id: string } }>(designer, '/me')).subject.id
+  await revokeGrant(await sessions.as('wade.admin'), ws, 'connection.manage', subject)
+})
 
 /**
  * IN02 (docs/build/S47): a connection manager defines an adapter and sends a test message that only reaches the local

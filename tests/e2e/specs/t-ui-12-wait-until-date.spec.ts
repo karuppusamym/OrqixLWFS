@@ -50,10 +50,10 @@ test.describe('wait until a date (mock API)', () => {
     await designer.goto(`/w/${ws}/workflows/${id}/edit`)
     await expect(designer.getByTestId('studio')).toBeVisible()
 
-    // The canvas card reads in plain language.
+    // The canvas step reads in plain language. The canvas opens in BPMN notation, where the summary is the shape's title.
     const card = designer.locator('.react-flow__node[data-id="untilStart"]')
     await expect(card).toBeVisible()
-    await expect(card).toContainText('Until Start date, 09:00 UTC')
+    await expect(card.locator('[data-notation="bpmn"]')).toHaveAttribute('title', /Until Start date, 09:00 UTC/)
 
     // The wait inspector: until a date, the date question, a UTC time and the preview.
     await designer.getByRole('tab', { name: 'Steps' }).click()

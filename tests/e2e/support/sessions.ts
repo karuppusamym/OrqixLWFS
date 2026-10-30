@@ -39,6 +39,7 @@ export class Sessions {
   private readonly browser: Browser
   private readonly contexts = new Map<string, { context: BrowserContext; page: Page }>()
   private ignoreHttpErrors = false
+  private readonly expectedConsoleErrors: Array<{ text: string; url?: string }> = []
   /** Pages whose sign-in finished. Before that, the SPA's unauthenticated /api/v1/me probe answers 401 by design. */
   private readonly signedIn = new WeakSet<Page>()
   private mockContext: { context: BrowserContext; page: Page } | null = null
@@ -51,6 +52,14 @@ export class Sessions {
   /** Expected 4xx responses (for example a denied cross-workspace request) log "Failed to load resource" in Chromium. */
   allowHttpErrors(): void {
     this.ignoreHttpErrors = true
+  }
+
+  /**
+   * One console error the spec expects, matched exactly (surrounding whitespace aside) and, when `url` is given, only
+   * when Chromium reports it from that URL. Everything else still fails the test.
+   */
+  allowConsoleError(text: string, url?: string): void {
+    this.expectedConsoleErrors.push({ text, url })
   }
 
   private async open(user: string): Promise<{ context: BrowserContext; page: Page }> {
@@ -70,6 +79,8 @@ export class Sessions {
     page.on('console', (msg) => {
       if (msg.type() !== 'error') return
       const text = msg.text()
+      const where = msg.location().url
+      if (this.expectedConsoleErrors.some((e) => e.text === text.trim() && (e.url === undefined || e.url === where))) return
       if (this.ignoreHttpErrors && /Failed to load resource: the server responded with a status of 4\d\d/.test(text)) return
       // The 401 that starts the OIDC login (S3 section 2) is expected; any 401 after sign-in is a real problem.
       if (!this.signedIn.has(page) && /Failed to load resource: the server responded with a status of 401/.test(text)) return

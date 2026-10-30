@@ -28,6 +28,7 @@ export function PinnedWorkflows() {
 
 function PinnedList() {
   const { ids } = useWorkflowPins()
+  if (ids.length === 0) return <p className="mb-4 text-sm text-muted-foreground">Use Pin beside a workflow to keep it here.</p>
   return <section aria-labelledby="pinned-workflows-heading" className="mb-6 rounded-card border border-border bg-surface p-4">
     <h2 id="pinned-workflows-heading" className="text-base">Pinned workflows</h2>
     <p className="mt-1 text-sm text-muted-foreground">Your shortcuts in this browser, for this account and workspace. Up to {PIN_LIMIT} pins; they stay here while you search the catalog.</p>

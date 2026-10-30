@@ -1,3 +1,4 @@
+import { SavedWorkViews } from '@/components/common/SavedWorkViews'
 import { Activity, AlertTriangle, Check, Clock } from 'lucide-react'
 import { useListFilters } from '@/lib/useListFilters'
 import { useRuns, useWorkflows } from '@/api/queries'
@@ -20,13 +21,14 @@ const FILTERS: Array<Lifecycle | ''> = ['', 'waiting', 'running', 'completed', '
 export function RunsPage() {
   const { workspace, can } = useWorkspace()
   const ws = workspace.id
-  const { params, update, lifecycle } = useListFilters()
+  const { params, update, lifecycle: selectedLifecycle } = useListFilters()
+  const lifecycle = selectedLifecycle || (can('run.operate') && params.size === 0 ? 'needsAttention' : '')
   const workflowId = params.get('workflowId') ?? ''
   const appliedKey = params.get('businessKey') ?? ''
   const rawOutcome = params.get('outcomeKind') ?? ''
   const outcomeKind: OutcomeKind | '' = rawOutcome === 'success' || rawOutcome === 'rejected' || rawOutcome === 'failed' ? rawOutcome : ''
   const clearFilters = () => {
-    update({ lifecycle: '', workflowId: '', businessKey: '', overdue: '', outcomeKind: '' })
+    update({ scope: 'all', lifecycle: '', workflowId: '', businessKey: '', overdue: '', outcomeKind: '' })
   }
   const overdueOnly = params.get('overdue') === 'true'
   const attentionOnly = lifecycle === 'needsAttention'
@@ -45,6 +47,8 @@ export function RunsPage() {
   return (
     <>
       <PageHeader title="Runs" description="All requests in this workspace. Technical details are available on each run." />
+      <SavedWorkViews kind="runs" effectiveFilters={{lifecycle,workflowId,businessKey:appliedKey,outcomeKind,overdue:overdueOnly ? 'true' : ''}} />
+      <div className="mb-3 flex gap-2"><Button variant={attentionOnly ? 'primary' : 'secondary'} onClick={() => update({ scope:'attention', lifecycle:'needsAttention', overdue:'' })}>Exception workbench</Button><Button variant={!lifecycle && !overdueOnly ? 'primary' : 'secondary'} onClick={clearFilters}>All runs</Button></div>
       <ConsistencyScanPanel />
       <div className="mb-4 flex flex-wrap items-end gap-4 rounded-card border border-border bg-surface p-4">
         <Button

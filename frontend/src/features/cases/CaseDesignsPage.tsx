@@ -47,6 +47,7 @@ export function CaseDesignsPage() {
   const drafts = useQuery({ queryKey: ['ws', ws, 'case-drafts'], queryFn: () => listCaseDefinitionDrafts(ws), enabled: allowed })
   const [key, setKey] = useState('')
   const [name, setName] = useState('')
+  const [keyEdited, setKeyEdited] = useState(false)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -74,15 +75,18 @@ export function CaseDesignsPage() {
   if (!allowed) return <Alert tone="warning">You need permission to edit workflows to design case types.</Alert>
   const list = definitions.data && drafts.data ? rows(definitions.data, drafts.data) : []
   return <div className="space-y-6">
-    <PageHeader title="Case types" description="Design the case types people start from Cases. Each case type is a CMMN case model: draft it, check it and publish a version."
+    <PageHeader title="Case types" description="Design how a case moves from intake to resolution. Create a draft, check it and publish a version."
       actions={<Link className="text-link underline" to={`/w/${ws}/cases`}>Go to Cases</Link>} />
     {error ? <Alert tone="danger">{error}</Alert> : null}
     <form className="space-y-3 rounded-card border border-border bg-surface p-5" aria-label="New case type" onSubmit={event => { event.preventDefault(); void create() }}>
       <h2>New case type</h2>
       <p id="case-type-key-hint" className="text-sm text-muted-foreground">The key is 2 to 63 lowercase letters, digits or hyphens, starting with a letter. It names the case type in CMMN and in case tasks of other case types, and cannot change later. The draft opens in the case designer.</p>
       <div className="grid gap-3 sm:grid-cols-2">
-        <div><Label htmlFor="case-type-key">Key</Label><Input id="case-type-key" value={key} maxLength={63} aria-describedby="case-type-key-hint" onChange={event => setKey(event.target.value)} required /></div>
-        <div><Label htmlFor="case-type-name">Name</Label><Input id="case-type-name" value={name} maxLength={200} onChange={event => setName(event.target.value)} required /></div>
+        <div><Label htmlFor="case-type-name">Name</Label><Input id="case-type-name" value={name} maxLength={200} onChange={event => {
+          const value = event.target.value; setName(value)
+          if (!keyEdited) setKey(value.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^[^a-z]+/, '').slice(0,63).replace(/-+$/, ''))
+        }} required /></div>
+        <div><Label htmlFor="case-type-key">Key</Label><Input id="case-type-key" value={key} minLength={2} maxLength={63} pattern="[a-z][a-z0-9-]{0,61}[a-z0-9]" aria-describedby="case-type-key-hint" onChange={event => { setKeyEdited(true); setKey(event.target.value) }} required /></div>
       </div>
       <Button type="submit" variant="primary" loading={pending} disabled={!key.trim() || !name.trim()}>Create draft</Button>
     </form>

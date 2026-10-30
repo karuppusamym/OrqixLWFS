@@ -404,6 +404,7 @@ export interface MockDb {
   migrationPolicies: Map<string, MockMigrationPolicy>
   migrationReviews: MockMigrationReview[]
   workflows: Map<string, MockWorkflow>
+  savedWorkViews: Array<components['schemas']['SavedWorkView'] & { wsId: string }>
   workflowFolders: Map<string, MockFolder>
   /** S104: archived workflows, kept apart so every live lookup ignores them; restore moves them back. */
   archivedWorkflows?: Map<string, { workflow: MockWorkflow; archivedAt: string; archivedById: string }>
@@ -511,6 +512,7 @@ export function emptyDb(): MockDb {
     migrationReviews: [],
     workflows: new Map(),
     canaries: new Map(),
+    savedWorkViews: [],
     workflowFolders: new Map(),
     workflowComments: [],
     runs: new Map(),
@@ -567,6 +569,7 @@ interface DbSnapshot {
   migrationReviews?: MockMigrationReview[]
   canaries?: Array<[string, MockCanary]>
   workflows: Array<[string, MockWorkflow]>
+  savedWorkViews?: Array<components['schemas']['SavedWorkView'] & { wsId: string }>
   workflowFolders?: Array<[string, MockFolder]>
   workflowComments?: MockComment[]
   runs: Array<[string, MockRun]>
@@ -588,6 +591,7 @@ export function snapshotDb(): string {
     canaries: [...db.canaries],
     migrationReviews: db.migrationReviews,
     workflows: [...db.workflows],
+    savedWorkViews: db.savedWorkViews,
     workflowFolders: [...db.workflowFolders],
     workflowComments: db.workflowComments,
     runs: [...db.runs],
@@ -613,6 +617,7 @@ export function restoreDb(json: string): boolean {
     next.migrationPolicies = new Map(snap.migrationPolicies ?? [])
     next.migrationReviews = snap.migrationReviews ?? []
     next.workflows = new Map(snap.workflows)
+    next.savedWorkViews = snap.savedWorkViews ?? []
     next.workflowFolders = new Map(snap.workflowFolders ?? [])
     next.workflowComments = snap.workflowComments ?? []
     next.runs = new Map(snap.runs)

@@ -90,7 +90,14 @@ public class TaskService {
     @Transactional(readOnly = true)
     public RuntimeDtos.TaskPage listTasks(Caller caller, UUID workspaceId, String view, String cursor, Integer limit,
             String requestedSort, Integer requestedMinPriority) {
+        return listTasks(caller, workspaceId, view, cursor, limit, requestedSort, requestedMinPriority, null, null, null);
+    }
+
+    @Transactional(readOnly = true)
+    public RuntimeDtos.TaskPage listTasks(Caller caller, UUID workspaceId, String view, String cursor, Integer limit,
+            String requestedSort, Integer requestedMinPriority, String q, String queue, String due) {
         WorkspaceAccess access = freshVisible(caller, workspaceId);
+        TaskFilter filter = TaskFilter.of(q, queue, due, clock.instant());
         String sort = requestedSort == null ? "priority" : requestedSort;
         int minPriority = requestedMinPriority == null ? 0 : requestedMinPriority;
         if (!List.of("priority", "oldest", "newest").contains(sort) || minPriority < 0 || minPriority > 100)
@@ -102,13 +109,20 @@ public class TaskService {
         }
         policy.require(access, Permission.TASK_ACT, "listTasks", false);
         int size = Limits.of(limit);
-        String filterKey = "listTasks|" + workspaceId + "|" + caller.subjectId() + "|" + view + "|v2|" + sort + "|" + minPriority;
+        String filterKey = "listTasks|" + workspaceId + "|" + caller.subjectId() + "|" + view + "|v3|" + sort + "|" + minPriority + "|" + filter.binding();
         CursorCodec.Position after = cursors.decode(cursor, filterKey);
+        if (after != null) {
+            try {
+                int split = after.id().indexOf(';');
+                filter = new TaskFilter(filter.q(), filter.queue(), filter.due(), Instant.ofEpochMilli(Long.parseLong(after.id().substring(0, split))));
+                after = new CursorCodec.Position(after.at(), after.id().substring(split + 1));
+            } catch (RuntimeException e) { throw new ApiException(ProblemCode.INVALID_CURSOR); }
+        }
         UUID me = caller.subjectId();
         List<TaskStore.TaskRow> rows = switch (view) {
-            case "assigned" -> taskQueries.open(workspaceId, me, access.groupKeys(), true, after, size + 1, sort, minPriority);
-            case "claimable" -> taskQueries.open(workspaceId, me, access.groupKeys(), false, after, size + 1, sort, minPriority);
-            default -> taskQueries.completed(workspaceId, me, after, size + 1);
+            case "assigned" -> taskQueries.open(workspaceId, me, access.groupKeys(), true, after, size + 1, sort, minPriority, filter);
+            case "claimable" -> taskQueries.open(workspaceId, me, access.groupKeys(), false, after, size + 1, sort, minPriority, filter);
+            default -> taskQueries.completed(workspaceId, me, after, size + 1, filter);
         };
         boolean more = rows.size() > size;
         List<TaskStore.TaskRow> items = more ? rows.subList(0, size) : rows;
@@ -125,11 +139,11 @@ public class TaskService {
         if (more) {
             TaskStore.TaskRow last = items.get(items.size() - 1);
             Instant at = "completed".equals(view) ? decisions.get(last.taskId()).decidedAt() : last.createdAt();
-            next = cursors.encode(new CursorCodec.Position(at, !"completed".equals(view) && "priority".equals(sort) ? last.priority() + ":" + last.taskId() : last.taskId()), filterKey);
+            next = cursors.encode(new CursorCodec.Position(at, filter.at().toEpochMilli() + ";" + (!"completed".equals(view) && "priority".equals(sort) ? last.priority() + ":" + last.taskId() : last.taskId())), filterKey);
         }
         RuntimeDtos.TaskCounts counts = new RuntimeDtos.TaskCounts(taskQueries.countAssigned(workspaceId, me),
                 taskQueries.countClaimable(workspaceId, me, access.groupKeys()));
-        return new RuntimeDtos.TaskPage(summaries, next, counts);
+        return new RuntimeDtos.TaskPage(summaries, next, counts, taskQueries.countMatching(workspaceId, me, access.groupKeys(), view, minPriority, filter));
     }
 
     @Transactional(readOnly = true)

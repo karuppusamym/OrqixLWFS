@@ -20,6 +20,7 @@ The revised [hackathon requirements baseline](docs/23-hackathon-requirements-bas
 | Start building R0 | [Build specification index](docs/build/README.md) → [S8 tickets and schedule](docs/build/S8-r0-tickets.md) → [S1 engineering baseline](docs/build/S1-engineering-baseline.md) |
 | Implement backend behavior | [S2 data model](docs/build/S2-data-model.md), [S3 API rules](docs/build/S3-api.md), [S4 compiler](docs/build/S4-workflow-compiler.md), [S5 runtime](docs/build/S5-runtime.md), [S6 security](docs/build/S6-security.md) |
 | Implement the UI | [S7 frontend](docs/build/S7-frontend.md), [02 UX specification](docs/02-ux-design.md) |
+| Review UI improvements and competitive priorities | [30 October UI and product review](docs/24-ui-product-review-2026-10-30.md) |
 | Test and release R0 | [S9 test plan](docs/build/S9-test-plan.md), [06 delivery plan and gates](docs/06-delivery-plan.md) |
 | Use the contracts | [OpenAPI](contracts/openapi.yaml), [workflow schema](contracts/workflow-v0.schema.json), [connection schema](contracts/connection-definition-v0.schema.json), [reference DDL](backend/app/src/main/resources/db/migration/V1__orqix_core.sql), [examples and fixtures](examples/) |
 | Understand the whole plan and release sequence | [09 Master implementation plan](docs/09-master-plan.md) |

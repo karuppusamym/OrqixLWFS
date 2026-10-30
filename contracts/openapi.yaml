@@ -5272,6 +5272,63 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /workspaces/{workspaceId}/work-views:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      operationId: listSavedWorkViews
+      tags: [Tasks]
+      x-orqix-permission: task.act | run.read
+      parameters:
+        - { name: kind, in: query, required: true, schema: { type: string, enum: [tasks, runs] } }
+      responses:
+        '200':
+          description: Own and workspace-shared query definitions; results retain current caller permissions.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/SavedWorkView' } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workspaces/{workspaceId}/work-views/{viewId}:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: viewId, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      operationId: saveWorkView
+      tags: [Tasks]
+      x-orqix-permission: task.act | run.read
+      description: Create at revision zero or update an owned query at its current revision; sharing never grants data access.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SaveWorkView' }
+      responses:
+        '200':
+          description: Saved query
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SavedWorkView' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      operationId: deleteWorkView
+      tags: [Tasks]
+      x-orqix-permission: task.act | run.read
+      parameters:
+        - { name: expectedRevision, in: query, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '204': { description: Owned query removed }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
   /workspaces/{workspaceId}/tasks:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
     get:
@@ -5297,6 +5354,18 @@ paths:
           in: query
           description: Optional open-task priority threshold; unsupported for completed tasks.
           schema: { type: integer, minimum: 0, maximum: 100 }
+        - name: q
+          in: query
+          description: Case-insensitive words matched across the eligible task summary before pagination; no wildcard syntax.
+          schema: { type: string, maxLength: 200 }
+        - name: queue
+          in: query
+          description: Candidate group key; eligibility is still enforced before pagination and counts.
+          schema: { type: string, maxLength: 63 }
+        - name: due
+          in: query
+          description: Overdue or next 24 hours relative to the first page time, retained in the signed cursor. Completed tasks never match overdue or soon.
+          schema: { type: string, enum: [all, overdue, soon, none], default: all }
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
       responses:
@@ -5310,6 +5379,7 @@ paths:
                 properties:
                   items: { type: array, items: { $ref: '#/components/schemas/TaskSummary' } }
                   nextCursor: { $ref: '#/components/schemas/NextCursor' }
+                  matchedCount: { type: integer, minimum: 0, maximum: 1000, description: 'Eligible tasks matching this query, capped at 1000. Tab counts remain unfiltered.' }
                   counts:
                     type: object
                     required: [assigned, claimable]
@@ -7620,6 +7690,28 @@ components:
       content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } }
 
   schemas:
+    SaveWorkView:
+      type: object
+      additionalProperties: false
+      required: [kind, name, shared, filters, expectedRevision]
+      properties:
+        kind: { type: string, enum: [tasks, runs] }
+        name: { type: string, minLength: 1, maxLength: 80 }
+        shared: { type: boolean }
+        expectedRevision: { type: integer, minimum: 0 }
+        filters: { type: object, additionalProperties: { type: string, maxLength: 200 } }
+    SavedWorkView:
+      type: object
+      required: [id, ownerId, kind, name, shared, filters, revision]
+      properties:
+        id: { type: string, format: uuid }
+        ownerId: { type: string, format: uuid }
+        kind: { type: string, enum: [tasks, runs] }
+        name: { type: string }
+        shared: { type: boolean }
+        revision: { type: integer, minimum: 1 }
+        filters: { type: object, additionalProperties: { type: string } }
+
     CaseDataField:
       type: object
       additionalProperties: false

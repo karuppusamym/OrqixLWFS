@@ -91,6 +91,13 @@ export function Shell() {
     { to: `${base}/settings`, label: 'Settings', icon: Settings, visible: can('workspace.manage-access', 'connection.read') },
   ]
 
+  const navigationGroups = [
+    { label: 'My workspace', labels: ['Home', 'My tasks', 'My requests', 'Cases', 'Apps', 'Assistant', ...(!can('workflow.edit') ? ['Workflows'] : [])] },
+    { label: 'Design', labels: [...(can('workflow.edit') ? ['Workflows'] : []), 'Case types', 'Views'] },
+    { label: 'Operate', labels: ['Runs', 'Insights', 'Agent writes'] },
+    { label: 'Manage', labels: ['Promotions', 'Settings'] },
+  ].map(group => ({ ...group, items: group.labels.flatMap(label => items.filter(item => item.visible && item.label === label)) })).filter(group => group.items.length > 0)
+
   const navVisible = rail || navOpen
 
   return (
@@ -148,10 +155,11 @@ export function Shell() {
               </Button>
             </div>
           ) : null}
-          <ul className="space-y-1 px-3 pt-4">
-            {items
-              .filter((i) => i.visible)
-              .map((item) => (
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
+            {navigationGroups.map(group => <div key={group.label} className="mb-4 last:mb-0">
+              <p className="mb-1 px-3 text-xs font-semibold tracking-wide text-nav-muted">{group.label}</p>
+              <ul aria-label={group.label} className="space-y-1">
+            {group.items.map((item) => (
                 <li key={item.to}>
                   <NavLink
                     to={item.to}
@@ -175,8 +183,10 @@ export function Shell() {
                   </NavLink>
                 </li>
               ))}
-          </ul>
-          <div className="mt-auto border-t border-nav-border px-5 py-4">
+              </ul>
+            </div>)}
+          </div>
+          <div className="mt-auto shrink-0 border-t border-nav-border px-5 py-4">
             <p className="truncate text-sm font-semibold text-nav-active-foreground" title={me.subject.displayName}>{me.subject.displayName}</p>
             <p className="truncate text-xs text-nav-muted" title={workspace.organizationName}>{workspace.organizationName}</p>
           </div>

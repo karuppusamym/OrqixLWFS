@@ -471,7 +471,7 @@ export const markAllNotificationsRead = (ws: string) =>
   call(api.POST('/workspaces/{workspaceId}/me/notifications/read-all', { params: { path: { workspaceId: ws } } }))
 
 // Tasks
-export const listTasks = (ws: string, view: TaskView, query: { cursor?: string; limit?: number; sort?: "priority" | "oldest" | "newest"; minPriority?: number } = {}) =>
+export const listTasks = (ws: string, view: TaskView, query: { cursor?: string; limit?: number; sort?: "priority" | "oldest" | "newest"; minPriority?: number; q?: string; queue?: string; due?: "all" | "overdue" | "soon" | "none" } = {}) =>
   call(api.GET('/workspaces/{workspaceId}/tasks', { params: { path: { workspaceId: ws }, query: { view, ...query } } }))
 
 export const getTask = (ws: string, taskId: string) =>

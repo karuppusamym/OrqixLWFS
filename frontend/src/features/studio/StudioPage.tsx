@@ -141,7 +141,7 @@ function StudioShell({ groupNames, canEdit, desktop, onNavigate, announce }: { g
   const openCard = useCallback((card: SideCard, next = true) => setCards((c) => ({ ...c, [card]: next })), [])
   const [aiOpen, setAiOpen] = usePersistedFlag(AI_DOCK_KEY, true)
   const [sideOpen, setSideOpen] = usePersistedFlag(SIDE_PANEL_KEY, true)
-  const [, setAiExpanded] = usePersistedFlag(AI_EXPANDED_KEY, true)
+  const [, setAiExpanded] = usePersistedFlag(AI_EXPANDED_KEY, false)
   const [aiFocus, setAiFocus] = useState<FocusStep | null>(null)
   // The Test tab keeps its work (sample, settings, last run) while the person edits on another tab (STU03).
   const [testMounted, setTestMounted] = useState(false)

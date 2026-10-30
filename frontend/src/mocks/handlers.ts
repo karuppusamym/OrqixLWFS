@@ -1,3 +1,4 @@
+import { filterLoadedTasks, parseDueFilter } from '@/features/tasks/taskFilters'
 import { delay, http, HttpResponse, type HttpHandler, type JsonBodyType } from 'msw'
 import type { components } from '@/api/schema'
 import type { Permission, ProblemCode, TaskDetail, ValidationIssue } from '@/api/types'
@@ -1538,6 +1539,35 @@ export function createHandlers(): HttpHandler[] {
       return new HttpResponse(null, { status: 204 })
     }),
 
+    http.get(`${B}/workspaces/:ws/work-views`, async ({ params, request }) => {
+      const kind = new URL(request.url).searchParams.get('kind')
+      if (kind !== 'tasks' && kind !== 'runs') return problem(400,'MALFORMED_REQUEST','Invalid kind')
+      const g=guard(params.ws,kind === 'tasks' ? 'task.act' : 'run.read'); if(!g.ok) return g.res
+      return HttpResponse.json({items:db.savedWorkViews.filter(item=>item.wsId===str(params.ws) && item.kind===kind && (item.shared || item.ownerId===g.user.id)).map(({wsId: _ws,...item})=>item)})
+    }),
+    http.put(`${B}/workspaces/:ws/work-views/:id`, async ({ params, request }) => {
+      const input=await body<components['schemas']['SaveWorkView']>(request)
+      if (!input || !['tasks','runs'].includes(input.kind)) return problem(400,'MALFORMED_REQUEST','Invalid kind')
+      const g=guard(params.ws,input.kind==='tasks'?'task.act':'run.read'); if(!g.ok) return g.res
+      const old=db.savedWorkViews.find(item=>item.wsId===str(params.ws) && item.id===str(params.id))
+      if(old && (old.ownerId!==g.user.id || old.kind!==input.kind)) return notFound()
+      if(input.expectedRevision!==(old?.revision ?? 0)) return problem(409,'WORKFLOW_VERSION_CONFLICT','Saved view changed')
+      const allowed=input.kind==='tasks'?['view','q','queue','due','sort','minPriority']:['lifecycle','workflowId','businessKey','overdue','outcomeKind']
+      if(!input.name?.trim() || input.name.trim().length>80 || typeof input.shared!=='boolean' || !input.filters || Object.entries(input.filters).some(([key,value])=>!allowed.includes(key)||typeof value!=='string'||value.length>200)) return problem(400,'MALFORMED_REQUEST','Invalid saved view')
+      if (!old && db.savedWorkViews.filter(item=>item.wsId===str(params.ws)).length>=200) return problem(400,'MALFORMED_REQUEST','Saved view limit reached')
+      const item={id:str(params.id),wsId:str(params.ws),ownerId:g.user.id,kind:input.kind,name:input.name.trim(),shared:input.shared,filters:input.filters,revision:(old?.revision ?? 0)+1}
+      db.savedWorkViews=db.savedWorkViews.filter(view=>view!==old); db.savedWorkViews.push(item)
+      const {wsId: _ws,...result}=item; return HttpResponse.json(result)
+    }),
+    http.delete(`${B}/workspaces/:ws/work-views/:id`, async ({params,request})=>{
+      const g=guard(params.ws); if(!g.ok) return g.res
+      const item=db.savedWorkViews.find(view=>view.wsId===str(params.ws)&&view.id===str(params.id)&&view.ownerId===g.user.id)
+      if(!item) return notFound()
+      if(!g.perms.includes(item.kind==='tasks'?'task.act':'run.read')) return forbidden()
+      if(item.revision!==Number(new URL(request.url).searchParams.get('expectedRevision'))) return problem(409,'WORKFLOW_VERSION_CONFLICT','Saved view changed')
+      db.savedWorkViews=db.savedWorkViews.filter(view=>view!==item); return new HttpResponse(null,{status:204})
+    }),
+
     // Tasks ---------------------------------------------------------------------------------------------------------------------------
     http.get(`${B}/workspaces/:ws/tasks`, async ({ params, request }) => {
       await slow()
@@ -1553,12 +1583,20 @@ export function createHandlers(): HttpHandler[] {
       const sort = url.searchParams.get('sort') ?? 'priority'
       const minPriority = Number(url.searchParams.get('minPriority') ?? 0)
       if (!['priority', 'oldest', 'newest'].includes(sort) || !Number.isInteger(minPriority) || minPriority < 0 || minPriority > 100 || view === 'completed' && (url.searchParams.has('sort') || url.searchParams.has('minPriority'))) return problem(400, 'MALFORMED_REQUEST', 'Invalid task list filters')
-      const chosen = (view === 'assigned' ? assigned : view === 'claimable' ? claimable : completed).filter(x => view === 'completed' || (x.task.priority ?? 0) >= minPriority)
+      const search = (url.searchParams.get('q') ?? '').trim().replace(/\s+/g, ' ').toLowerCase()
+      const queue = (url.searchParams.get('queue') ?? '').trim()
+      const rawDue = url.searchParams.get('due') ?? 'all'
+      if (search.length > 200 || queue.length > 63 || !['all','overdue','soon','none'].includes(rawDue)) return problem(400, 'MALFORMED_REQUEST', 'Invalid task search')
+      const due = parseDueFilter(rawDue)
+      const cursor = url.searchParams.get('cursor')
+      let anchor = Date.parse(clock.iso())
+      if (cursor) { try { anchor = JSON.parse(atob(cursor)).anchor; if (!Number.isFinite(anchor)) throw new Error() } catch { return problem(400, 'INVALID_CURSOR', 'Invalid task cursor') } }
+      const matches = (x: {run: MockRun; task: MockTask}) => filterLoadedTasks([toTaskSummary(x.run,x.task)],search,queue,due,anchor).length > 0
+      const chosen = (view === 'assigned' ? assigned : view === 'claimable' ? claimable : completed).filter(x => view === 'completed' || (x.task.priority ?? 0) >= minPriority).filter(matches)
       const compare = (a: typeof chosen[number], b: typeof chosen[number]) => view === 'completed' ? (b.task.decision?.decidedAt ?? '').localeCompare(a.task.decision?.decidedAt ?? '') || b.task.id.localeCompare(a.task.id) : (sort === 'priority' ? (b.task.priority ?? 0) - (a.task.priority ?? 0) : 0) || (sort === 'newest' ? -1 : 1) * (a.task.createdAt.localeCompare(b.task.createdAt) || a.task.id.localeCompare(b.task.id))
       chosen.sort(compare)
-      const binding = `${params.ws}|${g.user.id}|${view}|${sort}|${minPriority}`
+      const binding = JSON.stringify([params.ws,g.user.id,view,sort,minPriority,search,queue,due])
       let remaining = chosen
-      const cursor = url.searchParams.get('cursor')
       if (cursor) {
         try {
           const decoded = JSON.parse(atob(cursor)) as { binding: string; task: MockTask }
@@ -1569,8 +1607,8 @@ export function createHandlers(): HttpHandler[] {
       const limit = Math.min(100, Math.max(1, Number(url.searchParams.get('limit') ?? 25)))
       const items = remaining.slice(0, limit)
       const last = items.at(-1)
-      const page = { items, nextCursor: remaining.length > limit && last ? btoa(JSON.stringify({ binding, task: { id: last.task.id, createdAt: last.task.createdAt, priority: last.task.priority ?? 0, decision: last.task.decision ? { decidedAt:last.task.decision.decidedAt } : null } })) : null }
-      return HttpResponse.json({ items: page.items.map(({ run, task }) => toTaskSummary(run, task)), nextCursor: page.nextCursor, counts: { assigned: assigned.length, claimable: claimable.length } })
+      const page = { items, nextCursor: remaining.length > limit && last ? btoa(JSON.stringify({ binding, anchor, task: { id: last.task.id, createdAt: last.task.createdAt, priority: last.task.priority ?? 0, decision: last.task.decision ? { decidedAt:last.task.decision.decidedAt } : null } })) : null }
+      return HttpResponse.json({ items: page.items.map(({ run, task }) => toTaskSummary(run, task)), nextCursor: page.nextCursor, matchedCount: Math.min(1000,chosen.length), counts: { assigned: assigned.length, claimable: claimable.length } })
     }),
     http.put(`${B}/workspaces/:ws/tasks/:id/priority`, async ({ params, request }) => {
       await slow()

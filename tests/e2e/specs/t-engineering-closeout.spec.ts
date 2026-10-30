@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { expect, test } from '../support/fixtures'
 import { MOCK } from '../support/env'
-import { apiGet, selectStep, workspaceId } from '../support/app'
+import { apiGet, openFormTab, workspaceId } from '../support/app'
 import { apiSend, createWorkflow, publish, uniq } from '../support/api'
 import { expectNoSeriousViolations } from '../support/axe'
 
@@ -21,8 +21,8 @@ test('published request view is pinned in Studio and renders its submit action a
   expect((await apiSend(page, 'POST', `/workspaces/${ws}/views/${created.body.id}/publish`, { expectedRevision: 1 })).status).toBe(200)
   page = await sessions.as('dana.designer')
   await page.goto(`/w/${ws}/workflows/${workflow.id}/edit`)
-  await page.getByRole('tab', { name: 'Steps', exact: true }).click()
-  await selectStep(page, 'start')
+  // The reusable request view is part of the request form, on the Form tab (S120).
+  await openFormTab(page)
   await page.getByRole('button', { name: 'Choose reusable view' }).click()
   await page.getByLabel('Published request view').selectOption(created.body.id)
   await page.getByRole('button', { name: 'Apply selected version' }).click()

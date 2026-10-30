@@ -1,5 +1,5 @@
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { FormField } from '@/components/common/FormField'
 import { Button } from '@/components/ui/button'
@@ -28,6 +28,18 @@ export function QuestionList({ open }: { open?: { key: string; n: number } | nul
   const fields = useMemo(() => fieldsFromDefinition(def), [def])
   const rules = useMemo(() => questionRules(def), [def])
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
+  // Questions whose Advanced settings are open: kept across a field-key rename, which remounts the question.
+  const [advanced, setAdvanced] = useState<Set<string>>(() => new Set())
+  // Element to focus once it is rendered: a new question's label, or the key field of a renamed question. A timer is not
+  // enough: the opened question renders after the store update, which a real browser may do after a 0 ms timeout.
+  const pendingFocus = useRef<string | null>(null)
+  useEffect(() => {
+    if (!pendingFocus.current) return
+    const target = document.getElementById(pendingFocus.current)
+    if (!target) return
+    pendingFocus.current = null
+    target.focus()
+  })
   const [pendingDelete, setPendingDelete] = useState<string | null>(null)
 
   // Opening from outside is adjusted while rendering, once per request (a check issue may name the same question again).
@@ -75,7 +87,7 @@ export function QuestionList({ open }: { open?: { key: string; n: number } | nul
     })
     if (!added) return
     setExpanded((current) => new Set([...current, added]))
-    window.setTimeout(() => document.getElementById(`field-${added}-label`)?.focus(), 0)
+    pendingFocus.current = `field-${added}-label`
   }
 
   const deleting = pendingDelete ? fields.find((f) => f.key === pendingDelete) : undefined
@@ -93,6 +105,14 @@ export function QuestionList({ open }: { open?: { key: string; n: number } | nul
             total={fields.length}
             rules={rules[f.key]}
             expanded={expanded.has(f.key)}
+            advancedOpen={advanced.has(f.key)}
+            onAdvancedToggle={(open) => setAdvanced((current) => {
+              if (open === current.has(f.key)) return current
+              const next = new Set(current)
+              if (open) next.add(f.key)
+              else next.delete(f.key)
+              return next
+            })}
             readOnly={readOnly}
             onToggle={() => toggle(f.key)}
             onChange={(patch) => update(f.key, patch)}
@@ -102,7 +122,11 @@ export function QuestionList({ open }: { open?: { key: string; n: number } | nul
               const result = renameFieldKey(store.getState().definition, f.key, next)
               if (!result.ok) return result.reason
               store.getState().apply(() => result.def)
-              setExpanded((current) => new Set([...[...current].filter((k) => k !== f.key), next]))
+              const carry = (current: Set<string>) => (current.has(f.key) ? new Set([...[...current].filter((k) => k !== f.key), next]) : current)
+              setExpanded(carry)
+              setAdvanced(carry)
+              // The renamed question is a new element: give the key field its focus back.
+              pendingFocus.current = `field-${next}-key`
               return undefined
             }}
           />
@@ -142,6 +166,8 @@ function QuestionRow({
   total,
   rules,
   expanded,
+  advancedOpen,
+  onAdvancedToggle,
   readOnly,
   onToggle,
   onChange,
@@ -154,6 +180,8 @@ function QuestionRow({
   total: number
   rules: QuestionRules | undefined
   expanded: boolean
+  advancedOpen: boolean
+  onAdvancedToggle: (open: boolean) => void
   readOnly: boolean
   onToggle: () => void
   onChange: (patch: Partial<FormFieldModel>) => void
@@ -203,7 +231,7 @@ function QuestionRow({
       </div>
       {expanded ? (
         <div id={detailsId} className="space-y-3 border-t border-border bg-surface-muted p-3" data-testid={`field-card-${f.key}`}>
-          <QuestionDetails field={f} readOnly={readOnly} onChange={onChange} onRename={onRename} />
+          <QuestionDetails field={f} readOnly={readOnly} advancedOpen={advancedOpen} onAdvancedToggle={onAdvancedToggle} onChange={onChange} onRename={onRename} />
         </div>
       ) : null}
     </li>
@@ -213,11 +241,15 @@ function QuestionRow({
 function QuestionDetails({
   field: f,
   readOnly,
+  advancedOpen,
+  onAdvancedToggle,
   onChange,
   onRename,
 }: {
   field: FormFieldModel
   readOnly: boolean
+  advancedOpen: boolean
+  onAdvancedToggle: (open: boolean) => void
   onChange: (patch: Partial<FormFieldModel>) => void
   onRename: (next: string) => string | undefined
 }) {
@@ -300,7 +332,7 @@ function QuestionDetails({
         </fieldset>
       ) : null}
       <FieldConditionsEditor fieldKey={f.key} />
-      <Advanced label="Advanced">
+      <Advanced label="Advanced" open={advancedOpen} onToggle={onAdvancedToggle}>
         {f.kind !== 'file' && f.kind !== 'collection' ? <label htmlFor={`${p}-incident-editable`} className="flex items-center gap-2 text-sm">
           <Checkbox id={`${p}-incident-editable`} checked={!!f.incidentEditable} disabled={readOnly} onCheckedChange={checked => onChange({incidentEditable: checked === true})} />
           Allow operator correction during an incident before data is consumed

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { expect,test } from '../support/fixtures'
 import { MOCK } from '../support/env'
-import { apiGet,workspaceId,selectStep } from '../support/app'
+import { apiGet,workspaceId,selectStep,openFormTab } from '../support/app'
 import { apiSend,createWorkflow,publish,uniq } from '../support/api'
 import { expectNoSeriousViolations } from '../support/axe'
 
@@ -29,10 +29,11 @@ test('authored languages and responsive tokens reach pinned request and approval
   expect((await apiSend(page,'POST',`/workspaces/${ws}/views/${created.body.id}/publish`,{expectedRevision:2})).status).toBe(200)
   expect((await apiSend(page,'POST',`/workspaces/${ws}/views/${review.body.id}/publish`,{expectedRevision:1})).status).toBe(200)
   page=await sessions.as('dana.designer');await page.goto(`/w/${ws}/workflows/${workflow.id}/edit`)
-  await page.getByRole('tab',{name:'Steps',exact:true}).click();await selectStep(page,'start')
+  // The reusable request view is on the Form tab (S120); the approval view stays on the approval step.
+  await openFormTab(page)
   await page.getByRole('button',{name:'Choose reusable view'}).click();await page.getByLabel('Published request view').selectOption(created.body.id)
   await page.getByRole('button',{name:'Apply selected version'}).click();await expect(page.getByTestId('save-state')).toContainText('Saved')
-  await selectStep(page,'manager');await page.getByRole('button',{name:'Choose approval view'}).click();await page.getByLabel('Published approval view').selectOption(review.body.id)
+  await page.getByRole('tab',{name:'Steps',exact:true}).click();await selectStep(page,'manager');await page.getByRole('button',{name:'Choose approval view'}).click();await page.getByLabel('Published approval view').selectOption(review.body.id)
   await page.getByRole('button',{name:'Apply approval view',exact:true}).click();await expect(page.getByTestId('save-state')).toContainText('Saved')
   // "Saved" may still be the previous save's text: wait until the server draft holds both pinned views before publishing.
   await expect.poll(async()=>{const d=await apiGet<{definition:{inputUi?:{viewRef?:{id:string}};nodes:Array<{id:string;config:{viewBinding?:{id:string}}}>}}>(page,`/workspaces/${ws}/workflows/${workflow.id}/draft`)

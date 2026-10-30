@@ -124,10 +124,10 @@ export function InspectorSection({ title, children, className }: { title?: strin
   )
 }
 
-/** Advanced settings stay collapsed until asked for. */
-export function Advanced({ children, label = 'Advanced', open }: { children: ReactNode; label?: string; open?: boolean }) {
+/** Advanced settings stay collapsed until asked for. `open` is the initial state; `onToggle` reports changes. */
+export function Advanced({ children, label = 'Advanced', open, onToggle }: { children: ReactNode; label?: string; open?: boolean; onToggle?: (open: boolean) => void }) {
   return (
-    <details className="rounded-control border border-border" open={open}>
+    <details className="rounded-control border border-border" open={open} onToggle={onToggle ? (e) => onToggle(e.currentTarget.open) : undefined}>
       <summary className="cursor-pointer px-3 py-2 text-sm font-semibold text-primary-text">{label}</summary>
       <div className="space-y-4 border-t border-border p-3">{children}</div>
     </details>

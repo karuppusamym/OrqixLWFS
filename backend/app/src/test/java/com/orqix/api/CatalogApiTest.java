@@ -50,6 +50,22 @@ class CatalogApiTest extends IntegrationTestBase {
     }
 
     @Test
+    void startEmptyCreatesARequestFormAndAFinishStep() throws Exception {
+        String key = newKey();
+        Response created = api("dana.designer").post(Map.of("key", key, "name", "Empty " + key), "/workspaces/{ws}/workflows", PURCHASING);
+        assertThat(created.status()).as(created.toString()).isEqualTo(201);
+        UUID id = UUID.fromString(created.body().path("id").asString());
+        JsonNode definition = api("dana.designer").get("/workspaces/{ws}/workflows/{id}/draft", PURCHASING, id).body().path("definition");
+        assertThat(definition.path("nodes").findValuesAsString("type")).containsExactly("start", "end");
+        assertThat(definition.path("transitions").get(0).path("from").asString()).isEqualTo("start");
+        assertThat(definition.path("transitions").get(0).path("to").asString()).isEqualTo("finished");
+        // The skeleton is a valid draft; only an empty request form keeps it from publishing.
+        Response report = api("dana.designer").post(Map.of("revision", 1), "/workspaces/{ws}/workflows/{id}/validate", PURCHASING, id);
+        assertThat(report.status()).isEqualTo(200);
+        assertThat(report.body().path("issues").findValues("code").toString()).doesNotContain("WF_SCHEMA_INVALID");
+    }
+
+    @Test
     void draftIfMatchRace_T_API_02() throws Exception {
         String key = newKey();
         UUID id = createFromTemplate(key);

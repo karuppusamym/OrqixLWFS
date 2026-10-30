@@ -44,7 +44,48 @@
 | Playwright, mock mode (`E2E_MOCK=true`), six affected specs | 13 of 14 pass after the updates, including `t-forms-01`, which now also checks the preview hiding "Extra notes" below 5,000 and the row's rule text. One fails, **`t-ui-12` "studio: Date question…"**, at its first canvas assertion (`Until Start date, 09:00 UTC`): the card renders as a BPMN shape with text "Wait until the start date". That line is before any S120 change and no canvas file is touched, so the failure is treated as pre-existing, though it was **not re-run on `main`** to confirm. A copy of the test without that one assertion passes the S120-changed part (Form tab, Date question, Required toggle, check messages). |
 | Real browser, mock mode, 1440×900, Dana Designer | Form tab renders with the questions and live preview. Added "Show only when" on Business purpose, set Amount (USD) is at least 5000; the row shows the rule, the preview hides the question until 7500 is typed, then shows all 4. The start step shows the summary; Workflow settings shows progress stages and sections. An invalid answer pattern found by Check workflow → **Go to step** opens the Form tab with that question expanded and its label focused. No console errors. Mock data was reset afterwards. |
 
-Not done: a real-stack (Docker) run, an automated axe scan of the new tab outside the `t-ui-05` mock run, and a narrow-screen pass. On screens narrower than 1024 px the tab is read-only and stacks to one column.
+Not done: an automated axe scan of the new tab outside the `t-ui-05` mock run, and a narrow-screen pass. On screens narrower than 1024 px the tab is read-only and stacks to one column.
+
+## 3a. Real use case and real-stack run (30 October 2026)
+
+The old integration stack (`orqix-integ-1029`, 52 workflows and 65 runs, almost all left behind by e2e runs) was removed together with its database volume. A fresh stack (`orqix-s120`) was started from an image built from this branch.
+
+New spec **`t-forms-02-it-equipment-request`**, which runs in mock mode and on the real stack:
+- The designer starts an empty workflow from the New workflow dialog and builds the request form on the Form tab: 7 questions, 5 rules, 3 groups and an answer pattern.
+- Every rule's wording and preview behaviour are checked, as is Check workflow.
+- The workflow is published.
+- A USD 900 laptop is approved by the manager only, and the hidden answers are not stored.
+- A USD 2,600 replacement item is approved by the manager and then finance. The asset tag `IT-12` is refused with the author's message, and `IT-00421` is accepted.
+
+Bugs found while building and running it, all fixed in this slice:
+
+| Bug | Fix |
+|---|---|
+| Renaming a question's field key (under Advanced) remounted the question: Advanced closed and focus was lost. | Open state of Advanced is kept across the rename, and focus returns to the key field. `Advanced` gained `onToggle`. Unit test added. |
+| Form groups used the id `<group>-<fieldKey>` for "Include …" checkboxes, so a question keyed `title` (the purchase template's first question) collided with the group title input. The checkbox lost its label and the title box got the wrong accessible name. This predates S120. | Ids are `<group>-include-<fieldKey>`. Unit test added. |
+| **Real backend only:** "Start empty" created a workflow with no steps (`WorkflowService.emptyDefinition`), although the dialog promises "a request form and a finish step" and the mock creates them. The Studio cannot add a request form step, so such a workflow could never be completed. | The backend creates `start` (Request submitted) → `finished` (Finished, success) with a layout, like the mock. `CatalogApiTest.startEmptyCreatesARequestFormAndAFinishStep` added. |
+| `t-engineering-closeout` and `t-view-presentation` (real stack only) still chose the reusable request view on the start step. | They open the Form tab. |
+| Found while building the use case by hand: in a real browser, "Add a question" did not move focus to the new question's label, because the focus ran on a 0 ms timer before the question rendered (jsdom hid this). Typing and Enter then went to the button and added a second question. | Focus is applied in an effect after render (`pendingFocus`), for new questions and renamed keys. Checked in a real browser: focus lands on the new label. |
+
+Finding, not changed: grouped questions are rendered before ungrouped ones (the S35 rule), while the Form tab's question list keeps definition order. A question put into a group therefore jumps to the top of the real form. Changing the runtime order would alter published forms, so this is left for a later slice; the use case puts every question in a group.
+
+Second real-stack run, after the fixes, on a fresh stack with `E2E_STUB_URL` set: **86 passed, 0 failed**, 65 skipped by design (25 minutes). Full backend `mvnw clean verify` (Testcontainers): BUILD SUCCESS, compiler 650 and application 1,092 tests, 0 failures, 4 skipped (the existing opt-in live tests). Full frontend `vitest run`: 178 files, 1,278 tests pass, and `tsc -b` and `eslint .` are clean.
+
+The stack was then wiped again and the use case built on the clean stack through the UI, using a temporary Playwright script that was not kept:
+- the questions, rules and groups on the Form tab;
+- the steps in the Steps tab with Add step after, Add a path and route selects;
+- Check workflow;
+- publishing as the publisher.
+
+Four requests were then run:
+- a laptop (USD 900), approved by the manager;
+- a docking station (USD 2,600, replacement `IT-00421`), approved by the manager and then finance;
+- a phone (USD 1,200), rejected by the manager;
+- a headset (USD 120), left waiting for a manager.
+
+The stored inputs contain only the answers that were shown. The stack holds the two seeded templates, this workflow and these four requests.
+
+First real-stack run, before these fixes: 82 passed, 65 skipped by design (mock-only specs and presenter rehearsals), 4 failed. The failures were the two view specs and the empty-workflow bug above, plus `t-ex-06`, which needs `E2E_STUB_URL` to be set (an environment setting, not a code problem).
 
 ## 4. Limits and next slices
 

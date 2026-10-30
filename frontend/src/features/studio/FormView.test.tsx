@@ -151,3 +151,32 @@ describe('request-form issues open the Form tab (S120)', () => {
     expect(formFocusKey(def, 'manager', 'field.title')).toBeUndefined()
   })
 })
+
+describe('renaming a question key (S120)', () => {
+  it('keeps the question and its Advanced settings open and the key field focused', async () => {
+    const store = setup(normalizeDefinition(purchase))
+    const user = userEvent.setup()
+    await user.click(within(screen.getByTestId('question-title')).getByRole('button', { expanded: false }))
+    const card = within(screen.getByTestId('field-card-title'))
+    await user.click(card.getByText('Advanced'))
+    const key = card.getByLabelText('Field key')
+    await user.clear(key)
+    await user.type(key, 'item{Enter}')
+    expect(store.getState().definition.inputSchema.properties).toHaveProperty('item')
+    const renamed = within(screen.getByTestId('field-card-item'))
+    expect(renamed.getByText('Advanced').closest('details')).toHaveAttribute('open')
+    await vi.waitFor(() => expect(renamed.getByLabelText('Field key')).toHaveFocus())
+  })
+})
+
+describe('form groups (S120)', () => {
+  it('labels the include box of a question keyed "title" apart from the group title', async () => {
+    const store = setup(normalizeDefinition(purchase))
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Add a group' }))
+    const group = within(screen.getByRole('group', { name: 'Group 1' }))
+    expect(group.getByRole('textbox', { name: 'Group title' })).toHaveValue('Group 1')
+    await user.click(group.getByRole('checkbox', { name: 'Include What are you buying?' }))
+    expect(store.getState().definition.inputUi?.layout?.sections?.[0]?.fields).toEqual(['title'])
+  })
+})

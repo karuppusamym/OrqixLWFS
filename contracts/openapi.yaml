@@ -135,6 +135,111 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/cases/drafts:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      tags: [Cases]
+      operationId: listCaseDefinitionDrafts
+      summary: List the case type drafts of this workspace (S126)
+      x-orqix-permission: workflow.edit
+      responses:
+        '200': { description: 'Drafts, most recently saved first', content: { application/json: { schema: { type: array, maxItems: 200, items: { $ref: '#/components/schemas/CaseDefinitionDraftSummary' } } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Cases]
+      operationId: createCaseDefinitionDraft
+      summary: Start the draft of a case type
+      description: 'One draft per case key. The draft may be incomplete; checkCaseDefinitionDraft reports what still blocks publishing. A key that already has published versions starts the draft of its next version.'
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: case.draft.saved
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateCaseDefinitionDraft' } } } }
+      responses:
+        '201': { description: Created draft, content: { application/json: { schema: { $ref: '#/components/schemas/CaseDefinitionDraft' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /workspaces/{workspaceId}/cases/drafts/{draftId}:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: draftId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    get:
+      tags: [Cases]
+      operationId: getCaseDefinitionDraft
+      summary: Get a case type draft
+      x-orqix-permission: workflow.edit
+      responses:
+        '200': { description: Draft, content: { application/json: { schema: { $ref: '#/components/schemas/CaseDefinitionDraft' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Cases]
+      operationId: saveCaseDefinitionDraft
+      summary: Save the whole content of a case type draft
+      description: 'Replaces the draft content; omitted parts are cleared. The key never changes.'
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: case.draft.saved
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/SaveCaseDefinitionDraft' } } } }
+      responses:
+        '200': { description: Saved draft, content: { application/json: { schema: { $ref: '#/components/schemas/CaseDefinitionDraft' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    delete:
+      tags: [Cases]
+      operationId: deleteCaseDefinitionDraft
+      summary: Discard a case type draft
+      description: Published versions of the case type are not affected.
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: case.draft.deleted
+      responses:
+        '204': { description: Discarded }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workspaces/{workspaceId}/cases/drafts/{draftId}/check:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: draftId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [Cases]
+      operationId: checkCaseDefinitionDraft
+      summary: 'Run every admission rule of createCaseDefinition against the saved draft, without deploying'
+      description: 'Nothing is written. Independent rules all run, so every problem is reported at once. Engine deployment is not tried; a model the engine still rejects is reported when publishing.'
+      x-orqix-permission: workflow.edit
+      responses:
+        '200': { description: Check result for the saved draft version, content: { application/json: { schema: { $ref: '#/components/schemas/CaseDefinitionCheck' } } } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workspaces/{workspaceId}/cases/drafts/{draftId}/publish:
+    parameters:
+      - { $ref: '#/components/parameters/WorkspaceId' }
+      - { name: draftId, in: path, required: true, schema: { $ref: '#/components/schemas/Uuid' } }
+    post:
+      tags: [Cases]
+      operationId: publishCaseDefinitionDraft
+      summary: Check the draft again and deploy it as the next immutable version of the case type
+      description: 'Refused with 422 while the check reports problems and with 409 when the draft changed since expectedVersion. The draft stays as the working copy of the following version.'
+      x-orqix-permission: workflow.edit
+      x-orqix-audit: case.definition.created
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PublishCaseDefinitionDraft' } } } }
+      responses:
+        '201': { description: Deployed version, content: { application/json: { schema: { $ref: '#/components/schemas/CaseDefinition' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
   /workspaces/{workspaceId}/cases/instances:
     parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
     get:
@@ -7250,6 +7355,93 @@ components:
         workflowTasks: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseWorkflowTaskMapping' } }
         caseTasks: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseWorkflowTaskMapping' }, description: 'One mapping per CMMN caseTask (caseRef prefix:key bound to urn:orqix:case); inputMapping is child field to parent field, resultMapping is parent field to child field or outcome' }
         decisionTasks: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseWorkflowTaskMapping' }, description: 'One mapping per CMMN decisionTask (decision externalRef prefix:key bound to urn:orqix:decision); inputMapping is table fieldRef to case field, resultMapping is case field to table output' }
+    CaseDraftDataField:
+      type: object
+      description: A case data field as it is being edited. The check and publishing validate it as a CaseDataField.
+      maxProperties: 20
+      additionalProperties: true
+    CreateCaseDefinitionDraft:
+      type: object
+      additionalProperties: false
+      required: [key, name]
+      properties:
+        key: { type: string, pattern: '^[a-z][a-z0-9-]{1,62}$' }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        sourceXml: { type: [string, 'null'], maxLength: 65536, description: CMMN 1.1 source as far as it exists (64 KiB UTF-8) }
+        designerModel: { type: [object, 'null'], additionalProperties: true, description: 'Opaque state of the case designer (plan items and options), so the designer reopens the draft as it was. The server stores it and never reads it; the CMMN source is what is checked and published.' }
+        dataFields: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseDraftDataField' } }
+        viewRef: { oneOf: [{ $ref: '#/components/schemas/CaseViewRef' }, { type: 'null' }] }
+        workflowTasks: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseWorkflowTaskMapping' } }
+        caseTasks: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseWorkflowTaskMapping' } }
+        decisionTasks: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseWorkflowTaskMapping' } }
+    SaveCaseDefinitionDraft:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, name]
+      properties:
+        expectedVersion: { type: integer, minimum: 1, description: The draft version this content was edited from }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        sourceXml: { type: [string, 'null'], maxLength: 65536 }
+        designerModel: { type: [object, 'null'], additionalProperties: true }
+        dataFields: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseDraftDataField' } }
+        viewRef: { oneOf: [{ $ref: '#/components/schemas/CaseViewRef' }, { type: 'null' }] }
+        workflowTasks: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseWorkflowTaskMapping' } }
+        caseTasks: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseWorkflowTaskMapping' } }
+        decisionTasks: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/CaseWorkflowTaskMapping' } }
+    CaseDefinitionDraftSummary:
+      type: object
+      additionalProperties: false
+      required: [id, key, name, version, updatedAt, publishedVersion, publishedDraftVersion]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        key: { type: string }
+        name: { type: string }
+        version: { type: integer, minimum: 1, description: Draft version; every save adds one }
+        updatedAt: { $ref: '#/components/schemas/Timestamp' }
+        publishedVersion: { type: [integer, 'null'], minimum: 1, description: 'Current published version of this case type, if any' }
+        publishedDraftVersion: { type: [integer, 'null'], minimum: 1, description: The draft version that was last published from this draft }
+    CaseDefinitionDraft:
+      type: object
+      additionalProperties: false
+      required: [id, key, name, version, sourceXml, designerModel, dataFields, viewRef, workflowTasks, caseTasks, decisionTasks, updatedAt, publishedVersion, publishedDraftVersion]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        key: { type: string }
+        name: { type: string }
+        version: { type: integer, minimum: 1 }
+        sourceXml: { type: [string, 'null'] }
+        designerModel: { type: [object, 'null'], additionalProperties: true }
+        dataFields: { type: array, items: { $ref: '#/components/schemas/CaseDraftDataField' } }
+        viewRef: { oneOf: [{ $ref: '#/components/schemas/CaseViewRef' }, { type: 'null' }] }
+        workflowTasks: { type: array, items: { $ref: '#/components/schemas/CaseWorkflowTaskMapping' } }
+        caseTasks: { type: array, items: { $ref: '#/components/schemas/CaseWorkflowTaskMapping' } }
+        decisionTasks: { type: array, items: { $ref: '#/components/schemas/CaseWorkflowTaskMapping' } }
+        updatedAt: { $ref: '#/components/schemas/Timestamp' }
+        publishedVersion: { type: [integer, 'null'], minimum: 1 }
+        publishedDraftVersion: { type: [integer, 'null'], minimum: 1 }
+    CaseDefinitionCheck:
+      type: object
+      additionalProperties: false
+      required: [draftVersion, valid, issues]
+      properties:
+        draftVersion: { type: integer, minimum: 1, description: The saved draft version that was checked }
+        valid: { type: boolean, description: True when nothing blocks publishing this draft version }
+        issues:
+          type: array
+          maxItems: 50
+          items:
+            type: object
+            additionalProperties: false
+            required: [code, message]
+            properties:
+              code: { type: string, description: 'The problem code publishing would answer with, for example WORKFLOW_INVALID or VALIDATION_FAILED' }
+              message: { type: string }
+    PublishCaseDefinitionDraft:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: { type: integer, minimum: 1, description: The draft version that was checked }
     CaseDecisionPin:
       type: object
       additionalProperties: false

@@ -11,20 +11,16 @@ import { Alert } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
-import { CaseDataFields, CaseDataFieldsEditor, typedValues, type DataField, type DataInputs } from './CaseDataFields'
+import { CaseDataFields, typedValues, type DataField, type DataInputs } from './CaseDataFields'
 import type { components } from '@/api/schema'
-import { getPublishedView } from '@/api/views'
 import type { ViewDefinition } from '@/features/views/model'
-import { CaseViewPicker } from './CaseViewPicker'
-import { CaseModelDesigner, type CaseTaskMapping, type DecisionTaskMapping, type WorkflowTaskMapping } from './CaseModelDesigner'
-import { downloadBlob } from '@/lib/download'
-import { validateCaseView } from './caseView'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table'
-import { createCaseDefinition, getCaseDefinition, listCaseDefinitions, listCaseInstances, startCaseInstance } from './api'
+import { listCaseDefinitions, listCaseInstances, startCaseInstance } from './api'
 
-/** Initial CMMN case operations surface. Execution is limited to the server's validated model subset. */
+/**
+ * Working cases: start a case of a published case type, follow and work the cases. Case types are authored on the
+ * case designer page (S126, docs/26 C3), linked from here for people who may author.
+ */
 export function CasesPage() {
   const { workspace, can } = useWorkspace()
   const ws = workspace.id
@@ -32,46 +28,11 @@ export function CasesPage() {
   const queryClient = useQueryClient()
   const definitions = useQuery({ queryKey: ['ws', ws, 'case-definitions'], queryFn: () => listCaseDefinitions(ws), enabled: can('workflow.read', 'workflow.start') })
   const cases = useQuery({ queryKey: ['ws', ws, 'cases'], queryFn: () => listCaseInstances(ws), enabled: can('run.read', 'workflow.start', 'task.act') })
-  const [designing,setDesigning]=useState(false)
-  const [viewRef, setViewRef] = useState<{ id: string; version: number }>()
-  const [dataFields, setDataFields] = useState<DataField[]>([])
   const [starting, setStarting] = useState<components['schemas']['CaseDefinition'] | null>(null)
   const appearance=usePresentedView(starting?.viewBinding?.definition as ViewDefinition|undefined)
   const [initialData, setInitialData] = useState<DataInputs>({})
-  const [key, setKey] = useState('')
-  const [name, setName] = useState('')
-  const [file, setFile] = useState<File | null>(null)
-  const [workflowTasks, setWorkflowTasks] = useState<WorkflowTaskMapping[]>([])
-  const [caseTasks, setCaseTasks] = useState<CaseTaskMapping[]>([])
-  const [decisionTasks, setDecisionTasks] = useState<DecisionTaskMapping[]>([])
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  const create = async () => {
-    if (!file) return
-    setPending(true); setError(null)
-    try {
-      if (file.size > 65_536) throw new Error('Choose a CMMN file of at most 64 KiB.')
-      if (viewRef) {
-        if (!Number.isInteger(viewRef.version) || viewRef.version < 1) throw new Error('Choose a valid published case view version.')
-        const published = await getPublishedView(ws, viewRef.id, viewRef.version)
-        validateCaseView(dataFields, published.definition as ViewDefinition)
-      }
-      await createCaseDefinition(ws, { key: key.trim(), name: name.trim(), sourceXml: await file.text(), dataFields, viewRef, ...(designing && workflowTasks.length ? { workflowTasks } : {}), ...(designing && caseTasks.length ? { caseTasks } : {}), ...(designing && decisionTasks.length ? { decisionTasks } : {}) })
-      setFile(null); setKey(''); setName(''); setDataFields([]); setViewRef(undefined);setDesigning(false);setWorkflowTasks([]);setCaseTasks([]);setDecisionTasks([])
-      await queryClient.invalidateQueries({ queryKey: ['ws', ws, 'case-definitions'] })
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'The case definition could not be created.') }
-    finally { setPending(false) }
-  }
-
-  const exportModel = async (definitionId: string) => {
-    setPending(true); setError(null)
-    try {
-      const definition = await getCaseDefinition(ws, definitionId)
-      downloadBlob(new Blob([definition.sourceXml], { type: 'application/xml' }), `${definition.key}-v${definition.version}.cmmn`)
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'The case source could not be exported.') }
-    finally { setPending(false) }
-  }
 
   const start = async (definitionId: string, fields: DataField[] = []) => {
     setPending(true); setError(null)
@@ -85,25 +46,14 @@ export function CasesPage() {
 
   if (!can('workflow.read', 'workflow.start', 'run.read', 'task.act')) return <Alert tone="warning">You need case access to view this page.</Alert>
   return <div className="space-y-6">
-    <PageHeader title="Cases" description="Cases are pieces of work that need people to decide what happens next. Start one, work its tasks and follow its stages." />
+    <PageHeader title="Cases" description="Cases are pieces of work that need people to decide what happens next. Start a case of one of the case types below, work its tasks and follow its stages."
+      actions={can('workflow.edit') ? <Link className="text-link underline" to={`/w/${ws}/case-designs`}>Design case types</Link> : null} />
     {error ? <Alert tone="danger">{error}</Alert> : null}
-    {can('workflow.edit') ? <form className="space-y-3 rounded-card border border-border bg-surface p-5" onSubmit={event => { event.preventDefault(); void create() }}>
-      <h2>Create case definition</h2>
-      <p className="text-sm text-muted-foreground">Draw a case model here, import a CMMN file into the designer, or upload one as it is. Orqix runs human tasks, workflow tasks, stages, discretionary planning, repetition, entry and exit rules, user events and milestones; anything else in a file is reported and not run.</p>
-      <div className="grid gap-3 sm:grid-cols-2"><div><Label htmlFor="case-key">Key</Label><Input id="case-key" value={key} onChange={event => { setKey(event.target.value);if(designing)setFile(null) }} required /></div><div><Label htmlFor="case-name">Name</Label><Input id="case-name" value={name} onChange={event => { setName(event.target.value);if(designing)setFile(null) }} required /></div></div>
-      <Label htmlFor="case-file">CMMN file (maximum 64 KiB)</Label><Input id="case-file" type="file" accept=".cmmn,.xml" onChange={event => { setFile(event.target.files?.[0] ?? null);setDesigning(false) }} />
-      <Button type="button" variant="secondary" disabled={pending} onClick={()=>{setDesigning(value=>!value);setFile(null)}}>{designing?'Close case model designer':'Build a case model'}</Button>
-      {designing?<CaseModelDesigner ws={ws} caseKey={key.trim()} name={name.trim()} disabled={pending} dataFields={dataFields} onImported={(importedKey,importedName)=>{if(!key.trim()&&/^[a-z][a-z0-9-]{1,62}$/.test(importedKey))setKey(importedKey);if(!name.trim()&&importedName)setName(importedName.slice(0,200))}} onApply={(xml,tasks,children,tables)=>{setFile(xml===null?null:new File([xml],`${key.trim()}.cmmn`,{type:'application/xml'}));setWorkflowTasks(tasks??[]);setCaseTasks(children??[]);setDecisionTasks(tables??[])}}/>:null}
-      {designing&&file?<p role="status">Generated CMMN selected for this definition.</p>:null}
-      <CaseDataFieldsEditor fields={dataFields} onChange={setDataFields} disabled={pending} />
-      <CaseViewPicker ws={ws} value={viewRef} onChange={setViewRef} disabled={pending} />
-      <Button type="submit" variant="primary" loading={pending} disabled={!file || !key.trim() || !name.trim()}>Create definition</Button>
-    </form> : null}
-    {can('workflow.read', 'workflow.start') ? <section className="space-y-3" aria-label="Case definitions">
-      <h2>Definitions</h2>
-      {definitions.isPending ? <LoadingBlock label="Loading case definitions" /> : definitions.isError ? <QueryError error={definitions.error} onRetry={() => void definitions.refetch()} what="case definitions" /> : definitions.data.length ?
-        <div className="overflow-x-auto"><Table><THead><TR><TH>Name</TH><TH>Key</TH><TH>Version</TH><TH>Action</TH></TR></THead><TBody>{definitions.data.map(definition => <TR key={definition.id}><TD>{definition.name}</TD><TD>{definition.key}</TD><TD>{definition.version}</TD><TD>{can('workflow.start') ? <Button disabled={pending} onClick={() => { if (definition.dataFields?.length) { setInitialData({}); setStarting(definition) } else void start(definition.id) }}>Start case</Button> : null}{can('workflow.edit') ? <Button variant="secondary" disabled={pending} onClick={() => void exportModel(definition.id)}>Export CMMN</Button> : null}</TD></TR>)}</TBody></Table></div>
-        : <p className="text-sm text-muted-foreground">No case definitions are available in this workspace.</p>}
+    {can('workflow.read', 'workflow.start') ? <section className="space-y-3" aria-label="Case types">
+      <h2>Case types</h2>
+      {definitions.isPending ? <LoadingBlock label="Loading case types" /> : definitions.isError ? <QueryError error={definitions.error} onRetry={() => void definitions.refetch()} what="case types" /> : definitions.data.length ?
+        <div className="overflow-x-auto"><Table><THead><TR><TH>Name</TH><TH>Key</TH><TH>Version</TH><TH>Action</TH></TR></THead><TBody>{definitions.data.map(definition => <TR key={definition.id}><TD>{definition.name}</TD><TD>{definition.key}</TD><TD>{definition.version}</TD><TD>{can('workflow.start') ? <Button disabled={pending} onClick={() => { if (definition.dataFields?.length) { setInitialData({}); setStarting(definition) } else void start(definition.id) }}>Start case</Button> : null}</TD></TR>)}</TBody></Table></div>
+        : <p className="text-sm text-muted-foreground">No case types are published in this workspace.{can('workflow.edit') ? <> <Link className="text-link underline" to={`/w/${ws}/case-designs`}>Design a case type</Link>.</> : null}</p>}
     </section> : null}
     <Dialog open={starting !== null} onClose={() => setStarting(null)} dismissible={!pending} title="Start case" description={starting?.name}>
       <form lang={appearance.locale} className={`space-y-4 ${viewSurface(appearance.view)}`} onSubmit={event => { event.preventDefault(); if (starting) void start(starting.id, starting.dataFields ?? []) }}>

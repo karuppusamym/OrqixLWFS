@@ -138,26 +138,17 @@ public class CaseService {
     @Transactional
     public Definition createDefinition(Caller caller, UUID ws, CreateDefinition request) {
         var access = access(caller, ws, Permission.WORKFLOW_EDIT, "createCaseDefinition");
-        if (request == null || request.key() == null || !request.key().matches("[a-z][a-z0-9-]{1,62}")
-                || request.name() == null || request.name().isBlank() || request.name().length() > 200)
-            throw new ApiException(ProblemCode.VALIDATION_FAILED, "Case key or name is invalid.");
+        requireKeyAndName(request);
         String xml = request.sourceXml();
         var dataFields=dataModel.fields(request.dataFields());
         var view = request.viewRef() == null ? null : viewQueries.require(ws,request.viewRef());
         if (view != null) CaseViewBinding.validate(dataFields,view.definition());
         Set<String> groups = validator.validate(xml, request.key());
-        long found = jdbc.sql("SELECT count(*) FROM workspace_group WHERE workspace_id=:ws AND key IN (:groups)")
-                .param("ws",ws).param("groups",groups).query(Long.class).single();
-        if (found != groups.size())
-            throw new ApiException(ProblemCode.VALIDATION_FAILED, "Every candidate group must exist in this workspace.");
+        requireGroups(ws, groups);
         var pins = pinWorkflows(ws, xml, dataFields, request.workflowTasks());
         var childPins = pinChildCases(ws, request.key(), xml, dataFields, request.caseTasks());
         var decisionPins = pinDecisions(ws, xml, dataFields, request.decisionTasks());
-        var keys = dataFields.stream().map(CaseDataModel.Field::key).collect(java.util.stream.Collectors.toSet());
-        for (String field : validator.fileItems(xml).values())
-            if (!keys.contains(field)) throw new ApiException(ProblemCode.VALIDATION_FAILED, "Case file item " + field + " must be a declared case data field.");
-        for (String field : validator.conditionFields(xml))
-            if (!keys.contains(field)) throw new ApiException(ProblemCode.VALIDATION_FAILED, "An if-part reads case data field " + field + ", which this definition does not declare.");
+        requireDeclaredDataFields(xml, dataFields);
         boolean hasTimers = !validator.timers(xml).isEmpty();
         UUID catalog = Ids.newId();
         jdbc.sql("INSERT INTO case_catalog(id,workspace_id,key) VALUES(:id,:ws,:key) ON CONFLICT (workspace_id,key) DO NOTHING")
@@ -211,6 +202,74 @@ public class CaseService {
         audit.write(new AuditWriter.Entry(ws,AuditWriter.ActorType.USER,caller.subjectId(),"case.definition.created",
                 "caseDefinition",id.toString(),AuditWriter.Outcome.SUCCESS,Map.of("version",version,"workflowTasks",pins.size())));
         return definition(ws,id).summary();
+    }
+
+    private static void requireKeyAndName(CreateDefinition request) {
+        if (request == null || request.key() == null || !request.key().matches("[a-z][a-z0-9-]{1,62}")
+                || request.name() == null || request.name().isBlank() || request.name().length() > 200)
+            throw new ApiException(ProblemCode.VALIDATION_FAILED, "Case key or name is invalid.");
+    }
+
+    private void requireGroups(UUID ws, Set<String> groups) {
+        if (groups.isEmpty()) return;
+        long found = jdbc.sql("SELECT count(*) FROM workspace_group WHERE workspace_id=:ws AND key IN (:groups)")
+                .param("ws",ws).param("groups",groups).query(Long.class).single();
+        if (found != groups.size())
+            throw new ApiException(ProblemCode.VALIDATION_FAILED, "Every candidate group must exist in this workspace.");
+    }
+
+    private void requireDeclaredDataFields(String xml, List<CaseDataModel.Field> dataFields) {
+        var keys = dataFields.stream().map(CaseDataModel.Field::key).collect(java.util.stream.Collectors.toSet());
+        for (String field : validator.fileItems(xml).values())
+            if (!keys.contains(field)) throw new ApiException(ProblemCode.VALIDATION_FAILED, "Case file item " + field + " must be a declared case data field.");
+        for (String field : validator.conditionFields(xml))
+            if (!keys.contains(field)) throw new ApiException(ProblemCode.VALIDATION_FAILED, "An if-part reads case data field " + field + ", which this definition does not declare.");
+    }
+
+    /** One problem the check found: the problem code the publish would answer with, and its message. */
+    public record CheckIssue(String code, String message) {}
+
+    /**
+     * S126: every admission rule of {@link #createDefinition} without deploying or writing anything. Rules that do not
+     * depend on each other are all run, so the designer sees every problem at once; a rule whose input failed is skipped.
+     * Engine deployment itself is not tried, so a model the engine still rejects is reported only when publishing.
+     * Deliberately not transactional: a refused rule inside a read-only query helper must not mark a shared
+     * transaction rollback-only, since the check carries on after it.
+     */
+    public List<CheckIssue> checkDefinition(UUID ws, CreateDefinition request) {
+        return checkDefinition(ws, request, false);
+    }
+
+    /** As above; with {@code dataFieldsUnreadable} the caller already reported the data fields, and rules that need them are skipped. */
+    public List<CheckIssue> checkDefinition(UUID ws, CreateDefinition request, boolean dataFieldsUnreadable) {
+        var issues = new ArrayList<CheckIssue>();
+        boolean named = attempt(issues, () -> { requireKeyAndName(request); return true; }) != null;
+        var dataFields = dataFieldsUnreadable ? null : attempt(issues, () -> dataModel.fields(request.dataFields()));
+        if (dataFields != null && request.viewRef() != null)
+            attempt(issues, () -> { CaseViewBinding.validate(dataFields, viewQueries.require(ws, request.viewRef()).definition()); return true; });
+        String xml = request.sourceXml();
+        if (xml == null || xml.isBlank()) {
+            issues.add(new CheckIssue(ProblemCode.WORKFLOW_INVALID.name(), "The case type has no CMMN model yet. Draw the case plan or upload a CMMN file."));
+            return List.copyOf(issues);
+        }
+        if (!named) return List.copyOf(issues);
+        var groups = attempt(issues, () -> validator.validate(xml, request.key()));
+        if (groups == null) return List.copyOf(issues);
+        attempt(issues, () -> { requireGroups(ws, groups); return true; });
+        if (dataFields == null) return List.copyOf(issues);
+        attempt(issues, () -> pinWorkflows(ws, xml, dataFields, request.workflowTasks()));
+        attempt(issues, () -> pinChildCases(ws, request.key(), xml, dataFields, request.caseTasks()));
+        attempt(issues, () -> pinDecisions(ws, xml, dataFields, request.decisionTasks()));
+        attempt(issues, () -> { requireDeclaredDataFields(xml, dataFields); return true; });
+        return List.copyOf(issues);
+    }
+
+    private static <T> T attempt(List<CheckIssue> issues, java.util.function.Supplier<T> rule) {
+        try { return rule.get(); }
+        catch (ApiException ex) {
+            issues.add(new CheckIssue(ex.code().name(), ex.detail() == null ? ex.code().title() : ex.detail()));
+            return null;
+        }
     }
 
     private static final Set<String> RESULT_SOURCES = Set.of("outcome","outcomeKind","reference");

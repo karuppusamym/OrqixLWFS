@@ -157,17 +157,11 @@ describe('case workbench', () => {
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Start task' })).not.toBeInTheDocument())
   })
 
-  it('uploads a reviewed model and starts a case from the returned definition', async () => {
+  it('lists published case types to start, without a create form, and links authors to the case designer', async () => {
     signInAs('dana.designer')
-    let submitted: unknown
-    let definitions: typeof definition[] = []
     server.use(
-      http.get('*/api/v1/workspaces/:ws/cases/definitions', () => HttpResponse.json(definitions)),
+      http.get('*/api/v1/workspaces/:ws/cases/definitions', () => HttpResponse.json([definition])),
       http.get('*/api/v1/workspaces/:ws/cases/instances', () => HttpResponse.json([])),
-      http.post('*/api/v1/workspaces/:ws/cases/definitions', async ({ request }) => {
-        submitted = await request.json(); definitions = [definition]
-        return HttpResponse.json(definition, { status: 201 })
-      }),
       http.post('*/api/v1/workspaces/:ws/cases/definitions/:id/instances', ({ request }) => {
         expect(request.headers.get('Idempotency-Key')).toBeTruthy()
         return HttpResponse.json(active, { status: 201 })
@@ -175,17 +169,30 @@ describe('case workbench', () => {
       http.get('*/api/v1/workspaces/:ws/cases/instances/:id', () => HttpResponse.json(active)),
     )
     const user = userEvent.setup(); const { router } = await renderAppReady(`/w/${ws}/cases`)
-    await screen.findByText('No case definitions are available in this workspace.')
-    await user.type(screen.getByLabelText('Key'), 'review')
-    await user.type(screen.getByLabelText('Name'), 'Evidence review')
-    const file = new File(['<definitions/>'], 'review.cmmn', { type: 'application/xml' })
-    Object.defineProperty(file, 'text', { value: async () => '<definitions/>' })
-    await user.upload(screen.getByLabelText(/CMMN file/), file)
-    await user.click(screen.getByRole('button', { name: 'Create definition' }))
-    expect(submitted).toMatchObject({ key: 'review', name: 'Evidence review', sourceXml: '<definitions/>' })
-    await user.click(await screen.findByRole('button', { name: 'Start case' }))
+    const types = await screen.findByRole('region', { name: 'Case types' })
+    expect(within(types).getByRole('heading', { name: 'Case types' })).toBeInTheDocument()
+    expect(await within(types).findByRole('cell', { name: 'Evidence review' })).toBeInTheDocument()
+    // Authoring moved to the case designer page (S126): no key, name, CMMN upload or create button here.
+    expect(screen.queryByText('Create case definition')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Key')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/CMMN file/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Create definition' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Export CMMN' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Design case types' })).toHaveAttribute('href', `/w/${ws}/case-designs`)
+    await user.click(screen.getByRole('button', { name: 'Start case' }))
     await waitFor(() => expect(router.state.location.pathname).toBe(`/w/${ws}/cases/${instanceId}`))
     expect(await screen.findByText('Collect evidence')).toBeInTheDocument()
+  })
+
+  it('does not offer the case designer to people who only work cases', async () => {
+    signInAs('rhea.requester')
+    server.use(
+      http.get('*/api/v1/workspaces/:ws/cases/definitions', () => HttpResponse.json([])),
+      http.get('*/api/v1/workspaces/:ws/cases/instances', () => HttpResponse.json([])),
+    )
+    await renderAppReady(`/w/${ws}/cases`)
+    expect(await screen.findByText('No case types are published in this workspace.')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Design case type/ })).not.toBeInTheDocument()
   })
 
   it('completes only eligible tasks with the current case version', async () => {

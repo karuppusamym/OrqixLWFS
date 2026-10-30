@@ -4,6 +4,7 @@ import { MOCK } from '../support/env'
 import { workspaceId } from '../support/app'
 import { apiSend, uniq } from '../support/api'
 import { expectNoSeriousViolations } from '../support/axe'
+import { checkAndPublish, newCaseType, useCmmnFile } from '../support/caseDesigner'
 
 test('a pinned case view controls start and correction layout without granting edit authority', async ({ sessions }) => {
   test.skip(MOCK, 'Requires real case definition snapshots and current case-data permissions.')
@@ -20,10 +21,8 @@ test('a pinned case view controls start and correction layout without granting e
   page = await sessions.as('paul.publisher')
   expect((await apiSend(page, 'POST', `/workspaces/${ws}/views/${created.body.id}/publish`, { expectedRevision: 1 })).status).toBe(200)
   page = await sessions.as('dana.designer')
-  await page.goto(`/w/${ws}/cases`)
-  await page.getByLabel('Key', { exact: true }).fill(key)
-  await page.getByLabel('Name', { exact: true }).fill(key)
-  await page.getByLabel('CMMN file (maximum 64 KiB)').setInputFiles({ name: `${key}.cmmn`, mimeType: 'application/xml', buffer: Buffer.from(sourceXml) })
+  await newCaseType(page, ws, key)
+  await useCmmnFile(page, `${key}.cmmn`, sourceXml)
   await page.getByRole('button', { name: 'Add case data field' }).click()
   await page.getByLabel('Field 1 key', { exact: true }).fill('summary')
   await page.getByLabel('Field 1 label', { exact: true }).fill('Summary')
@@ -35,8 +34,7 @@ test('a pinned case view controls start and correction layout without granting e
   await page.getByRole('button', { name: 'Choose case view' }).click()
   await page.getByLabel('Published case view').selectOption(created.body.id)
   await expectNoSeriousViolations(page, 'Case view pin authoring')
-  await page.getByRole('button', { name: 'Create definition', exact: true }).click()
-  await expect(page.getByRole('cell', { name: key, exact: true }).first()).toBeVisible()
+  await checkAndPublish(page)
   page = await sessions.as('rhea.requester')
   await page.goto(`/w/${ws}/cases`)
   await page.getByRole('row').filter({ has: page.getByRole('cell', { name: key, exact: true }) }).getByRole('button', { name: 'Start case', exact: true }).click()

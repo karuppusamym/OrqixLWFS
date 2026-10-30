@@ -4,6 +4,7 @@ import { MOCK } from '../support/env'
 import { apiGet, openFormTab, workspaceId } from '../support/app'
 import { apiSend, createWorkflow, publish, uniq } from '../support/api'
 import { expectNoSeriousViolations } from '../support/axe'
+import { checkAndPublish, newCaseType, useCmmnFile } from '../support/caseDesigner'
 
 test('published request view is pinned in Studio and renders its submit action at runtime', async ({ sessions }) => {
   test.setTimeout(180_000)
@@ -160,10 +161,8 @@ test('real typed case data is authored, validated, corrected and retained after 
   let page = await sessions.as('dana.designer')
   const ws = await workspaceId(page), key = uniq('typed-case')
   const sourceXml = readFileSync(new URL('../../../backend/app/src/test/resources/cases/manual-required.cmmn', import.meta.url), 'utf8').replaceAll('lifecycleCase', key)
-  await page.goto(`/w/${ws}/cases`)
-  await page.getByLabel('Key', { exact: true }).fill(key)
-  await page.getByLabel('Name', { exact: true }).fill(key)
-  await page.getByLabel('CMMN file (maximum 64 KiB)').setInputFiles({ name: `${key}.cmmn`, mimeType: 'application/xml', buffer: Buffer.from(sourceXml) })
+  await newCaseType(page, ws, key)
+  await useCmmnFile(page, `${key}.cmmn`, sourceXml)
   await page.getByRole('button', { name: 'Add case data field' }).click()
   await page.getByLabel('Field 1 key', { exact: true }).fill('summary')
   await page.getByLabel('Field 1 label', { exact: true }).fill('Summary')
@@ -172,8 +171,7 @@ test('real typed case data is authored, validated, corrected and retained after 
   await page.getByLabel('Field 2 key', { exact: true }).fill('amount')
   await page.getByLabel('Field 2 label', { exact: true }).fill('Amount')
   await page.getByLabel('Field 2 type', { exact: true }).selectOption('number')
-  await page.getByRole('button', { name: 'Create definition', exact: true }).click()
-  await expect(page.getByRole('cell', { name: key, exact: true }).first()).toBeVisible()
+  await checkAndPublish(page)
   page = await sessions.as('rhea.requester')
   await page.goto(`/w/${ws}/cases`)
   await page.getByRole('row').filter({ has: page.getByRole('cell', { name: key, exact: true }) }).getByRole('button', { name: 'Start case', exact: true }).click()

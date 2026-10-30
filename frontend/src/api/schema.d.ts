@@ -87,6 +87,103 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/cases/drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** List the case type drafts of this workspace (S126) */
+        get: operations["listCaseDefinitionDrafts"];
+        put?: never;
+        /**
+         * Start the draft of a case type
+         * @description One draft per case key. The draft may be incomplete; checkCaseDefinitionDraft reports what still blocks publishing. A key that already has published versions starts the draft of its next version.
+         */
+        post: operations["createCaseDefinitionDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/cases/drafts/{draftId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                draftId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        /** Get a case type draft */
+        get: operations["getCaseDefinitionDraft"];
+        /**
+         * Save the whole content of a case type draft
+         * @description Replaces the draft content; omitted parts are cleared. The key never changes.
+         */
+        put: operations["saveCaseDefinitionDraft"];
+        post?: never;
+        /**
+         * Discard a case type draft
+         * @description Published versions of the case type are not affected.
+         */
+        delete: operations["deleteCaseDefinitionDraft"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/cases/drafts/{draftId}/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                draftId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run every admission rule of createCaseDefinition against the saved draft, without deploying
+         * @description Nothing is written. Independent rules all run, so every problem is reported at once. Engine deployment is not tried; a model the engine still rejects is reported when publishing.
+         */
+        post: operations["checkCaseDefinitionDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/cases/drafts/{draftId}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                draftId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check the draft again and deploy it as the next immutable version of the case type
+         * @description Refused with 422 while the check reports problems and with 409 when the draft changed since expectedVersion. The draft stays as the working copy of the following version.
+         */
+        post: operations["publishCaseDefinitionDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/cases/instances": {
         parameters: {
             query?: never;
@@ -5223,6 +5320,76 @@ export interface components {
             caseTasks?: components["schemas"]["CaseWorkflowTaskMapping"][];
             /** @description One mapping per CMMN decisionTask (decision externalRef prefix:key bound to urn:orqix:decision); inputMapping is table fieldRef to case field, resultMapping is case field to table output */
             decisionTasks?: components["schemas"]["CaseWorkflowTaskMapping"][];
+        };
+        /** @description A case data field as it is being edited. The check and publishing validate it as a CaseDataField. */
+        CaseDraftDataField: Record<string, never>;
+        CreateCaseDefinitionDraft: {
+            key: string;
+            name: string;
+            /** @description CMMN 1.1 source as far as it exists (64 KiB UTF-8) */
+            sourceXml?: string | null;
+            /** @description Opaque state of the case designer (plan items and options), so the designer reopens the draft as it was. The server stores it and never reads it; the CMMN source is what is checked and published. */
+            designerModel?: Record<string, never> | null;
+            dataFields?: components["schemas"]["CaseDraftDataField"][];
+            viewRef?: components["schemas"]["CaseViewRef"] | null;
+            workflowTasks?: components["schemas"]["CaseWorkflowTaskMapping"][];
+            caseTasks?: components["schemas"]["CaseWorkflowTaskMapping"][];
+            decisionTasks?: components["schemas"]["CaseWorkflowTaskMapping"][];
+        };
+        SaveCaseDefinitionDraft: {
+            /** @description The draft version this content was edited from */
+            expectedVersion: number;
+            name: string;
+            sourceXml?: string | null;
+            designerModel?: Record<string, never> | null;
+            dataFields?: components["schemas"]["CaseDraftDataField"][];
+            viewRef?: components["schemas"]["CaseViewRef"] | null;
+            workflowTasks?: components["schemas"]["CaseWorkflowTaskMapping"][];
+            caseTasks?: components["schemas"]["CaseWorkflowTaskMapping"][];
+            decisionTasks?: components["schemas"]["CaseWorkflowTaskMapping"][];
+        };
+        CaseDefinitionDraftSummary: {
+            id: components["schemas"]["Uuid"];
+            key: string;
+            name: string;
+            /** @description Draft version; every save adds one */
+            version: number;
+            updatedAt: components["schemas"]["Timestamp"];
+            /** @description Current published version of this case type, if any */
+            publishedVersion: number | null;
+            /** @description The draft version that was last published from this draft */
+            publishedDraftVersion: number | null;
+        };
+        CaseDefinitionDraft: {
+            id: components["schemas"]["Uuid"];
+            key: string;
+            name: string;
+            version: number;
+            sourceXml: string | null;
+            designerModel: Record<string, never> | null;
+            dataFields: components["schemas"]["CaseDraftDataField"][];
+            viewRef: components["schemas"]["CaseViewRef"] | null;
+            workflowTasks: components["schemas"]["CaseWorkflowTaskMapping"][];
+            caseTasks: components["schemas"]["CaseWorkflowTaskMapping"][];
+            decisionTasks: components["schemas"]["CaseWorkflowTaskMapping"][];
+            updatedAt: components["schemas"]["Timestamp"];
+            publishedVersion: number | null;
+            publishedDraftVersion: number | null;
+        };
+        CaseDefinitionCheck: {
+            /** @description The saved draft version that was checked */
+            draftVersion: number;
+            /** @description True when nothing blocks publishing this draft version */
+            valid: boolean;
+            issues: {
+                /** @description The problem code publishing would answer with, for example WORKFLOW_INVALID or VALIDATION_FAILED */
+                code: string;
+                message: string;
+            }[];
+        };
+        PublishCaseDefinitionDraft: {
+            /** @description The draft version that was checked */
+            expectedVersion: number;
         };
         CaseDecisionPin: {
             taskId: string;
@@ -11316,6 +11483,205 @@ export interface operations {
                     "application/json": components["schemas"]["CaseInstance"];
                 };
             };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listCaseDefinitionDrafts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Drafts, most recently saved first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseDefinitionDraftSummary"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createCaseDefinitionDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCaseDefinitionDraft"];
+            };
+        };
+        responses: {
+            /** @description Created draft */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseDefinitionDraft"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    getCaseDefinitionDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                draftId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Draft */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseDefinitionDraft"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    saveCaseDefinitionDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                draftId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveCaseDefinitionDraft"];
+            };
+        };
+        responses: {
+            /** @description Saved draft */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseDefinitionDraft"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    deleteCaseDefinitionDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                draftId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Discarded */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    checkCaseDefinitionDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                draftId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Check result for the saved draft version */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseDefinitionCheck"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    publishCaseDefinitionDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                draftId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublishCaseDefinitionDraft"];
+            };
+        };
+        responses: {
+            /** @description Deployed version */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseDefinition"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];

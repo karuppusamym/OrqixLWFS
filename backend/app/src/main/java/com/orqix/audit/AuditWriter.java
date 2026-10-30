@@ -75,6 +75,9 @@ public class AuditWriter {
             Map.entry("access.group.updated", Set.of("groupKey", "memberCount", "revision")),
             Map.entry("workflow.created", Set.of("key", "templateId", "source")),
             Map.entry("case.definition.created", Set.of("version")),
+            // S126: case type drafts; the key and draft version only, never the model or its fields.
+            Map.entry("case.draft.saved", Set.of("key", "version")),
+            Map.entry("case.draft.deleted", Set.of("key")),
             Map.entry("case.instance.started", Set.of("definitionId", "version")),
             Map.entry("case.data.updated", Set.of("version", "fields")),
             Map.entry("case.lifecycle.changed", Set.of("action", "version")),

@@ -25,13 +25,14 @@ public class BlueprintController {
     }
 
     @PostMapping(path = "/blueprints", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<?> upload(@PathVariable UUID workspaceId, @RequestPart(name = "file", required = false) MultipartFile file) {
+    public ResponseEntity<?> upload(@PathVariable UUID workspaceId, @RequestPart(name = "file", required = false) MultipartFile file,
+            @RequestParam(name = "caseType", required = false) String caseType) {
         var caller = callers.current();
         if (file == null || file.isEmpty()) throw ApiException.malformed("file is required.");
         if (file.getSize() > DocumentExtraction.BLUEPRINT_MAX_FILE_BYTES) throw new ApiException(ProblemCode.PAYLOAD_TOO_LARGE, "The PDF is larger than 25 MiB.");
         byte[] bytes;
         try { bytes = file.getBytes(); } catch (IOException e) { throw ApiException.malformed("The file could not be read."); }
-        UUID id = blueprints.upload(caller, workspaceId, file.getOriginalFilename(), bytes);
+        UUID id = blueprints.upload(caller, workspaceId, file.getOriginalFilename(), bytes, caseType);
         return ResponseEntity.created(URI.create("/api/v1/workspaces/" + workspaceId + "/migrations/" + id)).body(migrations.get(caller, workspaceId, id));
     }
 

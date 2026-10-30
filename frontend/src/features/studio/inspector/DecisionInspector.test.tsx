@@ -69,3 +69,48 @@ describe('conjunctive decision authoring', () => {
     expect(screen.queryByRole('button', { name: 'Move row 1 down' })).not.toBeInTheDocument()
   })
 })
+
+describe('lists, ranges and hit policies in the rule table (docs/build/S121)', () => {
+  function setup() {
+    const store = createStudioStore()
+    store.getState().load({ workflowId: 'workflow', revision: 1, definition: normalizeDefinition(purchase) })
+    function Inspector() {
+      const node = useStudio(s => s.definition.nodes.find(n => n.type === 'decision')!)
+      return <DecisionInspector node={node} />
+    }
+    render(<QueryClientProvider client={testQueryClient()}><StudioProvider value={{ store, saver: {} as DraftSaver, wsId: 'workspace', workflowId: 'workflow', readOnly: false, connections: { responseType: () => undefined } }}><Inspector /></StudioProvider></QueryClientProvider>)
+    return store
+  }
+
+  it('turns a comparison into a range and a list', async () => {
+    const store = setup()
+    const user = userEvent.setup()
+    await user.selectOptions(screen.getByLabelText('Comparison'), 'between')
+    expect(store.getState().definition.decisions[0]!.rows[0]!.when).toEqual({ fieldRef: '/input/amount', operator: 'between', value: { from: 5000, to: 5001 } })
+    await user.click(screen.getAllByLabelText('Including')[1]!)
+    expect(store.getState().definition.decisions[0]!.rows[0]!.when).toMatchObject({ value: { from: 5000, to: 5001, includeTo: false } })
+    await user.selectOptions(screen.getByLabelText('Comparison'), 'in')
+    expect(store.getState().definition.decisions[0]!.rows[0]!.when).toMatchObject({ operator: 'in', value: [5000] })
+    await user.click(screen.getByRole('button', { name: 'Add value' }))
+    expect(store.getState().definition.decisions[0]!.rows[0]!.when).toMatchObject({ operator: 'in', value: [5000, 0] })
+  })
+
+  it('offers the priority order and the aggregation with their policies', async () => {
+    const store = setup()
+    const user = userEvent.setup()
+    await user.selectOptions(screen.getByLabelText('Which row applies'), 'PRIORITY')
+    expect(store.getState().definition.decisions[0]!.priority).toEqual({ output: 'route', order: ['financeReview', 'standard'] })
+    await user.click(screen.getByRole('button', { name: 'Move standard up' }))
+    expect(store.getState().definition.decisions[0]!.priority?.order).toEqual(['standard', 'financeReview'])
+    await user.selectOptions(screen.getByLabelText('Which row applies'), 'COLLECT')
+    const table = store.getState().definition.decisions[0]!
+    expect(table.priority).toBeUndefined()
+    expect(table.aggregation).toBe('SUM')
+    await user.selectOptions(screen.getByLabelText('Combine the results as'), 'COUNT')
+    expect(store.getState().definition.decisions[0]!.aggregation).toBe('COUNT')
+    await user.selectOptions(screen.getByLabelText('Which row applies'), 'ANY')
+    expect(store.getState().definition.decisions[0]!.aggregation).toBeUndefined()
+    expect(screen.getByRole('button', { name: /Download DMN/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Import DMN/ })).toBeInTheDocument()
+  })
+})

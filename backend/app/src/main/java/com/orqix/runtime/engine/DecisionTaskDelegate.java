@@ -18,6 +18,8 @@ import org.springframework.stereotype.Component;
 
 import com.orqix.catalog.ReleaseQueries;
 import com.orqix.compiler.ConditionMatcher;
+import com.orqix.compiler.DecisionEvaluator;
+import com.orqix.compiler.DecisionTables;
 import com.orqix.runtime.internal.RunEvents;
 import com.orqix.runtime.internal.RunStore;
 import com.orqix.shared.json.Json;
@@ -80,21 +82,68 @@ public class DecisionTaskDelegate implements JavaDelegate {
             Object value=ProcessData.requireScalar(execution,json,fields.get(i));
             values.put(fields.get(i),value); variables.put("in"+(i+1),value);
         }
-        Result result=evaluatePinnedVariables(execution.getProcessDefinitionId(),execution.getTenantId(),decisionKey,variables,ruleOwners(table));
-        execution.setVariable(ProcessData.stepVariable(element.getId()), json.write(result.outputs()));
+        String tableJson=json.write(table);
+        boolean collect="COLLECT".equals(table.path("hitPolicy").asString(""));
+        Result result=evaluatePinnedVariables(execution.getProcessDefinitionId(),execution.getTenantId(),decisionKey,variables,
+                DecisionTables.ruleOwners(tableJson),collect);
+        // The canonical evaluation must select the same rows; under COLLECT it also gives the exact combined number.
+        Map<String,Object> canonicalValues=new LinkedHashMap<>(values);
+        if(asOf!=null) canonicalValues.put("$asOf",asOf);
+        DecisionEvaluator.Result canonical=DecisionTables.evaluate(tableJson,canonicalValues);
+        ObjectNode outputs=confirmedOutputs(decisionKey,result,canonical,collect);
+        execution.setVariable(ProcessData.stepVariable(element.getId()), json.write(outputs));
 
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("decisionKey", decisionKey);
         data.put("version", Integer.valueOf(version));
         data.put("matched", result.matched());
-        data.put("outputs", result.outputs());
+        data.put("outputs", outputs);
         data.put("evidence", evidenceValues(table, values, result.matched(), asOf));
         events.append(workspaceId, runId, "DECISION_EVALUATED", element.getId(), null, data);
     }
 
-    /** Outcome of a pinned DMN evaluation: {@code matched} is {@code r<n>} (1-based) or {@code default}
-     * (the trailing catch-all rule after the {@code rowCount} canonical rows). */
-    public record Result(String matched, ObjectNode outputs) {
+    /**
+     * Outcome of a pinned DMN evaluation: {@code matched} is {@code r<n>} (1-based) or {@code default} (the trailing
+     * catch-all rule after the canonical rows); under COLLECT every matching row, {@code r1,r3}, or {@code default}
+     * when none matched. {@code rows} are the zero-based canonical rows behind {@code matched}.
+     */
+    public record Result(String matched, ObjectNode outputs, List<Integer> rows) {
+        public Result(String matched, ObjectNode outputs) {
+            this(matched, outputs, List.of());
+        }
+    }
+
+    /**
+     * The step's results after the pinned DMN result and the canonical evaluation agree on the selected rows. COLLECT
+     * stores the canonical exact decimal, after checking the engine's double-precision combination is the same number
+     * (the engine adds doubles; 0.1 + 0.2 must still give 0.3); with no match it stores the default.
+     */
+    ObjectNode confirmedOutputs(String decisionKey, Result result, DecisionEvaluator.Result canonical, boolean collect) {
+        List<Integer> expected = canonical.matchedRows();
+        if (!expected.equals(result.rows())) {
+            throw new IllegalStateException("Pinned decision " + decisionKey + " selected rows " + result.rows()
+                    + " but the canonical evaluation selects " + expected);
+        }
+        if (!collect) {
+            return result.outputs();
+        }
+        ObjectNode outputs = json.object();
+        canonical.output().forEach((name, value) -> {
+            if (!canonical.usedDefault()) {
+                BigDecimal exact = (BigDecimal) value;
+                JsonNode engine = result.outputs().get(name);
+                if (engine == null || !engine.isNumber()) {
+                    throw new IllegalStateException("Pinned decision " + decisionKey + " returned no number for " + name);
+                }
+                BigDecimal tolerance = exact.abs().multiply(new BigDecimal("1E-12")).max(new BigDecimal("1E-9"));
+                if (engine.decimalValue().subtract(exact).abs().compareTo(tolerance) > 0) {
+                    throw new IllegalStateException("Pinned decision " + decisionKey + " combined " + engine.decimalValue()
+                            + " but the canonical evaluation gives " + exact);
+                }
+            }
+            outputs.set(name, json.fromScalar(value));
+        });
+        return outputs;
     }
 
     /**
@@ -112,22 +161,17 @@ public class DecisionTaskDelegate implements JavaDelegate {
                 java.util.stream.IntStream.range(0, rowCount).boxed().toList());
     }
 
-    /**
-     * The canonical row behind each generated DMN rule: an OR row ({@code any}) occupies one rule per alternative, every
-     * other row exactly one (mirrors the compiler's DMN generation).
-     */
-    static List<Integer> ruleOwners(JsonNode table) {
-        List<Integer> owners = new java.util.ArrayList<>();
-        JsonNode rows = table.path("rows");
-        for (int i = 0; i < rows.size(); i++) {
-            int rules = rows.get(i).path("when").has("any") ? rows.get(i).path("when").path("any").size() : 1;
-            for (int k = 0; k < rules; k++) owners.add(i);
-        }
-        return owners;
-    }
-
     public Result evaluatePinnedVariables(String processDefinitionId, String tenantId, String decisionKey,
             Map<String,Object> values, List<Integer> owners) {
+        return evaluatePinnedVariables(processDefinitionId, tenantId, decisionKey, values, owners, false);
+    }
+
+    /**
+     * @param collect true for a COLLECT table: no catch-all rule, so no match means no result (the default applies),
+     *                and every valid rule names a row that counts
+     */
+    public Result evaluatePinnedVariables(String processDefinitionId, String tenantId, String decisionKey,
+            Map<String,Object> values, List<Integer> owners, boolean collect) {
         String deploymentId = ProcessDefinitionUtil.getProcessDefinition(processDefinitionId).getDeploymentId();
         long pinned = CommandContextUtil.getDmnRepositoryService().createDecisionQuery()
                 .decisionKey(decisionKey).parentDeploymentId(deploymentId).decisionTenantId(tenantId).count();
@@ -144,6 +188,23 @@ public class DecisionTaskDelegate implements JavaDelegate {
             throw new IllegalStateException("Decision " + decisionKey + " failed: " + audit.getExceptionMessage());
         }
         List<Map<String, Object>> results = audit.getDecisionResult();
+        if (collect) {
+            List<Integer> rows = audit.getRuleExecutions().values().stream()
+                    .filter(r -> Boolean.TRUE.equals(r.isValid()))
+                    .map(r -> owners.get(r.getRuleNumber() - 1)).distinct().sorted().toList();
+            ObjectNode outputs = json.object();
+            if (results == null || results.isEmpty()) {
+                if (!rows.isEmpty()) {
+                    throw new IllegalStateException("Decision " + decisionKey + " matched rules but combined nothing");
+                }
+                return new Result("default", outputs, List.of());
+            }
+            if (results.size() != 1) {
+                throw new IllegalStateException("Decision " + decisionKey + " must combine to exactly one row");
+            }
+            results.get(0).forEach((k, v) -> outputs.set(k, json.fromScalar(normalize(v))));
+            return new Result(String.join(",", rows.stream().map(i -> "r" + (i + 1)).toList()), outputs, rows);
+        }
         if (results == null || results.size() != 1) {
             throw new IllegalStateException("Decision " + decisionKey + " must yield exactly one row");
         }
@@ -154,7 +215,7 @@ public class DecisionTaskDelegate implements JavaDelegate {
         String matched = matchedRule > owners.size() ? "default" : "r" + (owners.get(matchedRule - 1) + 1);
         ObjectNode outputs = json.object();
         results.get(0).forEach((k, v) -> outputs.set(k, json.fromScalar(normalize(v))));
-        return new Result(matched, outputs);
+        return new Result(matched, outputs, matchedRule > owners.size() ? List.of() : List.of(owners.get(matchedRule - 1)));
     }
 
     /** All bounded canonical candidates are checked with the compiler's typed scalar matcher.
@@ -176,7 +237,8 @@ public class DecisionTaskDelegate implements JavaDelegate {
         var inputs=evidence.putArray("inputs");
         values.forEach((field,value)->inputs.add(json.objectOf(Map.of("fieldRef",field,"value",value))));
         var candidates = evidence.putArray("rows");
-        String expected = "default";
+        java.util.List<String> matchedIds = new java.util.ArrayList<>();
+        java.util.Set<String> selectedIds = "default".equals(selected) ? java.util.Set.of() : java.util.Set.of(selected.split(","));
         for (int i = 0; i < rows.size(); i++) {
             JsonNode condition = rows.get(i).path("when");
             boolean any=condition.has("any");
@@ -185,7 +247,8 @@ public class DecisionTaskDelegate implements JavaDelegate {
             for(JsonNode term:terms) {
                 String ref=term.path("fieldRef").asString();
                 if(!values.containsKey(ref)) throw new IllegalStateException("Decision evidence input missing");
-                boolean hit=ConditionMatcher.matches(term.path("operator").asString(),values.get(ref),Json.scalar(term.path("value")));
+                String operator=term.path("operator").asString();
+                boolean hit=ConditionMatcher.matches(operator,values.get(ref),ConditionMatcher.operand(operator,term.path("value")));
                 matched = any ? matched | hit : matched & hit;
             }
             String id = "r" + (i + 1);
@@ -197,9 +260,9 @@ public class DecisionTaskDelegate implements JavaDelegate {
                         && (!window.has("to") || !asOf.isAfter(java.time.LocalDate.parse(window.path("to").asString())));
                 matched &= inWindow;
             }
-            if (matched && "default".equals(expected)) expected = id;
+            if (matched) matchedIds.add(id);
             ObjectNode row = json.object();
-            row.put("rowId", id).put("matched", matched).put("selected", id.equals(selected));
+            row.put("rowId", id).put("matched", matched).put("selected", selectedIds.contains(id));
             if (window.isObject()) {
                 row.put("inWindow", inWindow);
                 row.set("effective", window.deepCopy());
@@ -207,7 +270,17 @@ public class DecisionTaskDelegate implements JavaDelegate {
             row.set("condition", condition.deepCopy());
             candidates.add(row);
         }
-        if (!expected.equals(selected)) throw new IllegalStateException("Pinned decision result differs from canonical evidence");
+        // The selection must follow from the candidate rows: every match under COLLECT, one of the matches under
+        // PRIORITY (the highest ranked, confirmed by the canonical evaluation), the first match otherwise.
+        String policy = table.path("hitPolicy").asString("UNIQUE");
+        boolean consistent = switch (policy) {
+            case "COLLECT" -> matchedIds.isEmpty() ? "default".equals(selected) : String.join(",", matchedIds).equals(selected);
+            case "PRIORITY" -> matchedIds.isEmpty() ? "default".equals(selected) : matchedIds.contains(selected);
+            default -> (matchedIds.isEmpty() ? "default" : matchedIds.get(0)).equals(selected);
+        };
+        if (!consistent) throw new IllegalStateException("Pinned decision result differs from canonical evidence");
+        evidence.put("hitPolicy", policy);
+        if (table.has("aggregation")) evidence.put("aggregation", table.path("aggregation").asString());
         evidence.put("defaultSelected", "default".equals(selected));
         return evidence;
     }

@@ -5,14 +5,31 @@
 import type { ViewDefinition } from '@/features/views/model'
 
 export type NodeKind = 'start' | 'approval' | 'decision' | 'branch' | 'http' | 'generateDocument' | 'notification' | 'parallelSplit' | 'parallelJoin' | 'wait' | 'waitForMessage' | 'externalTask' | 'startWorkflow' | 'raiseError' | 'sendSignal' | 'waitForSignal' | 'compensate' | 'sendAdapter' | 'end'
-export type Operator = 'eq' | 'ne' | 'gte' | 'gt' | 'lt' | 'lte'
+/** `in` (a list) and `between` (a number range) are accepted in decision rows only (docs/build/S121). */
+export type Operator = 'eq' | 'ne' | 'gte' | 'gt' | 'lt' | 'lte' | 'in' | 'between'
+export type ScalarOperator = Exclude<Operator, 'in' | 'between'>
 export type RouteKind = 'next' | 'approved' | 'rejected' | 'timedOut' | 'failed' | 'condition' | 'default'
 export type Literal = string | number | boolean
+
+/** Bounds of `between`; each bound is included unless it says false. */
+export interface RangeValue {
+  from: number
+  to: number
+  includeFrom?: boolean
+  includeTo?: boolean
+}
+export type ConditionValue = Literal | Literal[] | RangeValue
 
 export interface AtomicCondition {
   fieldRef: string
   operator: Operator
-  value: Literal
+  value: ConditionValue
+}
+export function isRangeValue(v: unknown): v is RangeValue {
+  return typeof v === 'object' && v !== null && !Array.isArray(v) && typeof (v as RangeValue).from === 'number' && typeof (v as RangeValue).to === 'number'
+}
+export function isSetOperator(op: Operator): op is 'in' | 'between' {
+  return op === 'in' || op === 'between'
 }
 export type Condition = AtomicCondition | { all?: AtomicCondition[]; any?: AtomicCondition[]; fieldRef?: never; operator?: never; value?: never }
 export function isAtomicCondition(c: Condition): c is AtomicCondition {
@@ -60,10 +77,17 @@ export interface AssetRef {
   target: string
 }
 
+export type HitPolicy = 'UNIQUE' | 'FIRST' | 'ANY' | 'PRIORITY' | 'COLLECT'
+export type Aggregation = 'SUM' | 'MIN' | 'MAX' | 'COUNT'
+
 export interface DecisionTable {
   key: string
   version: number
-  hitPolicy: 'UNIQUE' | 'FIRST'
+  hitPolicy: HitPolicy
+  /** COLLECT only: how the number results of the matching rows combine. */
+  aggregation?: Aggregation
+  /** PRIORITY only: the result that decides and its values from the highest to the lowest priority. */
+  priority?: { output: string; order: Literal[] }
   rows: DecisionRow[]
   default: Record<string, Literal>
 }

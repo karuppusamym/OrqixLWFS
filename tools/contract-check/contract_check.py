@@ -39,7 +39,7 @@ SCHEMA_FAILURE_CODES = {"WF_SCHEMA_INVALID", "WF_SCHEMA_VERSION_UNSUPPORTED"}
 HTTP_METHODS = ("get", "put", "post", "delete", "options", "head", "patch", "trace")
 AUDIT_REQUIRED_METHODS = ("post", "put", "delete")
 # Worker polls/lock extensions are high-volume protocol calls; promotion-check and validation POSTs are read-only.
-AUDIT_EXEMPT_OPERATIONS = {"validateDraft", "evaluateDecision", "markNotificationRead", "markAllNotificationsRead", "fetchExternalJobs", "extendExternalJobLock", "checkReleasePromotion", "checkDraftBpmn"}
+AUDIT_EXEMPT_OPERATIONS = {"validateDraft", "evaluateDecision", "markNotificationRead", "markAllNotificationsRead", "fetchExternalJobs", "extendExternalJobLock", "checkReleasePromotion", "checkDraftBpmn", "convertDecisionDmn"}
 
 
 class Report:

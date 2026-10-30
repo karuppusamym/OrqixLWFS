@@ -21,14 +21,22 @@ import org.apache.pdfbox.pdmodel.font.PDType1Font;
 import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
 import org.apache.pdfbox.pdmodel.interactive.action.PDActionJavaScript;
 
-/** PDF fixtures for the blueprint tests, built with PDFBox at test time (all synthetic). */
+/**
+ * PDF fixtures for the blueprint tests: the committed synthetic sample, PDFs built with PDFBox at test time, and the one
+ * genuine Pega Blueprint export ({@link #PEGA_EXPORT}).
+ */
 public final class BlueprintPdfs {
     public static final Path SAMPLE = Path.of("../../examples/migration/pega-blueprint/synthetic-blueprint.pdf");
     public static final Path EXPECTED = Path.of("../../examples/migration/pega-blueprint/synthetic-blueprint.transcription.json");
+    /** A genuine Pega Blueprint "Application Overview Document" export with three case types. */
+    public static final Path PEGA_EXPORT = Path.of("../../examples/migration/pega-blueprint/RetailLoanOrigination.pdf");
+    public static final Path PEGA_EXPORT_EXPECTED = Path.of("../../examples/migration/pega-blueprint/RetailLoanOrigination.transcription.json");
 
     private BlueprintPdfs() { }
 
     public static byte[] sample() throws Exception { return Files.readAllBytes(SAMPLE); }
+
+    public static byte[] pegaExport() throws Exception { return Files.readAllBytes(PEGA_EXPORT); }
 
     public static byte[] pages(List<List<String>> pages) throws Exception { return build(pages, false, false, null); }
 

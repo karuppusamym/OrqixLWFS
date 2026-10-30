@@ -114,8 +114,8 @@ function CapturedFields({ step, readOnly, onChange }: { step: WorkflowNode; read
             const field = properties[key]!
             const label = field.title ?? key
             return (
-              <li key={key} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_9rem_auto_auto] sm:items-center">
-                <CommitInput aria-label={`Name of the field ${label}`} value={label} disabled={readOnly} maxLength={80}
+              <li key={key} className="grid grid-cols-[9rem_minmax(0,1fr)_auto] items-center gap-2">
+                <CommitInput className="col-span-3" aria-label={`Name of the field ${label}`} value={label} disabled={readOnly} maxLength={80}
                   onCommit={(title) => title.trim() && update({ ...properties, [key]: { ...field, title: title.trim() } })} />
                 <Select aria-label={`Type of ${label}`} value={captureTypeOf(field)} disabled={readOnly}
                   onChange={(e) => {

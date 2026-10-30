@@ -225,10 +225,11 @@ describe('case workbench', () => {
     await user.click(await screen.findByRole('button', { name: /^Start case$/ }))
     expect(body).toBeUndefined()
     const dialog = screen.getByRole('dialog', { name: /^Start case$/ })
-    await user.type(within(dialog).getByLabelText('Claim amount (required)'), '12.25')
-    await user.selectOptions(within(dialog).getByLabelText('Confirmed'), 'false')
+    await user.type(within(dialog).getByLabelText(/^Claim amount/), '12.25')
+    // Yes-or-no case fields are checkboxes, as on the request form (docs/build/S125).
+    await user.click(within(dialog).getByLabelText('Confirmed'))
     await user.click(within(dialog).getByRole('button', { name: 'Start case with data' }))
-    await waitFor(() => expect(body).toEqual({ data: { amount: 12.25, confirmed: false } }))
+    await waitFor(() => expect(body).toEqual({ data: { amount: 12.25, confirmed: true } }))
   })
 
   it('saves typed data with a reason and case version, then renders protected history', async () => {
@@ -242,7 +243,7 @@ describe('case workbench', () => {
     )
     const user = userEvent.setup(); await renderAppReady(`/w/${ws}/cases/${instanceId}`)
     await user.click(await screen.findByRole('button', { name: 'Show case data' }))
-    const input = await screen.findByLabelText('Claim amount (required)')
+    const input = await screen.findByLabelText(/^Claim amount/)
     await user.clear(input); await user.type(input, '20')
     expect(screen.getByRole('button', { name: 'Save case data' })).toBeDisabled()
     await user.type(screen.getByLabelText('Reason for data change'), 'Correct evidence amount')

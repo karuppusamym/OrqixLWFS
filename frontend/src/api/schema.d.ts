@@ -5259,7 +5259,9 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description One case data field. Since docs/build/S125 it carries the same optional checks as a single-value request question (workflow-v0 formField) and is edited and rendered with the same field editor and form renderer. Every S125 property is optional, so earlier definitions read and validate as before. */
         CaseDataField: {
+            /** @description New keys follow the request-question pattern ^[a-z][A-Za-z0-9]{0,63}$. Keys in the older pattern (capitals first or underscores) keep working and are reported in the definition's warnings as CASE_DATA_KEY_LEGACY. */
             key: string;
             label: string;
             /** @enum {string} */
@@ -5270,6 +5272,42 @@ export interface components {
             minimum?: number | null;
             maximum?: number | null;
             options?: string[] | null;
+            /** @description Help text shown with the field (S125, formField description). */
+            description?: string;
+            /** @description Text only: the shortest answer, at most maxLength (default 2000) (S125). */
+            minLength?: number;
+            /** @description Text only: the whole value must match this safe pattern, the same subset as formField pattern (docs/build/S90) (S125). */
+            pattern?: string;
+            /** @description Plain text shown when a value does not match pattern; only with pattern (S125). */
+            patternMessage?: string;
+            /**
+             * Format: date
+             * @description Date only: earliest allowed date, YYYY-MM-DD inclusive (S125).
+             */
+            formatMinimum?: string;
+            /**
+             * Format: date
+             * @description Date only: latest allowed date, YYYY-MM-DD inclusive (S125).
+             */
+            formatMaximum?: string;
+            /**
+             * @description Number or integer only: 0.01 for amounts in cents, 1 for whole numbers (S125).
+             * @enum {number}
+             */
+            multipleOf?: 0.01 | 1;
+            /**
+             * @description Presentation: textarea (long text) on text fields, money (USD) on number fields (S125, formField widget hint).
+             * @enum {string}
+             */
+            widget?: "textarea" | "money";
+        };
+        /** @description A problem with a case definition that does not stop it from being created or used (S125). */
+        CaseDefinitionWarning: {
+            /** @enum {string} */
+            code: "CASE_DATA_KEY_LEGACY";
+            /** @description The case data field key */
+            field: string;
+            message: string;
         };
         CaseDataValues: {
             [key: string]: string | number | boolean;
@@ -5470,6 +5508,8 @@ export interface components {
             version: number;
             createdAt: components["schemas"]["Timestamp"];
             dataFields?: components["schemas"]["CaseDataField"][];
+            /** @description Included only when not empty: data field keys outside the request-question pattern (S125). */
+            warnings?: components["schemas"]["CaseDefinitionWarning"][];
         };
         CaseDefinitionDetail: {
             viewBinding?: components["schemas"]["PinnedCaseView"] | null;
@@ -5483,6 +5523,8 @@ export interface components {
             workflowTasks?: components["schemas"]["CaseWorkflowPin"][];
             caseTasks?: components["schemas"]["CaseChildPin"][];
             decisionTasks?: components["schemas"]["CaseDecisionPin"][];
+            /** @description Included only when not empty: data field keys outside the request-question pattern (S125). */
+            warnings?: components["schemas"]["CaseDefinitionWarning"][];
         };
         CasePlanItem: {
             id: string;

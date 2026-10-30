@@ -114,4 +114,5 @@ Application designer round 3 (UI02i): [S116](S116-application-designer-round-3.m
 Studio Form tab with live preview (forms review slice 1, docs/26): [S120](S120-studio-form-tab.md) (frontend only).
 Step forms: field access and captured fields on human steps (forms review slice 2): [S123](S123-step-forms.md) (additive contract change).
 One AI conversation: clarifying questions, new edit operations, conversation saved with the draft (forms review slice 3): [S124](S124-one-ai-conversation.md) (V205).
+Shared field editor for case data: case fields edited, rendered and checked like request questions (forms review slice 3): [S125](S125-shared-case-field-editor.md) (additive contract change, no migration).
 Case designer page: case type drafts with a check before publishing, Cases page for working cases only (forms review, C3 and C1): [S126](S126-case-designer-page.md) (V206, additive contract change).

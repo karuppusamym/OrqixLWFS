@@ -27,6 +27,8 @@ export interface FormRendererProps {
   /** Prefix for generated element ids; keeps ids unique when two forms share a page. */
   idPrefix?: string
   disabled?: boolean
+  /** Show the values as read-only text boxes (case data without edit access, docs/build/S125). */
+  readOnly?: boolean
   onFileBusyChange?: (key: string, busy: boolean) => void
 }
 
@@ -35,9 +37,9 @@ export interface FormRendererProps {
  * `title` is the label, `description` is help text linked with aria-describedby, required fields are marked in text,
  * and client or server errors render on the same field.
  */
-export function FormRenderer({ fields, values, onChange, errors, idPrefix = 'f', disabled, onFileBusyChange,view }: FormRendererProps) {
+export function FormRenderer({ fields, values, onChange, errors, idPrefix = 'f', disabled, readOnly, onFileBusyChange,view }: FormRendererProps) {
   const shown = visibleFields(fields, values)
-  const render = (f: FieldDef) => <FieldControl key={f.key} field={f} value={values[f.key]} onChange={(v) => onChange(f.key, v)} error={errors[f.key]} id={fieldDomId(idPrefix, f.key)} disabled={disabled} onFileBusyChange={onFileBusyChange} />
+  const render = (f: FieldDef) => readOnly ? <ReadOnlyControl key={f.key} field={f} value={values[f.key]} id={fieldDomId(idPrefix, f.key)} /> : <FieldControl key={f.key} field={f} value={values[f.key]} onChange={(v) => onChange(f.key, v)} error={errors[f.key]} id={fieldDomId(idPrefix, f.key)} disabled={disabled} onFileBusyChange={onFileBusyChange} />
   const sectionIds = [...new Set(shown.flatMap(f => f.section ? [f.section.id] : []))]
   return (
     <div className="space-y-5">
@@ -234,6 +236,19 @@ function FieldControl({
             return <Input {...common} value={text} autoComplete="off" onChange={(e) => onChange(e.target.value)} />
         }
       }}
+    </FormField>
+  )
+}
+
+/** A value shown, not edited: choice labels, Yes or No, and "No value" when empty. */
+function ReadOnlyControl({ field: f, value, id }: { field: FieldDef; value: RawValue | undefined; id: string }) {
+  const text = value === undefined || value === '' ? 'No value'
+    : typeof value === 'boolean' ? (value ? 'Yes' : 'No')
+      : Array.isArray(value) ? `${value.length} item${value.length === 1 ? '' : 's'}`
+        : f.optionLabels?.[value] ?? value
+  return (
+    <FormField label={f.label} description={f.description} required={f.required} id={id}>
+      {(ids) => <Input id={ids.input} readOnly value={text} aria-describedby={ids.describedBy} />}
     </FormField>
   )
 }

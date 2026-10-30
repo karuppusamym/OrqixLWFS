@@ -35,8 +35,11 @@ import com.orqix.shared.web.Sql;
 /** Orqix authorization and persistence boundary for a deliberately restricted executable CMMN subset. */
 @Service
 public class CaseService {
-    public record Definition(UUID id, String key, String name, int version, Instant createdAt, List<CaseDataModel.Field> dataFields, ApplicationViewQueries.Pinned viewBinding) {}
-    public record DefinitionDetail(UUID id, String key, String name, int version, Instant createdAt, String sourceXml, List<CaseDataModel.Field> dataFields, ApplicationViewQueries.Pinned viewBinding, List<WorkflowPin> workflowTasks, List<ChildPin> caseTasks, List<DecisionPin> decisionTasks) {}
+    /** {@code warnings} (S125) lists data field keys outside the request-question pattern; it is left out when empty. */
+    public record Definition(UUID id, String key, String name, int version, Instant createdAt, List<CaseDataModel.Field> dataFields, ApplicationViewQueries.Pinned viewBinding,
+            @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_EMPTY) List<CaseDataModel.Warning> warnings) {}
+    public record DefinitionDetail(UUID id, String key, String name, int version, Instant createdAt, String sourceXml, List<CaseDataModel.Field> dataFields, ApplicationViewQueries.Pinned viewBinding, List<WorkflowPin> workflowTasks, List<ChildPin> caseTasks, List<DecisionPin> decisionTasks,
+            @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_EMPTY) List<CaseDataModel.Warning> warnings) {}
     /** The shared decision table version a decision task evaluates, pinned at publication, with explicit mappings. */
     public record DecisionPin(String taskId, UUID assetId, String decisionKey, String decisionName, int decisionVersion,
             Map<String,String> inputMapping, Map<String,String> resultMapping) {}
@@ -92,8 +95,8 @@ public class CaseService {
 
     private record DefinitionRow(UUID id, UUID workspaceId, String key, String name, int version,
             Instant createdAt, String sourceXml, String engineDefinitionId, List<CaseDataModel.Field> dataFields, ApplicationViewQueries.Pinned viewBinding) {
-        Definition summary() { return new Definition(id, key, name, version, createdAt, dataFields, viewBinding); }
-        DefinitionDetail detail(List<WorkflowPin> pins, List<ChildPin> children, List<DecisionPin> decisions) { return new DefinitionDetail(id, key, name, version, createdAt, sourceXml, dataFields, viewBinding, pins, children, decisions); }
+        Definition summary() { return new Definition(id, key, name, version, createdAt, dataFields, viewBinding, CaseDataModel.warnings(dataFields)); }
+        DefinitionDetail detail(List<WorkflowPin> pins, List<ChildPin> children, List<DecisionPin> decisions) { return new DefinitionDetail(id, key, name, version, createdAt, sourceXml, dataFields, viewBinding, pins, children, decisions, CaseDataModel.warnings(dataFields)); }
     }
     private record InstanceRow(UUID id, UUID definitionId, int definitionVersion, String engineInstanceId,
             String status, int version, Instant createdAt, UUID startedBy) {}

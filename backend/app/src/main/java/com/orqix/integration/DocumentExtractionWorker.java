@@ -19,18 +19,30 @@ import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLStreamConstants;
 import javax.xml.stream.XMLStreamReader;
 
+import java.awt.geom.Point2D;
+
 import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.contentstream.PDFGraphicsStreamEngine;
+import org.apache.pdfbox.cos.COSName;
+import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.encryption.InvalidPasswordException;
+import org.apache.pdfbox.pdmodel.font.PDFont;
+import org.apache.pdfbox.pdmodel.graphics.image.PDImage;
 import org.apache.pdfbox.text.PDFTextStripper;
+import org.apache.pdfbox.text.TextPosition;
 
 /** Parser-only entry point. Never starts Spring, executes macros/formulas, resolves links, or renders document code. */
 public final class DocumentExtractionWorker {
     static final int MAX_EXPANDED_BYTES = 20 * 1024 * 1024;
     static final int MAX_ENTRIES = 256;
     static final int MAX_PAGES = 100;
-    /** Worker type for blueprint PDFs: one text block per page, separated by form feeds, after a header line. */
+    /** Worker type for blueprint PDFs: one text block (and its geometry) per page, separated by form feeds, after a header line. */
     static final String PDF_PAGES = "pdfpages";
-    static final String PAGES_HEADER = "ORQIX-PDF-PAGES/1 ";
+    static final String PAGES_HEADER = "ORQIX-PDF-PAGES/2 ";
+    /** Separates a page's text from its geometry lines; a control character, so page text can never contain it. */
+    static final char GEOMETRY_SEPARATOR = '\u001E';
+    static final float MARK_MIN = 6, MARK_MAX = 24;
+    static final int MARKS_PER_PAGE = 2000;
     private DocumentExtractionWorker() { }
 
     public static void main(String[] args) {
@@ -94,13 +106,19 @@ public final class DocumentExtractionWorker {
     }
 
     /**
-     * Blueprint PDFs: text only, page by page. JavaScript, open actions, forms and embedded files are never executed or
-     * extracted; their presence is only reported so the review can say they were ignored. Control characters other than
-     * line breaks and tabs are removed so a page cannot forge the page separator.
+     * Blueprint PDFs: text page by page, plus each page's geometry (positioned text runs and small filled shapes such as
+     * step icons) so a layout can tell columns, headings and icon kinds apart. JavaScript, open actions, forms and
+     * embedded files are never executed or extracted; their presence is only reported so the review can say they were
+     * ignored. Images are never decoded. Control characters other than line breaks and tabs are removed from page text so
+     * a page cannot forge the page or geometry separators; geometry text has every control character removed.
+     * <p>
+     * Output: a header line, then per page its text, optionally {@link #GEOMETRY_SEPARATOR} and geometry lines, then a
+     * form feed. Geometry lines are {@code T x y width size b|r text} and {@code M x y width height rrggbb}, in points
+     * from the top left of the crop box. If the geometry of the whole document exceeds its budget, no page carries any.
      */
     static String pdfPages(byte[] bytes) throws Exception {
         if (bytes.length < 5 || !new String(bytes, 0, 5, StandardCharsets.US_ASCII).equals("%PDF-")) { throw new IOException(); }
-        BoundedWriter text = new BoundedWriter(DocumentExtraction.BLUEPRINT_MAX_TEXT_BYTES);
+        BoundedWriter text = new BoundedWriter(DocumentExtraction.BLUEPRINT_MAX_TEXT_BYTES + DocumentExtraction.BLUEPRINT_MAX_GEOMETRY_BYTES + 4096);
         try (var document = Loader.loadPDF(bytes)) {
             if (document.isEncrypted() || !document.getCurrentAccessPermission().canExtractContent()) { throw new Encrypted(); }
             int count = document.getNumberOfPages();
@@ -120,17 +138,119 @@ public final class DocumentExtractionWorker {
                 }
                 if (page.getCOSObject().containsKey(org.apache.pdfbox.cos.COSName.AA)) { javascript = true; }
             }
-            text.append(PAGES_HEADER).append(Integer.toString(count)).append(" javascript=").append(Boolean.toString(javascript))
-                    .append(" embedded=").append(Boolean.toString(embedded)).append("\n");
-            PDFTextStripper stripper = new PDFTextStripper();
+            PositionStripper stripper = new PositionStripper();
             stripper.setSortByPosition(true);
+            List<String> texts = new ArrayList<>(), geometries = new ArrayList<>();
+            int textBytes = 0, geometryBytes = 0;
             for (int page = 1; page <= count; page++) {
                 stripper.setStartPage(page);
                 stripper.setEndPage(page);
-                text.append(stripper.getText(document).replaceAll("[\\p{Cc}&&[^\\n\\t]]", "")).append("\f");
+                PDPage pdPage = document.getPage(page - 1);
+                stripper.geometry = geometryBytes <= DocumentExtraction.BLUEPRINT_MAX_GEOMETRY_BYTES ? new StringBuilder() : null;
+                String pageText = stripper.getText(document).replaceAll("[\\p{Cc}&&[^\\n\\t]]", "");
+                textBytes += pageText.getBytes(StandardCharsets.UTF_8).length;
+                if (textBytes > DocumentExtraction.BLUEPRINT_MAX_TEXT_BYTES) { throw new Limit(); }
+                texts.add(pageText);
+                StringBuilder geometry = stripper.geometry;
+                if (geometry == null) { continue; }
+                // Geometry is best effort: a page whose drawings cannot be walked leaves the document without geometry
+                // (read by the generic outline layout) instead of refusing a PDF whose text was readable.
+                try { new MarkCollector(pdPage, geometry).processPage(pdPage); }
+                catch (IOException | RuntimeException e) { geometryBytes = DocumentExtraction.BLUEPRINT_MAX_GEOMETRY_BYTES + 1; continue; }
+                geometryBytes += geometry.length();
+                geometries.add(geometryBytes <= DocumentExtraction.BLUEPRINT_MAX_GEOMETRY_BYTES ? geometry.toString() : "");
+            }
+            boolean withGeometry = geometryBytes <= DocumentExtraction.BLUEPRINT_MAX_GEOMETRY_BYTES;
+            text.append(PAGES_HEADER).append(Integer.toString(count)).append(" javascript=").append(Boolean.toString(javascript))
+                    .append(" embedded=").append(Boolean.toString(embedded)).append(" geometry=").append(Boolean.toString(withGeometry)).append("\n");
+            for (int i = 0; i < count; i++) {
+                text.append(texts.get(i));
+                if (withGeometry) { text.append(GEOMETRY_SEPARATOR).append(geometries.get(i)); }
+                text.append("\f");
             }
         }
         return text.toString();
+    }
+
+    /**
+     * The page text as {@link PDFTextStripper} writes it, while recording each written run with its position (already
+     * relative to the crop box) and font into {@link #geometry} when that is set.
+     */
+    private static final class PositionStripper extends PDFTextStripper {
+        StringBuilder geometry;
+
+        @Override
+        protected void writeString(String text, List<TextPosition> positions) throws IOException {
+            super.writeString(text, positions);
+            if (geometry == null || positions.isEmpty() || geometry.length() > DocumentExtraction.BLUEPRINT_MAX_GEOMETRY_BYTES) { return; }
+            String clean = text.replaceAll("\\p{Cc}", " ").strip();
+            if (clean.isEmpty()) { return; }
+            TextPosition first = positions.getFirst(), last = positions.getLast();
+            geometry.append(String.format(Locale.ROOT, "T %.1f %.1f %.1f %.1f %s %s\n", first.getXDirAdj(), first.getYDirAdj(),
+                    Math.max(0, last.getXDirAdj() + last.getWidthDirAdj() - first.getXDirAdj()), first.getFontSizeInPt(), bold(first.getFont()) ? "b" : "r", clean));
+        }
+
+        private static boolean bold(PDFont font) {
+            if (font == null) { return false; }
+            String name = font.getName() == null ? "" : font.getName().toLowerCase(Locale.ROOT);
+            var descriptor = font.getFontDescriptor();
+            return name.matches(".*(bold|black|heavy|demi).*") || (descriptor != null && (descriptor.isForceBold() || descriptor.getFontWeight() >= 600));
+        }
+    }
+
+    /**
+     * Small filled shapes of one page (between {@link #MARK_MIN} and {@link #MARK_MAX} points on each side, at most
+     * {@link #MARKS_PER_PAGE}): their bounding box and fill colour. Nothing is rendered and images are not decoded.
+     */
+    private static final class MarkCollector extends PDFGraphicsStreamEngine {
+        private final StringBuilder out;
+        private final float left, top;
+        private double minX, minY, maxX, maxY;
+        private boolean any;
+        private final Point2D.Float current = new Point2D.Float();
+        private int marks;
+
+        MarkCollector(PDPage page, StringBuilder out) {
+            super(page);
+            this.out = out;
+            left = page.getCropBox().getLowerLeftX();
+            top = page.getCropBox().getUpperRightY();
+        }
+
+        private void add(double x, double y) {
+            if (!any) { minX = maxX = x; minY = maxY = y; any = true; }
+            minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+        }
+
+        private void filled() {
+            if (!any) { return; }
+            double width = maxX - minX, height = maxY - minY;
+            any = false;
+            if (width < MARK_MIN || height < MARK_MIN || width > MARK_MAX || height > MARK_MAX || marks >= MARKS_PER_PAGE) { return; }
+            int rgb;
+            try { rgb = getGraphicsState().getNonStrokingColor().toRGB(); } catch (IOException | RuntimeException e) { return; }
+            marks++;
+            out.append(String.format(Locale.ROOT, "M %.1f %.1f %.1f %.1f %06x\n", minX - left, top - maxY, width, height, rgb & 0xFFFFFF));
+        }
+
+        @Override public void appendRectangle(Point2D p0, Point2D p1, Point2D p2, Point2D p3) {
+            for (Point2D p : List.of(p0, p1, p2, p3)) { add(p.getX(), p.getY()); }
+            current.setLocation(p0);
+        }
+        @Override public void moveTo(float x, float y) { add(x, y); current.setLocation(x, y); }
+        @Override public void lineTo(float x, float y) { add(x, y); current.setLocation(x, y); }
+        @Override public void curveTo(float x1, float y1, float x2, float y2, float x3, float y3) {
+            add(x1, y1); add(x2, y2); add(x3, y3); current.setLocation(x3, y3);
+        }
+        @Override public Point2D getCurrentPoint() { return current; }
+        @Override public void closePath() { }
+        @Override public void endPath() { any = false; }
+        @Override public void strokePath() { any = false; }
+        @Override public void fillPath(int windingRule) { filled(); }
+        @Override public void fillAndStrokePath(int windingRule) { filled(); }
+        @Override public void clip(int windingRule) { }
+        @Override public void drawImage(PDImage image) { }
+        @Override public void shadingFill(COSName shadingName) { }
     }
 
     private static Map<String, byte[]> parts(byte[] bytes) throws IOException {

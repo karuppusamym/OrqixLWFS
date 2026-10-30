@@ -1,6 +1,8 @@
 import type { FieldError, ProblemCode, ValidationIssue } from './types'
 import type { components } from './schema'
 type CompatibilityIssue = components['schemas']['CompatibilityIssue']
+/** A decision of an uploaded DMN file (docs/build/S121). */
+export type DmnDecisionChoice = components['schemas']['DecisionDmnChoice']
 
 /** Codes produced by the client itself when the server did not answer with a problem document. */
 export type ClientProblemCode = 'NETWORK_ERROR' | 'UNKNOWN_ERROR'
@@ -18,6 +20,7 @@ export interface ProblemBody {
   openItems?: CompatibilityIssue[]
   currentRevision?: number
   currentVersion?: number
+  decisions?: DmnDecisionChoice[]
 }
 
 /**
@@ -35,6 +38,8 @@ export class ProblemError extends Error {
   readonly openItems: CompatibilityIssue[]
   readonly currentRevision: number | undefined
   readonly currentVersion: number | undefined
+  /** importDecisionDmn / convertDecisionDmn: the decisions of the file to choose from. */
+  readonly decisions: DmnDecisionChoice[]
   readonly retryAfterSeconds: number | undefined
 
   constructor(init: {
@@ -48,6 +53,7 @@ export class ProblemError extends Error {
     openItems?: CompatibilityIssue[]
     currentRevision?: number
     currentVersion?: number
+    decisions?: DmnDecisionChoice[]
     retryAfterSeconds?: number
   }) {
     super(init.detail ?? init.title)
@@ -62,6 +68,7 @@ export class ProblemError extends Error {
     this.openItems = init.openItems ?? []
     this.currentRevision = init.currentRevision
     this.currentVersion = init.currentVersion
+    this.decisions = init.decisions ?? []
     this.retryAfterSeconds = init.retryAfterSeconds
   }
 
@@ -95,6 +102,7 @@ export function problemFromResponse(response: Response, body: unknown): ProblemE
       openItems: Array.isArray(p.openItems) ? p.openItems : [],
       currentRevision: p.currentRevision,
       currentVersion: p.currentVersion,
+      decisions: Array.isArray(p.decisions) ? p.decisions : [],
       retryAfterSeconds,
     })
   }

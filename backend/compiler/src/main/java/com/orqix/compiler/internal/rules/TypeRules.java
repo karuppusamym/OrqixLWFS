@@ -121,18 +121,110 @@ final class TypeRules {
             if(checked!=null) typed.put(row,checked);
             for(Node user:users) for(Condition term:terms) Conditions.availability(rc,term.fieldRef(),user,base+"/fieldRef",null);
         }
+        policy(rc, table);
         if(typed.size()!=table.rows().size()) return;
         // FIRST is ordered on purpose: the first matching row wins, so overlapping rows are allowed (S40).
-        if(!table.first()) for(int i=0;i<table.rows().size();i++) for(int j=i+1;j<table.rows().size();j++) {
+        // PRIORITY picks by the priority output and COLLECT counts every matching row, so both allow overlaps (S121).
+        boolean unique=DecisionTable.UNIQUE.equals(table.hitPolicy()), any=DecisionTable.ANY.equals(table.hitPolicy());
+        if(unique || any) for(int i=0;i<table.rows().size();i++) for(int j=i+1;j<table.rows().size();j++) {
             var x=table.rows().get(i); var y=table.rows().get(j);
             // Rows in disjoint effective windows never apply on the same day, so they cannot both match (S41).
             if(x.effective()!=null && y.effective()!=null && !x.effective().overlaps(y.effective())) continue;
+            // ANY: rows may overlap when they give exactly the same results (S121).
+            if(any && sameOutputs(x.then(),y.then())) continue;
             if(LogicalConditions.overlap(x.when(),typed.get(x),y.when(),typed.get(y)))
-                rc.issues().blocker("WF_DECISION_OVERLAP",table.path()+"/rows/"+j+"/when",null,null,"Rules "+(i+1)+" and "+(j+1)+" can both apply. Make their conditions exclusive.");
+                rc.issues().blocker("WF_DECISION_OVERLAP",table.path()+"/rows/"+j+"/when",null,null,any
+                        ? "Rules "+(i+1)+" and "+(j+1)+" can both apply but give different results. With Any matching row, overlapping rows must give the same results."
+                        : "Rules "+(i+1)+" and "+(j+1)+" can both apply. Make their conditions exclusive.");
         }
         if(scalar) {
             var atoms=table.rows().stream().map(r->typed.get(r).get(0)).toList();
             if(Disjointness.covers(atoms,atoms.get(0).type())) rc.issues().warning("WF_DECISION_DEFAULT_UNREACHABLE",table.path()+"/default",null,null,"The rules cover every possible value, so the default is never used.");
+        }
+    }
+
+    private static boolean sameOutputs(Map<String, Literal> a, Map<String, Literal> b) {
+        if (!a.keySet().equals(b.keySet())) return false;
+        for (var e : a.entrySet()) {
+            Literal other = b.get(e.getKey());
+            if (!e.getValue().typeName().equals(other.typeName())
+                    || !com.orqix.compiler.ConditionMatcher.matches("eq", e.getValue().value(), other.value())) return false;
+        }
+        return true;
+    }
+
+    /**
+     * Options of the hit policy (docs/build/S121): COLLECT needs an aggregation and one number result; PRIORITY
+     * needs the result that decides and the order of all its values; neither option is allowed elsewhere.
+     */
+    private static void policy(RuleContext rc, DecisionTable table) {
+        String name = q(table.key());
+        boolean collect = table.collect(), priority = DecisionTable.PRIORITY.equals(table.hitPolicy());
+        if (table.aggregation() != null && !collect) {
+            rc.issues().blocker("WF_DECISION_POLICY_OPTION", table.path() + "/aggregation", null, null,
+                    "Only the hit policy COLLECT combines results, so remove the aggregation of " + name + ".");
+        }
+        if (table.priority() != null && !priority) {
+            rc.issues().blocker("WF_DECISION_POLICY_OPTION", table.path() + "/priority", null, null,
+                    "Only the hit policy PRIORITY uses a priority order, so remove it from " + name + ".");
+        }
+        if (collect) {
+            if (table.aggregation() == null) {
+                rc.issues().blocker("WF_DECISION_POLICY_OPTION", table.path() + "/aggregation", null, null,
+                        "Choose how " + name + " combines the matching rows: sum, smallest, largest or count.");
+            }
+            boolean numbers = table.defaultOutput().size() == 1
+                    && table.defaultOutput().values().stream().allMatch(l -> l instanceof Literal.Num)
+                    && table.rows().stream().allMatch(r -> r.then().values().stream().allMatch(l -> l instanceof Literal.Num));
+            if (!numbers) {
+                rc.issues().blocker("WF_DECISION_COLLECT_OUTPUT", table.path() + "/default", null, null, name
+                        + " combines the results of all matching rows, so it must have exactly one result field and every"
+                        + " row and the default must set it to a number.");
+            }
+        }
+        if (priority) {
+            DecisionTable.Priority p = table.priority();
+            if (p == null) {
+                rc.issues().blocker("WF_DECISION_POLICY_OPTION", table.path() + "/priority", null, null,
+                        "Choose the result field that decides between matching rows of " + name
+                                + " and list its values from the most to the least important.");
+                return;
+            }
+            Literal reference = table.defaultOutput().get(p.output());
+            if (reference == null) {
+                rc.issues().blocker("WF_DECISION_PRIORITY_ORDER", table.path() + "/priority/output", null, null,
+                        "The priority result field " + q(p.output()) + " is not a result of " + name + ".");
+                return;
+            }
+            Set<String> seen = new HashSet<>();
+            for (int i = 0; i < p.order().size(); i++) {
+                Literal v = p.order().get(i);
+                Conditions.literalSafety(rc, v, table.path() + "/priority/order/" + i, null, null);
+                if (!v.typeName().equals(reference.typeName())) {
+                    rc.issues().blocker("WF_DECISION_PRIORITY_ORDER", table.path() + "/priority/order/" + i, null, null,
+                            "Every value in the priority order must be " + words(reference) + ", like " + q(p.output()) + ".");
+                    return;
+                }
+                if (!seen.add(v.typeName() + ":" + (v instanceof Literal.Num n ? n.number().stripTrailingZeros().toPlainString() : v.text()))) {
+                    rc.issues().blocker("WF_DECISION_PRIORITY_ORDER", table.path() + "/priority/order/" + i, null, null,
+                            "The priority order lists " + q(v.text()) + " twice.");
+                }
+            }
+            if (p.order().size() < 2 || p.order().size() > 20) {
+                rc.issues().blocker("WF_DECISION_PRIORITY_ORDER", table.path() + "/priority/order", null, null,
+                        "The priority order must list 2 to 20 values.");
+            }
+            List<Literal> used = new ArrayList<>();
+            table.rows().forEach(r -> { if (r.then().get(p.output()) != null) used.add(r.then().get(p.output())); });
+            used.add(reference);
+            for (Literal v : used) {
+                if (p.rank(v) == p.order().size()) {
+                    rc.issues().blocker("WF_DECISION_PRIORITY_ORDER", table.path() + "/priority/order", null, null,
+                            "The priority order of " + name + " does not list " + q(v.text()) + ", which a row or the"
+                                    + " default gives as " + q(p.output()) + ".");
+                    return;
+                }
+            }
         }
     }
 

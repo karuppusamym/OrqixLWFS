@@ -58,7 +58,7 @@ def main():
         "dana.designer", "paul.publisher", "rhea.requester", "fin.finance", "wade.admin", "olga.operator"))
     ws = next(w["id"] for w in rhea.get("/me").json()["workspaces"] if w["key"] == "purchasing")
     status = dana.get(f"/workspaces/{ws}/ai/status").json()
-    wf = next((w for w in paul.get(f"/workspaces/{ws}/workflows").json()["items"] if w["key"] == KEY), None)
+    wf = base.find_workflow(paul, ws, KEY)
     if wf is None:
         print(f"SKIP scenarios 20-23: the dev seed has no workflow '{KEY}'. Rebuild and restart the stack (dev profile).")
         return 0

@@ -51,6 +51,21 @@ def claim_and_decide(client, ws, run_id, action, reason=None):
     return claimed, decided
 
 
+def find_workflow(client, ws, key):
+    """The workflow with `key`, or None. Follows the list's cursor: after the browser suite the workspace has more
+    workflows than one page holds."""
+    cursor = None
+    while True:
+        params = {"cursor": cursor} if cursor else {}
+        page = client.get(f"/workspaces/{ws}/workflows", **params).json()
+        for item in page["items"]:
+            if item["key"] == key:
+                return item
+        cursor = page.get("nextCursor")
+        if not cursor:
+            return None
+
+
 def start(client, ws, wf_id, amount, title):
     return client.post(f"/workspaces/{ws}/runs", {"workflowId": wf_id, "input": {
         "title": title, "purpose": "End-to-end check", "costCenter": "OPS", "amount": amount}}, idem=True)
@@ -60,7 +75,9 @@ def main():
     rhea, mani, fin, paul, olga, fred = (Client(u) for u in (
         "rhea.requester", "mani.manager", "fin.finance", "paul.publisher", "olga.operator", "fred.facilities"))
     ws = next(w["id"] for w in rhea.get("/me").json()["workspaces"] if w["key"] == "purchasing")
-    wf = next(w for w in paul.get(f"/workspaces/{ws}/workflows").json()["items"] if w["key"] == "purchase-approval")
+    wf = find_workflow(paul, ws, "purchase-approval")
+    if wf is None:
+        raise SystemExit("Workflow 'purchase-approval' not found in the purchasing workspace")
     if not wf.get("activeRelease"):
         rev = paul.get(f"/workspaces/{ws}/workflows/{wf['id']}/draft").json()["revision"]
         paul.post(f"/workspaces/{ws}/workflows/{wf['id']}/publish", {"draftRevision": rev}, idem=True)

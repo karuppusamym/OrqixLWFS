@@ -9,7 +9,7 @@ import { attachStartFiles, planStartFiles } from './caseFiles'
 import { evaluate, migrationOptions } from './releaseMigration'
 import { migrationPublishDenial } from './migration'
 import { disabledFeaturesOf } from './features'
-import { normalizeDefinition, type Definition, type Literal } from '@/features/studio/model/types'
+import { normalizeDefinition, type DecisionTable, type Definition, type Literal } from '@/features/studio/model/types'
 import { buildFields, parseFormSchema, parseFormUi } from '@/lib/form/schema'
 import { validateJsonForm } from '@/lib/form/validate'
 import { waitHorizonErrors } from './dateWait'
@@ -17,6 +17,7 @@ import { validateDefinition, type ValidationContext } from './validate'
 import { mockBpmnFile, mockCheckBpmn, mockDraftBpmn } from './bpmnSource'
 import { assetIssues } from './sharedAssets'
 import { exportCsv, parseCsv, templateCsv } from './decisionCsv'
+import { exportDmn, readDmn } from './decisionDmn'
 import { ScenarioError, simulateDefinition, type SimConnection, type SimContext, type SimulationScenario } from './simulator'
 import { AssertionError, evaluateAssertions, validateAssertions, type Assertions } from './assertions'
 import {
@@ -613,6 +614,69 @@ export function createHandlers(): HttpHandler[] {
           const row = /\/rows\/(\d+)/.exec(b.path ?? '')
           return { line: row ? (parsed.ruleLines[Number(row[1])] ?? 1) : 1, column: row ? 4 : 1, code: b.code, message: b.message }
         }))
+      }
+      const next = { revision: latest.revision + 1, savedAt: clock.iso(), savedById: g.user.id, definition: normalizeDefinition(definition) }
+      wf.drafts.push(next)
+      wf.updatedAt = next.savedAt
+      return HttpResponse.json(
+        { workflowId: wf.id, revision: next.revision, savedAt: next.savedAt, savedBy: subjectRef(g.user), definition: next.definition },
+        { headers: { ETag: `"r${next.revision}"` } },
+      )
+    }),
+    // Decision table DMN (docs/build/S121): a simplified double, see ./decisionDmn.ts --------------------------------
+    http.get(`${B}/workspaces/:ws/workflows/:id/decisions/:key/dmn`, async ({ params }) => {
+      await slow()
+      const g = guard(params.ws, 'workflow.read')
+      if (!g.ok) return g.res
+      const wf = findWorkflow(str(params.ws), str(params.id))
+      const draft = wf?.drafts.at(-1)
+      const table = draft?.definition.decisions.find((d) => d.key === str(params.key))
+      if (!wf || !draft || !table) return notFound()
+      const label = draft.definition.nodes.find((n) => n.type === 'decision' && n.config.decisionRef === table.key)?.label
+      return new HttpResponse(exportDmn(table, table.key, label), { headers: { 'Content-Type': 'application/xml', 'Content-Disposition': `attachment; filename="${wf.key}-${table.key}-draft-${draft.revision}.dmn"` } })
+    }),
+    http.get(`${B}/workspaces/:ws/workflows/:id/releases/:rid/decisions/:key/dmn`, async ({ params }) => {
+      await slow()
+      const g = guard(params.ws, 'workflow.export')
+      if (!g.ok) return g.res
+      const wf = findWorkflow(str(params.ws), str(params.id))
+      const rel = wf?.releases.find((r) => r.id === str(params.rid))
+      const table = rel?.definition.decisions.find((d) => d.key === str(params.key))
+      if (!wf || !rel || !table) return notFound()
+      return new HttpResponse(exportDmn(table, table.key), { headers: { 'Content-Type': 'application/xml', 'Content-Disposition': `attachment; filename="${wf.key}-${table.key}-r${rel.releaseNumber}.dmn"` } })
+    }),
+    http.put(`${B}/workspaces/:ws/workflows/:id/decisions/:key/dmn`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws, 'workflow.edit')
+      if (!g.ok) return g.res
+      const wf = findWorkflow(str(params.ws), str(params.id))
+      if (!wf) return notFound()
+      const ifMatch = request.headers.get('If-Match')
+      if (!ifMatch) return problem(428, 'PRECONDITION_REQUIRED', 'If-Match header required')
+      const latest = wf.drafts.at(-1)!
+      if (ifMatch !== `"r${latest.revision}"`) return problem(412, 'STALE_REVISION', 'The draft changed', { currentRevision: latest.revision })
+      const index = latest.definition.decisions.findIndex((d) => d.key === str(params.key))
+      if (index < 0) return notFound()
+      const type = (request.headers.get('Content-Type') ?? '').toLowerCase()
+      if (!type.startsWith('application/xml') && !type.startsWith('text/xml')) return problem(400, 'MALFORMED_REQUEST', 'Send the file as Content-Type: application/xml.')
+      const text = await request.text()
+      if (text.length > 512 * 1024) return problem(413, 'PAYLOAD_TOO_LARGE', 'The file is larger than 512 KiB.')
+      const read = readDmn(text, new URL(request.url).searchParams.get('decisionId'))
+      if (!read.content) {
+        return problem(422, 'VALIDATION_FAILED', 'Some values are not valid', {
+          detail: read.problems.length ? `The DMN file cannot be imported: ${read.problems[0]}` : `The file has ${read.decisions.length} decisions. Choose the one to import with decisionId.`,
+          ...(read.problems.length ? { fieldErrors: read.problems.map((message) => ({ pointer: '/dmn', code: 'DMN_NOT_IMPORTED', message })) } : {}),
+          ...(read.decisions.length ? { decisions: read.decisions } : {}),
+        })
+      }
+      const old = latest.definition.decisions[index]!
+      const definition = { ...latest.definition, decisions: latest.definition.decisions.map((d, i) => (i === index ? { key: old.key, version: old.version, ...(read.content as unknown as Pick<DecisionTable, 'hitPolicy' | 'rows' | 'default'>) } : d)) }
+      const blockers = validateDefinition(definition, validationContext(wf.wsId)).filter((i) => i.severity === 'blocker' && (i.path === `/decisions/${index}` || i.path?.startsWith(`/decisions/${index}/`)))
+      if (blockers.length) {
+        return problem(422, 'VALIDATION_FAILED', 'Some values are not valid', {
+          detail: `The DMN file cannot be imported: ${blockers[0]!.message}`,
+          fieldErrors: blockers.map((b) => ({ pointer: `/dmn${(b.path ?? '').slice(`/decisions/${index}`.length)}`, code: b.code, message: b.message })),
+        })
       }
       const next = { revision: latest.revision + 1, savedAt: clock.iso(), savedById: g.user.id, definition: normalizeDefinition(definition) }
       wf.drafts.push(next)

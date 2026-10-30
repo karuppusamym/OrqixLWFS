@@ -2,14 +2,15 @@ import { formatCalendarDate, isCalendarDate } from '@/lib/dates'
 import { chipFor, fieldInfo, type ConnectionLookup } from './fieldRefs'
 import { nodeById } from './graph'
 import { KINDS, ROUTE_LABEL } from './kinds'
+import { conditionValueText } from './decisionLogic'
 import { conditionTerms, isAtomicCondition, type Condition, type Definition, type Operator, type Transition, type WorkflowNode } from './types'
 
-export const OPERATOR_LABEL: Record<Operator, string> = { eq: 'is', ne: 'is not', gte: 'at least', gt: 'greater than', lt: 'less than', lte: 'at most' }
+export const OPERATOR_LABEL: Record<Operator, string> = { eq: 'is', ne: 'is not', gte: 'at least', gt: 'greater than', lt: 'less than', lte: 'at most', in: 'is one of', between: 'between' }
 
 /** "Request → Amount (USD) is at least 5000" */
 export function describeCondition(def: Definition, c: Condition, lookup?: ConnectionLookup): string {
   if (!isAtomicCondition(c)) return conditionTerms(c).map(term => `(${describeCondition(def, term, lookup)})`).join('all' in c ? ' and ' : ' or ')
-  return `${chipFor(def, c.fieldRef, lookup)} ${OPERATOR_LABEL[c.operator]} ${String(c.value)}`
+  return `${chipFor(def, c.fieldRef, lookup)} ${OPERATOR_LABEL[c.operator]} ${conditionValueText(c.value)}`
 }
 
 /** Short route text used on edges and in the Steps tab. */

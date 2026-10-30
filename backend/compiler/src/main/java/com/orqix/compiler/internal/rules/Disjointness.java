@@ -43,10 +43,21 @@ public final class Disjointness {
         Set<Object> domain = a.type().kind() == FieldKind.BOOLEAN ? Set.of(true, false)
                 : a.type().domain() == null ? null : new HashSet<>(a.type().domain());
         if (domain != null) return domain.stream().anyMatch(v -> accepts(a.condition(), v) && accepts(b.condition(), v));
-        if (a.condition().operator() == Operator.NE && b.condition().operator() == Operator.NE) return true;
-        if (a.condition().operator() == Operator.NE || b.condition().operator() == Operator.NE)
-            return !a.condition().value().equals(b.condition().value());
-        return a.condition().value().equals(b.condition().value());
+        return openSatisfiable(List.of(a.condition(), b.condition()));
+    }
+
+    /**
+     * Satisfiability over an open text domain: with only "is not" terms some other text always fits; otherwise the
+     * value must be one of the values named by the first "is" or "is one of" term.
+     */
+    static boolean openSatisfiable(List<Condition> terms) {
+        Condition naming = terms.stream().filter(t -> t.operator() == Operator.EQ || t.operator() == Operator.IN)
+                .findFirst().orElse(null);
+        if (naming == null) return true;
+        for (Literal candidate : naming.literals()) {
+            if (terms.stream().allMatch(t -> accepts(t, candidate.value()))) return true;
+        }
+        return false;
     }
 
     /**
@@ -62,7 +73,7 @@ public final class Disjointness {
                 if (type.domain() == null) {
                     var excluded = conditions.stream().filter(c -> c.condition().operator() == Operator.NE)
                             .map(c -> c.condition().value()).distinct().toList();
-                    return excluded.size() > 1 || excluded.size() == 1 && conditions.stream().anyMatch(c -> c.condition().operator() == Operator.EQ && c.condition().value().equals(excluded.get(0)));
+                    return excluded.size() > 1 || excluded.size() == 1 && conditions.stream().anyMatch(c -> (c.condition().operator() == Operator.EQ || c.condition().operator() == Operator.IN) && c.condition().literals().contains(excluded.get(0)));
                 }
                 return type.domain().stream().allMatch(v -> conditions.stream().anyMatch(c -> accepts(c.condition(), v)));
             }
@@ -87,6 +98,10 @@ public final class Disjointness {
     }
 
     static Interval interval(Condition c) {
+        if (c.operator() == Operator.BETWEEN) {
+            return new Interval(c.range().from().number(), c.range().includeFrom(), c.range().to().number(),
+                    c.range().includeTo());
+        }
         BigDecimal v = ((Literal.Num) c.value()).number();
         return switch (c.operator()) {
             case EQ -> new Interval(v, true, v, true);
@@ -95,17 +110,22 @@ public final class Disjointness {
             case LT -> new Interval(null, false, v, false);
             case LTE -> new Interval(null, false, v, true);
             case NE -> throw new IllegalArgumentException("A not-equal condition is two intervals");
+            case IN -> throw new IllegalArgumentException("A list is one interval per value");
+            case BETWEEN -> throw new IllegalStateException("handled above");
         };
     }
 
     static List<Interval> intervals(Condition c) {
+        if (c.operator() == Operator.IN) {
+            return c.list().stream().map(l -> ((Literal.Num) l).number()).map(v -> new Interval(v, true, v, true)).toList();
+        }
         if (c.operator() != Operator.NE) return List.of(interval(c));
         BigDecimal v = ((Literal.Num) c.value()).number();
         return List.of(new Interval(null, false, v, false), new Interval(v, false, null, false));
     }
 
-    private static boolean accepts(Condition c, Object value) {
-        return com.orqix.compiler.ConditionMatcher.matches(c.operator().json(), value, c.value().value());
+    static boolean accepts(Condition c, Object value) {
+        return com.orqix.compiler.ConditionMatcher.matches(c.operator().json(), value, c.operand());
     }
 
     /** @return the intersection, or null when it is empty */
@@ -241,6 +261,6 @@ public final class Disjointness {
 
     /** @return true for operators that order values (only valid on numbers) */
     public static boolean ordering(Operator op) {
-        return op != Operator.EQ && op != Operator.NE;
+        return op != Operator.EQ && op != Operator.NE && op != Operator.IN;
     }
 }

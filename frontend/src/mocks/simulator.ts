@@ -1,7 +1,8 @@
 import { isCalendarDate } from '@/lib/dates'
 import { schemaProblems } from '@/lib/jsonSchemaLite'
 import { resolveInputAggregate } from '@/lib/form/aggregates'
-import { conditionTerms, isAtomicCondition, type AtomicCondition, type Condition, type Definition, type Literal, type Transition, type WorkflowNode } from '@/features/studio/model/types'
+import { conditionTerms, isAtomicCondition, type AtomicCondition, type Condition, type ConditionValue, type Definition, type Literal, type Transition, type WorkflowNode } from '@/features/studio/model/types'
+import { conditionValueText, evaluateTable as evaluateDecisionTable, matchValue } from '@/features/studio/model/decisionLogic'
 
 /**
  * Mock-side port of the dry run ("Test this workflow", docs/build/S4-workflow-compiler.md section 13). The Java class
@@ -123,11 +124,12 @@ function describeMinutes(total: number): string {
   return parts.length === 0 ? '0 minutes' : parts.join(' ')
 }
 
-const OPERATOR_PHRASE: Record<string, string> = { eq: 'is', ne: 'is not', gte: 'is at least', gt: 'is greater than', lt: 'is less than', lte: 'is at most' }
+const OPERATOR_PHRASE: Record<string, string> = { eq: 'is', ne: 'is not', gte: 'is at least', gt: 'is greater than', lt: 'is less than', lte: 'is at most', in: 'is one of', between: 'is between' }
 
 /** Same semantics as ConditionMatcher.matches: numbers compare numerically, other types only with is / is not. */
-export function matches(operator: string, actual: unknown, literal: Literal): boolean {
+export function matches(operator: string, actual: unknown, literal: ConditionValue): boolean {
   if (!(operator in OPERATOR_PHRASE)) throw new Error(`Unknown operator: ${operator}`)
+  if (typeof literal === 'object') return matchValue(operator, actual, literal)
   if (typeof actual === 'number' && typeof literal === 'number') {
     switch (operator) {
       case 'eq':
@@ -456,15 +458,23 @@ class Run {
     }
     d.inputs = inputs
     let matchedRow: number | null = null
+    let matchedRows: number[] = []
     let failure: string | null = null
     try {
+      const single = table.hitPolicy !== 'PRIORITY' && table.hitPolicy !== 'COLLECT'
       for (const [i, row] of table.rows.entries()) {
         if (conditionTerms(row.when).some(term => values.get(term.fieldRef) == null)) throw new Error('Missing decision input')
-        if (this.evaluate(row.when, [])) {
+        if (single && this.evaluate(row.when, [])) {
           matchedRow = i
           break
         }
       }
+      if (!single) {
+        // PRIORITY and COLLECT follow the shared evaluation (docs/build/S121).
+        const result = evaluateDecisionTable(table, Object.fromEntries([...values.entries()].map(([k, v]) => [k, v as Literal])))
+        matchedRow = result.matchedRow
+        matchedRows = result.matchedRows
+      } else if (matchedRow !== null) matchedRows = [matchedRow]
     } catch (e) {
       failure = (e as Error).message
     }
@@ -480,19 +490,31 @@ class Run {
       let m: boolean | null
       try { m = this.evaluate(row.when, []) } catch { m = null }
       if (m === true && firstMatch === null) firstMatch = i
-      rows.push({ row: i + 1, condition: this.conditionText(row.when, false, undefined), matched: m, selected: matchedRow === i, outputs: sortedLiterals(row.then) })
+      rows.push({ row: i + 1, condition: this.conditionText(row.when, false, undefined), matched: m, selected: matchedRows.includes(i), outputs: sortedLiterals(row.then) })
     }
     d.rows = rows
     d.usedDefault = matchedRow === null
     d.matchedRow = matchedRow === null ? null : matchedRow + 1
-    const output = sortedLiterals(matchedRow === null ? table.default : (table.rows[matchedRow] as { then: Record<string, Literal> }).then)
+    const collect = table.hitPolicy === 'COLLECT'
+    if (collect) {
+      d.matchedRows = matchedRows.map(i => i + 1)
+      d.aggregation = table.aggregation ?? null
+    }
+    const combined = collect && matchedRow !== null
+      ? evaluateDecisionTable(table, Object.fromEntries([...values.entries()].map(([k, v]) => [k, v as Literal]))).output
+      : null
+    const output = sortedLiterals(combined ?? (matchedRow === null ? table.default : (table.rows[matchedRow] as { then: Record<string, Literal> }).then))
     d.outputs = output
-    this.matchedRules.add(`${table.key}#${matchedRow === null ? 'default' : matchedRow}`)
+    if (matchedRows.length === 0) this.matchedRules.add(`${table.key}#default`)
+    for (const i of matchedRows) this.matchedRules.add(`${table.key}#${i}`)
     this.steps.set(n.id, { ...output })
     const outputsText = outputsTextOf(output)
     let sentence: string
     if (matchedRow === null) sentence = `${quote(n.label)}: no rule applies, so the "otherwise" result is used: ${outputsText}.`
-    else {
+    else if (collect) {
+      const how = table.aggregation === 'MIN' ? 'the smallest value' : table.aggregation === 'MAX' ? 'the largest value' : table.aggregation === 'COUNT' ? 'the number of matching rules' : 'the sum'
+      sentence = `${quote(n.label)}: ${matchedRows.length === 1 ? 'rule' : 'rules'} ${matchedRows.map(i => i + 1).join(', ')} apply, combined as ${how}, so ${outputsText}.`
+    } else {
       const row = table.rows[matchedRow] as { when: AtomicCondition }
       sentence = `${quote(n.label)}: rule ${matchedRow + 1} applies because ${this.conditionText(row.when, true, isAtomicCondition(row.when) ? values.get(row.when.fieldRef) : undefined)}, so ${outputsText}.`
     }
@@ -1204,7 +1226,7 @@ class Run {
     const f = this.info(c.fieldRef)
     const actual = known !== undefined && known !== null ? known : withValue ? this.resolve(c.fieldRef) : null
     const left = withValue && actual !== null && actual !== undefined ? `${f.label} (${text.value(actual, f.money)})` : f.label
-    return `${left} ${OPERATOR_PHRASE[c.operator]} ${text.value(c.value, f.money)}`
+    return `${left} ${OPERATOR_PHRASE[c.operator]} ${conditionValueText(c.value, v => text.value(v, f.money))}`
   }
 
   // -------------------------------------------------------------------------------------------- warnings and coverage

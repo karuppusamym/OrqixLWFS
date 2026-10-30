@@ -1004,7 +1004,10 @@ public class CaseService {
             systemEvent(ws,row.id(),"decisionNotEvaluated",planItemInstanceId,actor,null);
             return;
         }
-        String outcome=result.usedDefault()?"Default result":"Row "+(result.matchedRow()+1);
+        // COLLECT combines several rows (docs/build/S121): "Rows 1, 3".
+        String outcome=result.usedDefault()?"Default result":result.matchedRows().size()>1
+                ?"Rows "+String.join(", ",result.matchedRows().stream().map(i->String.valueOf(i+1)).toList())
+                :"Row "+(result.matchedRow()+1);
         int version=systemEvent(ws,row.id(),"decisionEvaluated",planItemInstanceId,actor,null);
         if(!after.equals(before)) {
             jdbc.sql("UPDATE case_instance SET data_values=CAST(:data AS jsonb) WHERE workspace_id=:ws AND id=:id").param("data",json.write(after)).param("ws",ws).param("id",row.id()).update();

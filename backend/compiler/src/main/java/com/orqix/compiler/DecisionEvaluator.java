@@ -1,5 +1,6 @@
 package com.orqix.compiler;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -14,7 +15,15 @@ public interface DecisionEvaluator {
      */
     Result evaluate(String definitionJson, String decisionKey, Map<String, Object> values);
 
-    /** @param matchedRow zero-based row index, or null when the default applied */
-    record Result(Integer matchedRow, boolean usedDefault, Map<String, Object> output) {
+    /**
+     * @param matchedRow  zero-based index of the row whose results apply, or null when the default applied; under
+     *                    COLLECT the first matching row
+     * @param matchedRows every row that applies, in table order: one row for the single-result hit policies, all
+     *                    matching rows under COLLECT (whose results are combined), none when the default applied
+     */
+    record Result(Integer matchedRow, boolean usedDefault, Map<String, Object> output, List<Integer> matchedRows) {
+        public Result(Integer matchedRow, boolean usedDefault, Map<String, Object> output) {
+            this(matchedRow, usedDefault, output, matchedRow == null ? List.of() : List.of(matchedRow));
+        }
     }
 }

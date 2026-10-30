@@ -157,6 +157,55 @@ export async function importDecisionCsv(ws: string, workflowId: string, decision
   return { draft: data, etag: etagOf(response) ?? revisionEtag(data.revision) }
 }
 
+// Decision table DMN (docs/build/S121)
+/** Standard DMN 1.3 file of a draft table; workflow.read. */
+export async function exportDecisionDmn(ws: string, workflowId: string, decisionKey: string) {
+  const { data, response } = await callWithResponse(
+    api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/decisions/{decisionKey}/dmn', { params: { path: { workspaceId: ws, workflowId, decisionKey } }, parseAs: 'blob' }),
+  )
+  return { blob: data as unknown as Blob, filename: filenameOf(response, `${decisionKey}.dmn`) }
+}
+
+/** Standard DMN 1.3 file of a published release's table; workflow.export. */
+export async function exportReleaseDecisionDmn(ws: string, workflowId: string, releaseId: string, decisionKey: string) {
+  const { data, response } = await callWithResponse(
+    api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/releases/{releaseId}/decisions/{decisionKey}/dmn', { params: { path: { workspaceId: ws, workflowId, releaseId, decisionKey } }, parseAs: 'blob' }),
+  )
+  return { blob: data as unknown as Blob, filename: filenameOf(response, `${decisionKey}.dmn`) }
+}
+
+/** Standard DMN 1.3 file of a shared decision version. */
+export async function exportSharedDecisionDmn(ws: string, assetKey: string, version: number) {
+  const { data, response } = await callWithResponse(
+    api.GET('/workspaces/{workspaceId}/shared-assets/decision/{assetKey}/versions/{version}/dmn', { params: { path: { workspaceId: ws, assetKey, version } }, parseAs: 'blob' }),
+  )
+  return { blob: data as unknown as Blob, filename: filenameOf(response, `${assetKey}-v${version}.dmn`) }
+}
+
+/** Replaces a draft table with a decision table of a DMN file; never publishes, saves the next draft revision. */
+export async function importDecisionDmn(ws: string, workflowId: string, decisionKey: string, revision: number, xml: string, decisionId?: string) {
+  const { data, response } = await callWithResponse(
+    api.PUT('/workspaces/{workspaceId}/workflows/{workflowId}/decisions/{decisionKey}/dmn', {
+      params: { path: { workspaceId: ws, workflowId, decisionKey }, query: decisionId ? { decisionId } : {}, header: { 'If-Match': revisionEtag(revision) } },
+      body: xml,
+      bodySerializer: (b: unknown) => b as BodyInit,
+      headers: { 'Content-Type': 'application/xml' },
+    }),
+  )
+  return { draft: data, etag: etagOf(response) ?? revisionEtag(data.revision) }
+}
+
+/** Converts a DMN file into shared decision content for review; nothing is stored. */
+export const convertDecisionDmn = (ws: string, xml: string, decisionId?: string) =>
+  call(
+    api.POST('/workspaces/{workspaceId}/shared-assets/decision/dmn', {
+      params: { path: { workspaceId: ws }, query: decisionId ? { decisionId } : {} },
+      body: xml,
+      bodySerializer: (b: unknown) => b as BodyInit,
+      headers: { 'Content-Type': 'application/xml' },
+    }),
+  )
+
 export const validateDraft = (ws: string, workflowId: string, revision: number) =>
   call(
     api.POST('/workspaces/{workspaceId}/workflows/{workflowId}/validate', {

@@ -321,8 +321,8 @@ public final class DecisionCsv {
         }
         // Fixed columns.
         String hit = head.isEmpty() ? "" : head.get(0);
-        if (!hit.equals("hitPolicy:UNIQUE") && !hit.equals("hitPolicy:FIRST")) {
-            problems.add(new Problem(1, 1, "header", "The first header cell must be hitPolicy:UNIQUE or hitPolicy:FIRST"
+        if (!hit.equals("hitPolicy:UNIQUE") && !hit.equals("hitPolicy:FIRST") && !hit.equals("hitPolicy:ANY")) {
+            problems.add(new Problem(1, 1, "header", "The first header cell must be hitPolicy:UNIQUE, hitPolicy:FIRST or hitPolicy:ANY"
                     + (hit.isEmpty() ? "." : ", not \"" + shorten(hit) + "\".")));
             return null;
         }
@@ -644,7 +644,10 @@ public final class DecisionCsv {
         JsonNode rows = table.path("rows");
         JsonNode def = table.path("default");
         String policy = table.path("hitPolicy").asString("");
-        if (!policy.equals("UNIQUE") && !policy.equals("FIRST")) {
+        if (policy.equals("PRIORITY") || policy.equals("COLLECT")) {
+            // Their priority order or aggregation has no place in the CSV header (docs/build/S121).
+            reasons.add("The hit policy " + policy + " has settings CSV cannot hold. Download the table as DMN instead.");
+        } else if (!policy.equals("UNIQUE") && !policy.equals("FIRST") && !policy.equals("ANY")) {
             reasons.add("The table has no hit policy.");
         }
         // Columns in order of first appearance.
@@ -656,8 +659,16 @@ public final class DecisionCsv {
                         + "split it into one row per alternative under the first-match policy.");
             }
             for (JsonNode term : terms(when)) {
+                String operator = term.path("operator").asString("");
+                if ((operator.equals("in") || operator.equals("between")) && !template) {
+                    reasons.add("Row " + (r + 1) + " uses a list or a range (is one of, is between), which CSV cannot hold."
+                            + " Download the table as DMN instead.");
+                    continue;
+                }
                 String ref = term.path("fieldRef").asString("");
-                String type = typeOf(term.path("value"));
+                JsonNode value = term.path("value");
+                // A template still names the column type of a list (its values) or a range (numbers).
+                String type = value.isArray() ? typeOf(value.path(0)) : value.isObject() ? "number" : typeOf(value);
                 String known = inputType.putIfAbsent(ref, type);
                 if (known != null && !known.equals(type) && !template) {
                     reasons.add("Row " + (r + 1) + " compares " + ref + " with " + type + " but another row uses " + known + ".");

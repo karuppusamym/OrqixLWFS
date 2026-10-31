@@ -471,7 +471,7 @@ export const markAllNotificationsRead = (ws: string) =>
   call(api.POST('/workspaces/{workspaceId}/me/notifications/read-all', { params: { path: { workspaceId: ws } } }))
 
 // Tasks
-export const listTasks = (ws: string, view: TaskView, query: { cursor?: string; limit?: number; sort?: "priority" | "oldest" | "newest"; minPriority?: number } = {}) =>
+export const listTasks = (ws: string, view: TaskView, query: { cursor?: string; limit?: number; sort?: "priority" | "oldest" | "newest"; minPriority?: number; q?: string; queue?: string; due?: "all" | "overdue" | "soon" | "none" } = {}) =>
   call(api.GET('/workspaces/{workspaceId}/tasks', { params: { path: { workspaceId: ws }, query: { view, ...query } } }))
 
 export const getTask = (ws: string, taskId: string) =>
@@ -553,6 +553,18 @@ export const testConnection = (ws: string, connectionKey: string, version: numbe
 export const getAccessOverview = (ws: string) => call(api.GET('/workspaces/{workspaceId}/access', { params: { path: { workspaceId: ws } } }))
 
 export const listGroups = (ws: string) => call(api.GET('/workspaces/{workspaceId}/groups', { params: { path: { workspaceId: ws } } }))
+
+type PrincipalRef = components['schemas']['PrincipalRef']
+export const createRoleBinding = (ws: string, role: components['schemas']['WorkspaceRole'], principal: PrincipalRef) =>
+  call(api.POST('/workspaces/{workspaceId}/access/role-bindings', { params: { path: { workspaceId: ws } }, body: { role, principal } }))
+export const deleteRoleBinding = (ws: string, bindingId: string) =>
+  callVoid(api.DELETE('/workspaces/{workspaceId}/access/role-bindings/{bindingId}', { params: { path: { workspaceId: ws, bindingId } } }))
+export const createPermissionGrant = (ws: string, permission: components['schemas']['PermissionGrant']['permission'], principal: PrincipalRef, workflowId: string | null) =>
+  call(api.POST('/workspaces/{workspaceId}/access/grants', { params: { path: { workspaceId: ws } }, body: { permission, principal, ...(workflowId ? { workflowId } : {}) } }))
+export const deletePermissionGrant = (ws: string, grantId: string) =>
+  callVoid(api.DELETE('/workspaces/{workspaceId}/access/grants/{grantId}', { params: { path: { workspaceId: ws, grantId } } }))
+export const putGroup = (ws: string, groupKey: string, body: { name: string; members: PrincipalRef[]; expectedRevision?: number }) =>
+  call(api.PUT('/workspaces/{workspaceId}/groups/{groupKey}', { params: { path: { workspaceId: ws, groupKey } }, body }))
 
 // Migration sources are immutable; conversion creates a validated draft, never a release.
 export const uploadMigration = (ws: string, body: { fileName: string; content: string; sourceFormat?: 'bpmn' | 'dmn' | 'camundaForm' | 'pegaArchive' | 'pegaMapping' | 'pegaXpdl' | 'cmmn' | 'pegaRules' }) =>

@@ -4,7 +4,7 @@ import { MOCK } from '../support/env'
 import { apiGet, ensureTemplatePublished, workspaceId } from '../support/app'
 import { apiSend, uniq } from '../support/api'
 import { expectNoSeriousViolations } from '../support/axe'
-import { checkAndPublish, newCaseType } from '../support/caseDesigner'
+import { checkAndPublish, newCaseType, startCaseButton } from '../support/caseDesigner'
 
 const fixture = (name: string) => readFile(new URL(`../../../backend/app/src/test/resources/cases/${name}.cmmn`, import.meta.url), 'utf8')
 const key = (prefix: string) => uniq(prefix).toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 40)
@@ -33,7 +33,7 @@ test('canvas authoring with a discretionary item that a manager plans into a run
 
   page = await sessions.as('rhea.requester')
   await page.goto(`/w/${ws}/cases`)
-  await page.getByRole('row').filter({ has: page.getByRole('cell', { name: caseKey, exact: true }) }).getByRole('button', { name: 'Start case', exact: true }).click()
+  await startCaseButton(page, caseKey).click()
   await expect(page).toHaveURL(new RegExp(`/w/${ws}/cases/[^/]+$`))
   const url = page.url()
 
@@ -84,7 +84,7 @@ test('a case task starts its child case, whose completion finishes the parent ta
 
   page = await sessions.as('mani.manager'); await page.goto(childUrl)
   await page.getByRole('button', { name: 'Complete task', exact: true }).click()
-  await expect(page.getByText('completed', { exact: true }).first()).toBeVisible()
+  await expect(page.getByText('Completed', { exact: true }).first()).toBeVisible()
 
   page = await sessions.as('olga.operator')
   await expect.poll(async () => (await apiGet<{ events: { action: string }[] }>(page, `/workspaces/${ws}/cases/instances/${started.body.id}/plan`)).events.map(e => e.action),

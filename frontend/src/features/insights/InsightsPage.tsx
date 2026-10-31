@@ -133,6 +133,14 @@ export function InsightsPage() {
       ) : (
         <div className="space-y-6" aria-busy={summary.isFetching}>
           <Cards data={summary.data} />
+          <Bottlenecks query={steps} />
+
+          <div className="grid gap-6 xl:grid-cols-2">
+            <NeedsAttention ws={ws} data={summary.data} />
+            <OldestOpen ws={ws} data={summary.data} />
+          </div>
+
+          <Sla ws={ws} data={summary.data} />
 
           <Card>
             <CardHeader>
@@ -149,14 +157,7 @@ export function InsightsPage() {
           </Card>
 
           <CycleTimes data={summary.data} />
-          <Bottlenecks query={steps} />
 
-          <div className="grid gap-6 xl:grid-cols-2">
-            <NeedsAttention ws={ws} data={summary.data} />
-            <OldestOpen ws={ws} data={summary.data} />
-          </div>
-
-          <Sla ws={ws} data={summary.data} />
         </div>
       )}
     </>

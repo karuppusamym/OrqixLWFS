@@ -40,7 +40,7 @@ describe('demo walkthrough: wording, hierarchy and deep links', () => {
   it('runs: "Needs attention" is a toggle (aria-pressed, check mark) and the row has one Review recovery action', async () => {
     signInAs('olga.operator', { demo: true })
     const user = userEvent.setup()
-    renderApp(`/w/${WS}/runs`)
+    renderApp(`/w/${WS}/runs?scope=all`)
     const toggle = await screen.findByRole('button', { name: 'Needs attention' })
     expect(toggle).toHaveAttribute('aria-pressed', 'false')
     await user.click(toggle)

@@ -1,0 +1,13 @@
+# Worker role (docs/adr/0004): runs the engine job executor, scheduled jobs and Kafka consumers. Combine with an
+# environment profile, for example "prod,worker". The Service and Route do not send user traffic to workers.
+# An API pod no longer runs the asynchronous jobs it creates, so workers poll for them every second instead of
+# Flowable's 10 s default. Timer acquisition keeps the default.
+flowable:
+  process:
+    async:
+      executor:
+        default-async-job-acquire-wait-time: 1s
+  cmmn:
+    async:
+      executor:
+        default-async-job-acquire-wait-time: 1s

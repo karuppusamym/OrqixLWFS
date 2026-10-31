@@ -13,8 +13,9 @@ public class SavedWorkViewsController {
     private final SavedWorkViews views;
     private final CallerResolver callers;
     public SavedWorkViewsController(SavedWorkViews views,CallerResolver callers) { this.views=views; this.callers=callers; }
+    /** kind is validated after workspace visibility, so a caller outside the workspace always gets 404. */
     @GetMapping
-    public Map<String,List<SavedWorkViews.Item>> list(@PathVariable UUID workspaceId,@RequestParam String kind) {
+    public Map<String,List<SavedWorkViews.Item>> list(@PathVariable UUID workspaceId,@RequestParam(required=false) String kind) {
         return Map.of("items",views.list(callers.current(),workspaceId,kind));
     }
     @PutMapping("/{viewId}")

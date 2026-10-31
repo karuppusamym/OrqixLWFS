@@ -7,6 +7,7 @@ import java.util.UUID;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.orqix.audit.AuditWriter;
 import com.orqix.identity.Caller;
 import com.orqix.identity.Permission;
 import com.orqix.identity.PolicyService;
@@ -24,11 +25,13 @@ public class SavedWorkViews {
     private final JdbcClient jdbc;
     private final PolicyService policy;
     private final Json json;
-    public SavedWorkViews(JdbcClient jdbc, PolicyService policy, Json json) { this.jdbc=jdbc; this.policy=policy; this.json=json; }
+    private final AuditWriter audit;
+    public SavedWorkViews(JdbcClient jdbc, PolicyService policy, Json json, AuditWriter audit) { this.jdbc=jdbc; this.policy=policy; this.json=json; this.audit=audit; }
 
     private void access(Caller caller, UUID ws, String kind) {
-        if (!List.of("tasks","runs").contains(kind == null ? "" : kind)) throw ApiException.malformed("kind must be tasks or runs.");
+        // Workspace visibility first: someone outside the workspace gets 404 whatever the parameters are.
         var access=policy.freshAccess(caller,ws).filter(a -> a.visible()).orElseThrow(() -> new ApiException(ProblemCode.NOT_FOUND));
+        if (!List.of("tasks","runs").contains(kind == null ? "" : kind)) throw ApiException.malformed("kind must be tasks or runs.");
         policy.require(access,"tasks".equals(kind) ? Permission.TASK_ACT : Permission.RUN_READ,"savedWorkViews",false);
     }
     @Transactional(readOnly=true)
@@ -57,7 +60,11 @@ public class SavedWorkViews {
               revision=saved_work_view.revision+1,updated_at=now()
             """).param("ws",ws).param("id",id).param("owner",caller.subjectId()).param("kind",input.kind())
             .param("name",input.name().strip()).param("shared",input.shared()).param("filters",json.write(input.filters())).update();
-        return jdbc.sql("SELECT * FROM saved_work_view WHERE workspace_id=:ws AND id=:id").param("ws",ws).param("id",id).query(this::map).single();
+        var saved=jdbc.sql("SELECT * FROM saved_work_view WHERE workspace_id=:ws AND id=:id").param("ws",ws).param("id",id).query(this::map).single();
+        // Sharing exposes the query (never its results) to the workspace, so every save is audited.
+        audit.write(new AuditWriter.Entry(ws,AuditWriter.ActorType.USER,caller.subjectId(),"workview.saved","savedWorkView",id.toString(),AuditWriter.Outcome.SUCCESS,
+            Map.of("kind",saved.kind(),"shared",saved.shared(),"revision",saved.revision())));
+        return saved;
     }
     @Transactional
     public void delete(Caller caller,UUID ws,UUID id,int expectedRevision) {
@@ -67,6 +74,8 @@ public class SavedWorkViews {
         if (jdbc.sql("DELETE FROM saved_work_view WHERE workspace_id=:ws AND id=:id AND owner_id=:owner AND revision=:revision")
             .param("ws",ws).param("id",id).param("owner",caller.subjectId()).param("revision",expectedRevision).update()!=1)
             throw new ApiException(ProblemCode.WORKFLOW_VERSION_CONFLICT,"This saved view changed. Reload it before deleting.");
+        audit.write(new AuditWriter.Entry(ws,AuditWriter.ActorType.USER,caller.subjectId(),"workview.deleted","savedWorkView",id.toString(),AuditWriter.Outcome.SUCCESS,
+            Map.of("kind",item.kind(),"revision",expectedRevision)));
     }
     private Item map(java.sql.ResultSet rs,int n) throws java.sql.SQLException {
         return new Item(Sql.uuid(rs,"id"),Sql.uuid(rs,"owner_id"),rs.getString("kind"),rs.getString("name"),rs.getBoolean("shared"),json.parse(rs.getString("filters")),rs.getInt("revision"));

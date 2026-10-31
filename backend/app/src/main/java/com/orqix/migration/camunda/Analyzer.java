@@ -499,8 +499,8 @@ public final class Analyzer {
                 analysis.waitDates.put(node.id, variable);
                 analysis.assumptions.add("Variable '" + variable + "' (the date timer '" + labelOf(e) + "' waits for) becomes the required "
                         + "request date field '" + fieldKey(variable) + "' (YYYY-MM-DD).");
-                add(e, node.type, Report.REVIEW, "DATE_TIMER_MAPPED",
-                        "The wait ends on the calendar date the requester enters in the new request date field '" + fieldKey(variable)
+                add(e, node.type, Report.VERIFY, "DATE_TIMER_MAPPED",
+                        "Converted but changed: the date is normalised to a calendar date. The wait ends on the calendar date the requester enters in the new request date field '" + fieldKey(variable)
                                 + "' at 09:00 UTC. The time of day, time zone and a date that is already past behave differently from "
                                 + "the source engine.",
                         "Check the time of day (09:00 UTC) and that requesters know to enter the date.", Need.ACKNOWLEDGE, null);
@@ -1089,8 +1089,11 @@ public final class Analyzer {
             Integer hours = "userTask".equals(owner.name()) ? Zeebe.dueHours(due) : null;
             if (hours != null) {
                 dueHours.put(idOf(owner), hours);
-                add(schedule, "taskSchedule", Report.REVIEW, "DUE_DATE_MAPPED",
-                        "The due time (" + Zeebe.mask(due) + ") becomes a due time of " + hours + " hour(s) on the approval. It is "
+                boolean normalised = Zeebe.dueNormalised(due);
+                add(schedule, "taskSchedule", normalised ? Report.VERIFY : Report.REVIEW, normalised ? "DUE_DATE_NORMALISED" : "DUE_DATE_MAPPED",
+                        (normalised ? "Converted but changed: a due time counted in calendar days is normalised to whole hours, so it "
+                                + "can differ by an hour across a daylight-saving change. " : "")
+                        + "The due time (" + Zeebe.mask(due) + ") becomes a due time of " + hours + " hour(s) on the approval. It is "
                                 + "displayed on the task only: no reminder is sent and nothing happens when it passes (use a boundary "
                                 + "timer for a real time limit).",
                         "Check the due time.", Need.ACKNOWLEDGE, null);
@@ -1709,8 +1712,11 @@ public final class Analyzer {
                         .filter(b -> b.flowId().equals(flow.id)).findFirst().orElse(null);
                 String shown = flow.condition instanceof Expressions.Logical l ? l.describe()
                         : ((Expressions.Comparison) flow.condition).describe();
-                add(e, "sequenceFlow", Report.REVIEW, "CONDITION_CONVERTED",
-                        "Source condition '" + conditionText(flow) + "' became the condition " + shown + " on the request or "
+                boolean rewritten = Expressions.rewritten(conditionText(flow));
+                add(e, "sequenceFlow", rewritten ? Report.VERIFY : Report.REVIEW, rewritten ? "CONDITION_REWRITTEN" : "CONDITION_CONVERTED",
+                        (rewritten ? "Converted but changed: the converter rewrote the source condition (a negation became the "
+                                + "opposite operator, or a range became two comparisons). " : "")
+                        + "Source condition '" + conditionText(flow) + "' became the condition " + shown + " on the request or "
                                 + "step field of the choice" + (entry != null && entry.compound() ? " (" + ("all".equals(entry.group())
                                 ? "all of the terms must hold" : "any of the terms may hold") + ")" : "")
                                 + ", so the path to '" + to + "' is taken only when it holds. Numbers compare as decimals "

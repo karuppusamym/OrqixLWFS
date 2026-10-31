@@ -566,6 +566,16 @@ export const convertPegaCaseDefinition = (ws: string, migrationId: string, body:
   call(api.POST('/workspaces/{workspaceId}/migrations/{migrationId}/case-definition', { params: { path: { workspaceId: ws, migrationId } }, body }))
 export const convertMigration = (ws: string, migrationId: string, body: S['ConvertMigrationRequest']) =>
   call(api.POST('/workspaces/{workspaceId}/migrations/{migrationId}/convert', { params: { path: { workspaceId: ws, migrationId } }, body }))
+// "Converted but changed — verify" items: a reviewer (not the mapper) acknowledges them after conversion; publishing waits for it.
+export const acknowledgeMigrationVerifications = (ws: string, migrationId: string, body: S['AcknowledgeMigrationVerificationsRequest']) =>
+  call(api.POST('/workspaces/{workspaceId}/migrations/{migrationId}/verifications', { params: { path: { workspaceId: ws, migrationId } }, body }))
+/** SI migration ledger: ZIP of ledger.json/csv/xlsx by default, or one file; workflow.export. */
+export async function exportMigrationLedger(ws: string, migrationId: string, format: 'zip' | 'json' | 'csv' | 'xlsx' = 'zip') {
+  const { data, response } = await callWithResponse(
+    api.GET('/workspaces/{workspaceId}/migrations/{migrationId}/ledger', { params: { path: { workspaceId: ws, migrationId }, query: { format } }, parseAs: 'blob' }),
+  )
+  return { blob: data as unknown as Blob, filename: filenameOf(response, `migration-ledger.${format}`) }
+}
 
 // Pega Blueprint PDF (docs/build/S91): multipart upload, reviewed transcription revisions, optional AI proposal (never applied).
 export const uploadBlueprintMigration = (ws: string, file: File, caseType?: string) =>

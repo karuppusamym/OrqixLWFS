@@ -166,8 +166,8 @@ Verified by reading the repository on 9 October 2026 ([feature status](feature-s
 
 | # | Gap | Evidence | Competitor reference |
 |---|---|---|---|
-| G1 | No "converted but changed — verify" severity. Current: supported, info, action, blocker | `Report.java` constants | Camunda REVIEW |
-| G2 | Per-process findings are grouped by source kind with kind/severity/unresolved filters; full JSON/CSV exports exist. Cross-file projects/grouping and XLSX remain open | `MigrationPage`, `reportExport`; filters retain complete-report exports and conversion | Camunda grouped view, CSV/XLSX/JSON |
+| G1 | Closed: `verify` ("converted but changed") joins supported, info, review, action and blocker. Open verify items block publishing until a reviewer other than the mapper acknowledges them (audited); applied to rewritten conditions, normalised date timers and due times, and changed start-form fields | `Report.java`, [17](17-migration-workbench.md) "Severity model" | Camunda REVIEW |
+| G2 | Per-process findings are grouped by source kind with kind/severity/unresolved filters; full JSON/CSV exports exist. Cross-file projects/grouping remain open; a per-migration XLSX/JSON/CSV ledger is built ([17](17-migration-workbench.md) "Migration ledger") | `MigrationPage`, `reportExport`; filters retain complete-report exports and conversion | Camunda grouped view, CSV/XLSX/JSON |
 | G3 | One BPMN file per import; no project of many files; no dependency ordering for call activities | `MigrationService`, `ConversionRequest` | Converter takes BPMN+DMN+forms together |
 | G4 | DMN and form files are not imported (`DMN_IMPORT_NOT_SUPPORTED`, `FORM_NOT_IMPORTED`) | Reason codes in `Analyzer` | Converter handles all three |
 | G5 | Unsupported: multi-instance, inclusive/event gateways, boundary timers/errors, message events, subprocesses, expressions beyond `eq/gte/lt` (no `>`, `<=`, `!=`, and/or) | Reason codes `MULTI_INSTANCE_NOT_SUPPORTED`, `GATEWAY_NOT_SUPPORTED_IN_V0`, `EVENT_NOT_SUPPORTED_IN_V0`, `SUBPROCESS_NOT_SUPPORTED`, `EXPRESSION_NOT_SUPPORTED` | Camunda 8 supports these |

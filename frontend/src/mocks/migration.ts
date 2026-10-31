@@ -432,6 +432,9 @@ export function approveReview(wf: MockWorkflow, user: MockUser, revision: number
 
 /** Mirrors MigrationGovernance.requirePublish; called by the publish handler before the release is created. */
 export function migrationPublishDenial(wf: MockWorkflow, user: MockUser, revision: number): Denial | null {
+  const job = wf.migration ? db.migrations.get(wf.migration.migrationId) : undefined
+  if (job?.report.issues.some(i => i.severity === 'verify' && i.resolutionStatus === 'open'))
+    return blocked('The migration has converted-but-changed items that a reviewer must verify and acknowledge before publishing.')
   if (!(db.migrationPolicies.get(wf.wsId)?.required ?? false)) return null
   const source = sourceOf(wf)
   if (!source) return null // The policy governs migrated workflows only.
@@ -441,5 +444,25 @@ export function migrationPublishDenial(wf: MockWorkflow, user: MockUser, revisio
   if (!eligibleReviewer(wf, approval.reviewerId)) return blocked('The migration reviewer no longer has publishing access. Obtain a new independent review.')
   if (user.id === source.mapperId || user.id === approval.reviewerId || user.id === latestDraft(wf).savedById)
     return { status: 403, code: 'FORBIDDEN', title: 'Forbidden', detail: 'Mapper, reviewer and publisher must be different people; draft authors cannot publish their own governed migration.' }
+  return null
+}
+
+/** Mirrors MigrationService.acknowledgeVerifications: after conversion, not by the mapper, only open verify items. */
+export function acknowledgeVerifications(migration: MockMigration, user: MockUser, items: Array<{ sourceElementId?: string; reasonCode?: string; sourcePath?: string | null }>, reason: string): Denial | null {
+  if (migration.status !== 'converted') return blocked('Convert the source first. Changed behaviour is verified against the converted draft.')
+  if (migration.convertedById === user.id) return { status: 403, code: 'FORBIDDEN', title: 'Forbidden', detail: 'You converted this source, so a different reviewer must verify its changed behaviour.' }
+  const issues = [...migration.report.issues]
+  const verifications = [...(migration.report.verifications ?? [])]
+  for (const item of items) {
+    let matched = false
+    issues.forEach((issue, index) => {
+      if (issue.severity === 'verify' && issue.resolutionStatus === 'open' && issue.sourceElementId === item.sourceElementId && issue.reasonCode === item.reasonCode && (item.sourcePath == null || item.sourcePath === issue.sourcePath)) {
+        issues[index] = { ...issue, resolutionStatus: 'acknowledged' }; matched = true
+        verifications.push({ sourceElementId: issue.sourceElementId, reasonCode: issue.reasonCode, sourcePath: issue.sourcePath ?? null, acknowledgedBy: user.id, acknowledgedByName: user.displayName, acknowledgedAt: clock.iso(), reason: reason.trim() })
+      }
+    })
+    if (!matched) return { status: 400, code: 'MALFORMED_REQUEST', title: 'Bad request', detail: `No open verify item matches ${item.sourceElementId} / ${item.reasonCode}.` }
+  }
+  migration.report = { ...migration.report, issues, verifications }
   return null
 }

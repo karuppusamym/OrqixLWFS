@@ -92,6 +92,8 @@ public class AuditWriter {
             Map.entry("view.draft.saved", Set.of("revision")),
             Map.entry("view.published", Set.of("version")),
             Map.entry("view.worklist-assigned", Set.of("revision")),
+            Map.entry("workview.saved", Set.of("kind", "shared", "revision")),
+            Map.entry("workview.deleted", Set.of("kind", "revision")),
             Map.entry("page.route-assigned", Set.of("slug", "revision", "version")),
             Map.entry("page.chain.run", Set.of("slug", "chainId", "version", "completed", "steps", "compensated")),
             Map.entry("task.sent-back", Set.of("taskId", "nodeId", "fields")),

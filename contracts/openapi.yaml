@@ -5301,6 +5301,7 @@ paths:
       operationId: saveWorkView
       tags: [Tasks]
       x-orqix-permission: task.act | run.read
+      x-orqix-audit: workview.saved
       description: Create at revision zero or update an owned query at its current revision; sharing never grants data access.
       requestBody:
         required: true
@@ -5321,6 +5322,7 @@ paths:
       operationId: deleteWorkView
       tags: [Tasks]
       x-orqix-permission: task.act | run.read
+      x-orqix-audit: workview.deleted
       parameters:
         - { name: expectedRevision, in: query, required: true, schema: { type: integer, minimum: 1 } }
       responses:

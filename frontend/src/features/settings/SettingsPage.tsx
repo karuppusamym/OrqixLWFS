@@ -17,7 +17,9 @@ import { EmptyState } from '@/components/common/EmptyState'
 import { AiSettingsPanel, useShowAiSettings } from '@/features/ai/AiSettingsPanel'
 
 /**
- * Settings (docs/build/S7-frontend.md section 4): members, roles and groups read-only in R0, and connections
+ * Tabs run from people and features, through connected systems, to shared content and retention.
+ * Settings (docs/build/S7-frontend.md section 4): roles, extra permissions and approval groups (editable by workspace
+ * administrators), and connections
  * with an editable binding for people who may manage them. Secret values are never shown or accepted.
  */
 export function SettingsPage() {
@@ -56,11 +58,6 @@ export function SettingsPage() {
               <ToggleRight className="size-4" aria-hidden="true" /> Features
             </TabsTrigger>
           ) : null}
-          {showAccess ? (
-            <TabsTrigger value="migration">
-              <ClipboardCheck className="size-4" aria-hidden="true" /> Migration review
-            </TabsTrigger>
-          ) : null}
           {showConnections ? (
             <TabsTrigger value="connections">
               <Plug className="size-4" aria-hidden="true" /> Connections
@@ -73,9 +70,14 @@ export function SettingsPage() {
               <Sparkles className="size-4" aria-hidden="true" /> AI
             </TabsTrigger>
           ) : null}
-          {showAccess ? <TabsTrigger value="documents">Approved documents</TabsTrigger> : null}
-          {showTemplates ? <TabsTrigger value="templates">Document templates</TabsTrigger> : null}
           {showAssets ? <TabsTrigger value="assets">Shared assets</TabsTrigger> : null}
+          {showTemplates ? <TabsTrigger value="templates">Document templates</TabsTrigger> : null}
+          {showAccess ? <TabsTrigger value="documents">Approved documents</TabsTrigger> : null}
+          {showAccess ? (
+            <TabsTrigger value="migration">
+              <ClipboardCheck className="size-4" aria-hidden="true" /> Migration review
+            </TabsTrigger>
+          ) : null}
           {showAccess ? <TabsTrigger value="retention">File retention</TabsTrigger> : null}
           {showAccess ? <TabsTrigger value="agent-write-retention">Agent write retention</TabsTrigger> : null}
         </TabsList>

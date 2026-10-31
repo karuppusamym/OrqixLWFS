@@ -46,43 +46,43 @@ const POLICY_WORDS: Record<string, string> = {
  * and forms that workflows reuse, by name, key or owner, and to see where each is used. Only the kinds you may read are searched.
  * Owners are labels: changing one, or a workflow referencing an asset, never gives anyone access.
  */
-export function SharedAssetsPanel() {
+export function SharedAssetsPanel({ only }: { only?: SharedAssetKind } = {}) {
   const { workspace, can } = useWorkspace()
   const ws = workspace.id
   const client = useQueryClient()
   const [q, setQ] = useState('')
   const [applied, setApplied] = useState('')
-  const [kind, setKind] = useState<SharedAssetKind | ''>('')
+  const [kind, setKind] = useState<SharedAssetKind | ''>(only ?? '')
   const [owner, setOwner] = useState('')
   const [showArchived, setShowArchived] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
   const query = { q: applied || undefined, kind: kind || undefined, owner: owner || undefined, includeArchived: showArchived }
   const list = useQuery({ queryKey: [...assetsKey(ws), query], queryFn: () => endpoints.listSharedAssets(ws, query) })
   // Owner choices come from every asset the caller may read, so the filter does not shrink with the results.
-  const everything = useQuery({ queryKey: [...assetsKey(ws), 'owners'], queryFn: () => endpoints.listSharedAssets(ws, { includeArchived: true }) })
+  const everything = useQuery({ queryKey: [...assetsKey(ws), 'owners'], queryFn: () => endpoints.listSharedAssets(ws, { includeArchived: true, ...(only ? { kind: only } : {}) }) })
   const owners = [...new Map((everything.data?.items ?? []).map((a) => [a.owner.id, a.owner.displayName])).entries()].sort((a, b) => a[1].localeCompare(b[1]))
   const readableKinds = everything.data?.searchedKinds ?? (['decision', 'documentTemplate', 'connection', 'form'] as SharedAssetKind[]).filter((k) => can(k === 'connection' ? 'connection.read' : 'workflow.read'))
 
   return (
-    <section aria-labelledby="shared-assets-title" className="max-w-5xl space-y-4">
-      <div>
+    <section aria-labelledby={only ? undefined : 'shared-assets-title'} aria-label={only ? `${KIND_LABELS[only]}s` : undefined} className="max-w-5xl space-y-4">
+      {only ? null : <div>
         <h2 id="shared-assets-title">Shared assets</h2>
         <p className="text-sm text-muted-foreground">
           Decision tables, document templates, connections and forms that workflows reuse. A workflow keeps a copy of the version it uses; validation tells its designers when a newer version exists, and blocks publishing when the asset is archived or no longer matches.
         </p>
-      </div>
+      </div>}
       <form role="search" aria-label="Search shared assets" className="flex flex-wrap items-end gap-3" onSubmit={(e) => { e.preventDefault(); setApplied(q.trim()); setSelected(null) }}>
         <FormField label="Name, key or owner" id="asset-q">
           {(ids) => <Input id={ids.input} value={q} maxLength={100} onChange={(e) => setQ(e.target.value)} />}
         </FormField>
-        <FormField label="Kind" id="asset-kind">
+        {only ? null : <FormField label="Kind" id="asset-kind">
           {(ids) => (
             <Select id={ids.input} value={kind} onChange={(e) => { setKind(e.target.value as SharedAssetKind | ''); setSelected(null) }}>
               <option value="">All kinds</option>
               {readableKinds.map((k) => <option key={k} value={k}>{KIND_LABELS[k]}</option>)}
             </Select>
           )}
-        </FormField>
+        </FormField>}
         <FormField label="Owner" id="asset-owner">
           {(ids) => (
             <Select id={ids.input} value={owner} onChange={(e) => { setOwner(e.target.value); setSelected(null) }}>
@@ -96,7 +96,7 @@ export function SharedAssetsPanel() {
           <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> Show archived
         </label>
       </form>
-      {can('workflow.edit') ? <DecisionDmnImport ws={ws} onSaved={() => void client.invalidateQueries({ queryKey: assetsKey(ws) })} /> : null}
+      {can('workflow.edit') && (!only || only === 'decision') ? <DecisionDmnImport ws={ws} onSaved={() => void client.invalidateQueries({ queryKey: assetsKey(ws) })} /> : null}
       {list.isPending ? <LoadingBlock rows={3} label="Loading shared assets" /> : list.isError ? (
         <QueryError error={list.error} onRetry={() => void list.refetch()} what="the shared assets" />
       ) : list.data.items.length === 0 ? (

@@ -90,6 +90,14 @@ function guard(wsId: string | readonly string[] | undefined, ...anyOf: Permissio
   return { ok: true, user, perms }
 }
 
+/** Mock evidence pack file (the real one is rendered by the server). */
+function mockEvidencePack(format: string, name: string, facts: Record<string, string | number>) {
+  if (!['pdf', 'docx', 'json'].includes(format)) return problem(422, 'VALIDATION_FAILED', 'Choose pdf, docx or json.')
+  const type = format === 'pdf' ? 'application/pdf' : format === 'docx' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/json'
+  const content = format === 'json' ? JSON.stringify({ formatVersion: '1', ...facts, payloadPolicy: 'Mock evidence pack' }, null, 2) : `Orqix mock evidence pack\n${JSON.stringify(facts)}\n`
+  return new HttpResponse(content, { status: 200, headers: { 'Content-Type': type, 'Content-Disposition': `attachment; filename="${name}.${format}"`, 'Cache-Control': 'no-store' } })
+}
+
 /** CMP01: mentioned people as API SubjectRefs (current display names). */
 function mentionRefs(ids: readonly string[] | undefined): { id: string; displayName: string }[] {
   return (ids ?? []).map((id) => ({ id, displayName: userById(id)?.displayName ?? 'Unknown user' }))
@@ -913,6 +921,24 @@ export function createHandlers(): HttpHandler[] {
         status: 200,
         headers: { 'Content-Type': 'application/zip', 'Content-Disposition': `attachment; filename="${wf.key}-r${rel.releaseNumber}.zip"` },
       })
+    }),
+    // Control evidence packs (docs/27 section 3): the mock returns a small placeholder file in the asked format.
+    http.get(`${B}/workspaces/:ws/workflows/:id/releases/:rid/evidence-pack`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws, 'workflow.read', 'audit.read')
+      if (!g.ok) return g.res
+      const wf = findWorkflow(str(params.ws), str(params.id))
+      const rel = wf?.releases.find((r) => r.id === str(params.rid))
+      if (!wf || !rel) return notFound()
+      const format = new URL(request.url).searchParams.get('format') ?? 'pdf'
+      return mockEvidencePack(format, `${wf.key}-r${rel.releaseNumber}-evidence-pack`, { kind: 'release', workflowKey: wf.key, releaseNumber: rel.releaseNumber })
+    }),
+    http.get(`${B}/workspaces/:ws/runs/:runId/evidence-pack`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws, 'run.read', 'audit.read')
+      if (!g.ok) return g.res
+      const format = new URL(request.url).searchParams.get('format') ?? 'pdf'
+      return mockEvidencePack(format, `run-${str(params.runId)}-evidence-pack`, { kind: 'run', runId: str(params.runId) })
     }),
     http.post(`${B}/workspaces/:ws/workflows/:id/active-release`, async ({ params, request }) => {
       await slow()

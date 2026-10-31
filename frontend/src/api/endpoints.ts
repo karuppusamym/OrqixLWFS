@@ -659,3 +659,32 @@ export const getWorkspaceFeatures = (ws: string) =>
 
 export const setWorkspaceFeature = (ws: string, feature: WorkspaceFeature, enabled: boolean) =>
   call(api.PUT('/workspaces/{workspaceId}/features/{feature}', { params: { path: { workspaceId: ws, feature } }, body: { enabled } }))
+
+// Control evidence packs (docs/27 section 3): per release and per run, as PDF, DOCX or JSON.
+export type EvidencePackFormat = 'pdf' | 'docx' | 'json'
+
+function evidenceFile(data: unknown, response: Response, fallback: string) {
+  const disposition = response.headers.get('Content-Disposition') ?? ''
+  const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition)
+  return { blob: data as Blob, filename: match?.[1] ? decodeURIComponent(match[1]) : fallback }
+}
+
+export async function exportReleaseEvidencePack(ws: string, workflowId: string, releaseId: string, format: EvidencePackFormat) {
+  const { data, response } = await callWithResponse(
+    api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/releases/{releaseId}/evidence-pack', {
+      params: { path: { workspaceId: ws, workflowId, releaseId }, query: { format } },
+      parseAs: 'blob',
+    }),
+  )
+  return evidenceFile(data, response, `release-evidence-pack.${format}`)
+}
+
+export async function exportRunEvidencePack(ws: string, runId: string, format: EvidencePackFormat) {
+  const { data, response } = await callWithResponse(
+    api.GET('/workspaces/{workspaceId}/runs/{runId}/evidence-pack', {
+      params: { path: { workspaceId: ws, runId }, query: { format } },
+      parseAs: 'blob',
+    }),
+  )
+  return evidenceFile(data, response, `run-evidence-pack.${format}`)
+}

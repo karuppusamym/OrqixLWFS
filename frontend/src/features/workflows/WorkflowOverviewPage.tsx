@@ -24,6 +24,7 @@ import { describeProblem } from '@/lib/problemMessages'
 import { VersionComparison } from './VersionComparison'
 import { PinWorkflowButton } from './PinnedWorkflows'
 import { ReleaseRollout } from './ReleaseRollout'
+import { EvidencePackMenu } from '@/features/evidence-pack/EvidencePackMenu'
 
 /** Workflow overview: draft status, releases, make active (rollback), export (docs/build/S7-frontend.md section 4). */
 export function WorkflowOverviewPage() {
@@ -234,6 +235,7 @@ export function WorkflowOverviewPage() {
                               <Download aria-hidden="true" /> BPMN
                             </Button>
                           ) : null}
+                          <EvidencePackMenu target={{ kind: 'release', workflowId, releaseId: r.id }} label={`Evidence pack for version ${r.releaseNumber}`} />
                         </div>
                       </TD>
                     </TR>

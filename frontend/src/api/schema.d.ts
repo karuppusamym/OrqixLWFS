@@ -5471,6 +5471,62 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/releases/{releaseId}/evidence-pack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+                releaseId: components["parameters"]["ReleaseId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Control evidence pack for a release (identity, approvals, tests, diff, history)
+         * @description Auditor-readable evidence for one published release (docs/27 section 3, Create): release identity and
+         *     SHA-256 checksums, who authored, reviewed and published it and when, the publication test results,
+         *     warnings acknowledged, the change summary from the previous release, promotion requests and the release's
+         *     audit history. Control metadata only. Allowed with workflow.read, or with audit.read for a workflow the
+         *     caller may start (404 when the caller cannot see the workflow). The JSON format is the pack itself with an `integrity.digest` (SHA-256 over the
+         *     RFC 8785 canonical JSON without `integrity`); PDF and DOCX render the same facts.
+         */
+        get: operations["exportReleaseEvidencePack"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/runs/{runId}/evidence-pack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Control evidence pack for a run (steps, decisions, SLA breaches, corrections, effects)
+         * @description Auditor-readable evidence for one run (docs/27 section 3, Create): the pinned release and its checksum,
+         *     each human step with assignee, decision and timestamps, SLA breaches, guarded operator corrections,
+         *     integration effect outcomes and the ordered timeline. Control metadata only: no request values, decision
+         *     reasons, comments or notes. The caller must be able to see the run (404 otherwise) and hold run.read or
+         *     audit.read (403, audited). Refuses truncation above 10000 records per list.
+         */
+        get: operations["exportRunEvidencePack"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -20738,6 +20794,131 @@ export interface operations {
                         [key: string]: unknown;
                     };
                     "text/csv": string;
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    exportReleaseEvidencePack: {
+        parameters: {
+            query?: {
+                format?: "pdf" | "docx" | "json";
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+                releaseId: components["parameters"]["ReleaseId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Evidence pack file */
+            200: {
+                headers: {
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": string;
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": string;
+                    "application/json": {
+                        /** @constant */
+                        formatVersion: "1";
+                        /** @constant */
+                        kind: "release";
+                        /** Format: date-time */
+                        generatedAt: string;
+                        release: {
+                            [key: string]: unknown;
+                        };
+                        approvals: ({
+                            /** @enum {unknown} */
+                            role: "Author" | "Reviewer" | "Publisher";
+                        } & {
+                            [key: string]: unknown;
+                        })[];
+                        tests: {
+                            /** @enum {unknown} */
+                            status: "passed" | "failed" | "notRecorded" | "notConfigured";
+                        } & {
+                            [key: string]: unknown;
+                        };
+                        diff: {
+                            [key: string]: unknown;
+                        };
+                        integrity: {
+                            digest: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    exportRunEvidencePack: {
+        parameters: {
+            query?: {
+                format?: "pdf" | "docx" | "json";
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Evidence pack file */
+            200: {
+                headers: {
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": string;
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": string;
+                    "application/json": {
+                        /** @constant */
+                        formatVersion: "1";
+                        /** @constant */
+                        kind: "run";
+                        /** Format: date-time */
+                        generatedAt: string;
+                        release: {
+                            [key: string]: unknown;
+                        };
+                        steps: {
+                            [key: string]: unknown;
+                        }[];
+                        effects: ({
+                            /** @enum {unknown} */
+                            outcome: "pending" | "inFlight" | "succeeded" | "retryableFailure" | "permanentFailure" | "unknown" | "notApplied";
+                        } & {
+                            [key: string]: unknown;
+                        })[];
+                        integrity: {
+                            digest: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    } & {
+                        [key: string]: unknown;
+                    };
                 };
             };
             401: components["responses"]["Unauthenticated"];

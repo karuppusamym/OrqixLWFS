@@ -240,12 +240,23 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
       if (!box || all.length === 0) return
       const bounds = getNodesBounds(all)
       const saved = initialViewport.current
-      if (firstFit && saved && Number.isFinite(saved.x) && Number.isFinite(saved.y) && Number.isFinite(saved.zoom) && saved.zoom >= 0.1 && saved.zoom <= 1.8) {
+      // A returning designer's saved view is kept, unless it would open with text too small to read.
+      if (firstFit && saved && Number.isFinite(saved.x) && Number.isFinite(saved.y) && Number.isFinite(saved.zoom) && saved.zoom >= minZoomRef.current && saved.zoom <= 1.8) {
         void flow.setViewport(saved, { duration: 0 })
         return
       }
       const whole = getViewportForBounds(bounds, box.width, box.height, 0.1, FIT.maxZoom, FIT.padding)
-      void flow.setViewport(whole, { duration })
+      const minZoom = minZoomRef.current
+      if (whole.zoom >= minZoom) {
+        void flow.setViewport(whole, { duration })
+        return
+      }
+      // Too wide to show whole at a readable size: start at the request form, readable, and pan for the rest.
+      const start = all.find((n) => n.data.kind === 'start') ?? all[0]
+      if (!start) return
+      const fitsTall = bounds.height * minZoom <= box.height - 48
+      const centerY = fitsTall ? bounds.y + bounds.height / 2 : start.position.y + (start.measured?.height ?? 128) / 2
+      void flow.setViewport({ x: 40 - start.position.x * minZoom, y: box.height / 2 - centerY * minZoom, zoom: minZoom }, { duration })
     })
   })
 

@@ -237,7 +237,10 @@ function VersionContent({ content }: { content: SharedAsset['versions'][number][
   if (table) return <p className="text-xs text-muted-foreground">{table.rows.length} {table.rows.length === 1 ? 'row' : 'rows'}; {POLICY_WORDS[table.hitPolicy]}</p>
   const form = formContentOfVersion(content)
   if (!form) return null
-  const titles = Object.entries(form.inputSchema.properties).map(([key, q]) => (q as { title?: string }).title ?? key)
+  // The stored schema's key order is not the form's order (PostgreSQL jsonb reorders keys); inputUi.order is.
+  const order = (form.inputUi as { order?: string[] } | undefined)?.order ?? []
+  const rank = (key: string) => { const index = order.indexOf(key); return index < 0 ? order.length : index }
+  const titles = Object.entries(form.inputSchema.properties).sort(([a], [b]) => rank(a) - rank(b)).map(([key, q]) => (q as { title?: string }).title ?? key)
   const rules = Object.keys(form.inputUi?.visibleWhen ?? {}).length + Object.keys(form.inputUi?.requiredWhen ?? {}).length
   return (
     <p className="text-xs text-muted-foreground" data-testid="form-version-summary">

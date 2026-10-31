@@ -23,6 +23,7 @@ test('designer files a workflow in a folder, filters by folder and owner, then d
   await expect(page.getByRole('link', { name: new RegExp(wf.name) }).first()).toBeVisible()
 
   // Create a folder; duplicate names are refused (case-insensitive).
+  await page.getByText('Manage library', { exact: true }).click()
   await page.getByRole('button', { name: 'Manage folders' }).click()
   const manage = page.getByRole('dialog', { name: 'Manage folders' })
   await manage.getByLabel('New folder name').fill(folderName)
@@ -73,6 +74,7 @@ test('designer files a workflow in a folder, filters by folder and owner, then d
   await expect(page).not.toHaveURL(/folder=/)
 
   // Rename, then delete: the workflow is kept and becomes unfiled.
+  await page.getByText('Manage library', { exact: true }).click()
   await page.getByRole('button', { name: 'Manage folders' }).click()
   await manage.getByRole('button', { name: `Rename ${folderName}` }).click()
   await manage.getByLabel(`Rename ${folderName}`).fill(renamed)

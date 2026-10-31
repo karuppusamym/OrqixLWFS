@@ -55,7 +55,7 @@ export function RunsPage() {
     <>
       <PageHeader title="Runs" description="All requests in this workspace. Technical details are available on each run." />
       <SavedWorkViews kind="runs" effectiveFilters={{lifecycle,workflowId,businessKey:appliedKey,outcomeKind,overdue:overdueOnly ? 'true' : ''}} />
-      <div className="mb-3 flex gap-2"><Button variant={attentionOnly ? 'primary' : 'secondary'} onClick={() => update({ lifecycle: 'needsAttention', overdue: '' })}>Exception workbench</Button><Button variant={!lifecycle && !overdueOnly ? 'primary' : 'secondary'} onClick={clearFilters}>All runs</Button></div>
+      <div className="mb-3 flex flex-wrap gap-2"><Button variant={attentionOnly ? 'primary' : 'secondary'} onClick={() => update({ lifecycle: 'needsAttention', overdue: '' })}>Exception workbench</Button><Button variant={!lifecycle && !overdueOnly ? 'primary' : 'secondary'} onClick={clearFilters}>All runs</Button></div>
       <ConsistencyScanPanel />
       <div className="mb-4 flex flex-wrap items-end gap-4 rounded-card border border-border bg-surface p-4">
         <Button

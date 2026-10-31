@@ -21,6 +21,8 @@ Order matters: **migrate first, then roll out the application.**
 
 OpenShift: `oc apply -k deploy/openshift/overlays/<env>` in the stages documented in [deploy/openshift/README.md](../deploy/openshift/README.md) (prerequisites → migration Job → app). The image runs as an arbitrary non-root UID with a read-only root filesystem and a writable `/tmp`.
 
+**One server, no internet:** the sovereign single-VM kit (`deploy/single-vm`, guide [sovereign-deployment.md](sovereign-deployment.md)) runs the same image with PostgreSQL, Keycloak and a TLS proxy on one Linux VM, with preflight, backup, restore and upgrade scripts.
+
 **Connection budget:** `pods × 15 + 5 (migration) + 10 (operations) ≤ 0.8 × max_connections`. With `max_connections = 100`, keep at most 4 pods.
 
 ## 3. Required configuration

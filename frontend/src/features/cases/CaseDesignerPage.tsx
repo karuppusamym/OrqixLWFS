@@ -28,6 +28,8 @@ type Check = components['schemas']['CaseDefinitionCheck']
 type Issue = Check['issues'][number]
 type SaveStatus = 'idle' | 'saving' | 'error' | 'conflict'
 type DesignerTab = 'plan' | 'data' | 'screens' | 'source'
+type Details = { name: string; dataFields: DataField[]; viewRef: NonNullable<CaseDraft['viewRef']> | undefined }
+type Step = { kind: 'plan' } | { kind: 'details'; field: keyof Details; at: number; before: Details }
 const NO_MODEL = 'The case type has no CMMN model yet'
 
 /**
@@ -67,7 +69,11 @@ function DraftEditor({ ws, workspaceName, initial }: { ws: string; workspaceName
   const model = useRef<CaseDesignerModel | null>(null)
   const lastModel = useRef<string | undefined>(undefined)
   const history = useRef<DesignerHistory | null>(null)
-  const [canUndo, setCanUndo] = useState({ canUndo: false, canRedo: false })
+  // One history for the whole draft: plan steps are replayed by the designer, detail steps restore a snapshot.
+  const [undoStack, setUndoStack] = useState<Step[]>([])
+  const [redoStack, setRedoStack] = useState<Step[]>([])
+  const planUndoCount = useRef(0)
+  const replaying = useRef(false)
   const [dataFields, setDataFields] = useState<DataField[]>(initial.dataFields as DataField[])
   const [viewRef, setViewRef] = useState(initial.viewRef ?? undefined)
   // A draft with nothing saved yet starts with the designer's starter model, which is not stored until saved.
@@ -84,6 +90,38 @@ function DraftEditor({ ws, workspaceName, initial }: { ws: string; workspaceName
   const [discarding, setDiscarding] = useState(false)
   const [tab, setTab] = useState<DesignerTab>('plan')
   const edited = () => { setDirty(true); setStatus(null); editCount.current += 1; setEdits(editCount.current) }
+  const details = (): Details => ({ name, dataFields, viewRef })
+  /** Records a detail change for undo; typing into the same field within a second is one step. */
+  const recordDetails = (field: keyof Details) => {
+    const now = Date.now()
+    setUndoStack((stack) => {
+      const last = stack.at(-1)
+      if (last?.kind === 'details' && last.field === field && now - last.at < 1000) return [...stack.slice(0, -1), { ...last, at: now }]
+      return [...stack.slice(-99), { kind: 'details', field, at: now, before: details() }]
+    })
+    setRedoStack([])
+  }
+  const restore = (snapshot: Details) => { setName(snapshot.name); setDataFields(snapshot.dataFields); setViewRef(snapshot.viewRef); edited() }
+  const onPlanHistory = ({ undoCount }: { undoCount: number; redoCount: number }) => {
+    // A new plan edit grows the designer's history; an undo or redo it replays for us does not count as one.
+    if (undoCount > planUndoCount.current && !replaying.current) { setUndoStack((stack) => [...stack.slice(-99), { kind: 'plan' }]); setRedoStack([]) }
+    planUndoCount.current = undoCount; replaying.current = false
+  }
+  const undo = () => {
+    const step = undoStack.at(-1)
+    if (!step) return
+    setUndoStack(undoStack.slice(0, -1))
+    if (step.kind === 'plan') { replaying.current = true; history.current?.undo(); setRedoStack([...redoStack, step]) }
+    else { setRedoStack([...redoStack, { ...step, before: details() }]); restore(step.before) }
+  }
+  const redo = () => {
+    const step = redoStack.at(-1)
+    if (!step) return
+    setRedoStack(redoStack.slice(0, -1))
+    if (step.kind === 'plan') { replaying.current = true; history.current?.redo(); setUndoStack([...undoStack, step]) }
+    else { setUndoStack([...undoStack, { ...step, at: 0, before: details() }]); restore(step.before) }
+  }
+  const clearHistory = () => { setUndoStack([]); setRedoStack([]); planUndoCount.current = 0 }
 
   const onModelChange = (next: CaseDesignerModel) => {
     const json = JSON.stringify(next)
@@ -190,7 +228,7 @@ function DraftEditor({ ws, workspaceName, initial }: { ws: string; workspaceName
     const text = await file.text()
     let report: ImportDiagnostic[] = []
     try { report = importCaseModel(text).diagnostics } catch { report = [] }
-    setFileXml(text); setFileReport(report); setMode('file'); setCheck(null); edited(); setTab('plan')
+    setFileXml(text); setFileReport(report); setMode('file'); setCheck(null); edited(); setTab('plan'); clearHistory()
   }
   const openInDesigner = () => {
     setError(null)
@@ -199,7 +237,7 @@ function DraftEditor({ ws, workspaceName, initial }: { ws: string; workspaceName
       if (!imported.items.length) throw new Error('The file has no plan items the designer can open.')
       setInitialModel({ items: applyMappings(imported.items, draft), options: imported.options })
       lastModel.current = undefined; model.current = null
-      setDesignerKey(value => value + 1); setMode('designer'); setCheck(null); edited()
+      setDesignerKey(value => value + 1); setMode('designer'); setCheck(null); edited(); clearHistory()
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'The file could not be opened in the designer.') }
   }
 
@@ -225,7 +263,7 @@ function DraftEditor({ ws, workspaceName, initial }: { ws: string; workspaceName
       saveText={saveText}
       saveTone={saveTone}
       announcement={saveStatus === 'saving' || (saveStatus === 'idle' && dirty) ? '' : saveText}
-      history={mode === 'designer' ? { onUndo: () => history.current?.undo(), onRedo: () => history.current?.redo(), ...canUndo } : undefined}
+      history={{ onUndo: undo, onRedo: redo, canUndo: undoStack.length > 0 && !pending, canRedo: redoStack.length > 0 && !pending }}
     >
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -276,7 +314,7 @@ function DraftEditor({ ws, workspaceName, initial }: { ws: string; workspaceName
         <TabsContent value="plan" forceMount hidden={tab !== 'plan'} className="m-0 p-4">
           {mode === 'designer'
             ? <CaseModelDesigner key={designerKey} ws={ws} caseKey={draft.key} name={title} disabled={pending} dataFields={dataFields} framed
-                historyRef={history} onHistoryChange={setCanUndo}
+                historyRef={history} onHistoryChange={onPlanHistory}
                 initialModel={initialModel} onModelChange={onModelChange} onApply={() => undefined} />
             : <div className="space-y-3 rounded-card border border-border bg-surface p-4" role="region" aria-label="Uploaded CMMN file">
                 <p>This case type uses an uploaded CMMN file as it is ({Math.max(1, Math.round(new TextEncoder().encode(fileXml).length / 1024))} KiB). The check and publishing use the file unchanged.</p>
@@ -288,13 +326,13 @@ function DraftEditor({ ws, workspaceName, initial }: { ws: string; workspaceName
         </TabsContent>
         <TabsContent value="data" forceMount hidden={tab !== 'data'} className="m-0 space-y-4 p-4">
           <div className="grid max-w-3xl gap-3 sm:grid-cols-2">
-            <div><Label htmlFor="case-draft-name">Name</Label><Input id="case-draft-name" value={name} maxLength={200} required disabled={pending} onChange={event => { setName(event.target.value); edited() }} /></div>
+            <div><Label htmlFor="case-draft-name">Name</Label><Input id="case-draft-name" value={name} maxLength={200} required disabled={pending} onChange={event => { recordDetails('name'); setName(event.target.value); edited() }} /></div>
             <div><Label htmlFor="case-draft-key">Key</Label><Input id="case-draft-key" value={draft.key} readOnly aria-describedby="case-draft-key-hint" /><p id="case-draft-key-hint" className="text-xs text-muted-foreground">The key cannot change.</p></div>
           </div>
-          <CaseDataFieldsEditor fields={dataFields} onChange={fields => { setDataFields(fields); edited() }} disabled={pending} />
+          <CaseDataFieldsEditor fields={dataFields} onChange={fields => { recordDetails('dataFields'); setDataFields(fields); edited() }} disabled={pending} />
         </TabsContent>
         <TabsContent value="screens" forceMount hidden={tab !== 'screens'} className="m-0 p-4">
-          <CaseViewPicker ws={ws} value={viewRef} onChange={value => { setViewRef(value); edited() }} disabled={pending} />
+          <CaseViewPicker ws={ws} value={viewRef} onChange={value => { recordDetails('viewRef'); setViewRef(value); edited() }} disabled={pending} />
         </TabsContent>
         <TabsContent value="source" forceMount hidden={tab !== 'source'} className="m-0 max-w-3xl space-y-3 p-4">
           <p className="text-sm text-muted-foreground">The case type is stored as CMMN 1.1. Download the CMMN the designer generates from More, or use a CMMN file as it is instead of the designer.</p>

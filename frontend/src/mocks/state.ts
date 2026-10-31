@@ -424,6 +424,16 @@ export interface MockDb {
   messageBuffer?: MockMessage[]
   /** S127: workspace feature switches that were changed at least once; absent means on. */
   featureSwitches?: MockFeatureSwitch[]
+  /** Access changes made in Settings (role bindings, grants, groups) on top of the seeded memberships. */
+  accessEdits?: MockAccessEdits
+}
+
+export interface MockAccessEdits {
+  roleBindings: Array<components['schemas']['RoleBinding'] & { wsId: string }>
+  grants: Array<components['schemas']['PermissionGrant'] & { wsId: string }>
+  /** Ids of seeded bindings and grants an administrator removed. */
+  removed: string[]
+  groups: Array<components['schemas']['Group'] & { wsId: string }>
 }
 
 export interface MockFeatureSwitch {
@@ -562,6 +572,7 @@ export function blankDefinition(workflowKey: string, name: string): Definition {
 interface DbSnapshot {
   messageBuffer?: MockMessage[]
   featureSwitches?: MockFeatureSwitch[]
+  accessEdits?: MockAccessEdits
   /** Absent in snapshots written before migrations were mocked. */
   migrations?: Array<[string, MockMigration]>
   migrationProjects?: Array<[string, MockMigrationProject]>
@@ -585,6 +596,7 @@ export function snapshotDb(): string {
   const snap: DbSnapshot = {
     messageBuffer: db.messageBuffer ?? [],
     featureSwitches: db.featureSwitches ?? [],
+    ...(db.accessEdits ? { accessEdits: db.accessEdits } : {}),
     migrations: [...db.migrations],
     migrationProjects: [...db.migrationProjects],
     migrationPolicies: [...db.migrationPolicies],
@@ -611,6 +623,7 @@ export function restoreDb(json: string): boolean {
     const next = emptyDb()
     next.messageBuffer = snap.messageBuffer ?? []
     next.featureSwitches = snap.featureSwitches ?? []
+    if (snap.accessEdits) next.accessEdits = snap.accessEdits
     next.migrations = new Map(snap.migrations ?? [])
     next.migrationProjects = new Map(snap.migrationProjects ?? [])
     next.canaries = new Map(snap.canaries ?? [])

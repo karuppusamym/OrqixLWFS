@@ -18,7 +18,8 @@ import { AiSettingsPanel, useShowAiSettings } from '@/features/ai/AiSettingsPane
 
 /**
  * Tabs run from people and features, through connected systems, to shared content and retention.
- * Settings (docs/build/S7-frontend.md section 4): members, roles and groups read-only in R0, and connections
+ * Settings (docs/build/S7-frontend.md section 4): roles, extra permissions and approval groups (editable by workspace
+ * administrators), and connections
  * with an editable binding for people who may manage them. Secret values are never shown or accepted.
  */
 export function SettingsPage() {

@@ -50,6 +50,54 @@ import {
   type MockWorkflow,
 } from './state'
 
+// Access (Settings → Members and groups): seeded memberships plus the changes an administrator made -------------------
+
+const ROLE_KEYS = ['WORKSPACE_ADMIN', 'WORKFLOW_DESIGNER', 'PUBLISHER', 'OPERATOR', 'VIEWER', 'APPROVER']
+const GRANT_KEYS = ['workflow.start', 'connection.manage', 'message.send', 'document.browse', 'job.work', 'audit.read', 'workflow.approve-promotion', 'agent.approve-write-tool']
+
+function edits(): NonNullable<typeof db.accessEdits> {
+  return (db.accessEdits ??= { roleBindings: [], grants: [], removed: [], groups: [] })
+}
+
+function principalOf(value: { type?: string; value?: string } | undefined): components['schemas']['Principal'] | null {
+  if (!value?.value?.trim() || (value.type !== 'subject' && value.type !== 'idpGroup')) return null
+  if (value.type === 'idpGroup') return { type: 'idpGroup', value: value.value.trim(), displayName: value.value.trim() }
+  const user = USERS.find((u) => u.id === value.value)
+  return user ? { type: 'subject', value: user.id, displayName: user.displayName } : null
+}
+
+const withoutWs = <T extends { wsId: string }>({ wsId: _ws, ...rest }: T): Omit<T, 'wsId'> => rest
+
+/** Seeded ids are stable so an administrator can remove them; removed ones stay removed. */
+function accessBindings(ws: string): components['schemas']['RoleBinding'][] {
+  const removed = new Set(edits().removed)
+  const seeded = allMemberships().filter((m) => m.wsId === ws).flatMap((m) => m.roles
+    .filter((r) => r !== 'REQUESTER' && r !== 'INTEGRATION_ADMIN')
+    .map((role) => {
+      const u = userByName(m.username)
+      return { id: `seed-role-${ws}-${m.username}-${role}`, role: role as components['schemas']['WorkspaceRole'], principal: { type: 'subject' as const, value: u.id, displayName: u.displayName }, source: 'seed' as const, createdAt: '2026-10-01T09:00:00Z' }
+    }))
+  return [...seeded, ...edits().roleBindings.filter((b) => b.wsId === ws).map(withoutWs)].filter((b) => !removed.has(b.id))
+}
+
+function accessGrants(ws: string): components['schemas']['PermissionGrant'][] {
+  const removed = new Set(edits().removed)
+  const seeded = allMemberships().filter((m) => m.wsId === ws).flatMap((m) => m.roles
+    .filter((r) => r === 'REQUESTER' || r === 'INTEGRATION_ADMIN')
+    .map((r) => {
+      const u = userByName(m.username)
+      return { id: `seed-grant-${ws}-${m.username}-${r}`, permission: (r === 'REQUESTER' ? 'workflow.start' : 'connection.manage') as components['schemas']['PermissionGrant']['permission'], workflowId: null, principal: { type: 'subject' as const, value: u.id, displayName: u.displayName }, createdAt: '2026-10-01T09:00:00Z' }
+    }))
+  return [...seeded, ...edits().grants.filter((x) => x.wsId === ws).map(withoutWs)].filter((x) => !removed.has(x.id))
+}
+
+function accessGroups(ws: string, withMembers: boolean): components['schemas']['Group'][] {
+  const seeded = ws === WORKSPACES[2]?.id ? [] : GROUPS.map((gr) => ({ ...gr, members: groupMembers(gr.key).map((u) => ({ type: 'subject' as const, value: u.id, displayName: u.displayName })) }))
+  const changed: components['schemas']['Group'][] = edits().groups.filter((x) => x.wsId === ws).map(withoutWs)
+  const all: components['schemas']['Group'][] = [...seeded.filter((x) => !changed.some((c) => c.key === x.key)), ...changed]
+  return all.map(({ members, ...rest }) => (withMembers ? { ...rest, members } : rest))
+}
+
 // Current persona ---------------------------------------------------------------------------------------
 
 let currentUsername = 'rhea.requester'
@@ -2002,38 +2050,72 @@ export function createHandlers(): HttpHandler[] {
       const g = guard(params.ws, 'workspace.manage-access')
       if (!g.ok) return g.res
       const ws = str(params.ws)
-      const roleBindings = allMemberships()
-        .filter((m) => m.wsId === ws)
-        .flatMap((m) =>
-          m.roles
-            .filter((r) => r !== 'REQUESTER' && r !== 'INTEGRATION_ADMIN')
-            .map((role) => {
-              const u = userByName(m.username)
-              return { id: newId(), role, principal: { type: 'subject', value: u.id, displayName: u.displayName }, source: 'seed', createdAt: '2026-10-01T09:00:00Z' }
-            }),
-        )
-      const grants = allMemberships()
-        .filter((m) => m.wsId === ws)
-        .flatMap((m) =>
-          m.roles
-            .filter((r) => r === 'REQUESTER' || r === 'INTEGRATION_ADMIN')
-            .map((r) => {
-              const u = userByName(m.username)
-              return { id: newId(), permission: r === 'REQUESTER' ? 'workflow.start' : 'connection.manage', workflowId: null, principal: { type: 'subject', value: u.id, displayName: u.displayName }, createdAt: '2026-10-01T09:00:00Z' }
-            }),
-        )
-      const groups = ws === WORKSPACES[2]?.id ? [] : GROUPS.map((gr) => ({ ...gr, members: groupMembers(gr.key).map((u) => ({ type: 'subject', value: u.id, displayName: u.displayName })) }))
-      return HttpResponse.json({ roleBindings, grants, groups })
+      return HttpResponse.json({ roleBindings: accessBindings(ws), grants: accessGrants(ws), groups: accessGroups(ws, true) })
     }),
     http.get(`${B}/workspaces/:ws/groups`, async ({ params }) => {
       await slow()
       const g = guard(params.ws, 'workflow.read', 'workspace.manage-access')
       if (!g.ok) return g.res
-      if (str(params.ws) === WORKSPACES[2]?.id) return HttpResponse.json({ items: [] })
       const withMembers = g.perms.includes('workspace.manage-access') || g.perms.includes('run.operate')
-      return HttpResponse.json({
-        items: GROUPS.map((gr) => ({ ...gr, ...(withMembers ? { members: groupMembers(gr.key).map((u) => ({ type: 'subject', value: u.id, displayName: u.displayName })) } : {}) })),
-      })
+      return HttpResponse.json({ items: accessGroups(str(params.ws), withMembers) })
+    }),
+    http.post(`${B}/workspaces/:ws/access/role-bindings`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws, 'workspace.manage-access')
+      if (!g.ok) return g.res
+      const body = (await request.json()) as { role?: string; principal?: { type?: string; value?: string } }
+      const principal = principalOf(body.principal)
+      if (!principal || !ROLE_KEYS.includes(body.role ?? '')) return problem(400, 'MALFORMED_REQUEST', 'The request is malformed', { detail: 'Choose a role and a person or sign-in group.' })
+      const ws = str(params.ws)
+      if (accessBindings(ws).some((b) => b.role === body.role && b.principal.type === principal.type && b.principal.value === principal.value)) return problem(409, 'DUPLICATE_KEY', 'This role binding already exists.')
+      const binding = { id: newId(), role: body.role as components['schemas']['WorkspaceRole'], principal, source: 'manual' as const, createdAt: clock.now().toISOString() }
+      edits().roleBindings.push({ ...binding, wsId: ws })
+      return HttpResponse.json(binding, { status: 201 })
+    }),
+    http.delete(`${B}/workspaces/:ws/access/role-bindings/:id`, async ({ params }) => {
+      await slow()
+      const g = guard(params.ws, 'workspace.manage-access')
+      if (!g.ok) return g.res
+      const id = str(params.id)
+      if (!accessBindings(str(params.ws)).some((b) => b.id === id)) return problem(404, 'NOT_FOUND', 'Not found')
+      const e = edits(); e.roleBindings = e.roleBindings.filter((b) => b.id !== id); e.removed.push(id)
+      return new HttpResponse(null, { status: 204 })
+    }),
+    http.post(`${B}/workspaces/:ws/access/grants`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws, 'workspace.manage-access')
+      if (!g.ok) return g.res
+      const body = (await request.json()) as { permission?: string; workflowId?: string | null; principal?: { type?: string; value?: string } }
+      const principal = principalOf(body.principal)
+      if (!principal || !GRANT_KEYS.includes(body.permission ?? '')) return problem(400, 'MALFORMED_REQUEST', 'The request is malformed', { detail: 'Choose a permission and a person or sign-in group.' })
+      if (body.workflowId && body.permission !== 'workflow.start') return problem(422, 'VALIDATION_FAILED', 'Some values are not valid', { detail: 'Only starting requests can be limited to one workflow.' })
+      const grant = { id: newId(), permission: body.permission as components['schemas']['PermissionGrant']['permission'], workflowId: body.workflowId ?? null, principal, createdAt: clock.now().toISOString() }
+      edits().grants.push({ ...grant, wsId: str(params.ws) })
+      return HttpResponse.json(grant, { status: 201 })
+    }),
+    http.delete(`${B}/workspaces/:ws/access/grants/:id`, async ({ params }) => {
+      await slow()
+      const g = guard(params.ws, 'workspace.manage-access')
+      if (!g.ok) return g.res
+      const id = str(params.id)
+      if (!accessGrants(str(params.ws)).some((x) => x.id === id)) return problem(404, 'NOT_FOUND', 'Not found')
+      const e = edits(); e.grants = e.grants.filter((x) => x.id !== id); e.removed.push(id)
+      return new HttpResponse(null, { status: 204 })
+    }),
+    http.put(`${B}/workspaces/:ws/groups/:key`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws, 'workspace.manage-access')
+      if (!g.ok) return g.res
+      const ws = str(params.ws), key = str(params.key)
+      const body = (await request.json()) as { name?: string; members?: Array<{ type?: string; value?: string }>; expectedRevision?: number }
+      if (!/^[a-z][a-z0-9-]{0,61}[a-z0-9]$/.test(key) || !body.name?.trim() || !Array.isArray(body.members) || body.members.length > 200) return problem(400, 'MALFORMED_REQUEST', 'The request is malformed', { detail: 'A group needs a key, a name and at most 200 members.' })
+      const members = body.members.map(principalOf)
+      if (members.some((m) => !m)) return problem(400, 'MALFORMED_REQUEST', 'The request is malformed', { detail: 'Every member is a person or a sign-in group.' })
+      const existing = accessGroups(ws, true).find((x) => x.key === key)
+      if (existing && body.expectedRevision !== existing.revision) return problem(409, 'GROUP_REVISION_CONFLICT', 'The group changed since you loaded it.')
+      const saved = { key, name: body.name.trim(), revision: (existing?.revision ?? 0) + 1, members: members as NonNullable<components['schemas']['Group']['members']> }
+      const e = edits(); e.groups = [...e.groups.filter((x) => !(x.wsId === ws && x.key === key)), { ...saved, wsId: ws }]
+      return HttpResponse.json(saved)
     }),
 
     // Logout (navigation POST) ---------------------------------------------------------------------------------------------------------------------

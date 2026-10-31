@@ -13,7 +13,7 @@ type Draft = components['schemas']['CaseDefinitionDraft'] & { ws: string }
 type Issue = components['schemas']['CaseDefinitionCheck']['issues'][number]
 
 const B = '/api/v1'
-const DEMO_DEFINITION: Definition = { id: '77777777-7777-4777-8777-777777777701', key: 'demoCase', name: 'Evidence review', version: 1, createdAt: '2026-10-17T12:00:00Z' }
+const DEMO_DEFINITION: Definition = { id: '77777777-7777-4777-8777-777777777701', key: 'evidence-review', name: 'Evidence review', version: 1, createdAt: '2026-10-17T12:00:00Z' }
 const DEMO_INSTANCE = '77777777-7777-4777-8777-777777777702'
 let definitions: Stored[] = []
 let instances: Row[] = []

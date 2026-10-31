@@ -265,7 +265,8 @@ export interface CaseModelDesignerProps {
   framed?: boolean
   /** Set by an editor frame that puts undo and redo in its header instead of the designer's own undo button. */
   historyRef?: { current: DesignerHistory | null }
-  onHistoryChange?: (state: { canUndo: boolean; canRedo: boolean }) => void
+  /** Reported after every plan change: how many steps can be undone (grows by one per edit) and redone. */
+  onHistoryChange?: (state: { undoCount: number; redoCount: number }) => void
 }
 
 export interface DesignerHistory { undo: () => void; redo: () => void }
@@ -297,7 +298,7 @@ export function CaseModelDesigner({ ws, caseKey, name, onApply, disabled, dataFi
   useEffect(() => { if (historyRef) historyRef.current = { undo, redo } })
   const reportHistory = useRef(onHistoryChange)
   useEffect(() => { reportHistory.current = onHistoryChange })
-  useEffect(() => { reportHistory.current?.({ canUndo: history.length > 0, canRedo: future.length > 0 }) }, [history.length, future.length])
+  useEffect(() => { reportHistory.current?.({ undoCount: history.length, redoCount: future.length }) }, [history.length, future.length])
   const nextId = () => { let index = 1; const used = new Set(caseItems(items).map(item => item.id)); while (used.has(`item${index}`)) index++; return `item${index}` }
   const replace = (id: string, patch: Partial<CaseModelItem>) => edit(nodes => patchItem(nodes, id, patch))
   const add = (kind: CaseItemKind, parent?: string) => edit(nodes => {

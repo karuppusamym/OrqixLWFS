@@ -145,6 +145,41 @@ describe('case designer page (S126)', () => {
     await waitFor(() => expect(screen.getByTestId('save-state')).toHaveTextContent(/^Saved/))
   })
 
+  it('undoes and redoes name, data field and plan changes in the order they were made', async () => {
+    signInAs('dana.designer')
+    const user = userEvent.setup()
+    await renderAppReady(`/w/${ws}/case-designs`)
+    await user.click(await screen.findByRole('button', { name: 'New case type' }))
+    await user.type(screen.getByLabelText('Name'), 'Mixed history')
+    await user.click(screen.getByRole('button', { name: 'Create draft' }))
+    await screen.findByRole('heading', { level: 1, name: 'Mixed history' })
+    const history = screen.getByRole('group', { name: 'History' })
+    const undo = () => user.click(within(history).getByRole('button', { name: 'Undo' }))
+    const redo = () => user.click(within(history).getByRole('button', { name: 'Redo' }))
+
+    await user.click(screen.getByRole('button', { name: 'Add milestone' }))
+    await user.click(screen.getByRole('tab', { name: 'Data' }))
+    const name = screen.getByLabelText('Name')
+    await user.clear(name); await user.type(name, 'Renamed')
+    await user.click(screen.getByRole('button', { name: 'Add case data field' }))
+    expect(screen.getByTestId('case-field-card-field1')).toBeInTheDocument()
+
+    await undo()
+    expect(screen.queryByTestId('case-field-card-field1')).not.toBeInTheDocument()
+    await undo()
+    expect(screen.getByLabelText('Name')).toHaveValue('Mixed history')
+    await undo()
+    await waitFor(() => expect(screen.queryAllByText('New milestone')).toHaveLength(0))
+    expect(within(history).getByRole('button', { name: 'Undo' })).toBeDisabled()
+
+    await redo(); await redo()
+    expect(screen.getByLabelText('Name')).toHaveValue('Renamed')
+    expect(screen.getAllByText('New milestone').length).toBeGreaterThan(0)
+    await redo()
+    expect(screen.getByTestId('case-field-card-field1')).toBeInTheDocument()
+    expect(within(history).getByRole('button', { name: 'Redo' })).toBeDisabled()
+  })
+
   it('is offered only to people who may author case types', async () => {
     signInAs('rhea.requester')
     await renderAppReady(`/w/${ws}/case-designs`)

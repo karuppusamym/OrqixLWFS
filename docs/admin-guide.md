@@ -49,12 +49,14 @@ Group changes in the IdP reach Orqix at the user's next sign-in or when the sess
 
 ## 5. Setting up a workspace
 
-R0 manages access through the API (`/api/v1`, see [OpenAPI](../contracts/openapi.yaml)); the Settings screen shows it read-only. Signed-in browser calls need the `X-XSRF-TOKEN` header.
+Workspace administrators manage access in **Settings → Members and groups** or through the API (`/api/v1`, see [OpenAPI](../contracts/openapi.yaml)); both use the same endpoints, checks and audit records. Signed-in browser calls need the `X-XSRF-TOKEN` header.
+
+Prefer **sign-in groups** (the identity provider's `groups` claim, for example Active Directory groups) over individual people: then joining or leaving an AD group is all it takes, and Orqix follows at the person's next sign-in. A person can be chosen once they have signed in and hold access in the workspace.
 
 1. **Platform admin:** `POST /admin/organizations`, then `POST /admin/workspaces` with `initialAdmins` (principals of type `idpGroup` or `subject`). Mark test workspaces with `isTest: true`; only they may allow self-approval workflows.
-2. **Workspace admin:** map IdP groups to roles with `POST /workspaces/{id}/access/role-bindings` — `WORKFLOW_DESIGNER`, `PUBLISHER`, `OPERATOR`, `VIEWER`, `APPROVER`, `WORKSPACE_ADMIN`.
+2. **Workspace admin:** map IdP groups to roles (Settings → Members and groups → **Add role**, or `POST /workspaces/{id}/access/role-bindings`) — `WORKFLOW_DESIGNER`, `PUBLISHER`, `OPERATOR`, `VIEWER`, `APPROVER`, `WORKSPACE_ADMIN`.
 3. Grant `workflow.start` (the requester capability) with `POST /workspaces/{id}/access/grants`, workspace-wide or for one workflow, and `connection.manage` to integration administrators. Other grant-only permissions are listed under [Grant-only permissions](#grant-only-permissions---19-october-2026).
-4. Create approval groups with `PUT /workspaces/{id}/groups/{key}` (for example `managers`, `finance-approvers`) listing IdP groups or subjects. Workflows assign approval steps to these keys; publishing fails while a referenced group is missing.
+4. Create approval groups, the work queues (Settings → Members and groups → **New approval group**, or `PUT /workspaces/{id}/groups/{key}`), for example `managers` or `finance-approvers`, listing IdP groups or people. A group belongs to the workspace and is shared by every workflow and case type in it; steps are assigned to its key, and members see those tasks as claimable. Members also need the Approver role to decide. Publishing fails while a referenced group is missing.
 
 Administrator roles manage access only: they do not see request data, approve or publish unless granted those roles too.
 

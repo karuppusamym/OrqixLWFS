@@ -23,6 +23,8 @@ import { AssertionError, evaluateAssertions, validateAssertions, type Assertions
 import {
   GROUPS,
   TEMPLATES,
+  PACK_TEMPLATES,
+  packTemplate,
   WORKSPACES,
   USERS,
   allMemberships,
@@ -383,7 +385,7 @@ export function createHandlers(): HttpHandler[] {
     http.get(`${B}/workspaces/:ws/templates`, async ({ params }) => {
       await slow()
       const g = guard(params.ws, 'workflow.edit')
-      return g.ok ? HttpResponse.json({ items: TEMPLATES }) : g.res
+      return g.ok ? HttpResponse.json({ items: [...TEMPLATES, ...PACK_TEMPLATES] }) : g.res
     }),
     http.get(`${B}/workspaces/:ws/workflows`, async ({ params, request }) => {
       await slow()
@@ -415,7 +417,7 @@ export function createHandlers(): HttpHandler[] {
       if (workflowsOf(str(params.ws)).some((w) => w.key === input.key)) {
         return problem(409, 'DUPLICATE_KEY', 'A workflow with this key already exists', { fieldErrors: [{ pointer: '/key', code: 'duplicate', message: 'A workflow with this key already exists.' }] })
       }
-      const definition: Definition = input.templateId === 'purchase-approval' ? purchaseTemplate() : input.templateId === 'new-hire-onboarding' ? onboardingTemplate() : input.templateId === 'order-payment-wait' ? orderPaymentTemplate() : input.templateId === 'case-with-stages' ? caseTemplate() : blankDefinition(input.key, input.name)
+      const definition: Definition = input.templateId === 'purchase-approval' ? purchaseTemplate() : input.templateId === 'new-hire-onboarding' ? onboardingTemplate() : input.templateId === 'order-payment-wait' ? orderPaymentTemplate() : input.templateId === 'case-with-stages' ? caseTemplate() : packTemplate(input.templateId) ?? blankDefinition(input.key, input.name)
       definition.workflowKey = input.key
       definition.name = input.name
       if (input.description) definition.metadata.description = input.description

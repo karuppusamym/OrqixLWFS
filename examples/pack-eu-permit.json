@@ -1,0 +1,875 @@
+{
+  "schemaVersion": "0.1",
+  "workflowKey": "permit-eu",
+  "name": "Building permit (European Union)",
+  "metadata": {
+    "description": "European Union building permit for a municipal office. A clerk checks completeness, planning scrutinises the plans, then fire and heritage reviews run only when the rules ask for them (inclusive split), and the permit authority decides within three months or the case escalates. Due dates count office hours and public holidays. Fire safety review from 22 m (high-rise threshold in German state building codes) or for assembly use; heritage review for listed buildings; escalation after three months, the usual statutory decision period. Shown in German as the EU second language; adapt to the member state. Illustrative regional template, not a regulatory-compliant product: thresholds, holiday lists and document names are placeholders for your compliance function to confirm.",
+    "tags": [
+      "pack:public-sector",
+      "region:eu",
+      "template:permit",
+      "owner:Municipal permit office",
+      "illustrative",
+      "lang:de"
+    ]
+  },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "applicantName",
+      "buildingUse",
+      "floors",
+      "height",
+      "parcel",
+      "floorArea",
+      "listedBuilding"
+    ],
+    "properties": {
+      "applicantName": {
+        "type": "string",
+        "title": "Applicant name / Name des Bauherrn",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "parcel": {
+        "type": "string",
+        "title": "Parcel (Flurstück) / Flurstück",
+        "minLength": 1,
+        "maxLength": 60
+      },
+      "district": {
+        "type": "string",
+        "title": "Municipality district / Gemarkung",
+        "minLength": 1,
+        "maxLength": 60
+      },
+      "buildingUse": {
+        "type": "string",
+        "title": "Building use / Nutzung",
+        "enum": [
+          "Residential",
+          "Commercial",
+          "Mixed use",
+          "Industrial",
+          "Assembly"
+        ]
+      },
+      "floorArea": {
+        "type": "number",
+        "title": "Gross floor area (m²) / Bruttogrundfläche (m²)",
+        "minimum": 1,
+        "maximum": 1000000,
+        "multipleOf": 0.01
+      },
+      "floors": {
+        "type": "integer",
+        "title": "Floors / Geschosse",
+        "minimum": 1,
+        "maximum": 60
+      },
+      "height": {
+        "type": "number",
+        "title": "Building height (m) / Gebäudehöhe (m)",
+        "minimum": 1,
+        "maximum": 300,
+        "multipleOf": 0.01
+      },
+      "listedBuilding": {
+        "type": "boolean",
+        "title": "Listed building or heritage area / Denkmal oder Denkmalbereich"
+      }
+    }
+  },
+  "inputUi": {
+    "order": [
+      "applicantName",
+      "parcel",
+      "district",
+      "buildingUse",
+      "floorArea",
+      "floors",
+      "height",
+      "listedBuilding"
+    ],
+    "widgets": {
+      "buildingUse": "select",
+      "floorArea": "number",
+      "height": "number",
+      "listedBuilding": "checkbox"
+    },
+    "submitLabel": "Submit application / Antrag einreichen",
+    "layout": {
+      "sections": [
+        {
+          "id": "applicant",
+          "title": "Applicant / Bauherr",
+          "columns": 2,
+          "fields": [
+            "applicantName",
+            "parcel",
+            "district"
+          ]
+        },
+        {
+          "id": "building",
+          "title": "Building / Gebäude",
+          "columns": 2,
+          "fields": [
+            "buildingUse",
+            "floorArea",
+            "floors",
+            "height",
+            "listedBuilding"
+          ]
+        }
+      ]
+    }
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "fireReview": {
+        "type": "boolean",
+        "title": "Fire review needed"
+      },
+      "decidedBy": {
+        "type": "string",
+        "title": "Decided by"
+      }
+    }
+  },
+  "triggers": [
+    "manual",
+    "api"
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "label": "Application received",
+      "config": {}
+    },
+    {
+      "id": "scope",
+      "type": "decision",
+      "label": "Decide which reviews apply",
+      "config": {
+        "decisionRef": "review-scope"
+      }
+    },
+    {
+      "id": "intake",
+      "type": "approval",
+      "label": "Completeness check / Vollständigkeitsprüfung",
+      "config": {
+        "candidateGroupRef": "permit-clerks",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 16,
+        "calendar": {
+          "zone": "Europe/Berlin",
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "holidays": [
+            "2026-01-01",
+            "2026-04-03",
+            "2026-04-06",
+            "2026-05-01",
+            "2026-05-14",
+            "2026-05-25",
+            "2026-10-03",
+            "2026-12-25",
+            "2026-12-26",
+            "2027-01-01",
+            "2027-03-26",
+            "2027-03-29",
+            "2027-05-01",
+            "2027-05-06",
+            "2027-05-17",
+            "2027-10-03",
+            "2027-12-25",
+            "2027-12-26"
+          ],
+          "start": "08:00",
+          "end": "16:00",
+          "revision": "EU-office-2026-illustrative",
+          "validFrom": "2026-01-01",
+          "intervals": [
+            {
+              "start": "08:00",
+              "end": "12:00"
+            },
+            {
+              "start": "13:00",
+              "end": "16:00"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "planning",
+      "type": "approval",
+      "label": "Planning scrutiny / Bauplanungsrechtliche Prüfung",
+      "config": {
+        "candidateGroupRef": "planning-officers",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 40,
+        "calendar": {
+          "zone": "Europe/Berlin",
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "holidays": [
+            "2026-01-01",
+            "2026-04-03",
+            "2026-04-06",
+            "2026-05-01",
+            "2026-05-14",
+            "2026-05-25",
+            "2026-10-03",
+            "2026-12-25",
+            "2026-12-26",
+            "2027-01-01",
+            "2027-03-26",
+            "2027-03-29",
+            "2027-05-01",
+            "2027-05-06",
+            "2027-05-17",
+            "2027-10-03",
+            "2027-12-25",
+            "2027-12-26"
+          ],
+          "start": "08:00",
+          "end": "16:00",
+          "revision": "EU-office-2026-illustrative",
+          "validFrom": "2026-01-01",
+          "intervals": [
+            {
+              "start": "08:00",
+              "end": "12:00"
+            },
+            {
+              "start": "13:00",
+              "end": "16:00"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "reviews",
+      "type": "parallelSplit",
+      "label": "Specialist reviews",
+      "config": {
+        "joinRef": "reviewsDone",
+        "mode": "inclusive"
+      }
+    },
+    {
+      "id": "fire",
+      "type": "approval",
+      "label": "Fire safety review / Brandschutzprüfung",
+      "config": {
+        "candidateGroupRef": "fire-officers",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 40,
+        "calendar": {
+          "zone": "Europe/Berlin",
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "holidays": [
+            "2026-01-01",
+            "2026-04-03",
+            "2026-04-06",
+            "2026-05-01",
+            "2026-05-14",
+            "2026-05-25",
+            "2026-10-03",
+            "2026-12-25",
+            "2026-12-26",
+            "2027-01-01",
+            "2027-03-26",
+            "2027-03-29",
+            "2027-05-01",
+            "2027-05-06",
+            "2027-05-17",
+            "2027-10-03",
+            "2027-12-25",
+            "2027-12-26"
+          ],
+          "start": "08:00",
+          "end": "16:00",
+          "revision": "EU-office-2026-illustrative",
+          "validFrom": "2026-01-01",
+          "intervals": [
+            {
+              "start": "08:00",
+              "end": "12:00"
+            },
+            {
+              "start": "13:00",
+              "end": "16:00"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "heritage",
+      "type": "approval",
+      "label": "Heritage review / Denkmalschutzprüfung",
+      "config": {
+        "candidateGroupRef": "heritage-officers",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 40,
+        "calendar": {
+          "zone": "Europe/Berlin",
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "holidays": [
+            "2026-01-01",
+            "2026-04-03",
+            "2026-04-06",
+            "2026-05-01",
+            "2026-05-14",
+            "2026-05-25",
+            "2026-10-03",
+            "2026-12-25",
+            "2026-12-26",
+            "2027-01-01",
+            "2027-03-26",
+            "2027-03-29",
+            "2027-05-01",
+            "2027-05-06",
+            "2027-05-17",
+            "2027-10-03",
+            "2027-12-25",
+            "2027-12-26"
+          ],
+          "start": "08:00",
+          "end": "16:00",
+          "revision": "EU-office-2026-illustrative",
+          "validFrom": "2026-01-01",
+          "intervals": [
+            {
+              "start": "08:00",
+              "end": "12:00"
+            },
+            {
+              "start": "13:00",
+              "end": "16:00"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "noReview",
+      "type": "notification",
+      "label": "Note that no specialist review was needed",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "No specialist review was needed; the application goes to the decision. / Keine Fachprüfung erforderlich; der Antrag geht zur Entscheidung."
+      }
+    },
+    {
+      "id": "reviewsDone",
+      "type": "parallelJoin",
+      "label": "Specialist reviews finished",
+      "config": {}
+    },
+    {
+      "id": "decision",
+      "type": "approval",
+      "label": "Permit decision / Entscheidung Bauaufsicht",
+      "config": {
+        "candidateGroupRef": "permit-authority",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 40,
+        "calendar": {
+          "zone": "Europe/Berlin",
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "holidays": [
+            "2026-01-01",
+            "2026-04-03",
+            "2026-04-06",
+            "2026-05-01",
+            "2026-05-14",
+            "2026-05-25",
+            "2026-10-03",
+            "2026-12-25",
+            "2026-12-26",
+            "2027-01-01",
+            "2027-03-26",
+            "2027-03-29",
+            "2027-05-01",
+            "2027-05-06",
+            "2027-05-17",
+            "2027-10-03",
+            "2027-12-25",
+            "2027-12-26"
+          ],
+          "start": "08:00",
+          "end": "16:00",
+          "revision": "EU-office-2026-illustrative",
+          "validFrom": "2026-01-01",
+          "intervals": [
+            {
+              "start": "08:00",
+              "end": "12:00"
+            },
+            {
+              "start": "13:00",
+              "end": "16:00"
+            }
+          ]
+        },
+        "timeoutAfter": "P90D"
+      }
+    },
+    {
+      "id": "escalation",
+      "type": "approval",
+      "label": "Head of department decision / Entscheidung Amtsleitung",
+      "config": {
+        "candidateGroupRef": "permit-heads",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 24,
+        "calendar": {
+          "zone": "Europe/Berlin",
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "holidays": [
+            "2026-01-01",
+            "2026-04-03",
+            "2026-04-06",
+            "2026-05-01",
+            "2026-05-14",
+            "2026-05-25",
+            "2026-10-03",
+            "2026-12-25",
+            "2026-12-26",
+            "2027-01-01",
+            "2027-03-26",
+            "2027-03-29",
+            "2027-05-01",
+            "2027-05-06",
+            "2027-05-17",
+            "2027-10-03",
+            "2027-12-25",
+            "2027-12-26"
+          ],
+          "start": "08:00",
+          "end": "16:00",
+          "revision": "EU-office-2026-illustrative",
+          "validFrom": "2026-01-01",
+          "intervals": [
+            {
+              "start": "08:00",
+              "end": "12:00"
+            },
+            {
+              "start": "13:00",
+              "end": "16:00"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "notifyGranted",
+      "type": "notification",
+      "label": "Tell applicant the permit was granted",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "Your building permit was granted. / Ihre Baugenehmigung wurde erteilt."
+      }
+    },
+    {
+      "id": "notifyRefused",
+      "type": "notification",
+      "label": "Tell applicant the application was refused",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "Your application was refused. Open the request to see the reason. / Ihr Antrag wurde abgelehnt. Den Grund finden Sie im Antrag."
+      }
+    },
+    {
+      "id": "granted",
+      "type": "end",
+      "label": "Granted",
+      "config": {
+        "businessOutcome": "Granted",
+        "outcomeKind": "success"
+      }
+    },
+    {
+      "id": "refused",
+      "type": "end",
+      "label": "Refused",
+      "config": {
+        "businessOutcome": "Refused",
+        "outcomeKind": "rejected"
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t1",
+      "from": "start",
+      "to": "scope",
+      "on": "next"
+    },
+    {
+      "id": "t2",
+      "from": "scope",
+      "to": "intake",
+      "on": "next"
+    },
+    {
+      "id": "t3",
+      "from": "intake",
+      "to": "planning",
+      "on": "approved"
+    },
+    {
+      "id": "t4",
+      "from": "intake",
+      "to": "notifyRefused",
+      "on": "rejected"
+    },
+    {
+      "id": "t5",
+      "from": "planning",
+      "to": "reviews",
+      "on": "approved"
+    },
+    {
+      "id": "t6",
+      "from": "planning",
+      "to": "notifyRefused",
+      "on": "rejected"
+    },
+    {
+      "id": "t7",
+      "from": "reviews",
+      "to": "fire",
+      "on": "condition",
+      "label": "High-rise or assembly use",
+      "condition": {
+        "fieldRef": "/steps/scope/fire",
+        "operator": "eq",
+        "value": true
+      }
+    },
+    {
+      "id": "t8",
+      "from": "reviews",
+      "to": "heritage",
+      "on": "condition",
+      "label": "Listed building",
+      "condition": {
+        "fieldRef": "/steps/scope/heritage",
+        "operator": "eq",
+        "value": true
+      }
+    },
+    {
+      "id": "t9",
+      "from": "reviews",
+      "to": "noReview",
+      "on": "default",
+      "label": "No specialist review"
+    },
+    {
+      "id": "t10",
+      "from": "fire",
+      "to": "reviewsDone",
+      "on": "approved"
+    },
+    {
+      "id": "t11",
+      "from": "fire",
+      "to": "notifyRefused",
+      "on": "rejected"
+    },
+    {
+      "id": "t12",
+      "from": "heritage",
+      "to": "reviewsDone",
+      "on": "approved"
+    },
+    {
+      "id": "t13",
+      "from": "heritage",
+      "to": "notifyRefused",
+      "on": "rejected"
+    },
+    {
+      "id": "t14",
+      "from": "noReview",
+      "to": "reviewsDone",
+      "on": "next"
+    },
+    {
+      "id": "t15",
+      "from": "reviewsDone",
+      "to": "decision",
+      "on": "next"
+    },
+    {
+      "id": "t16",
+      "from": "decision",
+      "to": "notifyGranted",
+      "on": "approved"
+    },
+    {
+      "id": "t17",
+      "from": "decision",
+      "to": "notifyRefused",
+      "on": "rejected"
+    },
+    {
+      "id": "t18",
+      "from": "decision",
+      "to": "escalation",
+      "on": "timedOut",
+      "label": "Statutory time limit passed"
+    },
+    {
+      "id": "t19",
+      "from": "escalation",
+      "to": "notifyGranted",
+      "on": "approved"
+    },
+    {
+      "id": "t20",
+      "from": "escalation",
+      "to": "notifyRefused",
+      "on": "rejected"
+    },
+    {
+      "id": "t21",
+      "from": "notifyGranted",
+      "to": "granted",
+      "on": "next"
+    },
+    {
+      "id": "t22",
+      "from": "notifyRefused",
+      "to": "refused",
+      "on": "next"
+    }
+  ],
+  "decisions": [
+    {
+      "key": "review-scope",
+      "version": 1,
+      "hitPolicy": "FIRST",
+      "rows": [
+        {
+          "when": {
+            "all": [
+              {
+                "fieldRef": "/input/height",
+                "operator": "gte",
+                "value": 22
+              },
+              {
+                "fieldRef": "/input/listedBuilding",
+                "operator": "eq",
+                "value": true
+              }
+            ]
+          },
+          "then": {
+            "fire": true,
+            "heritage": true
+          }
+        },
+        {
+          "when": {
+            "all": [
+              {
+                "fieldRef": "/input/buildingUse",
+                "operator": "eq",
+                "value": "Assembly"
+              },
+              {
+                "fieldRef": "/input/listedBuilding",
+                "operator": "eq",
+                "value": true
+              }
+            ]
+          },
+          "then": {
+            "fire": true,
+            "heritage": true
+          }
+        },
+        {
+          "when": {
+            "fieldRef": "/input/height",
+            "operator": "gte",
+            "value": 22
+          },
+          "then": {
+            "fire": true,
+            "heritage": false
+          }
+        },
+        {
+          "when": {
+            "fieldRef": "/input/buildingUse",
+            "operator": "eq",
+            "value": "Assembly"
+          },
+          "then": {
+            "fire": true,
+            "heritage": false
+          }
+        },
+        {
+          "when": {
+            "fieldRef": "/input/listedBuilding",
+            "operator": "eq",
+            "value": true
+          },
+          "then": {
+            "fire": false,
+            "heritage": true
+          }
+        }
+      ],
+      "default": {
+        "fire": false,
+        "heritage": false
+      }
+    }
+  ],
+  "execution": {
+    "maxConcurrentRuns": 200,
+    "maxAttempts": 3,
+    "retryDelaySeconds": 30
+  },
+  "security": {
+    "selfApproval": "deny"
+  },
+  "dependencies": {
+    "connections": []
+  },
+  "outputMapping": {
+    "fireReview": {
+      "fieldRef": "/steps/scope/fire",
+      "required": true
+    },
+    "decidedBy": {
+      "fieldRef": "/steps/decision/decidedBy",
+      "required": false
+    }
+  },
+  "uiLayout": {
+    "positions": {
+      "start": {
+        "x": 80,
+        "y": 80
+      },
+      "scope": {
+        "x": 320,
+        "y": 80
+      },
+      "intake": {
+        "x": 560,
+        "y": 80
+      },
+      "planning": {
+        "x": 800,
+        "y": 80
+      },
+      "reviews": {
+        "x": 1040,
+        "y": 80
+      },
+      "fire": {
+        "x": 1280,
+        "y": 80
+      },
+      "heritage": {
+        "x": 1280,
+        "y": 240
+      },
+      "noReview": {
+        "x": 1280,
+        "y": 400
+      },
+      "reviewsDone": {
+        "x": 1520,
+        "y": 80
+      },
+      "decision": {
+        "x": 1760,
+        "y": 80
+      },
+      "escalation": {
+        "x": 2000,
+        "y": 80
+      },
+      "notifyGranted": {
+        "x": 2240,
+        "y": 80
+      },
+      "notifyRefused": {
+        "x": 2240,
+        "y": 240
+      },
+      "granted": {
+        "x": 2480,
+        "y": 80
+      },
+      "refused": {
+        "x": 2480,
+        "y": 240
+      }
+    },
+    "viewport": {
+      "x": 0,
+      "y": 0,
+      "zoom": 0.6
+    }
+  }
+}

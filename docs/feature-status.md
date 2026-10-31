@@ -318,3 +318,13 @@ Blue Ocean "Create" item from [doc 27](27-blue-ocean-discovery.md) (Tier 1 DORA 
 | Feature | Status | Evidence | Limits |
 |---|---|---|---|
 | Exit export (`POST /workspaces/{id}/exit-export`, Settings → Exit export) | Verified, *tests and Docker API* | Backend on PostgreSQL/Flowable: 5 API tests (content, manifest hashes, no credentials, run data opt-in, admin-only with audited denial, both audit records with archive SHA-256, round trip: exported JSON re-imported in another workspace publishes with the same semantic hash) and 4 unit tests; frontend 4 component tests; `tools/api-e2e/e2e_exit_export.py` 48/48 on an isolated stack (project `orqix-exit`, app :28480) | Streamed with a 500-row cursor in one snapshot, but the browser button buffers the file (use the API for very large workspaces); no attachments, generated documents, cases, pages/views or engine tables; selection still exports all shared assets; picking workflows needs `workflow.read`; BPMN service steps are Flowable-specific; no real-stack browser run |
+
+## Regional regulated template packs - 31 October 2026
+
+[Regional template packs](regional-template-packs.md) add twenty built-in templates in three packs (banking and microfinance, shared services, public sector) with India, EU, Kenya and Nigeria variants: regional working calendars and public holidays, local currency in field titles, and English plus Hindi, German or Swahili labels. Doc 27 section 3 *Create: regulated template packs*.
+
+| Feature | Note | Status | Limits |
+|---|---|---|---|
+| Loan exception, KYC refresh (extends the periodic review), cooperative/MFI group loan, vendor onboarding, building/business permit, grant application; 20 regional variants in `examples/pack-*.json` | [regional-template-packs](regional-template-packs.md) | Verified, *tests and Docker stack* (compiler 108 tests including 87 simulated samples; 402/402 live checks on a private stack) | Illustrative, not compliance-approved; translations not reviewed by native speakers; lunar holidays 2026 only |
+| Template picker filters by region and industry; template list returns optional `pack`, `industry`, `region`, `languages` | [regional-template-packs](regional-template-packs.md#using-a-pack) | Verified, *tests and Docker API* | No browser journey on the real stack |
+| Gaps noted, not built | [regional-template-packs](regional-template-packs.md#gaps-found) | Open | Currency USD-only, no form translations, ASCII outcomes, per-step calendars, wall-clock time limits |

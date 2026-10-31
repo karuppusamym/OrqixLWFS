@@ -1,0 +1,941 @@
+{
+  "schemaVersion": "0.1",
+  "workflowKey": "kyc-refresh-in",
+  "name": "KYC refresh (India)",
+  "metadata": {
+    "description": "India KYC refresh. Extends KYC periodic review (same customerName, customerType, kyc-analysts and reviewedBy, plus risk rating and changed-details answers) with a risk-based path: low risk with no change is accepted on self-declaration, medium risk or changed details get an analyst re-review, high risk gets re-review and enhanced due diligence together, escalating after five days. Next refresh in 2, 8 or 10 years. Periodic updation every 2, 8 or 10 years by risk, with self-declaration when nothing changed, as the RBI KYC Master Direction describes. Illustrative regional template, not a regulatory-compliant product: thresholds, holiday lists and document names are placeholders for your compliance function to confirm.",
+    "tags": [
+      "pack:banking-mfi",
+      "region:india",
+      "template:kyc-refresh",
+      "owner:KYC operations",
+      "illustrative",
+      "lang:hi"
+    ]
+  },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "customerName",
+      "customerType",
+      "riskRating",
+      "detailsChanged"
+    ],
+    "properties": {
+      "customerName": {
+        "type": "string",
+        "title": "Customer name / ग्राहक का नाम",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "customerType": {
+        "type": "string",
+        "title": "Customer type / ग्राहक प्रकार",
+        "enum": [
+          "individual",
+          "corporate"
+        ]
+      },
+      "riskRating": {
+        "type": "string",
+        "title": "Risk rating / जोखिम श्रेणी",
+        "enum": [
+          "low",
+          "medium",
+          "high"
+        ]
+      },
+      "detailsChanged": {
+        "type": "boolean",
+        "title": "KYC details changed since the last update / पिछले अद्यतन के बाद KYC विवरण बदले हैं"
+      },
+      "idDocument": {
+        "type": "string",
+        "title": "Officially valid document / आधिकारिक रूप से मान्य दस्तावेज़",
+        "enum": [
+          "Aadhaar (offline XML or masked copy)",
+          "Passport",
+          "Voter ID",
+          "Driving licence",
+          "NREGA job card",
+          "PAN (with another OVD)"
+        ]
+      },
+      "lastUpdated": {
+        "type": "string",
+        "format": "date",
+        "title": "Last KYC update / पिछला KYC अद्यतन"
+      }
+    }
+  },
+  "inputUi": {
+    "order": [
+      "customerName",
+      "customerType",
+      "riskRating",
+      "detailsChanged",
+      "idDocument",
+      "lastUpdated"
+    ],
+    "widgets": {
+      "customerType": "radio",
+      "riskRating": "radio",
+      "detailsChanged": "checkbox",
+      "idDocument": "select"
+    },
+    "submitLabel": "Submit KYC refresh / पुनः KYC जमा करें",
+    "layout": {
+      "sections": [
+        {
+          "id": "customer",
+          "title": "Customer / ग्राहक",
+          "columns": 2,
+          "fields": [
+            "customerName",
+            "customerType",
+            "riskRating"
+          ]
+        },
+        {
+          "id": "refresh",
+          "title": "Refresh / पुनः KYC",
+          "columns": 2,
+          "fields": [
+            "detailsChanged",
+            "idDocument",
+            "lastUpdated"
+          ]
+        }
+      ]
+    }
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "reviewedBy": {
+        "type": "string",
+        "title": "Reviewed by"
+      },
+      "refreshIntervalYears": {
+        "type": "integer",
+        "title": "Next refresh in years"
+      }
+    }
+  },
+  "triggers": [
+    "manual",
+    "api"
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "label": "Refresh due",
+      "config": {}
+    },
+    {
+      "id": "interval",
+      "type": "decision",
+      "label": "Set the next refresh interval",
+      "config": {
+        "decisionRef": "refresh-interval"
+      }
+    },
+    {
+      "id": "path",
+      "type": "decision",
+      "label": "Choose the review path",
+      "config": {
+        "decisionRef": "refresh-path"
+      }
+    },
+    {
+      "id": "pathRoute",
+      "type": "branch",
+      "label": "Which review?",
+      "config": {}
+    },
+    {
+      "id": "notifySelf",
+      "type": "notification",
+      "label": "Tell requester the self-declaration was accepted",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "Self-declaration accepted: no change in KYC details. / स्व-घोषणा स्वीकार: KYC विवरण में कोई परिवर्तन नहीं।"
+      }
+    },
+    {
+      "id": "review",
+      "type": "approval",
+      "label": "Re-review the customer / ग्राहक की पुनः समीक्षा",
+      "config": {
+        "candidateGroupRef": "kyc-analysts",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 24,
+        "calendar": {
+          "zone": "Asia/Kolkata",
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6
+          ],
+          "holidays": [
+            "2026-01-10",
+            "2026-01-24",
+            "2026-01-26",
+            "2026-02-14",
+            "2026-02-28",
+            "2026-03-04",
+            "2026-03-14",
+            "2026-03-21",
+            "2026-03-26",
+            "2026-03-28",
+            "2026-03-31",
+            "2026-04-03",
+            "2026-04-11",
+            "2026-04-25",
+            "2026-05-01",
+            "2026-05-09",
+            "2026-05-23",
+            "2026-05-27",
+            "2026-06-13",
+            "2026-06-26",
+            "2026-06-27",
+            "2026-07-11",
+            "2026-07-25",
+            "2026-08-08",
+            "2026-08-15",
+            "2026-08-22",
+            "2026-08-26",
+            "2026-09-04",
+            "2026-09-12",
+            "2026-09-26",
+            "2026-10-02",
+            "2026-10-10",
+            "2026-10-20",
+            "2026-10-24",
+            "2026-11-08",
+            "2026-11-14",
+            "2026-11-24",
+            "2026-11-28",
+            "2026-12-12",
+            "2026-12-25",
+            "2026-12-26",
+            "2027-01-09",
+            "2027-01-23",
+            "2027-01-26",
+            "2027-02-13",
+            "2027-02-27",
+            "2027-03-13",
+            "2027-03-26",
+            "2027-03-27",
+            "2027-04-10",
+            "2027-04-24",
+            "2027-05-08",
+            "2027-05-22",
+            "2027-06-12",
+            "2027-06-26",
+            "2027-07-10",
+            "2027-07-24",
+            "2027-08-14",
+            "2027-08-15",
+            "2027-08-28",
+            "2027-09-11",
+            "2027-09-25",
+            "2027-10-02",
+            "2027-10-09",
+            "2027-10-23",
+            "2027-11-13",
+            "2027-11-27",
+            "2027-12-11",
+            "2027-12-25"
+          ],
+          "start": "10:00",
+          "end": "17:00",
+          "revision": "IN-bank-2026-illustrative",
+          "validFrom": "2026-01-01"
+        }
+      }
+    },
+    {
+      "id": "eddSplit",
+      "type": "parallelSplit",
+      "label": "Review and due diligence together",
+      "config": {
+        "joinRef": "eddJoin"
+      }
+    },
+    {
+      "id": "eddReview",
+      "type": "approval",
+      "label": "Re-review the customer / ग्राहक की पुनः समीक्षा",
+      "config": {
+        "candidateGroupRef": "kyc-analysts",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 24,
+        "calendar": {
+          "zone": "Asia/Kolkata",
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6
+          ],
+          "holidays": [
+            "2026-01-10",
+            "2026-01-24",
+            "2026-01-26",
+            "2026-02-14",
+            "2026-02-28",
+            "2026-03-04",
+            "2026-03-14",
+            "2026-03-21",
+            "2026-03-26",
+            "2026-03-28",
+            "2026-03-31",
+            "2026-04-03",
+            "2026-04-11",
+            "2026-04-25",
+            "2026-05-01",
+            "2026-05-09",
+            "2026-05-23",
+            "2026-05-27",
+            "2026-06-13",
+            "2026-06-26",
+            "2026-06-27",
+            "2026-07-11",
+            "2026-07-25",
+            "2026-08-08",
+            "2026-08-15",
+            "2026-08-22",
+            "2026-08-26",
+            "2026-09-04",
+            "2026-09-12",
+            "2026-09-26",
+            "2026-10-02",
+            "2026-10-10",
+            "2026-10-20",
+            "2026-10-24",
+            "2026-11-08",
+            "2026-11-14",
+            "2026-11-24",
+            "2026-11-28",
+            "2026-12-12",
+            "2026-12-25",
+            "2026-12-26",
+            "2027-01-09",
+            "2027-01-23",
+            "2027-01-26",
+            "2027-02-13",
+            "2027-02-27",
+            "2027-03-13",
+            "2027-03-26",
+            "2027-03-27",
+            "2027-04-10",
+            "2027-04-24",
+            "2027-05-08",
+            "2027-05-22",
+            "2027-06-12",
+            "2027-06-26",
+            "2027-07-10",
+            "2027-07-24",
+            "2027-08-14",
+            "2027-08-15",
+            "2027-08-28",
+            "2027-09-11",
+            "2027-09-25",
+            "2027-10-02",
+            "2027-10-09",
+            "2027-10-23",
+            "2027-11-13",
+            "2027-11-27",
+            "2027-12-11",
+            "2027-12-25"
+          ],
+          "start": "10:00",
+          "end": "17:00",
+          "revision": "IN-bank-2026-illustrative",
+          "validFrom": "2026-01-01"
+        }
+      }
+    },
+    {
+      "id": "edd",
+      "type": "approval",
+      "label": "Enhanced due diligence / उन्नत सम्यक तत्परता",
+      "config": {
+        "candidateGroupRef": "compliance-officers",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 40,
+        "calendar": {
+          "zone": "Asia/Kolkata",
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6
+          ],
+          "holidays": [
+            "2026-01-10",
+            "2026-01-24",
+            "2026-01-26",
+            "2026-02-14",
+            "2026-02-28",
+            "2026-03-04",
+            "2026-03-14",
+            "2026-03-21",
+            "2026-03-26",
+            "2026-03-28",
+            "2026-03-31",
+            "2026-04-03",
+            "2026-04-11",
+            "2026-04-25",
+            "2026-05-01",
+            "2026-05-09",
+            "2026-05-23",
+            "2026-05-27",
+            "2026-06-13",
+            "2026-06-26",
+            "2026-06-27",
+            "2026-07-11",
+            "2026-07-25",
+            "2026-08-08",
+            "2026-08-15",
+            "2026-08-22",
+            "2026-08-26",
+            "2026-09-04",
+            "2026-09-12",
+            "2026-09-26",
+            "2026-10-02",
+            "2026-10-10",
+            "2026-10-20",
+            "2026-10-24",
+            "2026-11-08",
+            "2026-11-14",
+            "2026-11-24",
+            "2026-11-28",
+            "2026-12-12",
+            "2026-12-25",
+            "2026-12-26",
+            "2027-01-09",
+            "2027-01-23",
+            "2027-01-26",
+            "2027-02-13",
+            "2027-02-27",
+            "2027-03-13",
+            "2027-03-26",
+            "2027-03-27",
+            "2027-04-10",
+            "2027-04-24",
+            "2027-05-08",
+            "2027-05-22",
+            "2027-06-12",
+            "2027-06-26",
+            "2027-07-10",
+            "2027-07-24",
+            "2027-08-14",
+            "2027-08-15",
+            "2027-08-28",
+            "2027-09-11",
+            "2027-09-25",
+            "2027-10-02",
+            "2027-10-09",
+            "2027-10-23",
+            "2027-11-13",
+            "2027-11-27",
+            "2027-12-11",
+            "2027-12-25"
+          ],
+          "start": "10:00",
+          "end": "17:00",
+          "revision": "IN-bank-2026-illustrative",
+          "validFrom": "2026-01-01"
+        },
+        "timeoutAfter": "P5D"
+      }
+    },
+    {
+      "id": "escalation",
+      "type": "approval",
+      "label": "Head of compliance approval / अनुपालन प्रमुख अनुमोदन",
+      "config": {
+        "candidateGroupRef": "head-of-compliance",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 16,
+        "calendar": {
+          "zone": "Asia/Kolkata",
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6
+          ],
+          "holidays": [
+            "2026-01-10",
+            "2026-01-24",
+            "2026-01-26",
+            "2026-02-14",
+            "2026-02-28",
+            "2026-03-04",
+            "2026-03-14",
+            "2026-03-21",
+            "2026-03-26",
+            "2026-03-28",
+            "2026-03-31",
+            "2026-04-03",
+            "2026-04-11",
+            "2026-04-25",
+            "2026-05-01",
+            "2026-05-09",
+            "2026-05-23",
+            "2026-05-27",
+            "2026-06-13",
+            "2026-06-26",
+            "2026-06-27",
+            "2026-07-11",
+            "2026-07-25",
+            "2026-08-08",
+            "2026-08-15",
+            "2026-08-22",
+            "2026-08-26",
+            "2026-09-04",
+            "2026-09-12",
+            "2026-09-26",
+            "2026-10-02",
+            "2026-10-10",
+            "2026-10-20",
+            "2026-10-24",
+            "2026-11-08",
+            "2026-11-14",
+            "2026-11-24",
+            "2026-11-28",
+            "2026-12-12",
+            "2026-12-25",
+            "2026-12-26",
+            "2027-01-09",
+            "2027-01-23",
+            "2027-01-26",
+            "2027-02-13",
+            "2027-02-27",
+            "2027-03-13",
+            "2027-03-26",
+            "2027-03-27",
+            "2027-04-10",
+            "2027-04-24",
+            "2027-05-08",
+            "2027-05-22",
+            "2027-06-12",
+            "2027-06-26",
+            "2027-07-10",
+            "2027-07-24",
+            "2027-08-14",
+            "2027-08-15",
+            "2027-08-28",
+            "2027-09-11",
+            "2027-09-25",
+            "2027-10-02",
+            "2027-10-09",
+            "2027-10-23",
+            "2027-11-13",
+            "2027-11-27",
+            "2027-12-11",
+            "2027-12-25"
+          ],
+          "start": "10:00",
+          "end": "17:00",
+          "revision": "IN-bank-2026-illustrative",
+          "validFrom": "2026-01-01"
+        }
+      }
+    },
+    {
+      "id": "eddDone",
+      "type": "notification",
+      "label": "Record that due diligence is complete",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "Enhanced due diligence is complete. / उन्नत सम्यक तत्परता पूरी हुई।"
+      }
+    },
+    {
+      "id": "eddJoin",
+      "type": "parallelJoin",
+      "label": "Both finished",
+      "config": {}
+    },
+    {
+      "id": "notifyDone",
+      "type": "notification",
+      "label": "Tell requester KYC is refreshed",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "KYC refreshed. / KYC अद्यतन हुआ।"
+      }
+    },
+    {
+      "id": "notifyRestricted",
+      "type": "notification",
+      "label": "Tell requester the account is restricted",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "KYC refresh not confirmed; account restricted. Open the request to see the reason. / पुनः KYC की पुष्टि नहीं हुई; खाता प्रतिबंधित। कारण देखने के लिए अनुरोध खोलें।"
+      }
+    },
+    {
+      "id": "refreshed",
+      "type": "end",
+      "label": "Refreshed",
+      "config": {
+        "businessOutcome": "Refreshed",
+        "outcomeKind": "success"
+      }
+    },
+    {
+      "id": "restricted",
+      "type": "end",
+      "label": "Restricted",
+      "config": {
+        "businessOutcome": "Restricted",
+        "outcomeKind": "rejected"
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t1",
+      "from": "start",
+      "to": "interval",
+      "on": "next"
+    },
+    {
+      "id": "t2",
+      "from": "interval",
+      "to": "path",
+      "on": "next"
+    },
+    {
+      "id": "t3",
+      "from": "path",
+      "to": "pathRoute",
+      "on": "next"
+    },
+    {
+      "id": "t4",
+      "from": "pathRoute",
+      "to": "eddSplit",
+      "on": "condition",
+      "label": "High risk",
+      "condition": {
+        "fieldRef": "/steps/path/route",
+        "operator": "eq",
+        "value": "edd"
+      }
+    },
+    {
+      "id": "t5",
+      "from": "pathRoute",
+      "to": "notifySelf",
+      "on": "condition",
+      "label": "Low risk, nothing changed",
+      "condition": {
+        "fieldRef": "/steps/path/route",
+        "operator": "eq",
+        "value": "selfDeclaration"
+      }
+    },
+    {
+      "id": "t6",
+      "from": "pathRoute",
+      "to": "review",
+      "on": "default",
+      "label": "Medium risk or details changed"
+    },
+    {
+      "id": "t7",
+      "from": "notifySelf",
+      "to": "refreshed",
+      "on": "next"
+    },
+    {
+      "id": "t8",
+      "from": "review",
+      "to": "notifyDone",
+      "on": "approved"
+    },
+    {
+      "id": "t9",
+      "from": "review",
+      "to": "notifyRestricted",
+      "on": "rejected"
+    },
+    {
+      "id": "t10",
+      "from": "eddSplit",
+      "to": "eddReview",
+      "on": "next"
+    },
+    {
+      "id": "t11",
+      "from": "eddSplit",
+      "to": "edd",
+      "on": "next"
+    },
+    {
+      "id": "t12",
+      "from": "eddReview",
+      "to": "eddJoin",
+      "on": "approved"
+    },
+    {
+      "id": "t13",
+      "from": "eddReview",
+      "to": "notifyRestricted",
+      "on": "rejected"
+    },
+    {
+      "id": "t14",
+      "from": "edd",
+      "to": "eddDone",
+      "on": "approved"
+    },
+    {
+      "id": "t15",
+      "from": "edd",
+      "to": "notifyRestricted",
+      "on": "rejected"
+    },
+    {
+      "id": "t16",
+      "from": "edd",
+      "to": "escalation",
+      "on": "timedOut",
+      "label": "Not decided in 5 days"
+    },
+    {
+      "id": "t17",
+      "from": "escalation",
+      "to": "eddDone",
+      "on": "approved"
+    },
+    {
+      "id": "t18",
+      "from": "eddDone",
+      "to": "eddJoin",
+      "on": "next"
+    },
+    {
+      "id": "t19",
+      "from": "escalation",
+      "to": "notifyRestricted",
+      "on": "rejected"
+    },
+    {
+      "id": "t20",
+      "from": "eddJoin",
+      "to": "notifyDone",
+      "on": "next"
+    },
+    {
+      "id": "t21",
+      "from": "notifyDone",
+      "to": "refreshed",
+      "on": "next"
+    },
+    {
+      "id": "t22",
+      "from": "notifyRestricted",
+      "to": "restricted",
+      "on": "next"
+    }
+  ],
+  "decisions": [
+    {
+      "key": "refresh-interval",
+      "version": 1,
+      "hitPolicy": "FIRST",
+      "rows": [
+        {
+          "when": {
+            "fieldRef": "/input/riskRating",
+            "operator": "eq",
+            "value": "high"
+          },
+          "then": {
+            "intervalYears": 2
+          }
+        },
+        {
+          "when": {
+            "fieldRef": "/input/riskRating",
+            "operator": "eq",
+            "value": "low"
+          },
+          "then": {
+            "intervalYears": 10
+          }
+        }
+      ],
+      "default": {
+        "intervalYears": 8
+      }
+    },
+    {
+      "key": "refresh-path",
+      "version": 1,
+      "hitPolicy": "FIRST",
+      "rows": [
+        {
+          "when": {
+            "fieldRef": "/input/riskRating",
+            "operator": "eq",
+            "value": "high"
+          },
+          "then": {
+            "route": "edd"
+          }
+        },
+        {
+          "when": {
+            "all": [
+              {
+                "fieldRef": "/input/detailsChanged",
+                "operator": "eq",
+                "value": true
+              },
+              {
+                "fieldRef": "/input/riskRating",
+                "operator": "ne",
+                "value": "high"
+              }
+            ]
+          },
+          "then": {
+            "route": "review"
+          }
+        },
+        {
+          "when": {
+            "fieldRef": "/input/riskRating",
+            "operator": "eq",
+            "value": "low"
+          },
+          "then": {
+            "route": "selfDeclaration"
+          }
+        }
+      ],
+      "default": {
+        "route": "review"
+      }
+    }
+  ],
+  "execution": {
+    "maxConcurrentRuns": 200,
+    "maxAttempts": 3,
+    "retryDelaySeconds": 30
+  },
+  "security": {
+    "selfApproval": "deny"
+  },
+  "dependencies": {
+    "connections": []
+  },
+  "outputMapping": {
+    "reviewedBy": {
+      "fieldRef": "/steps/review/decidedBy",
+      "required": false
+    },
+    "refreshIntervalYears": {
+      "fieldRef": "/steps/interval/intervalYears",
+      "required": true
+    }
+  },
+  "uiLayout": {
+    "positions": {
+      "start": {
+        "x": 80,
+        "y": 80
+      },
+      "interval": {
+        "x": 320,
+        "y": 80
+      },
+      "path": {
+        "x": 560,
+        "y": 80
+      },
+      "pathRoute": {
+        "x": 800,
+        "y": 80
+      },
+      "notifySelf": {
+        "x": 1040,
+        "y": 80
+      },
+      "review": {
+        "x": 1040,
+        "y": 240
+      },
+      "eddSplit": {
+        "x": 1040,
+        "y": 400
+      },
+      "eddReview": {
+        "x": 1280,
+        "y": 80
+      },
+      "edd": {
+        "x": 1280,
+        "y": 240
+      },
+      "escalation": {
+        "x": 1520,
+        "y": 80
+      },
+      "eddDone": {
+        "x": 1760,
+        "y": 80
+      },
+      "eddJoin": {
+        "x": 2000,
+        "y": 80
+      },
+      "notifyDone": {
+        "x": 2240,
+        "y": 80
+      },
+      "notifyRestricted": {
+        "x": 1760,
+        "y": 240
+      },
+      "refreshed": {
+        "x": 2480,
+        "y": 80
+      },
+      "restricted": {
+        "x": 2000,
+        "y": 240
+      }
+    },
+    "viewport": {
+      "x": 0,
+      "y": 0,
+      "zoom": 0.6
+    }
+  }
+}

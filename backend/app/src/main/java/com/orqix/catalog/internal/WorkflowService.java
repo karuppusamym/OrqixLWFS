@@ -84,7 +84,8 @@ public class WorkflowService {
         policy.require(access, Permission.WORKFLOW_EDIT, "listTemplates", false);
         return new CatalogDtos.TemplateList(templates.all().stream()
                 .map(t -> new CatalogDtos.Template(t.id(), t.name(), t.description(), t.typicalOwner(), t.requiredInputs(),
-                        t.requiredGroups(), t.requiredConnections(), t.requiredWorkflows()))
+                        t.requiredGroups(), t.requiredConnections(), t.requiredWorkflows(), t.pack(), t.industry(),
+                        t.region(), t.languages()))
                 .toList());
     }
 

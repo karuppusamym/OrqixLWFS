@@ -62,6 +62,42 @@ describe('New workflow: choose how to start', () => {
     expect(draftOf('Onboarding copy').nodes.length).toBeGreaterThan(2)
   })
 
+  it('template: regional packs filter by region and industry, and the copy keeps the regional calendar', async () => {
+    const { user, router, dialog } = await open()
+    await user.click(within(dialog).getByRole('button', { name: 'Start from a template' }))
+    const details = await screen.findByRole('dialog', { name: 'Start from a template' })
+    const filters = await within(details).findByTestId('template-filters')
+    const total = within(details).getAllByRole('radio').length
+    expect(total).toBeGreaterThanOrEqual(24)
+
+    await user.selectOptions(within(filters).getByLabelText('Region'), 'Kenya')
+    const kenya = within(details).getAllByRole('radio').map((r) => r.id)
+    expect(kenya.length).toBeGreaterThanOrEqual(6)
+    expect(kenya.every((id) => id.startsWith('tpl-pack-ke-'))).toBe(true)
+    expect(within(filters).getByText(`${kenya.length} of ${total} templates`)).toBeInTheDocument()
+
+    await user.selectOptions(within(filters).getByLabelText('Industry'), 'Public sector')
+    expect(within(details).getAllByRole('radio').map((r) => r.id)).toEqual(['tpl-pack-ke-grant', 'tpl-pack-ke-permit'])
+    expect(within(details).getAllByText('English and Swahili labels')).toHaveLength(2)
+
+    await user.selectOptions(within(filters).getByLabelText('Region'), '__general__')
+    expect(within(details).getByText(/No template matches this region and industry/)).toBeInTheDocument()
+    await user.selectOptions(within(filters).getByLabelText('Industry'), '__general__')
+    expect(within(details).getAllByRole('radio').map((r) => r.id)).toContain('tpl-purchase-approval')
+    expect(within(details).queryByLabelText(/Loan exception approval/)).not.toBeInTheDocument()
+
+    await user.selectOptions(within(filters).getByLabelText('Region'), 'India')
+    await user.selectOptions(within(filters).getByLabelText('Industry'), 'Banking and microfinance')
+    await user.click(within(details).getByLabelText(/Loan exception approval \(India\)/))
+    await user.type(within(details).getByLabelText(/^Name/), 'Branch loan exceptions')
+    await user.click(within(details).getByRole('button', { name: 'Create workflow' }))
+    await waitFor(() => expect(router.state.location.pathname).toMatch(/\/workflows\/[^/]+\/edit$/))
+    const draft = draftOf('Branch loan exceptions')
+    const branch = draft.nodes.find((n) => n.id === 'branchReview')!
+    expect((branch.config.calendar as { zone: string }).zone).toBe('Asia/Kolkata')
+    expect(String(branch.label)).toContain('शाखा प्रबंधक समीक्षा')
+  })
+
   it('empty: only a name is needed', async () => {
     const { user, router, dialog } = await open()
     await user.click(within(dialog).getByRole('button', { name: 'Start empty' }))

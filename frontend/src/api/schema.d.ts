@@ -7331,6 +7331,14 @@ export interface components {
             requiredConnections?: components["schemas"]["Key"][];
             /** @description Workflows the template starts as child requests; they must be published first. */
             requiredWorkflows?: components["schemas"]["Key"][];
+            /** @description Regional template pack key (banking-mfi, shared-services, public-sector); absent for general templates. docs/regional-template-packs.md */
+            pack?: string;
+            /** @description Display name of the pack industry, for filtering the template picker */
+            industry?: string;
+            /** @description Display name of the region the template is set up for (calendar, currency, labels), for example India */
+            region?: string;
+            /** @description Second-language codes of the bilingual form labels (for example hi, de, sw); absent when English only */
+            languages?: string[];
         };
         WorkflowSummary: {
             id: components["schemas"]["Uuid"];

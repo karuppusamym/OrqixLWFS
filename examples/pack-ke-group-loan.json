@@ -1,0 +1,687 @@
+{
+  "schemaVersion": "0.1",
+  "workflowKey": "group-loan-ke",
+  "name": "Group loan approval (Kenya)",
+  "metadata": {
+    "description": "Kenya cooperative and microfinance group loan in KES. Rules check group size (Chama 5 to 20 members; SACCO members group 3 to 20 members) and registration; a field officer verifies the group, then the branch manager approves, or a two-member credit committee when the total is KES 2,000,000 or more. Due dates count Kenya banking hours and holidays. Group lending for a SACCO or microfinance bank; the credit committee is the one the Sacco Societies Act requires. Illustrative regional template, not a regulatory-compliant product: thresholds, holiday lists and document names are placeholders for your compliance function to confirm.",
+    "tags": [
+      "pack:banking-mfi",
+      "region:kenya",
+      "template:group-loan",
+      "owner:Microfinance operations",
+      "illustrative",
+      "lang:sw"
+    ]
+  },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "groupName",
+      "groupType",
+      "registered",
+      "loanPurpose",
+      "members"
+    ],
+    "properties": {
+      "groupName": {
+        "type": "string",
+        "title": "Group name / Jina la kikundi",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "groupType": {
+        "type": "string",
+        "title": "Group type / Aina ya kikundi",
+        "enum": [
+          "Chama",
+          "SACCO members group"
+        ]
+      },
+      "registered": {
+        "type": "boolean",
+        "title": "Group registered with Social Development / Kikundi kimesajiliwa na Maendeleo ya Jamii"
+      },
+      "meetingDate": {
+        "type": "string",
+        "format": "date",
+        "title": "Group meeting date / Tarehe ya mkutano wa kikundi"
+      },
+      "loanPurpose": {
+        "type": "string",
+        "title": "Loan purpose / Madhumuni ya mkopo",
+        "enum": [
+          "Income generation",
+          "Agriculture",
+          "Small trade",
+          "School fees",
+          "Asset purchase"
+        ]
+      },
+      "members": {
+        "type": "array",
+        "title": "Members / Wanachama",
+        "minItems": 1,
+        "maxItems": 20,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "memberName",
+            "amount"
+          ],
+          "properties": {
+            "memberName": {
+              "type": "string",
+              "title": "Member name / Jina la mwanachama",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "memberRef": {
+              "type": "string",
+              "title": "Member number / Nambari ya mwanachama",
+              "minLength": 0,
+              "maxLength": 40
+            },
+            "amount": {
+              "type": "number",
+              "title": "Amount (KES) / Kiasi (KES)",
+              "minimum": 1,
+              "maximum": 100000000,
+              "multipleOf": 0.01
+            }
+          }
+        }
+      }
+    }
+  },
+  "inputUi": {
+    "order": [
+      "groupName",
+      "groupType",
+      "registered",
+      "meetingDate",
+      "loanPurpose",
+      "members"
+    ],
+    "widgets": {
+      "groupType": "select",
+      "registered": "checkbox",
+      "loanPurpose": "select"
+    },
+    "submitLabel": "Submit group loan / Wasilisha mkopo wa kikundi",
+    "layout": {
+      "sections": [
+        {
+          "id": "group",
+          "title": "Group / Kikundi",
+          "columns": 2,
+          "fields": [
+            "groupName",
+            "groupType",
+            "registered",
+            "meetingDate",
+            "loanPurpose"
+          ]
+        },
+        {
+          "id": "members",
+          "title": "Members / Wanachama",
+          "columns": 1,
+          "fields": [
+            "members"
+          ]
+        }
+      ]
+    }
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "memberCount": {
+        "type": "integer",
+        "title": "Members"
+      },
+      "totalAmount": {
+        "type": "number",
+        "title": "Total amount (KES)"
+      },
+      "verifiedBy": {
+        "type": "string",
+        "title": "Verified by"
+      }
+    }
+  },
+  "triggers": [
+    "manual",
+    "api"
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "label": "Group loan submitted",
+      "config": {}
+    },
+    {
+      "id": "eligibility",
+      "type": "decision",
+      "label": "Check group size and registration",
+      "config": {
+        "decisionRef": "group-eligibility"
+      }
+    },
+    {
+      "id": "eligibleRoute",
+      "type": "branch",
+      "label": "Eligible?",
+      "config": {}
+    },
+    {
+      "id": "notifyIneligible",
+      "type": "notification",
+      "label": "Tell requester the group is not eligible",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "The group does not meet the eligibility rules (size or registration). / Kikundi hakitimizi masharti ya ustahiki (idadi au usajili)."
+      }
+    },
+    {
+      "id": "fieldVerification",
+      "type": "approval",
+      "label": "Field officer verification / Uthibitisho wa afisa wa nyanjani",
+      "config": {
+        "candidateGroupRef": "field-officers",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 24,
+        "calendar": {
+          "zone": "Africa/Nairobi",
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "holidays": [
+            "2026-01-01",
+            "2026-03-20",
+            "2026-04-03",
+            "2026-04-06",
+            "2026-05-01",
+            "2026-05-27",
+            "2026-06-01",
+            "2026-10-10",
+            "2026-10-20",
+            "2026-12-12",
+            "2026-12-25",
+            "2026-12-26",
+            "2027-01-01",
+            "2027-03-26",
+            "2027-03-29",
+            "2027-05-01",
+            "2027-06-01",
+            "2027-10-10",
+            "2027-10-11",
+            "2027-10-20",
+            "2027-12-12",
+            "2027-12-13",
+            "2027-12-25",
+            "2027-12-26",
+            "2027-12-27"
+          ],
+          "start": "08:30",
+          "end": "16:30",
+          "revision": "KE-bank-2026-illustrative",
+          "validFrom": "2026-01-01"
+        }
+      }
+    },
+    {
+      "id": "level",
+      "type": "decision",
+      "label": "Set the approval level",
+      "config": {
+        "decisionRef": "group-level"
+      }
+    },
+    {
+      "id": "levelRoute",
+      "type": "branch",
+      "label": "Committee needed?",
+      "config": {}
+    },
+    {
+      "id": "branchApproval",
+      "type": "approval",
+      "label": "Branch manager review / Ukaguzi wa meneja wa tawi",
+      "config": {
+        "candidateGroupRef": "branch-managers",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 16,
+        "calendar": {
+          "zone": "Africa/Nairobi",
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "holidays": [
+            "2026-01-01",
+            "2026-03-20",
+            "2026-04-03",
+            "2026-04-06",
+            "2026-05-01",
+            "2026-05-27",
+            "2026-06-01",
+            "2026-10-10",
+            "2026-10-20",
+            "2026-12-12",
+            "2026-12-25",
+            "2026-12-26",
+            "2027-01-01",
+            "2027-03-26",
+            "2027-03-29",
+            "2027-05-01",
+            "2027-06-01",
+            "2027-10-10",
+            "2027-10-11",
+            "2027-10-20",
+            "2027-12-12",
+            "2027-12-13",
+            "2027-12-25",
+            "2027-12-26",
+            "2027-12-27"
+          ],
+          "start": "08:30",
+          "end": "16:30",
+          "revision": "KE-bank-2026-illustrative",
+          "validFrom": "2026-01-01"
+        }
+      }
+    },
+    {
+      "id": "committee",
+      "type": "approval",
+      "label": "Credit committee approval / Idhini ya kamati ya mikopo",
+      "config": {
+        "candidateGroupRef": "credit-committee",
+        "rejectReasonRequired": true,
+        "multiInstance": {
+          "approvers": 2
+        }
+      }
+    },
+    {
+      "id": "notifyApproved",
+      "type": "notification",
+      "label": "Tell requester it was approved",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "The group loan was approved and is ready for disbursement. / Mkopo wa kikundi umeidhinishwa na uko tayari kutolewa."
+      }
+    },
+    {
+      "id": "notifyRejected",
+      "type": "notification",
+      "label": "Tell requester it was rejected",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "The group loan was rejected. Open the request to see the reason. / Mkopo wa kikundi umekataliwa. Fungua ombi kuona sababu."
+      }
+    },
+    {
+      "id": "approved",
+      "type": "end",
+      "label": "Approved",
+      "config": {
+        "businessOutcome": "Approved",
+        "outcomeKind": "success"
+      }
+    },
+    {
+      "id": "rejected",
+      "type": "end",
+      "label": "Rejected",
+      "config": {
+        "businessOutcome": "Rejected",
+        "outcomeKind": "rejected"
+      }
+    },
+    {
+      "id": "ineligible",
+      "type": "end",
+      "label": "Ineligible",
+      "config": {
+        "businessOutcome": "Ineligible",
+        "outcomeKind": "rejected"
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t1",
+      "from": "start",
+      "to": "eligibility",
+      "on": "next"
+    },
+    {
+      "id": "t2",
+      "from": "eligibility",
+      "to": "eligibleRoute",
+      "on": "next"
+    },
+    {
+      "id": "t3",
+      "from": "eligibleRoute",
+      "to": "notifyIneligible",
+      "on": "condition",
+      "label": "Size or registration rule not met",
+      "condition": {
+        "fieldRef": "/steps/eligibility/eligible",
+        "operator": "eq",
+        "value": false
+      }
+    },
+    {
+      "id": "t4",
+      "from": "eligibleRoute",
+      "to": "fieldVerification",
+      "on": "default",
+      "label": "Eligible"
+    },
+    {
+      "id": "t5",
+      "from": "notifyIneligible",
+      "to": "ineligible",
+      "on": "next"
+    },
+    {
+      "id": "t6",
+      "from": "fieldVerification",
+      "to": "level",
+      "on": "approved"
+    },
+    {
+      "id": "t7",
+      "from": "fieldVerification",
+      "to": "notifyRejected",
+      "on": "rejected"
+    },
+    {
+      "id": "t8",
+      "from": "level",
+      "to": "levelRoute",
+      "on": "next"
+    },
+    {
+      "id": "t9",
+      "from": "levelRoute",
+      "to": "committee",
+      "on": "condition",
+      "label": "Total KES 2,000,000 or more",
+      "condition": {
+        "fieldRef": "/steps/level/level",
+        "operator": "eq",
+        "value": "committee"
+      }
+    },
+    {
+      "id": "t10",
+      "from": "levelRoute",
+      "to": "branchApproval",
+      "on": "default",
+      "label": "Within branch powers"
+    },
+    {
+      "id": "t11",
+      "from": "branchApproval",
+      "to": "notifyApproved",
+      "on": "approved"
+    },
+    {
+      "id": "t12",
+      "from": "branchApproval",
+      "to": "notifyRejected",
+      "on": "rejected"
+    },
+    {
+      "id": "t13",
+      "from": "committee",
+      "to": "notifyApproved",
+      "on": "approved"
+    },
+    {
+      "id": "t14",
+      "from": "committee",
+      "to": "notifyRejected",
+      "on": "rejected"
+    },
+    {
+      "id": "t15",
+      "from": "notifyApproved",
+      "to": "approved",
+      "on": "next"
+    },
+    {
+      "id": "t16",
+      "from": "notifyRejected",
+      "to": "rejected",
+      "on": "next"
+    }
+  ],
+  "decisions": [
+    {
+      "key": "group-eligibility",
+      "version": 1,
+      "hitPolicy": "FIRST",
+      "rows": [
+        {
+          "when": {
+            "fieldRef": "/input/registered",
+            "operator": "eq",
+            "value": false
+          },
+          "then": {
+            "eligible": false
+          }
+        },
+        {
+          "when": {
+            "all": [
+              {
+                "fieldRef": "/input/groupType",
+                "operator": "eq",
+                "value": "Chama"
+              },
+              {
+                "fieldRef": "/input/members/count",
+                "operator": "lt",
+                "value": 5
+              }
+            ]
+          },
+          "then": {
+            "eligible": false
+          }
+        },
+        {
+          "when": {
+            "all": [
+              {
+                "fieldRef": "/input/groupType",
+                "operator": "eq",
+                "value": "Chama"
+              },
+              {
+                "fieldRef": "/input/members/count",
+                "operator": "gt",
+                "value": 20
+              }
+            ]
+          },
+          "then": {
+            "eligible": false
+          }
+        },
+        {
+          "when": {
+            "all": [
+              {
+                "fieldRef": "/input/groupType",
+                "operator": "eq",
+                "value": "SACCO members group"
+              },
+              {
+                "fieldRef": "/input/members/count",
+                "operator": "lt",
+                "value": 3
+              }
+            ]
+          },
+          "then": {
+            "eligible": false
+          }
+        },
+        {
+          "when": {
+            "all": [
+              {
+                "fieldRef": "/input/groupType",
+                "operator": "eq",
+                "value": "SACCO members group"
+              },
+              {
+                "fieldRef": "/input/members/count",
+                "operator": "gt",
+                "value": 20
+              }
+            ]
+          },
+          "then": {
+            "eligible": false
+          }
+        }
+      ],
+      "default": {
+        "eligible": true
+      }
+    },
+    {
+      "key": "group-level",
+      "version": 1,
+      "hitPolicy": "FIRST",
+      "rows": [
+        {
+          "when": {
+            "fieldRef": "/input/members/sum/amount",
+            "operator": "gte",
+            "value": 2000000
+          },
+          "then": {
+            "level": "committee"
+          }
+        }
+      ],
+      "default": {
+        "level": "branch"
+      }
+    }
+  ],
+  "execution": {
+    "maxConcurrentRuns": 200,
+    "maxAttempts": 3,
+    "retryDelaySeconds": 30
+  },
+  "security": {
+    "selfApproval": "deny"
+  },
+  "dependencies": {
+    "connections": []
+  },
+  "outputMapping": {
+    "memberCount": {
+      "fieldRef": "/input/members/count",
+      "required": true
+    },
+    "totalAmount": {
+      "fieldRef": "/input/members/sum/amount",
+      "required": true
+    },
+    "verifiedBy": {
+      "fieldRef": "/steps/fieldVerification/decidedBy",
+      "required": false
+    }
+  },
+  "uiLayout": {
+    "positions": {
+      "start": {
+        "x": 80,
+        "y": 80
+      },
+      "eligibility": {
+        "x": 320,
+        "y": 80
+      },
+      "eligibleRoute": {
+        "x": 560,
+        "y": 80
+      },
+      "notifyIneligible": {
+        "x": 800,
+        "y": 80
+      },
+      "fieldVerification": {
+        "x": 800,
+        "y": 240
+      },
+      "level": {
+        "x": 1040,
+        "y": 80
+      },
+      "levelRoute": {
+        "x": 1280,
+        "y": 80
+      },
+      "branchApproval": {
+        "x": 1520,
+        "y": 80
+      },
+      "committee": {
+        "x": 1520,
+        "y": 240
+      },
+      "notifyApproved": {
+        "x": 1760,
+        "y": 80
+      },
+      "notifyRejected": {
+        "x": 1760,
+        "y": 240
+      },
+      "approved": {
+        "x": 2000,
+        "y": 80
+      },
+      "rejected": {
+        "x": 2000,
+        "y": 240
+      },
+      "ineligible": {
+        "x": 1040,
+        "y": 240
+      }
+    },
+    "viewport": {
+      "x": 0,
+      "y": 0,
+      "zoom": 0.6
+    }
+  }
+}

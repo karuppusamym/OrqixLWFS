@@ -240,7 +240,8 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
       if (!box || all.length === 0) return
       const bounds = getNodesBounds(all)
       const saved = initialViewport.current
-      if (firstFit && saved && Number.isFinite(saved.x) && Number.isFinite(saved.y) && Number.isFinite(saved.zoom) && saved.zoom >= 0.1 && saved.zoom <= 1.8) {
+      // A returning designer's saved view is kept, unless it would open with text too small to read.
+      if (firstFit && saved && Number.isFinite(saved.x) && Number.isFinite(saved.y) && Number.isFinite(saved.zoom) && saved.zoom >= minZoomRef.current && saved.zoom <= 1.8) {
         void flow.setViewport(saved, { duration: 0 })
         return
       }

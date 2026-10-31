@@ -61,6 +61,8 @@ export async function openQuestion(page: Page, key: string): Promise<Locator> {
  * key is under Advanced.
  */
 export async function addCaseField(page: Page, key: string, label: string, kind: string, required: boolean): Promise<void> {
+  // The case type designer keeps data fields on its Data tab.
+  await page.getByRole('tab', { name: 'Data', exact: true }).click()
   await page.getByRole('button', { name: 'Add case data field' }).click()
   const added = page.locator('[data-testid^="case-field-card-"]').last()
   await added.getByLabel(/^Label/).fill(label)

@@ -1,11 +1,12 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { HttpResponse, http } from 'msw'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { server } from '@/test/server'
 import { renderAppReady, signInAs } from '@/test/utils'
 import { WS_SANDBOX } from '@/mocks/state'
 import { listCaseDefinitions } from './api'
+import { caseAutosaveTuning } from './CaseDesignerPage'
 
 const ws = WS_SANDBOX
 const cmmn = (key: string, group = 'managers') => `<?xml version="1.0" encoding="UTF-8"?>
@@ -19,6 +20,10 @@ const file = (text: string) => { const value = new File([text], 'case.cmmn', { t
 const results = () => screen.getByRole('region', { name: 'Check results' })
 
 describe('case designer page (S126)', () => {
+  // These tests count draft versions; autosave would add versions between their steps.
+  beforeEach(() => { caseAutosaveTuning.delayMs = 600_000 })
+  afterEach(() => { caseAutosaveTuning.delayMs = undefined })
+
   it('creates a case type, shows every problem the check finds and publishes once they are fixed', async () => {
     signInAs('dana.designer')
     const user = userEvent.setup()
@@ -34,6 +39,7 @@ describe('case designer page (S126)', () => {
     expect(await screen.findByTestId('case-canvas')).toBeInTheDocument()
 
     // A data field, edited with the shared field editor (S125). The starter task has no eligible group: the check says so.
+    await user.click(screen.getByRole('tab', { name: 'Data' }))
     await user.click(screen.getByRole('button', { name: 'Add case data field' }))
     const card = within(screen.getByTestId('case-field-card-field1'))
     await user.clear(card.getByLabelText(/^Label/))
@@ -43,6 +49,7 @@ describe('case designer page (S126)', () => {
     expect(within(results()).getByText('Choose an eligible workspace group for every human task.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Publish version 1' })).toBeDisabled()
 
+    await user.click(screen.getByRole('tab', { name: 'Plan' }))
     await user.click(screen.getByRole('button', { name: 'Form view' }))
     const group = screen.getByLabelText('Eligible group for task1')
     await waitFor(() => expect(group.querySelectorAll('option').length).toBeGreaterThan(1))
@@ -57,7 +64,7 @@ describe('case designer page (S126)', () => {
     const published = (await listCaseDefinitions(ws)).find(definition => definition.key === 'claim-review')
     expect(published).toMatchObject({ name: 'Claim review', version: 1, dataFields: [{ key: 'field1', label: 'Claim amount', type: 'text' }] })
 
-    await user.click(screen.getByRole('link', { name: 'All case types' }))
+    await user.click(within(screen.getByRole('navigation', { name: 'Breadcrumb' })).getByRole('link', { name: 'Case types' }))
     const row = (await screen.findByRole('cell', { name: 'claim-review' })).closest('tr')!
     expect(within(row).getByText(/Published v1/)).toBeInTheDocument()
     expect(within(row).getByText('No changes since version 1')).toBeInTheDocument()
@@ -72,10 +79,12 @@ describe('case designer page (S126)', () => {
     await user.type(screen.getByLabelText('Name'), 'Uploaded review')
     await user.click(screen.getByRole('button', { name: 'Create draft' }))
     await screen.findByRole('heading', { level: 1, name: 'Uploaded review' })
+    await user.click(screen.getByRole('tab', { name: 'Source' }))
     await user.upload(screen.getByLabelText('CMMN file (maximum 64 KiB)'), file(cmmn('another-key')))
     expect(await screen.findByRole('region', { name: 'Uploaded CMMN file' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Check' }))
     await waitFor(() => expect(within(results()).getByText('Exactly one case with an ID matching the catalog key is required.')).toBeInTheDocument())
+    await user.click(screen.getByRole('tab', { name: 'Source' }))
     await user.upload(screen.getByLabelText('CMMN file (maximum 64 KiB)'), file(cmmn('uploaded-review')))
     await user.click(screen.getByRole('button', { name: 'Check' }))
     await waitFor(() => expect(within(results()).getByText(/No problems found/)).toBeInTheDocument())
@@ -107,7 +116,33 @@ describe('case designer page (S126)', () => {
     expect(screen.getByRole('button', { name: 'Publish version 3' })).toBeDisabled()
     // The published source opens in the designer, with its plan item and data fields.
     expect(await screen.findByTestId('case-canvas')).toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: 'Data' }))
     expect(await screen.findByRole('button', { name: /^Field 1: Amount/ })).toBeInTheDocument()
+  })
+
+  it('autosaves after a quiet period and undoes and redoes plan changes from the shared header', async () => {
+    caseAutosaveTuning.delayMs = 20
+    signInAs('dana.designer')
+    const user = userEvent.setup()
+    await renderAppReady(`/w/${ws}/case-designs`)
+    await user.click(await screen.findByRole('button', { name: 'New case type' }))
+    await user.type(screen.getByLabelText('Name'), 'Frame review')
+    await user.click(screen.getByRole('button', { name: 'Create draft' }))
+    expect(await screen.findByRole('heading', { level: 1, name: 'Frame review' })).toBeInTheDocument()
+    // The starter plan is not stored until saved: autosave stores it as draft version 2.
+    await waitFor(() => expect(screen.getByTestId('save-state')).toHaveTextContent(/^Saved/))
+    expect(screen.getByText(/draft version 2/)).toBeInTheDocument()
+    const history = screen.getByRole('group', { name: 'History' })
+    expect(within(history).getByRole('button', { name: 'Undo' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Add milestone' }))
+    await waitFor(() => expect(within(history).getByRole('button', { name: 'Undo' })).toBeEnabled())
+    expect(screen.getAllByText('New milestone').length).toBeGreaterThan(0)
+    await user.click(within(history).getByRole('button', { name: 'Undo' }))
+    await waitFor(() => expect(screen.queryAllByText('New milestone')).toHaveLength(0))
+    expect(within(history).getByRole('button', { name: 'Redo' })).toBeEnabled()
+    await user.click(within(history).getByRole('button', { name: 'Redo' }))
+    await waitFor(() => expect(screen.getAllByText('New milestone').length).toBeGreaterThan(0))
+    await waitFor(() => expect(screen.getByTestId('save-state')).toHaveTextContent(/^Saved/))
   })
 
   it('is offered only to people who may author case types', async () => {

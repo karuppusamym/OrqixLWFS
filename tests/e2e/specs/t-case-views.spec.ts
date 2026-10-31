@@ -25,6 +25,7 @@ test('a pinned case view controls start and correction layout without granting e
   await useCmmnFile(page, `${key}.cmmn`, sourceXml)
   await addCaseField(page, 'summary', 'Summary', 'text', true)
   await addCaseField(page, 'checked', 'Checked', 'yesNo', false)
+  await page.getByRole('tab', { name: 'Screens', exact: true }).click()
   await page.getByRole('button', { name: 'Choose case view' }).click()
   await page.getByLabel('Published case view').selectOption(created.body.id)
   await expectNoSeriousViolations(page, 'Case view pin authoring')

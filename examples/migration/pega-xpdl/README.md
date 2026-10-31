@@ -11,4 +11,4 @@ Upload as **Pega flow export (XPDL 2.0)**, review metadata exclusions and group/
 
 Unsupported source attributes, executable extensions, activities/tools, subprocesses, computed assignments, non-XOR routes and triggered events block conversion. Native Rule-Obj-* XML pages and RAP archives are not XPDL and are not automatically interpreted.
 
-See [S46](../../../docs/build/S46-pega-xpdl.md) for scope, tests and source references.
+See [S50](../../../docs/build/S50-pega-xpdl.md) for scope, tests and source references.

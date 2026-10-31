@@ -9,7 +9,8 @@ import org.springframework.context.annotation.Profile;
 @EnableConfigurationProperties(TaskReminderSettings.class)
 class TaskReminderConfiguration {}
 
+/** All scheduled background work (and the Kafka consumer reconcile loop) runs on all-in-one and worker pods only. */
 @Configuration
-@Profile("!migrate")
+@Profile("!migrate & !api")
 @EnableScheduling
 class TaskReminderSchedulingConfiguration {}

@@ -261,19 +261,28 @@ export interface CaseModelDesignerProps {
   initialModel?: { items: CaseModelItem[]; options?: CaseModelOptions }
   /** S126: the current model after every change (and once on mount), so a page can save it as a draft. */
   onModelChange?: (model: CaseDesignerModel) => void
+  /** Set inside an editor frame: the frame's tab names the designer, so its own border, title and intro are dropped. */
+  framed?: boolean
+  /** Set by an editor frame that puts undo and redo in its header instead of the designer's own undo button. */
+  historyRef?: { current: DesignerHistory | null }
+  /** Reported after every plan change: how many steps can be undone (grows by one per edit) and redone. */
+  onHistoryChange?: (state: { undoCount: number; redoCount: number }) => void
 }
+
+export interface DesignerHistory { undo: () => void; redo: () => void }
 
 /** The designer's state as a draft keeps it; `diagram` is whether generated CMMN carries diagram interchange. */
 export interface CaseDesignerModel { items: CaseModelItem[]; options: CaseModelOptions; diagram: boolean }
 
 const STARTER_ITEMS: CaseModelItem[] = [{ id: 'task1', kind: 'humanTask', label: 'Review evidence', required: true, manual: true, group: '' }]
 
-export function CaseModelDesigner({ ws, caseKey, name, onApply, disabled, dataFields = [], onImported, initialModel, onModelChange }: CaseModelDesignerProps) {
+export function CaseModelDesigner({ ws, caseKey, name, onApply, disabled, dataFields = [], onImported, initialModel, onModelChange, framed = false, historyRef, onHistoryChange }: CaseModelDesignerProps) {
   const groups = useGroups(ws)
   const groupList: Group[] = groups.data?.items ?? []
   const [items, setItems] = useState<CaseModelItem[]>(() => structuredClone(initialModel?.items.length ? initialModel.items : STARTER_ITEMS))
   const [history, setHistory] = useState<CaseModelItem[][]>([]), [error, setError] = useState<string>(), [xml, setXml] = useState('')
   const [view, setView] = useState<'canvas' | 'form'>('canvas')
+  const [future, setFuture] = useState<CaseModelItem[][]>([])
   const [selected, setSelected] = useState<string | null>(null)
   const [options, setOptions] = useState<CaseModelOptions>(() => structuredClone(initialModel?.options ?? {}))
   const [diagnostics, setDiagnostics] = useState<ImportDiagnostic[] | null>(null)
@@ -283,7 +292,13 @@ export function CaseModelDesigner({ ws, caseKey, name, onApply, disabled, dataFi
   useEffect(() => {
     reportModel.current?.({ items, options, diagram: view === 'canvas' || !!options.diagram || caseItems(items).some(item => item.layout) })
   }, [items, options, view])
-  const edit = (change: Change) => { setHistory(previous => [...previous.slice(-49), items]); setItems(change(structuredClone(items))); setXml(''); setError(undefined); onApply(null) }
+  const edit = (change: Change) => { setHistory(previous => [...previous.slice(-49), items]); setFuture([]); setItems(change(structuredClone(items))); setXml(''); setError(undefined); onApply(null) }
+  const undo = () => { if (!history.length) return; setFuture(next => [items, ...next].slice(0, 50)); setItems(history.at(-1)!); setHistory(history.slice(0, -1)); setXml(''); onApply(null) }
+  const redo = () => { if (!future.length) return; setHistory(previous => [...previous.slice(-49), items]); setItems(future[0]!); setFuture(future.slice(1)); setXml(''); onApply(null) }
+  useEffect(() => { if (historyRef) historyRef.current = { undo, redo } })
+  const reportHistory = useRef(onHistoryChange)
+  useEffect(() => { reportHistory.current = onHistoryChange })
+  useEffect(() => { reportHistory.current?.({ undoCount: history.length, redoCount: future.length }) }, [history.length, future.length])
   const nextId = () => { let index = 1; const used = new Set(caseItems(items).map(item => item.id)); while (used.has(`item${index}`)) index++; return `item${index}` }
   const replace = (id: string, patch: Partial<CaseModelItem>) => edit(nodes => patchItem(nodes, id, patch))
   const add = (kind: CaseItemKind, parent?: string) => edit(nodes => {
@@ -314,7 +329,7 @@ export function CaseModelDesigner({ ws, caseKey, name, onApply, disabled, dataFi
     try {
       if (file.size > 65_536) throw new Error('Choose a CMMN file of at most 64 KiB.')
       const imported = importCaseModel(await file.text())
-      setHistory(previous => [...previous.slice(-49), items])
+      setHistory(previous => [...previous.slice(-49), items]); setFuture([])
       setItems(imported.items.length ? imported.items : items); setOptions(imported.options); setDiagnostics(imported.diagnostics)
       setXml(''); setError(undefined); onApply(null); setSelected(null)
       onImported?.(imported.key, imported.name)
@@ -337,8 +352,8 @@ export function CaseModelDesigner({ ws, caseKey, name, onApply, disabled, dataFi
     {item.kind === 'stage' ? <div className="space-y-3 border-l-2 pl-3">{render(item.children ?? [], depth + 1)}<div className="flex flex-wrap gap-2">{ADDABLE.filter(kind => kind !== 'stage' || depth < 3).map(kind => <Button key={kind} type="button" variant="secondary" disabled={caseItems(items).length >= 30} onClick={() => add(kind, item.id)}>Add {kind === 'humanTask' ? 'task' : ADD_LABEL[kind]} to {item.id}</Button>)}</div></div> : null}
   </li>)}</ol>
 
-  return <fieldset disabled={disabled} className="space-y-4 rounded border p-4"><legend className="font-semibold">Case model designer</legend>
-    <p className="text-sm text-muted-foreground">Draw the case plan on the canvas, or use the form. Plan human tasks, workflow tasks that run a published workflow, case tasks that start another case, nested stages, milestones, timers and authorized user events; mark work discretionary so people add it when needed; repeat items; connect items with start-after and ends-when rules; and make work depend on case data. The server validates the generated CMMN before creating a definition.</p>
+  return <fieldset disabled={disabled} className={framed ? 'space-y-4' : 'space-y-4 rounded border p-4'}><legend className={framed ? 'sr-only' : 'font-semibold'}>Case model designer</legend>
+    <p className={framed ? 'sr-only' : 'text-sm text-muted-foreground'}>Draw the case plan on the canvas, or use the form. Plan human tasks, workflow tasks that run a published workflow, case tasks that start another case, nested stages, milestones, timers and authorized user events; mark work discretionary so people add it when needed; repeat items; connect items with start-after and ends-when rules; and make work depend on case data. The server validates the generated CMMN before creating a definition.</p>
     {groups.isError ? <Alert tone="danger">Workspace groups could not be loaded. <Button type="button" variant="ghost" onClick={() => void groups.refetch()}>Retry groups</Button></Alert> : null}
     <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Designer view">
       <Button type="button" variant={view === 'canvas' ? 'primary' : 'secondary'} aria-pressed={view === 'canvas'} onClick={() => setView('canvas')}>Canvas view</Button>
@@ -368,7 +383,7 @@ export function CaseModelDesigner({ ws, caseKey, name, onApply, disabled, dataFi
       <div className="flex flex-wrap gap-2">{ADDABLE.map(kind => <Button type="button" key={kind} variant="secondary" disabled={caseItems(items).length >= 30} onClick={() => add(kind)}>Add {ADD_LABEL[kind]}</Button>)}</div>
     </>}
     <div className="flex flex-wrap gap-2">
-      <Button type="button" variant="secondary" disabled={!history.length} onClick={() => { setItems(history.at(-1)!); setHistory(history.slice(0, -1)); setXml(''); onApply(null) }}>Undo model change</Button>
+      {historyRef ? null : <Button type="button" variant="secondary" disabled={!history.length} onClick={undo}>Undo model change</Button>}
       <Button type="button" onClick={generate}>Use generated CMMN</Button>
     </div>
     {error ? <Alert tone="danger">{error}</Alert> : null}{xml ? <div><Label htmlFor="case-generated-xml">Generated CMMN preview</Label><Textarea id="case-generated-xml" rows={8} readOnly value={xml} /><Button type="button" variant="secondary" onClick={() => downloadBlob(new Blob([xml], { type: 'application/xml' }), `${caseKey}.cmmn`)}>Download generated CMMN</Button></div> : null}

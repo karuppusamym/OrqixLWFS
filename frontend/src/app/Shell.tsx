@@ -1,4 +1,4 @@
-import { Activity, AppWindow, BarChart3, Check, ClipboardList, ChevronsUpDown, FlaskConical, House, Inbox, Layers3, LogOut, Menu, MessageSquare, PanelsTopLeft, Rocket, Send, Settings, Shapes, Workflow, X } from 'lucide-react'
+import { Activity, AppWindow, BarChart3, Check, ClipboardList, ChevronsUpDown, FlaskConical, House, Inbox, Layers3, LogOut, Menu, MessageSquare, PanelsTopLeft, Rocket, Send, Settings, Shapes, Table2, Workflow, X } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, NavLink, Outlet, useLocation, useMatches, useNavigate } from 'react-router'
 import { signOut } from '@/api/auth'
@@ -80,7 +80,8 @@ export function Shell() {
     { to: `${base}/tasks`, label: 'My tasks', icon: Inbox, visible: can('task.act'), badge: assigned },
     { to: `${base}/workflows`, label: 'Workflows', icon: Workflow, visible: can('workflow.read', 'workflow.start') },
     // S126: case type authoring sits next to workflow authoring, for the people who may author (workflow.edit).
-    { to: `${base}/case-designs`, label: 'Case types', icon: Shapes, visible: can('workflow.edit') },
+    { to: `${base}/case-designs`, label: 'Case types', icon: Shapes, visible: isOn('cases') && can('workflow.edit') },
+    { to: `${base}/decisions`, label: 'Decisions', icon: Table2, visible: can('workflow.read') },
     { to: `${base}/runs`, label: 'Runs', icon: Activity, visible: can('run.read') },
     { to: `${base}/cases`, label: 'Cases', icon: Layers3, visible: isOn('cases') && can('workflow.read', 'workflow.start', 'run.read', 'task.act') },
     { to: `${base}/apps`, label: 'Apps', icon: AppWindow, visible: isOn('apps') },
@@ -90,6 +91,13 @@ export function Shell() {
     { to: `${base}/promotions`, label: 'Promotions', icon: Rocket, visible: can('workflow.approve-promotion', 'workspace.manage-access', 'workflow.edit') },
     { to: `${base}/settings`, label: 'Settings', icon: Settings, visible: can('workspace.manage-access', 'connection.read') },
   ]
+
+  const navigationGroups = [
+    { label: 'My workspace', labels: ['Home', 'My tasks', 'My requests', 'Cases', 'Apps', 'Assistant', ...(!can('workflow.edit') ? ['Workflows'] : [])] },
+    { label: 'Design', labels: [...(can('workflow.edit') ? ['Workflows'] : []), 'Case types', 'Decisions', 'Views'] },
+    { label: 'Operate', labels: ['Runs', 'Insights', 'Agent writes'] },
+    { label: 'Manage', labels: ['Promotions', 'Settings'] },
+  ].map(group => ({ ...group, items: group.labels.flatMap(label => items.filter(item => item.visible && item.label === label)) })).filter(group => group.items.length > 0)
 
   const navVisible = rail || navOpen
 
@@ -148,10 +156,11 @@ export function Shell() {
               </Button>
             </div>
           ) : null}
-          <ul className="space-y-1 px-3 pt-4">
-            {items
-              .filter((i) => i.visible)
-              .map((item) => (
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
+            {navigationGroups.map(group => <div key={group.label} className="mb-4 last:mb-0">
+              <p className="mb-1 px-3 text-xs font-semibold tracking-wide text-nav-muted">{group.label}</p>
+              <ul aria-label={group.label} className="space-y-1">
+            {group.items.map((item) => (
                 <li key={item.to}>
                   <NavLink
                     to={item.to}
@@ -175,8 +184,10 @@ export function Shell() {
                   </NavLink>
                 </li>
               ))}
-          </ul>
-          <div className="mt-auto border-t border-nav-border px-5 py-4">
+              </ul>
+            </div>)}
+          </div>
+          <div className="mt-auto shrink-0 border-t border-nav-border px-5 py-4">
             <p className="truncate text-sm font-semibold text-nav-active-foreground" title={me.subject.displayName}>{me.subject.displayName}</p>
             <p className="truncate text-xs text-nav-muted" title={workspace.organizationName}>{workspace.organizationName}</p>
           </div>

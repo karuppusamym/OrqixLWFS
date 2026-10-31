@@ -1,7 +1,7 @@
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { USERS as users } from '@/mocks/state'
 import { server } from '@/test/server'
 import { renderApp, signInAs, WS } from '@/test/utils'
@@ -15,6 +15,22 @@ const reply = (patch: Partial<Conversation> = {}): Conversation => ({ id: ID, ve
 
 describe('guided conversation execution', () => {
   beforeEach(() => { window.sessionStorage.clear(); signInAs('rhea.requester') })
+
+  it('brings the newest turn into view after a reply instead of leaving it behind the answer box', async () => {
+    server.use(http.post(endpoint, () => HttpResponse.json(reply({ stage: 'completed', message: 'Submitted ORQ-1001.', runId: RUN }))))
+    const scrolled: Element[] = []
+    const original = Element.prototype.scrollIntoView
+    Element.prototype.scrollIntoView = vi.fn(function (this: Element) { scrolled.push(this) })
+    try {
+      const user = userEvent.setup()
+      renderApp(PATH)
+      await user.type(await screen.findByLabelText('Message'), 'confirm{Enter}')
+      await screen.findByRole('link', { name: 'Open request' })
+      await waitFor(() => expect(scrolled.at(-1)?.textContent).toContain('You said'))
+      expect(scrolled.at(-1)?.textContent).toContain('confirm')
+      expect(document.activeElement).toHaveAccessibleName('Current step')
+    } finally { Element.prototype.scrollIntoView = original }
+  })
 
   it('collects a missing field and requires explicit review before creating a request', async () => {
     const requests: ConversationMessage[] = []

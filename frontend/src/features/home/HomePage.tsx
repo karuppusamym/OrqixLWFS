@@ -1,7 +1,7 @@
 import { ArrowRight, ClipboardList, Cable, FileInput, Inbox, LibraryBig, Play, Workflow } from 'lucide-react'
 import { Link } from 'react-router'
 import { useMyRequests, useTaskCounters, useTasks, useWorkflows } from '@/api/queries'
-import type { TaskSummary } from '@/api/types'
+import { prioritizeTasks } from '@/features/tasks/taskFilters'
 import { useWorkspace } from '@/app/workspace'
 import { EmptyState } from '@/components/common/EmptyState'
 import { LoadingBlock } from '@/components/common/LoadingBlock'
@@ -68,7 +68,7 @@ export function HomePage() {
   const requests = useMyRequests(ws, {}, 5)
 
   const workflows = startable.data?.pages.flatMap((p) => p.items) ?? []
-  const tasks: TaskSummary[] = [...(assigned.data?.pages[0]?.items ?? []), ...(claimable.data?.pages[0]?.items ?? [])].slice(0, 5)
+  const tasks = prioritizeTasks([...(assigned.data?.pages.flatMap(page => page.items) ?? []), ...(claimable.data?.pages.flatMap(page => page.items) ?? [])]).slice(0, 5)
   const recent = requests.data?.pages[0]?.items.slice(0, 5) ?? []
   const firstName = workflows[0]?.name
 
@@ -93,7 +93,45 @@ export function HomePage() {
         </Link>
       </section>
 
-      <GetStarted ws={ws} />
+      {canAct ? (
+        <section aria-labelledby="waiting-heading" className="mb-8">
+          <div className="mb-3 flex items-baseline justify-between gap-3">
+            <div><h2 id="waiting-heading">Waiting for you</h2><p className="mt-1 text-sm text-muted-foreground">Up to five loaded tasks, overdue first, then highest priority.</p></div>
+            <Link to={`/w/${ws}/tasks`} className="inline-flex items-center gap-1 text-sm font-semibold">
+              Open My tasks <ArrowRight className="size-4" aria-hidden="true" />
+            </Link>
+          </div>
+          {assigned.isPending || claimable.isPending ? (
+            <LoadingBlock rows={2} label="Loading your tasks" />
+          ) : assigned.isError || claimable.isError ? (
+            <QueryError error={assigned.error ?? claimable.error} onRetry={() => { void assigned.refetch(); void claimable.refetch() }} what="your tasks" />
+          ) : tasks.length === 0 ? (
+            <EmptyState icon={Inbox} title="Nothing is waiting for you">
+              New approval work shows up here and in My tasks.
+            </EmptyState>
+          ) : (
+            <ul className="divide-y divide-border rounded-card border border-border bg-surface">
+              {tasks.map((t) => {
+                const due = taskDueText(t)
+                return (
+                  <li key={t.id}>
+                    <Link to={`/w/${ws}/tasks/${t.id}?view=${t.assignee ? 'assigned' : 'claimable'}`} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-foreground no-underline hover:bg-surface-muted">
+                      <span>
+                        <span className="block font-semibold">{taskTitle(t)}</span>
+                        <span className="block text-sm text-muted-foreground">
+                          {requestReference(t)} &middot; {t.label} &middot; requested by {t.requester.displayName}
+                          {t.assignee ? '' : ' · available to claim'}
+                        </span>
+                      </span>
+                      {due ? <span className={due.overdue ? 'text-sm font-semibold text-danger' : 'text-sm text-muted-foreground'}>{due.label}</span> : null}
+                    </Link>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </section>
+      ) : null}
 
       {canStart && (can('workflow.start') || workflows.length > 0) ? (
         <section aria-labelledby="start-heading" className="mb-8">
@@ -137,46 +175,6 @@ export function HomePage() {
         </section>
       ) : null}
 
-      {canAct ? (
-        <section aria-labelledby="waiting-heading" className="mb-8">
-          <div className="mb-3 flex items-baseline justify-between gap-3">
-            <h2 id="waiting-heading">Waiting for you</h2>
-            <Link to={`/w/${ws}/tasks`} className="inline-flex items-center gap-1 text-sm font-semibold">
-              Open My tasks <ArrowRight className="size-4" aria-hidden="true" />
-            </Link>
-          </div>
-          {assigned.isPending || claimable.isPending ? (
-            <LoadingBlock rows={2} label="Loading your tasks" />
-          ) : assigned.isError || claimable.isError ? (
-            <QueryError error={assigned.error ?? claimable.error} onRetry={() => { void assigned.refetch(); void claimable.refetch() }} what="your tasks" />
-          ) : tasks.length === 0 ? (
-            <EmptyState icon={Inbox} title="Nothing is waiting for you">
-              New approval work shows up here and in My tasks.
-            </EmptyState>
-          ) : (
-            <ul className="divide-y divide-border rounded-card border border-border bg-surface">
-              {tasks.map((t) => {
-                const due = taskDueText(t)
-                return (
-                  <li key={t.id}>
-                    <Link to={`/w/${ws}/tasks/${t.id}?view=${t.assignee ? 'assigned' : 'claimable'}`} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-foreground no-underline hover:bg-surface-muted">
-                      <span>
-                        <span className="block font-semibold">{taskTitle(t)}</span>
-                        <span className="block text-sm text-muted-foreground">
-                          {requestReference(t)} &middot; {t.label} &middot; requested by {t.requester.displayName}
-                          {t.assignee ? '' : ' · available to claim'}
-                        </span>
-                      </span>
-                      {due ? <span className={due.overdue ? 'text-sm font-semibold text-danger' : 'text-sm text-muted-foreground'}>{due.label}</span> : null}
-                    </Link>
-                  </li>
-                )
-              })}
-            </ul>
-          )}
-        </section>
-      ) : null}
-
       <section aria-labelledby="recent-heading">
         <div className="mb-3 flex items-baseline justify-between gap-3">
           <h2 id="recent-heading">Your recent requests</h2>
@@ -212,6 +210,7 @@ export function HomePage() {
           </ul>
         )}
       </section>
+      <div className="mt-8"><GetStarted ws={ws} /></div>
     </>
   )
 }

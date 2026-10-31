@@ -1,12 +1,17 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { CheckCircle2, FileClock, FilePlus2, LayoutList, PencilLine } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { useWorkspace } from '@/app/workspace'
+import { EmptyState } from '@/components/common/EmptyState'
 import { LoadingBlock } from '@/components/common/LoadingBlock'
 import { PageHeader } from '@/components/common/PageHeader'
 import { QueryError } from '@/components/common/QueryError'
+import { RelativeTime } from '@/components/common/RelativeTime'
 import { Alert } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Dialog } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table'
@@ -30,10 +35,12 @@ function rows(definitions: Definition[], drafts: DraftSummary[]): Row[] {
   return [...byKey.values()].sort((a, b) => a.name.localeCompare(b.name))
 }
 
-function draftState(row: Row): string {
-  if (!row.draft) return 'No draft'
-  if (row.draft.publishedDraftVersion === row.draft.version) return `No changes since version ${row.published?.version ?? row.draft.publishedVersion}`
-  return row.published ? `Draft with changes (draft version ${row.draft.version})` : `Not published yet (draft version ${row.draft.version})`
+function DraftState({ row }: { row: Row }) {
+  if (!row.draft) return <span className="text-muted-foreground">No draft</span>
+  if (row.draft.publishedDraftVersion === row.draft.version) return <span className="text-muted-foreground">No changes since version {row.published?.version ?? row.draft.publishedVersion}</span>
+  return row.published
+    ? <Badge tone="warning" title={`Draft version ${row.draft.version}`}><PencilLine aria-hidden="true" /> Changes not published</Badge>
+    : <Badge title={`Draft version ${row.draft.version}`}><FileClock aria-hidden="true" /> Not published yet</Badge>
 }
 
 /** S126 (docs/26 C3): where case types are authored. Working cases stays on the Cases page. */
@@ -47,6 +54,8 @@ export function CaseDesignsPage() {
   const drafts = useQuery({ queryKey: ['ws', ws, 'case-drafts'], queryFn: () => listCaseDefinitionDrafts(ws), enabled: allowed })
   const [key, setKey] = useState('')
   const [name, setName] = useState('')
+  const [keyEdited, setKeyEdited] = useState(false)
+  const [creating, setCreating] = useState(false)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -74,33 +83,42 @@ export function CaseDesignsPage() {
   if (!allowed) return <Alert tone="warning">You need permission to edit workflows to design case types.</Alert>
   const list = definitions.data && drafts.data ? rows(definitions.data, drafts.data) : []
   return <div className="space-y-6">
-    <PageHeader title="Case types" description="Design the case types people start from Cases. Each case type is a CMMN case model: draft it, check it and publish a version."
-      actions={<Link className="text-link underline" to={`/w/${ws}/cases`}>Go to Cases</Link>} />
-    {error ? <Alert tone="danger">{error}</Alert> : null}
-    <form className="space-y-3 rounded-card border border-border bg-surface p-5" aria-label="New case type" onSubmit={event => { event.preventDefault(); void create() }}>
-      <h2>New case type</h2>
-      <p id="case-type-key-hint" className="text-sm text-muted-foreground">The key is 2 to 63 lowercase letters, digits or hyphens, starting with a letter. It names the case type in CMMN and in case tasks of other case types, and cannot change later. The draft opens in the case designer.</p>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div><Label htmlFor="case-type-key">Key</Label><Input id="case-type-key" value={key} maxLength={63} aria-describedby="case-type-key-hint" onChange={event => setKey(event.target.value)} required /></div>
-        <div><Label htmlFor="case-type-name">Name</Label><Input id="case-type-name" value={name} maxLength={200} onChange={event => setName(event.target.value)} required /></div>
-      </div>
-      <Button type="submit" variant="primary" loading={pending} disabled={!key.trim() || !name.trim()}>Create draft</Button>
-    </form>
+    <PageHeader title="Case types" description="Design how a case moves from intake to resolution. Create a draft, check it and publish a version."
+      actions={<div className="flex flex-wrap gap-2">
+        <Button asChild size="lg"><Link to={`/w/${ws}/cases`}>Go to Cases</Link></Button>
+        <Button variant="primary" size="lg" onClick={() => { setError(null); setCreating(true) }}><FilePlus2 aria-hidden="true" /> New case type</Button>
+      </div>} />
+    {error && !creating ? <Alert tone="danger">{error}</Alert> : null}
+    <Dialog open={creating} onClose={() => setCreating(false)} dismissible={!pending} title="New case type" description="Name the case type. The draft opens in the case designer.">
+      <form className="space-y-4" aria-label="New case type" onSubmit={event => { event.preventDefault(); void create() }}>
+        <div><Label htmlFor="case-type-name">Name</Label><Input id="case-type-name" value={name} maxLength={200} placeholder="For example: Insurance claim" onChange={event => {
+          const value = event.target.value; setName(value)
+          if (!keyEdited) setKey(value.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^[^a-z]+/, '').slice(0,63).replace(/-+$/, ''))
+        }} required /></div>
+        <div><Label htmlFor="case-type-key">Key</Label><Input id="case-type-key" value={key} minLength={2} maxLength={63} pattern="[a-z][a-z0-9\-]{0,61}[a-z0-9]" aria-describedby="case-type-key-hint" onChange={event => { setKeyEdited(true); setKey(event.target.value) }} required />
+          <p id="case-type-key-hint" className="mt-1 text-sm text-muted-foreground">Suggested from the name. 2 to 63 lowercase letters, digits or hyphens, starting with a letter. It identifies the case type in CMMN and in other case types, and cannot change later.</p></div>
+        {error ? <Alert tone="danger">{error}</Alert> : null}
+        <div className="flex flex-wrap gap-2"><Button type="submit" variant="primary" loading={pending} disabled={!key.trim() || !name.trim()}>Create draft</Button><Button type="button" variant="secondary" disabled={pending} onClick={() => setCreating(false)}>Cancel</Button></div>
+      </form>
+    </Dialog>
     <section className="space-y-3" aria-label="Case types">
-      <h2>Case types</h2>
       {definitions.isPending || drafts.isPending ? <LoadingBlock label="Loading case types" />
         : definitions.isError ? <QueryError error={definitions.error} onRetry={() => void definitions.refetch()} what="case types" />
         : drafts.isError ? <QueryError error={drafts.error} onRetry={() => void drafts.refetch()} what="case type drafts" />
-        : list.length ? <div className="overflow-x-auto"><Table><THead><TR><TH>Name</TH><TH>Key</TH><TH>Published</TH><TH>Draft</TH><TH>Action</TH></TR></THead><TBody>
+        : list.length ? <div className="overflow-x-auto rounded-card border border-border bg-surface"><Table><caption className="sr-only">Case types</caption><THead><TR><TH>Name</TH><TH>Key</TH><TH>Status</TH><TH>Draft</TH><TH>Last change</TH><TH><span className="sr-only">Actions</span></TH></TR></THead><TBody>
           {list.map(row => <TR key={row.key}>
-            <TD>{row.name}</TD><TD>{row.key}</TD><TD>{row.published ? `Version ${row.published.version}` : 'Not published'}</TD><TD>{draftState(row)}</TD>
-            <TD><div className="flex flex-wrap gap-2">
-              <Button disabled={pending} onClick={() => void open(row)}>Open designer</Button>
-              {row.published ? <Button variant="secondary" disabled={pending} onClick={() => void exportModel(row.published!)}>Export CMMN</Button> : null}
+            <TD className="font-semibold">{row.name}</TD>
+            <TD className="font-mono text-xs text-muted-foreground">{row.key}</TD>
+            <TD className="whitespace-nowrap">{row.published ? <Badge tone="success" title="New cases use this version"><CheckCircle2 aria-hidden="true" /> Published v{row.published.version}</Badge> : <Badge>Not published</Badge>}</TD>
+            <TD className="whitespace-nowrap"><DraftState row={row} /></TD>
+            <TD className="whitespace-nowrap text-muted-foreground"><RelativeTime value={row.draft?.updatedAt ?? row.published?.createdAt} /></TD>
+            <TD><div className="flex flex-wrap justify-end gap-2">
+              <Button size="sm" variant="primary" disabled={pending} onClick={() => void open(row)}>Open designer</Button>
+              {row.published ? <Button size="sm" variant="secondary" disabled={pending} onClick={() => void exportModel(row.published!)}>Export CMMN</Button> : null}
             </div></TD>
           </TR>)}
         </TBody></Table></div>
-        : <p className="text-sm text-muted-foreground">No case types yet. Create one above.</p>}
+        : <EmptyState icon={LayoutList} title="No case types yet" action={<Button variant="primary" onClick={() => setCreating(true)}><FilePlus2 aria-hidden="true" /> New case type</Button>}>Create a case type to describe the stages, tasks and data of a case.</EmptyState>}
     </section>
   </div>
 }

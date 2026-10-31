@@ -51,6 +51,8 @@ test('an administrator switches a module off and on again for the whole workspac
     await expect(again.getByTestId('feature-apps-state')).toHaveText('On')
     await expect(nav(again).getByRole('link', { name: 'Apps' })).toBeVisible()
     const back = await sessions.as('rhea.requester')
+    // A session opened while the module was off reads the switches again on its next load.
+    await back.reload()
     await expect(nav(back).getByRole('link', { name: 'Apps' })).toBeVisible()
   } finally {
     // Never leave the shared workspace with a module off (real stack runs specs in sequence on one database).

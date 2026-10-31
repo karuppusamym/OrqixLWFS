@@ -1,5 +1,5 @@
 # Feature implementation status (R0)
-Updated 19 October 2026 · status vocabulary from [doc 09](09-master-plan.md#definition-of-a-build-ticket)
+Updated 31 October 2026 · status vocabulary from [doc 09](09-master-plan.md#definition-of-a-build-ticket)
 
 The Tier-1 hackathon implementation and its separate qualification limits are recorded in the [hackathon acceptance record](hackathon-acceptance.md). Historical product totals below do not qualify this candidate.
 
@@ -328,3 +328,15 @@ Blue Ocean "Create" item from [doc 27](27-blue-ocean-discovery.md) (Tier 1 DORA 
 | Loan exception, KYC refresh (extends the periodic review), cooperative/MFI group loan, vendor onboarding, building/business permit, grant application; 20 regional variants in `examples/pack-*.json` | [regional-template-packs](regional-template-packs.md) | Verified, *tests and Docker stack* (compiler 108 tests including 87 simulated samples; 402/402 live checks on a private stack) | Illustrative, not compliance-approved; translations not reviewed by native speakers; lunar holidays 2026 only |
 | Template picker filters by region and industry; template list returns optional `pack`, `industry`, `region`, `languages` | [regional-template-packs](regional-template-packs.md#using-a-pack) | Verified, *tests and Docker API* | No browser journey on the real stack |
 | Gaps noted, not built | [regional-template-packs](regional-template-packs.md#gaps-found) | Open | Currency USD-only, no form translations, ASCII outcomes, per-step calendars, wall-clock time limits |
+
+## Merged from develop - 31 October 2026
+
+Work merged into `develop` on 30 to 31 October 2026 (PRs #16 to #19) and brought onto `main` together with the Blue Ocean features above.
+
+| Feature | Note | Status | Limits |
+|---|---|---|---|
+| Test tab: generate cases for every path (route conditions, decision rows and form rules on request answers, both sides of each comparison); keep or delete proposals; saved-case limit 10 → 20 | [S122](build/S122-generated-test-cases.md) | Verified, *frontend tests* | Frontend only; conditions on step results are reached only through the answers that feed them; timeout and failure routes still need hand-written cases |
+| Optional API and worker runtime roles (`api` / `worker` profiles, `NodeRoleGuard`, OpenShift `split-roles` component and `prod-split` overlay) | [ADR 0004](adr/0004-runtime-roles-before-microservices.md) step 1, [admin guide](admin-guide.md) | Verified, *tests and manifest validation* | Not run on a cluster; no load test against all-in-one, so all-in-one stays the default. ADR steps 2 to 4 not implemented |
+| Saved work views for tasks and runs (V209): owner-only edits, optional sharing of filters (never results), allow-listed filters, revision conflicts, 200 per workspace, audited `workview.saved` / `workview.deleted` | [user guide](user-guide.md#saved-views-for-tasks-and-runs---30-october-2026) | Implemented | No dedicated backend API test or component test yet; covered only by the contract-generated security matrix and the Tasks page test |
+| Task search, queue and due filters run on the server; Home task preview orders overdue first; grouped navigation | [UI review](28-ui-product-review-2026-10-30.md) | Verified, *tests* | Mock-mode browser review only; no usability study |
+| Decisions page under Design; case type designer in the shared editor frame (autosave, undo, Check/Publish header); case Test tab; access administration in Settings; Features grouped by standard | PR #18 and #19 | Verified, *frontend tests and focused backend tests* | Playwright end-to-end suite repaired in PR #19; not re-run after this merge |

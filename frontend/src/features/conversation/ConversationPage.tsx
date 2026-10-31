@@ -84,6 +84,7 @@ function ConversationScreen({ ws, subject }: { ws: string; subject: string }) {
   const stepRef = useRef<HTMLDivElement>(null)
   const changeRef = useRef<HTMLInputElement>(null)
   const reasonRef = useRef<HTMLTextAreaElement>(null)
+  const turnRef = useRef<HTMLLIElement>(null)
   const refocus = useRef(false)
 
   const resume = useQuery({ queryKey: ['ws', ws, 'conversation', id], queryFn: () => getConversation(ws, id!), enabled: !!id, retry: false })
@@ -101,12 +102,16 @@ function ConversationScreen({ ws, subject }: { ws: string; subject: string }) {
     },
   })
 
-  /** After each reply move focus to where the person acts next: the answer box, or the step itself. */
+  /**
+   * After each reply bring the new turn (your message, the reply and the step below it) to the top of the page, then move
+   * focus to where the person acts next without scrolling again: the sticky answer box would otherwise hide the reply.
+   */
   useEffect(() => {
     if (!refocus.current || mutation.isPending) return
     refocus.current = false
-    if (current?.stage === 'collecting' || !current || current.stage === 'idle') answerRef.current?.focus()
-    else stepRef.current?.focus()
+    turnRef.current?.scrollIntoView?.({ block: 'start' })
+    if (current?.stage === 'collecting' || !current || current.stage === 'idle') answerRef.current?.focus({ preventScroll: true })
+    else stepRef.current?.focus({ preventScroll: true })
   }, [current, mutation.isPending])
   useEffect(() => { if (changing) changeRef.current?.focus() }, [changing])
   useEffect(() => { if (rejecting) reasonRef.current?.focus() }, [rejecting])
@@ -151,7 +156,7 @@ function ConversationScreen({ ws, subject }: { ws: string; subject: string }) {
     {resume.isError && !latest ? <div role="alert" className="mb-4 rounded-card border border-danger-border bg-danger-soft p-4"><p>We could not reopen your last conversation. It may have expired.</p><div className="mt-2 flex flex-wrap gap-2"><Button variant="secondary" onClick={() => void resume.refetch()}>Try again</Button><Button variant="secondary" onClick={startNew}>Start a new conversation</Button></div></div> : null}
 
     {history.length > 0 ? <div role="log" aria-label="Conversation" aria-live="polite" aria-relevant="additions text" className="mb-4">
-      <ol className="space-y-2">{history.map((entry, index) => <li key={index} className={entry.role === 'You' ? 'ml-6 rounded-card border border-primary-soft-border bg-primary-soft p-3' : 'mr-6 rounded-card border border-border bg-surface p-3'}><p className="mb-0.5 text-xs font-semibold text-muted-foreground">{entry.role === 'You' ? 'You said' : 'Assistant'}</p><p className="whitespace-pre-wrap break-words">{entry.message}</p></li>)}</ol>
+      <ol className="space-y-2">{history.map((entry, index) => <li key={index} ref={index === history.length - 2 ? turnRef : undefined} className={'scroll-mt-20 ' + (entry.role === 'You' ? 'ml-6 rounded-card border border-primary-soft-border bg-primary-soft p-3' : 'mr-6 rounded-card border border-border bg-surface p-3')}><p className="mb-0.5 text-xs font-semibold text-muted-foreground">{entry.role === 'You' ? 'You said' : 'Assistant'}</p><p className="whitespace-pre-wrap break-words">{entry.message}</p></li>)}</ol>
     </div> : <div role="log" aria-label="Conversation" aria-live="polite" className="mb-4">
       {current && !resume.isPending ? <p className="rounded-card border border-border bg-surface p-3"><span className="mb-0.5 block text-xs font-semibold text-muted-foreground">Assistant</span>{current.message}</p> : null}
     </div>}
@@ -173,10 +178,10 @@ function ConversationScreen({ ws, subject }: { ws: string; subject: string }) {
 
       {review ? <section aria-labelledby="assistant-review" className="rounded-card border border-border bg-surface p-4">
         <h2 id="assistant-review" className="mb-3 text-lg">Review {review.workflowName}</h2>
-        {rows.length === 0 ? <p className="text-sm text-muted-foreground">No details were provided.</p> : <dl className="divide-y divide-border">{rows.map((row) => <div key={row.name} className="grid gap-1 py-2 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)_auto] sm:items-start sm:gap-3">
-          <dt className="font-semibold break-words">{row.label}</dt>
-          <dd className="break-words">{row.display ?? displayValue(row.value)}</dd>
-          {stage === 'review' ? <dd><Button size="sm" variant="ghost" disabled={busy} onClick={() => { setChanging(row); setNewValue(typeof row.value === 'string' || typeof row.value === 'number' ? String(row.value) : Array.isArray(row.value) ? row.value.join(', ') : '') }} aria-label={`Change ${row.label}`}>Change</Button></dd> : null}
+        {rows.length === 0 ? <p className="text-sm text-muted-foreground">No details were provided.</p> : <dl className="divide-y divide-border">{rows.map((row) => <div key={row.name} className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-0.5 py-2">
+          <dt className="text-sm font-semibold break-words text-muted-foreground">{row.label}</dt>
+          <dd className="col-span-2 row-start-2 break-words">{row.display ?? displayValue(row.value)}</dd>
+          {stage === 'review' ? <dd className="col-start-2 row-start-1"><Button size="sm" variant="ghost" disabled={busy} onClick={() => { setChanging(row); setNewValue(typeof row.value === 'string' || typeof row.value === 'number' ? String(row.value) : Array.isArray(row.value) ? row.value.join(', ') : '') }} aria-label={`Change ${row.label}`}>Change</Button></dd> : null}
         </div>)}</dl>}
         {stage === 'review' && changing ? <form className="mt-3 space-y-2 rounded-card border border-border bg-surface-muted p-3" onSubmit={(event) => { event.preventDefault(); if (newValue.trim()) send(`${changing.name}=${newValue.trim()}`, `Change ${changing.label} to ${newValue.trim()}`) }}>
           <Label htmlFor="assistant-change">New value for {changing.label}</Label>
@@ -217,11 +222,10 @@ function ConversationScreen({ ws, subject }: { ws: string; subject: string }) {
       </div>
     </div> : null}
 
-    <form className="sticky bottom-0 mt-6 space-y-2 border-t border-border bg-background pt-3 pb-3" onSubmit={(event) => { event.preventDefault(); send(text) }}>
+    <form className="sticky bottom-0 mt-6 space-y-2 border-t border-border bg-background pt-3 pb-3 shadow-[0_-8px_16px_-12px_rgb(0_0_0/0.25)]" onSubmit={(event) => { event.preventDefault(); send(text) }}>
       <Label htmlFor="conversation-message">{field?.title ? `Your answer: ${String(field.title)}` : 'Message'}</Label>
-      <Textarea id="conversation-message" ref={answerRef} maxLength={4000} value={text} readOnly={busy} aria-busy={busy} onKeyDown={onKeyDown} onChange={(event) => setText(event.target.value)} aria-describedby="conversation-help" />
-      <p id="conversation-help" className="text-sm text-muted-foreground">{answerHint(field)} Press Enter to send, or Shift and Enter for a new line.</p>
-      <p className="text-sm text-muted-foreground">If you describe what you need in your own words, your message and the names of the request types you can use may be sent to your organization’s AI service to find the right one. You always review before anything is submitted.</p>
+      <Textarea id="conversation-message" ref={answerRef} rows={2} className="min-h-16" maxLength={4000} value={text} readOnly={busy} aria-busy={busy} onKeyDown={onKeyDown} onChange={(event) => setText(event.target.value)} aria-describedby="conversation-help" />
+      <p id="conversation-help" className="text-sm text-muted-foreground">{answerHint(field)} Press Enter to send, or Shift and Enter for a new line. Your own words may be sent to your organization’s AI service.</p>
       <div className="flex flex-wrap gap-2">
         <Button variant="primary" type="submit" disabled={!text.trim() || busy}>{busy ? 'Sending…' : 'Send'}</Button>
         {dictation.supported ? <Button type="button" variant="secondary" onClick={() => (dictation.listening ? dictation.stop() : dictation.start())} disabled={busy} aria-pressed={dictation.listening}>{dictation.listening ? <MicOff aria-hidden="true" /> : <Mic aria-hidden="true" />} {dictation.listening ? 'Stop talking' : 'Talk'}</Button> : null}
@@ -234,6 +238,10 @@ function ConversationScreen({ ws, subject }: { ws: string; subject: string }) {
       <section className="rounded-card border border-border bg-surface p-3" aria-labelledby="assistant-card-request">
         <h2 id="assistant-card-request" className="mb-1 text-sm">This request</h2>
         {review ? <p className="text-sm"><span className="font-semibold">{review.workflowName}</span><br />{rows.length} {rows.length === 1 ? 'answer' : 'answers'} so far. Check them in the review before you submit.</p> : reviewingTask ? <p className="text-sm">A task is open for your decision. Nothing is recorded until you confirm.</p> : <p className="text-sm text-muted-foreground">Nothing started yet. Choose an option or describe what you need.</p>}
+      </section>
+      <section className="rounded-card border border-border bg-surface p-3" aria-labelledby="assistant-card-ai">
+        <h2 id="assistant-card-ai" className="mb-1 text-sm">Your words and AI</h2>
+        <p className="text-sm text-muted-foreground">If you describe what you need in your own words, your message and the names of the request types you can use may be sent to your organization’s AI service to find the right one. You always review before anything is submitted.</p>
       </section>
       <section className="rounded-card border border-border bg-surface p-3" aria-labelledby="assistant-card-tips">
         <h2 id="assistant-card-tips" className="mb-1 text-sm">Tips</h2>

@@ -1,0 +1,19 @@
+# prod with the API/worker split (docs/adr/0004 step 1). Example and validation target: the prod overlay unchanged,
+# plus the split-roles component. Use it instead of overlays/prod only after the split has been load-tested.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Repeated from overlays/prod: they must also reach the worker resources the component adds at this layer. The
+# deployment pipeline sets the image here (kustomize edit set image) when it deploys this overlay.
+namespace: orqix-prod
+
+resources:
+  - ../prod
+
+components:
+  - ../../components/split-roles
+
+images:
+  - name: orqix
+    newName: registry.example.com/REPLACE/orqix
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000

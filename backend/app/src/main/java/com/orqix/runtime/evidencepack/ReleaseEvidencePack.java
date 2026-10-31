@@ -73,8 +73,9 @@ public class ReleaseEvidencePack {
         EvidenceRenderer.requireFormat(format);
         WorkspaceAccess access = policy.requireVisible(caller, ws);
         ReleaseRow release = release(ws, workflowId, releaseId).orElseThrow(ApiException::notFound);
-        // Who may see a release (catalog getRelease) may read its evidence; so may holders of audit.read.
-        if (!access.has(Permission.WORKFLOW_READ) && !access.has(Permission.AUDIT_READ)) {
+        // Who may see a release (catalog getRelease) may read its evidence. audit.read adds only workflows the
+        // caller may start; it never opens a workflow the caller cannot otherwise see.
+        if (!access.has(Permission.WORKFLOW_READ)) {
             if (!access.canStart(workflowId)) {
                 throw ApiException.notFound();
             }

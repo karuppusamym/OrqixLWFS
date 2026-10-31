@@ -1,0 +1,10 @@
+# Never commit secrets, keys or backups of this kit.
+.env
+.env.*
+!.env.example
+certs/*
+!certs/README.txt
+secrets/*
+!secrets/README.txt
+backups/*
+!backups/README.txt

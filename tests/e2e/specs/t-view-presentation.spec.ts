@@ -3,6 +3,7 @@ import { expect,test } from '../support/fixtures'
 import { MOCK } from '../support/env'
 import { apiGet,workspaceId,selectStep,openFormTab } from '../support/app'
 import { apiSend,createWorkflow,publish,uniq } from '../support/api'
+import { startCaseButton } from '../support/caseDesigner'
 import { expectNoSeriousViolations } from '../support/axe'
 
 test('authored languages and responsive tokens reach pinned request and approval views',async({sessions})=>{
@@ -78,7 +79,7 @@ test('localized case choices preserve stored values and current correction permi
   const sourceXml=readFileSync(new URL('../../../backend/app/src/test/resources/cases/manual-required.cmmn',import.meta.url),'utf8').replaceAll('lifecycleCase',key)
   const definition=await apiSend<{id:string}>(page,'POST',`/workspaces/${ws}/cases/definitions`,{key,name:key,sourceXml,viewRef:{id:created.body.id,version:1},dataFields:[{key:'priority',label:'Priority',type:'choice',required:true,options:['normal','urgent']}]});expect(definition.status).toBe(201)
   page=await sessions.as('rhea.requester');await page.goto(`/w/${ws}/cases`)
-  await page.getByRole('row').filter({has:page.getByRole('cell',{name:key,exact:true})}).getByRole('button',{name:'Start case',exact:true}).click()
+  await startCaseButton(page, key).click()
   const dialog=page.getByRole('dialog',{name:'Start case',exact:true});await dialog.getByLabel('View language').selectOption('fr')
   await dialog.getByLabel(/^Priorité/).selectOption('urgent');await dialog.getByRole('button',{name:'Start case with data'}).click()
   await expect(page).toHaveURL(new RegExp(`/w/${ws}/cases/[^/]+$`));const url=page.url(),id=url.split('/').at(-1)!

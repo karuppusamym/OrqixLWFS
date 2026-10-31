@@ -4,7 +4,7 @@ import { MOCK } from '../support/env'
 import { addCaseField, apiGet, openFormTab, workspaceId } from '../support/app'
 import { apiSend, createWorkflow, publish, uniq } from '../support/api'
 import { expectNoSeriousViolations } from '../support/axe'
-import { checkAndPublish, newCaseType, useCmmnFile } from '../support/caseDesigner'
+import { checkAndPublish, newCaseType, useCmmnFile, startCaseButton } from '../support/caseDesigner'
 
 test('published request view is pinned in Studio and renders its submit action at runtime', async ({ sessions }) => {
   test.setTimeout(180_000)
@@ -168,7 +168,7 @@ test('real typed case data is authored, validated, corrected and retained after 
   await checkAndPublish(page)
   page = await sessions.as('rhea.requester')
   await page.goto(`/w/${ws}/cases`)
-  await page.getByRole('row').filter({ has: page.getByRole('cell', { name: key, exact: true }) }).getByRole('button', { name: 'Start case', exact: true }).click()
+  await startCaseButton(page, key).click()
   const start = page.getByRole('dialog', { name: 'Start case', exact: true })
   await start.getByLabel(/^Summary/).fill('Original case evidence')
   await start.getByLabel('Amount', { exact: true }).fill('12.25')

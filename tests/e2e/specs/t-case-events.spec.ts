@@ -4,7 +4,7 @@ import { MOCK } from '../support/env'
 import { apiGet,workspaceId } from '../support/app'
 import { uniq } from '../support/api'
 import { expectNoSeriousViolations } from '../support/axe'
-import { checkAndPublish,newCaseType } from '../support/caseDesigner'
+import { checkAndPublish,newCaseType,startCaseButton } from '../support/caseDesigner'
 
 const checkpoint=new URL('../../../evidence/case-events-restart.json',import.meta.url)
 
@@ -24,7 +24,7 @@ test('native user event authoring enforces role access and activates a human tas
   await expect(page.getByLabel('Generated CMMN preview')).toHaveValue(/authorizedRoleRefs="case_role_finance-approvers"/)
   await checkAndPublish(page)
   page=await sessions.as('rhea.requester');await page.goto(`/w/${ws}/cases`)
-  await page.getByRole('row').filter({has:page.getByRole('cell',{name:key,exact:true})}).getByRole('button',{name:'Start case',exact:true}).click()
+  await startCaseButton(page, key).click()
   await expect(page).toHaveURL(new RegExp(`/w/${ws}/cases/[^/]+$`));const url=page.url()
   await page.getByRole('button',{name:'Show case plan',exact:true}).click()
   await expect(page.getByRole('button',{name:'Trigger event',exact:true})).toHaveCount(0)
@@ -58,7 +58,7 @@ test('repeatable human task authoring creates sequential required work',async({s
   await expect(page.getByLabel('Generated CMMN preview')).toHaveValue(/repetitionCounter &lt; 3/)
   await checkAndPublish(page)
   page=await sessions.as('rhea.requester');await page.goto(`/w/${ws}/cases`)
-  await page.getByRole('row').filter({has:page.getByRole('cell',{name:key,exact:true})}).getByRole('button',{name:'Start case',exact:true}).click()
+  await startCaseButton(page, key).click()
   await expect(page).toHaveURL(new RegExp(`/w/${ws}/cases/[^/]+$`));const url=page.url(),id=url.split('/').at(-1)!
   page=await sessions.as('mani.manager');await page.goto(url)
   await page.getByRole('button',{name:'Show case plan',exact:true}).click()

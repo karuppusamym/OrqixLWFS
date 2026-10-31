@@ -68,7 +68,7 @@ export function CaseDetailPage() {
       description={<>Case <span className="font-mono" title={data.id}>#{shortCaseId(data.id)}</span> · started <RelativeTime value={data.createdAt} /></>}
       actions={<Button asChild variant="secondary"><Link to={`/w/${ws}/cases`}>Back to Cases</Link></Button>} />
     {error ? <Alert tone="danger">{error}</Alert> : null}
-    <div className="flex flex-wrap items-center gap-3"><Badge tone={CASE_STATUS[data.status].tone}>{CASE_STATUS[data.status].label}</Badge><span className="text-sm text-muted-foreground">Case type version {data.definitionVersion}</span></div>
+    <div className="flex flex-wrap items-center gap-3"><Badge tone={CASE_STATUS[data.status].tone}>{CASE_STATUS[data.status].label}</Badge><span className="text-sm text-muted-foreground">Case type version {data.definitionVersion}</span><span className="text-sm text-muted-foreground" title="Goes up by one with every change to this case">Case version {data.version}</span></div>
     {data.status === 'suspended' ? <Alert tone="warning">This case is on hold. Its work can continue after an operator resumes it.</Alert> : null}
     {can('run.operate') && (data.status === 'active' || data.status === 'suspended') ? <div className="flex flex-wrap gap-2">
       {data.status === 'active' ? <><Button variant="secondary" disabled={pendingTask !== null} onClick={() => setOperation('suspend')}>Put case on hold</Button><Button variant="secondary" disabled={pendingTask !== null} onClick={() => setOperation('close')}>Close case</Button></> : <Button variant="secondary" disabled={pendingTask !== null} onClick={() => setOperation('resume')}>Resume case</Button>}

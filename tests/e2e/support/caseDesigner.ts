@@ -27,3 +27,8 @@ export async function checkAndPublish(page: Page): Promise<void> {
   await page.getByRole('button', { name: /^Publish version \d+$/ }).click()
   await expect(page.getByText(/^Published version \d+ of /)).toBeVisible()
 }
+
+/** The Start case button on the Cases page card of the case type with this key. */
+export function startCaseButton(page: Page, key: string) {
+  return page.locator(`[data-case-key="${key}"]`).getByRole('button', { name: 'Start case', exact: true })
+}

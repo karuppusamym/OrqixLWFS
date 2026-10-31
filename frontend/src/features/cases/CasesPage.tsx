@@ -56,7 +56,7 @@ export function CasesPage() {
     {can('workflow.read', 'workflow.start') ? <section className="space-y-3" aria-labelledby="case-types-heading">
       <h2 id="case-types-heading" className="text-lg">Case types</h2>
       {definitions.isPending ? <LoadingBlock label="Loading case types" /> : definitions.isError ? <QueryError error={definitions.error} onRetry={() => void definitions.refetch()} what="case types" /> : definitions.data.length ?
-        <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{definitions.data.map(definition => <li key={definition.id} className="flex flex-col justify-between gap-3 rounded-card border border-border bg-surface p-4">
+        <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{definitions.data.map(definition => <li key={definition.id} data-case-key={definition.key} aria-label={definition.name} className="flex flex-col justify-between gap-3 rounded-card border border-border bg-surface p-4">
           <div className="min-w-0">
             <p className="flex items-start gap-2 font-semibold"><Briefcase className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" /><span className="wrap-anywhere">{definition.name}</span></p>
             <p className="mt-1 text-sm text-muted-foreground">Version {definition.version}{definition.dataFields?.length ? ` · asks for ${definition.dataFields.length} ${definition.dataFields.length === 1 ? 'detail' : 'details'} to start` : ''}</p>

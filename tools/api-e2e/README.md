@@ -136,8 +136,8 @@ Home Loan Application must equal the committed transcription (8 stages, 58 steps
 7 integrations) and report the findings the export cannot answer (roles, outcomes, decision conditions, rejection
 routes, integrations). An unknown case type is refused. The script then reviews the four approvals the way a designer
 would (roles, order, Approved and Rejected outcomes, everything else excluded with a reason), checks that nothing
-blocks, converts, and checks the new draft holds the four approvals and none of the excluded steps. The PDF is a
-confidential customer document, so the script prints counts, ids and finding codes only.
+blocks, converts, and checks the new draft holds the four approvals and none of the excluded steps. It prints
+counts, ids and finding codes, not the document text.
 
 On an isolated stack use app port 18080, the second redirect address the dev realm accepts:
 `ORQIX_HOST_PORT=18080 docker compose -p <name> --profile app up -d --build`, then `ORQIX_BASE_URL=http://localhost:18080`.

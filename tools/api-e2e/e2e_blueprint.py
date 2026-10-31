@@ -4,7 +4,7 @@ Uploads examples/migration/pega-blueprint/RetailLoanOrigination.pdf through the 
 container, PDF extraction worker, PostgreSQL), checks the transcription of each case type and the findings, then
 reviews the Home Loan approval path the way a designer would and converts it into a workflow draft.
 
-The PDF is a confidential customer document: this script prints counts, ids and finding codes only, never its text.
+The script prints counts, ids and finding codes, not the document text.
 
     python tools/api-e2e/e2e_blueprint.py      # about 30 s; creates one workflow draft per run
 """

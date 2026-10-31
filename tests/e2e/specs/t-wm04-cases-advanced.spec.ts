@@ -84,7 +84,7 @@ test('a case task starts its child case, whose completion finishes the parent ta
 
   page = await sessions.as('mani.manager'); await page.goto(childUrl)
   await page.getByRole('button', { name: 'Complete task', exact: true }).click()
-  await expect(page.getByText('completed', { exact: true }).first()).toBeVisible()
+  await expect(page.getByText('Completed', { exact: true }).first()).toBeVisible()
 
   page = await sessions.as('olga.operator')
   await expect.poll(async () => (await apiGet<{ events: { action: string }[] }>(page, `/workspaces/${ws}/cases/instances/${started.body.id}/plan`)).events.map(e => e.action),

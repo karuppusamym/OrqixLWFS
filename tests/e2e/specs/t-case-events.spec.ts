@@ -40,7 +40,7 @@ test('native user event authoring enforces role access and activates a human tas
   await page.getByRole('dialog').getByLabel('Reason',{exact:true}).fill('Start released review')
   await page.getByRole('button',{name:'Confirm plan change',exact:true}).click()
   await page.getByRole('button',{name:'Complete task',exact:true}).click()
-  await expect(page.getByText('completed',{exact:true}).first()).toBeVisible()
+  await expect(page.getByText('Completed',{exact:true}).first()).toBeVisible()
   page=await sessions.as('rhea.requester');await page.goto(url)
   await page.getByRole('button',{name:'Show case plan',exact:true}).click()
   await expect(page.getByText(/Version 2: Trigger event/)).toBeVisible()
@@ -73,7 +73,7 @@ test('repeatable human task authoring creates sequential required work',async({s
   if(count===2) {
     await writeFile(checkpoint,JSON.stringify({ws,id}),'utf8')
     await expect(page.getByRole('button',{name:'Start task',exact:true})).toBeVisible()
-  } else await expect(page.getByText('completed',{exact:true}).first()).toBeVisible()
+  } else await expect(page.getByText('Completed',{exact:true}).first()).toBeVisible()
   await page.setViewportSize({width:390,height:844});await expectNoSeriousViolations(page,'Sequential repeated case work mobile')
 })
 
@@ -87,7 +87,7 @@ test('restart retains the repetition counter and completes only the remaining wo
   await page.getByRole('dialog').getByLabel('Reason',{exact:true}).fill('Complete the remaining occurrence after restart')
   await page.getByRole('button',{name:'Confirm plan change',exact:true}).click()
   await page.getByRole('button',{name:'Complete task',exact:true}).click()
-  await expect(page.getByText('completed',{exact:true}).first()).toBeVisible()
+  await expect(page.getByText('Completed',{exact:true}).first()).toBeVisible()
   page=await sessions.as('rhea.requester')
   const result=await apiGet<{items:Array<{elementId:string;state:string}>;events:unknown[]}>(page,`/workspaces/${ws}/cases/instances/${id}/plan`)
   const reviews=result.items.filter(item=>item.elementId==='node_task1_item'&&item.state==='completed')

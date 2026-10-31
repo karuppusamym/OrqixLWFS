@@ -41,7 +41,7 @@ test('a visually authored model executes required manual work and achieves its m
   await page.getByRole('dialog').getByLabel('Reason',{exact:true}).fill('Start the visually authored review')
   await page.getByRole('button',{name:'Confirm plan change',exact:true}).click()
   await page.getByRole('button',{name:'Complete task',exact:true}).click()
-  await expect(page.getByText('completed',{exact:true}).first()).toBeVisible()
+  await expect(page.getByText('Completed',{exact:true}).first()).toBeVisible()
   await expect(page.getByText('Your work is complete. Further case details require current case read access.',{exact:true})).toBeVisible()
   page=await sessions.as('rhea.requester');await page.goto(url)
   await page.getByRole('button',{name:'Show case plan',exact:true}).click()

@@ -24,6 +24,7 @@ describe('case designer page (S126)', () => {
     const user = userEvent.setup()
     const { router } = await renderAppReady(`/w/${ws}/case-designs`)
     expect(await screen.findByRole('heading', { level: 1, name: 'Case types' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'New case type' }))
     await user.type(screen.getByLabelText('Key'), 'claim-review')
     await user.type(screen.getByLabelText('Name'), 'Claim review')
     await user.click(screen.getByRole('button', { name: 'Create draft' }))
@@ -58,7 +59,7 @@ describe('case designer page (S126)', () => {
 
     await user.click(screen.getByRole('link', { name: 'All case types' }))
     const row = (await screen.findByRole('cell', { name: 'claim-review' })).closest('tr')!
-    expect(within(row).getByText('Version 1')).toBeInTheDocument()
+    expect(within(row).getByText(/Published v1/)).toBeInTheDocument()
     expect(within(row).getByText('No changes since version 1')).toBeInTheDocument()
   })
 
@@ -66,7 +67,8 @@ describe('case designer page (S126)', () => {
     signInAs('dana.designer')
     const user = userEvent.setup()
     await renderAppReady(`/w/${ws}/case-designs`)
-    await user.type(await screen.findByLabelText('Key'), 'uploaded-review')
+    await user.click(await screen.findByRole('button', { name: 'New case type' }))
+    await user.type(screen.getByLabelText('Key'), 'uploaded-review')
     await user.type(screen.getByLabelText('Name'), 'Uploaded review')
     await user.click(screen.getByRole('button', { name: 'Create draft' }))
     await screen.findByRole('heading', { level: 1, name: 'Uploaded review' })

@@ -6,6 +6,7 @@ import { expect, type Page } from '@playwright/test'
  */
 export async function newCaseType(page: Page, ws: string, key: string, name = key): Promise<void> {
   await page.goto(`/w/${ws}/case-designs`)
+  await page.getByRole('button', { name: 'New case type', exact: true }).click()
   await page.getByLabel('Key', { exact: true }).fill(key)
   await page.getByLabel('Name', { exact: true }).fill(name)
   await page.getByRole('button', { name: 'Create draft', exact: true }).click()

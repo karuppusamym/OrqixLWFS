@@ -11,7 +11,7 @@ import { Alert } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { formatDateTime } from '@/lib/dates'
-import { FEATURES, featureInfo } from '@/lib/features'
+import { ALWAYS_ON, FEATURE_GROUPS, FEATURES, featureInfo } from '@/lib/features'
 
 const featuresKey = (ws: string) => ['ws', ws, 'features'] as const
 
@@ -39,15 +39,36 @@ export function FeaturesPanel() {
       ) : query.isError ? (
         <QueryError error={query.error} onRetry={() => void query.refetch()} what="the features" />
       ) : (
-        <ul className="space-y-3">
-          {FEATURES.map((info) => {
-            const state = query.data.items.find((s) => s.feature === info.feature)
-            return state ? <FeatureRow key={info.feature} ws={ws} state={state} /> : null
-          })}
-        </ul>
+        <div className="space-y-6">
+          {FEATURE_GROUPS.map(({ group, title, description }) => (
+            <section key={group} aria-labelledby={`features-${group}`} className="space-y-3">
+              <div>
+                <h3 id={`features-${group}`} className="text-base">{title}</h3>
+                <p className="text-sm text-muted-foreground">{description}</p>
+              </div>
+              <ul className="space-y-3">
+                {group === 'modelling' ? ALWAYS_ON.map((core) => (
+                  <li key={core.name} className="rounded-card border border-border bg-surface p-4" data-testid={`feature-core-${core.name.toLowerCase()}`}>
+                    <h4 className="flex flex-wrap items-center gap-2 text-base font-semibold">{core.name}<Badge tone="info">Always on</Badge></h4>
+                    <p className="mt-1 text-sm">{core.covers}</p>
+                    <Formats formats={core.formats} />
+                  </li>
+                )) : null}
+                {FEATURES.filter((info) => info.group === group).map((info) => {
+                  const state = query.data.items.find((s) => s.feature === info.feature)
+                  return state ? <FeatureRow key={info.feature} ws={ws} state={state} /> : null
+                })}
+              </ul>
+            </section>
+          ))}
+        </div>
       )}
     </section>
   )
+}
+
+function Formats({ formats }: { formats: readonly string[] }) {
+  return <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="Standards and formats">{formats.map((format) => <li key={format}><Badge>{format}</Badge></li>)}</ul>
 }
 
 function FeatureRow({ ws, state }: { ws: string; state: WorkspaceFeatureState }) {
@@ -71,11 +92,12 @@ function FeatureRow({ ws, state }: { ws: string; state: WorkspaceFeatureState })
     <li className="rounded-card border border-border bg-surface p-4" data-testid={`feature-${state.feature}`} aria-labelledby={headingId}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1 space-y-1">
-          <h3 id={headingId} className="flex items-center gap-2 text-base font-semibold">
+          <h4 id={headingId} className="flex items-center gap-2 text-base font-semibold">
             {info.name}
             <Badge tone={state.enabled ? 'success' : 'neutral'} data-testid={`feature-${state.feature}-state`}>{state.enabled ? 'On' : 'Off'}</Badge>
-          </h3>
+          </h4>
           <p className="text-sm">{info.covers}</p>
+          {info.formats ? <Formats formats={info.formats} /> : null}
           {state.updatedAt ? (
             <p className="text-xs text-muted-foreground">
               Switched {state.enabled ? 'on' : 'off'} by {state.updatedBy?.displayName ?? 'someone'} on {formatDateTime(state.updatedAt)}

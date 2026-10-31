@@ -35,7 +35,7 @@ describe('shell: permission-based navigation, workspaces, notifications', () => 
     signInAs('olga.operator')
     const first = renderApp(`/w/${WS}`)
     await screen.findByRole('heading', { level: 1 })
-    expect(navLinks()).toEqual(['Home', 'My requests', 'Cases', 'Apps', 'Assistant', 'Workflows', 'Views', 'Runs', 'Insights', 'Agent writes', 'Settings'])
+    expect(navLinks()).toEqual(['Home', 'My requests', 'Cases', 'Apps', 'Assistant', 'Workflows', 'Decisions', 'Views', 'Runs', 'Insights', 'Agent writes', 'Settings'])
     first.unmount()
 
     signInAs('wade.admin')

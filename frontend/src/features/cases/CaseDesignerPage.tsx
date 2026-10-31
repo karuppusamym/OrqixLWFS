@@ -174,11 +174,14 @@ function DraftEditor({ ws, initial }: { ws: string; initial: CaseDraft }) {
             <Button type="button" variant="secondary" disabled={pending} onClick={openInDesigner}>Open in the designer</Button>
             <p className="text-xs text-muted-foreground">Opening the file in the designer replaces it with what the designer generates; anything left out is dropped when you save.</p>
           </div>}
-      <div className="space-y-1">
+      <details className="rounded-card border border-border bg-surface p-3" open={mode === 'file' || undefined}>
+        <summary className="cursor-pointer text-sm font-semibold">Source: use a CMMN file instead</summary>
+        <div className="mt-3 space-y-1">
         <Label htmlFor="case-draft-file">CMMN file (maximum 64 KiB)</Label>
         <Input id="case-draft-file" type="file" accept=".cmmn,.xml" disabled={pending} aria-describedby="case-draft-file-hint" onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void chooseFile(file) }} />
         <p id="case-draft-file-hint" className="text-xs text-muted-foreground">Use a CMMN file as it is instead of the designer. Orqix runs the elements the check admits and reports anything else.</p>
-      </div>
+        </div>
+      </details>
     </section>
 
     <CaseDataFieldsEditor fields={dataFields} onChange={fields => { setDataFields(fields); edited() }} disabled={pending} />

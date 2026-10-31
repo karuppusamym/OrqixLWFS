@@ -36,6 +36,7 @@ export const routes: RouteObject[] = [
           { path: 'cases/:instanceId', lazy: async () => ({ Component: (await import('@/features/cases/CaseDetailPage')).CaseDetailPage }) },
           { path: 'case-designs', lazy: async () => ({ Component: (await import('@/features/cases/CaseDesignsPage')).CaseDesignsPage }) },
           { path: 'case-designs/:draftId', lazy: async () => ({ Component: (await import('@/features/cases/CaseDesignerPage')).CaseDesignerPage }) },
+          { path: 'decisions', lazy: async () => ({ Component: (await import('@/features/decisions/DecisionsPage')).DecisionsPage }) },
           { path: 'views', lazy: async () => ({ Component: (await import('@/features/views/ViewLibraryPage')).ViewLibraryPage }) },
           { path: 'views/:viewId', lazy: async () => ({ Component: (await import('@/features/views/ViewEditorPage')).ViewEditorPage }) },
           { path: 'extensions', lazy: async () => ({ Component: (await import('@/features/extensions/ExtensionsPage')).ExtensionsPage }) },

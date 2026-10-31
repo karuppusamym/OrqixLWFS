@@ -95,7 +95,7 @@ export function CaseDesignsPage() {
           const value = event.target.value; setName(value)
           if (!keyEdited) setKey(value.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^[^a-z]+/, '').slice(0,63).replace(/-+$/, ''))
         }} required /></div>
-        <div><Label htmlFor="case-type-key">Key</Label><Input id="case-type-key" value={key} minLength={2} maxLength={63} pattern="[a-z][a-z0-9-]{0,61}[a-z0-9]" aria-describedby="case-type-key-hint" onChange={event => { setKeyEdited(true); setKey(event.target.value) }} required />
+        <div><Label htmlFor="case-type-key">Key</Label><Input id="case-type-key" value={key} minLength={2} maxLength={63} pattern="[a-z][a-z0-9\-]{0,61}[a-z0-9]" aria-describedby="case-type-key-hint" onChange={event => { setKeyEdited(true); setKey(event.target.value) }} required />
           <p id="case-type-key-hint" className="mt-1 text-sm text-muted-foreground">Suggested from the name. 2 to 63 lowercase letters, digits or hyphens, starting with a letter. It identifies the case type in CMMN and in other case types, and cannot change later.</p></div>
         {error ? <Alert tone="danger">{error}</Alert> : null}
         <div className="flex flex-wrap gap-2"><Button type="submit" variant="primary" loading={pending} disabled={!key.trim() || !name.trim()}>Create draft</Button><Button type="button" variant="secondary" disabled={pending} onClick={() => setCreating(false)}>Cancel</Button></div>

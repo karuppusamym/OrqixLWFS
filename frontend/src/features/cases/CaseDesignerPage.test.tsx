@@ -180,6 +180,25 @@ describe('case designer page (S126)', () => {
     expect(within(history).getByRole('button', { name: 'Redo' })).toBeDisabled()
   })
 
+  it('walks the current plan on the Test tab without saving or running anything', async () => {
+    signInAs('dana.designer')
+    const user = userEvent.setup()
+    await renderAppReady(`/w/${ws}/case-designs`)
+    await user.click(await screen.findByRole('button', { name: 'New case type' }))
+    await user.type(screen.getByLabelText('Name'), 'Walk review')
+    await user.click(screen.getByRole('button', { name: 'Create draft' }))
+    await screen.findByRole('heading', { level: 1, name: 'Walk review' })
+    await user.click(screen.getByRole('button', { name: 'Add milestone' }))
+    await user.click(screen.getByRole('tab', { name: 'Test' }))
+    const walk = await screen.findByRole('region', { name: 'Plan walkthrough' })
+    expect(within(walk).getByText('Required work is open')).toBeInTheDocument()
+    await user.click(within(walk).getByRole('button', { name: 'Start: Review evidence' }))
+    await user.click(within(walk).getByRole('button', { name: 'Complete: Review evidence' }))
+    expect(within(walk).getByText('The case can be closed')).toBeInTheDocument()
+    expect(within(screen.getByRole('region', { name: 'What happened' })).getByText('Review evidence completed.')).toBeInTheDocument()
+    expect(screen.getByText(/draft version 1/)).toBeInTheDocument()
+  })
+
   it('is offered only to people who may author case types', async () => {
     signInAs('rhea.requester')
     await renderAppReady(`/w/${ws}/case-designs`)

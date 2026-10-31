@@ -19,6 +19,7 @@ import type { components } from '@/api/schema'
 import { CaseDataFieldsEditor, type DataField } from './CaseDataFields'
 import { CaseModelDesigner, type CaseDesignerModel, type DesignerHistory } from './CaseModelDesigner'
 import { CaseViewPicker } from './CaseViewPicker'
+import { CaseWalkthroughPanel } from './CaseWalkthroughPanel'
 import { checkCaseDefinitionDraft, deleteCaseDefinitionDraft, getCaseDefinitionDraft, publishCaseDefinitionDraft, saveCaseDefinitionDraft } from './api'
 import { applyMappings, openDraft, type CaseDraft, type DraftModel } from './caseDraft'
 import { caseModelCaseTasks, caseModelDecisionTasks, caseModelWorkflowTasks, caseModelXml } from './caseModel'
@@ -27,7 +28,7 @@ import { importCaseModel, type ImportDiagnostic } from './cmmnImport'
 type Check = components['schemas']['CaseDefinitionCheck']
 type Issue = Check['issues'][number]
 type SaveStatus = 'idle' | 'saving' | 'error' | 'conflict'
-type DesignerTab = 'plan' | 'data' | 'screens' | 'source'
+type DesignerTab = 'plan' | 'data' | 'screens' | 'source' | 'test'
 type Details = { name: string; dataFields: DataField[]; viewRef: NonNullable<CaseDraft['viewRef']> | undefined }
 type Step = { kind: 'plan' } | { kind: 'details'; field: keyof Details; at: number; before: Details }
 const NO_MODEL = 'The case type has no CMMN model yet'
@@ -89,6 +90,9 @@ function DraftEditor({ ws, workspaceName, initial }: { ws: string; workspaceName
   const [status, setStatus] = useState<string | null>(null)
   const [discarding, setDiscarding] = useState(false)
   const [tab, setTab] = useState<DesignerTab>('plan')
+  // The Test tab walks a snapshot of the plan taken each time it opens, so edits never change a walk in progress.
+  const [walk, setWalk] = useState<{ run: number; items: CaseDesignerModel['items'] }>({ run: 0, items: [] })
+  const openTab = (next: DesignerTab) => { if (next === 'test' && tab !== 'test') setWalk(w => ({ run: w.run + 1, items: structuredClone(model.current?.items ?? []) })); setTab(next) }
   const edited = () => { setDirty(true); setStatus(null); editCount.current += 1; setEdits(editCount.current) }
   const details = (): Details => ({ name, dataFields, viewRef })
   /** Records a detail change for undo; typing into the same field within a second is one step. */
@@ -300,13 +304,14 @@ function DraftEditor({ ws, workspaceName, initial }: { ws: string; workspaceName
       </div> : null}
     </div> : null}
 
-    <Tabs value={tab} onValueChange={value => setTab(value as DesignerTab)} className="flex min-h-0 flex-1 flex-col">
+    <Tabs value={tab} onValueChange={value => openTab(value as DesignerTab)} className="flex min-h-0 flex-1 flex-col">
       <div className="border-b border-border bg-surface px-4 py-2">
         <TabsList aria-label="Case type views">
           <TabsTrigger value="plan">Plan</TabsTrigger>
           <TabsTrigger value="data">Data</TabsTrigger>
           <TabsTrigger value="screens">Screens</TabsTrigger>
           <TabsTrigger value="source">Source</TabsTrigger>
+          {mode === 'designer' ? <TabsTrigger value="test">Test</TabsTrigger> : null}
         </TabsList>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto bg-canvas">
@@ -334,6 +339,9 @@ function DraftEditor({ ws, workspaceName, initial }: { ws: string; workspaceName
         <TabsContent value="screens" forceMount hidden={tab !== 'screens'} className="m-0 p-4">
           <CaseViewPicker ws={ws} value={viewRef} onChange={value => { recordDetails('viewRef'); setViewRef(value); edited() }} disabled={pending} />
         </TabsContent>
+        {mode === 'designer' ? <TabsContent value="test" className="m-0 p-4">
+          {tab === 'test' ? <CaseWalkthroughPanel key={walk.run} items={walk.items} /> : null}
+        </TabsContent> : null}
         <TabsContent value="source" forceMount hidden={tab !== 'source'} className="m-0 max-w-3xl space-y-3 p-4">
           <p className="text-sm text-muted-foreground">The case type is stored as CMMN 1.1. Download the CMMN the designer generates from More, or use a CMMN file as it is instead of the designer.</p>
           <div className="space-y-1 rounded-card border border-border bg-surface p-4">

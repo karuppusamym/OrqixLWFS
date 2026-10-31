@@ -24,6 +24,9 @@ public final class DocumentExtraction {
     /** Budget for the positioned runs and marks of all pages; a document over it is returned without geometry. */
     public static final int BLUEPRINT_MAX_GEOMETRY_BYTES = 2 * 1024 * 1024;
     private static final Semaphore SLOTS = new Semaphore(2);
+    /** Above this length the worker's classpath is passed in an argument file (see workerCommand). */
+    private static final int LONG_CLASSPATH = 8 * 1024;
+    private static final String CLASSPATH_ARGS = "classpath.args";
 
     /**
      * Text of each page of a PDF, in page order, and (when within budget) each page's geometry. {@code javascript} and
@@ -147,7 +150,7 @@ public final class DocumentExtraction {
         } finally {
             if (worker != null && worker.isAlive()) { worker.destroyForcibly(); }
             if (directory != null) {
-                for (String name : List.of("source.bin", "text.txt")) {
+                for (String name : List.of("source.bin", "text.txt", CLASSPATH_ARGS)) {
                     try { Files.deleteIfExists(directory.resolve(name)); } catch (IOException ignored) { }
                 }
                 try { Files.deleteIfExists(directory); } catch (IOException ignored) { }
@@ -156,16 +159,26 @@ public final class DocumentExtraction {
         }
     }
 
-    static List<String> workerCommand(String type, Path source, Path output) {
+    static List<String> workerCommand(String type, Path source, Path output) throws IOException {
         return workerCommand(type, source, output, "-Xmx128m");
     }
 
-    static List<String> workerCommand(String type, Path source, Path output, String heap) {
+    static List<String> workerCommand(String type, Path source, Path output, String heap) throws IOException {
         String executable = Path.of(System.getProperty("java.home"), "bin", System.getProperty("os.name")
                 .toLowerCase().contains("windows") ? "java.exe" : "java").toString();
         String classpath = System.getProperty("java.class.path");
         List<String> command = new ArrayList<>(List.of(executable, heap, "-XX:MaxMetaspaceSize=64m",
-                "-Djava.awt.headless=true", "-Djava.io.tmpdir=" + source.getParent(), "-cp", classpath));
+                "-Djava.awt.headless=true", "-Djava.io.tmpdir=" + source.getParent()));
+        if (classpath.length() > LONG_CLASSPATH) {
+            // A classpath of many jars (Gradle test or bootRun) can exceed the Windows command-line limit (32,767
+            // characters), so it goes to the worker in a Java argument file instead.
+            Path arguments = source.getParent().resolve(CLASSPATH_ARGS);
+            Files.writeString(arguments, "-cp \"" + classpath.replace("\\", "\\\\").replace("\"", "\\\"") + "\"\n",
+                    StandardCharsets.UTF_8);
+            command.add("@" + arguments);
+        } else {
+            command.addAll(List.of("-cp", classpath));
+        }
         // Executable Spring Boot jars keep application classes under BOOT-INF; PropertiesLauncher resolves them.
         if (isBootJar(classpath)) {
             command.add(1, "-Dloader.main=" + DocumentExtractionWorker.class.getName());

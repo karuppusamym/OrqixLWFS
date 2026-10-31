@@ -1,0 +1,53 @@
+// Gradle build for machines that use Gradle 8.14+ and JDK 21 (the Maven build in pom.xml stays the main build).
+//
+// Behind a company repository manager (Nexus, Artifactory), set these in ~/.gradle/gradle.properties:
+//   orqixRepoUrl=https://nexus.example.com/repository/maven-public/
+//   orqixRepoUsername=...   (optional)
+//   orqixRepoPassword=...   (optional)
+// The mirror then serves both the plugins and the libraries; without it, Maven Central and the plugin portal are used.
+
+pluginManagement {
+    def mirror = providers.gradleProperty('orqixRepoUrl').orNull
+    repositories {
+        if (mirror) {
+            maven {
+                url = mirror
+                def user = providers.gradleProperty('orqixRepoUsername').orNull
+                if (user) {
+                    credentials {
+                        username = user
+                        password = providers.gradleProperty('orqixRepoPassword').orNull
+                    }
+                }
+            }
+        } else {
+            gradlePluginPortal()
+            mavenCentral()
+        }
+    }
+}
+
+dependencyResolutionManagement {
+    def mirror = providers.gradleProperty('orqixRepoUrl').orNull
+    repositories {
+        if (mirror) {
+            maven {
+                url = mirror
+                def user = providers.gradleProperty('orqixRepoUsername').orNull
+                if (user) {
+                    credentials {
+                        username = user
+                        password = providers.gradleProperty('orqixRepoPassword').orNull
+                    }
+                }
+            }
+        } else {
+            mavenCentral()
+        }
+    }
+}
+
+rootProject.name = 'orqix'
+
+include 'compiler'
+include 'app'

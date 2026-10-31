@@ -1182,6 +1182,55 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/MigrationPolicyRequest'
+  /workspaces/{workspaceId}/exit-export:
+    parameters:
+    - $ref: '#/components/parameters/WorkspaceId'
+    post:
+      tags:
+      - Administration
+      operationId: exportWorkspaceArchive
+      summary: Download the workspace, or selected workflows, as an open-format exit archive
+      description: |
+        Workflow exit guarantee (docs/admin-guide.md, "Exit export"). Streams a ZIP that can be read without Orqix:
+        for each workflow every released version as Orqix workflow JSON (contracts/workflow-v0.schema.json) with its
+        compiled BPMN 2.0 XML, DMN decision tables, source map and compile manifest, plus the latest draft; shared forms
+        and decision tables with every version; connection definitions and bindings with credentials removed; run
+        history (runs, tasks, decisions, run events) and the audit log as CSV and JSON Lines; `people.csv`; a README
+        explaining the formats; `manifest.json` with the SHA-256 and size of every file and `SHA256SUMS`.
+
+        Workspace administrators only (`workspace.manage-access`); members without it get 403 (audited denial),
+        outsiders 404. An empty body, or no `workflowIds`, exports the whole workspace. Run input and output values and
+        run event details are included only with `includeRunData: true`. History is read in one consistent snapshot
+        and streamed, so the response starts at once and its length is not known in advance. Every export is audited
+        as `workspace.exit-export.started` before the first byte, then `workspace.exit-exported` with counts and the
+        archive SHA-256 (outcome `failed` when the stream broke off; the partial file is not a valid ZIP).
+      x-orqix-permission: workspace.manage-access
+      x-orqix-audit: workspace.exit-exported
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExitExportRequest'
+      responses:
+        '200':
+          description: The exit archive (ZIP), streamed
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            application/zip:
+              schema: { type: string, contentMediaType: application/zip }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
   /workspaces/{workspaceId}/workflows/{workflowId}/migration-review:
     parameters:
     - $ref: '#/components/parameters/WorkspaceId'
@@ -8626,6 +8675,21 @@ components:
           type: string
           minLength: 1
           maxLength: 1000
+    ExitExportRequest:
+      type: object
+      additionalProperties: false
+      description: Both fields optional; no workflowIds exports the whole workspace.
+      properties:
+        workflowIds:
+          type: array
+          maxItems: 500
+          uniqueItems: true
+          items: { type: string, format: uuid }
+          description: Workflows of this workspace to export; unknown ids return 422.
+        includeRunData:
+          type: boolean
+          default: false
+          description: Also export run input and output values and run event details.
     MigrationReviewRequest:
       type: object
       additionalProperties: false

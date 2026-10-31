@@ -109,3 +109,17 @@ python tools/api-e2e/e2e_cases.py     # ~20 seconds; creates its own workflow fr
 Two files chosen on the request form (upload, then reference), start, list and download (attachment, nosniff, sandbox),
 refused types and the 10 MiB cap enforced by the container, a file added later and removed, outsiders get 404, the
 required file question, and stage 1 of 3 moving to stage 2 with the timeline events once each. Design: docs/build/S25.
+
+## Workflow exit export (`e2e_exit_export.py`)
+
+```bash
+python tools/api-e2e/e2e_exit_export.py   # ~15 seconds; runs purchase-approval twice, then exports
+```
+
+Runs one approved and one rejected request, downloads the whole workspace (with run data) and one selected workflow as
+exit archives (streamed to `EXIT_OUT`, default a temp folder), checks a designer gets 403 and an outsider 404, then reads
+the archives with the Python standard library only: `SHA256SUMS` and `manifest.json` against every file, BPMN/DMN XML,
+CSV against JSON Lines, the workflow JSON against the bundled schema (if `jsonschema` is installed), and no credential
+reference. Finally the exported workflow JSON is imported again and published. With `EXIT_PSQL_CONTAINER` set to the
+stack's PostgreSQL container it also puts a credential reference on the procurement binding during the export (restored
+afterwards) and checks the audit log holds the archive's SHA-256.

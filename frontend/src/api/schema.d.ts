@@ -1070,6 +1070,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/exit-export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Download the workspace, or selected workflows, as an open-format exit archive
+         * @description Workflow exit guarantee (docs/admin-guide.md, "Exit export"). Streams a ZIP that can be read without Orqix:
+         *     for each workflow every released version as Orqix workflow JSON (contracts/workflow-v0.schema.json) with its
+         *     compiled BPMN 2.0 XML, DMN decision tables, source map and compile manifest, plus the latest draft; shared forms
+         *     and decision tables with every version; connection definitions and bindings with credentials removed; run
+         *     history (runs, tasks, decisions, run events) and the audit log as CSV and JSON Lines; `people.csv`; a README
+         *     explaining the formats; `manifest.json` with the SHA-256 and size of every file and `SHA256SUMS`.
+         *
+         *     Workspace administrators only (`workspace.manage-access`); members without it get 403 (audited denial),
+         *     outsiders 404. An empty body, or no `workflowIds`, exports the whole workspace. Run input and output values and
+         *     run event details are included only with `includeRunData: true`. History is read in one consistent snapshot
+         *     and streamed, so the response starts at once and its length is not known in advance. Every export is audited
+         *     as `workspace.exit-export.started` before the first byte, then `workspace.exit-exported` with counts and the
+         *     archive SHA-256 (outcome `failed` when the stream broke off; the partial file is not a valid ZIP).
+         */
+        post: operations["exportWorkspaceArchive"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/workflows/{workflowId}/migration-review": {
         parameters: {
             query?: never;
@@ -6258,6 +6292,16 @@ export interface components {
             required: boolean;
             expectedVersion: number;
             reason: string;
+        };
+        /** @description Both fields optional; no workflowIds exports the whole workspace. */
+        ExitExportRequest: {
+            /** @description Workflows of this workspace to export; unknown ids return 422. */
+            workflowIds?: string[];
+            /**
+             * @description Also export run input and output values and run event details.
+             * @default false
+             */
+            includeRunData: boolean;
         };
         MigrationReviewRequest: {
             draftRevision: number;
@@ -13579,6 +13623,38 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    exportWorkspaceArchive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ExitExportRequest"];
+            };
+        };
+        responses: {
+            /** @description The exit archive (ZIP), streamed */
+            200: {
+                headers: {
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/zip": string;
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             422: components["responses"]["Unprocessable"];
         };
     };

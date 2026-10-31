@@ -914,6 +914,24 @@ export function createHandlers(): HttpHandler[] {
         headers: { 'Content-Type': 'application/zip', 'Content-Disposition': `attachment; filename="${wf.key}-r${rel.releaseNumber}.zip"` },
       })
     }),
+    // Workflow exit export: admins only; a selection must name workflows of this workspace.
+    http.post(`${B}/workspaces/:ws/exit-export`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws, 'workspace.manage-access')
+      if (!g.ok) return g.res
+      const text = await request.text()
+      const body = (text ? JSON.parse(text) : {}) as { workflowIds?: string[]; includeRunData?: boolean }
+      const ids = body.workflowIds ?? []
+      if (ids.some((id) => !findWorkflow(str(params.ws), id))) {
+        return problem(422, 'VALIDATION_FAILED', 'Some values are not valid', { detail: 'One or more selected workflows do not exist in this workspace.' })
+      }
+      const key = WORKSPACES.find((w) => w.id === str(params.ws))?.key ?? 'workspace'
+      const content = `Orqix mock exit archive\nscope ${ids.length ? 'selection' : 'workspace'}\nworkflows ${ids.join(',')}\nincludeRunData ${body.includeRunData === true}\n`
+      return new HttpResponse(content, {
+        status: 200,
+        headers: { 'Content-Type': 'application/zip', 'Content-Disposition': `attachment; filename="orqix-exit-${key}-mock.zip"` },
+      })
+    }),
     http.post(`${B}/workspaces/:ws/workflows/:id/active-release`, async ({ params, request }) => {
       await slow()
       const g = guard(params.ws, 'workflow.publish')

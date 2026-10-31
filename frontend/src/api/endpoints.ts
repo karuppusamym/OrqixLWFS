@@ -595,6 +595,20 @@ export const getMigrationReview = (ws: string, workflowId: string) =>
 export const approveMigrationReview = (ws: string, workflowId: string, body: S['MigrationReviewRequest']) =>
   call(api.POST('/workspaces/{workspaceId}/workflows/{workflowId}/migration-review', { params: { path: { workspaceId: ws, workflowId } }, body }))
 
+// Workflow exit export (docs/admin-guide.md): the workspace or selected workflows as an open-format ZIP.
+export async function exportWorkspaceArchive(ws: string, body: S['ExitExportRequest']) {
+  const { data, response } = await callWithResponse(
+    api.POST('/workspaces/{workspaceId}/exit-export', {
+      params: { path: { workspaceId: ws } },
+      body,
+      parseAs: 'blob',
+    }),
+  )
+  const disposition = response.headers.get('Content-Disposition') ?? ''
+  const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition)
+  return { blob: data as unknown as Blob, filename: match?.[1] ? decodeURIComponent(match[1]) : 'orqix-exit-archive.zip' }
+}
+
 // Inbound messages (docs/build/S16): tell requests that wait for a named message that it arrived.
 export const sendMessage = (ws: string, body: S['SendMessageRequest'], idempotencyKey: string) =>
   call(api.POST('/workspaces/{workspaceId}/messages', { params: { path: { workspaceId: ws }, header: { 'Idempotency-Key': idempotencyKey } }, body }))

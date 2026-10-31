@@ -487,6 +487,48 @@ export const TEMPLATES = [
   },
 ]
 
+// Regional regulated template packs (docs/regional-template-packs.md), read from /examples like the real catalog.
+type PackFile = {
+  name: string
+  metadata: { description: string; tags?: string[] }
+  inputSchema: { properties: Record<string, { title?: string }> }
+  nodes: Array<{ config: { candidateGroupRef?: string } }>
+}
+const packFiles = import.meta.glob('../../../examples/pack-*.json', { eager: true, import: 'default' }) as Record<string, PackFile>
+const PACK_INDUSTRIES: Record<string, string> = { 'banking-mfi': 'Banking and microfinance', 'shared-services': 'Shared services', 'public-sector': 'Public sector' }
+const PACK_REGIONS: Record<string, string> = { india: 'India', eu: 'European Union', kenya: 'Kenya', nigeria: 'Nigeria' }
+const packs = Object.entries(packFiles)
+  .map(([path, file]) => ({ id: path.replace(/^.*\/(pack-[^/]+)\.json$/, '$1'), file }))
+  .sort((a, b) => a.id.localeCompare(b.id))
+
+function packTag(file: PackFile, name: string): string | undefined {
+  return file.metadata.tags?.find((t) => t.startsWith(`${name}:`))?.slice(name.length + 1)
+}
+
+export const PACK_TEMPLATES = packs.map(({ id, file }) => {
+  const pack = packTag(file, 'pack')!
+  return {
+    id,
+    name: file.name,
+    description: file.metadata.description,
+    typicalOwner: packTag(file, 'owner') ?? 'Workflow owner',
+    requiredInputs: Object.keys(file.inputSchema.properties),
+    requiredGroups: [...new Set(file.nodes.map((n) => n.config.candidateGroupRef).filter((g): g is string => !!g))],
+    requiredConnections: [] as string[],
+    requiredWorkflows: [] as string[],
+    pack,
+    industry: PACK_INDUSTRIES[pack] ?? pack,
+    region: PACK_REGIONS[packTag(file, 'region')!] ?? packTag(file, 'region'),
+    languages: (file.metadata.tags ?? []).filter((t) => t.startsWith('lang:')).map((t) => t.slice(5)),
+  }
+})
+
+/** The definition of a regional pack template, or undefined for any other id. */
+export function packTemplate(id: string | undefined): Definition | undefined {
+  const found = packs.find((p) => p.id === id)
+  return found ? normalizeDefinition(structuredClone(found.file)) : undefined
+}
+
 export function caseTemplate(): Definition {
   return normalizeDefinition(caseExample)
 }

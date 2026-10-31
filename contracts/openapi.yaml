@@ -9967,6 +9967,10 @@ components:
         requiredGroups: { type: array, items: { $ref: '#/components/schemas/Key' } }
         requiredConnections: { type: array, items: { $ref: '#/components/schemas/Key' } }
         requiredWorkflows: { type: array, items: { $ref: '#/components/schemas/Key' }, description: 'Workflows the template starts as child requests; they must be published first.' }
+        pack: { type: string, description: 'Regional template pack key (banking-mfi, shared-services, public-sector); absent for general templates. docs/regional-template-packs.md' }
+        industry: { type: string, description: 'Display name of the pack industry, for filtering the template picker' }
+        region: { type: string, description: 'Display name of the region the template is set up for (calendar, currency, labels), for example India' }
+        languages: { type: array, items: { type: string }, description: 'Second-language codes of the bilingual form labels (for example hi, de, sw); absent when English only' }
 
     WorkflowSummary:
       type: object

@@ -297,3 +297,13 @@ Evidence for each row is in its build note; none of it is production acceptance.
 | Restore an archived workflow; callback token cleanup and per-token limit; per-item approval quorum, one at a time and proposed approver | [S104](build/S104-restore-callback-limits-per-item-quorum.md) | Verified | Backend on PostgreSQL and Flowable, frontend component tests; no browser journey; callback limit per pod; proposed approver matched by email only |
 | Start one workflow per row of a list of rows (`forEach.itemMapping`) | [S105](build/S105-row-iteration.md) | Verified | Compiler, runtime (sequential and parallel) and Studio tests; no nested lists; no browser journey |
 | Shared BPMN shape sizes; promotion approval notifications; SASL Kafka test and consumer error status; E2E suite back in CI; BPMN canvas readable zoom | [S106](build/S106-shapes-promotion-kafka-e2e.md) | Verified | Backend on PostgreSQL, Flowable and a SASL Kafka container; E2E repaired on a local stack; no TLS broker; in-app notifications only |
+
+## Regional regulated template packs - 31 October 2026
+
+[Regional template packs](regional-template-packs.md) add twenty built-in templates in three packs (banking and microfinance, shared services, public sector) with India, EU, Kenya and Nigeria variants: regional working calendars and public holidays, local currency in field titles, and English plus Hindi, German or Swahili labels. Doc 27 section 3 *Create: regulated template packs*.
+
+| Feature | Note | Status | Limits |
+|---|---|---|---|
+| Loan exception, KYC refresh (extends the periodic review), cooperative/MFI group loan, vendor onboarding, building/business permit, grant application; 20 regional variants in `examples/pack-*.json` | [regional-template-packs](regional-template-packs.md) | Verified, *tests and Docker stack* (compiler 108 tests including 87 simulated samples; 402/402 live checks on a private stack) | Illustrative, not compliance-approved; translations not reviewed by native speakers; lunar holidays 2026 only |
+| Template picker filters by region and industry; template list returns optional `pack`, `industry`, `region`, `languages` | [regional-template-packs](regional-template-packs.md#using-a-pack) | Verified, *tests and Docker API* | No browser journey on the real stack |
+| Gaps noted, not built | [regional-template-packs](regional-template-packs.md#gaps-found) | Open | Currency USD-only, no form translations, ASCII outcomes, per-step calendars, wall-clock time limits |

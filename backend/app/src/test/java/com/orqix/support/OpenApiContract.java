@@ -165,7 +165,7 @@ public final class OpenApiContract {
         }
         if ("application/zip".equals(mediaType) || "application/octet-stream".equals(mediaType)
                 || "application/pdf".equals(mediaType)
-                || "application/vnd.openxmlformats-officedocument.wordprocessingml.document".equals(mediaType)) {
+                || mediaType.startsWith("application/vnd.openxmlformats-officedocument.")) {
             return;
         }
         String schemaPointer = responsePointer + "/content/" + escape(mediaType) + "/schema";

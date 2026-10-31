@@ -7,6 +7,7 @@ import jakarta.validation.constraints.*;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import com.orqix.identity.CallerResolver;
+import com.orqix.migration.internal.MigrationLedger;
 import com.orqix.migration.internal.MigrationService;
 import com.orqix.migration.internal.PegaRuleArchives;
 import tools.jackson.databind.JsonNode;
@@ -16,8 +17,12 @@ import tools.jackson.databind.JsonNode;
 public class MigrationController {
     public record Upload(@NotBlank @Size(max=200) String fileName, @NotBlank @Size(max=1_398_104) String content,
             @Pattern(regexp="bpmn|dmn|camundaForm|pegaArchive|pegaMapping|pegaXpdl|cmmn|pegaRules") String sourceFormat) { }
-    private final CallerResolver callers; private final MigrationService service; private final PegaRuleArchives pegaRules;
-    public MigrationController(CallerResolver callers, MigrationService service, PegaRuleArchives pegaRules) { this.callers=callers; this.service=service; this.pegaRules=pegaRules; }
+    /** Reviewer acknowledgement of "converted but changed — verify" items (docs/17 "Severity model"). */
+    public record Verifications(@NotNull @Size(min=1,max=500) java.util.List<@Valid Item> items, @NotBlank @Size(max=1000) String reason) {
+        public record Item(@NotBlank @Size(max=1000) String sourceElementId, @NotBlank @Size(max=128) String reasonCode, @Size(max=2000) String sourcePath) { }
+    }
+    private final CallerResolver callers; private final MigrationService service; private final PegaRuleArchives pegaRules; private final MigrationLedger ledger;
+    public MigrationController(CallerResolver callers, MigrationService service, PegaRuleArchives pegaRules, MigrationLedger ledger) { this.callers=callers; this.service=service; this.pegaRules=pegaRules; this.ledger=ledger; }
     @PostMapping
     public ResponseEntity<?> upload(@PathVariable UUID workspaceId, @Valid @RequestBody Upload request) {
         var result=service.upload(callers.current(),workspaceId,request.fileName(),request.content(),request.sourceFormat());
@@ -33,6 +38,18 @@ public class MigrationController {
     public ResponseEntity<?> caseDefinition(@PathVariable UUID workspaceId,@PathVariable UUID migrationId,@RequestBody JsonNode request) {
         var result=pegaRules.caseDefinition(callers.current(),workspaceId,migrationId,request);
         return ResponseEntity.status(result.dryRun() ? 200 : 201).body(result);
+    }
+    @PostMapping("/{migrationId}/verifications")
+    public Object verify(@PathVariable UUID workspaceId,@PathVariable UUID migrationId,@Valid @RequestBody Verifications request) {
+        return service.acknowledgeVerifications(callers.current(),workspaceId,migrationId,
+                request.items().stream().map(i -> new MigrationService.VerificationItem(i.sourceElementId(),i.reasonCode(),i.sourcePath())).toList(),request.reason());
+    }
+    /** SI migration ledger: a ZIP of ledger.json, ledger.csv and ledger.xlsx, or one of them with {@code format}. */
+    @GetMapping("/{migrationId}/ledger")
+    public ResponseEntity<byte[]> ledger(@PathVariable UUID workspaceId,@PathVariable UUID migrationId,@RequestParam(required=false) String format) {
+        var file=ledger.export(callers.current(),workspaceId,migrationId,format);
+        return ResponseEntity.ok().header("Content-Type",file.contentType())
+                .header("Content-Disposition","attachment; filename=\""+file.fileName()+"\"").header("Cache-Control","no-store").body(file.content());
     }
     @PostMapping("/{migrationId}/convert")
     public ResponseEntity<?> convert(@PathVariable UUID workspaceId,@PathVariable UUID migrationId,@RequestBody JsonNode request) {

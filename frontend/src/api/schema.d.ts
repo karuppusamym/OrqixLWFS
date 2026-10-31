@@ -5248,6 +5248,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/migrations/{migrationId}/verifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                migrationId: components["parameters"]["MigrationId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * A reviewer acknowledges converted-but-changed (verify) items of a converted migration
+         * @description Each listed item must match an open verify item of the stored report (by sourceElementId, reasonCode and optionally sourcePath); it becomes acknowledged and the report records who, when and why under verifications. Allowed only after conversion; needs workflow.publish, and the person who converted the source cannot acknowledge. While any verify item is open, publishing the converted workflow is refused with MIGRATION_BLOCKED.
+         */
+        post: operations["acknowledgeMigrationVerifications"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/migrations/{migrationId}/ledger": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                migrationId: components["parameters"]["MigrationId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * SI migration ledger (ZIP of ledger.json, ledger.csv and ledger.xlsx, or one of them)
+         * @description One row per source finding with disposition, severity, reason code, resolution, target node id, source SHA-256, adapter version, the approved mapping of that element and its verification; plus the conversion mappings, source map, the latest independent review, verification acknowledgements and the generated equivalence checks the report holds. Golden-scenario results from tools/migration-equivalence are a separate evidence pack and are marked notRecorded. Spreadsheet cells are text only, never formulas; the CSV prefixes formula-like text with an apostrophe.
+         */
+        get: operations["exportMigrationLedger"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/migrations/{migrationId}/convert": {
         parameters: {
             query?: never;
@@ -9380,8 +9426,11 @@ export interface components {
             sourceElementId: string;
             sourceName?: string | null;
             sourceKind: string;
-            /** @enum {string} */
-            severity: "supported" | "info" | "review" | "action" | "blocker";
+            /**
+             * @description verify = converted but changed: the converter knowingly changed behaviour slightly. It never blocks conversion; while open it blocks publishing the converted workflow until a reviewer acknowledges it (acknowledgeMigrationVerifications).
+             * @enum {string}
+             */
+            severity: "supported" | "info" | "review" | "verify" | "action" | "blocker";
             reasonCode: string;
             explanation: string;
             suggestedAction?: string | null;
@@ -9404,6 +9453,8 @@ export interface components {
                 info?: number;
                 /** @description Converted items whose behaviour could differ; they never block conversion */
                 review?: number;
+                /** @description Converted-but-changed items; open ones block publishing until a reviewer acknowledges them */
+                verify?: number;
                 action?: number;
                 blocker?: number;
             };
@@ -9424,8 +9475,90 @@ export interface components {
             mappingHints?: components["schemas"]["MappingHints"];
             /** @description Generated behaviour checks (DMN): the source semantics versus the converted table evaluated by the compiler */
             testCases?: components["schemas"]["MigrationTestCase"][];
-            /** @description True when no blocker, open action or unacknowledged info item remains. Review items never affect it. */
+            /** @description True when no blocker, open action or unacknowledged info item remains (the conversion gate). Review and verify items never affect it; open verify items block publishing instead. */
             publishable: boolean;
+            /** @description Reviewer acknowledgements of verify items, recorded after conversion */
+            verifications?: components["schemas"]["MigrationVerification"][];
+        };
+        MigrationLedger: {
+            /** @enum {string} */
+            format: "orqix-migration-ledger-0.1";
+            migration: {
+                /** Format: uuid */
+                id?: string;
+                fileName?: string;
+                status?: string;
+                sourceSystem?: string;
+                sourceSha256?: string;
+                adapterVersion?: string;
+                convertedWorkflowId?: string | null;
+                mappedBy?: string | null;
+                publishable?: boolean;
+                awaitingVerification?: boolean;
+            } & {
+                [key: string]: unknown;
+            };
+            elementCounts: {
+                [key: string]: number;
+            };
+            assumptions?: string[];
+            elements: {
+                sourceElementId?: string | null;
+                sourceName?: string | null;
+                sourceKind?: string | null;
+                sourcePath?: string | null;
+                /** @enum {string} */
+                disposition: "converted" | "convertedReview" | "convertedChangedUnverified" | "convertedChangedVerified" | "notImported" | "decisionNeeded" | "mapped" | "manualRebuild";
+                severity: string;
+                reasonCode: string;
+                resolutionStatus: string;
+                targetNodeId?: string | null;
+                sourceSha256: string;
+                adapterVersion: string;
+                approvedMapping?: {
+                    [key: string]: unknown;
+                } | null;
+                verification?: components["schemas"]["MigrationVerification"] | null;
+                explanation?: string | null;
+                suggestedAction?: string | null;
+            }[];
+            approvedMappings?: {
+                [key: string]: unknown;
+            } | null;
+            sourceMap?: Record<string, never> | unknown[] | null;
+            verifications: components["schemas"]["MigrationVerification"][];
+            independentReview?: {
+                [key: string]: unknown;
+            } | null;
+            equivalence: {
+                generatedChecks?: components["schemas"]["MigrationTestCase"][];
+                goldenScenarios?: {
+                    /** @enum {string} */
+                    status?: "notRecorded";
+                    note?: string;
+                };
+            };
+        };
+        MigrationVerification: {
+            sourceElementId: string;
+            reasonCode: string;
+            sourcePath?: string | null;
+            /** Format: uuid */
+            acknowledgedBy: string;
+            acknowledgedByName?: string | null;
+            /** Format: date-time */
+            acknowledgedAt: string;
+            reason: string;
+        };
+        AcknowledgeMigrationVerificationsRequest: {
+            items: {
+                sourceElementId: string;
+                reasonCode: string;
+                /** @description Narrows the match when one element has several items with the same reason code */
+                sourcePath?: string | null;
+            }[];
+            /** @description What the reviewer checked; kept in the report and the ledger */
+            reason: string;
         };
         /** @description Structured facts for the mapping helper (Camunda 8), keyed by source element id. Header and query parameter values, credentials and full URLs are never included. */
         MappingHints: {
@@ -20379,6 +20512,70 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["Unprocessable"];
+        };
+    };
+    acknowledgeMigrationVerifications: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                migrationId: components["parameters"]["MigrationId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcknowledgeMigrationVerificationsRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated migration job */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MigrationJob"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    exportMigrationLedger: {
+        parameters: {
+            query?: {
+                format?: "zip" | "json" | "csv" | "xlsx";
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                migrationId: components["parameters"]["MigrationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Ledger file (Content-Disposition attachment) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/zip": string;
+                    "application/json": components["schemas"]["MigrationLedger"];
+                    "text/csv": string;
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": string;
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     convertMigration: {

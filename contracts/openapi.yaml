@@ -7028,6 +7028,77 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
 
+  /workspaces/{workspaceId}/migrations/{migrationId}/verifications:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/MigrationId'
+    post:
+      tags: [Migration]
+      operationId: acknowledgeMigrationVerifications
+      x-orqix-feature: migration
+      summary: A reviewer acknowledges converted-but-changed (verify) items of a converted migration
+      description: >-
+        Each listed item must match an open verify item of the stored report (by sourceElementId, reasonCode and optionally
+        sourcePath); it becomes acknowledged and the report records who, when and why under verifications. Allowed only after
+        conversion; needs workflow.publish, and the person who converted the source cannot acknowledge. While any verify item
+        is open, publishing the converted workflow is refused with MIGRATION_BLOCKED.
+      x-orqix-permission: workflow.publish
+      x-orqix-audit: migration.verification.acknowledged
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AcknowledgeMigrationVerificationsRequest' }
+      responses:
+        '200':
+          description: Updated migration job
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MigrationJob' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/migrations/{migrationId}/ledger:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/MigrationId'
+    get:
+      tags: [Migration]
+      operationId: exportMigrationLedger
+      summary: SI migration ledger (ZIP of ledger.json, ledger.csv and ledger.xlsx, or one of them)
+      description: >-
+        One row per source finding with disposition, severity, reason code, resolution, target node id, source SHA-256,
+        adapter version, the approved mapping of that element and its verification; plus the conversion mappings, source map,
+        the latest independent review, verification acknowledgements and the generated equivalence checks the report holds.
+        Golden-scenario results from tools/migration-equivalence are a separate evidence pack and are marked notRecorded.
+        Spreadsheet cells are text only, never formulas; the CSV prefixes formula-like text with an apostrophe.
+      x-orqix-permission: workflow.export
+      x-orqix-audit: migration.ledger.exported
+      parameters:
+        - name: format
+          in: query
+          required: false
+          schema: { type: string, enum: [zip, json, csv, xlsx], default: zip }
+      responses:
+        '200':
+          description: Ledger file (Content-Disposition attachment)
+          content:
+            application/zip:
+              schema: { type: string, format: binary }
+            application/json:
+              schema: { $ref: '#/components/schemas/MigrationLedger' }
+            text/csv:
+              schema: { type: string }
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /workspaces/{workspaceId}/migrations/{migrationId}/convert:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -12783,7 +12854,10 @@ components:
         sourceElementId: { type: string }
         sourceName: { type: [string, 'null'] }
         sourceKind: { type: string }
-        severity: { type: string, enum: [supported, info, review, action, blocker] }
+        severity:
+          type: string
+          enum: [supported, info, review, verify, action, blocker]
+          description: 'verify = converted but changed: the converter knowingly changed behaviour slightly. It never blocks conversion; while open it blocks publishing the converted workflow until a reviewer acknowledges it (acknowledgeMigrationVerifications).'
         reasonCode: { type: string }
         explanation: { type: string }
         suggestedAction: { type: [string, 'null'] }
@@ -12807,6 +12881,7 @@ components:
             supported: { type: integer }
             info: { type: integer }
             review: { type: integer, description: 'Converted items whose behaviour could differ; they never block conversion' }
+            verify: { type: integer, description: 'Converted-but-changed items; open ones block publishing until a reviewer acknowledges them' }
             action: { type: integer }
             blocker: { type: integer }
         issues: { type: array, items: { $ref: '#/components/schemas/CompatibilityIssue' } }
@@ -12828,7 +12903,95 @@ components:
           type: array
           description: 'Generated behaviour checks (DMN): the source semantics versus the converted table evaluated by the compiler'
           items: { $ref: '#/components/schemas/MigrationTestCase' }
-        publishable: { type: boolean, description: 'True when no blocker, open action or unacknowledged info item remains. Review items never affect it.' }
+        publishable: { type: boolean, description: 'True when no blocker, open action or unacknowledged info item remains (the conversion gate). Review and verify items never affect it; open verify items block publishing instead.' }
+        verifications:
+          type: array
+          description: 'Reviewer acknowledgements of verify items, recorded after conversion'
+          items: { $ref: '#/components/schemas/MigrationVerification' }
+    MigrationLedger:
+      type: object
+      required: [format, migration, elementCounts, elements, verifications, equivalence]
+      properties:
+        format: { type: string, enum: [orqix-migration-ledger-0.1] }
+        migration:
+          type: object
+          additionalProperties: true
+          properties:
+            id: { type: string, format: uuid }
+            fileName: { type: string }
+            status: { type: string }
+            sourceSystem: { type: string }
+            sourceSha256: { type: string }
+            adapterVersion: { type: string }
+            convertedWorkflowId: { type: [string, 'null'] }
+            mappedBy: { type: [string, 'null'] }
+            publishable: { type: boolean }
+            awaitingVerification: { type: boolean }
+        elementCounts: { type: object, additionalProperties: { type: integer } }
+        assumptions: { type: array, items: { type: string } }
+        elements:
+          type: array
+          items:
+            type: object
+            required: [disposition, severity, reasonCode, resolutionStatus, sourceSha256, adapterVersion]
+            properties:
+              sourceElementId: { type: [string, 'null'] }
+              sourceName: { type: [string, 'null'] }
+              sourceKind: { type: [string, 'null'] }
+              sourcePath: { type: [string, 'null'] }
+              disposition: { type: string, enum: [converted, convertedReview, convertedChangedUnverified, convertedChangedVerified, notImported, decisionNeeded, mapped, manualRebuild] }
+              severity: { type: string }
+              reasonCode: { type: string }
+              resolutionStatus: { type: string }
+              targetNodeId: { type: [string, 'null'] }
+              sourceSha256: { type: string }
+              adapterVersion: { type: string }
+              approvedMapping: { type: [object, 'null'], additionalProperties: true }
+              verification: { oneOf: [ { $ref: '#/components/schemas/MigrationVerification' }, { type: 'null' } ] }
+              explanation: { type: [string, 'null'] }
+              suggestedAction: { type: [string, 'null'] }
+        approvedMappings: { type: [object, 'null'], additionalProperties: true }
+        sourceMap: { type: [object, array, 'null'] }
+        verifications: { type: array, items: { $ref: '#/components/schemas/MigrationVerification' } }
+        independentReview: { type: [object, 'null'], additionalProperties: true }
+        equivalence:
+          type: object
+          properties:
+            generatedChecks: { type: array, items: { $ref: '#/components/schemas/MigrationTestCase' } }
+            goldenScenarios:
+              type: object
+              properties:
+                status: { type: string, enum: [notRecorded] }
+                note: { type: string }
+    MigrationVerification:
+      type: object
+      required: [sourceElementId, reasonCode, acknowledgedBy, acknowledgedAt, reason]
+      properties:
+        sourceElementId: { type: string }
+        reasonCode: { type: string }
+        sourcePath: { type: [string, 'null'] }
+        acknowledgedBy: { type: string, format: uuid }
+        acknowledgedByName: { type: [string, 'null'] }
+        acknowledgedAt: { type: string, format: date-time }
+        reason: { type: string }
+    AcknowledgeMigrationVerificationsRequest:
+      type: object
+      additionalProperties: false
+      required: [items, reason]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items:
+            type: object
+            additionalProperties: false
+            required: [sourceElementId, reasonCode]
+            properties:
+              sourceElementId: { type: string, minLength: 1, maxLength: 1000 }
+              reasonCode: { type: string, minLength: 1, maxLength: 128 }
+              sourcePath: { type: [string, 'null'], maxLength: 2000, description: 'Narrows the match when one element has several items with the same reason code' }
+        reason: { type: string, minLength: 1, maxLength: 1000, description: 'What the reviewer checked; kept in the report and the ledger' }
     MappingHints:
       type: object
       description: 'Structured facts for the mapping helper (Camunda 8), keyed by source element id. Header and query parameter values, credentials and full URLs are never included.'

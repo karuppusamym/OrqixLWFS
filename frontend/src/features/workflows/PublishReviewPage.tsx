@@ -27,6 +27,7 @@ import { groupIssues } from '@/features/studio/CheckPanel'
 import { MigrationReviewPanel, useMigrationReview } from '@/features/migration/MigrationReviewPanel'
 import { publishBlock } from '@/features/migration/reviewGate'
 import { diffDefinitions, type Change } from './diff'
+import { EvidencePackMenu } from '@/features/evidence-pack/EvidencePackMenu'
 
 /**
  * STU03: "N of M shared tests passed" next to the check, for information only. Whether publishing needs passing shared
@@ -88,7 +89,7 @@ export function PublishReviewPage() {
   const [note, setNote] = useState('')
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<ProblemError | null>(null)
-  const [published, setPublished] = useState<{ number: number; active: boolean } | null>(null)
+  const [published, setPublished] = useState<{ number: number; active: boolean; id: string } | null>(null)
   const ackRef = useRef<HTMLButtonElement>(null)
 
   const after = useMemo(() => (draft.data ? normalizeDefinition(draft.data.draft.definition) : null), [draft.data])
@@ -124,7 +125,7 @@ export function PublishReviewPage() {
       const key = idempotency.keyFor(fingerprintOf(workflowId, body))
       const { data } = await endpoints.publishDraft(ws, workflowId, body, key)
       await Promise.all([client.invalidateQueries({ queryKey: ['ws', ws, 'workflow', workflowId] }), client.invalidateQueries({ queryKey: ['ws', ws, 'workflows'] })])
-      setPublished({ number: data.releaseNumber, active: data.isActive })
+      setPublished({ number: data.releaseNumber, active: data.isActive, id: data.id })
       announce(`Version ${data.releaseNumber} published. Existing requests continue on their original version.`)
     } catch (cause) {
       const problem = toProblem(cause)
@@ -158,6 +159,7 @@ export function PublishReviewPage() {
           <Button asChild variant="secondary" size="lg">
             <Link to={`/w/${ws}/workflows/${workflowId}/edit`}>Back to the studio</Link>
           </Button>
+          <EvidencePackMenu size="lg" target={{ kind: 'release', workflowId, releaseId: published.id }} label={`Download the evidence pack for version ${published.number}`} />
         </div>
       </div>
     )

@@ -7444,6 +7444,152 @@ paths:
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
         '422': { $ref: '#/components/responses/Unprocessable' }
 
+  /workspaces/{workspaceId}/workflows/{workflowId}/releases/{releaseId}/evidence-pack:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/WorkflowId'
+      - $ref: '#/components/parameters/ReleaseId'
+    get:
+      tags: [Releases]
+      operationId: exportReleaseEvidencePack
+      summary: Control evidence pack for a release (identity, approvals, tests, diff, history)
+      description: |
+        Auditor-readable evidence for one published release (docs/27 section 3, Create): release identity and
+        SHA-256 checksums, who authored, reviewed and published it and when, the publication test results,
+        warnings acknowledged, the change summary from the previous release, promotion requests and the release's
+        audit history. Control metadata only. Allowed with workflow.read, or with audit.read for a workflow the
+        caller may start (404 when the caller cannot see the workflow). The JSON format is the pack itself with an `integrity.digest` (SHA-256 over the
+        RFC 8785 canonical JSON without `integrity`); PDF and DOCX render the same facts.
+      x-orqix-permission: workflow.read | audit.read
+      x-orqix-audit: release.evidence-pack-exported
+      parameters:
+        - in: query
+          name: format
+          schema: { enum: [pdf, docx, json], default: pdf }
+      responses:
+        '200':
+          description: Evidence pack file
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            application/pdf:
+              schema: { type: string, contentMediaType: application/pdf }
+            application/vnd.openxmlformats-officedocument.wordprocessingml.document:
+              schema: { type: string }
+            application/json:
+              schema:
+                type: object
+                required: [formatVersion, kind, generatedAt, generatedBy, workspace, release, artifacts, approvals, controls, tests, warnings, diff, history, payloadPolicy, integrity]
+                additionalProperties: true
+                properties:
+                  formatVersion: { const: '1' }
+                  kind: { const: release }
+                  generatedAt: { type: string, format: date-time }
+                  release:
+                    type: object
+                    required: [id, workflowKey, releaseNumber, draftRevision, publishedAt, semanticHash, sourceHash, compilerVersion]
+                    additionalProperties: true
+                  approvals:
+                    type: array
+                    items:
+                      type: object
+                      required: [role, action, subject]
+                      additionalProperties: true
+                      properties:
+                        role: { enum: [Author, Reviewer, Publisher] }
+                  tests:
+                    type: object
+                    required: [status, results]
+                    additionalProperties: true
+                    properties:
+                      status: { enum: [passed, failed, notRecorded, notConfigured] }
+                  diff:
+                    type: object
+                    required: [summary, changes]
+                    additionalProperties: true
+                  integrity:
+                    type: object
+                    required: [algorithm, digest]
+                    additionalProperties: true
+                    properties:
+                      digest: { type: string, pattern: '^[0-9a-f]{64}$' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /workspaces/{workspaceId}/runs/{runId}/evidence-pack:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/RunId'
+    get:
+      tags: [Runs]
+      operationId: exportRunEvidencePack
+      summary: Control evidence pack for a run (steps, decisions, SLA breaches, corrections, effects)
+      description: |
+        Auditor-readable evidence for one run (docs/27 section 3, Create): the pinned release and its checksum,
+        each human step with assignee, decision and timestamps, SLA breaches, guarded operator corrections,
+        integration effect outcomes and the ordered timeline. Control metadata only: no request values, decision
+        reasons, comments or notes. The caller must be able to see the run (404 otherwise) and hold run.read or
+        audit.read (403, audited). Refuses truncation above 10000 records per list.
+      x-orqix-permission: run.read | audit.read
+      x-orqix-audit: run.evidence-pack-exported
+      parameters:
+        - in: query
+          name: format
+          schema: { enum: [pdf, docx, json], default: pdf }
+      responses:
+        '200':
+          description: Evidence pack file
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            application/pdf:
+              schema: { type: string, contentMediaType: application/pdf }
+            application/vnd.openxmlformats-officedocument.wordprocessingml.document:
+              schema: { type: string }
+            application/json:
+              schema:
+                type: object
+                required: [formatVersion, kind, generatedAt, generatedBy, workspace, run, release, steps, slaBreaches, corrections, effects, timeline, summary, payloadPolicy, integrity]
+                additionalProperties: true
+                properties:
+                  formatVersion: { const: '1' }
+                  kind: { const: run }
+                  generatedAt: { type: string, format: date-time }
+                  release:
+                    type: object
+                    required: [id, releaseNumber, semanticHash, sourceHash]
+                    additionalProperties: true
+                  steps:
+                    type: array
+                    items:
+                      type: object
+                      required: [taskId, nodeId, step, status, createdAt, slaBreached]
+                      additionalProperties: true
+                  effects:
+                    type: array
+                    items:
+                      type: object
+                      required: [effectId, nodeId, operation, outcome, attempts]
+                      additionalProperties: true
+                      properties:
+                        outcome: { enum: [pending, inFlight, succeeded, retryableFailure, permanentFailure, unknown, notApplied] }
+                  integrity:
+                    type: object
+                    required: [algorithm, digest]
+                    additionalProperties: true
+                    properties:
+                      digest: { type: string, pattern: '^[0-9a-f]{64}$' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
 components:
   securitySchemes:
     sessionCookie:

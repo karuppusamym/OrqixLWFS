@@ -59,6 +59,9 @@ public class AuditWriter {
             Map.entry("notification.attention", Set.of("reason")),
             Map.entry("notification.delivery", Set.of("runId","status","attempts")),
             Map.entry("run.evidence-exported", Set.of("auditCount","eventCount")),
+            // Control evidence packs (docs/27 section 3): format and counts only.
+            Map.entry("run.evidence-pack-exported", Set.of("format", "stepCount", "eventCount")),
+            Map.entry("release.evidence-pack-exported", Set.of("format", "releaseNumber")),
             Map.entry("task.sla-breached", Set.of("runId","dueAt","releaseId")),
             Map.entry("comment.created", Set.of("runId")),
             Map.entry("attachment.added", Set.of("runId", "attachmentId", "sizeBytes", "contentType", "scanStatus", "staged")),

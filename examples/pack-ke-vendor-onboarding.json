@@ -1,0 +1,707 @@
+{
+  "schemaVersion": "0.1",
+  "workflowKey": "vendor-onboarding-ke",
+  "name": "Vendor onboarding (Kenya)",
+  "metadata": {
+    "description": "Kenya vendor onboarding in KES without any connection. Procurement due diligence and bank-detail verification run in parallel; vendors that process personal data get a privacy review (Data Protection Act 2019); a declared conflict of interest or spend of KES 10,000,000 or more needs compliance approval. The KRA PIN is format-checked on the form. Due dates count Kenya office hours and public holidays. AGPO vendors are flagged for the public procurement reservation; check the KRA tax compliance certificate. Illustrative regional template, not a regulatory-compliant product: thresholds, holiday lists and document names are placeholders for your compliance function to confirm.",
+    "tags": [
+      "pack:shared-services",
+      "region:kenya",
+      "template:vendor-onboarding",
+      "owner:Procurement operations",
+      "illustrative",
+      "lang:sw"
+    ]
+  },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "vendorName",
+      "taxId",
+      "category",
+      "annualSpend",
+      "personalData",
+      "conflictOfInterest"
+    ],
+    "properties": {
+      "vendorName": {
+        "type": "string",
+        "title": "Vendor legal name / Jina rasmi la msambazaji",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "taxId": {
+        "type": "string",
+        "title": "KRA PIN / PIN ya KRA",
+        "minLength": 4,
+        "maxLength": 20,
+        "pattern": "^[AP][0-9]{9}[A-Z]$",
+        "patternMessage": "Enter an 11-character KRA PIN, for example P051234567X."
+      },
+      "category": {
+        "type": "string",
+        "title": "Category / Kundi",
+        "enum": [
+          "Goods",
+          "Services",
+          "IT and software",
+          "Works and construction",
+          "Professional services"
+        ]
+      },
+      "annualSpend": {
+        "type": "number",
+        "title": "Expected annual spend (KES) / Matumizi yanayotarajiwa kwa mwaka (KES)",
+        "minimum": 1,
+        "maximum": 10000000000,
+        "multipleOf": 0.01
+      },
+      "agpo": {
+        "type": "boolean",
+        "title": "AGPO certificate holder / Mwenye cheti cha AGPO"
+      },
+      "personalData": {
+        "type": "boolean",
+        "title": "Vendor will process personal data / Msambazaji atachakata data binafsi"
+      },
+      "conflictOfInterest": {
+        "type": "boolean",
+        "title": "Possible conflict of interest declared / Mgongano wa maslahi umetangazwa"
+      }
+    }
+  },
+  "inputUi": {
+    "order": [
+      "vendorName",
+      "taxId",
+      "category",
+      "annualSpend",
+      "agpo",
+      "personalData",
+      "conflictOfInterest"
+    ],
+    "widgets": {
+      "category": "select",
+      "annualSpend": "number",
+      "agpo": "checkbox",
+      "personalData": "checkbox",
+      "conflictOfInterest": "checkbox"
+    },
+    "submitLabel": "Submit vendor / Wasilisha msambazaji",
+    "layout": {
+      "sections": [
+        {
+          "id": "vendor",
+          "title": "Vendor / Msambazaji",
+          "columns": 2,
+          "fields": [
+            "vendorName",
+            "taxId",
+            "category",
+            "annualSpend",
+            "agpo"
+          ]
+        },
+        {
+          "id": "risk",
+          "title": "Risk / Hatari",
+          "columns": 1,
+          "fields": [
+            "personalData",
+            "conflictOfInterest"
+          ]
+        }
+      ]
+    }
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "riskBand": {
+        "type": "string",
+        "title": "Risk band"
+      },
+      "diligenceBy": {
+        "type": "string",
+        "title": "Due diligence by"
+      }
+    }
+  },
+  "triggers": [
+    "manual",
+    "api"
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "label": "Vendor submitted",
+      "config": {}
+    },
+    {
+      "id": "risk",
+      "type": "decision",
+      "label": "Rate vendor risk",
+      "config": {
+        "decisionRef": "vendor-risk"
+      }
+    },
+    {
+      "id": "split",
+      "type": "parallelSplit",
+      "label": "Run the checks together",
+      "config": {
+        "joinRef": "join"
+      }
+    },
+    {
+      "id": "diligence",
+      "type": "approval",
+      "label": "Procurement due diligence / Uchunguzi wa ununuzi",
+      "config": {
+        "candidateGroupRef": "procurement-officers",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 24,
+        "calendar": {
+          "zone": "Africa/Nairobi",
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "holidays": [
+            "2026-01-01",
+            "2026-03-20",
+            "2026-04-03",
+            "2026-04-06",
+            "2026-05-01",
+            "2026-05-27",
+            "2026-06-01",
+            "2026-10-10",
+            "2026-10-20",
+            "2026-12-12",
+            "2026-12-25",
+            "2026-12-26",
+            "2027-01-01",
+            "2027-03-26",
+            "2027-03-29",
+            "2027-05-01",
+            "2027-06-01",
+            "2027-10-10",
+            "2027-10-11",
+            "2027-10-20",
+            "2027-12-12",
+            "2027-12-13",
+            "2027-12-25",
+            "2027-12-26",
+            "2027-12-27"
+          ],
+          "start": "08:00",
+          "end": "17:00",
+          "revision": "KE-office-2026-illustrative",
+          "validFrom": "2026-01-01",
+          "intervals": [
+            {
+              "start": "08:00",
+              "end": "13:00"
+            },
+            {
+              "start": "14:00",
+              "end": "17:00"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "bank",
+      "type": "approval",
+      "label": "Verify bank details / Thibitisha taarifa za benki",
+      "config": {
+        "candidateGroupRef": "accounts-payable",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 16,
+        "calendar": {
+          "zone": "Africa/Nairobi",
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "holidays": [
+            "2026-01-01",
+            "2026-03-20",
+            "2026-04-03",
+            "2026-04-06",
+            "2026-05-01",
+            "2026-05-27",
+            "2026-06-01",
+            "2026-10-10",
+            "2026-10-20",
+            "2026-12-12",
+            "2026-12-25",
+            "2026-12-26",
+            "2027-01-01",
+            "2027-03-26",
+            "2027-03-29",
+            "2027-05-01",
+            "2027-06-01",
+            "2027-10-10",
+            "2027-10-11",
+            "2027-10-20",
+            "2027-12-12",
+            "2027-12-13",
+            "2027-12-25",
+            "2027-12-26",
+            "2027-12-27"
+          ],
+          "start": "08:00",
+          "end": "17:00",
+          "revision": "KE-office-2026-illustrative",
+          "validFrom": "2026-01-01",
+          "intervals": [
+            {
+              "start": "08:00",
+              "end": "13:00"
+            },
+            {
+              "start": "14:00",
+              "end": "17:00"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "join",
+      "type": "parallelJoin",
+      "label": "Both checks finished",
+      "config": {}
+    },
+    {
+      "id": "privacyRoute",
+      "type": "branch",
+      "label": "Personal data?",
+      "config": {}
+    },
+    {
+      "id": "privacy",
+      "type": "approval",
+      "label": "Privacy review / Ukaguzi wa faragha",
+      "config": {
+        "candidateGroupRef": "privacy-officers",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 24,
+        "calendar": {
+          "zone": "Africa/Nairobi",
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "holidays": [
+            "2026-01-01",
+            "2026-03-20",
+            "2026-04-03",
+            "2026-04-06",
+            "2026-05-01",
+            "2026-05-27",
+            "2026-06-01",
+            "2026-10-10",
+            "2026-10-20",
+            "2026-12-12",
+            "2026-12-25",
+            "2026-12-26",
+            "2027-01-01",
+            "2027-03-26",
+            "2027-03-29",
+            "2027-05-01",
+            "2027-06-01",
+            "2027-10-10",
+            "2027-10-11",
+            "2027-10-20",
+            "2027-12-12",
+            "2027-12-13",
+            "2027-12-25",
+            "2027-12-26",
+            "2027-12-27"
+          ],
+          "start": "08:00",
+          "end": "17:00",
+          "revision": "KE-office-2026-illustrative",
+          "validFrom": "2026-01-01",
+          "intervals": [
+            {
+              "start": "08:00",
+              "end": "13:00"
+            },
+            {
+              "start": "14:00",
+              "end": "17:00"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "riskRoute",
+      "type": "branch",
+      "label": "High risk?",
+      "config": {}
+    },
+    {
+      "id": "compliance",
+      "type": "approval",
+      "label": "Compliance approval / Idhini ya uzingatiaji",
+      "config": {
+        "candidateGroupRef": "compliance-officers",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 24,
+        "calendar": {
+          "zone": "Africa/Nairobi",
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "holidays": [
+            "2026-01-01",
+            "2026-03-20",
+            "2026-04-03",
+            "2026-04-06",
+            "2026-05-01",
+            "2026-05-27",
+            "2026-06-01",
+            "2026-10-10",
+            "2026-10-20",
+            "2026-12-12",
+            "2026-12-25",
+            "2026-12-26",
+            "2027-01-01",
+            "2027-03-26",
+            "2027-03-29",
+            "2027-05-01",
+            "2027-06-01",
+            "2027-10-10",
+            "2027-10-11",
+            "2027-10-20",
+            "2027-12-12",
+            "2027-12-13",
+            "2027-12-25",
+            "2027-12-26",
+            "2027-12-27"
+          ],
+          "start": "08:00",
+          "end": "17:00",
+          "revision": "KE-office-2026-illustrative",
+          "validFrom": "2026-01-01",
+          "intervals": [
+            {
+              "start": "08:00",
+              "end": "13:00"
+            },
+            {
+              "start": "14:00",
+              "end": "17:00"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "notifyApproved",
+      "type": "notification",
+      "label": "Tell requester the vendor is onboarded",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "The vendor was onboarded. / Msambazaji amesajiliwa."
+      }
+    },
+    {
+      "id": "notifyRejected",
+      "type": "notification",
+      "label": "Tell requester the vendor was rejected",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "The vendor was rejected. Open the request to see the reason. / Msambazaji amekataliwa. Fungua ombi kuona sababu."
+      }
+    },
+    {
+      "id": "onboarded",
+      "type": "end",
+      "label": "Onboarded",
+      "config": {
+        "businessOutcome": "Onboarded",
+        "outcomeKind": "success"
+      }
+    },
+    {
+      "id": "rejected",
+      "type": "end",
+      "label": "Rejected",
+      "config": {
+        "businessOutcome": "Rejected",
+        "outcomeKind": "rejected"
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t1",
+      "from": "start",
+      "to": "risk",
+      "on": "next"
+    },
+    {
+      "id": "t2",
+      "from": "risk",
+      "to": "split",
+      "on": "next"
+    },
+    {
+      "id": "t3",
+      "from": "split",
+      "to": "diligence",
+      "on": "next"
+    },
+    {
+      "id": "t4",
+      "from": "split",
+      "to": "bank",
+      "on": "next"
+    },
+    {
+      "id": "t5",
+      "from": "diligence",
+      "to": "join",
+      "on": "approved"
+    },
+    {
+      "id": "t6",
+      "from": "diligence",
+      "to": "notifyRejected",
+      "on": "rejected"
+    },
+    {
+      "id": "t7",
+      "from": "bank",
+      "to": "join",
+      "on": "approved"
+    },
+    {
+      "id": "t8",
+      "from": "bank",
+      "to": "notifyRejected",
+      "on": "rejected"
+    },
+    {
+      "id": "t9",
+      "from": "join",
+      "to": "privacyRoute",
+      "on": "next"
+    },
+    {
+      "id": "t10",
+      "from": "privacyRoute",
+      "to": "privacy",
+      "on": "condition",
+      "label": "Processes personal data",
+      "condition": {
+        "fieldRef": "/input/personalData",
+        "operator": "eq",
+        "value": true
+      }
+    },
+    {
+      "id": "t11",
+      "from": "privacyRoute",
+      "to": "riskRoute",
+      "on": "default",
+      "label": "No personal data"
+    },
+    {
+      "id": "t12",
+      "from": "privacy",
+      "to": "riskRoute",
+      "on": "approved"
+    },
+    {
+      "id": "t13",
+      "from": "privacy",
+      "to": "notifyRejected",
+      "on": "rejected"
+    },
+    {
+      "id": "t14",
+      "from": "riskRoute",
+      "to": "compliance",
+      "on": "condition",
+      "label": "Conflict declared or KES 10,000,000 or more",
+      "condition": {
+        "fieldRef": "/steps/risk/band",
+        "operator": "eq",
+        "value": "high"
+      }
+    },
+    {
+      "id": "t15",
+      "from": "riskRoute",
+      "to": "notifyApproved",
+      "on": "default",
+      "label": "Standard risk"
+    },
+    {
+      "id": "t16",
+      "from": "compliance",
+      "to": "notifyApproved",
+      "on": "approved"
+    },
+    {
+      "id": "t17",
+      "from": "compliance",
+      "to": "notifyRejected",
+      "on": "rejected"
+    },
+    {
+      "id": "t18",
+      "from": "notifyApproved",
+      "to": "onboarded",
+      "on": "next"
+    },
+    {
+      "id": "t19",
+      "from": "notifyRejected",
+      "to": "rejected",
+      "on": "next"
+    }
+  ],
+  "decisions": [
+    {
+      "key": "vendor-risk",
+      "version": 1,
+      "hitPolicy": "FIRST",
+      "rows": [
+        {
+          "when": {
+            "any": [
+              {
+                "fieldRef": "/input/conflictOfInterest",
+                "operator": "eq",
+                "value": true
+              },
+              {
+                "fieldRef": "/input/annualSpend",
+                "operator": "gte",
+                "value": 10000000
+              }
+            ]
+          },
+          "then": {
+            "band": "high"
+          }
+        }
+      ],
+      "default": {
+        "band": "standard"
+      }
+    }
+  ],
+  "execution": {
+    "maxConcurrentRuns": 200,
+    "maxAttempts": 3,
+    "retryDelaySeconds": 30
+  },
+  "security": {
+    "selfApproval": "deny"
+  },
+  "dependencies": {
+    "connections": []
+  },
+  "outputMapping": {
+    "riskBand": {
+      "fieldRef": "/steps/risk/band",
+      "required": true
+    },
+    "diligenceBy": {
+      "fieldRef": "/steps/diligence/decidedBy",
+      "required": false
+    }
+  },
+  "uiLayout": {
+    "positions": {
+      "start": {
+        "x": 80,
+        "y": 80
+      },
+      "risk": {
+        "x": 320,
+        "y": 80
+      },
+      "split": {
+        "x": 560,
+        "y": 80
+      },
+      "diligence": {
+        "x": 800,
+        "y": 80
+      },
+      "bank": {
+        "x": 800,
+        "y": 240
+      },
+      "join": {
+        "x": 1040,
+        "y": 80
+      },
+      "privacyRoute": {
+        "x": 1280,
+        "y": 80
+      },
+      "privacy": {
+        "x": 1520,
+        "y": 80
+      },
+      "riskRoute": {
+        "x": 1760,
+        "y": 80
+      },
+      "compliance": {
+        "x": 2000,
+        "y": 80
+      },
+      "notifyApproved": {
+        "x": 2240,
+        "y": 80
+      },
+      "notifyRejected": {
+        "x": 2240,
+        "y": 240
+      },
+      "onboarded": {
+        "x": 2480,
+        "y": 80
+      },
+      "rejected": {
+        "x": 2480,
+        "y": 240
+      }
+    },
+    "viewport": {
+      "x": 0,
+      "y": 0,
+      "zoom": 0.6
+    }
+  }
+}

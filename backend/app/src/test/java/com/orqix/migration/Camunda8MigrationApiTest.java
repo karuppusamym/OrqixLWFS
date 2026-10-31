@@ -54,6 +54,17 @@ class Camunda8MigrationApiTest extends RuntimeTestBase {
 
     private UUID publish(JsonNode converted) throws Exception {
         UUID workflow = UUID.fromString(converted.path("workflow").path("id").asString());
+        // Converted-but-changed items block publishing until a reviewer other than the mapper (dana) verifies them.
+        var open = new java.util.ArrayList<Map<String, String>>();
+        for (JsonNode i : converted.path("report").path("issues"))
+            if ("verify".equals(i.path("severity").asString()) && "open".equals(i.path("resolutionStatus").asString()))
+                open.add(Map.of("sourceElementId", i.path("sourceElementId").asString(), "reasonCode", i.path("reasonCode").asString()));
+        if (!open.isEmpty()) {
+            String migration = jdbc.sql("SELECT id::text FROM migration_job WHERE converted_workflow_id=:wf").param("wf", workflow).query(String.class).single();
+            var verified = api("paul.publisher").post(Map.of("items", open, "reason", "Checked against the source fixture"),
+                    "/workspaces/{ws}/migrations/{id}/verifications", PURCHASING, migration);
+            assertThat(verified.status()).as(verified.toString()).isEqualTo(200);
+        }
         var publish = api("paul.publisher").post(Map.of("draftRevision", 1, "acknowledgeWarnings", true), UUID.randomUUID().toString(),
                 "/workspaces/{ws}/workflows/{id}/publish", PURCHASING, workflow);
         assertThat(publish.status()).as(publish.toString()).isEqualTo(201);

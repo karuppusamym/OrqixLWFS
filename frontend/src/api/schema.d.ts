@@ -1070,6 +1070,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/exit-export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Download the workspace, or selected workflows, as an open-format exit archive
+         * @description Workflow exit guarantee (docs/admin-guide.md, "Exit export"). Streams a ZIP that can be read without Orqix:
+         *     for each workflow every released version as Orqix workflow JSON (contracts/workflow-v0.schema.json) with its
+         *     compiled BPMN 2.0 XML, DMN decision tables, source map and compile manifest, plus the latest draft; shared forms
+         *     and decision tables with every version; connection definitions and bindings with credentials removed; run
+         *     history (runs, tasks, decisions, run events) and the audit log as CSV and JSON Lines; `people.csv`; a README
+         *     explaining the formats; `manifest.json` with the SHA-256 and size of every file and `SHA256SUMS`.
+         *
+         *     Workspace administrators only (`workspace.manage-access`); members without it get 403 (audited denial),
+         *     outsiders 404. An empty body, or no `workflowIds`, exports the whole workspace. Run input and output values and
+         *     run event details are included only with `includeRunData: true`. History is read in one consistent snapshot
+         *     and streamed, so the response starts at once and its length is not known in advance. Every export is audited
+         *     as `workspace.exit-export.started` before the first byte, then `workspace.exit-exported` with counts and the
+         *     archive SHA-256 (outcome `failed` when the stream broke off; the partial file is not a valid ZIP).
+         */
+        post: operations["exportWorkspaceArchive"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/workflows/{workflowId}/migration-review": {
         parameters: {
             query?: never;
@@ -5248,6 +5282,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/migrations/{migrationId}/verifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                migrationId: components["parameters"]["MigrationId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * A reviewer acknowledges converted-but-changed (verify) items of a converted migration
+         * @description Each listed item must match an open verify item of the stored report (by sourceElementId, reasonCode and optionally sourcePath); it becomes acknowledged and the report records who, when and why under verifications. Allowed only after conversion; needs workflow.publish, and the person who converted the source cannot acknowledge. While any verify item is open, publishing the converted workflow is refused with MIGRATION_BLOCKED.
+         */
+        post: operations["acknowledgeMigrationVerifications"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/migrations/{migrationId}/ledger": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                migrationId: components["parameters"]["MigrationId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * SI migration ledger (ZIP of ledger.json, ledger.csv and ledger.xlsx, or one of them)
+         * @description One row per source finding with disposition, severity, reason code, resolution, target node id, source SHA-256, adapter version, the approved mapping of that element and its verification; plus the conversion mappings, source map, the latest independent review, verification acknowledgements and the generated equivalence checks the report holds. Golden-scenario results from tools/migration-equivalence are a separate evidence pack and are marked notRecorded. Spreadsheet cells are text only, never formulas; the CSV prefixes formula-like text with an apostrophe.
+         */
+        get: operations["exportMigrationLedger"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/migrations/{migrationId}/convert": {
         parameters: {
             query?: never;
@@ -5463,6 +5543,62 @@ export interface paths {
         };
         /** Download ordered control evidence and a release manifest */
         get: operations["exportCaseEvidence"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/workflows/{workflowId}/releases/{releaseId}/evidence-pack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+                releaseId: components["parameters"]["ReleaseId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Control evidence pack for a release (identity, approvals, tests, diff, history)
+         * @description Auditor-readable evidence for one published release (docs/27 section 3, Create): release identity and
+         *     SHA-256 checksums, who authored, reviewed and published it and when, the publication test results,
+         *     warnings acknowledged, the change summary from the previous release, promotion requests and the release's
+         *     audit history. Control metadata only. Allowed with workflow.read, or with audit.read for a workflow the
+         *     caller may start (404 when the caller cannot see the workflow). The JSON format is the pack itself with an `integrity.digest` (SHA-256 over the
+         *     RFC 8785 canonical JSON without `integrity`); PDF and DOCX render the same facts.
+         */
+        get: operations["exportReleaseEvidencePack"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/runs/{runId}/evidence-pack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Control evidence pack for a run (steps, decisions, SLA breaches, corrections, effects)
+         * @description Auditor-readable evidence for one run (docs/27 section 3, Create): the pinned release and its checksum,
+         *     each human step with assignee, decision and timestamps, SLA breaches, guarded operator corrections,
+         *     integration effect outcomes and the ordered timeline. Control metadata only: no request values, decision
+         *     reasons, comments or notes. The caller must be able to see the run (404 otherwise) and hold run.read or
+         *     audit.read (403, audited). Refuses truncation above 10000 records per list.
+         */
+        get: operations["exportRunEvidencePack"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6258,6 +6394,16 @@ export interface components {
             required: boolean;
             expectedVersion: number;
             reason: string;
+        };
+        /** @description Both fields optional; no workflowIds exports the whole workspace. */
+        ExitExportRequest: {
+            /** @description Workflows of this workspace to export; unknown ids return 422. */
+            workflowIds?: string[];
+            /**
+             * @description Also export run input and output values and run event details.
+             * @default false
+             */
+            includeRunData: boolean;
         };
         MigrationReviewRequest: {
             draftRevision: number;
@@ -7185,6 +7331,14 @@ export interface components {
             requiredConnections?: components["schemas"]["Key"][];
             /** @description Workflows the template starts as child requests; they must be published first. */
             requiredWorkflows?: components["schemas"]["Key"][];
+            /** @description Regional template pack key (banking-mfi, shared-services, public-sector); absent for general templates. docs/regional-template-packs.md */
+            pack?: string;
+            /** @description Display name of the pack industry, for filtering the template picker */
+            industry?: string;
+            /** @description Display name of the region the template is set up for (calendar, currency, labels), for example India */
+            region?: string;
+            /** @description Second-language codes of the bilingual form labels (for example hi, de, sw); absent when English only */
+            languages?: string[];
         };
         WorkflowSummary: {
             id: components["schemas"]["Uuid"];
@@ -9324,8 +9478,11 @@ export interface components {
             sourceElementId: string;
             sourceName?: string | null;
             sourceKind: string;
-            /** @enum {string} */
-            severity: "supported" | "info" | "review" | "action" | "blocker";
+            /**
+             * @description verify = converted but changed: the converter knowingly changed behaviour slightly. It never blocks conversion; while open it blocks publishing the converted workflow until a reviewer acknowledges it (acknowledgeMigrationVerifications).
+             * @enum {string}
+             */
+            severity: "supported" | "info" | "review" | "verify" | "action" | "blocker";
             reasonCode: string;
             explanation: string;
             suggestedAction?: string | null;
@@ -9348,6 +9505,8 @@ export interface components {
                 info?: number;
                 /** @description Converted items whose behaviour could differ; they never block conversion */
                 review?: number;
+                /** @description Converted-but-changed items; open ones block publishing until a reviewer acknowledges them */
+                verify?: number;
                 action?: number;
                 blocker?: number;
             };
@@ -9368,8 +9527,90 @@ export interface components {
             mappingHints?: components["schemas"]["MappingHints"];
             /** @description Generated behaviour checks (DMN): the source semantics versus the converted table evaluated by the compiler */
             testCases?: components["schemas"]["MigrationTestCase"][];
-            /** @description True when no blocker, open action or unacknowledged info item remains. Review items never affect it. */
+            /** @description True when no blocker, open action or unacknowledged info item remains (the conversion gate). Review and verify items never affect it; open verify items block publishing instead. */
             publishable: boolean;
+            /** @description Reviewer acknowledgements of verify items, recorded after conversion */
+            verifications?: components["schemas"]["MigrationVerification"][];
+        };
+        MigrationLedger: {
+            /** @enum {string} */
+            format: "orqix-migration-ledger-0.1";
+            migration: {
+                /** Format: uuid */
+                id?: string;
+                fileName?: string;
+                status?: string;
+                sourceSystem?: string;
+                sourceSha256?: string;
+                adapterVersion?: string;
+                convertedWorkflowId?: string | null;
+                mappedBy?: string | null;
+                publishable?: boolean;
+                awaitingVerification?: boolean;
+            } & {
+                [key: string]: unknown;
+            };
+            elementCounts: {
+                [key: string]: number;
+            };
+            assumptions?: string[];
+            elements: {
+                sourceElementId?: string | null;
+                sourceName?: string | null;
+                sourceKind?: string | null;
+                sourcePath?: string | null;
+                /** @enum {string} */
+                disposition: "converted" | "convertedReview" | "convertedChangedUnverified" | "convertedChangedVerified" | "notImported" | "decisionNeeded" | "mapped" | "manualRebuild";
+                severity: string;
+                reasonCode: string;
+                resolutionStatus: string;
+                targetNodeId?: string | null;
+                sourceSha256: string;
+                adapterVersion: string;
+                approvedMapping?: {
+                    [key: string]: unknown;
+                } | null;
+                verification?: components["schemas"]["MigrationVerification"] | null;
+                explanation?: string | null;
+                suggestedAction?: string | null;
+            }[];
+            approvedMappings?: {
+                [key: string]: unknown;
+            } | null;
+            sourceMap?: Record<string, never> | unknown[] | null;
+            verifications: components["schemas"]["MigrationVerification"][];
+            independentReview?: {
+                [key: string]: unknown;
+            } | null;
+            equivalence: {
+                generatedChecks?: components["schemas"]["MigrationTestCase"][];
+                goldenScenarios?: {
+                    /** @enum {string} */
+                    status?: "notRecorded";
+                    note?: string;
+                };
+            };
+        };
+        MigrationVerification: {
+            sourceElementId: string;
+            reasonCode: string;
+            sourcePath?: string | null;
+            /** Format: uuid */
+            acknowledgedBy: string;
+            acknowledgedByName?: string | null;
+            /** Format: date-time */
+            acknowledgedAt: string;
+            reason: string;
+        };
+        AcknowledgeMigrationVerificationsRequest: {
+            items: {
+                sourceElementId: string;
+                reasonCode: string;
+                /** @description Narrows the match when one element has several items with the same reason code */
+                sourcePath?: string | null;
+            }[];
+            /** @description What the reviewer checked; kept in the report and the ledger */
+            reason: string;
         };
         /** @description Structured facts for the mapping helper (Camunda 8), keyed by source element id. Header and query parameter values, credentials and full URLs are never included. */
         MappingHints: {
@@ -13579,6 +13820,38 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    exportWorkspaceArchive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ExitExportRequest"];
+            };
+        };
+        responses: {
+            /** @description The exit archive (ZIP), streamed */
+            200: {
+                headers: {
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/zip": string;
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             422: components["responses"]["Unprocessable"];
         };
     };
@@ -20325,6 +20598,71 @@ export interface operations {
             422: components["responses"]["Unprocessable"];
         };
     };
+    acknowledgeMigrationVerifications: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                migrationId: components["parameters"]["MigrationId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcknowledgeMigrationVerificationsRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated migration job */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MigrationJob"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["FeatureDisabled"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    exportMigrationLedger: {
+        parameters: {
+            query?: {
+                format?: "zip" | "json" | "csv" | "xlsx";
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                migrationId: components["parameters"]["MigrationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Ledger file (Content-Disposition attachment) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/zip": string;
+                    "application/json": components["schemas"]["MigrationLedger"];
+                    "text/csv": string;
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": string;
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     convertMigration: {
         parameters: {
             query?: never;
@@ -20738,6 +21076,131 @@ export interface operations {
                         [key: string]: unknown;
                     };
                     "text/csv": string;
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    exportReleaseEvidencePack: {
+        parameters: {
+            query?: {
+                format?: "pdf" | "docx" | "json";
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                workflowId: components["parameters"]["WorkflowId"];
+                releaseId: components["parameters"]["ReleaseId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Evidence pack file */
+            200: {
+                headers: {
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": string;
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": string;
+                    "application/json": {
+                        /** @constant */
+                        formatVersion: "1";
+                        /** @constant */
+                        kind: "release";
+                        /** Format: date-time */
+                        generatedAt: string;
+                        release: {
+                            [key: string]: unknown;
+                        };
+                        approvals: ({
+                            /** @enum {unknown} */
+                            role: "Author" | "Reviewer" | "Publisher";
+                        } & {
+                            [key: string]: unknown;
+                        })[];
+                        tests: {
+                            /** @enum {unknown} */
+                            status: "passed" | "failed" | "notRecorded" | "notConfigured";
+                        } & {
+                            [key: string]: unknown;
+                        };
+                        diff: {
+                            [key: string]: unknown;
+                        };
+                        integrity: {
+                            digest: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    exportRunEvidencePack: {
+        parameters: {
+            query?: {
+                format?: "pdf" | "docx" | "json";
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Evidence pack file */
+            200: {
+                headers: {
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": string;
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": string;
+                    "application/json": {
+                        /** @constant */
+                        formatVersion: "1";
+                        /** @constant */
+                        kind: "run";
+                        /** Format: date-time */
+                        generatedAt: string;
+                        release: {
+                            [key: string]: unknown;
+                        };
+                        steps: {
+                            [key: string]: unknown;
+                        }[];
+                        effects: ({
+                            /** @enum {unknown} */
+                            outcome: "pending" | "inFlight" | "succeeded" | "retryableFailure" | "permanentFailure" | "unknown" | "notApplied";
+                        } & {
+                            [key: string]: unknown;
+                        })[];
+                        integrity: {
+                            digest: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    } & {
+                        [key: string]: unknown;
+                    };
                 };
             };
             401: components["responses"]["Unauthenticated"];

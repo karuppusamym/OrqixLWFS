@@ -97,6 +97,7 @@ public class MigrationGovernance {
     /** Called under the workflow row lock, before deployment, in the same publication transaction. */
     void requirePublish(Caller caller, UUID ws, UUID wf, CatalogStore.DraftRow draft) {
         lockPolicy(ws);
+        requireVerified(ws, wf);
         if (!settings(ws).required()) return;
         Source source=source(ws,wf);
         if (source==null) return; // This policy governs migrated workflows; ordinary authored workflows keep their controls.
@@ -108,6 +109,15 @@ public class MigrationGovernance {
         if (caller.subjectId().equals(source.mapper()) || caller.subjectId().equals(approval.reviewer())
                 || caller.subjectId().equals(draft.savedBy()))
             throw new ApiException(ProblemCode.FORBIDDEN,"Mapper, reviewer and publisher must be different people; draft authors cannot publish their own governed migration.");
+    }
+    /**
+     * "Converted but changed — verify" items of the source conversion block publishing until a reviewer acknowledged each
+     * one (docs/17-migration-workbench.md "Severity model"). Applies whether or not the independent review policy is on.
+     */
+    private void requireVerified(UUID ws, UUID wf) {
+        int open = jdbc.sql("SELECT count(*) FROM migration_job WHERE workspace_id=:ws AND converted_workflow_id=:wf AND jsonb_path_exists(report, '$.issues[*] ? (@.severity == \"verify\" && @.resolutionStatus == \"open\")')")
+                .param("ws",ws).param("wf",wf).query(Integer.class).single();
+        if (open > 0) throw blocked("The migration has converted-but-changed items that a reviewer must verify and acknowledge before publishing.");
     }
     private void lockPolicy(UUID ws) {
         jdbc.sql("SELECT id FROM workspace WHERE id=:ws FOR SHARE").param("ws",ws).query(UUID.class).single();

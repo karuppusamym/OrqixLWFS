@@ -566,6 +566,16 @@ export const convertPegaCaseDefinition = (ws: string, migrationId: string, body:
   call(api.POST('/workspaces/{workspaceId}/migrations/{migrationId}/case-definition', { params: { path: { workspaceId: ws, migrationId } }, body }))
 export const convertMigration = (ws: string, migrationId: string, body: S['ConvertMigrationRequest']) =>
   call(api.POST('/workspaces/{workspaceId}/migrations/{migrationId}/convert', { params: { path: { workspaceId: ws, migrationId } }, body }))
+// "Converted but changed — verify" items: a reviewer (not the mapper) acknowledges them after conversion; publishing waits for it.
+export const acknowledgeMigrationVerifications = (ws: string, migrationId: string, body: S['AcknowledgeMigrationVerificationsRequest']) =>
+  call(api.POST('/workspaces/{workspaceId}/migrations/{migrationId}/verifications', { params: { path: { workspaceId: ws, migrationId } }, body }))
+/** SI migration ledger: ZIP of ledger.json/csv/xlsx by default, or one file; workflow.export. */
+export async function exportMigrationLedger(ws: string, migrationId: string, format: 'zip' | 'json' | 'csv' | 'xlsx' = 'zip') {
+  const { data, response } = await callWithResponse(
+    api.GET('/workspaces/{workspaceId}/migrations/{migrationId}/ledger', { params: { path: { workspaceId: ws, migrationId }, query: { format } }, parseAs: 'blob' }),
+  )
+  return { blob: data as unknown as Blob, filename: filenameOf(response, `migration-ledger.${format}`) }
+}
 
 // Pega Blueprint PDF (docs/build/S91): multipart upload, reviewed transcription revisions, optional AI proposal (never applied).
 export const uploadBlueprintMigration = (ws: string, file: File, caseType?: string) =>
@@ -594,6 +604,20 @@ export const getMigrationReview = (ws: string, workflowId: string) =>
   call(api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/migration-review', { params: { path: { workspaceId: ws, workflowId } } }))
 export const approveMigrationReview = (ws: string, workflowId: string, body: S['MigrationReviewRequest']) =>
   call(api.POST('/workspaces/{workspaceId}/workflows/{workflowId}/migration-review', { params: { path: { workspaceId: ws, workflowId } }, body }))
+
+// Workflow exit export (docs/admin-guide.md): the workspace or selected workflows as an open-format ZIP.
+export async function exportWorkspaceArchive(ws: string, body: S['ExitExportRequest']) {
+  const { data, response } = await callWithResponse(
+    api.POST('/workspaces/{workspaceId}/exit-export', {
+      params: { path: { workspaceId: ws } },
+      body,
+      parseAs: 'blob',
+    }),
+  )
+  const disposition = response.headers.get('Content-Disposition') ?? ''
+  const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition)
+  return { blob: data as unknown as Blob, filename: match?.[1] ? decodeURIComponent(match[1]) : 'orqix-exit-archive.zip' }
+}
 
 // Inbound messages (docs/build/S16): tell requests that wait for a named message that it arrived.
 export const sendMessage = (ws: string, body: S['SendMessageRequest'], idempotencyKey: string) =>
@@ -659,3 +683,32 @@ export const getWorkspaceFeatures = (ws: string) =>
 
 export const setWorkspaceFeature = (ws: string, feature: WorkspaceFeature, enabled: boolean) =>
   call(api.PUT('/workspaces/{workspaceId}/features/{feature}', { params: { path: { workspaceId: ws, feature } }, body: { enabled } }))
+
+// Control evidence packs (docs/27 section 3): per release and per run, as PDF, DOCX or JSON.
+export type EvidencePackFormat = 'pdf' | 'docx' | 'json'
+
+function evidenceFile(data: unknown, response: Response, fallback: string) {
+  const disposition = response.headers.get('Content-Disposition') ?? ''
+  const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition)
+  return { blob: data as Blob, filename: match?.[1] ? decodeURIComponent(match[1]) : fallback }
+}
+
+export async function exportReleaseEvidencePack(ws: string, workflowId: string, releaseId: string, format: EvidencePackFormat) {
+  const { data, response } = await callWithResponse(
+    api.GET('/workspaces/{workspaceId}/workflows/{workflowId}/releases/{releaseId}/evidence-pack', {
+      params: { path: { workspaceId: ws, workflowId, releaseId }, query: { format } },
+      parseAs: 'blob',
+    }),
+  )
+  return evidenceFile(data, response, `release-evidence-pack.${format}`)
+}
+
+export async function exportRunEvidencePack(ws: string, runId: string, format: EvidencePackFormat) {
+  const { data, response } = await callWithResponse(
+    api.GET('/workspaces/{workspaceId}/runs/{runId}/evidence-pack', {
+      params: { path: { workspaceId: ws, runId }, query: { format } },
+      parseAs: 'blob',
+    }),
+  )
+  return evidenceFile(data, response, `run-evidence-pack.${format}`)
+}

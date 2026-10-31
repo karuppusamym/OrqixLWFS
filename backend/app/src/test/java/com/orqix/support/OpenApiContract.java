@@ -163,7 +163,9 @@ public final class OpenApiContract {
             throw new AssertionError(operation.id() + " " + status + ": content type " + contentType
                     + " not in " + content.propertyNames());
         }
-        if ("application/zip".equals(mediaType) || "application/octet-stream".equals(mediaType)) {
+        if ("application/zip".equals(mediaType) || "application/octet-stream".equals(mediaType)
+                || "application/pdf".equals(mediaType)
+                || mediaType.startsWith("application/vnd.openxmlformats-officedocument.")) {
             return;
         }
         String schemaPointer = responsePointer + "/content/" + escape(mediaType) + "/schema";

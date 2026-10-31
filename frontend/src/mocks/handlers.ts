@@ -23,6 +23,8 @@ import { AssertionError, evaluateAssertions, validateAssertions, type Assertions
 import {
   GROUPS,
   TEMPLATES,
+  PACK_TEMPLATES,
+  packTemplate,
   WORKSPACES,
   USERS,
   allMemberships,
@@ -88,6 +90,14 @@ function guard(wsId: string | readonly string[] | undefined, ...anyOf: Permissio
   const perms = permissionsOf(user, id)
   if (anyOf.length > 0 && !anyOf.some((p) => perms.includes(p))) return { ok: false, res: forbidden() }
   return { ok: true, user, perms }
+}
+
+/** Mock evidence pack file (the real one is rendered by the server). */
+function mockEvidencePack(format: string, name: string, facts: Record<string, string | number>) {
+  if (!['pdf', 'docx', 'json'].includes(format)) return problem(422, 'VALIDATION_FAILED', 'Choose pdf, docx or json.')
+  const type = format === 'pdf' ? 'application/pdf' : format === 'docx' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/json'
+  const content = format === 'json' ? JSON.stringify({ formatVersion: '1', ...facts, payloadPolicy: 'Mock evidence pack' }, null, 2) : `Orqix mock evidence pack\n${JSON.stringify(facts)}\n`
+  return new HttpResponse(content, { status: 200, headers: { 'Content-Type': type, 'Content-Disposition': `attachment; filename="${name}.${format}"`, 'Cache-Control': 'no-store' } })
 }
 
 /** CMP01: mentioned people as API SubjectRefs (current display names). */
@@ -375,7 +385,7 @@ export function createHandlers(): HttpHandler[] {
     http.get(`${B}/workspaces/:ws/templates`, async ({ params }) => {
       await slow()
       const g = guard(params.ws, 'workflow.edit')
-      return g.ok ? HttpResponse.json({ items: TEMPLATES }) : g.res
+      return g.ok ? HttpResponse.json({ items: [...TEMPLATES, ...PACK_TEMPLATES] }) : g.res
     }),
     http.get(`${B}/workspaces/:ws/workflows`, async ({ params, request }) => {
       await slow()
@@ -407,7 +417,7 @@ export function createHandlers(): HttpHandler[] {
       if (workflowsOf(str(params.ws)).some((w) => w.key === input.key)) {
         return problem(409, 'DUPLICATE_KEY', 'A workflow with this key already exists', { fieldErrors: [{ pointer: '/key', code: 'duplicate', message: 'A workflow with this key already exists.' }] })
       }
-      const definition: Definition = input.templateId === 'purchase-approval' ? purchaseTemplate() : input.templateId === 'new-hire-onboarding' ? onboardingTemplate() : input.templateId === 'order-payment-wait' ? orderPaymentTemplate() : input.templateId === 'case-with-stages' ? caseTemplate() : blankDefinition(input.key, input.name)
+      const definition: Definition = input.templateId === 'purchase-approval' ? purchaseTemplate() : input.templateId === 'new-hire-onboarding' ? onboardingTemplate() : input.templateId === 'order-payment-wait' ? orderPaymentTemplate() : input.templateId === 'case-with-stages' ? caseTemplate() : packTemplate(input.templateId) ?? blankDefinition(input.key, input.name)
       definition.workflowKey = input.key
       definition.name = input.name
       if (input.description) definition.metadata.description = input.description
@@ -912,6 +922,42 @@ export function createHandlers(): HttpHandler[] {
       return new HttpResponse(content, {
         status: 200,
         headers: { 'Content-Type': 'application/zip', 'Content-Disposition': `attachment; filename="${wf.key}-r${rel.releaseNumber}.zip"` },
+      })
+    }),
+    // Control evidence packs (docs/27 section 3): the mock returns a small placeholder file in the asked format.
+    http.get(`${B}/workspaces/:ws/workflows/:id/releases/:rid/evidence-pack`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws, 'workflow.read', 'audit.read')
+      if (!g.ok) return g.res
+      const wf = findWorkflow(str(params.ws), str(params.id))
+      const rel = wf?.releases.find((r) => r.id === str(params.rid))
+      if (!wf || !rel) return notFound()
+      const format = new URL(request.url).searchParams.get('format') ?? 'pdf'
+      return mockEvidencePack(format, `${wf.key}-r${rel.releaseNumber}-evidence-pack`, { kind: 'release', workflowKey: wf.key, releaseNumber: rel.releaseNumber })
+    }),
+    http.get(`${B}/workspaces/:ws/runs/:runId/evidence-pack`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws, 'run.read', 'audit.read')
+      if (!g.ok) return g.res
+      const format = new URL(request.url).searchParams.get('format') ?? 'pdf'
+      return mockEvidencePack(format, `run-${str(params.runId)}-evidence-pack`, { kind: 'run', runId: str(params.runId) })
+    }),
+    // Workflow exit export: admins only; a selection must name workflows of this workspace.
+    http.post(`${B}/workspaces/:ws/exit-export`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws, 'workspace.manage-access')
+      if (!g.ok) return g.res
+      const text = await request.text()
+      const body = (text ? JSON.parse(text) : {}) as { workflowIds?: string[]; includeRunData?: boolean }
+      const ids = body.workflowIds ?? []
+      if (ids.some((id) => !findWorkflow(str(params.ws), id))) {
+        return problem(422, 'VALIDATION_FAILED', 'Some values are not valid', { detail: 'One or more selected workflows do not exist in this workspace.' })
+      }
+      const key = WORKSPACES.find((w) => w.id === str(params.ws))?.key ?? 'workspace'
+      const content = `Orqix mock exit archive\nscope ${ids.length ? 'selection' : 'workspace'}\nworkflows ${ids.join(',')}\nincludeRunData ${body.includeRunData === true}\n`
+      return new HttpResponse(content, {
+        status: 200,
+        headers: { 'Content-Type': 'application/zip', 'Content-Disposition': `attachment; filename="orqix-exit-${key}-mock.zip"` },
       })
     }),
     http.post(`${B}/workspaces/:ws/workflows/:id/active-release`, async ({ params, request }) => {

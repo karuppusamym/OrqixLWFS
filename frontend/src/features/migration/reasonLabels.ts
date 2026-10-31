@@ -13,6 +13,8 @@ const LABELS: Record<string, string> = {
   WORKER_NOT_PORTABLE: 'Custom job worker: choose a system call',
   EXPRESSION_NOT_SUPPORTED: 'Condition is too complex to convert',
   CONDITION_CONVERTED: 'Condition converted',
+  CONDITION_REWRITTEN: 'Condition rewritten — verify the changed behaviour',
+  DUE_DATE_NORMALISED: 'Due time normalised to hours — verify',
   DUE_DATE_MAPPED: 'Due time carried over',
   DUE_DATE_NOT_IMPORTED: 'Due date not carried over',
   FOLLOW_UP_NOT_IMPORTED: 'Follow-up date not carried over',

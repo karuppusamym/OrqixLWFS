@@ -2,7 +2,7 @@ import { delay, http, HttpResponse, type HttpHandler } from 'msw'
 import type { Permission } from '@/api/types'
 import { draftResource, getCurrentUser, workflowResource } from '@/mocks/handlers'
 import {
-  MockSourceError, approveReview, convertMigration, createMigration, migrationView, nextInProject, planProject, policyView, projectView,
+  MockSourceError, acknowledgeVerifications, approveReview, convertMigration, createMigration, migrationView, nextInProject, planProject, policyView, projectView,
   reviewView, type ConvertOutcome, type ConvertRequest, type Denial, type ProjectSource,
 } from '@/mocks/migration'
 import { WORKSPACES, clock, db, isMember, newId, permissionsOf, type MockMigration, type MockMigrationProject } from '@/mocks/state'
@@ -100,6 +100,26 @@ export function createMigrationHandlers(): HttpHandler[] {
       if (!migration) return notFound()
       const outcome = convertMigration(migration, g.user, await json<ConvertRequest>(request))
       return outcome.ok ? HttpResponse.json(convertedBody(outcome, g.perms), { status: 201 }) : failure(outcome)
+    }),
+
+    http.post(`${B}/workspaces/:ws/migrations/:id/verifications`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws, 'workflow.publish')
+      if (!g.ok) return g.res
+      const migration = migrationOf(g.ws, params.id)
+      if (!migration) return notFound()
+      const input = await json<{ items?: Array<{ sourceElementId?: string; reasonCode?: string; sourcePath?: string | null }>; reason?: unknown }>(request)
+      if (!Array.isArray(input.items) || input.items.length === 0 || typeof input.reason !== 'string' || !input.reason.trim() || input.reason.length > 1000)
+        return problem(400, 'MALFORMED_REQUEST', 'Bad request', { detail: 'items and a reason of 1 to 1000 characters are required.' })
+      const denied = acknowledgeVerifications(migration, g.user, input.items, input.reason)
+      return denied ? denial(denied) : HttpResponse.json(migrationView(migration))
+    }),
+    // Mock mode builds no workbook: the ZIP and XLSX ledger need the real backend.
+    http.get(`${B}/workspaces/:ws/migrations/:id/ledger`, async ({ params }) => {
+      await slow()
+      const g = guard(params.ws, 'workflow.export')
+      if (!g.ok) return g.res
+      return migrationOf(g.ws, params.id) ? problem(422, 'MIGRATION_BLOCKED', 'Not available in mock mode', { detail: 'The migration ledger (ZIP, XLSX) is built by the real backend.' }) : notFound()
     }),
 
     // Projects ---------------------------------------------------------------------------------------------------------------

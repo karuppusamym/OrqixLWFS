@@ -55,6 +55,19 @@ public final class Expressions {
     }
 
     /** Result of reading one expression. */
+    private static final Pattern BARE_NEGATION = Pattern.compile("(?i)(?:not|!)\\s*\\(\\s*[A-Za-z_$][A-Za-z0-9_$]*\\s*\\)");
+    private static final Pattern REWRITE = Pattern.compile("(?i)(?:^|[^A-Za-z0-9_$])(?:not\\s*\\(|!\\s*\\(|between\\b)");
+
+    /**
+     * True when converting the condition text rewrites it rather than transcribing it: {@code not(...)} / {@code !(...)}
+     * becomes the opposite operator (De Morgan over a group) and a FEEL {@code between} range becomes two comparisons. Such
+     * a condition is a "converted but changed — verify" item ({@code CONDITION_REWRITTEN}).
+     */
+    public static boolean rewritten(String source) {
+        // not(approved) of a bare yes/no variable is transcribed as "approved is no", not rewritten.
+        return source != null && REWRITE.matcher(BARE_NEGATION.matcher(source).replaceAll(" ")).find();
+    }
+
     public sealed interface Parsed permits Comparison, Logical, Unsupported {
     }
 

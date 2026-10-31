@@ -1,0 +1,616 @@
+{
+  "schemaVersion": "0.1",
+  "workflowKey": "grant-application-eu",
+  "name": "Grant application (European Union)",
+  "metadata": {
+    "description": "European Union grant application in EUR. Rules reject requests above EUR 500,000 or with own contribution under 20 percent; two reviewers on the technical panel must both approve, finance checks the budget, and the grants committee decides from EUR 100,000. Due dates count office hours and public holidays. Applicants confirm the de minimis ceiling (EUR 300,000 over three years, Regulation 2023/2831); co-funding of at least 20 percent. Illustrative regional template, not a regulatory-compliant product: thresholds, holiday lists and document names are placeholders for your compliance function to confirm.",
+    "tags": [
+      "pack:public-sector",
+      "region:eu",
+      "template:grant",
+      "owner:Grants office",
+      "illustrative",
+      "lang:de"
+    ]
+  },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "organisationName",
+      "organisationType",
+      "registrationId",
+      "programme",
+      "requestedAmount",
+      "ownContribution",
+      "projectSummary",
+      "budget",
+      "deMinimisExceeded"
+    ],
+    "properties": {
+      "organisationName": {
+        "type": "string",
+        "title": "Organisation name / Name der Organisation",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "organisationType": {
+        "type": "string",
+        "title": "Organisation type / Organisationsform",
+        "enum": [
+          "Non-profit association",
+          "SME",
+          "Municipality",
+          "Research organisation",
+          "Social enterprise"
+        ]
+      },
+      "registrationId": {
+        "type": "string",
+        "title": "Register number / Registernummer",
+        "minLength": 3,
+        "maxLength": 40,
+        "pattern": "^[A-Za-z0-9 /.-]{3,40}$",
+        "patternMessage": "Enter the register number, for example VR 12345."
+      },
+      "programme": {
+        "type": "string",
+        "title": "Programme / Förderprogramm",
+        "enum": [
+          "Climate and energy",
+          "Digital transition",
+          "Social inclusion",
+          "Culture",
+          "Rural development"
+        ]
+      },
+      "requestedAmount": {
+        "type": "number",
+        "title": "Requested amount (EUR) / Beantragter Betrag (EUR)",
+        "minimum": 1,
+        "maximum": 10000000000,
+        "multipleOf": 0.01
+      },
+      "ownContribution": {
+        "type": "integer",
+        "title": "Own contribution (%) / Eigenanteil (%)",
+        "minimum": 0,
+        "maximum": 100
+      },
+      "projectSummary": {
+        "type": "string",
+        "title": "Project summary / Projektbeschreibung",
+        "minLength": 20,
+        "maxLength": 4000
+      },
+      "budget": {
+        "type": "array",
+        "title": "Budget lines / Kostenplan",
+        "minItems": 1,
+        "maxItems": 20,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "item",
+            "amount"
+          ],
+          "properties": {
+            "item": {
+              "type": "string",
+              "title": "Budget item / Kostenposition",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "amount": {
+              "type": "number",
+              "title": "Requested amount (EUR) / Beantragter Betrag (EUR)",
+              "minimum": 1,
+              "maximum": 100000000,
+              "multipleOf": 0.01
+            }
+          }
+        }
+      },
+      "deMinimisExceeded": {
+        "type": "boolean",
+        "title": "Over the de minimis ceiling (3 years) / Über der De-minimis-Höchstgrenze (3 Jahre)"
+      }
+    }
+  },
+  "inputUi": {
+    "order": [
+      "organisationName",
+      "organisationType",
+      "registrationId",
+      "programme",
+      "requestedAmount",
+      "ownContribution",
+      "projectSummary",
+      "budget",
+      "deMinimisExceeded"
+    ],
+    "widgets": {
+      "organisationType": "select",
+      "programme": "select",
+      "requestedAmount": "number",
+      "projectSummary": "textarea",
+      "deMinimisExceeded": "checkbox"
+    },
+    "submitLabel": "Submit application / Antrag einreichen",
+    "layout": {
+      "sections": [
+        {
+          "id": "organisation",
+          "title": "Organisation / Organisation",
+          "columns": 2,
+          "fields": [
+            "organisationName",
+            "organisationType",
+            "registrationId",
+            "deMinimisExceeded"
+          ]
+        },
+        {
+          "id": "project",
+          "title": "Project / Projekt",
+          "columns": 1,
+          "fields": [
+            "programme",
+            "requestedAmount",
+            "ownContribution",
+            "projectSummary",
+            "budget"
+          ]
+        }
+      ]
+    }
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "budgetTotal": {
+        "type": "number",
+        "title": "Budget total (EUR)"
+      },
+      "financeCheckedBy": {
+        "type": "string",
+        "title": "Finance checked by"
+      }
+    }
+  },
+  "triggers": [
+    "manual",
+    "api"
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "label": "Application received",
+      "config": {}
+    },
+    {
+      "id": "eligibility",
+      "type": "decision",
+      "label": "Check eligibility",
+      "config": {
+        "decisionRef": "grant-eligibility"
+      }
+    },
+    {
+      "id": "eligibleRoute",
+      "type": "branch",
+      "label": "Eligible?",
+      "config": {}
+    },
+    {
+      "id": "notifyIneligible",
+      "type": "notification",
+      "label": "Tell applicant it is not eligible",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "The application does not meet the programme's eligibility rules. / Der Antrag erfüllt die Fördervoraussetzungen des Programms nicht."
+      }
+    },
+    {
+      "id": "panel",
+      "type": "approval",
+      "label": "Technical review panel / Fachgutachter",
+      "config": {
+        "candidateGroupRef": "grant-reviewers",
+        "rejectReasonRequired": true,
+        "multiInstance": {
+          "approvers": 2
+        }
+      }
+    },
+    {
+      "id": "finance",
+      "type": "approval",
+      "label": "Finance check / Haushaltsprüfung",
+      "config": {
+        "candidateGroupRef": "grants-finance",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 24,
+        "calendar": {
+          "zone": "Europe/Berlin",
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "holidays": [
+            "2026-01-01",
+            "2026-04-03",
+            "2026-04-06",
+            "2026-05-01",
+            "2026-05-14",
+            "2026-05-25",
+            "2026-10-03",
+            "2026-12-25",
+            "2026-12-26",
+            "2027-01-01",
+            "2027-03-26",
+            "2027-03-29",
+            "2027-05-01",
+            "2027-05-06",
+            "2027-05-17",
+            "2027-10-03",
+            "2027-12-25",
+            "2027-12-26"
+          ],
+          "start": "08:00",
+          "end": "16:00",
+          "revision": "EU-office-2026-illustrative",
+          "validFrom": "2026-01-01",
+          "intervals": [
+            {
+              "start": "08:00",
+              "end": "12:00"
+            },
+            {
+              "start": "13:00",
+              "end": "16:00"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "levelRoute",
+      "type": "branch",
+      "label": "Committee needed?",
+      "config": {}
+    },
+    {
+      "id": "committee",
+      "type": "approval",
+      "label": "Grants committee approval / Genehmigung Bewilligungsausschuss",
+      "config": {
+        "candidateGroupRef": "grants-committee",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 80,
+        "calendar": {
+          "zone": "Europe/Berlin",
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "holidays": [
+            "2026-01-01",
+            "2026-04-03",
+            "2026-04-06",
+            "2026-05-01",
+            "2026-05-14",
+            "2026-05-25",
+            "2026-10-03",
+            "2026-12-25",
+            "2026-12-26",
+            "2027-01-01",
+            "2027-03-26",
+            "2027-03-29",
+            "2027-05-01",
+            "2027-05-06",
+            "2027-05-17",
+            "2027-10-03",
+            "2027-12-25",
+            "2027-12-26"
+          ],
+          "start": "08:00",
+          "end": "16:00",
+          "revision": "EU-office-2026-illustrative",
+          "validFrom": "2026-01-01",
+          "intervals": [
+            {
+              "start": "08:00",
+              "end": "12:00"
+            },
+            {
+              "start": "13:00",
+              "end": "16:00"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "notifyAwarded",
+      "type": "notification",
+      "label": "Tell applicant the grant was awarded",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "The grant was awarded. / Die Förderung wurde bewilligt."
+      }
+    },
+    {
+      "id": "notifyRejected",
+      "type": "notification",
+      "label": "Tell applicant it was rejected",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "The grant application was rejected. Open the request to see the reason. / Der Förderantrag wurde abgelehnt. Den Grund finden Sie im Antrag."
+      }
+    },
+    {
+      "id": "awarded",
+      "type": "end",
+      "label": "Awarded",
+      "config": {
+        "businessOutcome": "Awarded",
+        "outcomeKind": "success"
+      }
+    },
+    {
+      "id": "rejected",
+      "type": "end",
+      "label": "Rejected",
+      "config": {
+        "businessOutcome": "Rejected",
+        "outcomeKind": "rejected"
+      }
+    },
+    {
+      "id": "ineligible",
+      "type": "end",
+      "label": "Ineligible",
+      "config": {
+        "businessOutcome": "Ineligible",
+        "outcomeKind": "rejected"
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t1",
+      "from": "start",
+      "to": "eligibility",
+      "on": "next"
+    },
+    {
+      "id": "t2",
+      "from": "eligibility",
+      "to": "eligibleRoute",
+      "on": "next"
+    },
+    {
+      "id": "t3",
+      "from": "eligibleRoute",
+      "to": "notifyIneligible",
+      "on": "condition",
+      "label": "Eligibility rule not met",
+      "condition": {
+        "fieldRef": "/steps/eligibility/eligible",
+        "operator": "eq",
+        "value": false
+      }
+    },
+    {
+      "id": "t4",
+      "from": "eligibleRoute",
+      "to": "panel",
+      "on": "default",
+      "label": "Eligible"
+    },
+    {
+      "id": "t5",
+      "from": "notifyIneligible",
+      "to": "ineligible",
+      "on": "next"
+    },
+    {
+      "id": "t6",
+      "from": "panel",
+      "to": "finance",
+      "on": "approved"
+    },
+    {
+      "id": "t7",
+      "from": "panel",
+      "to": "notifyRejected",
+      "on": "rejected"
+    },
+    {
+      "id": "t8",
+      "from": "finance",
+      "to": "levelRoute",
+      "on": "approved"
+    },
+    {
+      "id": "t9",
+      "from": "finance",
+      "to": "notifyRejected",
+      "on": "rejected"
+    },
+    {
+      "id": "t10",
+      "from": "levelRoute",
+      "to": "committee",
+      "on": "condition",
+      "label": "EUR 100,000 or more",
+      "condition": {
+        "fieldRef": "/input/requestedAmount",
+        "operator": "gte",
+        "value": 100000
+      }
+    },
+    {
+      "id": "t11",
+      "from": "levelRoute",
+      "to": "notifyAwarded",
+      "on": "default",
+      "label": "Below committee threshold"
+    },
+    {
+      "id": "t12",
+      "from": "committee",
+      "to": "notifyAwarded",
+      "on": "approved"
+    },
+    {
+      "id": "t13",
+      "from": "committee",
+      "to": "notifyRejected",
+      "on": "rejected"
+    },
+    {
+      "id": "t14",
+      "from": "notifyAwarded",
+      "to": "awarded",
+      "on": "next"
+    },
+    {
+      "id": "t15",
+      "from": "notifyRejected",
+      "to": "rejected",
+      "on": "next"
+    }
+  ],
+  "decisions": [
+    {
+      "key": "grant-eligibility",
+      "version": 1,
+      "hitPolicy": "FIRST",
+      "rows": [
+        {
+          "when": {
+            "any": [
+              {
+                "fieldRef": "/input/requestedAmount",
+                "operator": "gt",
+                "value": 500000
+              },
+              {
+                "fieldRef": "/input/ownContribution",
+                "operator": "lt",
+                "value": 20
+              },
+              {
+                "fieldRef": "/input/deMinimisExceeded",
+                "operator": "eq",
+                "value": true
+              }
+            ]
+          },
+          "then": {
+            "eligible": false
+          }
+        }
+      ],
+      "default": {
+        "eligible": true
+      }
+    }
+  ],
+  "execution": {
+    "maxConcurrentRuns": 200,
+    "maxAttempts": 3,
+    "retryDelaySeconds": 30
+  },
+  "security": {
+    "selfApproval": "deny"
+  },
+  "dependencies": {
+    "connections": []
+  },
+  "outputMapping": {
+    "budgetTotal": {
+      "fieldRef": "/input/budget/sum/amount",
+      "required": true
+    },
+    "financeCheckedBy": {
+      "fieldRef": "/steps/finance/decidedBy",
+      "required": false
+    }
+  },
+  "uiLayout": {
+    "positions": {
+      "start": {
+        "x": 80,
+        "y": 80
+      },
+      "eligibility": {
+        "x": 320,
+        "y": 80
+      },
+      "eligibleRoute": {
+        "x": 560,
+        "y": 80
+      },
+      "notifyIneligible": {
+        "x": 800,
+        "y": 80
+      },
+      "panel": {
+        "x": 800,
+        "y": 240
+      },
+      "finance": {
+        "x": 1040,
+        "y": 80
+      },
+      "levelRoute": {
+        "x": 1280,
+        "y": 80
+      },
+      "committee": {
+        "x": 1520,
+        "y": 80
+      },
+      "notifyAwarded": {
+        "x": 1760,
+        "y": 80
+      },
+      "notifyRejected": {
+        "x": 1760,
+        "y": 240
+      },
+      "awarded": {
+        "x": 2000,
+        "y": 80
+      },
+      "rejected": {
+        "x": 2000,
+        "y": 240
+      },
+      "ineligible": {
+        "x": 1040,
+        "y": 240
+      }
+    },
+    "viewport": {
+      "x": 0,
+      "y": 0,
+      "zoom": 0.6
+    }
+  }
+}

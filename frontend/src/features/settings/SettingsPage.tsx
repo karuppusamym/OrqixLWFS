@@ -1,4 +1,4 @@
-import { ClipboardCheck, Plug, ShieldCheck, Sparkles, ToggleRight, Users } from 'lucide-react'
+import { Archive, ClipboardCheck, Plug, ShieldCheck, Sparkles, ToggleRight, Users } from 'lucide-react'
 import { useWorkspace } from '@/app/workspace'
 import { PageHeader } from '@/components/common/PageHeader'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -10,6 +10,7 @@ import { DocumentTemplatesPanel } from './DocumentTemplatesPanel'
 import { SharedAssetsPanel } from './SharedAssetsPanel'
 import { ConnectionsPanel } from './ConnectionsPanel'
 import { MigrationPolicyPanel } from './MigrationPolicyPanel'
+import { ExitExportPanel } from './ExitExportPanel'
 import { WebhooksPanel } from './WebhooksPanel'
 import { KafkaTriggersPanel } from './KafkaTriggersPanel'
 import { FeaturesPanel } from './FeaturesPanel'
@@ -78,12 +79,18 @@ export function SettingsPage() {
           {showAssets ? <TabsTrigger value="assets">Shared assets</TabsTrigger> : null}
           {showAccess ? <TabsTrigger value="retention">File retention</TabsTrigger> : null}
           {showAccess ? <TabsTrigger value="agent-write-retention">Agent write retention</TabsTrigger> : null}
+          {showAccess ? (
+            <TabsTrigger value="exit-export">
+              <Archive className="size-4" aria-hidden="true" /> Exit export
+            </TabsTrigger>
+          ) : null}
         </TabsList>
         {showAccess ? <TabsContent value="documents"><DocumentSourcesPanel /></TabsContent> : null}
         {showTemplates ? <TabsContent value="templates"><DocumentTemplatesPanel /></TabsContent> : null}
         {showAssets ? <TabsContent value="assets"><SharedAssetsPanel /></TabsContent> : null}
         {showAccess ? <TabsContent value="retention"><AttachmentRetentionPanel /></TabsContent> : null}
         {showAccess ? <TabsContent value="agent-write-retention"><AgentWriteRetentionPanel /></TabsContent> : null}
+        {showAccess ? <TabsContent value="exit-export"><ExitExportPanel /></TabsContent> : null}
         {showAccess ? (
           <TabsContent value="access">
             <AccessPanel />

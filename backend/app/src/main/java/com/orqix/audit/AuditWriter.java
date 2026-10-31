@@ -109,6 +109,10 @@ public class AuditWriter {
             Map.entry("workflow.published", Set.of("releaseNumber", "draftRevision", "semanticHash", "warningsAcknowledged")),
             Map.entry("workflow.active-release.changed", Set.of("fromReleaseNumber", "toReleaseNumber")),
             Map.entry("workflow.exported", Set.of("releaseNumber", "format", "revision")),
+            // Workflow exit export (docs/admin-guide.md): scope, counts and the archive hash only, never content.
+            Map.entry("workspace.exit-export.started", Set.of("scope", "workflowCount", "includeRunData", "formatVersion")),
+            Map.entry("workspace.exit-exported", Set.of("scope", "includeRunData", "workflows", "releases", "runs",
+                    "tasks", "decisions", "auditEvents", "files", "bytes", "sha256")),
             Map.entry("workflow.canary.set", Set.of("activeReleaseNumber", "canaryReleaseNumber", "percent")),
             Map.entry("workflow.canary.cleared", Set.of("canaryReleaseNumber")),
             Map.entry("workspace.environment.changed", Set.of("from", "to", "requireApproval")),

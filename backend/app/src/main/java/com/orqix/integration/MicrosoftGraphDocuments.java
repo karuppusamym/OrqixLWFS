@@ -346,13 +346,18 @@ public final class MicrosoftGraphDocuments {
         if (token != null) {
             request.header("Authorization", "Bearer " + token);
         }
-        var future = client.sendAsync(request.build(), info -> new HttpExecutor.LimitedSubscriber(limit));
+        var body = new HttpExecutor.LimitedSubscriber.Holder();
+        var future = client.sendAsync(request.build(), body.handler(limit));
         try {
             return future.get(remaining, TimeUnit.NANOSECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new Failure("DOCUMENT_INTERRUPTED", null, Observation.MAYBE_APPLIED);
         } catch (ExecutionException e) {
+            // The body limit wins over whatever error the client reported after the subscriber cancelled.
+            if (body.exceeded()) {
+                throw fail("DOCUMENT_CONTENT_TOO_LARGE");
+            }
             for (Throwable cause = e; cause != null; cause = cause.getCause()) {
                 if (cause instanceof HttpExecutor.ResponseTooLargeException) {
                     throw fail("DOCUMENT_CONTENT_TOO_LARGE");

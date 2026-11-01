@@ -325,8 +325,8 @@ public class McpClient {
     }
 
     private HttpResponse<byte[]> await(HttpRequest request, Duration timeout) {
-        CompletableFuture<HttpResponse<byte[]>> future = http.sendAsync(request,
-                info -> new HttpExecutor.LimitedSubscriber());
+        HttpExecutor.LimitedSubscriber.Holder body = new HttpExecutor.LimitedSubscriber.Holder();
+        CompletableFuture<HttpResponse<byte[]>> future = http.sendAsync(request, body.handler());
         try {
             return future.get(timeout.toMillis() + 1000, TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
@@ -339,7 +339,8 @@ public class McpClient {
         } catch (ExecutionException e) {
             future.cancel(true);
             Throwable cause = e.getCause();
-            if (cause instanceof HttpExecutor.ResponseTooLargeException) {
+            // The body limit wins over whatever error the client reported after the subscriber cancelled.
+            if (body.exceeded() || cause instanceof HttpExecutor.ResponseTooLargeException) {
                 throw new McpException(FailureKind.INVALID, null, "The MCP response is too large");
             }
             if (cause instanceof HttpTimeoutException) {

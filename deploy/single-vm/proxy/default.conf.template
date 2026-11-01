@@ -1,0 +1,88 @@
+# TLS reverse proxy for the single-VM kit. Rendered by the nginx image at start (only ${ORQIX_PUBLIC_URL} and
+# ${KEYCLOAK_ADMIN_ALLOW} are substituted; NGINX_ENVSUBST_FILTER in compose.yaml). Certificate: certs/tls.crt (full chain,
+# server certificate first) and certs/tls.key, mounted read-only from TLS_CERT_DIR.
+
+server_tokens off;
+client_max_body_size 26m;   # largest app upload is 25 MiB + 64 KiB (Blueprint PDF); the app enforces exact per-path limits
+
+# Docker's embedded DNS, so a re-created container (new IP) is found again without restarting the proxy.
+resolver 127.0.0.11 valid=10s ipv6=off;
+
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      '';
+}
+
+# Plain HTTP: redirect everything to HTTPS.
+server {
+    listen 8080;
+    location / {
+        return 301 ${ORQIX_PUBLIC_URL}$request_uri;
+    }
+}
+
+server {
+    listen 8443 ssl;
+    http2 on;
+
+    ssl_certificate     /etc/nginx/certs/tls.crt;
+    ssl_certificate_key /etc/nginx/certs/tls.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:TLS:10m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header X-Content-Type-Options nosniff always;
+
+    proxy_http_version 1.1;
+    # $http_host keeps the published port, so the OAuth2 redirect URI and Keycloak URLs match ORQIX_PUBLIC_URL.
+    # X-Forwarded-Port is deliberately not sent: it would be the container port 8443.
+    proxy_set_header Host              $http_host;
+    proxy_set_header X-Forwarded-Host  $http_host;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header Upgrade           $http_upgrade;
+    proxy_set_header Connection        $connection_upgrade;
+    proxy_read_timeout 180s;
+    proxy_buffer_size 16k;
+    proxy_buffers 8 16k;
+
+    # Keycloak admin console and admin REST API: restricted (KEYCLOAK_ADMIN_ALLOW, one address or CIDR, or "all").
+    location /auth/admin/ {
+        allow ${KEYCLOAK_ADMIN_ALLOW};
+        allow 127.0.0.1;
+        deny all;
+        set $kc http://keycloak:8080;
+        proxy_pass $kc;
+    }
+
+    # Keycloak sign-in pages, tokens issued to browsers, account console.
+    location /auth/ {
+        set $kc http://keycloak:8080;
+        proxy_pass $kc;
+    }
+
+    # Orqix UI and API. The management port (8081) is never routed here.
+    location / {
+        set $app http://orqix:8080;
+        proxy_pass $app;
+    }
+}
+
+# Management: health and Prometheus metrics of Orqix, published on MANAGEMENT_BIND (127.0.0.1 by default).
+server {
+    listen 8081;
+    location = /actuator/health/liveness   { set $m http://orqix:8081; proxy_pass $m; }
+    location = /actuator/health/readiness  { set $m http://orqix:8081; proxy_pass $m; }
+    location = /actuator/health            { set $m http://orqix:8081; proxy_pass $m; }
+    location = /actuator/prometheus        { set $m http://orqix:8081; proxy_pass $m; }
+    location / { return 404; }
+}
+
+# Container health check of the proxy itself (not published).
+server {
+    listen 127.0.0.1:8082;
+    location = /proxy-health { return 200 "ok\n"; }
+}

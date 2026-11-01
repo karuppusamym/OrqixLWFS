@@ -13,6 +13,10 @@ import java.util.List;
  *       imported (documentation, layout, settings, listeners). Needs an explicit acknowledgement.</li>
  *   <li>{@link #REVIEW} (converter REVIEW): converted, but behaviour could differ. Never blocks conversion or
  *       {@code publishable}; open until the designer acknowledges it, and kept in the report as evidence.</li>
+ *   <li>{@link #VERIFY} ("converted but changed — verify"): converted, and the converter knowingly changed the behaviour
+ *       slightly (a rewritten expression, a normalised timer, a renamed or re-enabled form field). Never blocks conversion,
+ *       but an open item blocks publishing the converted workflow until a reviewer other than the mapper acknowledges it
+ *       ({@code POST /migrations/{id}/verifications}, audited as {@code migration.verification.acknowledged}).</li>
  *   <li>{@link #ACTION} (converter WARNING with a decision): no direct equivalent; the designer must choose a mapping.</li>
  *   <li>{@link #BLOCKER} (converter TASK): manual rebuild; cannot be converted.</li>
  * </ul>
@@ -21,6 +25,7 @@ public final class Report {
 
     public static final String SUPPORTED = "supported";
     public static final String REVIEW = "review";
+    public static final String VERIFY = "verify";
     public static final String INFO = "info";
     public static final String ACTION = "action";
     public static final String BLOCKER = "blocker";
@@ -47,16 +52,23 @@ public final class Report {
                     nodeId, resolutionStatus, sourcePath);
         }
 
-        /** Only open blockers and actions stop a conversion; review and info items never do by themselves. */
+        /** An open "converted but changed" item: conversion goes ahead, publishing waits for a reviewer's acknowledgement. */
+        public boolean awaitsVerification() {
+            return VERIFY.equals(severity) && OPEN.equals(resolutionStatus);
+        }
+
+        /** Only open blockers and actions stop a conversion; review, verify and info items never do by themselves. */
         public boolean blocksPublishing() {
             return (BLOCKER.equals(severity) || ACTION.equals(severity)) && OPEN.equals(resolutionStatus);
         }
     }
 
-    public record ElementCounts(int total, int supported, int info, int action, int blocker, int review) {
+    public record ElementCounts(int total, int supported, int info, int action, int blocker, int review, int verify) {
 
-        public ElementCounts(int total,int supported,int info,int action,int blocker) { this(total,supported,info,action,blocker,0); }
+        public ElementCounts(int total,int supported,int info,int action,int blocker) { this(total,supported,info,action,blocker,0,0); }
+        public ElementCounts(int total,int supported,int info,int action,int blocker,int review) { this(total,supported,info,action,blocker,review,0); }
         public static ElementCounts of(List<Issue> issues) {
+            int verify = 0;
             int review = 0;
             int supported = 0;
             int info = 0;
@@ -66,12 +78,13 @@ public final class Report {
                 switch (issue.severity()) {
                     case SUPPORTED -> supported++;
                     case REVIEW -> review++;
+                    case VERIFY -> verify++;
                     case INFO -> info++;
                     case ACTION -> action++;
                     default -> blocker++;
                 }
             }
-            return new ElementCounts(issues.size(), supported, info, action, blocker, review);
+            return new ElementCounts(issues.size(), supported, info, action, blocker, review, verify);
         }
     }
 
@@ -175,28 +188,50 @@ public final class Report {
         }
     }
 
+    /**
+     * A reviewer's acknowledgement of one {@link #VERIFY} item after conversion: who checked the changed behaviour, when and
+     * why. Kept in the stored report so exports and the migration ledger carry it.
+     */
+    public record Verification(String sourceElementId, String reasonCode, String sourcePath, String acknowledgedBy,
+            String acknowledgedByName, String acknowledgedAt, String reason) {
+    }
+
     public record CompatibilityReport(String sourceSystem, String sourceVersion, String adapterVersion, String sourceHash,
             String processId, String processName, ElementCounts elementCounts, List<Issue> issues,
             List<String> assumptions, RequiredMappings requiredMappings, boolean publishable, List<TestCase> testCases,
-            MappingHints mappingHints) {
+            MappingHints mappingHints, List<Verification> verifications) {
 
         public CompatibilityReport {
             testCases = testCases == null ? List.of() : testCases;
             mappingHints = mappingHints == null ? MappingHints.NONE : mappingHints;
+            verifications = verifications == null ? List.of() : verifications;
+        }
+
+        public CompatibilityReport(String sourceSystem, String sourceVersion, String adapterVersion, String sourceHash,
+                String processId, String processName, ElementCounts elementCounts, List<Issue> issues,
+                List<String> assumptions, RequiredMappings requiredMappings, boolean publishable, List<TestCase> testCases,
+                MappingHints mappingHints) {
+            this(sourceSystem, sourceVersion, adapterVersion, sourceHash, processId, processName, elementCounts, issues,
+                    assumptions, requiredMappings, publishable, testCases, mappingHints, List.of());
+        }
+
+        /** True while any "converted but changed" item still waits for a reviewer's acknowledgement. */
+        public boolean awaitingVerification() {
+            return issues != null && issues.stream().anyMatch(Issue::awaitsVerification);
         }
 
         public CompatibilityReport(String sourceSystem, String sourceVersion, String adapterVersion, String sourceHash,
                 String processId, String processName, ElementCounts elementCounts, List<Issue> issues,
                 List<String> assumptions, RequiredMappings requiredMappings, boolean publishable, List<TestCase> testCases) {
             this(sourceSystem, sourceVersion, adapterVersion, sourceHash, processId, processName, elementCounts, issues,
-                    assumptions, requiredMappings, publishable, testCases, MappingHints.NONE);
+                    assumptions, requiredMappings, publishable, testCases, MappingHints.NONE, List.of());
         }
 
         public CompatibilityReport(String sourceSystem, String sourceVersion, String adapterVersion, String sourceHash,
                 String processId, String processName, ElementCounts elementCounts, List<Issue> issues,
                 List<String> assumptions, RequiredMappings requiredMappings, boolean publishable) {
             this(sourceSystem, sourceVersion, adapterVersion, sourceHash, processId, processName, elementCounts, issues,
-                    assumptions, requiredMappings, publishable, List.of(), MappingHints.NONE);
+                    assumptions, requiredMappings, publishable, List.of(), MappingHints.NONE, List.of());
         }
     }
 }

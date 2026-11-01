@@ -18,6 +18,7 @@ import { toKey } from '@/lib/text'
 import { FormPreview } from './FormPreview'
 import { reasonLabel, sourceLabel } from './reasonLabels'
 import { ServiceMappingGuide } from './ServiceMappingGuide'
+import { VerificationPanel } from './VerificationPanel'
 
 type Job = components['schemas']['MigrationJob']
 type Request = components['schemas']['ConvertMigrationRequest']
@@ -44,7 +45,7 @@ export interface NativeContext {
 
 /** Compatibility report and mapping form of one source file; converting creates a draft, never a release. */
 export function JobReview({ job, editable, project, native }: { job: Job; editable: boolean; project?: ProjectContext; native?: NativeContext }) {
-  const { workspace } = useWorkspace()
+  const { workspace, can } = useWorkspace()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const groups = useGroups(workspace.id, editable && (job.report.requiredMappings?.groups?.length ?? 0) > 0)
@@ -89,6 +90,12 @@ export function JobReview({ job, editable, project, native }: { job: Job; editab
       setFormMappings(current => ({ ...current, [element]: { migrationId: uploaded.id } }))
     } catch (cause) { setFormError(current => ({ ...current, [element]: cause instanceof Error ? cause.message : 'The form could not be read.' })) }
   }
+  const [ledgerError, setLedgerError] = useState<string | null>(null)
+  const downloadLedger = async (format: 'zip' | 'xlsx') => {
+    setLedgerError(null)
+    try { const file = await endpoints.exportMigrationLedger(workspace.id, job.id, format); downloadBlob(file.blob, file.filename) }
+    catch (cause) { setLedgerError(cause instanceof Error ? cause.message : 'The migration ledger could not be downloaded.') }
+  }
   const mappingTemplate = () => downloadJson({ format: 'orqix-pega-mapping-0.1', archiveJobId: job.id,
     sourceArchiveHash: report.sourceHash, sourceVersion: 'ENTER-PEGA-VERSION', definition: {},
     fileMappings: Object.fromEntries(report.issues.map(i => [i.sourceElementId, { disposition: 'unresolved', targetNodeIds: [], explanation: '' }])) }, 'pega-mapping-template.json')
@@ -126,23 +133,25 @@ export function JobReview({ job, editable, project, native }: { job: Job; editab
     finally { setPending(false) }
   }
   return <section className="space-y-5" aria-label="Compatibility report">
-    <div className="flex flex-wrap items-center justify-between gap-3"><h2>{job.fileName}</h2><div className="flex gap-2"><Button onClick={() => downloadJson(job, 'migration-report.json')}>Download compatibility report</Button><Button onClick={() => downloadBlob(new Blob([reportCsv(report)], { type: 'text/csv;charset=utf-8' }), 'migration-findings.csv')}>Download findings CSV</Button></div></div>
+    <div className="flex flex-wrap items-center justify-between gap-3"><h2>{job.fileName}</h2><div className="flex gap-2"><Button onClick={() => downloadJson(job, 'migration-report.json')}>Download compatibility report</Button><Button onClick={() => downloadBlob(new Blob([reportCsv(report)], { type: 'text/csv;charset=utf-8' }), 'migration-findings.csv')}>Download findings CSV</Button>{can('workflow.export') ? <><Button onClick={() => void downloadLedger('zip')}>Download migration ledger (ZIP)</Button><Button onClick={() => void downloadLedger('xlsx')}>Ledger XLSX</Button></> : null}</div></div>
+    {ledgerError ? <Alert tone="danger">{ledgerError}</Alert> : null}
     <p className="text-sm font-medium">Source: {sourceLabel(report)}</p>
     <p className="break-all text-xs text-muted-foreground">{report.sourceSystem} · adapter {report.adapterVersion} · SHA-256 {report.sourceHash}</p>
     <div className="flex flex-wrap gap-2">{Object.entries(report.elementCounts).map(([kind, count]) => <Badge key={kind}>{kind}: {count}</Badge>)}</div>
     <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">{report.assumptions.map((a, i) => <li key={i}>{a}</li>)}</ul>
     <div className="flex flex-wrap items-end gap-3">
       <div><Label htmlFor="findings-kind">Finding kind</Label><Select id="findings-kind" value={findingKind} onChange={event => setFindingKind(event.target.value)}><option value="all">All kinds</option>{[...new Set(report.issues.map(issue => issue.sourceKind))].sort().map(kind => <option key={kind} value={kind}>{kind}</option>)}</Select></div>
-      <div><Label htmlFor="findings-severity">Severity</Label><Select id="findings-severity" value={findingSeverity} onChange={event => setFindingSeverity(event.target.value)}><option value="all">All severities</option>{['blocker','action','review','info','supported'].map(severity => <option key={severity} value={severity}>{severity}</option>)}</Select></div>
+      <div><Label htmlFor="findings-severity">Severity</Label><Select id="findings-severity" value={findingSeverity} onChange={event => setFindingSeverity(event.target.value)}><option value="all">All severities</option>{['blocker','action','verify','review','info','supported'].map(severity => <option key={severity} value={severity}>{severity === 'verify' ? 'verify (converted but changed)' : severity}</option>)}</Select></div>
       <Label className="flex gap-2 items-center"><input type="checkbox" checked={onlyOpen} onChange={event => setOnlyOpen(event.target.checked)} />Unresolved findings only</Label>
     </div>
     <p className="text-sm text-muted-foreground">Showing {visibleFindings.length} of {report.issues.length} findings. Exports and conversion use the complete report.</p>
     <div className="space-y-5">{findingGroups.map(kind => <section key={kind} className="space-y-3" aria-label={`${kind} findings`}><h3>{kind}</h3>{visibleFindings.filter(issue => issue.sourceKind === kind).map((issue, index) => <article key={index} className="rounded-card border border-border bg-surface p-4">
       {reasonLabel(issue.reasonCode) ? <h4 className="mb-1 text-sm font-semibold">{reasonLabel(issue.reasonCode)}</h4> : null}
-      <div className="flex flex-wrap items-center gap-2"><Badge tone={issue.severity === 'blocker' ? 'danger' : issue.severity === 'action' ? 'warning' : issue.severity === 'review' ? 'info' : undefined}>{issue.severity}</Badge><span className="break-all font-semibold">{issue.sourceName ?? issue.sourceElementId}</span><span className="text-xs text-muted-foreground">{issue.sourceKind} · {issue.resolutionStatus}</span></div>
+      <div className="flex flex-wrap items-center gap-2"><Badge tone={issue.severity === 'blocker' ? 'danger' : issue.severity === 'action' || issue.severity === 'verify' ? 'warning' : issue.severity === 'review' ? 'info' : undefined}>{issue.severity === 'verify' ? 'verify: converted but changed' : issue.severity}</Badge><span className="break-all font-semibold">{issue.sourceName ?? issue.sourceElementId}</span><span className="text-xs text-muted-foreground">{issue.sourceKind} · {issue.resolutionStatus}</span></div>
       <p className="mt-2 text-sm">{issue.explanation}</p>{issue.suggestedAction ? <p className="mt-1 text-sm text-muted-foreground">{issue.suggestedAction}</p> : null}
       <p className="mt-2 break-all font-mono text-xs text-muted-foreground">{issue.reasonCode} · {issue.sourcePath ?? issue.sourceElementId}</p>
     </article>)}</section>)}</div>
+    <VerificationPanel key={`${job.id}-${report.verifications?.length ?? 0}`} job={job} />
     {report.testCases?.length ? <section className="space-y-2" aria-label="Generated decision checks"><h3>Generated decision checks</h3><p className="text-sm text-muted-foreground">Each case compares the source meaning with the converted table at and around every threshold. A failed case blocks conversion.</p>
       {/* A scrollable table must be focusable so keyboard users can scroll it (axe scrollable-region-focusable, WCAG 2.1.1), as with ScrollTable. */}
       {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex */}
@@ -180,6 +189,7 @@ export function JobReview({ job, editable, project, native }: { job: Job; editab
       </> : <><Label htmlFor="migration-decision-id">Decision to convert (optional)</Label><Input id="migration-decision-id" value={decisionId} onChange={e => setDecisionId(e.target.value)} /><p className="text-sm text-muted-foreground">Leave empty when the file has one decision.</p></> : null}
       {(report.sourceSystem !== 'pega' || automaticPega) && report.sourceSystem !== 'dmn' ? <><Label htmlFor="migration-input">Request schema (optional JSON)</Label><Textarea id="migration-input" value={input} onChange={e => setInput(e.target.value)} rows={5} spellCheck={false} /><p className="text-sm text-muted-foreground">If omitted, branch comparisons and approved service contracts supply field types. Review the inferred request form before publishing.</p></> : null}
       {(report.requiredMappings?.childWorkflows ?? []).length ? <><Label htmlFor="migration-children">Child workflow mappings (JSON)</Label><Textarea id="migration-children" value={children} onChange={e => setChildren(e.target.value)} rows={7} spellCheck={false} /><p className="text-sm text-muted-foreground">Source calls: {report.requiredMappings?.childWorkflows?.join(', ')}. Each mapping needs workflowRef, inputMapping and resultMapping. Publish the child first; the parent is fixed to its published version.</p></> : null}
+      {(report.elementCounts.verify ?? 0) > 0 ? <Alert tone="warning" live="off">{report.elementCounts.verify} item(s) are converted but changed. They do not block conversion, but the draft cannot be published until a reviewer other than you verifies each change.</Alert> : null}
       {(report.elementCounts.review ?? 0) > 0 ? <Label className="flex items-start gap-2"><input type="checkbox" checked={ackReview} onChange={e => setAckReview(e.target.checked)} />I reviewed the {report.elementCounts.review} converted items marked review. Their original text is kept in the report and each can behave differently in the target.</Label> : null}
       <Label className="flex items-start gap-2"><input type="checkbox" checked={ack} onChange={e => setAck(e.target.checked)} />I reviewed the assumptions, manual mappings and explicitly excluded source behavior.</Label>
       <Alert tone="info" live="off">Conversion must pass compiler validation. A publisher must separately review and publish; no run starts here.</Alert>

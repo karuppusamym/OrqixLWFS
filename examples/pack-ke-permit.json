@@ -1,0 +1,864 @@
+{
+  "schemaVersion": "0.1",
+  "workflowKey": "permit-ke",
+  "name": "Single business permit (Kenya)",
+  "metadata": {
+    "description": "Kenya county single business permit. A clerk checks completeness, a rule table sets the fee band from the number of employees (KES 5,000, 15,000 or 30,000 as placeholders for the county Finance Act), public health and fire inspections run only when the activity or premises need them, and the permit authority decides within 14 days or the case goes to the chief officer. Due dates count county office hours and Kenyan public holidays. Illustrative regional template, not a regulatory-compliant product: thresholds, holiday lists and document names are placeholders for your compliance function to confirm.",
+    "tags": [
+      "pack:public-sector",
+      "region:kenya",
+      "template:permit",
+      "owner:County licensing office",
+      "illustrative",
+      "lang:sw"
+    ]
+  },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "businessName",
+      "kraPin",
+      "activity",
+      "ward",
+      "premisesArea",
+      "employees"
+    ],
+    "properties": {
+      "businessName": {
+        "type": "string",
+        "title": "Business name / Jina la biashara",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "kraPin": {
+        "type": "string",
+        "title": "KRA PIN / PIN ya KRA",
+        "minLength": 11,
+        "maxLength": 11,
+        "pattern": "^[AP][0-9]{9}[A-Z]$",
+        "patternMessage": "Enter an 11-character KRA PIN, for example P051234567X."
+      },
+      "activity": {
+        "type": "string",
+        "title": "Business activity / Shughuli ya biashara",
+        "enum": [
+          "Small trader or shop",
+          "Hotel, restaurant or bar",
+          "Professional services",
+          "Manufacturing",
+          "Hazardous goods: fuel, gas, chemicals",
+          "Transport and storage"
+        ]
+      },
+      "ward": {
+        "type": "string",
+        "title": "Ward / Wadi",
+        "minLength": 1,
+        "maxLength": 60
+      },
+      "premisesArea": {
+        "type": "number",
+        "title": "Premises area (m²) / Ukubwa wa eneo la biashara (m²)",
+        "minimum": 1,
+        "maximum": 100000,
+        "multipleOf": 0.01
+      },
+      "employees": {
+        "type": "integer",
+        "title": "Employees / Wafanyakazi",
+        "minimum": 0,
+        "maximum": 10000
+      }
+    }
+  },
+  "inputUi": {
+    "order": [
+      "businessName",
+      "kraPin",
+      "activity",
+      "ward",
+      "premisesArea",
+      "employees"
+    ],
+    "widgets": {
+      "activity": "select",
+      "premisesArea": "number"
+    },
+    "submitLabel": "Submit application / Wasilisha ombi",
+    "layout": {
+      "sections": [
+        {
+          "id": "business",
+          "title": "Business / Biashara",
+          "columns": 2,
+          "fields": [
+            "businessName",
+            "kraPin",
+            "activity"
+          ]
+        },
+        {
+          "id": "premises",
+          "title": "Premises / Eneo la biashara",
+          "columns": 2,
+          "fields": [
+            "ward",
+            "premisesArea",
+            "employees"
+          ]
+        }
+      ]
+    }
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "feeBand": {
+        "type": "string",
+        "title": "Fee band"
+      },
+      "feeKes": {
+        "type": "number",
+        "title": "Permit fee (KES)"
+      },
+      "decidedBy": {
+        "type": "string",
+        "title": "Decided by"
+      }
+    }
+  },
+  "triggers": [
+    "manual",
+    "api"
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "label": "Application received",
+      "config": {}
+    },
+    {
+      "id": "scope",
+      "type": "decision",
+      "label": "Decide which reviews apply",
+      "config": {
+        "decisionRef": "review-scope"
+      }
+    },
+    {
+      "id": "fee",
+      "type": "decision",
+      "label": "Work out the permit fee",
+      "config": {
+        "decisionRef": "permit-fee"
+      }
+    },
+    {
+      "id": "intake",
+      "type": "approval",
+      "label": "Completeness check / Ukaguzi wa ukamilifu",
+      "config": {
+        "candidateGroupRef": "permit-clerks",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 16,
+        "calendar": {
+          "zone": "Africa/Nairobi",
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "holidays": [
+            "2026-01-01",
+            "2026-03-20",
+            "2026-04-03",
+            "2026-04-06",
+            "2026-05-01",
+            "2026-05-27",
+            "2026-06-01",
+            "2026-10-10",
+            "2026-10-20",
+            "2026-12-12",
+            "2026-12-25",
+            "2026-12-26",
+            "2027-01-01",
+            "2027-03-26",
+            "2027-03-29",
+            "2027-05-01",
+            "2027-06-01",
+            "2027-10-10",
+            "2027-10-11",
+            "2027-10-20",
+            "2027-12-12",
+            "2027-12-13",
+            "2027-12-25",
+            "2027-12-26",
+            "2027-12-27"
+          ],
+          "start": "08:00",
+          "end": "17:00",
+          "revision": "KE-office-2026-illustrative",
+          "validFrom": "2026-01-01",
+          "intervals": [
+            {
+              "start": "08:00",
+              "end": "13:00"
+            },
+            {
+              "start": "14:00",
+              "end": "17:00"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "inspections",
+      "type": "parallelSplit",
+      "label": "Inspections",
+      "config": {
+        "joinRef": "inspectionsDone",
+        "mode": "inclusive"
+      }
+    },
+    {
+      "id": "health",
+      "type": "approval",
+      "label": "Public health inspection / Ukaguzi wa afya ya umma",
+      "config": {
+        "candidateGroupRef": "health-inspectors",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 40,
+        "calendar": {
+          "zone": "Africa/Nairobi",
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "holidays": [
+            "2026-01-01",
+            "2026-03-20",
+            "2026-04-03",
+            "2026-04-06",
+            "2026-05-01",
+            "2026-05-27",
+            "2026-06-01",
+            "2026-10-10",
+            "2026-10-20",
+            "2026-12-12",
+            "2026-12-25",
+            "2026-12-26",
+            "2027-01-01",
+            "2027-03-26",
+            "2027-03-29",
+            "2027-05-01",
+            "2027-06-01",
+            "2027-10-10",
+            "2027-10-11",
+            "2027-10-20",
+            "2027-12-12",
+            "2027-12-13",
+            "2027-12-25",
+            "2027-12-26",
+            "2027-12-27"
+          ],
+          "start": "08:00",
+          "end": "17:00",
+          "revision": "KE-office-2026-illustrative",
+          "validFrom": "2026-01-01",
+          "intervals": [
+            {
+              "start": "08:00",
+              "end": "13:00"
+            },
+            {
+              "start": "14:00",
+              "end": "17:00"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "fire",
+      "type": "approval",
+      "label": "Fire safety inspection / Ukaguzi wa usalama wa moto",
+      "config": {
+        "candidateGroupRef": "fire-officers",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 40,
+        "calendar": {
+          "zone": "Africa/Nairobi",
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "holidays": [
+            "2026-01-01",
+            "2026-03-20",
+            "2026-04-03",
+            "2026-04-06",
+            "2026-05-01",
+            "2026-05-27",
+            "2026-06-01",
+            "2026-10-10",
+            "2026-10-20",
+            "2026-12-12",
+            "2026-12-25",
+            "2026-12-26",
+            "2027-01-01",
+            "2027-03-26",
+            "2027-03-29",
+            "2027-05-01",
+            "2027-06-01",
+            "2027-10-10",
+            "2027-10-11",
+            "2027-10-20",
+            "2027-12-12",
+            "2027-12-13",
+            "2027-12-25",
+            "2027-12-26",
+            "2027-12-27"
+          ],
+          "start": "08:00",
+          "end": "17:00",
+          "revision": "KE-office-2026-illustrative",
+          "validFrom": "2026-01-01",
+          "intervals": [
+            {
+              "start": "08:00",
+              "end": "13:00"
+            },
+            {
+              "start": "14:00",
+              "end": "17:00"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "noInspection",
+      "type": "notification",
+      "label": "Note that no inspection was needed",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "No inspection was needed; the application goes to the decision. / Hakuna ukaguzi uliohitajika; ombi linaenda kwa uamuzi."
+      }
+    },
+    {
+      "id": "inspectionsDone",
+      "type": "parallelJoin",
+      "label": "Inspections finished",
+      "config": {}
+    },
+    {
+      "id": "decision",
+      "type": "approval",
+      "label": "Permit decision / Uamuzi wa kibali",
+      "config": {
+        "candidateGroupRef": "permit-authority",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 24,
+        "calendar": {
+          "zone": "Africa/Nairobi",
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "holidays": [
+            "2026-01-01",
+            "2026-03-20",
+            "2026-04-03",
+            "2026-04-06",
+            "2026-05-01",
+            "2026-05-27",
+            "2026-06-01",
+            "2026-10-10",
+            "2026-10-20",
+            "2026-12-12",
+            "2026-12-25",
+            "2026-12-26",
+            "2027-01-01",
+            "2027-03-26",
+            "2027-03-29",
+            "2027-05-01",
+            "2027-06-01",
+            "2027-10-10",
+            "2027-10-11",
+            "2027-10-20",
+            "2027-12-12",
+            "2027-12-13",
+            "2027-12-25",
+            "2027-12-26",
+            "2027-12-27"
+          ],
+          "start": "08:00",
+          "end": "17:00",
+          "revision": "KE-office-2026-illustrative",
+          "validFrom": "2026-01-01",
+          "intervals": [
+            {
+              "start": "08:00",
+              "end": "13:00"
+            },
+            {
+              "start": "14:00",
+              "end": "17:00"
+            }
+          ]
+        },
+        "timeoutAfter": "P14D"
+      }
+    },
+    {
+      "id": "escalation",
+      "type": "approval",
+      "label": "Chief officer decision / Uamuzi wa afisa mkuu",
+      "config": {
+        "candidateGroupRef": "permit-heads",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 16,
+        "calendar": {
+          "zone": "Africa/Nairobi",
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "holidays": [
+            "2026-01-01",
+            "2026-03-20",
+            "2026-04-03",
+            "2026-04-06",
+            "2026-05-01",
+            "2026-05-27",
+            "2026-06-01",
+            "2026-10-10",
+            "2026-10-20",
+            "2026-12-12",
+            "2026-12-25",
+            "2026-12-26",
+            "2027-01-01",
+            "2027-03-26",
+            "2027-03-29",
+            "2027-05-01",
+            "2027-06-01",
+            "2027-10-10",
+            "2027-10-11",
+            "2027-10-20",
+            "2027-12-12",
+            "2027-12-13",
+            "2027-12-25",
+            "2027-12-26",
+            "2027-12-27"
+          ],
+          "start": "08:00",
+          "end": "17:00",
+          "revision": "KE-office-2026-illustrative",
+          "validFrom": "2026-01-01",
+          "intervals": [
+            {
+              "start": "08:00",
+              "end": "13:00"
+            },
+            {
+              "start": "14:00",
+              "end": "17:00"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "notifyGranted",
+      "type": "notification",
+      "label": "Tell applicant the permit was issued",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "Your single business permit was issued. / Kibali chako cha biashara kimetolewa."
+      }
+    },
+    {
+      "id": "notifyRefused",
+      "type": "notification",
+      "label": "Tell applicant the application was refused",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "Your application was refused. Open the request to see the reason. / Ombi lako limekataliwa. Fungua ombi kuona sababu."
+      }
+    },
+    {
+      "id": "granted",
+      "type": "end",
+      "label": "Issued",
+      "config": {
+        "businessOutcome": "Issued",
+        "outcomeKind": "success"
+      }
+    },
+    {
+      "id": "refused",
+      "type": "end",
+      "label": "Refused",
+      "config": {
+        "businessOutcome": "Refused",
+        "outcomeKind": "rejected"
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t1",
+      "from": "start",
+      "to": "scope",
+      "on": "next"
+    },
+    {
+      "id": "t2",
+      "from": "scope",
+      "to": "fee",
+      "on": "next"
+    },
+    {
+      "id": "t3",
+      "from": "fee",
+      "to": "intake",
+      "on": "next"
+    },
+    {
+      "id": "t4",
+      "from": "intake",
+      "to": "inspections",
+      "on": "approved"
+    },
+    {
+      "id": "t5",
+      "from": "intake",
+      "to": "notifyRefused",
+      "on": "rejected"
+    },
+    {
+      "id": "t6",
+      "from": "inspections",
+      "to": "health",
+      "on": "condition",
+      "label": "Food, drink or lodging",
+      "condition": {
+        "fieldRef": "/steps/scope/health",
+        "operator": "eq",
+        "value": true
+      }
+    },
+    {
+      "id": "t7",
+      "from": "inspections",
+      "to": "fire",
+      "on": "condition",
+      "label": "Large premises or hazardous goods",
+      "condition": {
+        "fieldRef": "/steps/scope/fire",
+        "operator": "eq",
+        "value": true
+      }
+    },
+    {
+      "id": "t8",
+      "from": "inspections",
+      "to": "noInspection",
+      "on": "default",
+      "label": "No inspection"
+    },
+    {
+      "id": "t9",
+      "from": "health",
+      "to": "inspectionsDone",
+      "on": "approved"
+    },
+    {
+      "id": "t10",
+      "from": "health",
+      "to": "notifyRefused",
+      "on": "rejected"
+    },
+    {
+      "id": "t11",
+      "from": "fire",
+      "to": "inspectionsDone",
+      "on": "approved"
+    },
+    {
+      "id": "t12",
+      "from": "fire",
+      "to": "notifyRefused",
+      "on": "rejected"
+    },
+    {
+      "id": "t13",
+      "from": "noInspection",
+      "to": "inspectionsDone",
+      "on": "next"
+    },
+    {
+      "id": "t14",
+      "from": "inspectionsDone",
+      "to": "decision",
+      "on": "next"
+    },
+    {
+      "id": "t15",
+      "from": "decision",
+      "to": "notifyGranted",
+      "on": "approved"
+    },
+    {
+      "id": "t16",
+      "from": "decision",
+      "to": "notifyRefused",
+      "on": "rejected"
+    },
+    {
+      "id": "t17",
+      "from": "decision",
+      "to": "escalation",
+      "on": "timedOut",
+      "label": "Not decided in 14 days"
+    },
+    {
+      "id": "t18",
+      "from": "escalation",
+      "to": "notifyGranted",
+      "on": "approved"
+    },
+    {
+      "id": "t19",
+      "from": "escalation",
+      "to": "notifyRefused",
+      "on": "rejected"
+    },
+    {
+      "id": "t20",
+      "from": "notifyGranted",
+      "to": "granted",
+      "on": "next"
+    },
+    {
+      "id": "t21",
+      "from": "notifyRefused",
+      "to": "refused",
+      "on": "next"
+    }
+  ],
+  "decisions": [
+    {
+      "key": "review-scope",
+      "version": 1,
+      "hitPolicy": "FIRST",
+      "rows": [
+        {
+          "when": {
+            "all": [
+              {
+                "fieldRef": "/input/activity",
+                "operator": "eq",
+                "value": "Hotel, restaurant or bar"
+              },
+              {
+                "fieldRef": "/input/premisesArea",
+                "operator": "gte",
+                "value": 500
+              }
+            ]
+          },
+          "then": {
+            "health": true,
+            "fire": true
+          }
+        },
+        {
+          "when": {
+            "fieldRef": "/input/activity",
+            "operator": "eq",
+            "value": "Hotel, restaurant or bar"
+          },
+          "then": {
+            "health": true,
+            "fire": false
+          }
+        },
+        {
+          "when": {
+            "fieldRef": "/input/activity",
+            "operator": "eq",
+            "value": "Hazardous goods: fuel, gas, chemicals"
+          },
+          "then": {
+            "health": false,
+            "fire": true
+          }
+        },
+        {
+          "when": {
+            "fieldRef": "/input/premisesArea",
+            "operator": "gte",
+            "value": 500
+          },
+          "then": {
+            "health": false,
+            "fire": true
+          }
+        }
+      ],
+      "default": {
+        "health": false,
+        "fire": false
+      }
+    },
+    {
+      "key": "permit-fee",
+      "version": 1,
+      "hitPolicy": "FIRST",
+      "rows": [
+        {
+          "when": {
+            "fieldRef": "/input/employees",
+            "operator": "gt",
+            "value": 50
+          },
+          "then": {
+            "feeBand": "Large",
+            "feeKes": 30000
+          }
+        },
+        {
+          "when": {
+            "fieldRef": "/input/employees",
+            "operator": "gt",
+            "value": 5
+          },
+          "then": {
+            "feeBand": "Medium",
+            "feeKes": 15000
+          }
+        }
+      ],
+      "default": {
+        "feeBand": "Small",
+        "feeKes": 5000
+      }
+    }
+  ],
+  "execution": {
+    "maxConcurrentRuns": 200,
+    "maxAttempts": 3,
+    "retryDelaySeconds": 30
+  },
+  "security": {
+    "selfApproval": "deny"
+  },
+  "dependencies": {
+    "connections": []
+  },
+  "outputMapping": {
+    "feeBand": {
+      "fieldRef": "/steps/fee/feeBand",
+      "required": true
+    },
+    "feeKes": {
+      "fieldRef": "/steps/fee/feeKes",
+      "required": true
+    },
+    "decidedBy": {
+      "fieldRef": "/steps/decision/decidedBy",
+      "required": false
+    }
+  },
+  "uiLayout": {
+    "positions": {
+      "start": {
+        "x": 80,
+        "y": 80
+      },
+      "scope": {
+        "x": 320,
+        "y": 80
+      },
+      "fee": {
+        "x": 560,
+        "y": 80
+      },
+      "intake": {
+        "x": 800,
+        "y": 80
+      },
+      "inspections": {
+        "x": 1040,
+        "y": 80
+      },
+      "health": {
+        "x": 1280,
+        "y": 80
+      },
+      "fire": {
+        "x": 1280,
+        "y": 240
+      },
+      "noInspection": {
+        "x": 1280,
+        "y": 400
+      },
+      "inspectionsDone": {
+        "x": 1520,
+        "y": 80
+      },
+      "decision": {
+        "x": 1760,
+        "y": 80
+      },
+      "escalation": {
+        "x": 2000,
+        "y": 80
+      },
+      "notifyGranted": {
+        "x": 2240,
+        "y": 80
+      },
+      "notifyRefused": {
+        "x": 2240,
+        "y": 240
+      },
+      "granted": {
+        "x": 2480,
+        "y": 80
+      },
+      "refused": {
+        "x": 2480,
+        "y": 240
+      }
+    },
+    "viewport": {
+      "x": 0,
+      "y": 0,
+      "zoom": 0.6
+    }
+  }
+}

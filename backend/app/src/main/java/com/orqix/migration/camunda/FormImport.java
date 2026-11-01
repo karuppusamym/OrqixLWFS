@@ -80,6 +80,10 @@ public final class FormImport {
                                     + elementName + "'") + ". Approvals do not collect fields: the approver sees the request fields, "
                                     + "decides and comments.",
                             "Check that nothing the approver types in this form is needed by a later step.", null, Report.OPEN, i.sourcePath()));
+                } else if (Report.VERIFY.equals(i.severity())) {
+                    // A task form's fields only become a note, so a changed field is not changed request behaviour.
+                    shown.add(new Report.Issue(i.sourceElementId(), i.sourceName(), i.sourceKind(), Report.REVIEW, i.reasonCode(),
+                            i.explanation(), i.suggestedAction(), i.targetNodeId(), i.resolutionStatus(), i.sourcePath()));
                 } else {
                     shown.add(i);
                 }
@@ -458,7 +462,7 @@ public final class FormImport {
                 add(field.componentId(), field.label(), "component", Report.SUPPORTED, "FORM_FIELD_MAPPED", "'" + field.label() + "' becomes "
                         + describe(field) + (field.required() ? ", required" : "") + ".", null, path);
             } else {
-                add(field.componentId(), field.label(), "component", Report.REVIEW, "FORM_FIELD_MAPPED_WITH_CHANGES", "'" + field.label()
+                add(field.componentId(), field.label(), "component", Report.VERIFY, "FORM_FIELD_MAPPED_WITH_CHANGES", "'" + field.label()
                         + "' becomes " + describe(field) + (field.required() ? ", required" : "") + ", with differences: "
                         + String.join("; ", changes) + ".", "Check the field in the request form before publishing.", path);
             }

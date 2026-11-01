@@ -1,0 +1,777 @@
+{
+  "schemaVersion": "0.1",
+  "workflowKey": "group-loan-in",
+  "name": "Group loan approval (India)",
+  "metadata": {
+    "description": "India cooperative and microfinance group loan in INR. Rules check group size (Joint liability group - JLG 4 to 10 members; Self-help group - SHG 10 to 20 members) and registration; a field officer verifies the group, then the branch manager approves, or a two-member credit committee when the total is INR 10 lakh or more. Due dates count India banking hours and holidays. JLG of 4 to 10 and SHG of 10 to 20 members after compulsory group training, in line with NABARD and RBI microfinance practice. Illustrative regional template, not a regulatory-compliant product: thresholds, holiday lists and document names are placeholders for your compliance function to confirm.",
+    "tags": [
+      "pack:banking-mfi",
+      "region:india",
+      "template:group-loan",
+      "owner:Microfinance operations",
+      "illustrative",
+      "lang:hi"
+    ]
+  },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "groupName",
+      "groupType",
+      "registered",
+      "loanPurpose",
+      "members"
+    ],
+    "properties": {
+      "groupName": {
+        "type": "string",
+        "title": "Group name / समूह का नाम",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "groupType": {
+        "type": "string",
+        "title": "Group type / समूह प्रकार",
+        "enum": [
+          "Joint liability group - JLG",
+          "Self-help group - SHG"
+        ]
+      },
+      "registered": {
+        "type": "boolean",
+        "title": "Compulsory group training completed / अनिवार्य समूह प्रशिक्षण पूरा"
+      },
+      "meetingDate": {
+        "type": "string",
+        "format": "date",
+        "title": "Group meeting date / समूह बैठक की तिथि"
+      },
+      "loanPurpose": {
+        "type": "string",
+        "title": "Loan purpose / ऋण का उद्देश्य",
+        "enum": [
+          "Income generation",
+          "Agriculture and allied",
+          "Small trade",
+          "Education",
+          "Housing repair"
+        ]
+      },
+      "members": {
+        "type": "array",
+        "title": "Members / सदस्य",
+        "minItems": 1,
+        "maxItems": 20,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "memberName",
+            "amount"
+          ],
+          "properties": {
+            "memberName": {
+              "type": "string",
+              "title": "Member name / सदस्य का नाम",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "memberRef": {
+              "type": "string",
+              "title": "Member reference / सदस्य संदर्भ",
+              "minLength": 0,
+              "maxLength": 40
+            },
+            "amount": {
+              "type": "number",
+              "title": "Amount (INR) / राशि (₹)",
+              "minimum": 1,
+              "maximum": 100000000,
+              "multipleOf": 0.01
+            }
+          }
+        }
+      }
+    }
+  },
+  "inputUi": {
+    "order": [
+      "groupName",
+      "groupType",
+      "registered",
+      "meetingDate",
+      "loanPurpose",
+      "members"
+    ],
+    "widgets": {
+      "groupType": "select",
+      "registered": "checkbox",
+      "loanPurpose": "select"
+    },
+    "submitLabel": "Submit group loan / समूह ऋण जमा करें",
+    "layout": {
+      "sections": [
+        {
+          "id": "group",
+          "title": "Group / समूह",
+          "columns": 2,
+          "fields": [
+            "groupName",
+            "groupType",
+            "registered",
+            "meetingDate",
+            "loanPurpose"
+          ]
+        },
+        {
+          "id": "members",
+          "title": "Members / सदस्य",
+          "columns": 1,
+          "fields": [
+            "members"
+          ]
+        }
+      ]
+    }
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "memberCount": {
+        "type": "integer",
+        "title": "Members"
+      },
+      "totalAmount": {
+        "type": "number",
+        "title": "Total amount (INR)"
+      },
+      "verifiedBy": {
+        "type": "string",
+        "title": "Verified by"
+      }
+    }
+  },
+  "triggers": [
+    "manual",
+    "api"
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "label": "Group loan submitted",
+      "config": {}
+    },
+    {
+      "id": "eligibility",
+      "type": "decision",
+      "label": "Check group size and registration",
+      "config": {
+        "decisionRef": "group-eligibility"
+      }
+    },
+    {
+      "id": "eligibleRoute",
+      "type": "branch",
+      "label": "Eligible?",
+      "config": {}
+    },
+    {
+      "id": "notifyIneligible",
+      "type": "notification",
+      "label": "Tell requester the group is not eligible",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "The group does not meet the eligibility rules (size or training). / समूह पात्रता नियम (आकार या प्रशिक्षण) पूरे नहीं करता।"
+      }
+    },
+    {
+      "id": "fieldVerification",
+      "type": "approval",
+      "label": "Field officer verification / क्षेत्र अधिकारी सत्यापन",
+      "config": {
+        "candidateGroupRef": "field-officers",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 24,
+        "calendar": {
+          "zone": "Asia/Kolkata",
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6
+          ],
+          "holidays": [
+            "2026-01-10",
+            "2026-01-24",
+            "2026-01-26",
+            "2026-02-14",
+            "2026-02-28",
+            "2026-03-04",
+            "2026-03-14",
+            "2026-03-21",
+            "2026-03-26",
+            "2026-03-28",
+            "2026-03-31",
+            "2026-04-03",
+            "2026-04-11",
+            "2026-04-25",
+            "2026-05-01",
+            "2026-05-09",
+            "2026-05-23",
+            "2026-05-27",
+            "2026-06-13",
+            "2026-06-26",
+            "2026-06-27",
+            "2026-07-11",
+            "2026-07-25",
+            "2026-08-08",
+            "2026-08-15",
+            "2026-08-22",
+            "2026-08-26",
+            "2026-09-04",
+            "2026-09-12",
+            "2026-09-26",
+            "2026-10-02",
+            "2026-10-10",
+            "2026-10-20",
+            "2026-10-24",
+            "2026-11-08",
+            "2026-11-14",
+            "2026-11-24",
+            "2026-11-28",
+            "2026-12-12",
+            "2026-12-25",
+            "2026-12-26",
+            "2027-01-09",
+            "2027-01-23",
+            "2027-01-26",
+            "2027-02-13",
+            "2027-02-27",
+            "2027-03-13",
+            "2027-03-26",
+            "2027-03-27",
+            "2027-04-10",
+            "2027-04-24",
+            "2027-05-08",
+            "2027-05-22",
+            "2027-06-12",
+            "2027-06-26",
+            "2027-07-10",
+            "2027-07-24",
+            "2027-08-14",
+            "2027-08-15",
+            "2027-08-28",
+            "2027-09-11",
+            "2027-09-25",
+            "2027-10-02",
+            "2027-10-09",
+            "2027-10-23",
+            "2027-11-13",
+            "2027-11-27",
+            "2027-12-11",
+            "2027-12-25"
+          ],
+          "start": "10:00",
+          "end": "17:00",
+          "revision": "IN-bank-2026-illustrative",
+          "validFrom": "2026-01-01"
+        }
+      }
+    },
+    {
+      "id": "level",
+      "type": "decision",
+      "label": "Set the approval level",
+      "config": {
+        "decisionRef": "group-level"
+      }
+    },
+    {
+      "id": "levelRoute",
+      "type": "branch",
+      "label": "Committee needed?",
+      "config": {}
+    },
+    {
+      "id": "branchApproval",
+      "type": "approval",
+      "label": "Branch manager review / शाखा प्रबंधक समीक्षा",
+      "config": {
+        "candidateGroupRef": "branch-managers",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 16,
+        "calendar": {
+          "zone": "Asia/Kolkata",
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6
+          ],
+          "holidays": [
+            "2026-01-10",
+            "2026-01-24",
+            "2026-01-26",
+            "2026-02-14",
+            "2026-02-28",
+            "2026-03-04",
+            "2026-03-14",
+            "2026-03-21",
+            "2026-03-26",
+            "2026-03-28",
+            "2026-03-31",
+            "2026-04-03",
+            "2026-04-11",
+            "2026-04-25",
+            "2026-05-01",
+            "2026-05-09",
+            "2026-05-23",
+            "2026-05-27",
+            "2026-06-13",
+            "2026-06-26",
+            "2026-06-27",
+            "2026-07-11",
+            "2026-07-25",
+            "2026-08-08",
+            "2026-08-15",
+            "2026-08-22",
+            "2026-08-26",
+            "2026-09-04",
+            "2026-09-12",
+            "2026-09-26",
+            "2026-10-02",
+            "2026-10-10",
+            "2026-10-20",
+            "2026-10-24",
+            "2026-11-08",
+            "2026-11-14",
+            "2026-11-24",
+            "2026-11-28",
+            "2026-12-12",
+            "2026-12-25",
+            "2026-12-26",
+            "2027-01-09",
+            "2027-01-23",
+            "2027-01-26",
+            "2027-02-13",
+            "2027-02-27",
+            "2027-03-13",
+            "2027-03-26",
+            "2027-03-27",
+            "2027-04-10",
+            "2027-04-24",
+            "2027-05-08",
+            "2027-05-22",
+            "2027-06-12",
+            "2027-06-26",
+            "2027-07-10",
+            "2027-07-24",
+            "2027-08-14",
+            "2027-08-15",
+            "2027-08-28",
+            "2027-09-11",
+            "2027-09-25",
+            "2027-10-02",
+            "2027-10-09",
+            "2027-10-23",
+            "2027-11-13",
+            "2027-11-27",
+            "2027-12-11",
+            "2027-12-25"
+          ],
+          "start": "10:00",
+          "end": "17:00",
+          "revision": "IN-bank-2026-illustrative",
+          "validFrom": "2026-01-01"
+        }
+      }
+    },
+    {
+      "id": "committee",
+      "type": "approval",
+      "label": "Credit committee approval / क्रेडिट समिति अनुमोदन",
+      "config": {
+        "candidateGroupRef": "credit-committee",
+        "rejectReasonRequired": true,
+        "multiInstance": {
+          "approvers": 2
+        }
+      }
+    },
+    {
+      "id": "notifyApproved",
+      "type": "notification",
+      "label": "Tell requester it was approved",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "The group loan was approved and is ready for disbursement. / समूह ऋण स्वीकृत हुआ और वितरण के लिए तैयार है।"
+      }
+    },
+    {
+      "id": "notifyRejected",
+      "type": "notification",
+      "label": "Tell requester it was rejected",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "The group loan was rejected. Open the request to see the reason. / समूह ऋण अस्वीकृत हुआ। कारण देखने के लिए अनुरोध खोलें।"
+      }
+    },
+    {
+      "id": "approved",
+      "type": "end",
+      "label": "Approved",
+      "config": {
+        "businessOutcome": "Approved",
+        "outcomeKind": "success"
+      }
+    },
+    {
+      "id": "rejected",
+      "type": "end",
+      "label": "Rejected",
+      "config": {
+        "businessOutcome": "Rejected",
+        "outcomeKind": "rejected"
+      }
+    },
+    {
+      "id": "ineligible",
+      "type": "end",
+      "label": "Ineligible",
+      "config": {
+        "businessOutcome": "Ineligible",
+        "outcomeKind": "rejected"
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t1",
+      "from": "start",
+      "to": "eligibility",
+      "on": "next"
+    },
+    {
+      "id": "t2",
+      "from": "eligibility",
+      "to": "eligibleRoute",
+      "on": "next"
+    },
+    {
+      "id": "t3",
+      "from": "eligibleRoute",
+      "to": "notifyIneligible",
+      "on": "condition",
+      "label": "Size or registration rule not met",
+      "condition": {
+        "fieldRef": "/steps/eligibility/eligible",
+        "operator": "eq",
+        "value": false
+      }
+    },
+    {
+      "id": "t4",
+      "from": "eligibleRoute",
+      "to": "fieldVerification",
+      "on": "default",
+      "label": "Eligible"
+    },
+    {
+      "id": "t5",
+      "from": "notifyIneligible",
+      "to": "ineligible",
+      "on": "next"
+    },
+    {
+      "id": "t6",
+      "from": "fieldVerification",
+      "to": "level",
+      "on": "approved"
+    },
+    {
+      "id": "t7",
+      "from": "fieldVerification",
+      "to": "notifyRejected",
+      "on": "rejected"
+    },
+    {
+      "id": "t8",
+      "from": "level",
+      "to": "levelRoute",
+      "on": "next"
+    },
+    {
+      "id": "t9",
+      "from": "levelRoute",
+      "to": "committee",
+      "on": "condition",
+      "label": "Total INR 10 lakh or more",
+      "condition": {
+        "fieldRef": "/steps/level/level",
+        "operator": "eq",
+        "value": "committee"
+      }
+    },
+    {
+      "id": "t10",
+      "from": "levelRoute",
+      "to": "branchApproval",
+      "on": "default",
+      "label": "Within branch powers"
+    },
+    {
+      "id": "t11",
+      "from": "branchApproval",
+      "to": "notifyApproved",
+      "on": "approved"
+    },
+    {
+      "id": "t12",
+      "from": "branchApproval",
+      "to": "notifyRejected",
+      "on": "rejected"
+    },
+    {
+      "id": "t13",
+      "from": "committee",
+      "to": "notifyApproved",
+      "on": "approved"
+    },
+    {
+      "id": "t14",
+      "from": "committee",
+      "to": "notifyRejected",
+      "on": "rejected"
+    },
+    {
+      "id": "t15",
+      "from": "notifyApproved",
+      "to": "approved",
+      "on": "next"
+    },
+    {
+      "id": "t16",
+      "from": "notifyRejected",
+      "to": "rejected",
+      "on": "next"
+    }
+  ],
+  "decisions": [
+    {
+      "key": "group-eligibility",
+      "version": 1,
+      "hitPolicy": "FIRST",
+      "rows": [
+        {
+          "when": {
+            "fieldRef": "/input/registered",
+            "operator": "eq",
+            "value": false
+          },
+          "then": {
+            "eligible": false
+          }
+        },
+        {
+          "when": {
+            "all": [
+              {
+                "fieldRef": "/input/groupType",
+                "operator": "eq",
+                "value": "Joint liability group - JLG"
+              },
+              {
+                "fieldRef": "/input/members/count",
+                "operator": "lt",
+                "value": 4
+              }
+            ]
+          },
+          "then": {
+            "eligible": false
+          }
+        },
+        {
+          "when": {
+            "all": [
+              {
+                "fieldRef": "/input/groupType",
+                "operator": "eq",
+                "value": "Joint liability group - JLG"
+              },
+              {
+                "fieldRef": "/input/members/count",
+                "operator": "gt",
+                "value": 10
+              }
+            ]
+          },
+          "then": {
+            "eligible": false
+          }
+        },
+        {
+          "when": {
+            "all": [
+              {
+                "fieldRef": "/input/groupType",
+                "operator": "eq",
+                "value": "Self-help group - SHG"
+              },
+              {
+                "fieldRef": "/input/members/count",
+                "operator": "lt",
+                "value": 10
+              }
+            ]
+          },
+          "then": {
+            "eligible": false
+          }
+        },
+        {
+          "when": {
+            "all": [
+              {
+                "fieldRef": "/input/groupType",
+                "operator": "eq",
+                "value": "Self-help group - SHG"
+              },
+              {
+                "fieldRef": "/input/members/count",
+                "operator": "gt",
+                "value": 20
+              }
+            ]
+          },
+          "then": {
+            "eligible": false
+          }
+        }
+      ],
+      "default": {
+        "eligible": true
+      }
+    },
+    {
+      "key": "group-level",
+      "version": 1,
+      "hitPolicy": "FIRST",
+      "rows": [
+        {
+          "when": {
+            "fieldRef": "/input/members/sum/amount",
+            "operator": "gte",
+            "value": 1000000
+          },
+          "then": {
+            "level": "committee"
+          }
+        }
+      ],
+      "default": {
+        "level": "branch"
+      }
+    }
+  ],
+  "execution": {
+    "maxConcurrentRuns": 200,
+    "maxAttempts": 3,
+    "retryDelaySeconds": 30
+  },
+  "security": {
+    "selfApproval": "deny"
+  },
+  "dependencies": {
+    "connections": []
+  },
+  "outputMapping": {
+    "memberCount": {
+      "fieldRef": "/input/members/count",
+      "required": true
+    },
+    "totalAmount": {
+      "fieldRef": "/input/members/sum/amount",
+      "required": true
+    },
+    "verifiedBy": {
+      "fieldRef": "/steps/fieldVerification/decidedBy",
+      "required": false
+    }
+  },
+  "uiLayout": {
+    "positions": {
+      "start": {
+        "x": 80,
+        "y": 80
+      },
+      "eligibility": {
+        "x": 320,
+        "y": 80
+      },
+      "eligibleRoute": {
+        "x": 560,
+        "y": 80
+      },
+      "notifyIneligible": {
+        "x": 800,
+        "y": 80
+      },
+      "fieldVerification": {
+        "x": 800,
+        "y": 240
+      },
+      "level": {
+        "x": 1040,
+        "y": 80
+      },
+      "levelRoute": {
+        "x": 1280,
+        "y": 80
+      },
+      "branchApproval": {
+        "x": 1520,
+        "y": 80
+      },
+      "committee": {
+        "x": 1520,
+        "y": 240
+      },
+      "notifyApproved": {
+        "x": 1760,
+        "y": 80
+      },
+      "notifyRejected": {
+        "x": 1760,
+        "y": 240
+      },
+      "approved": {
+        "x": 2000,
+        "y": 80
+      },
+      "rejected": {
+        "x": 2000,
+        "y": 240
+      },
+      "ineligible": {
+        "x": 1040,
+        "y": 240
+      }
+    },
+    "viewport": {
+      "x": 0,
+      "y": 0,
+      "zoom": 0.6
+    }
+  }
+}

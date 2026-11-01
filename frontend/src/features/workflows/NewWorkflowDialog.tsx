@@ -11,7 +11,7 @@ import { ProblemAlert, toProblem } from '@/components/common/ProblemAlert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
-import { Input, Textarea } from '@/components/ui/input'
+import { Input, Select, Textarea } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { useAiEnabled } from '@/features/ai/api'
@@ -105,7 +105,23 @@ function Choice({ icon: Icon, title, badge, onClick, children }: { icon: Compone
   )
 }
 
-/** Template or empty: choose the template (if any), name it, create. */
+/** Filter value for templates without a region or industry (the general templates). */
+const GENERAL = '__general__'
+const LANGUAGES: Record<string, string> = { hi: 'Hindi', de: 'German', sw: 'Swahili', fr: 'French' }
+
+function distinct(values: Array<string | undefined>): string[] {
+  return [...new Set(values.filter((v): v is string => !!v))].sort((a, b) => a.localeCompare(b))
+}
+
+function matches(value: string | undefined, filter: string): boolean {
+  return filter === '' || (filter === GENERAL ? !value : value === filter)
+}
+
+function languageName(code: string): string {
+  return LANGUAGES[code] ?? code
+}
+
+/** Template or empty: choose the template (if any), name it, create. Regional packs can be filtered by region and industry. */
 function DetailsDialog({ fromTemplate, onClose, onBack }: { fromTemplate: boolean; onClose: () => void; onBack: () => void }) {
   const { workspace } = useWorkspace()
   const ws = workspace.id
@@ -121,9 +137,15 @@ function DetailsDialog({ fromTemplate, onClose, onBack }: { fromTemplate: boolea
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<ProblemError | null>(null)
 
+  const [region, setRegion] = useState('')
+  const [industry, setIndustry] = useState('')
+
   const effectiveKey = keyTouched ? key : toKey(name)
-  const items = templates.data?.items ?? []
-  const chosenTemplate = fromTemplate ? (templateId || items[0]?.id || '') : ''
+  const all = templates.data?.items ?? []
+  const regions = distinct(all.map((t) => t.region))
+  const industries = distinct(all.map((t) => t.industry))
+  const items = all.filter((t) => matches(t.region, region) && matches(t.industry, industry))
+  const chosenTemplate = fromTemplate ? (items.some((t) => t.id === templateId) ? templateId : items[0]?.id || '') : ''
 
   const submit = async () => {
     const next: Record<string, string> = {}
@@ -176,10 +198,37 @@ function DetailsDialog({ fromTemplate, onClose, onBack }: { fromTemplate: boolea
         {fromTemplate ? (
           <fieldset className="space-y-2">
             <legend className="text-sm font-semibold">Template</legend>
+            {regions.length > 0 || industries.length > 0 ? (
+              <div className="flex flex-wrap items-end gap-3" data-testid="template-filters">
+                {regions.length > 0 ? (
+                  <div className="min-w-40 flex-1 space-y-1">
+                    <Label htmlFor="tpl-region">Region</Label>
+                    <Select id="tpl-region" value={region} onChange={(e) => setRegion(e.target.value)}>
+                      <option value="">All regions</option>
+                      <option value={GENERAL}>No specific region</option>
+                      {regions.map((r) => <option key={r} value={r}>{r}</option>)}
+                    </Select>
+                  </div>
+                ) : null}
+                {industries.length > 0 ? (
+                  <div className="min-w-40 flex-1 space-y-1">
+                    <Label htmlFor="tpl-industry">Industry</Label>
+                    <Select id="tpl-industry" value={industry} onChange={(e) => setIndustry(e.target.value)}>
+                      <option value="">All industries</option>
+                      <option value={GENERAL}>General</option>
+                      {industries.map((i) => <option key={i} value={i}>{i}</option>)}
+                    </Select>
+                  </div>
+                ) : null}
+                <p className="pb-2 text-sm text-muted-foreground" aria-live="polite">{items.length} of {all.length} templates</p>
+              </div>
+            ) : null}
             {templates.isPending ? (
               <p className="text-sm text-muted-foreground">Loading templates…</p>
-            ) : items.length === 0 ? (
+            ) : all.length === 0 ? (
               <p className="text-sm">There are no templates in this workspace yet. Go back and start empty or answer a few questions.</p>
+            ) : items.length === 0 ? (
+              <p className="text-sm">No template matches this region and industry. Choose another region or industry.</p>
             ) : (
               <RadioGroup value={chosenTemplate} onValueChange={setTemplateId}>
                 {items.map((t) => (
@@ -187,6 +236,13 @@ function DetailsDialog({ fromTemplate, onClose, onBack }: { fromTemplate: boolea
                     <RadioGroupItem value={t.id} id={`tpl-${t.id}`} />
                     <Label htmlFor={`tpl-${t.id}`} className="font-normal">
                       <span className="font-semibold">{t.name}</span>
+                      {t.region || t.industry ? (
+                        <span className="mt-1 flex flex-wrap gap-1">
+                          {t.region ? <Badge tone="info">{t.region}</Badge> : null}
+                          {t.industry ? <Badge tone="neutral">{t.industry}</Badge> : null}
+                          {(t.languages ?? []).length > 0 ? <Badge tone="neutral">English and {(t.languages ?? []).map(languageName).join(', ')} labels</Badge> : null}
+                        </span>
+                      ) : null}
                       <span className="block text-muted-foreground">{t.description}</span>
                       <span className="mt-1 block text-xs text-muted-foreground">
                         Needs approver groups: {(t.requiredGroups ?? []).map(humanize).join(', ') || 'none'} &middot; connections: {(t.requiredConnections ?? []).map(humanize).join(', ') || 'none'}{(t.requiredWorkflows ?? []).length > 0 ? <> &middot; starts workflows: {(t.requiredWorkflows ?? []).map(humanize).join(', ')}</> : null}

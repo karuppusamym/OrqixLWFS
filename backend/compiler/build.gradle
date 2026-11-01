@@ -1,0 +1,53 @@
+// Mirrors compiler/pom.xml.
+plugins {
+    id 'jacoco'
+}
+
+description = 'Canonical workflow model, validation, BPMN/DMN generation and evaluators. Pure Java: no Spring, Flowable, JDBC or network.'
+base.archivesName = 'orqix-compiler'
+
+dependencies {
+    // "api": these are compile dependencies for the app module too, as in Maven.
+    api 'tools.jackson.core:jackson-databind'
+    api 'com.networknt:json-schema-validator'
+    api 'io.github.erdtman:java-json-canonicalization'
+
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testImplementation 'org.assertj:assertj-core'
+}
+
+// The JSON Schemas in /contracts are the single source; they are packaged, not copied by hand.
+processResources {
+    from(new File(repoRoot, 'contracts')) {
+        include 'workflow-v0.schema.json', 'connection-definition-v0.schema.json', 'bpmn-shape-sizes.json'
+        into 'orqix/schemas'
+    }
+}
+
+test {
+    systemProperty 'orqix.goldenDir', file('src/test/resources/golden').absolutePath
+    // Pass -Porqix.updateGolden=true (or -Dorqix.updateGolden=true) to rewrite src/test/resources/golden.
+    systemProperty 'orqix.updateGolden', providers.gradleProperty('orqix.updateGolden')
+            .orElse(providers.systemProperty('orqix.updateGolden')).getOrElse('false')
+    finalizedBy jacocoTestReport
+}
+
+// S1 section 7: coverage gate on the compiler module (90% of lines), checked by "gradle check" and "gradle build".
+jacoco {
+    toolVersion = '0.8.14'
+}
+
+jacocoTestCoverageVerification {
+    violationRules {
+        rule {
+            element = 'BUNDLE'
+            limit {
+                counter = 'LINE'
+                value = 'COVEREDRATIO'
+                minimum = 0.90
+            }
+        }
+    }
+}
+
+check.dependsOn jacocoTestCoverageVerification

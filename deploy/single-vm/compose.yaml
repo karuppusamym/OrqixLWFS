@@ -1,0 +1,244 @@
+# Orqix sovereign single-VM deployment (docs/sovereign-deployment.md).
+#
+# One Linux VM, five containers, no outbound internet needed at runtime:
+#
+#   proxy          nginx, the only container with published ports: HTTPS (bring-your-own certificate) for the UI, the
+#                  API and the sign-in pages (/auth), plus the management port bound to localhost for monitoring.
+#   orqix          the Orqix image (UI + API + Flowable engine), profile prod, runtime database role.
+#   orqix-migrate  one-shot: the same image with profile migrate (Flyway + Flowable schema), then it exits.
+#                  Every `up` runs it first; the app starts only after it exited 0.
+#   keycloak       identity provider (production mode, realm imported once), stores its data in PostgreSQL.
+#                  Optional: point Orqix at your own OIDC provider instead (see .env.example, section 4).
+#   postgres       PostgreSQL. ALL state lives here: Orqix data, request files (attachments are stored in the
+#                  database), audit history, sessions, engine state and Keycloak's realm.
+#
+# Use the scripts, not raw commands: scripts/install.sh, backup.sh, restore.sh, upgrade.sh (they pass --env-file and the
+# project name). Everything is configured in .env (copy .env.example; never commit it).
+
+x-orqix-hardening: &orqix-hardening
+  user: "${ORQIX_UID:-1000770000}:0"
+  read_only: true
+  tmpfs:
+    - /tmp:size=512m
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+
+# Identity settings, shared by the app and the migration job (the migration job boots the same Spring context).
+x-identity-env: &identity-env
+  # --- OIDC browser login (authorization code + PKCE) ---
+  SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_ORQIX_PROVIDER: orqix
+  SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_ORQIX_CLIENT_ID: ${ORQIX_OIDC_CLIENT_ID:-orqix-web}
+  SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_ORQIX_CLIENT_SECRET: ${ORQIX_OIDC_CLIENT_SECRET}
+  SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_ORQIX_CLIENT_AUTHENTICATION_METHOD: client_secret_basic
+  SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_ORQIX_AUTHORIZATION_GRANT_TYPE: authorization_code
+  SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_ORQIX_REDIRECT_URI: "{baseUrl}/login/oauth2/code/{registrationId}"
+  SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_ORQIX_SCOPE: openid,profile,email
+  # Bundled Keycloak: the browser follows the public authorization/logout URLs; the server-to-server calls go to the
+  # keycloak container directly. External IdP: set all five URLs in .env to the provider's endpoints.
+  SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_ORQIX_AUTHORIZATION_URI: ${ORQIX_OIDC_AUTHORIZATION_URI:-${ORQIX_PUBLIC_URL}/auth/realms/${ORQIX_REALM:-orqix}/protocol/openid-connect/auth}
+  SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_ORQIX_TOKEN_URI: ${ORQIX_OIDC_TOKEN_URI:-http://keycloak:8080/auth/realms/${ORQIX_REALM:-orqix}/protocol/openid-connect/token}
+  SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_ORQIX_JWK_SET_URI: ${ORQIX_OIDC_JWK_SET_URI:-http://keycloak:8080/auth/realms/${ORQIX_REALM:-orqix}/protocol/openid-connect/certs}
+  SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_ORQIX_USER_INFO_URI: ${ORQIX_OIDC_USER_INFO_URI:-http://keycloak:8080/auth/realms/${ORQIX_REALM:-orqix}/protocol/openid-connect/userinfo}
+  SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_ORQIX_USER_NAME_ATTRIBUTE: preferred_username
+  ORQIX_IDENTITY_END_SESSION_URI: ${ORQIX_OIDC_END_SESSION_URI:-${ORQIX_PUBLIC_URL}/auth/realms/${ORQIX_REALM:-orqix}/protocol/openid-connect/logout}
+  # --- machine clients (bearer JWT): `iss` is checked against the issuer, keys come from the JWK set URI ---
+  SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: ${ORQIX_OIDC_ISSUER:-${ORQIX_PUBLIC_URL}/auth/realms/${ORQIX_REALM:-orqix}}
+  SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: ${ORQIX_OIDC_JWK_SET_URI:-http://keycloak:8080/auth/realms/${ORQIX_REALM:-orqix}/protocol/openid-connect/certs}
+  SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_AUDIENCES: orqix-api
+  ORQIX_IDENTITY_GROUPS_CLAIM: ${ORQIX_GROUPS_CLAIM:-groups}
+  ORQIX_IDENTITY_BOOTSTRAP_PLATFORM_ADMIN_GROUPS: ${ORQIX_PLATFORM_ADMIN_GROUP:-orqix-platform-admins}
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:18-alpine}
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?set POSTGRES_SUPERUSER_PASSWORD in .env}
+      POSTGRES_DB: orqix
+      ORQIX_MIGRATOR_PASSWORD: ${ORQIX_MIGRATOR_PASSWORD:?set ORQIX_MIGRATOR_PASSWORD in .env}
+      ORQIX_APP_PASSWORD: ${ORQIX_APP_PASSWORD:?set ORQIX_APP_PASSWORD in .env}
+      KEYCLOAK_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?set KEYCLOAK_DB_PASSWORD in .env}
+    command:
+      - postgres
+      - -c
+      - max_connections=${POSTGRES_MAX_CONNECTIONS:-100}
+      - -c
+      - shared_buffers=${POSTGRES_SHARED_BUFFERS:-512MB}
+    volumes:
+      # PostgreSQL 18+ images keep the cluster below /var/lib/postgresql/<major>; mount the parent.
+      - pgdata:/var/lib/postgresql
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    networks: [backend]
+    shm_size: 256m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d orqix"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
+
+  keycloak:
+    image: ${KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:26.8.0}
+    restart: unless-stopped
+    logging: *logging
+    # Started when COMPOSE_PROFILES contains "keycloak" (the .env.example default). Leave it out for an external IdP.
+    profiles: ["keycloak"]
+    command: ["start", "--import-realm"]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
+      # Temporary master-realm admin, used for the first sign-in to the admin console and by scripts/add-user.sh.
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set KEYCLOAK_ADMIN_PASSWORD in .env}
+      # Served below /auth on the same hostname and certificate as Orqix. The issuer in every token is
+      # ${ORQIX_PUBLIC_URL}/auth/realms/<realm>; the Orqix container reaches the token, keys and userinfo endpoints
+      # directly as http://keycloak:8080/auth/... (backchannel), so it never needs to trust the certificate.
+      KC_HTTP_RELATIVE_PATH: /auth
+      KC_HTTP_MANAGEMENT_RELATIVE_PATH: /
+      KC_HOSTNAME: ${ORQIX_PUBLIC_URL:?set ORQIX_PUBLIC_URL in .env}/auth
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_HEALTH_ENABLED: "true"
+      KC_LOG_LEVEL: ${KEYCLOAK_LOG_LEVEL:-info}
+      # Values substituted into keycloak/orqix-realm.json on the first import (Keycloak ${VAR} placeholders).
+      ORQIX_PUBLIC_URL: ${ORQIX_PUBLIC_URL}
+      ORQIX_REALM: ${ORQIX_REALM:-orqix}
+      ORQIX_OIDC_CLIENT_SECRET: ${ORQIX_OIDC_CLIENT_SECRET:?set ORQIX_OIDC_CLIENT_SECRET in .env}
+      ORQIX_PLATFORM_ADMIN_GROUP: ${ORQIX_PLATFORM_ADMIN_GROUP:-orqix-platform-admins}
+    volumes:
+      - ./keycloak/orqix-realm.json:/opt/keycloak/data/import/orqix-realm.json:ro
+    networks: [backend]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # The Keycloak image has neither curl nor wget: speak HTTP to the management port (9000) with bash /dev/tcp.
+      test:
+        - "CMD-SHELL"
+        - "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '\"status\": \"UP\"' <&3"
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  orqix-migrate:
+    image: ${ORQIX_IMAGE:?set ORQIX_IMAGE in .env}
+    <<: *orqix-hardening
+    restart: "no"
+    logging: *logging
+    environment:
+      SPRING_PROFILES_ACTIVE: migrate
+      ORQIX_DB_URL: jdbc:postgresql://postgres:5432/orqix
+      ORQIX_DB_MIGRATOR_USER: orqix_migrator
+      ORQIX_DB_MIGRATOR_PASSWORD: ${ORQIX_MIGRATOR_PASSWORD}
+      ORQIX_APP_ROLE: orqix_app
+      ORQIX_CURSOR_SECRET: ${ORQIX_CURSOR_SECRET}
+      <<: *identity-env
+      JAVA_OPTS: -XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError -XX:-UsePerfData -Djava.io.tmpdir=/tmp
+    networks: [backend]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  orqix:
+    image: ${ORQIX_IMAGE}
+    <<: *orqix-hardening
+    restart: unless-stopped
+    logging: *logging
+    stop_grace_period: 60s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      orqix-migrate:
+        condition: service_completed_successfully
+    volumes:
+      # One file per connection secretRef (orqix.secrets.dir). Read on every call: rotation needs no restart.
+      - ./secrets:/var/run/secrets/orqix:ro
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      JAVA_OPTS: ${ORQIX_JAVA_OPTS:--XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError -XX:-UsePerfData -Djava.io.tmpdir=/tmp}
+      # --- database: runtime role, DML only ---
+      ORQIX_DB_URL: jdbc:postgresql://postgres:5432/orqix
+      ORQIX_DB_USER: orqix_app
+      ORQIX_DB_PASSWORD: ${ORQIX_APP_PASSWORD}
+      ORQIX_CURSOR_SECRET: ${ORQIX_CURSOR_SECRET:?set ORQIX_CURSOR_SECRET in .env}
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: ${ORQIX_DB_POOL_SIZE:-15}
+      <<: *identity-env
+      # --- outbound connections (all off or empty by default; docs/sovereign-deployment.md section 4) ---
+      ORQIX_EGRESS_ALLOWED_HOSTS: ${ORQIX_EGRESS_ALLOWED_HOSTS:-}
+      ORQIX_EGRESS_ALLOWED_PRIVATE_HOSTS: ${ORQIX_EGRESS_ALLOWED_PRIVATE_HOSTS:-}
+      ORQIX_EGRESS_PLAIN_HTTP_HOSTS: ""
+      ORQIX_SECRETS_DIR: /var/run/secrets/orqix
+      # AI assistance: empty key = AI off, the product runs rules-only and never calls the AI provider.
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      ORQIX_AI_BASE_URL: ${ORQIX_AI_BASE_URL:-https://openrouter.ai/api/v1}
+      ORQIX_MAIL_ENABLED: ${ORQIX_MAIL_ENABLED:-false}
+      ORQIX_MAIL_HOST: ${ORQIX_MAIL_HOST:-localhost}
+      ORQIX_MAIL_PORT: ${ORQIX_MAIL_PORT:-25}
+      ORQIX_MAIL_FROM: ${ORQIX_MAIL_FROM:-workflow@example.invalid}
+      ORQIX_MAIL_STARTTLS: ${ORQIX_MAIL_STARTTLS:-true}
+      ORQIX_ATTACHMENTS_CLAMAV_ENABLED: ${ORQIX_CLAMAV_ENABLED:-false}
+      ORQIX_ATTACHMENTS_CLAMAV_HOST: ${ORQIX_CLAMAV_HOST:-clamav}
+      ORQIX_ATTACHMENTS_CLAMAV_PORT: ${ORQIX_CLAMAV_PORT:-3310}
+      ORQIX_KAFKA_MODE: "off"
+      ORQIX_REMINDERS_ENABLED: ${ORQIX_REMINDERS_ENABLED:-true}
+    networks: [backend]
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - "exec 3<>/dev/tcp/127.0.0.1/8081 && printf 'GET /actuator/health/readiness HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '\"status\":\"UP\"' <&3"
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 90s
+
+  proxy:
+    image: ${PROXY_IMAGE:-nginx:1.27-alpine}
+    restart: unless-stopped
+    logging: *logging
+    depends_on:
+      orqix:
+        condition: service_started
+    ports:
+      - "${HTTPS_BIND:-0.0.0.0}:${HTTPS_PORT:-443}:8443"
+      - "${HTTP_BIND:-0.0.0.0}:${HTTP_PORT:-80}:8080"
+      # Health and Prometheus metrics; localhost only by default. Never expose this port publicly.
+      - "${MANAGEMENT_BIND:-127.0.0.1}:${MANAGEMENT_PORT:-8081}:8081"
+    environment:
+      ORQIX_PUBLIC_URL: ${ORQIX_PUBLIC_URL}
+      KEYCLOAK_ADMIN_ALLOW: ${KEYCLOAK_ADMIN_ALLOW:-127.0.0.1}
+      NGINX_ENVSUBST_FILTER: "^(ORQIX_PUBLIC_URL|KEYCLOAK_ADMIN_ALLOW)$"
+    volumes:
+      - ./proxy/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ${TLS_CERT_DIR:-./certs}:/etc/nginx/certs:ro
+    # The proxy is on both networks: "edge" carries the published ports, "backend" reaches the app and Keycloak.
+    networks: [edge, backend]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8082/proxy-health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+
+networks:
+  # internal: true = no route to anything outside the VM's Docker bridge. Orqix, Keycloak and PostgreSQL cannot open any
+  # outbound connection. Set BACKEND_INTERNAL=false only when you enable an outbound integration
+  # (docs/sovereign-deployment.md section 4); the in-app egress allowlist still applies.
+  backend:
+    internal: ${BACKEND_INTERNAL:-true}
+  edge: {}
+
+volumes:
+  pgdata: {}

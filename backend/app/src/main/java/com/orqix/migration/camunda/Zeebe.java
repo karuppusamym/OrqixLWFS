@@ -207,6 +207,16 @@ final class Zeebe {
         }
     }
 
+    /** True when a mapped due time had a day component, which {@link #dueHours} normalises to a fixed number of hours. */
+    static boolean dueNormalised(String source) {
+        if (source == null) {
+            return false;
+        }
+        Matcher now = NOW_PLUS.matcher(source.strip());
+        String iso = now.matches() ? now.group(1) : duration(source);
+        return iso != null && iso.matches("P[0-9]+D.*");
+    }
+
     /** {@code source-procurement-worker} as the operation name {@code sourceProcurementWorker}; null when nothing usable remains. */
     static String operationName(String jobType) {
         if (jobType == null) {

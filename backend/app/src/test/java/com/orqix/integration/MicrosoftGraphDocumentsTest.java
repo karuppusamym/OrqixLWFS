@@ -203,6 +203,22 @@ class MicrosoftGraphDocumentsTest {
     }
 
     @Test
+    void theBodyLimitIsRecordedEvenWhenTheClientReportsADifferentError() {
+        // After the subscriber cancels, the JDK client may fail the exchange with its own IOException; callers
+        // ask the holder instead of relying on the error they received (this raced on CI).
+        var body = new HttpExecutor.LimitedSubscriber.Holder();
+        var subscriber = body.handler(1).apply(null);
+        assertThat(body.exceeded()).isFalse();
+        subscriber.onSubscribe(new java.util.concurrent.Flow.Subscription() {
+            @Override public void request(long count) { }
+            @Override public void cancel() { }
+        });
+        subscriber.onNext(List.of(java.nio.ByteBuffer.wrap(new byte[] {1, 2})));
+        subscriber.onError(new java.io.IOException("connection closed"));
+        assertThat(body.exceeded()).isTrue();
+    }
+
+    @Test
     void honorsAnAdministrativelyRestrictedDriveEnumBeforeSending() {
         ObjectNode restricted = (ObjectNode) definition.document().deepCopy();
         ((ObjectNode) restricted.path("operations").path("readText").path("requestSchema")

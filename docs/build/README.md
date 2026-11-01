@@ -9,7 +9,7 @@ The planning package (docs 01–14) explains **what** Orqix is and **why**. This
 |---|---|
 | Everyone (30 min) | This page → [S8 R0 tickets and schedule](S8-r0-tickets.md) → [S1 engineering baseline](S1-engineering-baseline.md) |
 | Backend | [S2 data model](S2-data-model.md), [S3 API rules](S3-api.md), [S4 compiler](S4-workflow-compiler.md), [S5 runtime](S5-runtime.md), [S6 security](S6-security.md) |
-| Frontend | [S7 frontend](S7-frontend.md), [S3 API rules](S3-api.md), [doc 02 UX](../02-ux-design.md), [design board](../../design/business-workspace.svg) |
+| Frontend | [S7 frontend](S7-frontend.md), [S3 API rules](S3-api.md), [doc 02 UX](../02-ux-design.md) |
 | Integration / QA | [S5 §6 effects](S5-runtime.md#6-http-node-and-effect-journal-orqixhttptask-asynchronous-job), [S6](S6-security.md), [S9 test plan](S9-test-plan.md), [S1 §6 local environment](S1-engineering-baseline.md#6-local-development-environment) |
 
 ## 2. Package contents and verification status

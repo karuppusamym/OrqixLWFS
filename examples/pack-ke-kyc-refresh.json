@@ -1,0 +1,760 @@
+{
+  "schemaVersion": "0.1",
+  "workflowKey": "kyc-refresh-ke",
+  "name": "KYC refresh (Kenya)",
+  "metadata": {
+    "description": "Kenya KYC refresh. Extends KYC periodic review (same customerName, customerType, kyc-analysts and reviewedBy, plus risk rating and changed-details answers) with a risk-based path: low risk with no change is accepted on self-declaration, medium risk or changed details get an analyst re-review, high risk gets re-review and enhanced due diligence together, escalating after five days. Next refresh in 1, 3 or 5 years. Risk-based customer due diligence refresh as POCAMLA and CBK guidance expect; intervals are placeholders. Illustrative regional template, not a regulatory-compliant product: thresholds, holiday lists and document names are placeholders for your compliance function to confirm.",
+    "tags": [
+      "pack:banking-mfi",
+      "region:kenya",
+      "template:kyc-refresh",
+      "owner:KYC operations",
+      "illustrative",
+      "lang:sw"
+    ]
+  },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "customerName",
+      "customerType",
+      "riskRating",
+      "detailsChanged"
+    ],
+    "properties": {
+      "customerName": {
+        "type": "string",
+        "title": "Customer name / Jina la mteja",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "customerType": {
+        "type": "string",
+        "title": "Customer type / Aina ya mteja",
+        "enum": [
+          "individual",
+          "corporate"
+        ]
+      },
+      "riskRating": {
+        "type": "string",
+        "title": "Risk rating / Kiwango cha hatari",
+        "enum": [
+          "low",
+          "medium",
+          "high"
+        ]
+      },
+      "detailsChanged": {
+        "type": "boolean",
+        "title": "KYC details changed since the last update / Taarifa za KYC zimebadilika tangu sasisho la mwisho"
+      },
+      "idDocument": {
+        "type": "string",
+        "title": "Identity document / Hati ya utambulisho",
+        "enum": [
+          "National ID",
+          "Maisha card",
+          "Passport",
+          "Alien ID",
+          "Certificate of incorporation"
+        ]
+      },
+      "lastUpdated": {
+        "type": "string",
+        "format": "date",
+        "title": "Last KYC update / Sasisho la mwisho la KYC"
+      }
+    }
+  },
+  "inputUi": {
+    "order": [
+      "customerName",
+      "customerType",
+      "riskRating",
+      "detailsChanged",
+      "idDocument",
+      "lastUpdated"
+    ],
+    "widgets": {
+      "customerType": "radio",
+      "riskRating": "radio",
+      "detailsChanged": "checkbox",
+      "idDocument": "select"
+    },
+    "submitLabel": "Submit KYC refresh / Wasilisha sasisho la KYC",
+    "layout": {
+      "sections": [
+        {
+          "id": "customer",
+          "title": "Customer / Mteja",
+          "columns": 2,
+          "fields": [
+            "customerName",
+            "customerType",
+            "riskRating"
+          ]
+        },
+        {
+          "id": "refresh",
+          "title": "Refresh / Sasisho",
+          "columns": 2,
+          "fields": [
+            "detailsChanged",
+            "idDocument",
+            "lastUpdated"
+          ]
+        }
+      ]
+    }
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "reviewedBy": {
+        "type": "string",
+        "title": "Reviewed by"
+      },
+      "refreshIntervalYears": {
+        "type": "integer",
+        "title": "Next refresh in years"
+      }
+    }
+  },
+  "triggers": [
+    "manual",
+    "api"
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "label": "Refresh due",
+      "config": {}
+    },
+    {
+      "id": "interval",
+      "type": "decision",
+      "label": "Set the next refresh interval",
+      "config": {
+        "decisionRef": "refresh-interval"
+      }
+    },
+    {
+      "id": "path",
+      "type": "decision",
+      "label": "Choose the review path",
+      "config": {
+        "decisionRef": "refresh-path"
+      }
+    },
+    {
+      "id": "pathRoute",
+      "type": "branch",
+      "label": "Which review?",
+      "config": {}
+    },
+    {
+      "id": "notifySelf",
+      "type": "notification",
+      "label": "Tell requester the self-declaration was accepted",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "Self-declaration accepted: no change in KYC details. / Tamko binafsi limekubaliwa: hakuna mabadiliko ya taarifa za KYC."
+      }
+    },
+    {
+      "id": "review",
+      "type": "approval",
+      "label": "Re-review the customer / Kagua mteja upya",
+      "config": {
+        "candidateGroupRef": "kyc-analysts",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 24,
+        "calendar": {
+          "zone": "Africa/Nairobi",
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "holidays": [
+            "2026-01-01",
+            "2026-03-20",
+            "2026-04-03",
+            "2026-04-06",
+            "2026-05-01",
+            "2026-05-27",
+            "2026-06-01",
+            "2026-10-10",
+            "2026-10-20",
+            "2026-12-12",
+            "2026-12-25",
+            "2026-12-26",
+            "2027-01-01",
+            "2027-03-26",
+            "2027-03-29",
+            "2027-05-01",
+            "2027-06-01",
+            "2027-10-10",
+            "2027-10-11",
+            "2027-10-20",
+            "2027-12-12",
+            "2027-12-13",
+            "2027-12-25",
+            "2027-12-26",
+            "2027-12-27"
+          ],
+          "start": "08:30",
+          "end": "16:30",
+          "revision": "KE-bank-2026-illustrative",
+          "validFrom": "2026-01-01"
+        }
+      }
+    },
+    {
+      "id": "eddSplit",
+      "type": "parallelSplit",
+      "label": "Review and due diligence together",
+      "config": {
+        "joinRef": "eddJoin"
+      }
+    },
+    {
+      "id": "eddReview",
+      "type": "approval",
+      "label": "Re-review the customer / Kagua mteja upya",
+      "config": {
+        "candidateGroupRef": "kyc-analysts",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 24,
+        "calendar": {
+          "zone": "Africa/Nairobi",
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "holidays": [
+            "2026-01-01",
+            "2026-03-20",
+            "2026-04-03",
+            "2026-04-06",
+            "2026-05-01",
+            "2026-05-27",
+            "2026-06-01",
+            "2026-10-10",
+            "2026-10-20",
+            "2026-12-12",
+            "2026-12-25",
+            "2026-12-26",
+            "2027-01-01",
+            "2027-03-26",
+            "2027-03-29",
+            "2027-05-01",
+            "2027-06-01",
+            "2027-10-10",
+            "2027-10-11",
+            "2027-10-20",
+            "2027-12-12",
+            "2027-12-13",
+            "2027-12-25",
+            "2027-12-26",
+            "2027-12-27"
+          ],
+          "start": "08:30",
+          "end": "16:30",
+          "revision": "KE-bank-2026-illustrative",
+          "validFrom": "2026-01-01"
+        }
+      }
+    },
+    {
+      "id": "edd",
+      "type": "approval",
+      "label": "Enhanced due diligence / Uchunguzi wa kina",
+      "config": {
+        "candidateGroupRef": "compliance-officers",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 40,
+        "calendar": {
+          "zone": "Africa/Nairobi",
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "holidays": [
+            "2026-01-01",
+            "2026-03-20",
+            "2026-04-03",
+            "2026-04-06",
+            "2026-05-01",
+            "2026-05-27",
+            "2026-06-01",
+            "2026-10-10",
+            "2026-10-20",
+            "2026-12-12",
+            "2026-12-25",
+            "2026-12-26",
+            "2027-01-01",
+            "2027-03-26",
+            "2027-03-29",
+            "2027-05-01",
+            "2027-06-01",
+            "2027-10-10",
+            "2027-10-11",
+            "2027-10-20",
+            "2027-12-12",
+            "2027-12-13",
+            "2027-12-25",
+            "2027-12-26",
+            "2027-12-27"
+          ],
+          "start": "08:30",
+          "end": "16:30",
+          "revision": "KE-bank-2026-illustrative",
+          "validFrom": "2026-01-01"
+        },
+        "timeoutAfter": "P5D"
+      }
+    },
+    {
+      "id": "escalation",
+      "type": "approval",
+      "label": "Head of compliance approval / Idhini ya mkuu wa uzingatiaji",
+      "config": {
+        "candidateGroupRef": "head-of-compliance",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 16,
+        "calendar": {
+          "zone": "Africa/Nairobi",
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "holidays": [
+            "2026-01-01",
+            "2026-03-20",
+            "2026-04-03",
+            "2026-04-06",
+            "2026-05-01",
+            "2026-05-27",
+            "2026-06-01",
+            "2026-10-10",
+            "2026-10-20",
+            "2026-12-12",
+            "2026-12-25",
+            "2026-12-26",
+            "2027-01-01",
+            "2027-03-26",
+            "2027-03-29",
+            "2027-05-01",
+            "2027-06-01",
+            "2027-10-10",
+            "2027-10-11",
+            "2027-10-20",
+            "2027-12-12",
+            "2027-12-13",
+            "2027-12-25",
+            "2027-12-26",
+            "2027-12-27"
+          ],
+          "start": "08:30",
+          "end": "16:30",
+          "revision": "KE-bank-2026-illustrative",
+          "validFrom": "2026-01-01"
+        }
+      }
+    },
+    {
+      "id": "eddDone",
+      "type": "notification",
+      "label": "Record that due diligence is complete",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "Enhanced due diligence is complete. / Uchunguzi wa kina umekamilika."
+      }
+    },
+    {
+      "id": "eddJoin",
+      "type": "parallelJoin",
+      "label": "Both finished",
+      "config": {}
+    },
+    {
+      "id": "notifyDone",
+      "type": "notification",
+      "label": "Tell requester KYC is refreshed",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "KYC refreshed. / KYC imesasishwa."
+      }
+    },
+    {
+      "id": "notifyRestricted",
+      "type": "notification",
+      "label": "Tell requester the account is restricted",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "KYC refresh not confirmed; account restricted. Open the request to see the reason. / Sasisho la KYC halijathibitishwa; akaunti imezuiwa. Fungua ombi kuona sababu."
+      }
+    },
+    {
+      "id": "refreshed",
+      "type": "end",
+      "label": "Refreshed",
+      "config": {
+        "businessOutcome": "Refreshed",
+        "outcomeKind": "success"
+      }
+    },
+    {
+      "id": "restricted",
+      "type": "end",
+      "label": "Restricted",
+      "config": {
+        "businessOutcome": "Restricted",
+        "outcomeKind": "rejected"
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t1",
+      "from": "start",
+      "to": "interval",
+      "on": "next"
+    },
+    {
+      "id": "t2",
+      "from": "interval",
+      "to": "path",
+      "on": "next"
+    },
+    {
+      "id": "t3",
+      "from": "path",
+      "to": "pathRoute",
+      "on": "next"
+    },
+    {
+      "id": "t4",
+      "from": "pathRoute",
+      "to": "eddSplit",
+      "on": "condition",
+      "label": "High risk",
+      "condition": {
+        "fieldRef": "/steps/path/route",
+        "operator": "eq",
+        "value": "edd"
+      }
+    },
+    {
+      "id": "t5",
+      "from": "pathRoute",
+      "to": "notifySelf",
+      "on": "condition",
+      "label": "Low risk, nothing changed",
+      "condition": {
+        "fieldRef": "/steps/path/route",
+        "operator": "eq",
+        "value": "selfDeclaration"
+      }
+    },
+    {
+      "id": "t6",
+      "from": "pathRoute",
+      "to": "review",
+      "on": "default",
+      "label": "Medium risk or details changed"
+    },
+    {
+      "id": "t7",
+      "from": "notifySelf",
+      "to": "refreshed",
+      "on": "next"
+    },
+    {
+      "id": "t8",
+      "from": "review",
+      "to": "notifyDone",
+      "on": "approved"
+    },
+    {
+      "id": "t9",
+      "from": "review",
+      "to": "notifyRestricted",
+      "on": "rejected"
+    },
+    {
+      "id": "t10",
+      "from": "eddSplit",
+      "to": "eddReview",
+      "on": "next"
+    },
+    {
+      "id": "t11",
+      "from": "eddSplit",
+      "to": "edd",
+      "on": "next"
+    },
+    {
+      "id": "t12",
+      "from": "eddReview",
+      "to": "eddJoin",
+      "on": "approved"
+    },
+    {
+      "id": "t13",
+      "from": "eddReview",
+      "to": "notifyRestricted",
+      "on": "rejected"
+    },
+    {
+      "id": "t14",
+      "from": "edd",
+      "to": "eddDone",
+      "on": "approved"
+    },
+    {
+      "id": "t15",
+      "from": "edd",
+      "to": "notifyRestricted",
+      "on": "rejected"
+    },
+    {
+      "id": "t16",
+      "from": "edd",
+      "to": "escalation",
+      "on": "timedOut",
+      "label": "Not decided in 5 days"
+    },
+    {
+      "id": "t17",
+      "from": "escalation",
+      "to": "eddDone",
+      "on": "approved"
+    },
+    {
+      "id": "t18",
+      "from": "eddDone",
+      "to": "eddJoin",
+      "on": "next"
+    },
+    {
+      "id": "t19",
+      "from": "escalation",
+      "to": "notifyRestricted",
+      "on": "rejected"
+    },
+    {
+      "id": "t20",
+      "from": "eddJoin",
+      "to": "notifyDone",
+      "on": "next"
+    },
+    {
+      "id": "t21",
+      "from": "notifyDone",
+      "to": "refreshed",
+      "on": "next"
+    },
+    {
+      "id": "t22",
+      "from": "notifyRestricted",
+      "to": "restricted",
+      "on": "next"
+    }
+  ],
+  "decisions": [
+    {
+      "key": "refresh-interval",
+      "version": 1,
+      "hitPolicy": "FIRST",
+      "rows": [
+        {
+          "when": {
+            "fieldRef": "/input/riskRating",
+            "operator": "eq",
+            "value": "high"
+          },
+          "then": {
+            "intervalYears": 1
+          }
+        },
+        {
+          "when": {
+            "fieldRef": "/input/riskRating",
+            "operator": "eq",
+            "value": "low"
+          },
+          "then": {
+            "intervalYears": 5
+          }
+        }
+      ],
+      "default": {
+        "intervalYears": 3
+      }
+    },
+    {
+      "key": "refresh-path",
+      "version": 1,
+      "hitPolicy": "FIRST",
+      "rows": [
+        {
+          "when": {
+            "fieldRef": "/input/riskRating",
+            "operator": "eq",
+            "value": "high"
+          },
+          "then": {
+            "route": "edd"
+          }
+        },
+        {
+          "when": {
+            "all": [
+              {
+                "fieldRef": "/input/detailsChanged",
+                "operator": "eq",
+                "value": true
+              },
+              {
+                "fieldRef": "/input/riskRating",
+                "operator": "ne",
+                "value": "high"
+              }
+            ]
+          },
+          "then": {
+            "route": "review"
+          }
+        },
+        {
+          "when": {
+            "fieldRef": "/input/riskRating",
+            "operator": "eq",
+            "value": "low"
+          },
+          "then": {
+            "route": "selfDeclaration"
+          }
+        }
+      ],
+      "default": {
+        "route": "review"
+      }
+    }
+  ],
+  "execution": {
+    "maxConcurrentRuns": 200,
+    "maxAttempts": 3,
+    "retryDelaySeconds": 30
+  },
+  "security": {
+    "selfApproval": "deny"
+  },
+  "dependencies": {
+    "connections": []
+  },
+  "outputMapping": {
+    "reviewedBy": {
+      "fieldRef": "/steps/review/decidedBy",
+      "required": false
+    },
+    "refreshIntervalYears": {
+      "fieldRef": "/steps/interval/intervalYears",
+      "required": true
+    }
+  },
+  "uiLayout": {
+    "positions": {
+      "start": {
+        "x": 80,
+        "y": 80
+      },
+      "interval": {
+        "x": 320,
+        "y": 80
+      },
+      "path": {
+        "x": 560,
+        "y": 80
+      },
+      "pathRoute": {
+        "x": 800,
+        "y": 80
+      },
+      "notifySelf": {
+        "x": 1040,
+        "y": 80
+      },
+      "review": {
+        "x": 1040,
+        "y": 240
+      },
+      "eddSplit": {
+        "x": 1040,
+        "y": 400
+      },
+      "eddReview": {
+        "x": 1280,
+        "y": 80
+      },
+      "edd": {
+        "x": 1280,
+        "y": 240
+      },
+      "escalation": {
+        "x": 1520,
+        "y": 80
+      },
+      "eddDone": {
+        "x": 1760,
+        "y": 80
+      },
+      "eddJoin": {
+        "x": 2000,
+        "y": 80
+      },
+      "notifyDone": {
+        "x": 2240,
+        "y": 80
+      },
+      "notifyRestricted": {
+        "x": 1760,
+        "y": 240
+      },
+      "refreshed": {
+        "x": 2480,
+        "y": 80
+      },
+      "restricted": {
+        "x": 2000,
+        "y": 240
+      }
+    },
+    "viewport": {
+      "x": 0,
+      "y": 0,
+      "zoom": 0.6
+    }
+  }
+}

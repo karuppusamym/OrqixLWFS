@@ -87,6 +87,7 @@ public class WorkspaceFeatures {
             gate("convertPegaCaseDefinition", "POST", "/workspaces/{workspaceId}/migrations/{migrationId}/case-definition", Feature.MIGRATION, Feature.CASES),
             gate("uploadMigration", "POST", "/workspaces/{workspaceId}/migrations", Feature.MIGRATION),
             gate("convertMigration", "POST", "/workspaces/{workspaceId}/migrations/{migrationId}/convert", Feature.MIGRATION),
+            gate("acknowledgeMigrationVerifications", "POST", "/workspaces/{workspaceId}/migrations/{migrationId}/verifications", Feature.MIGRATION),
             gate("uploadBlueprintMigration", "POST", "/workspaces/{workspaceId}/migrations/blueprints", Feature.MIGRATION),
             gate("saveBlueprintTranscription", "PUT", "/workspaces/{workspaceId}/migrations/{migrationId}/blueprint", Feature.MIGRATION),
             gate("uploadMigrationProject", "POST", "/workspaces/{workspaceId}/migrations/projects", Feature.MIGRATION),

@@ -26,6 +26,7 @@ import { readStorage, writeStorage } from '@/lib/storage'
 import { RunProgressPanel, type RunView } from './RunProgressPanel'
 import { CancelDialog, MigrateDialog, ReassignDialog, RepairDialog, ReconcileDialog, ResumeDialog, RetryDialog, SuspendDialog } from './OperatorDialogs'
 import { CaseControlsPanel } from './CaseControlsPanel'
+import { EvidencePackMenu } from '@/features/evidence-pack/EvidencePackMenu'
 import { RunCommentsPanel } from './RunCommentsPanel'
 import { RunFiles, useRunFiles } from './RunFiles'
 import { StageProgress } from './StageProgress'
@@ -138,9 +139,12 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
           </>
         }
         actions={
-          <Button asChild variant="secondary">
-            <Link to={operator ? `/w/${ws}/runs` : `/w/${ws}/requests`}>{operator ? 'All runs' : 'My requests'}</Link>
-          </Button>
+          <>
+            <EvidencePackMenu size="default" target={{ kind: 'run', runId: run.id }} label={`Evidence pack for request ${requestId(run)}`} />
+            <Button asChild variant="secondary">
+              <Link to={operator ? `/w/${ws}/runs` : `/w/${ws}/requests`}>{operator ? 'All runs' : 'My requests'}</Link>
+            </Button>
+          </>
         }
       />
 

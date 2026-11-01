@@ -1,0 +1,575 @@
+{
+  "schemaVersion": "0.1",
+  "workflowKey": "loan-exception-eu",
+  "name": "Loan exception approval (European Union)",
+  "metadata": {
+    "description": "European Union loan exception approval in EUR. A loan that breaks credit policy goes to the branch manager, then by amount to the credit head (from EUR 100,000) or a two-member credit committee (from EUR 500,000). Related-party loans also need compliance. Due dates count European Union banking hours and public holidays. Loans to members of the management body and related parties need the separate approval CRD Article 88 asks for. Illustrative regional template, not a regulatory-compliant product: thresholds, holiday lists and document names are placeholders for your compliance function to confirm.",
+    "tags": [
+      "pack:banking-mfi",
+      "region:eu",
+      "template:loan-exception",
+      "owner:Credit operations",
+      "illustrative",
+      "lang:de"
+    ]
+  },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "loanReference",
+      "borrowerSegment",
+      "amount",
+      "exceptionType",
+      "exceptionDetail",
+      "relatedParty"
+    ],
+    "properties": {
+      "loanReference": {
+        "type": "string",
+        "title": "Loan reference / Kreditreferenz",
+        "minLength": 3,
+        "maxLength": 30,
+        "pattern": "^[A-Za-z0-9-]{3,30}$",
+        "patternMessage": "Use 3 to 30 letters, digits and dashes, for example LN-2026-0042."
+      },
+      "borrowerSegment": {
+        "type": "string",
+        "title": "Borrower segment / Kundensegment",
+        "enum": [
+          "Consumer",
+          "Residential mortgage",
+          "SME"
+        ]
+      },
+      "amount": {
+        "type": "number",
+        "title": "Loan amount (EUR) / Kreditbetrag (EUR)",
+        "minimum": 1,
+        "maximum": 10000000000,
+        "multipleOf": 0.01
+      },
+      "exceptionType": {
+        "type": "string",
+        "title": "Policy exception / Richtlinienabweichung",
+        "enum": [
+          "Rate concession",
+          "Tenor beyond policy",
+          "DSTI above limit",
+          "LTV above limit",
+          "Collateral shortfall",
+          "Covenant waiver"
+        ]
+      },
+      "exceptionDetail": {
+        "type": "string",
+        "title": "What breaks policy, and why accept it / Welche Abweichung, und warum vertretbar",
+        "minLength": 10,
+        "maxLength": 2000
+      },
+      "mitigants": {
+        "type": "string",
+        "title": "Mitigants / Risikomindernde Faktoren",
+        "minLength": 0,
+        "maxLength": 2000
+      },
+      "relatedParty": {
+        "type": "boolean",
+        "title": "Borrower is an insider or related party / Kreditnehmer ist Insider oder nahestehende Person"
+      }
+    }
+  },
+  "inputUi": {
+    "order": [
+      "loanReference",
+      "borrowerSegment",
+      "amount",
+      "exceptionType",
+      "exceptionDetail",
+      "mitigants",
+      "relatedParty"
+    ],
+    "widgets": {
+      "borrowerSegment": "select",
+      "amount": "number",
+      "exceptionType": "select",
+      "exceptionDetail": "textarea",
+      "mitigants": "textarea",
+      "relatedParty": "checkbox"
+    },
+    "submitLabel": "Submit exception / Abweichung einreichen",
+    "layout": {
+      "sections": [
+        {
+          "id": "loan",
+          "title": "Loan / Kredit",
+          "columns": 2,
+          "fields": [
+            "loanReference",
+            "borrowerSegment",
+            "amount",
+            "relatedParty"
+          ]
+        },
+        {
+          "id": "exception",
+          "title": "Exception / Abweichung",
+          "columns": 1,
+          "fields": [
+            "exceptionType",
+            "exceptionDetail",
+            "mitigants"
+          ]
+        }
+      ]
+    }
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "approvalLevel": {
+        "type": "string",
+        "title": "Approval level"
+      },
+      "branchReviewer": {
+        "type": "string",
+        "title": "Branch reviewer"
+      }
+    }
+  },
+  "triggers": [
+    "manual",
+    "api"
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "label": "Exception submitted",
+      "config": {}
+    },
+    {
+      "id": "level",
+      "type": "decision",
+      "label": "Set the approval level",
+      "config": {
+        "decisionRef": "exception-level"
+      }
+    },
+    {
+      "id": "branchReview",
+      "type": "approval",
+      "label": "Branch manager review / Prüfung Filialleitung",
+      "config": {
+        "candidateGroupRef": "branch-managers",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 16,
+        "calendar": {
+          "zone": "Europe/Berlin",
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "holidays": [
+            "2026-01-01",
+            "2026-04-03",
+            "2026-04-06",
+            "2026-05-01",
+            "2026-12-25",
+            "2026-12-26",
+            "2027-01-01",
+            "2027-03-26",
+            "2027-03-29",
+            "2027-05-01",
+            "2027-12-25",
+            "2027-12-26"
+          ],
+          "start": "09:00",
+          "end": "17:00",
+          "revision": "EU-bank-2026-illustrative",
+          "validFrom": "2026-01-01"
+        }
+      }
+    },
+    {
+      "id": "relatedRoute",
+      "type": "branch",
+      "label": "Related party?",
+      "config": {}
+    },
+    {
+      "id": "compliance",
+      "type": "approval",
+      "label": "Related-party compliance review / Compliance-Prüfung nahestehende Person",
+      "config": {
+        "candidateGroupRef": "compliance-officers",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 24,
+        "calendar": {
+          "zone": "Europe/Berlin",
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "holidays": [
+            "2026-01-01",
+            "2026-04-03",
+            "2026-04-06",
+            "2026-05-01",
+            "2026-12-25",
+            "2026-12-26",
+            "2027-01-01",
+            "2027-03-26",
+            "2027-03-29",
+            "2027-05-01",
+            "2027-12-25",
+            "2027-12-26"
+          ],
+          "start": "09:00",
+          "end": "17:00",
+          "revision": "EU-bank-2026-illustrative",
+          "validFrom": "2026-01-01"
+        }
+      }
+    },
+    {
+      "id": "levelRoute",
+      "type": "branch",
+      "label": "Which approval level?",
+      "config": {}
+    },
+    {
+      "id": "creditHead",
+      "type": "approval",
+      "label": "Credit head approval / Genehmigung Leitung Kredit",
+      "config": {
+        "candidateGroupRef": "credit-heads",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 16,
+        "calendar": {
+          "zone": "Europe/Berlin",
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "holidays": [
+            "2026-01-01",
+            "2026-04-03",
+            "2026-04-06",
+            "2026-05-01",
+            "2026-12-25",
+            "2026-12-26",
+            "2027-01-01",
+            "2027-03-26",
+            "2027-03-29",
+            "2027-05-01",
+            "2027-12-25",
+            "2027-12-26"
+          ],
+          "start": "09:00",
+          "end": "17:00",
+          "revision": "EU-bank-2026-illustrative",
+          "validFrom": "2026-01-01"
+        },
+        "escalation": {
+          "intervalHours": 8,
+          "maxNotices": 3
+        }
+      }
+    },
+    {
+      "id": "committee",
+      "type": "approval",
+      "label": "Credit committee approval / Genehmigung Kreditausschuss",
+      "config": {
+        "candidateGroupRef": "credit-committee",
+        "rejectReasonRequired": true,
+        "multiInstance": {
+          "approvers": 2
+        }
+      }
+    },
+    {
+      "id": "notifyApproved",
+      "type": "notification",
+      "label": "Tell requester it was approved",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "The loan exception was approved. / Die Kreditabweichung wurde genehmigt."
+      }
+    },
+    {
+      "id": "notifyRejected",
+      "type": "notification",
+      "label": "Tell requester it was rejected",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "The loan exception was rejected. Open the request to see the reason. / Die Kreditabweichung wurde abgelehnt. Den Grund finden Sie im Antrag."
+      }
+    },
+    {
+      "id": "approved",
+      "type": "end",
+      "label": "Approved",
+      "config": {
+        "businessOutcome": "Approved",
+        "outcomeKind": "success"
+      }
+    },
+    {
+      "id": "rejected",
+      "type": "end",
+      "label": "Rejected",
+      "config": {
+        "businessOutcome": "Rejected",
+        "outcomeKind": "rejected"
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t1",
+      "from": "start",
+      "to": "level",
+      "on": "next"
+    },
+    {
+      "id": "t2",
+      "from": "level",
+      "to": "branchReview",
+      "on": "next"
+    },
+    {
+      "id": "t3",
+      "from": "branchReview",
+      "to": "relatedRoute",
+      "on": "approved"
+    },
+    {
+      "id": "t4",
+      "from": "branchReview",
+      "to": "notifyRejected",
+      "on": "rejected"
+    },
+    {
+      "id": "t5",
+      "from": "relatedRoute",
+      "to": "compliance",
+      "on": "condition",
+      "label": "Director, staff or related party",
+      "condition": {
+        "fieldRef": "/input/relatedParty",
+        "operator": "eq",
+        "value": true
+      }
+    },
+    {
+      "id": "t6",
+      "from": "relatedRoute",
+      "to": "levelRoute",
+      "on": "default",
+      "label": "Not related"
+    },
+    {
+      "id": "t7",
+      "from": "compliance",
+      "to": "levelRoute",
+      "on": "approved"
+    },
+    {
+      "id": "t8",
+      "from": "compliance",
+      "to": "notifyRejected",
+      "on": "rejected"
+    },
+    {
+      "id": "t9",
+      "from": "levelRoute",
+      "to": "committee",
+      "on": "condition",
+      "label": "EUR 500,000 or more",
+      "condition": {
+        "fieldRef": "/steps/level/level",
+        "operator": "eq",
+        "value": "committee"
+      }
+    },
+    {
+      "id": "t10",
+      "from": "levelRoute",
+      "to": "creditHead",
+      "on": "condition",
+      "label": "EUR 100,000 or more",
+      "condition": {
+        "fieldRef": "/steps/level/level",
+        "operator": "eq",
+        "value": "creditHead"
+      }
+    },
+    {
+      "id": "t11",
+      "from": "levelRoute",
+      "to": "notifyApproved",
+      "on": "default",
+      "label": "Within branch powers"
+    },
+    {
+      "id": "t12",
+      "from": "creditHead",
+      "to": "notifyApproved",
+      "on": "approved"
+    },
+    {
+      "id": "t13",
+      "from": "creditHead",
+      "to": "notifyRejected",
+      "on": "rejected"
+    },
+    {
+      "id": "t14",
+      "from": "committee",
+      "to": "notifyApproved",
+      "on": "approved"
+    },
+    {
+      "id": "t15",
+      "from": "committee",
+      "to": "notifyRejected",
+      "on": "rejected"
+    },
+    {
+      "id": "t16",
+      "from": "notifyApproved",
+      "to": "approved",
+      "on": "next"
+    },
+    {
+      "id": "t17",
+      "from": "notifyRejected",
+      "to": "rejected",
+      "on": "next"
+    }
+  ],
+  "decisions": [
+    {
+      "key": "exception-level",
+      "version": 1,
+      "hitPolicy": "FIRST",
+      "rows": [
+        {
+          "when": {
+            "fieldRef": "/input/amount",
+            "operator": "gte",
+            "value": 500000
+          },
+          "then": {
+            "level": "committee"
+          }
+        },
+        {
+          "when": {
+            "fieldRef": "/input/amount",
+            "operator": "gte",
+            "value": 100000
+          },
+          "then": {
+            "level": "creditHead"
+          }
+        }
+      ],
+      "default": {
+        "level": "branch"
+      }
+    }
+  ],
+  "execution": {
+    "maxConcurrentRuns": 200,
+    "maxAttempts": 3,
+    "retryDelaySeconds": 30
+  },
+  "security": {
+    "selfApproval": "deny"
+  },
+  "dependencies": {
+    "connections": []
+  },
+  "outputMapping": {
+    "approvalLevel": {
+      "fieldRef": "/steps/level/level",
+      "required": true
+    },
+    "branchReviewer": {
+      "fieldRef": "/steps/branchReview/decidedBy",
+      "required": false
+    }
+  },
+  "uiLayout": {
+    "positions": {
+      "start": {
+        "x": 80,
+        "y": 80
+      },
+      "level": {
+        "x": 320,
+        "y": 80
+      },
+      "branchReview": {
+        "x": 560,
+        "y": 80
+      },
+      "relatedRoute": {
+        "x": 800,
+        "y": 80
+      },
+      "compliance": {
+        "x": 1040,
+        "y": 80
+      },
+      "levelRoute": {
+        "x": 1280,
+        "y": 80
+      },
+      "creditHead": {
+        "x": 1520,
+        "y": 80
+      },
+      "committee": {
+        "x": 1520,
+        "y": 240
+      },
+      "notifyApproved": {
+        "x": 1760,
+        "y": 80
+      },
+      "notifyRejected": {
+        "x": 1760,
+        "y": 240
+      },
+      "approved": {
+        "x": 2000,
+        "y": 80
+      },
+      "rejected": {
+        "x": 2000,
+        "y": 240
+      }
+    },
+    "viewport": {
+      "x": 0,
+      "y": 0,
+      "zoom": 0.6
+    }
+  }
+}

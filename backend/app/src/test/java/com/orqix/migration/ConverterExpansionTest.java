@@ -362,8 +362,12 @@ class ConverterExpansionTest {
                 "{\"any\":[{\"fieldRef\":\"/input/riskLevel\",\"operator\":\"eq\",\"value\":\"high\"},{\"fieldRef\":\"/input/riskLevel\",\"operator\":\"eq\",\"value\":\"critical\"},"
                         + "{\"fieldRef\":\"/input/riskScore\",\"operator\":\"gte\",\"value\":80}]}");
         var conditions = converted.report().issues().stream().filter(i -> "CONDITION_CONVERTED".equals(i.reasonCode())).toList();
-        assertThat(conditions).extracting(Report.Issue::sourceElementId).containsExactlyInAnyOrder("tierLarge", "tierMedium", "regionOutside", "riskEscalate");
+        assertThat(conditions).extracting(Report.Issue::sourceElementId).containsExactlyInAnyOrder("tierLarge", "tierMedium", "riskEscalate");
         assertThat(conditions).allMatch(i -> Report.REVIEW.equals(i.severity()));
+        // not(region in (...)) is rewritten (De Morgan): converted but changed, open until a reviewer verifies it.
+        var rewritten = converted.report().issues().stream().filter(i -> "CONDITION_REWRITTEN".equals(i.reasonCode())).toList();
+        assertThat(rewritten).extracting(Report.Issue::sourceElementId).containsExactly("regionOutside");
+        assertThat(rewritten).allMatch(i -> Report.VERIFY.equals(i.severity()) && Report.OPEN.equals(i.resolutionStatus()));
         JsonNode definition = converted.definition();
         assertThat(endOf(definition, values("10000.01", "EU", "low", "1"))).isEqualTo("Large");
         assertThat(endOf(definition, values("10000", "EU", "low", "1"))).isEqualTo("Medium");

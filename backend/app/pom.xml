@@ -205,6 +205,8 @@
                     <include>vendor-onboarding-check.json</include>
                     <include>order-payment-wait.json</include>
                     <include>case-with-stages.json</include>
+                    <!-- Regional regulated template packs (docs/regional-template-packs.md). -->
+                    <include>pack-*.json</include>
                 </includes>
             </resource>
             <!-- Connection definition used by the dev seed (profile dev only). -->

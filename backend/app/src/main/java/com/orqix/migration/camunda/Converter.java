@@ -110,7 +110,9 @@ public final class Converter {
                 case CHILD -> childMapped(a, item.subject, effectiveRequest.path("childWorkflowMappings").path(item.subject), effectiveRequest);
                 case DECISION -> effectiveRequest.path("decisionMappings").path(item.subject).isObject() && decisionTables.containsKey(item.subject);
                 case FORM -> uploadedForms.containsKey(item.subject) || acknowledgeInfo;
-                case ACKNOWLEDGE -> Report.REVIEW.equals(item.issue.severity()) ? acknowledgeReview : acknowledgeInfo;
+                // A verify item is never closed by the mapper's flags: a reviewer acknowledges it after conversion.
+                case ACKNOWLEDGE -> Report.VERIFY.equals(item.issue.severity()) ? false
+                        : Report.REVIEW.equals(item.issue.severity()) ? acknowledgeReview : acknowledgeInfo;
                 default -> false;
             };
             Report.Issue shown = item.issue;

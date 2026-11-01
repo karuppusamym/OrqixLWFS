@@ -1,5 +1,5 @@
 # Business experience and screen design
-Status: design specification. [Visual board](../design/business-workspace.svg) uses illustrative data.
+Status: design specification.
 
 ## Design direction
 

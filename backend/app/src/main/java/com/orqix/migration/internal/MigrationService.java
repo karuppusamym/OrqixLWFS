@@ -159,6 +159,52 @@ public class MigrationService {
             return new Converted(created.workflow(),created.draft(),report);
         } catch (SourceException e) { throw sourceProblem(e); }
     }
+    /** One "converted but changed" item a reviewer acknowledges, by its source element, reason code and (optional) path. */
+    public record VerificationItem(String sourceElementId, String reasonCode, String sourcePath) { }
+
+    /**
+     * A reviewer acknowledges "converted but changed — verify" items of a converted migration (docs/17 "Severity model").
+     * Needs {@code workflow.publish}; the person who converted (the mapper) cannot verify their own conversion. Each listed
+     * item must match at least one open verify item. The report keeps who, when and why; the action is audited.
+     */
+    @Transactional
+    public Job acknowledgeVerifications(Caller caller, UUID ws, UUID id, List<VerificationItem> items, String reason) {
+        var access=policy.requireVisible(caller,ws);
+        policy.require(access,Permission.WORKFLOW_PUBLISH,"acknowledgeMigrationVerification",true);
+        if (reason == null || reason.isBlank() || reason.length() > 1000) throw new ApiException(ProblemCode.VALIDATION_FAILED,"A reason of 1 to 1000 characters is required.");
+        if (items == null || items.isEmpty() || items.size() > 500) throw new ApiException(ProblemCode.VALIDATION_FAILED,"List 1 to 500 items to acknowledge.");
+        Stored job=stored(ws,id,true);
+        if (!"converted".equals(job.view.status())) throw new ApiException(ProblemCode.MIGRATION_BLOCKED,"Convert the source first. Changed behaviour is verified against the converted draft.");
+        UUID mapper=jdbc.sql("SELECT converted_by_subject_id FROM migration_job WHERE workspace_id=:ws AND id=:id").param("ws",ws).param("id",id)
+                .query((rs,n) -> Sql.uuid(rs,"converted_by_subject_id")).single();
+        if (caller.subjectId().equals(mapper)) throw new ApiException(ProblemCode.FORBIDDEN,"You converted this source, so a different reviewer must verify its changed behaviour.");
+        var report=job.view.report();
+        List<Report.Issue> issues=new ArrayList<>(report.issues());
+        List<Report.Verification> verifications=new ArrayList<>(report.verifications());
+        String now=Instant.now().toString(); String text=reason.strip();
+        for (VerificationItem item:items) {
+            if (item == null || item.sourceElementId() == null || item.reasonCode() == null) throw new ApiException(ProblemCode.VALIDATION_FAILED,"Each item needs sourceElementId and reasonCode.");
+            boolean matched=false;
+            for (int i=0;i<issues.size();i++) {
+                var issue=issues.get(i);
+                if (issue.awaitsVerification() && item.sourceElementId().equals(issue.sourceElementId()) && item.reasonCode().equals(issue.reasonCode())
+                        && (item.sourcePath() == null || item.sourcePath().equals(issue.sourcePath()))) {
+                    issues.set(i,issue.withResolution(Report.ACKNOWLEDGED)); matched=true;
+                    verifications.add(new Report.Verification(issue.sourceElementId(),issue.reasonCode(),issue.sourcePath(),caller.subjectId().toString(),caller.displayName(),now,text));
+                }
+            }
+            if (!matched) throw new ApiException(ProblemCode.VALIDATION_FAILED,"No open verify item matches "+item.sourceElementId()+" / "+item.reasonCode()+".");
+        }
+        var updated=new Report.CompatibilityReport(report.sourceSystem(),report.sourceVersion(),report.adapterVersion(),report.sourceHash(),report.processId(),
+                report.processName(),report.elementCounts(),issues,report.assumptions(),report.requiredMappings(),report.publishable(),report.testCases(),
+                report.mappingHints(),verifications);
+        jdbc.sql("UPDATE migration_job SET report=CAST(:report AS jsonb),updated_at=now() WHERE workspace_id=:ws AND id=:id")
+                .param("report",json.write(updated)).param("ws",ws).param("id",id).update();
+        audit(caller,ws,id,"migration.verification.acknowledged",Map.of("migrationId",id.toString(),"workflowId",String.valueOf(job.view.convertedWorkflowId()),
+                "items",items.stream().map(i -> i.sourceElementId()+"/"+i.reasonCode()).toList(),"remaining",(int)issues.stream().filter(Report.Issue::awaitsVerification).count()));
+        return stored(ws,id,false).view;
+    }
+
     /** The decision a DMN job converts: the named one, or the only decision of the file. */
     private static String selectedDecision(DmnAnalysis dmn,JsonNode request) {
         String requested=request.path("decisionId").asString(null);

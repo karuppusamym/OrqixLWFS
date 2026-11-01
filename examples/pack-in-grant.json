@@ -1,0 +1,611 @@
+{
+  "schemaVersion": "0.1",
+  "workflowKey": "grant-application-in",
+  "name": "Grant application (India)",
+  "metadata": {
+    "description": "India grant application in INR. Rules reject requests above INR 50 lakh or with own contribution under 10 percent; two reviewers on the technical panel must both approve, finance checks the budget, and the grants committee decides from INR 10 lakh. Due dates count office hours and public holidays. Built for a state department or CSR foundation; registered NGOs give their NGO Darpan ID. Illustrative regional template, not a regulatory-compliant product: thresholds, holiday lists and document names are placeholders for your compliance function to confirm.",
+    "tags": [
+      "pack:public-sector",
+      "region:india",
+      "template:grant",
+      "owner:Grants office",
+      "illustrative",
+      "lang:hi"
+    ]
+  },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "organisationName",
+      "organisationType",
+      "registrationId",
+      "programme",
+      "requestedAmount",
+      "ownContribution",
+      "projectSummary",
+      "budget"
+    ],
+    "properties": {
+      "organisationName": {
+        "type": "string",
+        "title": "Organisation name / संगठन का नाम",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "organisationType": {
+        "type": "string",
+        "title": "Organisation type / संगठन प्रकार",
+        "enum": [
+          "Registered NGO",
+          "Self-help group federation",
+          "Gram panchayat",
+          "MSME",
+          "Cooperative society"
+        ]
+      },
+      "registrationId": {
+        "type": "string",
+        "title": "NGO Darpan ID / एनजीओ दर्पण आईडी",
+        "minLength": 3,
+        "maxLength": 40,
+        "pattern": "^[A-Z]{2}/[0-9]{4}/[0-9]{7}$",
+        "patternMessage": "Enter the NGO Darpan unique ID, for example MH/2019/0234567."
+      },
+      "programme": {
+        "type": "string",
+        "title": "Programme / कार्यक्रम",
+        "enum": [
+          "Livelihoods",
+          "Women's empowerment",
+          "Skill development",
+          "Water and sanitation",
+          "Digital literacy"
+        ]
+      },
+      "requestedAmount": {
+        "type": "number",
+        "title": "Requested amount (INR) / अनुरोधित राशि (₹)",
+        "minimum": 1,
+        "maximum": 10000000000,
+        "multipleOf": 0.01
+      },
+      "ownContribution": {
+        "type": "integer",
+        "title": "Own contribution (%) / स्वयं का योगदान (%)",
+        "minimum": 0,
+        "maximum": 100
+      },
+      "projectSummary": {
+        "type": "string",
+        "title": "Project summary / परियोजना सारांश",
+        "minLength": 20,
+        "maxLength": 4000
+      },
+      "budget": {
+        "type": "array",
+        "title": "Budget lines / बजट मदें",
+        "minItems": 1,
+        "maxItems": 20,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "item",
+            "amount"
+          ],
+          "properties": {
+            "item": {
+              "type": "string",
+              "title": "Budget item / बजट मद",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "amount": {
+              "type": "number",
+              "title": "Requested amount (INR) / अनुरोधित राशि (₹)",
+              "minimum": 1,
+              "maximum": 100000000,
+              "multipleOf": 0.01
+            }
+          }
+        }
+      }
+    }
+  },
+  "inputUi": {
+    "order": [
+      "organisationName",
+      "organisationType",
+      "registrationId",
+      "programme",
+      "requestedAmount",
+      "ownContribution",
+      "projectSummary",
+      "budget"
+    ],
+    "widgets": {
+      "organisationType": "select",
+      "programme": "select",
+      "requestedAmount": "number",
+      "projectSummary": "textarea"
+    },
+    "submitLabel": "Submit application / आवेदन जमा करें",
+    "layout": {
+      "sections": [
+        {
+          "id": "organisation",
+          "title": "Organisation / संगठन",
+          "columns": 2,
+          "fields": [
+            "organisationName",
+            "organisationType",
+            "registrationId"
+          ]
+        },
+        {
+          "id": "project",
+          "title": "Project / परियोजना",
+          "columns": 1,
+          "fields": [
+            "programme",
+            "requestedAmount",
+            "ownContribution",
+            "projectSummary",
+            "budget"
+          ]
+        }
+      ]
+    }
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "budgetTotal": {
+        "type": "number",
+        "title": "Budget total (INR)"
+      },
+      "financeCheckedBy": {
+        "type": "string",
+        "title": "Finance checked by"
+      }
+    }
+  },
+  "triggers": [
+    "manual",
+    "api"
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "label": "Application received",
+      "config": {}
+    },
+    {
+      "id": "eligibility",
+      "type": "decision",
+      "label": "Check eligibility",
+      "config": {
+        "decisionRef": "grant-eligibility"
+      }
+    },
+    {
+      "id": "eligibleRoute",
+      "type": "branch",
+      "label": "Eligible?",
+      "config": {}
+    },
+    {
+      "id": "notifyIneligible",
+      "type": "notification",
+      "label": "Tell applicant it is not eligible",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "The application does not meet the programme's eligibility rules. / आवेदन कार्यक्रम के पात्रता नियम पूरे नहीं करता।"
+      }
+    },
+    {
+      "id": "panel",
+      "type": "approval",
+      "label": "Technical review panel / तकनीकी समीक्षा पैनल",
+      "config": {
+        "candidateGroupRef": "grant-reviewers",
+        "rejectReasonRequired": true,
+        "multiInstance": {
+          "approvers": 2
+        }
+      }
+    },
+    {
+      "id": "finance",
+      "type": "approval",
+      "label": "Finance check / वित्त जांच",
+      "config": {
+        "candidateGroupRef": "grants-finance",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 24,
+        "calendar": {
+          "zone": "Asia/Kolkata",
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "holidays": [
+            "2026-01-26",
+            "2026-03-04",
+            "2026-03-21",
+            "2026-03-26",
+            "2026-03-31",
+            "2026-04-03",
+            "2026-05-01",
+            "2026-05-27",
+            "2026-06-26",
+            "2026-08-15",
+            "2026-08-26",
+            "2026-09-04",
+            "2026-10-02",
+            "2026-10-20",
+            "2026-11-08",
+            "2026-11-24",
+            "2026-12-25",
+            "2027-01-26",
+            "2027-03-26",
+            "2027-08-15",
+            "2027-10-02",
+            "2027-12-25"
+          ],
+          "start": "09:30",
+          "end": "18:00",
+          "revision": "IN-office-2026-illustrative",
+          "validFrom": "2026-01-01",
+          "intervals": [
+            {
+              "start": "09:30",
+              "end": "13:30"
+            },
+            {
+              "start": "14:00",
+              "end": "18:00"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "levelRoute",
+      "type": "branch",
+      "label": "Committee needed?",
+      "config": {}
+    },
+    {
+      "id": "committee",
+      "type": "approval",
+      "label": "Grants committee approval / अनुदान समिति अनुमोदन",
+      "config": {
+        "candidateGroupRef": "grants-committee",
+        "rejectReasonRequired": true,
+        "dueAfterHours": 80,
+        "calendar": {
+          "zone": "Asia/Kolkata",
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "holidays": [
+            "2026-01-26",
+            "2026-03-04",
+            "2026-03-21",
+            "2026-03-26",
+            "2026-03-31",
+            "2026-04-03",
+            "2026-05-01",
+            "2026-05-27",
+            "2026-06-26",
+            "2026-08-15",
+            "2026-08-26",
+            "2026-09-04",
+            "2026-10-02",
+            "2026-10-20",
+            "2026-11-08",
+            "2026-11-24",
+            "2026-12-25",
+            "2027-01-26",
+            "2027-03-26",
+            "2027-08-15",
+            "2027-10-02",
+            "2027-12-25"
+          ],
+          "start": "09:30",
+          "end": "18:00",
+          "revision": "IN-office-2026-illustrative",
+          "validFrom": "2026-01-01",
+          "intervals": [
+            {
+              "start": "09:30",
+              "end": "13:30"
+            },
+            {
+              "start": "14:00",
+              "end": "18:00"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "notifyAwarded",
+      "type": "notification",
+      "label": "Tell applicant the grant was awarded",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "The grant was awarded. / अनुदान स्वीकृत हुआ।"
+      }
+    },
+    {
+      "id": "notifyRejected",
+      "type": "notification",
+      "label": "Tell applicant it was rejected",
+      "config": {
+        "channel": "inApp",
+        "recipient": "initiator",
+        "message": "The grant application was rejected. Open the request to see the reason. / अनुदान आवेदन अस्वीकृत हुआ। कारण देखने के लिए अनुरोध खोलें।"
+      }
+    },
+    {
+      "id": "awarded",
+      "type": "end",
+      "label": "Awarded",
+      "config": {
+        "businessOutcome": "Awarded",
+        "outcomeKind": "success"
+      }
+    },
+    {
+      "id": "rejected",
+      "type": "end",
+      "label": "Rejected",
+      "config": {
+        "businessOutcome": "Rejected",
+        "outcomeKind": "rejected"
+      }
+    },
+    {
+      "id": "ineligible",
+      "type": "end",
+      "label": "Ineligible",
+      "config": {
+        "businessOutcome": "Ineligible",
+        "outcomeKind": "rejected"
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t1",
+      "from": "start",
+      "to": "eligibility",
+      "on": "next"
+    },
+    {
+      "id": "t2",
+      "from": "eligibility",
+      "to": "eligibleRoute",
+      "on": "next"
+    },
+    {
+      "id": "t3",
+      "from": "eligibleRoute",
+      "to": "notifyIneligible",
+      "on": "condition",
+      "label": "Eligibility rule not met",
+      "condition": {
+        "fieldRef": "/steps/eligibility/eligible",
+        "operator": "eq",
+        "value": false
+      }
+    },
+    {
+      "id": "t4",
+      "from": "eligibleRoute",
+      "to": "panel",
+      "on": "default",
+      "label": "Eligible"
+    },
+    {
+      "id": "t5",
+      "from": "notifyIneligible",
+      "to": "ineligible",
+      "on": "next"
+    },
+    {
+      "id": "t6",
+      "from": "panel",
+      "to": "finance",
+      "on": "approved"
+    },
+    {
+      "id": "t7",
+      "from": "panel",
+      "to": "notifyRejected",
+      "on": "rejected"
+    },
+    {
+      "id": "t8",
+      "from": "finance",
+      "to": "levelRoute",
+      "on": "approved"
+    },
+    {
+      "id": "t9",
+      "from": "finance",
+      "to": "notifyRejected",
+      "on": "rejected"
+    },
+    {
+      "id": "t10",
+      "from": "levelRoute",
+      "to": "committee",
+      "on": "condition",
+      "label": "INR 10 lakh or more",
+      "condition": {
+        "fieldRef": "/input/requestedAmount",
+        "operator": "gte",
+        "value": 1000000
+      }
+    },
+    {
+      "id": "t11",
+      "from": "levelRoute",
+      "to": "notifyAwarded",
+      "on": "default",
+      "label": "Below committee threshold"
+    },
+    {
+      "id": "t12",
+      "from": "committee",
+      "to": "notifyAwarded",
+      "on": "approved"
+    },
+    {
+      "id": "t13",
+      "from": "committee",
+      "to": "notifyRejected",
+      "on": "rejected"
+    },
+    {
+      "id": "t14",
+      "from": "notifyAwarded",
+      "to": "awarded",
+      "on": "next"
+    },
+    {
+      "id": "t15",
+      "from": "notifyRejected",
+      "to": "rejected",
+      "on": "next"
+    }
+  ],
+  "decisions": [
+    {
+      "key": "grant-eligibility",
+      "version": 1,
+      "hitPolicy": "FIRST",
+      "rows": [
+        {
+          "when": {
+            "any": [
+              {
+                "fieldRef": "/input/requestedAmount",
+                "operator": "gt",
+                "value": 5000000
+              },
+              {
+                "fieldRef": "/input/ownContribution",
+                "operator": "lt",
+                "value": 10
+              }
+            ]
+          },
+          "then": {
+            "eligible": false
+          }
+        }
+      ],
+      "default": {
+        "eligible": true
+      }
+    }
+  ],
+  "execution": {
+    "maxConcurrentRuns": 200,
+    "maxAttempts": 3,
+    "retryDelaySeconds": 30
+  },
+  "security": {
+    "selfApproval": "deny"
+  },
+  "dependencies": {
+    "connections": []
+  },
+  "outputMapping": {
+    "budgetTotal": {
+      "fieldRef": "/input/budget/sum/amount",
+      "required": true
+    },
+    "financeCheckedBy": {
+      "fieldRef": "/steps/finance/decidedBy",
+      "required": false
+    }
+  },
+  "uiLayout": {
+    "positions": {
+      "start": {
+        "x": 80,
+        "y": 80
+      },
+      "eligibility": {
+        "x": 320,
+        "y": 80
+      },
+      "eligibleRoute": {
+        "x": 560,
+        "y": 80
+      },
+      "notifyIneligible": {
+        "x": 800,
+        "y": 80
+      },
+      "panel": {
+        "x": 800,
+        "y": 240
+      },
+      "finance": {
+        "x": 1040,
+        "y": 80
+      },
+      "levelRoute": {
+        "x": 1280,
+        "y": 80
+      },
+      "committee": {
+        "x": 1520,
+        "y": 80
+      },
+      "notifyAwarded": {
+        "x": 1760,
+        "y": 80
+      },
+      "notifyRejected": {
+        "x": 1760,
+        "y": 240
+      },
+      "awarded": {
+        "x": 2000,
+        "y": 80
+      },
+      "rejected": {
+        "x": 2000,
+        "y": 240
+      },
+      "ineligible": {
+        "x": 1040,
+        "y": 240
+      }
+    },
+    "viewport": {
+      "x": 0,
+      "y": 0,
+      "zoom": 0.6
+    }
+  }
+}

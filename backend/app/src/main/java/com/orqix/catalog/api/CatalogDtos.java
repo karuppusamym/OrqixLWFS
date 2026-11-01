@@ -24,8 +24,13 @@ public final class CatalogDtos {
 
     public static final String KEY = "^[a-z][a-z0-9-]{0,62}[a-z0-9]$";
 
+    /** pack, industry, region and languages are set only for the regional template packs (absent otherwise). */
     public record Template(String id, String name, String description, String typicalOwner, List<String> requiredInputs,
-            List<String> requiredGroups, List<String> requiredConnections, List<String> requiredWorkflows) {
+            List<String> requiredGroups, List<String> requiredConnections, List<String> requiredWorkflows,
+            @JsonInclude(JsonInclude.Include.NON_NULL) String pack,
+            @JsonInclude(JsonInclude.Include.NON_NULL) String industry,
+            @JsonInclude(JsonInclude.Include.NON_NULL) String region,
+            @JsonInclude(JsonInclude.Include.NON_EMPTY) List<String> languages) {
     }
 
     public record TemplateList(List<Template> items) {

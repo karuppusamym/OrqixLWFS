@@ -7,6 +7,11 @@ dist-mock/
 /build/
 *.class
 
+# Gradle (office build; the wrapper scripts, jar and properties are committed)
+.gradle/
+backend/build/
+backend/*/build/
+
 # Python
 __pycache__/
 *.pyc

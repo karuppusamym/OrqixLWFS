@@ -16,7 +16,7 @@ describe('workspace list filters', () => {
     expect(await screen.findByText('Failed · Unavailable')).toBeInTheDocument()
     await user.click(screen.getByRole('button',{name:'Clear filters'}))
     expect(filter).toHaveValue('')
-    expect(router.state.location.search).toBe('')
+    expect(router.state.location.search).toBe('?scope=all')
   })
   it('restores run filters from a shared URL and clears them without losing unrelated parameters', async () => {
     signInAs('olga.operator')
@@ -25,7 +25,7 @@ describe('workspace list filters', () => {
     expect(await screen.findByLabelText('Status')).toHaveValue('waiting')
     expect(screen.getByLabelText('Request reference')).toHaveValue('PO-1042')
     await user.click(screen.getByRole('button', { name: 'Clear filters' }))
-    await waitFor(() => expect(router.state.location.search).toBe('?source=bookmark'))
+    await waitFor(() => expect(router.state.location.search).toBe('?source=bookmark&scope=all'))
     expect(screen.getByLabelText('Status')).toHaveValue('')
     expect(screen.getByLabelText('Request reference')).toHaveValue('')
   })
@@ -71,5 +71,18 @@ describe('workspace list filters', () => {
     await user.click(await screen.findByRole('button', { name: 'Show all workflows' }))
     expect(router.state.location.search).toBe('')
     expect(screen.getByLabelText('Search workflows')).toHaveValue('')
+  })
+})
+
+describe('operator exception view', () => {
+  it('opens on needs attention and stays off once the operator turns it off', async () => {
+    signInAs('olga.operator')
+    const user = userEvent.setup()
+    const { router } = renderApp(`/w/${WS}/runs`)
+    const toggle = await screen.findByRole('button', { name: 'Needs attention' })
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    await user.click(toggle)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Needs attention' })).toHaveAttribute('aria-pressed', 'false'))
+    expect(router.state.location.search).toBe('?scope=all')
   })
 })

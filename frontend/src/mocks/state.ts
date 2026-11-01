@@ -404,6 +404,7 @@ export interface MockDb {
   migrationPolicies: Map<string, MockMigrationPolicy>
   migrationReviews: MockMigrationReview[]
   workflows: Map<string, MockWorkflow>
+  savedWorkViews: Array<components['schemas']['SavedWorkView'] & { wsId: string }>
   workflowFolders: Map<string, MockFolder>
   /** S104: archived workflows, kept apart so every live lookup ignores them; restore moves them back. */
   archivedWorkflows?: Map<string, { workflow: MockWorkflow; archivedAt: string; archivedById: string }>
@@ -423,6 +424,16 @@ export interface MockDb {
   messageBuffer?: MockMessage[]
   /** S127: workspace feature switches that were changed at least once; absent means on. */
   featureSwitches?: MockFeatureSwitch[]
+  /** Access changes made in Settings (role bindings, grants, groups) on top of the seeded memberships. */
+  accessEdits?: MockAccessEdits
+}
+
+export interface MockAccessEdits {
+  roleBindings: Array<components['schemas']['RoleBinding'] & { wsId: string }>
+  grants: Array<components['schemas']['PermissionGrant'] & { wsId: string }>
+  /** Ids of seeded bindings and grants an administrator removed. */
+  removed: string[]
+  groups: Array<components['schemas']['Group'] & { wsId: string }>
 }
 
 export interface MockFeatureSwitch {
@@ -553,6 +564,7 @@ export function emptyDb(): MockDb {
     migrationReviews: [],
     workflows: new Map(),
     canaries: new Map(),
+    savedWorkViews: [],
     workflowFolders: new Map(),
     workflowComments: [],
     runs: new Map(),
@@ -602,6 +614,7 @@ export function blankDefinition(workflowKey: string, name: string): Definition {
 interface DbSnapshot {
   messageBuffer?: MockMessage[]
   featureSwitches?: MockFeatureSwitch[]
+  accessEdits?: MockAccessEdits
   /** Absent in snapshots written before migrations were mocked. */
   migrations?: Array<[string, MockMigration]>
   migrationProjects?: Array<[string, MockMigrationProject]>
@@ -609,6 +622,7 @@ interface DbSnapshot {
   migrationReviews?: MockMigrationReview[]
   canaries?: Array<[string, MockCanary]>
   workflows: Array<[string, MockWorkflow]>
+  savedWorkViews?: Array<components['schemas']['SavedWorkView'] & { wsId: string }>
   workflowFolders?: Array<[string, MockFolder]>
   workflowComments?: MockComment[]
   runs: Array<[string, MockRun]>
@@ -624,12 +638,14 @@ export function snapshotDb(): string {
   const snap: DbSnapshot = {
     messageBuffer: db.messageBuffer ?? [],
     featureSwitches: db.featureSwitches ?? [],
+    ...(db.accessEdits ? { accessEdits: db.accessEdits } : {}),
     migrations: [...db.migrations],
     migrationProjects: [...db.migrationProjects],
     migrationPolicies: [...db.migrationPolicies],
     canaries: [...db.canaries],
     migrationReviews: db.migrationReviews,
     workflows: [...db.workflows],
+    savedWorkViews: db.savedWorkViews,
     workflowFolders: [...db.workflowFolders],
     workflowComments: db.workflowComments,
     runs: [...db.runs],
@@ -649,12 +665,14 @@ export function restoreDb(json: string): boolean {
     const next = emptyDb()
     next.messageBuffer = snap.messageBuffer ?? []
     next.featureSwitches = snap.featureSwitches ?? []
+    if (snap.accessEdits) next.accessEdits = snap.accessEdits
     next.migrations = new Map(snap.migrations ?? [])
     next.migrationProjects = new Map(snap.migrationProjects ?? [])
     next.canaries = new Map(snap.canaries ?? [])
     next.migrationPolicies = new Map(snap.migrationPolicies ?? [])
     next.migrationReviews = snap.migrationReviews ?? []
     next.workflows = new Map(snap.workflows)
+    next.savedWorkViews = snap.savedWorkViews ?? []
     next.workflowFolders = new Map(snap.workflowFolders ?? [])
     next.workflowComments = snap.workflowComments ?? []
     next.runs = new Map(snap.runs)

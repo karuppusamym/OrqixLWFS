@@ -4,7 +4,7 @@ import { MOCK } from '../support/env'
 import { addCaseField, workspaceId } from '../support/app'
 import { apiSend, uniq } from '../support/api'
 import { expectNoSeriousViolations } from '../support/axe'
-import { checkAndPublish, newCaseType, useCmmnFile } from '../support/caseDesigner'
+import { checkAndPublish, newCaseType, useCmmnFile, startCaseButton } from '../support/caseDesigner'
 
 test('a pinned case view controls start and correction layout without granting edit authority', async ({ sessions }) => {
   test.skip(MOCK, 'Requires real case definition snapshots and current case-data permissions.')
@@ -25,13 +25,14 @@ test('a pinned case view controls start and correction layout without granting e
   await useCmmnFile(page, `${key}.cmmn`, sourceXml)
   await addCaseField(page, 'summary', 'Summary', 'text', true)
   await addCaseField(page, 'checked', 'Checked', 'yesNo', false)
+  await page.getByRole('tab', { name: 'Screens', exact: true }).click()
   await page.getByRole('button', { name: 'Choose case view' }).click()
   await page.getByLabel('Published case view').selectOption(created.body.id)
   await expectNoSeriousViolations(page, 'Case view pin authoring')
   await checkAndPublish(page)
   page = await sessions.as('rhea.requester')
   await page.goto(`/w/${ws}/cases`)
-  await page.getByRole('row').filter({ has: page.getByRole('cell', { name: key, exact: true }) }).getByRole('button', { name: 'Start case', exact: true }).click()
+  await startCaseButton(page, key).click()
   const start = page.getByRole('dialog', { name: 'Start case', exact: true })
   await expect(start.getByRole('group', { name: 'Shared evidence details' })).toBeVisible()
   await start.getByLabel(/^Review summary/).fill('Original evidence')

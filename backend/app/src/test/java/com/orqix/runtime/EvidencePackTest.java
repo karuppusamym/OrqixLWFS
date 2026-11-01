@@ -111,6 +111,31 @@ class EvidencePackTest extends RuntimeTestBase {
         assertThat(api("vic.viewer").get(RELEASE_PACK, PURCHASING, workflow, UUID.randomUUID()).status()).isEqualTo(404);
         // A requester without workflow.read gets no pack.
         assertThat(api("rhea.requester").get(RELEASE_PACK, PURCHASING, workflow, r2).status()).isIn(403, 404);
+        // audit.read adds release packs only for workflows the caller may start: an approver who can neither read
+        // nor start workflows still gets 404, while a requester who can start this one gets the pack.
+        Response financeGrant = grantAuditRead("fin.finance");
+        Response requesterGrant = grantAuditRead("rhea.requester");
+        try {
+            assertThat(api("fin.finance").get(RELEASE_PACK, PURCHASING, workflow, r2).status()).isEqualTo(404);
+            Response auditor = api("rhea.requester").get(RELEASE_PACK + "?format=json", PURCHASING, workflow, r2);
+            assertThat(auditor.status()).as(auditor.toString()).isEqualTo(200);
+        } finally {
+            revoke(financeGrant);
+            revoke(requesterGrant);
+        }
+    }
+
+    private Response grantAuditRead(String user) throws Exception {
+        Response granted = api("wade.admin").post(Map.of("permission", "audit.read", "principal",
+                Map.of("type", "subject", "value", subject(user).toString())),
+                "/workspaces/{ws}/access/grants", PURCHASING);
+        assertThat(granted.status()).as(granted.toString()).isEqualTo(201);
+        return granted;
+    }
+
+    private void revoke(Response granted) throws Exception {
+        assertThat(api("wade.admin").delete("/workspaces/{ws}/access/grants/{id}", PURCHASING,
+                granted.body().path("id").asString()).status()).isEqualTo(204);
     }
 
     @Test

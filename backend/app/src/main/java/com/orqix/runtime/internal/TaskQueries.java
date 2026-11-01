@@ -43,7 +43,7 @@ public class TaskQueries {
 
     @Transactional(readOnly = true)
     public List<TaskStore.TaskRow> open(UUID workspaceId, UUID subject, Collection<String> groups,
-            boolean assigned, CursorCodec.Position after, int limit, String sort, int minPriority) {
+            boolean assigned, CursorCodec.Position after, int limit, String sort, int minPriority, TaskFilter filter) {
         if (!assigned && groups.isEmpty()) return List.of();
         String id = after == null ? null : after.id();
         Integer priority = null;
@@ -66,29 +66,90 @@ public class TaskQueries {
             default -> "t.created_at DESC,t.engine_task_id DESC";
         };
         String ownership = assigned ? "t.assignee_subject_id=:subject" : "t.assignee_subject_id IS NULL AND t.candidate_group_key IN (:groups) AND t.required_skills <@ CAST(:skills AS jsonb) AND (t.self_approval_allowed OR t.initiator_subject_id<>:subject) AND NOT EXISTS (SELECT 1 FROM task_decision d WHERE d.workspace_id=t.workspace_id AND d.run_id=t.run_id AND d.actor_subject_id=:subject AND d.node_id IN (SELECT jsonb_array_elements_text(t.separate_from)))";
-        var query = jdbc.sql("SELECT " + T_COLUMNS + " FROM task_context t WHERE t.workspace_id=:ws AND t.status='open' AND " + ownership
-                + " AND t.priority>=:minPriority AND (CAST(:afterAt AS timestamptz) IS NULL OR " + comparison + ") ORDER BY " + order + " LIMIT :limit")
+        var query = jdbc.sql("SELECT " + T_COLUMNS + " FROM task_context t" + searchJoins(filter) + " WHERE t.workspace_id=:ws AND t.status='open' AND " + ownership
+                + filterSql(filter) + " AND t.priority>=:minPriority AND (CAST(:afterAt AS timestamptz) IS NULL OR " + comparison + ") ORDER BY " + order + " LIMIT :limit")
                 .param("ws",workspaceId).param("subject",subject).param("minPriority",minPriority)
                 .param("afterAt",after == null ? null : Sql.ts(after.at())).param("afterId",id).param("limit",limit);
         if (!assigned) query.param("groups",List.copyOf(groups)).param("skills",json.write(groups));
         if ("priority".equals(sort)) query.param("afterPriority",priority);
+        bindFilter(query, filter);
         return query.query(TaskStore::map).list();
     }
 
     /** Tasks the subject decided, newest decision first (cursor on decided_at). */
     @Transactional(readOnly = true)
-    public List<TaskStore.TaskRow> completed(UUID workspaceId, UUID subject, CursorCodec.Position after, int limit) {
-        return jdbc.sql("SELECT " + T_COLUMNS + ", d.decided_at AS sort_at" + """
+    public List<TaskStore.TaskRow> completed(UUID workspaceId, UUID subject, CursorCodec.Position after, int limit, TaskFilter filter) {
+        var query = jdbc.sql("SELECT " + T_COLUMNS + ", d.decided_at AS sort_at" + """
                  FROM task_context t JOIN task_decision d
                    ON d.workspace_id = t.workspace_id AND d.engine_task_id = t.engine_task_id
-                 WHERE t.workspace_id = :ws AND d.actor_subject_id = :subject
+                """ + searchJoins(filter) + " WHERE t.workspace_id = :ws AND d.actor_subject_id = :subject" + filterSql(filter) + """
                    AND (CAST(:afterAt AS timestamptz) IS NULL
                         OR (d.decided_at, t.engine_task_id) < (CAST(:afterAt AS timestamptz), CAST(:afterId AS text)))
                  ORDER BY d.decided_at DESC, t.engine_task_id DESC LIMIT :limit
                 """)
                 .param("ws", workspaceId).param("subject", subject)
                 .param("afterAt", after == null ? null : Sql.ts(after.at())).param("afterId", after == null ? null : after.id())
-                .param("limit", limit).query(TaskStore::map).list();
+                .param("limit", limit);
+        bindFilter(query, filter);
+        return query.query(TaskStore::map).list();
+    }
+
+    private static String searchJoins(TaskFilter filter) {
+        if (filter.q().isEmpty()) return "";
+        return " " + """
+            JOIN workflow_run r ON r.workspace_id=t.workspace_id AND r.id=t.run_id
+            JOIN workflow_release rel ON rel.workspace_id=r.workspace_id AND rel.id=r.release_id
+            JOIN subject person ON person.id=t.initiator_subject_id
+            LEFT JOIN workspace_group g ON g.workspace_id=t.workspace_id AND g.key=t.candidate_group_key
+            LEFT JOIN LATERAL (
+              SELECT left(btrim(r.input->>f.key),120) AS title
+              FROM jsonb_each(rel.definition->'inputSchema'->'properties') WITH ORDINALITY AS f(key,value,ord)
+              WHERE f.value->>'type'='string' AND NOT jsonb_exists(f.value,'enum') AND NOT jsonb_exists(f.value,'format')
+                AND jsonb_typeof(r.input->f.key)='string' AND btrim(r.input->>f.key)<>''
+              ORDER BY COALESCE((SELECT min(o.n) FROM jsonb_array_elements_text(COALESCE(rel.definition->'inputUi'->'order','[]'::jsonb))
+                WITH ORDINALITY AS o(name,n) WHERE o.name=f.key),9223372036854775807),f.ord LIMIT 1
+            ) title ON true
+            """;
+    }
+
+    private static String filterSql(TaskFilter filter) {
+        StringBuilder sql = new StringBuilder();
+        if (!filter.queue().isEmpty()) sql.append(" AND t.candidate_group_key=:filterQueue");
+        sql.append(switch (filter.due()) {
+            case "overdue" -> " AND t.status='open' AND t.due_at<:filterAt";
+            case "soon" -> " AND t.status='open' AND t.due_at>=:filterAt AND t.due_at<=:filterUntil";
+            case "none" -> " AND t.due_at IS NULL";
+            default -> "";
+        });
+        for (int i=0;i<filter.terms().size();i++)
+            sql.append(" AND position(:term").append(i).append(" in lower(concat_ws(' ',title.title,r.reference,r.business_key,t.label,person.display_name,g.name)))>0");
+        return sql.toString();
+    }
+
+    private static void bindFilter(JdbcClient.StatementSpec query, TaskFilter filter) {
+        if (!filter.queue().isEmpty()) query.param("filterQueue",filter.queue());
+        if (List.of("overdue","soon").contains(filter.due())) query.param("filterAt",Sql.ts(filter.at()));
+        if ("soon".equals(filter.due())) query.param("filterUntil",Sql.ts(filter.at().plusSeconds(86400)));
+        for (int i=0;i<filter.terms().size();i++) query.param("term"+i,filter.terms().get(i));
+    }
+
+    /** Same eligibility and filter predicates as the page, capped to bound inbox polling cost. */
+    @Transactional(readOnly = true)
+    public int countMatching(UUID ws, UUID subject, Collection<String> groups, String view, int minPriority, TaskFilter filter) {
+        if ("claimable".equals(view) && groups.isEmpty()) return 0;
+        String ownership = switch(view) {
+            case "assigned" -> "t.status='open' AND t.assignee_subject_id=:subject";
+            case "claimable" -> "t.status='open' AND t.assignee_subject_id IS NULL AND t.candidate_group_key IN (:groups) AND t.required_skills <@ CAST(:skills AS jsonb) AND (t.self_approval_allowed OR t.initiator_subject_id<>:subject) AND NOT EXISTS (SELECT 1 FROM task_decision d WHERE d.workspace_id=t.workspace_id AND d.run_id=t.run_id AND d.actor_subject_id=:subject AND d.node_id IN (SELECT jsonb_array_elements_text(t.separate_from)))";
+            default -> "EXISTS (SELECT 1 FROM task_decision d WHERE d.workspace_id=t.workspace_id AND d.engine_task_id=t.engine_task_id AND d.actor_subject_id=:subject)";
+        };
+        var query = jdbc.sql("SELECT count(*) FROM (SELECT 1 FROM task_context t " + searchJoins(filter)
+            + " WHERE t.workspace_id=:ws AND " + ownership + filterSql(filter)
+            + ("completed".equals(view) ? "" : " AND t.priority>=:minPriority") + " LIMIT :cap) matched")
+            .param("ws",ws).param("subject",subject).param("cap",COUNT_CAP);
+        if (!"completed".equals(view)) query.param("minPriority",minPriority);
+        if ("claimable".equals(view)) query.param("groups",List.copyOf(groups)).param("skills",json.write(groups));
+        bindFilter(query,filter);
+        return query.query(Integer.class).single();
     }
 
     /**

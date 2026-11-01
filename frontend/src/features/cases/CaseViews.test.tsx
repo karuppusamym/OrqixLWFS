@@ -59,12 +59,14 @@ describe('reusable case presentation', () => {
       http.put('*/api/v1/workspaces/:ws/cases/drafts/:id', async ({ request }) => { body = await request.json(); return HttpResponse.json({ ...draft, ...(body as object), version: 2 }) }),
     )
     const user = userEvent.setup(); await renderAppReady(`/w/${ws}/case-designs/${id}`)
+    await user.click(await screen.findByRole('tab', { name: 'Data' }))
     await user.click(await screen.findByRole('button', { name: 'Add case data field' }))
+    await user.click(screen.getByRole('tab', { name: 'Screens' }))
     await user.click(screen.getByRole('button', { name: 'Choose case view' }))
     await screen.findByRole('option', { name: /Shared case view/ })
     await user.selectOptions(screen.getByLabelText('Published case view'), viewId)
     await user.clear(screen.getByLabelText('Case view version')); await user.type(screen.getByLabelText('Case view version'), '2')
-    await user.click(screen.getByRole('button', { name: 'Save draft' }))
+    // Autosave stores the draft after the quiet period; no save button.
     await waitFor(() => expect(body).toMatchObject({ expectedVersion: 1, viewRef: { id: viewId, version: 2 }, dataFields: [{ key: 'field1', type: 'text' }] }))
   })
 })

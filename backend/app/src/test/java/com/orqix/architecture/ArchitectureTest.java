@@ -47,8 +47,10 @@ class ArchitectureTest {
     void cmmnAdapterUsesOnlyPublicCaseTaskAndIdentityApis() {
         noClasses().that().resideInAPackage("com.orqix.cases..")
                 .should().dependOnClassesThat(resideInAnyPackage("org.flowable..")
+                        // org.flowable.common.engine.api holds FlowableException, the public base exception of
+                        // those APIs, which CaseService catches when a CMMN deployment is rejected.
                         .and(not(resideInAnyPackage("org.flowable.cmmn.api..", "org.flowable.task.api..",
-                                "org.flowable.identitylink.api.."))))
+                                "org.flowable.identitylink.api..", "org.flowable.common.engine.api.."))))
                 .check(CLASSES);
     }
 

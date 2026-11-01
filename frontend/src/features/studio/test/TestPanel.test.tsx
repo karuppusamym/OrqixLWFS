@@ -224,4 +224,42 @@ describe('Test this workflow (panel)', () => {
     await user.click(within(panel).getByRole('button', { name: 'Run all saved cases' }))
     await waitFor(() => expect(within(panel).getByTestId('case-summary')).toHaveTextContent('1 of 1 passed'), { timeout: 20000 })
   }, 90000)
+
+  it('generates a case for every path to keep or delete, and the kept cases all pass with their path checks', async () => {
+    const simulated: Array<Record<string, unknown>> = []
+    server.use(http.post('*/api/v1/workspaces/:ws/workflows/:wf/simulate', async ({ request }) => {
+      simulated.push((await request.clone().json()) as Record<string, unknown>)
+      return undefined
+    }))
+    signInAs('dana.designer')
+    const user = userEvent.setup()
+    renderApp(EDIT)
+    const panel = await openPanel(user)
+    await user.click(within(panel).getByTestId('generate-cases'))
+    expect(await within(panel).findByTestId('generated-summary', undefined, { timeout: 30000 })).toHaveTextContent('4 cases to review. Together they take 6 of 6 routes and match 2 of 2 decision rules.')
+    const proposed = within(panel).getAllByTestId('generated-case')
+    expect(proposed.map((li) => li.querySelector('span')?.textContent)).toEqual(['Amount (USD) is 5000', 'Amount (USD) is 4999.99', 'Review request rejects (Amount (USD) is 5000)', 'Finance review rejects (Amount (USD) is 5000)'])
+    expect(proposed[0]).toHaveTextContent('Expect: Fulfilled')
+    expect(proposed[0]).toHaveTextContent('Steps: Request submitted → Review request → Check purchase amount → Finance review needed? → Finance review → Create purchase order → Tell requester it is ordered → Fulfilled')
+    expect(proposed[3]).toHaveTextContent('Expect: Rejected')
+    // Every dry run is the draft on screen; the boundary answers come from the decision rule "at least USD 5,000".
+    expect(simulated.map((b) => (b.input as Record<string, unknown>).amount)).toEqual(expect.arrayContaining([5000, 4999.99]))
+    expect(simulated.every((b) => b.revision !== undefined)).toBe(true)
+    // Nothing is kept until the designer says so.
+    expect(within(panel).getByText(/Saved test cases \(0 of 20\)/)).toBeInTheDocument()
+
+    await user.click(within(panel).getByRole('button', { name: 'Delete the generated case Amount (USD) is 4999.99' }))
+    await user.click(within(panel).getByRole('button', { name: 'Keep the generated case Amount (USD) is 5000' }))
+    expect(within(panel).getByTestId('case-notice')).toHaveTextContent('Kept “Amount (USD) is 5000”.')
+    expect(within(panel).getAllByTestId('generated-case')).toHaveLength(2)
+    await user.click(within(panel).getByRole('button', { name: 'Keep all 2' }))
+    expect(within(panel).queryByTestId('generated-cases')).not.toBeInTheDocument()
+    expect(within(panel).getByText(/Saved test cases \(3 of 20\)/)).toBeInTheDocument()
+    const stored = JSON.parse(window.localStorage.getItem(`orqix.testCases.v2.${USERS.find((u) => u.username === 'dana.designer')!.id}.${WS}.${PURCHASE_WORKFLOW_ID}`) ?? '[]')
+    expect(stored[0]).toMatchObject({ version: 3, name: 'Amount (USD) is 5000', expect: 'Fulfilled', values: { amount: '5000' }, assertions: { path: { match: 'exact', steps: ['start', 'manager', 'amountPolicy', 'route', 'finance', 'procure', 'notify', 'fulfilled'] } } })
+    expect(stored[1]).toMatchObject({ expect: 'Rejected', settings: { approvals: { manager: { outcome: 'reject' } } } })
+
+    await user.click(within(panel).getByRole('button', { name: 'Run all saved cases' }))
+    await waitFor(() => expect(within(panel).getByTestId('case-summary')).toHaveTextContent('3 of 3 passed'), { timeout: 20000 })
+  }, 90000)
 })

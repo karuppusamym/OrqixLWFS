@@ -44,8 +44,9 @@ export function WorkflowsPage() {
         actions={
           can('workflow.edit') ? (
             <div className="flex flex-wrap gap-2">
-            <ManageFoldersButton />
-            <ArchivedWorkflowsButton />
+            <details className="relative self-center"><summary className="cursor-pointer rounded-control border border-border bg-surface px-3 py-2 text-sm font-semibold">Manage library</summary>
+              <div className="absolute right-0 z-20 mt-2 flex min-w-48 flex-col gap-2 rounded-card border border-border bg-surface p-3 shadow-card"><ManageFoldersButton /><ArchivedWorkflowsButton /></div>
+            </details>
             {isOn('migration') ? <Button asChild size="lg"><Link to={`/w/${ws}/migrations`}>Import workflow</Link></Button> : null}
             <Button variant="primary" size="lg" onClick={() => setCreating(true)}>
               <FilePlus2 aria-hidden="true" /> New workflow

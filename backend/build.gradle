@@ -1,0 +1,84 @@
+// Gradle build (Gradle 8.14+, JDK 21). It mirrors pom.xml: when a version changes there, change it here too.
+
+plugins {
+    id 'org.springframework.boot' version '4.0.8' apply false
+    id 'io.spring.dependency-management' version '1.1.7' apply false
+}
+
+ext {
+    // Same pins as the <properties> of pom.xml.
+    springBootVersion = '4.0.8'
+    flowableVersion = '8.0.0'
+    springModulithVersion = '2.0.8'
+    jsonSchemaValidatorVersion = '3.0.8'
+    jsonCanonicalizationVersion = '1.1'
+    uuidCreatorVersion = '6.1.1'
+    archunitVersion = '1.5.1'
+    wiremockVersion = '3.13.2'
+    // Security patch overrides for kafka-clients' compression libraries (see pom.xml).
+    lz4JavaVersion = '1.11.4'
+    snappyJavaVersion = '1.1.10.9'
+    // The folder that holds backend/, contracts/ and examples/.
+    repoRoot = rootDir.parentFile
+}
+
+subprojects {
+    apply plugin: 'java-library'
+    apply plugin: 'io.spring.dependency-management'
+
+    group = 'com.orqix'
+    version = '0.1.0-SNAPSHOT'
+
+    // Security patch overrides for Boot 4.0.8 (see pom.xml). Set as project properties so they also apply to the BOM
+    // that the Spring Boot plugin imports by itself.
+    ext['tomcat.version'] = '11.0.25'
+    ext['jackson-2-bom.version'] = '2.21.7'
+    ext['jackson-bom.version'] = '3.1.7'
+
+    dependencyManagement {
+        imports {
+            mavenBom "org.springframework.boot:spring-boot-dependencies:${springBootVersion}"
+            mavenBom "org.springframework.modulith:spring-modulith-bom:${springModulithVersion}"
+        }
+        dependencies {
+            dependencySet(group: 'org.flowable', version: flowableVersion) {
+                entry 'flowable-spring-boot-starter-process'
+                entry 'flowable-spring-boot-starter-dmn'
+                entry 'flowable-dmn-spring-configurator'
+                entry 'flowable-spring-boot-starter-cmmn'
+                entry 'flowable-cmmn-spring-configurator'
+            }
+            dependency "com.networknt:json-schema-validator:${jsonSchemaValidatorVersion}"
+            dependency "io.github.erdtman:java-json-canonicalization:${jsonCanonicalizationVersion}"
+            dependency "com.github.f4b6a3:uuid-creator:${uuidCreatorVersion}"
+            dependency "com.tngtech.archunit:archunit-junit5:${archunitVersion}"
+            // Spring Modulith brings archunit 1.4.2; pinned to match archunit-junit5, as in pom.xml.
+            dependency "com.tngtech.archunit:archunit:${archunitVersion}"
+            dependency "org.wiremock:wiremock-standalone:${wiremockVersion}"
+            dependency "at.yawk.lz4:lz4-java:${lz4JavaVersion}"
+            dependency "org.xerial.snappy:snappy-java:${snappyJavaVersion}"
+        }
+    }
+
+    dependencies {
+        testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = 'UTF-8'
+        options.release = 21
+        // Spring reads constructor and method parameter names (the Spring Boot Maven parent sets this too).
+        options.compilerArgs << '-parameters'
+    }
+
+    tasks.withType(Test).configureEach {
+        useJUnitPlatform()
+        systemProperty 'orqix.repoRoot', repoRoot.absolutePath
+        // Surefire uses the JVM default heap; Gradle's default (512 MB) is too small for the Spring and Flowable tests.
+        maxHeapSize = '2g'
+        testLogging {
+            events 'failed', 'skipped'
+            exceptionFormat = 'full'
+        }
+    }
+}

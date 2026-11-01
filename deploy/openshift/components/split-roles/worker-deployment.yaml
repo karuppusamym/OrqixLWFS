@@ -1,0 +1,140 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orqix-worker
+  labels:
+    app.kubernetes.io/name: orqix
+    app.kubernetes.io/component: worker
+    app.kubernetes.io/part-of: orqix
+    orqix.io/stage: app
+spec:
+  # Fixed at two: one survives a drain (PDB), and both fit the connection budget next to three API pods. Raise only
+  # with max_connections (see kustomization.yaml).
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: orqix
+      app.kubernetes.io/component: worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: orqix
+        app.kubernetes.io/component: worker
+        app.kubernetes.io/part-of: orqix
+    spec:
+      serviceAccountName: orqix
+      automountServiceAccountToken: false
+      # Same drain as the all-in-one pod: job acquisition stops, in-flight jobs finish within 45 s.
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: orqix
+              app.kubernetes.io/component: worker
+      containers:
+        - name: orqix
+          image: orqix
+          imagePullPolicy: IfNotPresent
+          # The web server still listens on 8080, but no Service selects workers; only probes and metrics are reached.
+          ports:
+            - name: management
+              containerPort: 8081
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: orqix-config
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: prod,worker
+            - name: ORQIX_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: orqix-db-app
+                  key: password
+            - name: ORQIX_CURSOR_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: orqix-app
+                  key: cursor-secret
+            - name: SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_ORQIX_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: orqix-app
+                  key: oidc-client-secret
+            # Agent steps run as engine jobs, so workers need the AI key too (optional, as on the API pods).
+            - name: OPENROUTER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: orqix-ai
+                  key: openrouter-api-key
+                  optional: true
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: management
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 36
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: management
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: management
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+            successThreshold: 1
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 5"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: connection-secrets
+              mountPath: /var/run/secrets/orqix
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi
+        - name: connection-secrets
+          secret:
+            secretName: orqix-connection-secrets
+            defaultMode: 0440
+            optional: true

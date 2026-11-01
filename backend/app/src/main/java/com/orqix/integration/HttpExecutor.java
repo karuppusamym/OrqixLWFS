@@ -137,7 +137,8 @@ public class HttpExecutor {
                 .version(HttpClient.Version.HTTP_1_1)
                 .build());
         HttpResponse<byte[]> response;
-        CompletableFuture<HttpResponse<byte[]>> future = client.sendAsync(request, info -> new LimitedSubscriber());
+        LimitedSubscriber.Holder limited = new LimitedSubscriber.Holder();
+        CompletableFuture<HttpResponse<byte[]>> future = client.sendAsync(request, limited.handler());
         try {
             response = future.get(timeoutSeconds + 2L, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
@@ -150,7 +151,9 @@ public class HttpExecutor {
             return finish(started, Observation.MAYBE_APPLIED, operation.effectClass(), null, "TIMEOUT",
                     "No complete response within " + timeoutSeconds + " s", null, null);
         } catch (ExecutionException e) {
-            return classifyFailure(started, e.getCause(), operation.effectClass(), timeoutSeconds);
+            // The body limit wins over whatever error the client reported after the subscriber cancelled.
+            return classifyFailure(started, limited.exceeded() ? new ResponseTooLargeException() : e.getCause(),
+                    operation.effectClass(), timeoutSeconds);
         }
         int status = response.statusCode();
         if (status == 401 && ("oauth2ClientCredentials".equals(target.authType()) || "oauth2AuthorizationCode".equals(target.authType())) && secrets != null)
@@ -349,6 +352,21 @@ public class HttpExecutor {
         private Flow.Subscription subscription;
         private long size;
         private final int limit;
+        /** Set before cancelling: the client may then fail the exchange with its own error, which hides this reason. */
+        private volatile boolean exceeded;
+
+        /** True when the body passed the limit, whatever error the client reported for the exchange. */
+        boolean exceeded() { return exceeded; }
+
+        /** A subscriber for {@code sendAsync} that the caller keeps, to ask {@link #exceeded()} after a failure. */
+        static final class Holder {
+            private volatile LimitedSubscriber subscriber;
+            HttpResponse.BodyHandler<byte[]> handler(int limit) {
+                return info -> subscriber = new LimitedSubscriber(limit);
+            }
+            HttpResponse.BodyHandler<byte[]> handler() { return handler(MAX_RESPONSE_BYTES); }
+            boolean exceeded() { LimitedSubscriber s = subscriber; return s != null && s.exceeded(); }
+        }
 
         LimitedSubscriber() { this(MAX_RESPONSE_BYTES); }
         LimitedSubscriber(int limit) { this.limit = limit; }
@@ -374,6 +392,7 @@ public class HttpExecutor {
                 if (size > limit) {
                     // Publish the classified failure before cancelling: JDK clients can synchronously deliver a
                     // generic cancellation error through onError, which must not replace the body-limit reason.
+                    exceeded = true;
                     result.completeExceptionally(new ResponseTooLargeException());
                     buffers.clear();
                     subscription.cancel();

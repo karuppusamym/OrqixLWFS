@@ -10,6 +10,8 @@ deploy/openshift/
 │   ├── config.env              non-secret orqix.* / Spring configuration (env-var form)
 │   └── secrets.example.yaml    NOT applied: the Secret names and keys the workloads reference
 ├── overlays/{dev,int,prod}/    namespace, image, hostnames, CIDRs, egress allowlist, per-environment config.env
+├── overlays/prod-split/        prod plus the API/worker split (example and validation target)
+├── components/split-roles/     opt-in API/worker split (docs/adr/0004)
 └── optional/servicemonitor.yaml   needs the Prometheus Operator CRDs; apply separately
 ```
 
@@ -17,7 +19,7 @@ Render and validate (no cluster needed):
 
 ```bash
 kubectl kustomize deploy/openshift/overlays/prod          # or: oc kustomize ...
-python tools/validate-manifests/validate_manifests.py     # 130+ structural checks over the three overlays
+python tools/validate-manifests/validate_manifests.py     # 150+ structural checks over the four overlays
 kubectl kustomize deploy/openshift/overlays/int | docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
     -strict -ignore-missing-schemas -kubernetes-version 1.31.0 -summary -
 ```
@@ -36,6 +38,24 @@ kubectl kustomize deploy/openshift/overlays/int | docker run --rm -i ghcr.io/yan
 | NetworkPolicy: default deny; ingress 8080 from the router namespace only, 8081 from the monitoring namespaces only; egress to DNS, PostgreSQL, the IdP and allowlisted endpoints. The migration Job gets DNS + PostgreSQL only | `base/networkpolicy.yaml` |
 | PodDisruptionBudget `minAvailable: 1`; HPA 2..4 | `base/pdb.yaml`, `base/hpa.yaml` |
 | HPA ceiling vs the database: `pods x 15 + 5 + 10 <= 0.8 x max_connections`; 4 pods = 75 <= 80 at `max_connections = 100` (S5 section 11). Raising `maxReplicas` needs a larger `max_connections` and a check of external API rate limits | `base/hpa.yaml` |
+
+## Optional: separate API and worker pods
+
+By default every pod serves users **and** runs the engine job executor, the scheduled jobs and the Kafka consumers. The
+`components/split-roles` component ([ADR 0004](../../docs/adr/0004-runtime-roles-before-microservices.md)) splits them:
+
+| Deployment | Profiles | Does | Replicas | Connections |
+|---|---|---|---|---|
+| `orqix` (API) | `prod,api` | requests only; no engine jobs, no scheduled work | HPA 2..3 | 10 per pod |
+| `orqix-worker` | `prod,worker` | engine jobs (BPMN and CMMN), scheduled jobs, Kafka; not behind the Service | 2 | 15 per pod |
+
+Budget: `3 x 10 + 2 x 15 + 5 + 10 = 75 <= 80`. Workers get monitoring ingress, DNS, PostgreSQL and connection egress, but
+no router ingress and no IdP egress. Asynchronous steps after a user action start on a worker within about one second.
+An API deployment without workers is invalid: timers, retries, callbacks, webhooks, reminders and Kafka would stop.
+
+Enable it by adding the component to an overlay; `overlays/prod-split` shows the prod case. A component's new resources
+need the namespace and image set in the overlay that lists it, which is why `prod-split` repeats both. Not verified on a
+cluster and not load-tested against the all-in-one layout; keep the default until both are done.
 
 ## Rollout order (migration Job first)
 

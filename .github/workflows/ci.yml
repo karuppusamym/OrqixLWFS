@@ -101,11 +101,11 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - run: pip install -r tools/validate-manifests/requirements.txt
-      - name: Structural checks over the dev, int and prod overlays
+      - name: Structural checks over the dev, int, prod and prod-split overlays
         run: python tools/validate-manifests/validate_manifests.py
       - name: Schema validation (Kubernetes 1.31; Route has no published schema and is checked structurally above)
         run: |
-          for overlay in dev int prod; do
+          for overlay in dev int prod prod-split; do
             echo "== $overlay"
             kubectl kustomize "deploy/openshift/overlays/$overlay" \
               | docker run --rm -i "$KUBECONFORM_IMAGE" -strict -ignore-missing-schemas -kubernetes-version 1.31.0 -summary -

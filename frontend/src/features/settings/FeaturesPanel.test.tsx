@@ -11,6 +11,28 @@ function switchOff(feature: 'ai' | 'cases' | 'migration' | 'agents' | 'apps' | '
 }
 
 describe('workspace feature switches (S127)', () => {
+  it('groups the switches by modelling standard, import and add-ons, with the always-on core and its formats', async () => {
+    signInAs('wade.admin')
+    const user = userEvent.setup()
+    renderApp(`/w/${WS}/settings`)
+    await user.click(await screen.findByRole('tab', { name: 'Features' }))
+    const modelling = await screen.findByRole('region', { name: 'Modelling' })
+    expect(within(modelling).getByTestId('feature-core-workflows')).toHaveTextContent(/Always on.*BPMN 2.0/)
+    expect(within(modelling).getByTestId('feature-core-decisions')).toHaveTextContent(/Always on.*DMN decision tables/)
+    expect(within(within(modelling).getByTestId('feature-cases')).getByText('CMMN 1.1')).toBeInTheDocument()
+    expect(within(screen.getByRole('region', { name: 'Import' })).getByTestId('feature-migration')).toHaveTextContent(/Pega Blueprint PDF/)
+    expect(within(screen.getByRole('region', { name: 'Add-ons' })).getByTestId('feature-ai')).toBeInTheDocument()
+  })
+
+  it('hides Case types with Cases switched off', async () => {
+    signInAs('dana.designer')
+    switchOff('cases')
+    renderApp(`/w/${WS}/workflows`)
+    await screen.findByRole('heading', { level: 1, name: 'Workflows' })
+    await waitFor(() => expect(navLinks()).toContain('Decisions'))
+    expect(navLinks()).not.toContain('Case types')
+  })
+
   it('lets an administrator switch a module off after confirming, hides it from the menu, and switch it on again', async () => {
     signInAs('wade.admin')
     const user = userEvent.setup()

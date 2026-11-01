@@ -4,7 +4,7 @@ import { MOCK } from '../support/env'
 import { workspaceId } from '../support/app'
 import { uniq } from '../support/api'
 import { expectNoSeriousViolations } from '../support/axe'
-import { checkAndPublish,newCaseType } from '../support/caseDesigner'
+import { checkAndPublish,newCaseType, startCaseButton } from '../support/caseDesigner'
 
 test('a visually authored model executes required manual work and achieves its milestone',async({sessions})=>{
   test.skip(MOCK,'Verifies generated CMMN against the real case engine.')
@@ -32,7 +32,7 @@ test('a visually authored model executes required manual work and achieves its m
   expect(await readFile((await exported.path())!,'utf8')).toBe(generated)
   page=await sessions.as('rhea.requester')
   await page.goto(`/w/${ws}/cases`)
-  await page.getByRole('row').filter({has:page.getByRole('cell',{name:key,exact:true})}).getByRole('button',{name:'Start case',exact:true}).click()
+  await startCaseButton(page, key).click()
   await expect(page).toHaveURL(new RegExp(`/w/${ws}/cases/[^/]+$`))
   const url=page.url()
   page=await sessions.as('mani.manager');await page.goto(url)
@@ -41,7 +41,7 @@ test('a visually authored model executes required manual work and achieves its m
   await page.getByRole('dialog').getByLabel('Reason',{exact:true}).fill('Start the visually authored review')
   await page.getByRole('button',{name:'Confirm plan change',exact:true}).click()
   await page.getByRole('button',{name:'Complete task',exact:true}).click()
-  await expect(page.getByText('completed',{exact:true}).first()).toBeVisible()
+  await expect(page.getByText('Completed',{exact:true}).first()).toBeVisible()
   await expect(page.getByText('Your work is complete. Further case details require current case read access.',{exact:true})).toBeVisible()
   page=await sessions.as('rhea.requester');await page.goto(url)
   await page.getByRole('button',{name:'Show case plan',exact:true}).click()

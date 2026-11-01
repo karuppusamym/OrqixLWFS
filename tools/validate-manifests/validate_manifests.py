@@ -66,7 +66,16 @@ def one(docs: list[dict], kind: str, name: str | None = None) -> dict:
 
 
 def selects(selector: dict, labels: dict) -> bool:
-    return all(labels.get(k) == v for k, v in (selector.get("matchLabels") or selector).items())
+    if "matchLabels" not in selector and "matchExpressions" not in selector:
+        return all(labels.get(k) == v for k, v in selector.items())  # Service-style selector
+    if not all(labels.get(k) == v for k, v in (selector.get("matchLabels") or {}).items()):
+        return False
+    for expr in selector.get("matchExpressions") or []:
+        if expr["operator"] != "In":
+            raise SystemExit(f"unsupported selector operator {expr['operator']}")
+        if labels.get(expr["key"]) not in expr["values"]:
+            return False
+    return True
 
 
 def env_map(container: dict) -> dict:
@@ -129,6 +138,12 @@ def check_overlay(name: str, docs: list[dict], secret_refs: dict[str, set[str]],
     secret_vol = volumes.get(mounts.get("/var/run/secrets/orqix", ""), {})
     report.check("secret" in secret_vol and container["volumeMounts"][[m["mountPath"] for m in container["volumeMounts"]].index("/var/run/secrets/orqix")].get("readOnly") is True,
                  "connection secrets mounted read-only at /var/run/secrets/orqix", f"{name}: secret volume {secret_vol}")
+
+    image = container["image"]
+    report.check(image != "orqix" and not image.endswith(":latest"), f"overlay sets the image ({image})",
+                 f"{name}: image {image} is the bare placeholder or :latest (overlay images entry not applied)")
+    if name == "prod":
+        report.check("@sha256:" in image, "prod image pinned by digest", f"{name}: image {image} is not pinned by digest")
 
     config_name = one(docs, "ConfigMap")["metadata"]["name"]
     report.check(container["envFrom"][0]["configMapRef"]["name"] == config_name, "envFrom references the generated ConfigMap", f"{name}: configMapRef")
@@ -198,6 +213,69 @@ def check_overlay(name: str, docs: list[dict], secret_refs: dict[str, set[str]],
     print(f"  INFO  {placeholders} REPLACE placeholders remain to be completed by the environment owner")
 
 
+SPLIT_OVERLAY = "prod-split"
+API_CONNECTIONS_PER_POD = 10
+
+
+def check_split(docs: list[dict], secret_refs: dict[str, set[str]], report: Report) -> None:
+    """docs/adr/0004 step 1: prod plus the split-roles component (API pods + worker pods)."""
+    name = SPLIT_OVERLAY
+    print(f"\n== overlay {name}")
+    expected = dict(EXPECTED_KINDS, Deployment=2, PodDisruptionBudget=2)
+    kinds = {k: len(by_kind(docs, k)) for k in expected}
+    report.check(kinds == expected, "expected resource set rendered (API and worker Deployments and PDBs)", f"{name}: resource counts {kinds}")
+    report.check(not by_kind(docs, "Secret"), "no Secret rendered", f"{name}: a Secret is rendered")
+
+    api, worker = one(docs, "Deployment", "orqix"), one(docs, "Deployment", "orqix-worker")
+    api_c, worker_c = api["spec"]["template"]["spec"]["containers"][0], worker["spec"]["template"]["spec"]["containers"][0]
+    api_labels, worker_labels = api["spec"]["template"]["metadata"]["labels"], worker["spec"]["template"]["metadata"]["labels"]
+    api_env, worker_env = env_map(api_c), env_map(worker_c)
+    report.check(api_env["SPRING_PROFILES_ACTIVE"].get("value") == "prod,api", "API pods run profiles prod,api", f"{name}: API profile {api_env['SPRING_PROFILES_ACTIVE']}")
+    report.check(worker_env["SPRING_PROFILES_ACTIVE"].get("value") == "prod,worker", "worker pods run profiles prod,worker", f"{name}: worker profile {worker_env['SPRING_PROFILES_ACTIVE']}")
+    report.check(api_env.get("SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE", {}).get("value") == str(API_CONNECTIONS_PER_POD),
+                 f"API pool size {API_CONNECTIONS_PER_POD}", f"{name}: API pool size")
+    report.check("SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE" not in worker_env, "worker pool size from the ConfigMap (15)", f"{name}: worker pool override")
+    report.check(worker_labels.get("app.kubernetes.io/component") == "worker" and selects(worker["spec"]["selector"], worker_labels)
+                 and not selects(worker["spec"]["selector"], api_labels) and not selects(api["spec"]["selector"], worker_labels),
+                 "API and worker selectors are disjoint", f"{name}: deployment selectors overlap")
+    report.check("replicas" not in api["spec"] and worker["spec"].get("replicas") == 2, "API replicas left to the HPA, 2 workers", f"{name}: replicas")
+    report.check(len({api_c["image"], worker_c["image"], one(docs, "Job")["spec"]["template"]["spec"]["containers"][0]["image"]}) == 1
+                 and "@sha256:" in worker_c["image"], "API, worker and migration Job use the same digest-pinned image", f"{name}: images differ")
+    same = ("securityContext", "resources", "startupProbe", "livenessProbe", "readinessProbe", "volumeMounts", "envFrom", "lifecycle")
+    report.check(all(api_c.get(k) == worker_c.get(k) for k in same), "worker container hardening, probes, resources and mounts match the API pods",
+                 f"{name}: worker differs in {[k for k in same if api_c.get(k) != worker_c.get(k)]}")
+    pod_same = ("securityContext", "volumes", "terminationGracePeriodSeconds", "serviceAccountName", "automountServiceAccountToken")
+    report.check(all(api["spec"]["template"]["spec"].get(k) == worker["spec"]["template"]["spec"].get(k) for k in pod_same),
+                 "worker pod security, volumes and grace period match the API pods", f"{name}: worker pod spec differs")
+    report.check({p["name"] for p in worker_c["ports"]} == {"management"}, "worker declares only the management port", f"{name}: worker ports")
+    refs = {(e["valueFrom"]["secretKeyRef"]["name"], e["valueFrom"]["secretKeyRef"]["key"]) for e in worker_c["env"] if "valueFrom" in e}
+    report.check(refs == {(e["valueFrom"]["secretKeyRef"]["name"], e["valueFrom"]["secretKeyRef"]["key"]) for e in api_c["env"] if "valueFrom" in e}
+                 and all(r[1] in secret_refs.get(r[0], set()) for r in refs), "worker reads the same documented Secrets", f"{name}: worker secret refs {refs}")
+
+    svc, route = one(docs, "Service", "orqix"), one(docs, "Route", "orqix")
+    report.check(selects(svc["spec"]["selector"], api_labels) and not selects(svc["spec"]["selector"], worker_labels)
+                 and route["spec"]["to"]["name"] == "orqix", "Service and Route reach the API pods only", f"{name}: Service selects workers")
+    pdbs = {p["metadata"]["name"]: p["spec"] for p in by_kind(docs, "PodDisruptionBudget")}
+    report.check(selects(pdbs["orqix"]["selector"], api_labels) and not selects(pdbs["orqix"]["selector"], worker_labels)
+                 and selects(pdbs["orqix-worker"]["selector"], worker_labels) and pdbs["orqix-worker"]["minAvailable"] == 1,
+                 "one PDB per role, minAvailable 1", f"{name}: pdbs {pdbs}")
+
+    policies = {p["metadata"]["name"]: p["spec"]["podSelector"] for p in by_kind(docs, "NetworkPolicy")}
+    worker_allowed = {"orqix-default-deny", "orqix-allow-monitoring-ingress", "orqix-allow-dns-egress", "orqix-allow-postgres-egress",
+                      "orqix-allow-connection-egress"}
+    report.check({n for n, s in policies.items() if selects(s, worker_labels)} == worker_allowed,
+                 "workers: default deny, monitoring ingress, DNS, PostgreSQL and connection egress only (no router ingress, no IdP)",
+                 f"{name}: worker policies {sorted(n for n, s in policies.items() if selects(s, worker_labels))}")
+    report.check(all(selects(s, api_labels) for n, s in policies.items()), "API pods keep every policy", f"{name}: API pods lost a policy")
+
+    hpa = one(docs, "HorizontalPodAutoscaler")["spec"]
+    budget = hpa["maxReplicas"] * API_CONNECTIONS_PER_POD + worker["spec"]["replicas"] * CONNECTIONS_PER_POD + MIGRATION_CONNECTIONS + OPERATIONS_CONNECTIONS
+    report.check(hpa["scaleTargetRef"]["name"] == "orqix" and hpa["maxReplicas"] == 3 and budget <= 0.8 * MAX_CONNECTIONS,
+                 f"API HPA ..3 plus 2 workers fits the connection budget ({budget} <= {0.8 * MAX_CONNECTIONS:.0f})", f"{name}: connection budget {budget}")
+    namespaces = {d["metadata"].get("namespace") for d in docs}
+    report.check(namespaces == {"orqix-prod"}, "all resources in namespace orqix-prod", f"{name}: namespaces {namespaces}")
+
+
 def main() -> int:
     root = Path(__file__).resolve().parents[2] / "deploy" / "openshift"
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -212,11 +290,12 @@ def main() -> int:
     report = Report()
     for overlay in OVERLAYS:
         check_overlay(overlay, render(args.root / "overlays" / overlay), secrets, report)
+    check_split(render(args.root / "overlays" / SPLIT_OVERLAY), secrets, report)
     print()
     if report.failures:
         print(f"RESULT: FAIL - {len(report.failures)} of {report.count} checks failed")
         return 1
-    print(f"RESULT: PASS - {report.count} checks across {len(OVERLAYS)} overlays")
+    print(f"RESULT: PASS - {report.count} checks across {len(OVERLAYS) + 1} overlays")
     return 0
 
 

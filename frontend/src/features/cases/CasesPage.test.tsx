@@ -72,7 +72,7 @@ describe('case workbench', () => {
     await user.type(screen.getByLabelText('Reason'), 'Duplicate request')
     await user.click(screen.getByRole('button', { name: 'Confirm termination' }))
     await waitFor(() => expect(body).toEqual({ expectedVersion: 1, reason: 'Duplicate request' }))
-    expect(await screen.findByText('terminated')).toBeInTheDocument()
+    expect(await screen.findByText('Terminated')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Terminate case' })).not.toBeInTheDocument()
   })
   it('loads the nested case plan on demand and refreshes milestones after a task decision', async () => {
@@ -123,7 +123,7 @@ describe('case workbench', () => {
     expect(screen.getByRole('button', { name: 'Confirm change' })).toBeDisabled()
     await user.type(screen.getByLabelText('Reason'), 'Wait for evidence')
     await user.click(screen.getByRole('button', { name: 'Confirm change' }))
-    expect(await screen.findByText('suspended')).toBeInTheDocument()
+    expect(await screen.findByText('On hold')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Complete task' })).toBeDisabled()
     await user.click(screen.getByRole('button', { name: 'Resume case' }))
     await user.type(screen.getByLabelText('Reason'), 'Evidence arrived')
@@ -171,7 +171,7 @@ describe('case workbench', () => {
     const user = userEvent.setup(); const { router } = await renderAppReady(`/w/${ws}/cases`)
     const types = await screen.findByRole('region', { name: 'Case types' })
     expect(within(types).getByRole('heading', { name: 'Case types' })).toBeInTheDocument()
-    expect(await within(types).findByRole('cell', { name: 'Evidence review' })).toBeInTheDocument()
+    expect(await within(types).findByText('Evidence review')).toBeInTheDocument()
     // Authoring moved to the case designer page (S126): no key, name, CMMN upload or create button here.
     expect(screen.queryByText('Create case definition')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Key')).not.toBeInTheDocument()
@@ -191,7 +191,8 @@ describe('case workbench', () => {
       http.get('*/api/v1/workspaces/:ws/cases/instances', () => HttpResponse.json([])),
     )
     await renderAppReady(`/w/${ws}/cases`)
-    expect(await screen.findByText('No case types are published in this workspace.')).toBeInTheDocument()
+    expect(await screen.findByText('No case types published yet')).toBeInTheDocument()
+    expect(screen.getByText('Ask a designer to publish a case type.')).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /Design case type/ })).not.toBeInTheDocument()
   })
 

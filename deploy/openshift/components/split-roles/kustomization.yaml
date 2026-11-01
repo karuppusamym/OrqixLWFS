@@ -1,0 +1,59 @@
+# Opt-in API/worker split (docs/adr/0004 step 1). Add to an overlay with:
+#
+#   components:
+#     - ../../components/split-roles
+#
+# The "orqix" Deployment becomes the API role (profile api: no engine jobs, no scheduled work, 10 connections per pod,
+# HPA 2..3) and "orqix-worker" runs the jobs, scheduled work and Kafka consumers (profile worker, 2 pods, 15 connections
+# each). Connection budget: 3 x 10 + 2 x 15 + 5 (migration) + 10 (operations) = 75 <= 0.8 x max_connections 100.
+# Raise a ceiling only after max_connections. Workers carry component=worker, so the Service, Route, router ingress and
+# IdP egress never select them; monitoring ingress and connection egress are widened to cover them.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+  - worker-deployment.yaml
+  - worker-pdb.yaml
+
+patches:
+  - target: {group: apps, version: v1, kind: Deployment, name: orqix}
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: orqix
+      spec:
+        template:
+          spec:
+            containers:
+              - name: orqix
+                env:
+                  - name: SPRING_PROFILES_ACTIVE
+                    value: prod,api
+                  # API pods hold no job threads; container env overrides the ConfigMap's 15.
+                  - name: SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE
+                    value: "10"
+  - target: {group: autoscaling, version: v2, kind: HorizontalPodAutoscaler, name: orqix}
+    patch: |-
+      - op: replace
+        path: /spec/maxReplicas
+        value: 3
+  - target: {group: networking.k8s.io, version: v1, kind: NetworkPolicy, name: orqix-allow-monitoring-ingress}
+    patch: |-
+      - op: replace
+        path: /spec/podSelector
+        value:
+          matchLabels:
+            app.kubernetes.io/name: orqix
+          matchExpressions:
+            - {key: app.kubernetes.io/component, operator: In, values: [app, worker]}
+  # Workers make the outbound calls (HTTP steps, retries, webhooks, agent steps), so they need the same endpoints.
+  - target: {group: networking.k8s.io, version: v1, kind: NetworkPolicy, name: orqix-allow-connection-egress}
+    patch: |-
+      - op: replace
+        path: /spec/podSelector
+        value:
+          matchLabels:
+            app.kubernetes.io/name: orqix
+          matchExpressions:
+            - {key: app.kubernetes.io/component, operator: In, values: [app, worker]}

@@ -4018,6 +4018,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{workspaceId}/work-views": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        get: operations["listSavedWorkViews"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspaceId}/work-views/{viewId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                viewId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Create at revision zero or update an owned query at its current revision; sharing never grants data access. */
+        put: operations["saveWorkView"];
+        post?: never;
+        delete: operations["deleteWorkView"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{workspaceId}/tasks": {
         parameters: {
             query?: never;
@@ -5611,6 +5649,30 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        SaveWorkView: {
+            /** @enum {string} */
+            kind: "tasks" | "runs";
+            name: string;
+            shared: boolean;
+            expectedRevision: number;
+            filters: {
+                [key: string]: string;
+            };
+        };
+        SavedWorkView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            ownerId: string;
+            /** @enum {string} */
+            kind: "tasks" | "runs";
+            name: string;
+            shared: boolean;
+            revision: number;
+            filters: {
+                [key: string]: string;
+            };
+        };
         /** @description One case data field. Since docs/build/S125 it carries the same optional checks as a single-value request question (workflow-v0 formField) and is edited and rendered with the same field editor and form renderer. Every S125 property is optional, so earlier definitions read and validate as before. */
         CaseDataField: {
             /** @description New keys follow the request-question pattern ^[a-z][A-Za-z0-9]{0,63}$. Keys in the older pattern (capitals first or underscores) keep working and are reported in the definition's warnings as CASE_DATA_KEY_LEGACY. */
@@ -18621,6 +18683,92 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    listSavedWorkViews: {
+        parameters: {
+            query: {
+                kind: "tasks" | "runs";
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Own and workspace-shared query definitions; results retain current caller permissions. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["SavedWorkView"][];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    saveWorkView: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                viewId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveWorkView"];
+            };
+        };
+        responses: {
+            /** @description Saved query */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedWorkView"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    deleteWorkView: {
+        parameters: {
+            query: {
+                expectedRevision: number;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                viewId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Owned query removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
     listTasks: {
         parameters: {
             query: {
@@ -18634,6 +18782,12 @@ export interface operations {
                 sort?: "priority" | "oldest" | "newest";
                 /** @description Optional open-task priority threshold; unsupported for completed tasks. */
                 minPriority?: number;
+                /** @description Case-insensitive words matched across the eligible task summary before pagination; no wildcard syntax. */
+                q?: string;
+                /** @description Candidate group key; eligibility is still enforced before pagination and counts. */
+                queue?: string;
+                /** @description Overdue or next 24 hours relative to the first page time, retained in the signed cursor. Completed tasks never match overdue or soon. */
+                due?: "all" | "overdue" | "soon" | "none";
                 cursor?: components["parameters"]["Cursor"];
                 limit?: components["parameters"]["Limit"];
             };
@@ -18654,6 +18808,8 @@ export interface operations {
                     "application/json": {
                         items: components["schemas"]["TaskSummary"][];
                         nextCursor: components["schemas"]["NextCursor"];
+                        /** @description Eligible tasks matching this query, capped at 1000. Tab counts remain unfiltered. */
+                        matchedCount?: number;
                         counts: {
                             assigned: number;
                             /** @description Exact up to 1000 and 1000 beyond (a large backlog is not counted in full on every call) */

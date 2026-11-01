@@ -202,6 +202,7 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const fitPending = useRef(true)
   const fitted = useRef(false)
+  const initialViewport = useRef(store.getState().definition.uiLayout?.viewport)
   const skipNextFit = useRef(false)
   const lastKey = useRef(key)
   useEffect(() => {
@@ -230,6 +231,7 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
     if (!fitPending.current || !nodesInitialized || !prepared) return
     fitPending.current = false
     const duration = fitted.current && !prefersReducedMotion() ? 250 : 0
+    const firstFit = !fitted.current
     fitted.current = true
     // One frame later, so React Flow has applied the new positions and sizes.
     requestAnimationFrame(() => {
@@ -237,8 +239,14 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
       const all = flow.getNodes()
       if (!box || all.length === 0) return
       const bounds = getNodesBounds(all)
+      const saved = initialViewport.current
+      // A returning designer's saved view is kept, unless it would open with text too small to read.
+      if (firstFit && saved && Number.isFinite(saved.x) && Number.isFinite(saved.y) && Number.isFinite(saved.zoom) && saved.zoom >= minZoomRef.current && saved.zoom <= 1.8) {
+        void flow.setViewport(saved, { duration: 0 })
+        return
+      }
       const whole = getViewportForBounds(bounds, box.width, box.height, 0.1, FIT.maxZoom, FIT.padding)
-      const minZoom = FIT_MIN_ZOOM[notation]
+      const minZoom = minZoomRef.current
       if (whole.zoom >= minZoom) {
         void flow.setViewport(whole, { duration })
         return
@@ -406,7 +414,7 @@ function CanvasInner({ groupNames, onBranchConnect }: CanvasProps) {
           elementsSelectable
           nodesFocusable
           edgesFocusable
-          minZoom={0.25}
+          minZoom={0.1}
           maxZoom={1.8}
           connectionRadius={32}
           proOptions={{ hideAttribution: false }}

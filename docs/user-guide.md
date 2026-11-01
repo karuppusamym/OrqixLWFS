@@ -343,3 +343,21 @@ An evidence pack is a file an auditor can read without access to Orqix. It is bu
 - **What is left out**: request values, form answers, attachments, decision reasons, comments, operator notes, test inputs, template bodies and credentials. Those stay in Orqix. The file says so on its first page.
 - **Checking a file**: each pack ends with a SHA-256 content digest. In the JSON file it covers the canonical JSON (RFC 8785) of the pack without its `integrity` member, so anyone can recompute it. The PDF and Word files show the digest of the same content.
 - The PDF uses a standard Latin font; characters outside it (for example Chinese names) appear as `?`. Use the Word or JSON file for those. Very large runs (more than 10,000 steps, calls, corrections or events) are refused rather than cut short; use the controlled audit extraction process instead.
+
+## Cases for every path on the Test tab (designers) - 30 October 2026
+
+On the Test tab, **Generate cases for every path** saves the draft (if you may edit it) and proposes up to 20 test cases. Each one sets request answers on both sides of every route condition, decision rule and form rule that reads a request answer. Each proposal shows its name (the answers it sets on purpose), the expected outcome and the steps it takes. A summary says how many routes the cases cover together and lists any route no case takes, usually timeouts and failure routes, which still need a hand-written case.
+
+Proposals are not saved until you choose **Keep** (or **Keep all**). A kept case is an ordinary saved case: you can load, edit, export and run it with **Run all saved cases**. Generating again and keeping replaces earlier generated cases with the same name. Anyone who can read the workflow can generate; keeping needs edit permission. The saved-case list holds up to 20 cases. Everything runs as dry runs of the draft: nothing is started, and no outside system or AI is called. Details: [S122](build/S122-generated-test-cases.md).
+
+## Saved views for tasks and runs - 30 October 2026
+
+On **My tasks** and **Runs**, **Save current view** stores the current filters (for tasks: list, search, queue, due, sort and priority; for requests: state, workflow, reference, overdue and outcome) under a name of up to 80 characters. Pick a view from **Saved views** to apply it again. Tick **Share with this workspace** to let colleagues use the same filters. Sharing shares only the filters: a shared view never shows anyone a task or request they could not already see. Only the person who saved a view can update or delete it. Saves and deletes are recorded in the audit log. A workspace holds up to 200 saved views.
+
+## Decisions page and the case type designer (designers) - 31 October 2026
+
+Shared decision tables (DMN) have their own **Decisions** page under Design, so you no longer need to go through Settings > Shared assets. Case types open in the same full-screen designer frame as workflows: one header with save state, undo and redo, **Check**, **Publish** and **More**, and the tabs Plan, Data, Screens and Source. Changes save automatically about 1.5 seconds after you stop typing. If someone else saved in between, you are asked to reload instead of overwriting their work.
+
+## Regional template packs (designers) - 31 October 2026
+
+The template picker can filter by region (India, EU, Kenya, Nigeria) and industry. The regional packs include loan exceptions, KYC refresh, group loans, vendor onboarding, permits and grant applications, with local working calendars and second-language labels. They are starting points, not compliance-approved processes. See [regional template packs](regional-template-packs.md).

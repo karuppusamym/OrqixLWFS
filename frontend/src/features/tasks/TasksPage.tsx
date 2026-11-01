@@ -1,3 +1,4 @@
+import { SavedWorkViews } from '@/components/common/SavedWorkViews'
 import { useQuery } from '@tanstack/react-query'
 import { getWorklistView } from '@/api/worklists'
 import type { ViewDefinition } from '@/features/views/model'
@@ -14,7 +15,7 @@ import { LoadingBlock } from '@/components/common/LoadingBlock'
 import { PageHeader } from '@/components/common/PageHeader'
 import { QueryError } from '@/components/common/QueryError'
 import { Button } from '@/components/ui/button'
-import { Select } from '@/components/ui/input'
+import { Input, Select } from '@/components/ui/input'
 import { taskAge } from './taskAge'
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -24,6 +25,7 @@ import { requestReference, taskTitle } from '@/lib/runText'
 import { useIsDesktop } from '@/lib/useMediaQuery'
 import { TaskStage } from '@/features/runs/StageProgress'
 import { TaskPanel } from './TaskPanel'
+import { parseDueFilter } from './taskFilters'
 
 const VIEWS: Array<{ id: TaskView; label: string }> = [
   { id: 'assigned', label: 'Assigned to me' },
@@ -65,12 +67,28 @@ function TaskInbox() {
     : taskId ? (inferred ?? 'assigned')
       : counters.data && counters.data.assigned === 0 && counters.data.claimable > 0 ? 'claimable' : 'assigned'
   const sort = params.get('sort') === 'oldest' ? 'oldest' : params.get('sort') === 'newest' ? 'newest' : 'priority'
-  const minPriority = params.get('minPriority') === '50' ? 50 : 0
-  const list = useTasks(ws, view, true, sort, minPriority)
-  const loadedTasks: TaskSummary[] = list.data?.pages.flatMap((p) => p.items) ?? []
-  const queue = params.get('queue') ?? ''
-  const queueOptions = [...new Map(loadedTasks.map(task => [task.candidateGroup.key, task.candidateGroup])).values()]
-  const tasks = queue ? loadedTasks.filter(task => task.candidateGroup.key === queue) : loadedTasks
+  const minPriority = view !== 'completed' && params.get('minPriority') === '50' ? 50 : 0
+  const queue = view === 'completed' ? '' : params.get('queue') ?? ''
+  const search = params.get('q') ?? ''
+  const due = view === 'completed' ? 'all' : parseDueFilter(params.get('due'))
+  const filtered = !!(queue || search.trim() || due !== 'all' || minPriority)
+  const list = useTasks(ws, view, true, sort, minPriority, { q: search.trim() || undefined, queue: queue || undefined, due })
+  const tasks: TaskSummary[] = list.data?.pages.flatMap(page => page.items) ?? []
+  const queueOptions = [...new Map(tasks.map(task => [task.candidateGroup.key, task.candidateGroup])).values()]
+  const matchedCount = list.data?.pages[0]?.matchedCount
+  const updateFilter = (key: string, value: string) => {
+    const next = new URLSearchParams(params)
+    if (value) next.set(key, value); else next.delete(key)
+    next.set('view', view)
+    setParams(next, { replace: true })
+  }
+  const clearFilters = () => {
+    const next = new URLSearchParams(params)
+    for (const key of ['q', 'queue', 'due', 'minPriority']) next.delete(key)
+    next.set('view', view)
+    setParams(next, { replace: true })
+  }
+  const listQuery = new URLSearchParams(params); listQuery.set('view', view)
 
   const showList = desktop || !taskId
   const showPanel = !!taskId
@@ -85,14 +103,19 @@ function TaskInbox() {
       ) : (
         <div className="mb-4">
           <Button asChild variant="secondary">
-            <Link to={`/w/${ws}/tasks?view=${view}`}>Back to My tasks</Link>
+            <Link to={`/w/${ws}/tasks?${listQuery}`}>Back to My tasks</Link>
           </Button>
         </div>
       )}
       <div className={cn('grid gap-6', desktop && showPanel ? 'lg:grid-cols-[minmax(0,1fr)_minmax(0,30rem)]' : '')}>
         {showList ? (
           <div className="min-w-0">
-            <Tabs value={view} onValueChange={(v) => navigate(`/w/${ws}/tasks?view=${v}`)}>
+            <SavedWorkViews kind="tasks" effectiveFilters={{view,sort,minPriority:String(minPriority),q:search,queue,due}} />
+            <Tabs value={view} onValueChange={(v) => {
+              const next = new URLSearchParams(params); next.set('view', v)
+              if (v === 'completed') { next.delete('due'); next.delete('minPriority'); next.delete('queue') }
+              navigate(`/w/${ws}/tasks?${next}`)
+            }}>
               <TabsList aria-label="Task lists">
                 {VIEWS.map((v) => (
                   <TabsTrigger key={v.id} value={v.id}>
@@ -101,12 +124,26 @@ function TaskInbox() {
                   </TabsTrigger>
                 ))}
               </TabsList>
+            <div className="mt-4 rounded-card border border-border bg-surface p-4">
+              <div className="flex flex-wrap items-end gap-3">
+                <label className="w-full text-sm font-medium sm:min-w-0 sm:w-auto sm:flex-1" htmlFor="task-search">Search tasks
+                  <Input id="task-search" type="search" value={search} placeholder="Request, reference, person or step" onChange={e => updateFilter('q', e.target.value)} />
+                </label>
+                {view !== 'completed' ? <label className="w-full text-sm font-medium sm:w-auto" htmlFor="task-due">Due date
+                  <Select id="task-due" aria-label="Due date" value={due} onChange={e => updateFilter('due', e.target.value === 'all' ? '' : e.target.value)}>
+                    <option value="all">Any due date</option><option value="overdue">Overdue</option><option value="soon">Due in next 24 hours</option><option value="none">No due date</option>
+                  </Select>
+                </label> : null}
+                {filtered ? <Button variant="ghost" onClick={clearFilters}>Clear filters</Button> : null}
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">Search covers all tasks you can access in this list. Bookmark this page to keep your filters.</p>
+            </div>
             {view !== 'completed' ? <div className="my-4 flex flex-wrap gap-4">
               <label htmlFor="task-queue-filter">Work queue <Select id="task-queue-filter" aria-label="Work queue" value={queue} onChange={e => { const next = new URLSearchParams(params); if (e.target.value) next.set('queue',e.target.value); else next.delete('queue'); next.set('view',view); setParams(next) }}>
                 <option value="">All queues</option>
                 {queue && !queueOptions.some(group => group.key === queue) ? <option value={queue}>{queue}</option> : null}
                 {queueOptions.map(group => <option key={group.key} value={group.key}>{group.name}</option>)}
-              </Select><span className="block text-xs text-muted-foreground">Filters loaded tasks; Load more includes older work.</span></label>
+              </Select><span className="block text-xs text-muted-foreground">Filters all eligible tasks, including work on later pages.</span></label>
               <label htmlFor="task-sort">Sort tasks <Select id="task-sort" aria-label="Sort tasks" value={sort} onChange={e => { const next = new URLSearchParams(params); next.set('sort',e.target.value); next.set('view',view); setParams(next) }}>
                 <option value="priority">Priority, then oldest</option><option value="oldest">Oldest first</option><option value="newest">Newest first</option>
               </Select></label>
@@ -114,15 +151,16 @@ function TaskInbox() {
                 <option value={0}>All priorities</option><option value={50}>Priority 50 and above</option>
               </Select></label>
             </div> : null}
+            {!list.isPending && !list.isError ? <p role="status" className="mb-3 text-sm text-muted-foreground">Showing {tasks.length}{matchedCount !== undefined ? ` of ${matchedCount}${matchedCount >= 1000 ? '+' : ''} matching tasks` : ' matching tasks'}{list.hasNextPage ? ' - More available' : ''}</p> : null}
             <TabsContent value={view} aria-label={VIEWS.find((v) => v.id === view)?.label}>
               {list.isPending ? (
                 <LoadingBlock rows={4} label="Loading tasks" />
-              ) : list.isError ? (
+              ) : list.isError && !list.data ? (
                 <QueryError error={list.error} onRetry={() => void list.refetch()} what="your tasks" />
               ) : tasks.length === 0 ? (
-                <EmptyState icon={Inbox} title={view === 'assigned' ? 'No tasks are assigned to you' : view === 'claimable' ? 'Nothing is available to claim' : 'You have not completed any tasks yet'}>
-                  {view === 'claimable' ? 'When a request needs a decision from your group, it appears here.' : 'Check the other tabs, or come back later.'}
-                  {queue && list.hasNextPage ? <Button variant="secondary" onClick={() => void list.fetchNextPage()} loading={list.isFetchingNextPage}>Load more</Button> : null}
+                <EmptyState icon={Inbox} title={filtered ? 'No tasks match these filters' : view === 'assigned' ? 'No tasks are assigned to you' : view === 'claimable' ? 'Nothing is available to claim' : 'You have not completed any tasks yet'}>
+                  {filtered ? 'Clear filters to broaden your results.' : view === 'claimable' ? 'When a request needs a decision from your group, it appears here.' : 'Check the other tabs, or come back later.'}
+                  {list.hasNextPage ? <Button variant="secondary" onClick={() => void list.fetchNextPage()} loading={list.isFetchingNextPage}>Load more</Button> : null}
                 </EmptyState>
               ) : (
                 <>
@@ -136,6 +174,8 @@ function TaskInbox() {
                   ) : null}
                 </>
               )}
+              {list.isError && !!list.data && !list.isFetchNextPageError ? <QueryError error={list.error} onRetry={() => void list.refetch()} what="updated tasks" /> : null}
+              {list.isFetchNextPageError ? <QueryError error={list.error} onRetry={() => void list.fetchNextPage()} what="more tasks" /> : null}
             </TabsContent>
             </Tabs>
           </div>

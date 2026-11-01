@@ -1,0 +1,89 @@
+// Mirrors app/pom.xml.
+apply plugin: 'org.springframework.boot'
+
+description = 'Spring Boot application: identity, catalog, runtime (Flowable), integration, notification, audit, API.'
+base.archivesName = 'orqix-app'
+
+dependencies {
+    implementation project(':compiler')
+
+    // Web, security, sessions
+    implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'org.springframework.boot:spring-boot-starter-security-oauth2-client'
+    implementation 'org.springframework.boot:spring-boot-starter-security-oauth2-resource-server'
+    implementation 'org.springframework.boot:spring-boot-starter-session-jdbc'
+
+    // Optional SMTP transport; disabled unless explicitly configured.
+    implementation 'org.springframework.boot:spring-boot-starter-mail'
+
+    // Persistence
+    implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+    implementation 'org.springframework.boot:spring-boot-starter-flyway'
+    implementation 'org.flywaydb:flyway-database-postgresql'
+    runtimeOnly 'org.postgresql:postgresql'
+
+    // Engine
+    implementation 'org.flowable:flowable-spring-boot-starter-process'
+    implementation 'org.flowable:flowable-spring-boot-starter-dmn'
+    implementation 'org.flowable:flowable-dmn-spring-configurator'
+    implementation 'org.flowable:flowable-spring-boot-starter-cmmn'
+    implementation 'org.flowable:flowable-cmmn-spring-configurator'
+
+    // Operations
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    implementation 'io.micrometer:micrometer-registry-prometheus'
+
+    // Modularity and ids
+    implementation 'org.springframework.modulith:spring-modulith-starter-core'
+    implementation 'com.github.f4b6a3:uuid-creator'
+    // Not listed as an annotationProcessor on purpose: spring-modulith-apt only writes javadoc.json for optional module
+    // documentation, and under Gradle it writes it relative to the Gradle daemon's folder, not to this project.
+
+    // JSON: RFC 8785 canonical form (idempotency/effect hashes), 2020-12 validation of connection definitions
+    implementation 'io.github.erdtman:java-json-canonicalization'
+    implementation 'com.networknt:json-schema-validator'
+
+    // PDF extraction runs in a bounded isolated worker JVM; Office OOXML is read with bounded ZIP/StAX.
+    implementation 'org.apache.pdfbox:pdfbox:3.0.6'
+    // IN05 (c): Apache Kafka client, version from the Spring Boot BOM.
+    implementation 'org.apache.kafka:kafka-clients'
+
+    // Tests
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+    testImplementation 'org.springframework.boot:spring-boot-starter-security-test'
+    testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+    testImplementation 'org.testcontainers:testcontainers-postgresql'
+    testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+    testImplementation 'org.testcontainers:testcontainers-kafka'
+    testImplementation 'org.springframework.modulith:spring-modulith-starter-test'
+    testImplementation 'com.tngtech.archunit:archunit-junit5'
+    testImplementation 'org.wiremock:wiremock-standalone'
+}
+
+processResources {
+    // Built-in templates come from /examples (single source; never copied by hand).
+    from(new File(repoRoot, 'examples')) {
+        include 'purchase-approval.json', 'new-hire-onboarding.json', 'vendor-onboarding-check.json',
+                'order-payment-wait.json', 'case-with-stages.json',
+                // Regional regulated template packs (docs/regional-template-packs.md).
+                'pack-*.json'
+        into 'templates'
+    }
+    // Connection definitions used by the dev seed (profile dev only).
+    from(new File(repoRoot, 'examples/connections')) {
+        include 'procurement.connection.json', 'vendor-risk-assistant.connection.json'
+        into 'dev-seed/connections'
+    }
+}
+
+// spring-modulith-apt is a compile-time annotation processor; the Maven jar leaves it out, so this one does too.
+configurations.named('runtimeClasspath') {
+    exclude group: 'org.springframework.modulith', module: 'spring-modulith-apt'
+}
+
+bootJar {
+    archiveFileName = 'orqix-app.jar'
+}

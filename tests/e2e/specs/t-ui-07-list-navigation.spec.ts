@@ -18,7 +18,8 @@ test('run search survives reload and Back, including an unfinished search', asyn
   await page.reload()
   await expect(page.getByRole('textbox', { name: 'Request reference', exact: true })).toHaveValue('ORQ-1003')
   await page.getByRole('button', { name: 'Clear filters' }).click()
-  await expect(page).toHaveURL(`/w/${ws}/runs`)
+  // Clearing records the explicit choice to see all runs, so operators are not sent back to the exception view.
+  await expect(page).toHaveURL(`/w/${ws}/runs?scope=all`)
   await page.getByRole('textbox', { name: 'Request reference', exact: true }).fill('unfinished search')
   await page.goBack()
   await expect(page.getByRole('textbox', { name: 'Request reference', exact: true })).toHaveValue('ORQ-1003')

@@ -1,7 +1,7 @@
 # S7 — Frontend screens and studio
 Build specification · revision 1.0 · 7 October 2026
 
-Turns the [UX specification](../02-ux-design.md) and [design board](../../design/business-workspace.svg) into routes, components, data flows and states for R0. API calls refer to `operationId`s in [`openapi.yaml`](../../contracts/openapi.yaml).
+Turns the [UX specification](../02-ux-design.md) into routes, components, data flows and states for R0. API calls refer to `operationId`s in [`openapi.yaml`](../../contracts/openapi.yaml).
 
 ## 1. Shell
 

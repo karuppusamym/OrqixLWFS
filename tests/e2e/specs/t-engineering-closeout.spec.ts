@@ -4,7 +4,7 @@ import { MOCK } from '../support/env'
 import { addCaseField, apiGet, openFormTab, workspaceId } from '../support/app'
 import { apiSend, createWorkflow, publish, uniq } from '../support/api'
 import { expectNoSeriousViolations } from '../support/axe'
-import { checkAndPublish, newCaseType, useCmmnFile } from '../support/caseDesigner'
+import { checkAndPublish, newCaseType, useCmmnFile, startCaseButton } from '../support/caseDesigner'
 
 test('published request view is pinned in Studio and renders its submit action at runtime', async ({ sessions }) => {
   test.setTimeout(180_000)
@@ -70,10 +70,10 @@ test('operator confirms a case termination with a reason and open tasks disappea
   await dialog.getByLabel('Reason').fill('Duplicate synthetic case')
   await expectNoSeriousViolations(page, 'Case termination confirmation')
   await dialog.getByRole('button', { name: 'Confirm termination' }).click()
-  await expect(page.getByText('terminated', { exact: true })).toBeVisible()
+  await expect(page.getByText('Terminated', { exact: true })).toBeVisible()
   await expect(page.getByText('No tasks are currently available.')).toBeVisible()
   await page.reload()
-  await expect(page.getByText('terminated', { exact: true })).toBeVisible()
+  await expect(page.getByText('Terminated', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Terminate case', exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: 'Show case plan', exact: true }).click()
   const plan = page.getByRole('region', { name: 'Case plan', exact: true })
@@ -125,7 +125,7 @@ test('real case manual work, hold, resume and guarded close preserve case histor
   await page.getByRole('button', { name: 'Put case on hold', exact: true }).click()
   await page.getByRole('dialog').getByLabel('Reason').fill('Wait for supporting evidence')
   await page.getByRole('button', { name: 'Confirm change' }).click()
-  await expect(page.getByText('suspended', { exact: true })).toBeVisible()
+  await expect(page.getByText('On hold', { exact: true })).toBeVisible()
   await page.reload()
   await expect(page.getByRole('button', { name: 'Resume case', exact: true })).toBeVisible()
   page = await sessions.as('mani.manager')
@@ -136,7 +136,7 @@ test('real case manual work, hold, resume and guarded close preserve case histor
   await page.getByRole('button', { name: 'Resume case', exact: true }).click()
   await page.getByRole('dialog').getByLabel('Reason').fill('Evidence is ready')
   await page.getByRole('button', { name: 'Confirm change' }).click()
-  await expect(page.getByText('active', { exact: true })).toBeVisible()
+  await expect(page.getByText('Active', { exact: true })).toBeVisible()
   page = await sessions.as('mani.manager')
   await page.goto(url)
   await page.getByRole('button', { name: 'Complete task', exact: true }).click()
@@ -146,7 +146,7 @@ test('real case manual work, hold, resume and guarded close preserve case histor
   await page.getByRole('button', { name: 'Close case', exact: true }).click()
   await page.getByRole('dialog').getByLabel('Reason').fill('Required review completed')
   await page.getByRole('button', { name: 'Confirm change' }).click()
-  await expect(page.getByText('completed', { exact: true })).toBeVisible()
+  await expect(page.getByText('Completed', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Show case plan', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Case history', exact: true })).toBeVisible()
   await expect(page.getByText('Required review completed', { exact: true })).toBeVisible()
@@ -168,7 +168,7 @@ test('real typed case data is authored, validated, corrected and retained after 
   await checkAndPublish(page)
   page = await sessions.as('rhea.requester')
   await page.goto(`/w/${ws}/cases`)
-  await page.getByRole('row').filter({ has: page.getByRole('cell', { name: key, exact: true }) }).getByRole('button', { name: 'Start case', exact: true }).click()
+  await startCaseButton(page, key).click()
   const start = page.getByRole('dialog', { name: 'Start case', exact: true })
   await start.getByLabel(/^Summary/).fill('Original case evidence')
   await start.getByLabel('Amount', { exact: true }).fill('12.25')
@@ -198,7 +198,7 @@ test('real typed case data is authored, validated, corrected and retained after 
   await page.getByRole('button', { name: 'Close case', exact: true }).click()
   await page.getByRole('dialog').getByLabel('Reason', { exact: true }).fill('Required case work is complete')
   await page.getByRole('button', { name: 'Confirm change' }).click()
-  await expect(page.getByText('completed', { exact: true })).toBeVisible()
+  await expect(page.getByText('Completed', { exact: true })).toBeVisible()
   await page.reload()
   await page.getByRole('button', { name: 'Show case data' }).click()
   await expect(page.getByLabel(/^Summary/)).toHaveValue('Corrected case evidence')

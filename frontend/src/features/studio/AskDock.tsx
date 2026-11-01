@@ -4,8 +4,8 @@ import { AuthoringPanel, type FocusStep } from '@/features/ai/AuthoringPanel'
 import { usePersistedFlag } from '@/lib/usePersistedFlag'
 import { AI_EXPANDED_KEY } from './viewKeys'
 
-/** Short screens (or a zoomed browser) start with the dock closed to one line so the canvas keeps its height. */
-const defaultExpanded = () => typeof window === 'undefined' || window.innerHeight >= 800
+/** Start compact so the workflow keeps its height; an explicit saved preference takes precedence. */
+const defaultExpanded = () => false
 
 /**
  * The conversation with the AI, docked under the canvas like a chat box. It opens and closes from its own bar (the

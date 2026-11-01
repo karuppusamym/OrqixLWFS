@@ -292,7 +292,7 @@ public final class RuntimeDtos {
     public record TaskCounts(int assigned, int claimable) {
     }
 
-    public record TaskPage(List<TaskSummary> items, String nextCursor, TaskCounts counts) {
+    public record TaskPage(List<TaskSummary> items, String nextCursor, TaskCounts counts, int matchedCount) {
     }
 
     // ------------------------------------------------------------------ notifications

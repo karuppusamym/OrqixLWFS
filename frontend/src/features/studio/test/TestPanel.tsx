@@ -1,6 +1,6 @@
 import { useWorkspace } from '@/app/workspace'
 import { useQuery } from '@tanstack/react-query'
-import { FlaskConical, Play, RotateCcw, X } from 'lucide-react'
+import { FlaskConical, ListChecks, Play, RotateCcw, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as endpoints from '@/api/endpoints'
 import { isProblemError } from '@/api/problem'
@@ -18,6 +18,7 @@ import { carryOverValues, validateForm, type FieldErrors, type RawValue, type Ra
 import { fieldErrorMap } from '@/lib/problemMessages'
 import { useStudio, useStudioContext } from '../StudioContext'
 import { AssertionResults, AssertionsEditor } from './AssertionsEditor'
+import { generateCases, type GeneratedCase, type GenerationReport } from './caseGenerator'
 import { DecisionGrid } from './DecisionGrid'
 import { Playback } from './Playback'
 import { playbackAt, NO_PLAYBACK, useSetPlayback } from './PlaybackContext'
@@ -81,6 +82,8 @@ export function TestPanel({ groupNames, onClose, onGoToStep, onCheck, active = t
   const [caseNotice, setCaseNotice] = useState<string | null>(null)
   const [caseRuns, setCaseRuns] = useState<CaseRun[] | null>(null)
   const [runningAll, setRunningAll] = useState(false)
+  const [generated, setGenerated] = useState<GenerationReport | null>(null)
+  const [generating, setGenerating] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
 
   const summary = useQuery({ queryKey: ['ws', wsId, 'workflow', workflowId, 'test-summary'], queryFn: () => endpoints.getWorkflowTestSummary(wsId, workflowId), staleTime: 10_000, retry: false })
@@ -238,6 +241,67 @@ export function TestPanel({ groupNames, onClose, onGoToStep, onCheck, active = t
     setCaseRuns(list)
     setRunningAll(false)
     announce(`${list.filter((d) => d.pass).length} of ${list.length} saved test cases passed.`)
+  }
+
+  /** "Generate cases for every path": answers either side of each condition, each dry-run once (docs/build/S122). */
+  const generate = async () => {
+    setGenerating(true)
+    setGenerated(null)
+    setProblem(null)
+    setBlockers([])
+    try {
+      if (!(await flush())) throw new Error('The draft could not be saved, so no cases were generated.')
+      const current = store.getState()
+      const stamp = Date.now().toString(36)
+      const report = await generateCases({
+        def: current.definition,
+        fields,
+        schema,
+        ui,
+        newId: (i) => `case-${stamp}-${i + 1}`,
+        dryRun: async (input, forSettings) => {
+          try {
+            return await endpoints.simulateWorkflow(wsId, workflowId, { revision: current.revision, input, scenario: toScenario(current.definition, forSettings) })
+          } catch (cause) {
+            // Answers the server does not accept are left out; anything else stops the generation.
+            if (isProblemError(cause) && cause.code === 'VALIDATION_FAILED') return null
+            throw cause
+          }
+        },
+      })
+      setGenerated(report)
+      announce(`${report.cases.length} test cases generated. Together they take ${report.routes.taken} of ${report.routes.total} routes. Keep the ones you want.`)
+    } catch (cause) {
+      if (isProblemError(cause) && cause.code === 'WORKFLOW_INVALID') setBlockers(cause.issues)
+      else setProblem(toProblem(cause))
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  /** Moves generated cases into the saved list (same name replaces); those that do not fit stay proposed. */
+  const keepGenerated = (picked: GeneratedCase[]) => {
+    if (!generated) return
+    let next = cases
+    const kept: GeneratedCase[] = []
+    for (const g of picked) {
+      const merged = upsertCase(next, g.case)
+      if (!merged) continue
+      next = merged
+      kept.push(g)
+    }
+    if (kept.length > 0) updateCases(next)
+    const rest = generated.cases.filter((g) => !kept.includes(g))
+    setGenerated(rest.length > 0 ? { ...generated, cases: rest } : null)
+    const left = picked.length - kept.length
+    const what = kept.length === 1 ? `Kept “${kept[0]?.case.name}”.` : `Kept ${kept.length} generated cases.`
+    setCaseNotice(`${what}${left > 0 ? ` ${left} did not fit: you can keep ${MAX_CASES} test cases.` : ''}`)
+  }
+
+  const discardGenerated = (picked: GeneratedCase[]) => {
+    if (!generated) return
+    const rest = generated.cases.filter((g) => !picked.includes(g))
+    setGenerated(rest.length > 0 ? { ...generated, cases: rest } : null)
   }
 
   const shareAndTest = async () => {
@@ -418,6 +482,67 @@ export function TestPanel({ groupNames, onClose, onGoToStep, onCheck, active = t
             ) : null}
           </>
         ) : null}
+
+        <section aria-labelledby="test-generate-title" className="border-t border-border pt-3" data-testid="generate-section">
+          <h3 id="test-generate-title" className="text-sm font-semibold">
+            Cases for every path
+          </h3>
+          <p className="text-sm text-muted-foreground">
+            Builds answers from the route conditions, decision rules and form rules, just either side of each limit, plus one rejection per approval step. Each set of answers is dry-run once to record how it ends and which steps it takes. Nothing is sent to any system or AI provider.
+          </p>
+          <Button variant="secondary" className="mt-2" onClick={() => void generate()} loading={generating} disabled={runningAll} data-testid="generate-cases">
+            {generating ? null : <ListChecks aria-hidden="true" />} Generate cases for every path
+          </Button>
+          {generated ? (
+            <div className="mt-2" data-testid="generated-cases">
+              <p role="status" className="text-sm font-semibold" data-testid="generated-summary">
+                {`${generated.cases.length} ${generated.cases.length === 1 ? 'case' : 'cases'} to review. Together they take ${generated.routes.taken} of ${generated.routes.total} routes${generated.rules.total > 0 ? ` and match ${generated.rules.matched} of ${generated.rules.total} decision rules` : ''}.`}
+              </p>
+              {generated.routes.notTaken.length > 0 ? (
+                <details className="mt-1">
+                  <summary className="cursor-pointer text-sm">Routes no generated case takes ({generated.routes.notTaken.length})</summary>
+                  <ul className="mt-1 list-disc pl-5 text-sm">
+                    {generated.routes.notTaken.map((r) => (
+                      <li key={r}>{r}</li>
+                    ))}
+                  </ul>
+                </details>
+              ) : null}
+              {!canEdit ? <p className="text-sm text-muted-foreground">Keeping generated cases needs permission to edit workflows.</p> : null}
+              <ul className="mt-2 space-y-2">
+                {generated.cases.map((g) => (
+                  <li key={g.case.id} className="rounded border border-dashed border-border p-2 text-sm" data-testid="generated-case">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-semibold">{g.case.name}</span>
+                      {canEdit ? (
+                        <span className="flex gap-1">
+                          <Button variant="secondary" size="sm" onClick={() => keepGenerated([g])} aria-label={`Keep the generated case ${g.case.name}`}>
+                            Keep
+                          </Button>
+                          <Button variant="secondary" size="sm" onClick={() => discardGenerated([g])} aria-label={`Delete the generated case ${g.case.name}`}>
+                            Delete
+                          </Button>
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="mt-1">Expect: {expectationLabel(g.case.expect)}</p>
+                    <p className="text-muted-foreground">Steps: {g.pathLabels.join(' → ')}</p>
+                  </li>
+                ))}
+              </ul>
+              {canEdit && generated.cases.length > 1 ? (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Button variant="secondary" onClick={() => keepGenerated(generated.cases)}>
+                    Keep all {generated.cases.length}
+                  </Button>
+                  <Button variant="secondary" onClick={() => discardGenerated(generated.cases)}>
+                    Delete all
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </section>
 
         <section aria-labelledby="test-cases-title" className="border-t border-border pt-3" data-testid="saved-cases">
           <h3 id="test-cases-title" className="text-sm font-semibold">

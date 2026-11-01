@@ -13,7 +13,7 @@ describe('shell: permission-based navigation, workspaces, notifications', () => 
     signInAs('rhea.requester')
     renderApp(`/w/${WS}`)
     await screen.findByRole('heading', { level: 1 })
-    expect(navLinks()).toEqual(['Home', 'My requests', 'Assistant', 'Workflows', 'Cases', 'Apps'])
+    expect(navLinks()).toEqual(['Home', 'My requests', 'Cases', 'Apps', 'Assistant', 'Workflows'])
   })
 
   it('approvers get My tasks with their assigned count', async () => {
@@ -26,7 +26,7 @@ describe('shell: permission-based navigation, workspaces, notifications', () => 
     claim(run, run.tasks.find(isOpen)!, mani)
     renderApp(`/w/${WS}`)
     await waitFor(() => expect(navLinks()).toContain('My tasks'))
-    expect(navLinks()).toEqual(['Home', 'My requests', 'Assistant', 'My tasks', 'Workflows', 'Cases', 'Apps'])
+    expect(navLinks()).toEqual(['Home', 'My tasks', 'My requests', 'Cases', 'Apps', 'Assistant', 'Workflows'])
     const link = within(screen.getByRole('navigation', { name: 'Main' })).getByRole('link', { name: /My tasks/ })
     await waitFor(() => expect(link).toHaveTextContent('1 assigned to you'))
   })
@@ -35,13 +35,13 @@ describe('shell: permission-based navigation, workspaces, notifications', () => 
     signInAs('olga.operator')
     const first = renderApp(`/w/${WS}`)
     await screen.findByRole('heading', { level: 1 })
-    expect(navLinks()).toEqual(['Home', 'My requests', 'Assistant', 'Workflows', 'Runs', 'Cases', 'Apps', 'Views', 'Insights', 'Agent writes', 'Settings'])
+    expect(navLinks()).toEqual(['Home', 'My requests', 'Cases', 'Apps', 'Assistant', 'Workflows', 'Decisions', 'Views', 'Runs', 'Insights', 'Agent writes', 'Settings'])
     first.unmount()
 
     signInAs('wade.admin')
     const second = renderApp(`/w/${WS}`)
     await screen.findByRole('heading', { level: 1 })
-    expect(navLinks()).toEqual(['Home', 'My requests', 'Assistant', 'Apps', 'Promotions', 'Settings'])
+    expect(navLinks()).toEqual(['Home', 'My requests', 'Apps', 'Assistant', 'Promotions', 'Settings'])
     second.unmount()
 
     signInAs('otto.outsider')

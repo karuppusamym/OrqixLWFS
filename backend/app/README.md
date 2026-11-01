@@ -16,6 +16,23 @@ cd backend
 ./mvnw -pl app spring-boot:run -Dspring-boot.run.profiles=dev           # app on :8080, management on :8081
 ```
 
+### With Gradle instead of Maven
+
+`backend/` also has a Gradle build (Gradle 8.14 or newer; the wrapper uses 8.14.3) that mirrors the Maven poms. It
+needs JDK 21, like Maven. Use `gradlew.bat` on Windows. An installed `gradle` 8.14+ works the same as `./gradlew`.
+
+```bash
+cd backend
+./gradlew build                                                       # compile, all tests, compiler coverage gate
+./gradlew :app:bootRun --args='--spring.profiles.active=migrate,dev'  # Flyway + dev seed + engine schema, then exits
+./gradlew :app:bootRun --args='--spring.profiles.active=dev'          # app on :8080, management on :8081
+./gradlew :app:bootJar                                                # app/build/libs/orqix-app.jar
+```
+
+Behind a company repository manager, put `orqixRepoUrl=<mirror URL>` (and optionally `orqixRepoUsername` and
+`orqixRepoPassword`) in `~/.gradle/gradle.properties`; plugins and libraries are then fetched from that mirror. When a
+dependency version changes in `pom.xml`, change it in `build.gradle` too.
+
 The `dev` profile's defaults match `deploy/compose` (database `orqix_app`/`orqix_migrator`, Keycloak realm
 `orqix-dev` on `localhost:8180`, procurement stub on `localhost:8095`, secrets in `deploy/compose/secrets`). Sign in
 with the dev users listed in [S1 §6.1](../../docs/build/S1-engineering-baseline.md#61-dev-realm-and-seed-b013-b023);

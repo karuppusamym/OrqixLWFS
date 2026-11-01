@@ -1,0 +1,15 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: orqix-worker
+  labels:
+    app.kubernetes.io/name: orqix
+    app.kubernetes.io/component: worker
+    app.kubernetes.io/part-of: orqix
+    orqix.io/stage: app
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: orqix
+      app.kubernetes.io/component: worker

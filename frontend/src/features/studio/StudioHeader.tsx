@@ -1,9 +1,9 @@
-import { BookOpenText, Download, Eye, FlaskConical, ListChecks, MoreHorizontal, Redo2, Rocket, Undo2 } from 'lucide-react'
+import { BookOpenText, Download, Eye, FlaskConical, ListChecks, MoreHorizontal, Rocket } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router'
+import { EditorHeader, saveStateText } from '@/components/common/EditorHeader'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { formatRelative } from '@/lib/dates'
 import { isDirty } from '@/stores/studioStore'
 import { useWorkspace } from '@/app/workspace'
 import { useAiEnabled } from '@/features/ai/api'
@@ -12,21 +12,7 @@ import { useCanUndo, useStudio, useStudioContext } from './StudioContext'
 import { useDownloadDraftBpmn } from './useDownloadBpmn'
 import { ViewMenu } from './ViewMenu'
 
-export function saveStateText(state: { saveStatus: string; dirty: boolean; savedAt: string | null }): string {
-  switch (state.saveStatus) {
-    case 'saving':
-      return 'Saving…'
-    case 'offline':
-      return 'Offline – retrying'
-    case 'conflict':
-      return 'Conflict – reload needed'
-    case 'error':
-      return 'Could not save'
-    default:
-      if (state.dirty) return 'Unsaved changes'
-      return state.savedAt ? `Saved ${formatRelative(state.savedAt)}` : 'Saved'
-  }
-}
+export { saveStateText } from '@/components/common/EditorHeader'
 
 /**
  * Studio header (docs/build/S7-frontend.md section 5): breadcrumb, revision, honest save state, and the actions
@@ -74,48 +60,15 @@ export function StudioHeader({
   const tone = saveStatus === 'conflict' || saveStatus === 'error' ? 'text-danger font-semibold' : saveStatus === 'offline' ? 'text-warning-foreground font-semibold' : 'text-muted-foreground'
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-border bg-surface px-4 py-2.5">
-      <div className="min-w-0">
-        <nav aria-label="Breadcrumb" className="text-xs text-muted-foreground">
-          <ol className="flex flex-wrap items-center gap-1">
-            <li>{workspaceName}</li>
-            <li aria-hidden="true">/</li>
-            <li>
-              <Link to={workflowsHref}>Workflows</Link>
-            </li>
-            <li aria-hidden="true">/</li>
-            <li aria-current="page">
-              <Link to={overviewHref} className="font-semibold">
-                {name || 'Untitled workflow'}
-              </Link>
-            </li>
-          </ol>
-        </nav>
-        <h1 className="truncate text-lg leading-7" title={name || undefined}>{name || 'Untitled workflow'}</h1>
-      </div>
-      <div className="flex flex-wrap items-center gap-3">
-        <p className="text-sm" data-testid="draft-meta">
-          <span>Draft revision {revision}</span>
-          <span className="mx-2 text-muted-foreground" aria-hidden="true">
-            &middot;
-          </span>
-          <span className={tone} data-testid="save-state">
-            {text}
-          </span>
-        </p>
-        <span role="status" aria-live="polite" className="sr-only" data-testid="save-announcement">
-          {settled}
-        </span>
-        {!readOnly ? (
-          <div className="flex gap-1" role="group" aria-label="History">
-            <Button variant="ghost" size="icon" onClick={() => store.getState().undo()} disabled={!canUndo} aria-label="Undo">
-              <Undo2 aria-hidden="true" />
-            </Button>
-            <Button variant="ghost" size="icon" onClick={() => store.getState().redo()} disabled={!canRedo} aria-label="Redo">
-              <Redo2 aria-hidden="true" />
-            </Button>
-          </div>
-        ) : null}
+    <EditorHeader
+      crumbs={[{ label: workspaceName }, { label: 'Workflows', to: workflowsHref }, { label: name || 'Untitled workflow', to: overviewHref }]}
+      title={name || 'Untitled workflow'}
+      meta={<span>Draft revision {revision}</span>}
+      saveText={text}
+      saveTone={tone}
+      announcement={settled}
+      history={readOnly ? undefined : { onUndo: () => store.getState().undo(), onRedo: () => store.getState().redo(), canUndo, canRedo }}
+    >
         {onTest ? (
           <Button variant="secondary" onClick={onTest} aria-pressed={testOpen}>
             <FlaskConical aria-hidden="true" /> Test workflow
@@ -167,7 +120,6 @@ export function StudioHeader({
             </span>
           ) : null}
         </span>
-      </div>
-    </div>
+    </EditorHeader>
   )
 }

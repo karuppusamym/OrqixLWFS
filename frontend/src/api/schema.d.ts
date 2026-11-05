@@ -7043,12 +7043,12 @@ export interface components {
             selections?: {
                 key: string;
                 /** @enum {string} */
-                effectClass: "readOnly" | "idempotentWithKey" | "nonIdempotent";
+                effectClass: "readOnly" | "idempotentWithKey" | "idempotentNatural" | "nonIdempotent";
                 idempotencyHeader?: string;
             }[];
         };
         OpenApiReviewResult: {
-            definition: components["schemas"]["connection-definition-v0.schema"] | null;
+            definition: components["schemas"]["ConnectionDefinitionDocument"] | null;
             report: {
                 source: {
                     [key: string]: unknown;
@@ -9052,7 +9052,7 @@ export interface components {
             connectionKey: components["schemas"]["Key"];
             operation: string;
             /** @enum {string} */
-            effectClass: "readOnly" | "idempotentWithKey" | "nonIdempotent";
+            effectClass: "readOnly" | "idempotentWithKey" | "idempotentByLookup" | "idempotentNatural" | "nonIdempotent";
             /** @enum {string} */
             state: "pending" | "inFlight" | "succeeded" | "retryableFailure" | "permanentFailure" | "unknown" | "notApplied";
             attempts: number;
@@ -9208,17 +9208,19 @@ export interface components {
                 name: string;
                 label: string;
                 /** @enum {string} */
-                effectClass: "readOnly" | "idempotentWithKey" | "nonIdempotent";
+                effectClass: "readOnly" | "idempotentWithKey" | "idempotentByLookup" | "idempotentNatural" | "nonIdempotent";
                 testable: boolean;
             }[];
         };
         ConnectionDefinitionRecord: {
             version: number;
-            definition: components["schemas"]["connection-definition-v0.schema"];
+            definition: components["schemas"]["ConnectionDefinitionDocument"];
             definitionHash: string;
             createdAt: components["schemas"]["Timestamp"];
             createdBy: components["schemas"]["SubjectRef"];
         };
+        /** @description A connection definition version: schemaVersion 0.1 (http, agent, microsoftGraph) or 1.0 (http with path templates, query encoders, headers, DELETE, nested, form, multipart and binary bodies, row lists, response headers, pagination, error mapping, long operations, async declarations and lookup reconciliation). Registration validates against the schema the schemaVersion names, then the CONN_V1_* rules. */
+        ConnectionDefinitionDocument: components["schemas"]["connection-definition-v0.schema"] | components["schemas"]["connection-definition-v1.schema"];
         ConnectionDetail: {
             key: components["schemas"]["Key"];
             definitions: components["schemas"]["ConnectionDefinitionRecord"][];
@@ -10555,6 +10557,7 @@ export interface components {
                 resultMapping: {
                     [key: string]: string;
                 };
+                /** @description Seconds to wait for the answer: at most the operation's maxTimeoutSeconds (up to 30, or 120 for operations a v1 connection marks long). */
                 timeoutSeconds: number;
                 /** @description This step is the designer's undo of the named earlier step, which must be a call to a system that can change something (S32). With compensation manual (the default) it is an ordinary step on an authored path and documentation only. With compensation automatic (docs/build/S55) it has no paths of its own and an 'Undo completed calls' step runs it, once, only when the named step completed successfully in this request. */
                 compensates?: components["schemas"]["id"];
@@ -11219,6 +11222,7 @@ export interface components {
                         resultMapping: {
                             [key: string]: string;
                         };
+                        /** @description Seconds to wait for the answer: at most the operation's maxTimeoutSeconds (up to 30, or 120 for operations a v1 connection marks long). */
                         timeoutSeconds: number;
                         /** @description This step is the designer's undo of the named earlier step, which must be a call to a system that can change something (S32). With compensation manual (the default) it is an ordinary step on an authored path and documentation only. With compensation automatic (docs/build/S55) it has no paths of its own and an 'Undo completed calls' step runs it, once, only when the named step completed successfully in this request. */
                         compensates?: components["schemas"]["id"];
@@ -11883,6 +11887,427 @@ export interface components {
                 } & (unknown & unknown);
             };
         } & (unknown & unknown);
+        pathParam: {
+            /** @enum {unknown} */
+            type: "string" | "integer";
+            description?: string;
+            const?: string | number;
+            enum?: string[];
+            pattern?: string;
+            maxLength?: number;
+        };
+        queryParam: {
+            const: string | number | boolean;
+        } | {
+            input: components["schemas"]["fieldKey"];
+        } | {
+            /** @description Fixed text with {input} placeholders. The encoder escapes each substituted value for the target syntax, then the whole value is percent-encoded. */
+            template: string;
+            /** @enum {unknown} */
+            encoder: "rfc3986" | "servicenowEncodedQuery";
+        };
+        headerValue: {
+            const: string;
+        } | {
+            input: components["schemas"]["fieldKey"];
+        };
+        "$defs-scalarField": {
+            /** @enum {unknown} */
+            type: "string" | "number" | "integer" | "boolean";
+            /**
+             * @description date: YYYY-MM-DD. attachment: the ID of a file of the request; only for multipart or binary bodies.
+             * @enum {unknown}
+             */
+            format?: "date" | "attachment";
+            description?: string;
+            enum?: string[];
+            maxLength?: number;
+            pattern?: string;
+        };
+        "$defs-requestObject": {
+            /** @constant */
+            type: "object";
+            required?: string[];
+            properties: {
+                [key: string]: components["schemas"]["$defs-scalarField"];
+            };
+            /** @constant */
+            additionalProperties: false;
+        };
+        /** @description Body member name (the remote system's own spelling) to value. */
+        templateObject: {
+            [key: string]: components["schemas"]["templateValue"];
+        };
+        templateValue: {
+            input: components["schemas"]["fieldKey"];
+        } | {
+            const: string | number | boolean | null;
+        } | {
+            object: components["schemas"]["templateObject"];
+        } | {
+            array: components["schemas"]["templateValue"][];
+        };
+        /** @description Remote APIs may add fields; unknown fields are ignored unless additionalProperties is false. Nesting is limited to five levels (CONN_V1_RESPONSE_DEPTH). */
+        "$defs-responseObject": {
+            /** @constant */
+            type: "object";
+            required?: string[];
+            properties: {
+                [key: string]: components["schemas"]["responseValue"];
+            };
+            additionalProperties?: boolean;
+        };
+        responseValue: components["schemas"]["$defs-scalarField"] | components["schemas"]["$defs-responseObject"] | components["schemas"]["responseArray"];
+        /** @description A list in the response. A result pointer ending in /[*] projects it into a list of rows (items with scalar columns) or, with /[*]/<column>, a list of single values; at most 100 items are mapped and the rest are truncated (visible on the run timeline). */
+        responseArray: {
+            /** @constant */
+            type: "array";
+            items: components["schemas"]["responseValue"];
+            maxItems?: number;
+        };
+        /** @description JSON Pointer (RFC 6901), possibly empty for the whole document. */
+        pointer: string;
+        errorMapping: {
+            status: number;
+            /** @description Business error code, e.g. INCIDENT_NOT_FOUND. */
+            code: string;
+            /** @description Where the remote system's message is in the error body; it becomes failureMessage (truncated to 200 characters, never logged). */
+            bodyPointer?: components["schemas"]["pointer"];
+            /** @description Fixed business message used when there is no bodyPointer or it does not resolve to text. */
+            message?: string;
+        };
+        /** @description Bounded reads over several pages; each page is its own journaled read. Results that project a list (/[*]) collect rows from every page; other results come from the first page. */
+        pagination: {
+            /** @enum {unknown} */
+            style: "offset" | "cursor" | "pageToken" | "linkHeader";
+            /** @description The list counted per page; must be an array in responseSchema. */
+            itemsPointer: components["schemas"]["pointer"];
+            pageSize?: number;
+            offsetParam?: string;
+            limitParam?: string;
+            /** @description cursor and pageToken: where the next cursor is in the response body. */
+            cursorPointer?: components["schemas"]["pointer"];
+            cursorParam?: string;
+            maxPages: number;
+            maxItems: number;
+        } & (unknown & unknown);
+        /** @description Declaration only in this version (CG-W02 executes it): the remote system answers with an accepted status and a status location that a read-only operation follows. The status URL must stay inside the binding. */
+        async: {
+            acceptedStatuses: number[];
+            statusFrom: {
+                header: string;
+            } | {
+                bodyPointer: components["schemas"]["pointer"];
+            };
+            statusOperation: components["schemas"]["fieldKey"];
+            pollIntervalSeconds?: number;
+            maxWaitSeconds?: number;
+        };
+        /** @description idempotentByLookup (CG-C02): Orqix sets keyField to a stable key on every send. When the outcome is uncertain (timeout, reset, 5xx or a crashed attempt) the readOnly lookup operation is called with that key: found records success with the found record and nothing is sent again; not found (after settling) allows a resend with the same key; a failed lookup leaves the outcome unknown. */
+        reconcile: {
+            operation: components["schemas"]["fieldKey"];
+            /** @description requestSchema field (string) that receives the key. Workflows cannot map it. */
+            keyField: components["schemas"]["fieldKey"];
+            /**
+             * @description request.reference: <request reference>-<step id>-<occurrence>, e.g. ORQ-1042-raise-1. effectKey: the 64-character effect key.
+             * @enum {unknown}
+             */
+            keyFrom: "request.reference" | "effectKey";
+            /** @description requestSchema field of the lookup operation that receives the key (default keyField). */
+            lookupField?: components["schemas"]["fieldKey"];
+            /** @description Pointer into the lookup response; the record is found when it resolves to a non-null value. */
+            found: components["schemas"]["pointer"];
+            /**
+             * @description found: the step's results are read from the found record placed at foundAs, so the same result pointers work for a send and a reconciliation.
+             * @constant
+             */
+            resultFrom?: "found";
+            /** @description Where the found record sits in this operation's own response (default: the whole response). */
+            foundAs?: components["schemas"]["pointer"];
+            /** @description The lookup is tried up to three times over this many seconds before deciding not found (default 30). */
+            lookupSettleSeconds?: number;
+        };
+        "$defs-operation": {
+            label: string;
+            description?: string;
+            /** @enum {unknown} */
+            method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+            /** @description Path appended to the binding base URL. {name} segments are path parameters declared in pathParams; values are percent-encoded and may never contain '/', '..' or control characters. No query string: use query. */
+            path: string;
+            /** @description Every {name} of the path. A const parameter is fixed by the definition and cannot be mapped; any other parameter is a required input with this name. */
+            pathParams?: {
+                [key: string]: components["schemas"]["pathParam"];
+            };
+            /** @description Query parameters in this order. Each is a const, a mapped input or a template filled by a reviewed encoder. A mapped value that is absent leaves the parameter out. */
+            query?: {
+                [key: string]: components["schemas"]["queryParam"];
+            };
+            /** @description Static non-secret headers and mapped headers. Authorization, Cookie, Host, Content-Type, Content-Length, hop-by-hop headers, the idempotency header and Orqix headers are refused (CONN_V1_HEADER_FORBIDDEN). */
+            headers?: {
+                [key: string]: components["schemas"]["headerValue"];
+            };
+            /**
+             * @description Request body encoding for POST, PUT and PATCH (default json; DELETE may send json). form: application/x-www-form-urlencoded from a flat body. multipart: multipart/form-data, attachment inputs become file parts. binary: the bytes of one attachment input (binaryInput).
+             * @enum {unknown}
+             */
+            contentType?: "json" | "form" | "multipart" | "binary";
+            /** @description The operation's inputs: flat typed scalars mapped from workflow fields, exactly like v0. Inputs are sent where path, query, headers and body reference them; without a body template, inputs no other part references form the flat JSON body (v0 behavior). */
+            requestSchema?: components["schemas"]["$defs-requestObject"];
+            /** @description Body template: nested objects and arrays whose leaves are inputs or constants (depth at most 5, at most 200 leaves). For form and multipart it must be flat. */
+            body?: components["schemas"]["templateObject"];
+            /** @description contentType binary only: the requestSchema field (format attachment) whose authorized request file is the body. */
+            binaryInput?: components["schemas"]["fieldKey"];
+            responseSchema: components["schemas"]["$defs-responseObject"];
+            /** @description Response headers that results may read with the pointer /@headers/<Name>. Set-Cookie, Authorization and hop-by-hop headers are refused. */
+            responseHeaders?: {
+                [key: string]: components["schemas"]["$defs-scalarField"];
+            };
+            successStatuses: number[];
+            /** @description Client errors that are business outcomes. A mapped error is a known rejection: the step's failed route or raiseOnFailure receives failureCode = code. 401, 403, 408 and 429 keep their platform meaning and cannot be mapped. */
+            errors?: components["schemas"]["errorMapping"][];
+            /**
+             * @description readOnly: no remote side effect. idempotentWithKey: remote deduplicates by the idempotency header. idempotentByLookup: Orqix writes a stable key into reconcile.keyField; when the outcome is uncertain a read-only lookup decides (CG-C02). idempotentNatural: repeating the same values gives the same result (PUT, PATCH or DELETE that sets fixed values); retried like idempotentWithKey without a header. nonIdempotent: retried only when the request provably was not sent.
+             * @enum {unknown}
+             */
+            effectClass: "readOnly" | "idempotentWithKey" | "idempotentByLookup" | "idempotentNatural" | "nonIdempotent";
+            idempotencyHeader?: string;
+            /** @description Up to 30, or up to 120 for operations marked long. */
+            maxTimeoutSeconds: number;
+            /** @description The operation may take more than 30 s (at most 120). The job lock is set above the timeout. */
+            long?: boolean;
+            /** @description May be invoked from the connection test endpoint. Only allowed for readOnly operations. */
+            testable: boolean;
+            pagination?: components["schemas"]["pagination"];
+            /** @description Declared rate hint; a binding can only lower it. Enforced by the binding rate limiter (CG-W04), not by this contract. */
+            rateLimit?: {
+                requestsPerMinute: number;
+                respectRetryAfter?: boolean;
+            };
+            async?: components["schemas"]["async"];
+            reconcile?: components["schemas"]["reconcile"];
+        } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown);
+        /**
+         * Orqix connection definition v1.0 — declarative HTTP operation contract
+         * @description Immutable, versioned, secret-free description of an approved HTTP integration (CG-C01, docs/build/S130-connection-definition-v1.md). Keeps every rule of v0.1 for kind http and adds path templates, query parameters with reviewed encoders, allow-listed headers, DELETE, nested and form, multipart or binary bodies, row lists and response headers in results, bounded pagination, error mapping to business codes, long operations up to 120 s, async declarations and lookup reconciliation (idempotentByLookup, CG-C02). Shape checks live here; cross-field rules (placeholders, input references, depth and leaf bounds, forbidden headers, reconcile targets) are registration rules CONN_V1_* listed in S130. Agent and Microsoft Graph connections stay on schema 0.1.
+         */
+        "connection-definition-v1.schema": {
+            /** @constant */
+            schemaVersion: "1.0";
+            /**
+             * @description Only http in v1.
+             * @constant
+             */
+            kind?: "http";
+            key: string;
+            version: number;
+            name: string;
+            description?: string;
+            operations: {
+                [key: string]: components["schemas"]["$defs-operation"];
+            };
+            $defs: {
+                fieldKey: string;
+                /** @description JSON Pointer (RFC 6901), possibly empty for the whole document. */
+                pointer: string;
+                operation: {
+                    label: string;
+                    description?: string;
+                    /** @enum {unknown} */
+                    method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+                    /** @description Path appended to the binding base URL. {name} segments are path parameters declared in pathParams; values are percent-encoded and may never contain '/', '..' or control characters. No query string: use query. */
+                    path: string;
+                    /** @description Every {name} of the path. A const parameter is fixed by the definition and cannot be mapped; any other parameter is a required input with this name. */
+                    pathParams?: {
+                        [key: string]: components["schemas"]["pathParam"];
+                    };
+                    /** @description Query parameters in this order. Each is a const, a mapped input or a template filled by a reviewed encoder. A mapped value that is absent leaves the parameter out. */
+                    query?: {
+                        [key: string]: components["schemas"]["queryParam"];
+                    };
+                    /** @description Static non-secret headers and mapped headers. Authorization, Cookie, Host, Content-Type, Content-Length, hop-by-hop headers, the idempotency header and Orqix headers are refused (CONN_V1_HEADER_FORBIDDEN). */
+                    headers?: {
+                        [key: string]: components["schemas"]["headerValue"];
+                    };
+                    /**
+                     * @description Request body encoding for POST, PUT and PATCH (default json; DELETE may send json). form: application/x-www-form-urlencoded from a flat body. multipart: multipart/form-data, attachment inputs become file parts. binary: the bytes of one attachment input (binaryInput).
+                     * @enum {unknown}
+                     */
+                    contentType?: "json" | "form" | "multipart" | "binary";
+                    /** @description The operation's inputs: flat typed scalars mapped from workflow fields, exactly like v0. Inputs are sent where path, query, headers and body reference them; without a body template, inputs no other part references form the flat JSON body (v0 behavior). */
+                    requestSchema?: components["schemas"]["$defs-requestObject"];
+                    /** @description Body template: nested objects and arrays whose leaves are inputs or constants (depth at most 5, at most 200 leaves). For form and multipart it must be flat. */
+                    body?: components["schemas"]["templateObject"];
+                    /** @description contentType binary only: the requestSchema field (format attachment) whose authorized request file is the body. */
+                    binaryInput?: components["schemas"]["fieldKey"];
+                    responseSchema: components["schemas"]["$defs-responseObject"];
+                    /** @description Response headers that results may read with the pointer /@headers/<Name>. Set-Cookie, Authorization and hop-by-hop headers are refused. */
+                    responseHeaders?: {
+                        [key: string]: components["schemas"]["$defs-scalarField"];
+                    };
+                    successStatuses: number[];
+                    /** @description Client errors that are business outcomes. A mapped error is a known rejection: the step's failed route or raiseOnFailure receives failureCode = code. 401, 403, 408 and 429 keep their platform meaning and cannot be mapped. */
+                    errors?: components["schemas"]["errorMapping"][];
+                    /**
+                     * @description readOnly: no remote side effect. idempotentWithKey: remote deduplicates by the idempotency header. idempotentByLookup: Orqix writes a stable key into reconcile.keyField; when the outcome is uncertain a read-only lookup decides (CG-C02). idempotentNatural: repeating the same values gives the same result (PUT, PATCH or DELETE that sets fixed values); retried like idempotentWithKey without a header. nonIdempotent: retried only when the request provably was not sent.
+                     * @enum {unknown}
+                     */
+                    effectClass: "readOnly" | "idempotentWithKey" | "idempotentByLookup" | "idempotentNatural" | "nonIdempotent";
+                    idempotencyHeader?: string;
+                    /** @description Up to 30, or up to 120 for operations marked long. */
+                    maxTimeoutSeconds: number;
+                    /** @description The operation may take more than 30 s (at most 120). The job lock is set above the timeout. */
+                    long?: boolean;
+                    /** @description May be invoked from the connection test endpoint. Only allowed for readOnly operations. */
+                    testable: boolean;
+                    pagination?: components["schemas"]["pagination"];
+                    /** @description Declared rate hint; a binding can only lower it. Enforced by the binding rate limiter (CG-W04), not by this contract. */
+                    rateLimit?: {
+                        requestsPerMinute: number;
+                        respectRetryAfter?: boolean;
+                    };
+                    async?: components["schemas"]["async"];
+                    reconcile?: components["schemas"]["reconcile"];
+                } & (unknown & unknown & unknown & unknown & unknown & unknown & unknown);
+                pathParam: {
+                    /** @enum {unknown} */
+                    type: "string" | "integer";
+                    description?: string;
+                    const?: string | number;
+                    enum?: string[];
+                    pattern?: string;
+                    maxLength?: number;
+                };
+                queryParam: {
+                    const: string | number | boolean;
+                } | {
+                    input: components["schemas"]["fieldKey"];
+                } | {
+                    /** @description Fixed text with {input} placeholders. The encoder escapes each substituted value for the target syntax, then the whole value is percent-encoded. */
+                    template: string;
+                    /** @enum {unknown} */
+                    encoder: "rfc3986" | "servicenowEncodedQuery";
+                };
+                headerValue: {
+                    const: string;
+                } | {
+                    input: components["schemas"]["fieldKey"];
+                };
+                templateValue: {
+                    input: components["schemas"]["fieldKey"];
+                } | {
+                    const: string | number | boolean | null;
+                } | {
+                    object: components["schemas"]["templateObject"];
+                } | {
+                    array: components["schemas"]["templateValue"][];
+                };
+                /** @description Body member name (the remote system's own spelling) to value. */
+                templateObject: {
+                    [key: string]: components["schemas"]["templateValue"];
+                };
+                scalarField: {
+                    /** @enum {unknown} */
+                    type: "string" | "number" | "integer" | "boolean";
+                    /**
+                     * @description date: YYYY-MM-DD. attachment: the ID of a file of the request; only for multipart or binary bodies.
+                     * @enum {unknown}
+                     */
+                    format?: "date" | "attachment";
+                    description?: string;
+                    enum?: string[];
+                    maxLength?: number;
+                    pattern?: string;
+                };
+                requestObject: {
+                    /** @constant */
+                    type: "object";
+                    required?: string[];
+                    properties: {
+                        [key: string]: components["schemas"]["$defs-scalarField"];
+                    };
+                    /** @constant */
+                    additionalProperties: false;
+                };
+                responseValue: components["schemas"]["$defs-scalarField"] | components["schemas"]["$defs-responseObject"] | components["schemas"]["responseArray"];
+                /** @description Remote APIs may add fields; unknown fields are ignored unless additionalProperties is false. Nesting is limited to five levels (CONN_V1_RESPONSE_DEPTH). */
+                responseObject: {
+                    /** @constant */
+                    type: "object";
+                    required?: string[];
+                    properties: {
+                        [key: string]: components["schemas"]["responseValue"];
+                    };
+                    additionalProperties?: boolean;
+                };
+                /** @description A list in the response. A result pointer ending in /[*] projects it into a list of rows (items with scalar columns) or, with /[*]/<column>, a list of single values; at most 100 items are mapped and the rest are truncated (visible on the run timeline). */
+                responseArray: {
+                    /** @constant */
+                    type: "array";
+                    items: components["schemas"]["responseValue"];
+                    maxItems?: number;
+                };
+                errorMapping: {
+                    status: number;
+                    /** @description Business error code, e.g. INCIDENT_NOT_FOUND. */
+                    code: string;
+                    /** @description Where the remote system's message is in the error body; it becomes failureMessage (truncated to 200 characters, never logged). */
+                    bodyPointer?: components["schemas"]["pointer"];
+                    /** @description Fixed business message used when there is no bodyPointer or it does not resolve to text. */
+                    message?: string;
+                };
+                /** @description Bounded reads over several pages; each page is its own journaled read. Results that project a list (/[*]) collect rows from every page; other results come from the first page. */
+                pagination: {
+                    /** @enum {unknown} */
+                    style: "offset" | "cursor" | "pageToken" | "linkHeader";
+                    /** @description The list counted per page; must be an array in responseSchema. */
+                    itemsPointer: components["schemas"]["pointer"];
+                    pageSize?: number;
+                    offsetParam?: string;
+                    limitParam?: string;
+                    /** @description cursor and pageToken: where the next cursor is in the response body. */
+                    cursorPointer?: components["schemas"]["pointer"];
+                    cursorParam?: string;
+                    maxPages: number;
+                    maxItems: number;
+                } & (unknown & unknown);
+                /** @description Declaration only in this version (CG-W02 executes it): the remote system answers with an accepted status and a status location that a read-only operation follows. The status URL must stay inside the binding. */
+                async: {
+                    acceptedStatuses: number[];
+                    statusFrom: {
+                        header: string;
+                    } | {
+                        bodyPointer: components["schemas"]["pointer"];
+                    };
+                    statusOperation: components["schemas"]["fieldKey"];
+                    pollIntervalSeconds?: number;
+                    maxWaitSeconds?: number;
+                };
+                /** @description idempotentByLookup (CG-C02): Orqix sets keyField to a stable key on every send. When the outcome is uncertain (timeout, reset, 5xx or a crashed attempt) the readOnly lookup operation is called with that key: found records success with the found record and nothing is sent again; not found (after settling) allows a resend with the same key; a failed lookup leaves the outcome unknown. */
+                reconcile: {
+                    operation: components["schemas"]["fieldKey"];
+                    /** @description requestSchema field (string) that receives the key. Workflows cannot map it. */
+                    keyField: components["schemas"]["fieldKey"];
+                    /**
+                     * @description request.reference: <request reference>-<step id>-<occurrence>, e.g. ORQ-1042-raise-1. effectKey: the 64-character effect key.
+                     * @enum {unknown}
+                     */
+                    keyFrom: "request.reference" | "effectKey";
+                    /** @description requestSchema field of the lookup operation that receives the key (default keyField). */
+                    lookupField?: components["schemas"]["fieldKey"];
+                    /** @description Pointer into the lookup response; the record is found when it resolves to a non-null value. */
+                    found: components["schemas"]["pointer"];
+                    /**
+                     * @description found: the step's results are read from the found record placed at foundAs, so the same result pointers work for a send and a reconciliation.
+                     * @constant
+                     */
+                    resultFrom?: "found";
+                    /** @description Where the found record sits in this operation's own response (default: the whole response). */
+                    foundAs?: components["schemas"]["pointer"];
+                    /** @description The lookup is tried up to three times over this many seconds before deciding not found (default 30). */
+                    lookupSettleSeconds?: number;
+                };
+            };
+        };
     };
     responses: {
         /** @description Malformed request or missing Idempotency-Key */
@@ -19835,7 +20260,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    definition: components["schemas"]["connection-definition-v0.schema"];
+                    definition: components["schemas"]["ConnectionDefinitionDocument"];
                 };
             };
         };

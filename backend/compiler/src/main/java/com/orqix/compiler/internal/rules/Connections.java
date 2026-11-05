@@ -9,8 +9,8 @@ import java.util.Set;
 import java.util.TreeSet;
 
 import com.orqix.compiler.CompileContext;
+import com.orqix.compiler.ConnectionContracts;
 import com.orqix.compiler.CompileContext.ConnectionVersion;
-import com.orqix.compiler.internal.json.JsonPointers;
 import com.orqix.compiler.internal.json.StrictJson;
 import com.orqix.compiler.internal.model.Enums.FieldKind;
 import com.orqix.compiler.internal.model.WorkflowDefinition;
@@ -108,64 +108,100 @@ public final class Connections {
         return op == null || !op.isObject() ? null : op;
     }
 
-    /** @return request fields of an operation by name (sorted); empty when it has no request body */
+    /**
+     * @return mappable inputs of an operation by name (sorted): request fields and, for v1, path parameters that are
+     *         not constants; empty when it has none
+     */
     public static Map<String, RequestField> requestFields(JsonNode operation) {
         Map<String, RequestField> fields = new LinkedHashMap<>();
-        JsonNode schema = operation.get("requestSchema");
-        if (schema == null) {
-            return fields;
-        }
-        List<String> names = new ArrayList<>(schema.get("properties").propertyNames());
+        Map<String, JsonNode> inputs = ConnectionContracts.inputs(operation);
+        List<String> names = new ArrayList<>(inputs.keySet());
         Collections.sort(names);
         for (String name : names) {
-            JsonNode f = schema.get("properties").get(name);
-            fields.put(name, new RequestField(FieldKind.fromJson(f.get("type").stringValue()), enumOf(f)));
+            JsonNode f = inputs.get(name);
+            fields.put(name, new RequestField(FieldKind.fromJson(f.get("type").stringValue(),
+                    f.path("format").stringValue(null)), enumOf(f)));
         }
         return fields;
     }
 
-    /** @return required request field names in declaration order */
+    /** @return required inputs in declaration order (request fields, then non-constant path parameters) */
     public static List<String> requiredRequestFields(JsonNode operation) {
-        List<String> required = new ArrayList<>();
-        JsonNode schema = operation.get("requestSchema");
-        if (schema != null && schema.has("required")) {
-            schema.get("required").forEach(r -> required.add(r.stringValue()));
-        }
-        return required;
+        return new ArrayList<>(ConnectionContracts.requiredInputs(operation));
     }
 
-    /** @return the scalar at the pointer in the operation's response schema, or null when it does not resolve */
+    /** @return the request field Orqix fills with the reconciliation key (idempotentByLookup), or null */
+    public static String reconcileKeyField(JsonNode operation) {
+        JsonNode reconcile = operation.get("reconcile");
+        return reconcile == null ? null : reconcile.path("keyField").stringValue(null);
+    }
+
+    /**
+     * @return the scalar at the pointer in the operation's response schema (array items by index, or a declared
+     *         response header for {@code /@headers/<Name>}), or null when it does not resolve to a single value
+     */
     public static ResponseScalar responseScalar(JsonNode operation, String pointer) {
-        List<String> tokens;
-        try {
-            tokens = JsonPointers.parse(pointer);
-        } catch (IllegalArgumentException e) {
+        ConnectionContracts.ResultPointer parsed = ConnectionContracts.parseResult(pointer);
+        if (parsed == null || parsed.projection()) {
             return null;
         }
-        if (tokens.isEmpty()) {
+        JsonNode schema;
+        boolean allRequired;
+        if (parsed.header() != null) {
+            schema = ConnectionContracts.responseHeader(operation, parsed.header());
+            allRequired = false;
+        } else {
+            ConnectionContracts.SchemaAt at = ConnectionContracts.schemaAt(operation.get("responseSchema"),
+                    parsed.base());
+            if (at == null) {
+                return null;
+            }
+            schema = at.schema();
+            allRequired = at.allRequired();
+        }
+        if (!ConnectionContracts.isScalar(schema)) {
             return null;
         }
-        JsonNode schema = operation.get("responseSchema");
-        boolean allRequired = true;
-        for (String token : tokens) {
-            if (schema == null || !"object".equals(schema.path("type").stringValue(null))) {
-                return null;
-            }
-            JsonNode next = schema.path("properties").get(token);
-            if (next == null) {
-                return null;
-            }
-            boolean required = false;
-            for (JsonNode r : schema.path("required")) {
-                if (token.equals(r.stringValue())) {
-                    required = true;
-                }
-            }
-            allRequired &= required;
-            schema = next;
+        FieldKind kind = FieldKind.fromJson(schema.path("type").stringValue(""), schema.path("format").stringValue(null));
+        if (kind == FieldKind.ATTACHMENT) {
+            kind = FieldKind.STRING;
         }
-        FieldKind kind = FieldKind.fromJson(schema.path("type").stringValue(""));
         return kind == null ? null : new ResponseScalar(kind, enumOf(schema), allRequired);
+    }
+
+    /**
+     * A list result ({@code <list>/[*]} rows, or {@code <list>/[*]/<column>} single values).
+     *
+     * @param itemKind   OBJECT for rows, else the kind of the single values
+     * @param enumValues allowed values of single text values, or null
+     */
+    public record ResponseList(FieldKind itemKind, Set<String> enumValues) {
+    }
+
+    /** @return the list a projection pointer selects, or null when it is not a projection or does not resolve */
+    public static ResponseList responseList(JsonNode operation, String pointer) {
+        ConnectionContracts.ResultPointer parsed = ConnectionContracts.parseResult(pointer);
+        if (parsed == null || !parsed.projection()) {
+            return null;
+        }
+        ConnectionContracts.SchemaAt list = ConnectionContracts.schemaAt(operation.get("responseSchema"), parsed.base());
+        if (list == null || !"array".equals(list.schema().path("type").stringValue(""))) {
+            return null;
+        }
+        JsonNode items = list.schema().get("items");
+        if (parsed.column().isEmpty()) {
+            return ConnectionContracts.rowColumns(items).isEmpty() ? null : new ResponseList(FieldKind.OBJECT, null);
+        }
+        ConnectionContracts.SchemaAt column = ConnectionContracts.schemaAt(items, parsed.column());
+        if (column == null || !ConnectionContracts.isScalar(column.schema())) {
+            return null;
+        }
+        FieldKind kind = FieldKind.fromJson(column.schema().path("type").stringValue(""),
+                column.schema().path("format").stringValue(null));
+        if (kind == null || kind == FieldKind.ATTACHMENT) {
+            kind = FieldKind.STRING;
+        }
+        return new ResponseList(kind, enumOf(column.schema()));
     }
 
     private static Set<String> enumOf(JsonNode field) {

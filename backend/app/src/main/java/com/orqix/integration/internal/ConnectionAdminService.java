@@ -21,6 +21,7 @@ import com.networknt.schema.SchemaLocation;
 import com.networknt.schema.SchemaRegistry;
 import com.networknt.schema.SpecificationVersion;
 import com.orqix.audit.AuditWriter;
+import com.orqix.compiler.ConnectionContracts;
 import com.orqix.identity.Caller;
 import com.orqix.identity.Permission;
 import com.orqix.identity.PolicyService;
@@ -64,6 +65,7 @@ public class ConnectionAdminService {
     private final Json json;
     private final Clock clock;
     private final Schema definitionSchema;
+    private final Schema definitionV1Schema;
     private final WorkspaceFeatures features;
 
     public ConnectionAdminService(ConnectionService connections, PolicyService policy, SubjectService subjects,
@@ -83,6 +85,8 @@ public class ConnectionAdminService {
         this.clock = clock;
         this.definitionSchema = SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12)
                 .getSchema(SchemaLocation.of("classpath:orqix/schemas/connection-definition-v0.schema.json"));
+        this.definitionV1Schema = SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12)
+                .getSchema(SchemaLocation.of("classpath:orqix/schemas/connection-definition-v1.schema.json"));
     }
 
     /** S127: binding or testing an agent connection needs the agents module on (x-orqix-feature-when kind agent). */
@@ -144,12 +148,20 @@ public class ConnectionAdminService {
         if ("agent".equals(definition.path("kind").asString("http"))) {
             features.require(workspaceId, WorkspaceFeatures.Feature.AGENTS);
         }
-        List<Error> errors = definitionSchema.validate(definition);
+        // schemaVersion 1.0 is validated against the v1 schema plus its registration rules (S130); 0.1 as before.
+        boolean v1 = ConnectionContracts.isV1(definition);
+        List<Error> errors = (v1 ? definitionV1Schema : definitionSchema).validate(definition);
         if (!errors.isEmpty()) {
             throw new ApiException(ProblemCode.VALIDATION_FAILED, "The connection definition is not valid.")
                     .withFieldErrors(errors.stream().limit(50).map(e -> new ApiException.FieldError(
                             "/definition" + pointer(e), e.getKeyword() == null ? "schema" : e.getKeyword(),
                             e.getMessage())).toList());
+        }
+        List<ConnectionContracts.Problem> rules = ConnectionContracts.check(definition);
+        if (!rules.isEmpty()) {
+            throw new ApiException(ProblemCode.VALIDATION_FAILED, "The connection definition is not valid.")
+                    .withFieldErrors(rules.stream().limit(50).map(p -> new ApiException.FieldError(
+                            "/definition" + p.pointer(), p.code(), p.message())).toList());
         }
         if (!key.equals(definition.path("key").asString())) {
             throw new ApiException(ProblemCode.VALIDATION_FAILED, "definition.key must equal the connection key.")
@@ -366,7 +378,7 @@ public class ConnectionAdminService {
                 }
                 HttpExecutor.CallResult call = executor.call(new HttpExecutor.Target(binding.baseUrl(),
                         binding.authType(), binding.authHeaderName(), binding.secretRef(), binding.workspaceId()), record.definition(), operation,
-                        record.definition().isMicrosoftGraph() ? input : null, testMapping,
+                        record.definition().isMicrosoftGraph() || operation.v1() ? input : null, testMapping,
                         "connection-test-" + UUID.randomUUID(), operation.maxTimeoutSeconds(), secret);
                 boolean ok = call.outcome() == HttpExecutor.Outcome.SUCCEEDED;
                 result = new ConnectionDtos.TestResult(ok ? "succeeded" : "failed", call.httpStatus(), call.durationMs(),

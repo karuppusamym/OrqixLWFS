@@ -10,7 +10,8 @@ import java.util.Set;
 import tools.jackson.databind.JsonNode;
 
 /**
- * Parsed, immutable connection definition version (connection-definition-v0.schema.json). Secret-free and portable;
+ * Parsed, immutable connection definition version (connection-definition-v0.schema.json or, for schemaVersion 1.0,
+ * connection-definition-v1.schema.json). Secret-free and portable;
  * environment details live in the binding.
  */
 public record ConnectionDefinition(String key, int version, String name, JsonNode document, String definitionHash,
@@ -30,7 +31,12 @@ public record ConnectionDefinition(String key, int version, String name, JsonNod
     }
 
     public enum EffectClass {
-        READ_ONLY("readOnly"), IDEMPOTENT_WITH_KEY("idempotentWithKey"), NON_IDEMPOTENT("nonIdempotent");
+        READ_ONLY("readOnly"), IDEMPOTENT_WITH_KEY("idempotentWithKey"),
+        /** v1 (CG-C02): an uncertain outcome is settled by the operation's read-only lookup. */
+        IDEMPOTENT_BY_LOOKUP("idempotentByLookup"),
+        /** v1: repeating the same values gives the same result; retried like idempotentWithKey without a header. */
+        IDEMPOTENT_NATURAL("idempotentNatural"),
+        NON_IDEMPOTENT("nonIdempotent");
 
         private final String value;
 
@@ -52,9 +58,31 @@ public record ConnectionDefinition(String key, int version, String name, JsonNod
         }
     }
 
+    /**
+     * @param source the operation as declared; v1 request parts, results, errors, pagination and reconcile are read
+     *               from it (docs/build/S130-connection-definition-v1.md)
+     * @param v1     true for a {@code schemaVersion "1.0"} definition
+     */
     public record Operation(String name, String label, String method, String path, JsonNode requestSchema,
             JsonNode responseSchema, Set<Integer> successStatuses, EffectClass effectClass, String idempotencyHeader,
-            int maxTimeoutSeconds, boolean testable, AgentSpec agent) {
+            int maxTimeoutSeconds, boolean testable, AgentSpec agent, JsonNode source, boolean v1) {
+
+        public Operation(String name, String label, String method, String path, JsonNode requestSchema,
+                JsonNode responseSchema, Set<Integer> successStatuses, EffectClass effectClass, String idempotencyHeader,
+                int maxTimeoutSeconds, boolean testable, AgentSpec agent) {
+            this(name, label, method, path, requestSchema, responseSchema, successStatuses, effectClass,
+                    idempotencyHeader, maxTimeoutSeconds, testable, agent, null, false);
+        }
+
+        /** @return the paginated-read settings, or null */
+        public JsonNode pagination() {
+            return v1 && source.has("pagination") ? source.get("pagination") : null;
+        }
+
+        /** @return the lookup reconciliation settings (idempotentByLookup), or null */
+        public JsonNode reconcile() {
+            return v1 && source.has("reconcile") ? source.get("reconcile") : null;
+        }
     }
 
     /**
@@ -97,6 +125,7 @@ public record ConnectionDefinition(String key, int version, String name, JsonNod
 
     public static ConnectionDefinition parse(JsonNode document, String definitionHash) {
         Map<String, Operation> operations = new LinkedHashMap<>();
+        boolean v1 = "1.0".equals(document.path("schemaVersion").asString(""));
         for (Map.Entry<String, JsonNode> entry : document.path("operations").properties()) {
             JsonNode op = entry.getValue();
             Set<Integer> statuses = new LinkedHashSet<>();
@@ -107,7 +136,7 @@ public record ConnectionDefinition(String key, int version, String name, JsonNod
                     Set.copyOf(statuses), EffectClass.of(op.path("effectClass").asString()),
                     op.has("idempotencyHeader") ? op.get("idempotencyHeader").asString() : null,
                     op.path("maxTimeoutSeconds").asInt(30), op.path("testable").asBoolean(false),
-                    op.has("agent") ? agent(op.get("agent")) : null));
+                    op.has("agent") ? agent(op.get("agent")) : null, op, v1));
         }
         return new ConnectionDefinition(document.path("key").asString(), document.path("version").asInt(),
                 document.path("name").asString(), document, definitionHash, java.util.Collections.unmodifiableMap(operations),

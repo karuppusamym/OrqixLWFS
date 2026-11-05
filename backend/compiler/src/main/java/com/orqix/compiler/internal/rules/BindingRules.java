@@ -9,6 +9,7 @@ import java.util.Set;
 
 import com.orqix.compiler.CompileContext.GroupInfo;
 import com.orqix.compiler.internal.json.JsonPointers;
+import com.orqix.compiler.internal.model.Enums.FieldKind;
 import com.orqix.compiler.internal.model.Node;
 import com.orqix.compiler.internal.model.WorkflowDefinition.Dependency;
 import com.orqix.compiler.internal.rules.Connections.Pinned;
@@ -267,6 +268,21 @@ final class BindingRules {
                         + " has no request field " + q(e.getKey()) + ".");
                 continue;
             }
+            if (e.getKey().equals(Connections.reconcileKeyField(operation))) {
+                rc.issues().blocker("WF_MAPPING_RECONCILE_KEY", path, n.id(), null, "The operation " + op
+                        + " fills " + q(e.getKey()) + " itself, so it can find the record after an uncertain"
+                        + " outcome. Remove this mapping.");
+                continue;
+            }
+            if (target.kind() == FieldKind.ATTACHMENT) {
+                // A file input (v1 multipart or binary body) accepts only a file of this request.
+                if (rc.types().resolve(e.getValue()) instanceof Resolved r && r.type().kind() != FieldKind.ATTACHMENT) {
+                    rc.issues().blocker("WF_MAPPING_TYPE", path, n.id(), null, "The request field " + q(e.getKey())
+                            + " expects a file of this request, but the source is " + r.type().kind().description()
+                            + " (" + e.getValue() + ").");
+                }
+                continue;
+            }
             if (rc.types().resolve(e.getValue()) instanceof Resolved r) {
                 String problem = FieldTypes.incompatibility(r.type(), target.kind(), target.enumValues());
                 if (problem != null) {
@@ -276,7 +292,7 @@ final class BindingRules {
             }
         }
         for (String required : Connections.requiredRequestFields(operation)) {
-            if (!n.inputMapping().containsKey(required)) {
+            if (!n.inputMapping().containsKey(required) && !required.equals(Connections.reconcileKeyField(operation))) {
                 rc.issues().blocker("WF_MAPPING_MISSING_REQUIRED", n.configPath("inputMapping"), n.id(), null,
                         "The operation " + op + " requires " + q(required) + ", but " + n.label()
                                 + " does not provide it.");
@@ -284,6 +300,9 @@ final class BindingRules {
         }
         for (Map.Entry<String, String> e : n.resultMapping().entrySet()) {
             String path = JsonPointers.append(n.configPath("resultMapping"), e.getKey());
+            if (Connections.responseList(operation, e.getValue()) != null) {
+                continue;
+            }
             Connections.ResponseScalar scalar = Connections.responseScalar(operation, e.getValue());
             if (scalar == null) {
                 rc.issues().blocker("WF_RESULT_POINTER_UNKNOWN", path, n.id(), null, "The response of " + op

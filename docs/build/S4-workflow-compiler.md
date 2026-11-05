@@ -132,8 +132,9 @@ Severity **B** = blocker (cannot publish), **W** = warning (publish requires `ac
 | `WF_OPERATION_UNKNOWN` | B | Operation not in the pinned definition version |
 | `WF_MAPPING_UNKNOWN_TARGET` | B | `inputMapping` key not in the operation `requestSchema` |
 | `WF_MAPPING_MISSING_REQUIRED` | B | A required request field is not mapped |
+| `WF_MAPPING_RECONCILE_KEY` | B | `inputMapping` maps the `reconcile.keyField` of an `idempotentByLookup` operation; Orqix fills it ([S130](S130-connection-definition-v1.md)) |
 | `WF_MAPPING_TYPE` | B | Source type incompatible with target (number→integer only from integer; enum source must be a subset of an enum target) |
-| `WF_RESULT_POINTER_UNKNOWN` | B | `resultMapping` pointer does not resolve to a scalar in `responseSchema` |
+| `WF_RESULT_POINTER_UNKNOWN` | B | `resultMapping` pointer does not resolve to a scalar in `responseSchema` (v1: also a `/[*]` list projection or a declared `/@headers/<Name>`, S130) |
 | `WF_RESULT_OPTIONAL` | W | Pointer targets a non-required response property; a missing value at runtime becomes `RESPONSE_INVALID` |
 | `WF_TIMEOUT_EXCEEDS_OPERATION` | B | `timeoutSeconds` > operation `maxTimeoutSeconds` |
 | `WF_SELF_APPROVAL_NOT_ALLOWED` | B | `security.selfApproval = allow` in a workspace that does not permit it |

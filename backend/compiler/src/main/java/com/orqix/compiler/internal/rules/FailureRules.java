@@ -16,14 +16,16 @@ import com.orqix.compiler.internal.model.WorkflowDefinition.Transition;
 /**
  * Failure routes (S32). A "Call a system" step may have one optional {@code failed} path:
  * a business reaction to a known permanent HTTP rejection or invalid read-only response. Child workflow failure
- * paths are blocked; exhausted retries retain operator incidents. The failure facts {@code failureKind}, {@code failureHttpStatus} and {@code failureMessage} are
+ * paths are blocked; exhausted retries retain operator incidents. The failure facts {@code failureKind}, {@code failureHttpStatus}, {@code failureMessage} and {@code failureCode} (the
+ * business code of a mapped error of a v1 connection, S130, else empty) are
  * outputs of that step that exist only on the failed path. An outcome that may have happened (unknown) never takes
  * the path. Also checks the {@code compensates} annotation of a call step.
  */
 final class FailureRules {
 
     /** Reserved output names of a step with a failed path, in documentation order. */
-    static final List<String> FAILURE_OUTPUTS = List.of("failureKind", "failureHttpStatus", "failureMessage");
+    static final List<String> FAILURE_OUTPUTS = List.of("failureKind", "failureHttpStatus", "failureMessage",
+            "failureCode");
 
     /** Values of {@code failureKind}. */
     static final Set<String> FAILURE_KINDS = Set.of("rejected", "invalidResponse");

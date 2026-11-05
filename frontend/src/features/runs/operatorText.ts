@@ -14,6 +14,8 @@ export const EFFECT_STATE_LABEL: Record<Effect['state'], string> = {
 export const EFFECT_CLASS_LABEL: Record<Effect['effectClass'], string> = {
   readOnly: 'Read only: safe to retry',
   idempotentWithKey: 'Safe to retry: the service de-duplicates repeated requests',
+  idempotentByLookup: 'Safe to retry after a check: if there is no answer, Orqix looks the record up before sending again',
+  idempotentNatural: 'Safe to retry: sending the same values again gives the same result',
   nonIdempotent: 'Not safe to retry automatically: if there is no answer, someone must check the outcome',
 }
 

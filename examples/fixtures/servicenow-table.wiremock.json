@@ -1,0 +1,139 @@
+{
+  "description": "WireMock mappings for examples/connections/servicenow-table.connection.json (docs/build/S130). Load them with 'java -jar wiremock-standalone.jar --root-dir <dir>' after copying its mappings to <dir>/mappings/, or programmatically; bind the connection to http://localhost:<port>/servicenow. Bodies follow the default ServiceNow data model and are illustrative. ServiceNowFixturesTest runs the example operations against these mappings.",
+  "mappings": [
+    {
+      "name": "getIncident found",
+      "request": {
+        "method": "GET",
+        "urlPath": "/servicenow/api/now/table/incident/a1b2c3d4e5f60718293a4b5c6d7e8f90",
+        "headers": { "Accept": { "equalTo": "application/json" } },
+        "queryParameters": {
+          "sysparm_fields": { "equalTo": "sys_id,number,state,short_description,close_code,close_notes,correlation_id" },
+          "sysparm_exclude_reference_link": { "equalTo": "true" }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": {
+          "result": {
+            "sys_id": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+            "number": "INC0012345",
+            "state": "6",
+            "short_description": "Access to the finance share",
+            "close_code": "Solved (Permanently)",
+            "close_notes": "Access granted.",
+            "correlation_id": "ORQ-1042-raise-1"
+          }
+        }
+      }
+    },
+    {
+      "name": "getIncident not found",
+      "priority": 10,
+      "request": { "method": "GET", "urlPathPattern": "/servicenow/api/now/table/incident/[0-9a-f]{32}" },
+      "response": {
+        "status": 404,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": {
+          "error": { "message": "No Record found", "detail": "Record doesn't exist or ACL restricts the record retrieval" },
+          "status": "failure"
+        }
+      }
+    },
+    {
+      "name": "findIncidentByCorrelation found",
+      "request": {
+        "method": "GET",
+        "urlPath": "/servicenow/api/now/table/incident",
+        "queryParameters": {
+          "sysparm_query": { "equalTo": "correlation_id=ORQ-1042-raise-1" },
+          "sysparm_limit": { "equalTo": "1" }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": {
+          "result": [
+            { "sys_id": "a1b2c3d4e5f60718293a4b5c6d7e8f90", "number": "INC0012345", "state": "1", "correlation_id": "ORQ-1042-raise-1" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "findIncidentByCorrelation not found",
+      "priority": 10,
+      "request": {
+        "method": "GET",
+        "urlPath": "/servicenow/api/now/table/incident",
+        "queryParameters": { "sysparm_query": { "matches": "correlation_id=.*" } }
+      },
+      "response": { "status": 200, "headers": { "Content-Type": "application/json" }, "jsonBody": { "result": [] } }
+    },
+    {
+      "name": "listOpenIncidents first page",
+      "request": {
+        "method": "GET",
+        "urlPath": "/servicenow/api/now/table/incident",
+        "queryParameters": {
+          "sysparm_query": { "equalTo": "active=true^assignment_group=0123456789abcdef0123456789abcdef^ORDERBYDESCsys_created_on" },
+          "sysparm_offset": { "equalTo": "0" },
+          "sysparm_limit": { "equalTo": "25" }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": { "Content-Type": "application/json", "X-Total-Count": "2" },
+        "jsonBody": {
+          "result": [
+            { "sys_id": "b1b2c3d4e5f60718293a4b5c6d7e8f90", "number": "INC0012346", "state": "2", "short_description": "Printer jam" },
+            { "sys_id": "c1b2c3d4e5f60718293a4b5c6d7e8f90", "number": "INC0012347", "state": "1", "short_description": "VPN slow" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "createIncident",
+      "request": {
+        "method": "POST",
+        "urlPath": "/servicenow/api/now/table/incident",
+        "headers": { "Content-Type": { "equalTo": "application/json" } },
+        "bodyPatterns": [
+          { "matchesJsonPath": "$.short_description" },
+          { "matchesJsonPath": "$[?(@.correlation_id =~ /ORQ-[0-9]{4,}-.+-[0-9]+/)]" }
+        ]
+      },
+      "response": {
+        "status": 201,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": {
+          "result": { "sys_id": "a1b2c3d4e5f60718293a4b5c6d7e8f90", "number": "INC0012345", "state": "1", "correlation_id": "ORQ-1042-raise-1" }
+        }
+      }
+    },
+    {
+      "name": "createIncident invalid",
+      "priority": 10,
+      "request": { "method": "POST", "urlPath": "/servicenow/api/now/table/incident" },
+      "response": {
+        "status": 400,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": { "error": { "message": "short_description is mandatory" }, "status": "failure" }
+      }
+    },
+    {
+      "name": "attachFile",
+      "request": {
+        "method": "POST",
+        "urlPath": "/servicenow/api/now/attachment/file",
+        "queryParameters": { "table_name": { "equalTo": "incident" } }
+      },
+      "response": {
+        "status": 201,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": { "result": { "sys_id": "d1b2c3d4e5f60718293a4b5c6d7e8f90", "size_bytes": "24" } }
+      }
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-import { AlertTriangle, Ban, CheckCircle2, Clock, Pause, Play, RefreshCw, Wrench, XCircle } from 'lucide-react'
+import { AlertTriangle, Ban, CheckCircle2, Clock, Pause, Play, RadioTower, RefreshCw, Wrench, XCircle } from 'lucide-react'
 import { CallbackWaitsPanel } from './CallbackWaitsPanel'
 import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router'
@@ -24,7 +24,8 @@ import { humanize } from '@/lib/text'
 import { isTerminal } from '@/lib/status'
 import { readStorage, writeStorage } from '@/lib/storage'
 import { RunProgressPanel, type RunView } from './RunProgressPanel'
-import { CancelDialog, MigrateDialog, ReassignDialog, RepairDialog, ReconcileDialog, ResumeDialog, RetryDialog, SuspendDialog } from './OperatorDialogs'
+import { CancelDialog, MigrateDialog, ReassignDialog, RepairDialog, ReconcileDialog, ResumeDialog, RetryDialog, SendSignalDialog, SuspendDialog } from './OperatorDialogs'
+import { signalChoices } from './signals'
 import { CaseControlsPanel } from './CaseControlsPanel'
 import { EvidencePackMenu } from '@/features/evidence-pack/EvidencePackMenu'
 import { RunCommentsPanel } from './RunCommentsPanel'
@@ -46,7 +47,7 @@ const TONE_DOT: Record<EventTone, string> = {
   danger: 'bg-danger',
 }
 
-type DialogName = 'retry' | 'reconcile' | 'cancel' | 'reassign' | 'suspend' | 'resume' | 'migrate' | 'repair' | null
+type DialogName = 'retry' | 'reconcile' | 'cancel' | 'reassign' | 'suspend' | 'resume' | 'migrate' | 'repair' | 'signal' | null
 
 /**
  * Run detail for requesters, approvers and operators (docs/build/S7-frontend.md section 4).
@@ -66,7 +67,7 @@ export function RunDetailPage() {
   return <RunView run={run.data} events={events.data?.events ?? []} eventsUpdatedAt={events.dataUpdatedAt} releaseDefinition={release.data?.definition} />
 }
 
-function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: RunDetail; events: RunEvent[]; eventsUpdatedAt: number; releaseDefinition: { inputSchema: unknown; inputUi?: unknown } | undefined }) {
+function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: RunDetail; events: RunEvent[]; eventsUpdatedAt: number; releaseDefinition: { inputSchema: unknown; inputUi?: unknown; nodes?: unknown; subprocesses?: unknown } | undefined }) {
   const { workspace, can } = useWorkspace()
   const ws = workspace.id
   const me = useMe()
@@ -116,6 +117,8 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
   const effects = run.effects ?? []
   const reconcileCandidates = candidateEffects(effects)
   const notReversed = run.completedEffectsNotReversed ?? []
+  const signals = signalChoices(run, events, releaseDefinition)
+  const waitingForSignal = run.currentSteps.some((s) => s.kind === 'waitForSignal')
   // Lead with the next safe action. An unknown outcome is checked before anything is retried; a definite failure or used-up
   // retries are retried; only a stuck request with nothing to retry points at the task owner. A request that is simply
   // waiting needs no recommendation.
@@ -234,6 +237,12 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
             <Button variant={nextAction === 'reassign' ? 'primary' : 'secondary'} onClick={() => setDialog('reassign')} disabled={openTasks.length === 0} title="Give the open approval task to another eligible person">
               Reassign task
             </Button>
+            {/* Only where signals are in play: a "Wait for a signal" step is open or the workflow has signal handlers. */}
+            {!isTerminal(run.lifecycle) && (waitingForSignal || signals.length > 0) ? (
+              <Button variant="secondary" onClick={() => setDialog('signal')} disabled={!!run.suspension} title={run.suspension ? 'Resume the request before sending a signal' : 'Send a signal that this request waits for'}>
+                <RadioTower aria-hidden="true" /> Send signal
+              </Button>
+            ) : null}
             {run.suspension ? (
               <Button variant="primary" onClick={() => setDialog('resume')} disabled={!allowed.resume.allowed} title="Let this request continue where it stopped">
                 <Play aria-hidden="true" /> Resume request
@@ -260,6 +269,7 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
           <ul className="mt-3 space-y-1 text-sm text-muted-foreground">
             {!allowed.retry.allowed && needsAttention ? <li>Retry: {reasonText(allowed.retry.reasonCode)}</li> : null}
             {!allowed.cancel.allowed ? <li>Cancel: {reasonText(allowed.cancel.reasonCode)}</li> : null}
+            {waitingForSignal && !run.suspension ? <li data-testid="signal-hint">This request is waiting for a signal{signals[0] ? <> (<span className="font-mono">{signals[0].signal}</span>)</> : null}. If nothing else will send it, use Send signal.</li> : null}
             {!run.suspension && !allowed.suspend.allowed && run.lifecycle !== 'cancelled' && run.lifecycle !== 'completed' ? <li>Suspend: {reasonText(allowed.suspend.reasonCode)}</li> : null}
           </ul>
         </section>
@@ -407,6 +417,7 @@ function RunView({ run, events, eventsUpdatedAt, releaseDefinition }: { run: Run
       {dialog === 'resume' ? <ResumeDialog open run={run} onClose={() => setDialog(null)} /> : null}
       {dialog === 'migrate' ? <MigrateDialog open run={run} onClose={() => setDialog(null)} /> : null}
       {dialog === 'reassign' ? <ReassignDialog open run={run} onClose={() => setDialog(null)} /> : null}
+      {dialog === 'signal' ? <SendSignalDialog open run={run} choices={signals} onClose={() => setDialog(null)} /> : null}
     </>
   )
 }

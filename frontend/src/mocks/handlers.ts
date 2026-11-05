@@ -4,7 +4,7 @@ import type { components } from '@/api/schema'
 import type { Permission, ProblemCode, TaskDetail, ValidationIssue } from '@/api/types'
 import { nodeById } from '@/features/studio/model/graph'
 import { sendMessage, validMessageName } from './messages'
-import { migrateRunTo, suspendBlocker, suspendRun, resumeRun, addEvent, canSeeRunData, hasTaskSkills, isRunParticipant, isSeparatedFrom, evaluateTable, requestTitleOf, claim, createRun, decide, cancelRun, currentRelease, reconcileRun, retryRun, release as releaseTask, selfApprovalAllowed, toRun, toRunDetail, toTaskSummary } from './engine'
+import { awaitedSignals, deliverSignal, migrateRunTo, suspendBlocker, suspendRun, resumeRun, addEvent, canSeeRunData, hasTaskSkills, isRunParticipant, isSeparatedFrom, evaluateTable, requestTitleOf, claim, createRun, decide, cancelRun, currentRelease, reconcileRun, retryRun, release as releaseTask, selfApprovalAllowed, toRun, toRunDetail, toTaskSummary } from './engine'
 import { makeRelease } from './seed'
 import { attachStartFiles, planStartFiles } from './caseFiles'
 import { evaluate, migrationOptions } from './releaseMigration'
@@ -36,6 +36,7 @@ import {
   db,
   groupMembers,
   inGroup,
+  isCreatedWorkspace,
   isMember,
   newId,
   permissionsOf,
@@ -94,7 +95,7 @@ function accessGrants(ws: string): components['schemas']['PermissionGrant'][] {
 }
 
 function accessGroups(ws: string, withMembers: boolean): components['schemas']['Group'][] {
-  const seeded = ws === WORKSPACES[2]?.id ? [] : GROUPS.map((gr) => ({ ...gr, members: groupMembers(gr.key).map((u) => ({ type: 'subject' as const, value: u.id, displayName: u.displayName })) }))
+  const seeded = ws === WORKSPACES[2]?.id || isCreatedWorkspace(ws) ? [] : GROUPS.map((gr) => ({ ...gr, members: groupMembers(gr.key).map((u) => ({ type: 'subject' as const, value: u.id, displayName: u.displayName })) }))
   const changed: components['schemas']['Group'][] = edits().groups.filter((x) => x.wsId === ws).map(withoutWs)
   const all: components['schemas']['Group'][] = [...seeded.filter((x) => !changed.some((c) => c.key === x.key)), ...changed]
   return all.map(({ members, ...rest }) => (withMembers ? { ...rest, members } : rest))
@@ -1484,6 +1485,26 @@ export function createHandlers(): HttpHandler[] {
         const blocker = suspendBlocker(run)
         if (blocker) return problem(409, 'RUN_NOT_SUSPENDABLE', 'The request cannot be suspended', { detail: blocker, currentVersion: run.version })
         suspendRun(run, g.user, input.reason.trim())
+        return { status: 200, body: toRunDetail(run, g.user) }
+      })
+    }),
+    http.post(`${B}/workspaces/:ws/runs/:id/signals`, async ({ params, request }) => {
+      await slow()
+      const g = guard(params.ws, 'run.operate')
+      if (!g.ok) return g.res
+      const run = db.runs.get(str(params.id))
+      if (!run || run.wsId !== str(params.ws)) return notFound()
+      const input = await body<{ signal: string; reason: string; expectedVersion: number }>(request)
+      return idempotent(request, g.user, 'sendRunSignal', input, () => {
+        if (typeof input.signal !== 'string' || !/^[a-z][a-zA-Z0-9]*(-[a-z0-9][a-zA-Z0-9]*)*$/.test(input.signal) || input.signal.length < 2 || input.signal.length > 64) return problem(400, 'MALFORMED_REQUEST', 'The request does not match the operation schema.', { fieldErrors: [{ pointer: '/signal', code: 'invalid', message: 'Invalid value' }] })
+        if (!input.reason?.trim()) return problem(400, 'MALFORMED_REQUEST', 'The request does not match the operation schema.', { fieldErrors: [{ pointer: '/reason', code: 'invalid', message: 'Invalid value' }] })
+        if (run.lifecycle === 'completed' || run.lifecycle === 'cancelled') return problem(409, 'RUN_NOT_ACTIVE', 'The run has already ended.', { currentVersion: run.version })
+        if (input.expectedVersion !== run.version) return problem(409, 'RUN_NOT_ACTIVE', 'The request changed', { currentVersion: run.version })
+        if (run.suspension) return problem(409, 'RUN_SUSPENDED', 'The request is suspended', { currentVersion: run.version })
+        if (!awaitedSignals(run).includes(input.signal)) return problem(409, 'SIGNAL_NOT_AWAITED', 'No step or handler of this request is waiting for that signal now.', { currentVersion: run.version })
+        run.version += 1
+        addEvent(run, 'SIGNAL_SENT', { actorId: g.user.id, data: { signal: input.signal, reason: input.reason.trim() } })
+        deliverSignal(run, input.signal)
         return { status: 200, body: toRunDetail(run, g.user) }
       })
     }),

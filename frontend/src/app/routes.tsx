@@ -16,6 +16,8 @@ import { RunDetailPage } from '@/features/runs/RunDetailPage'
  */
 export const routes: RouteObject[] = [
   { path: '/', element: <RootRedirect />, errorElement: <RouteErrorPage /> },
+  // Platform administration lives outside any workspace: a platform administrator may not belong to one yet.
+  { path: '/admin', errorElement: <RouteErrorPage />, lazy: async () => ({ Component: (await import('@/features/admin/PlatformAdminPage')).PlatformAdminPage }) },
   {
     path: '/w/:workspaceId',
     element: <WorkspaceRoute />,
